@@ -45,8 +45,9 @@ pal_tls_ctx *pal_tls_ctx_new(const char *cert_file, const char *key_file)
         return NULL;
     }
     SSL_CTX_set_min_proto_version(ctx, TLS1_2_VERSION);
-    if (SSL_CTX_use_certificate_chain_file(ctx, cert_file,
-                                           SSL_FILETYPE_PEM) != 1 ||
+    /* use_certificate_file (single PEM cert) is the most portable variant
+     * across OpenSSL header generations; our deployments use one cert. */
+    if (SSL_CTX_use_certificate_file(ctx, cert_file, SSL_FILETYPE_PEM) != 1 ||
         SSL_CTX_use_PrivateKey_file(ctx, key_file, SSL_FILETYPE_PEM) != 1 ||
         SSL_CTX_check_private_key(ctx) != 1) {
         SSL_CTX_free(ctx);
