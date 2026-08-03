@@ -20,6 +20,9 @@ void config_init(ddup_config *cfg)
     cfg->replicaof_host[0] = '\0';
     cfg->replicaof_port = 0;
     cfg->repl_backlog_size = 1024 * 1024;
+    cfg->tls_port = 0;
+    cfg->tls_cert_file[0] = '\0';
+    cfg->tls_key_file[0] = '\0';
 }
 
 static int key_eq(const char *a, const char *b)
@@ -142,7 +145,46 @@ int config_apply(ddup_config *cfg, const char *key, const char *value)
     }
     if (key_eq(key, "repl-backlog-size"))
         return parse_u64(value, &cfg->repl_backlog_size);
+    if (key_eq(key, "tls-port"))
+        return parse_port(value, &cfg->tls_port);
+    if (key_eq(key, "tls-cert-file"))
+        return copy_str(cfg->tls_cert_file, sizeof(cfg->tls_cert_file),
+                        value);
+    if (key_eq(key, "tls-key-file"))
+        return copy_str(cfg->tls_key_file, sizeof(cfg->tls_key_file),
+                        value);
     return -1;
+}
+
+static int file_readable(const char *path)
+{
+    FILE *f;
+    if (path[0] == '\0')
+        return 0;
+    f = fopen(path, "rb");
+    if (f == NULL)
+        return 0;
+    fclose(f);
+    return 1;
+}
+
+int config_validate(const ddup_config *cfg, char *err, size_t errcap)
+{
+    if (cfg->tls_port == 0)
+        return 0;
+    if (!file_readable(cfg->tls_cert_file)) {
+        snprintf(err, errcap,
+                 "tls-port is set but tls-cert-file '%s' is not readable",
+                 cfg->tls_cert_file);
+        return -1;
+    }
+    if (!file_readable(cfg->tls_key_file)) {
+        snprintf(err, errcap,
+                 "tls-port is set but tls-key-file '%s' is not readable",
+                 cfg->tls_key_file);
+        return -1;
+    }
+    return 0;
 }
 
 /* Trim leading/trailing ASCII whitespace in place; returns the start. */

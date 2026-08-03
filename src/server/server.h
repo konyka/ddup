@@ -19,6 +19,13 @@ server *server_create(const char *host, uint16_t port);
 /* Actual bound port. */
 uint16_t server_port(const server *s);
 
+/* Start a TLS listener alongside the plain one (port 0 = ephemeral).
+ * Returns 0 on success; -1 when TLS is unavailable (stub build) or the
+ * cert/key/listen setup failed. */
+int server_enable_tls(server *s, const char *host, uint16_t port,
+                      const char *cert_file, const char *key_file);
+uint16_t server_tls_port(const server *s);
+
 /* Enable AOF persistence: replay the file if it exists, then append every
  * mutating command. Returns 0 on success. */
 int server_enable_aof(server *s, const char *path);

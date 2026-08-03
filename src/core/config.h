@@ -21,6 +21,9 @@ typedef struct ddup_config {
     char replicaof_host[64];  /* "" = master role */
     uint16_t replicaof_port;  /* 0 = unset */
     uint64_t repl_backlog_size; /* replication backlog ring bytes */
+    uint16_t tls_port;        /* 0 = off */
+    char tls_cert_file[512];
+    char tls_key_file[512];
 } ddup_config;
 
 void config_init(ddup_config *cfg);
@@ -33,5 +36,9 @@ int config_load_file(ddup_config *cfg, const char *path);
 /* Apply one inline override (key without leading dashes, case-insensitive).
  * Returns 0 on success, -1 on unknown key or invalid value. */
 int config_apply(ddup_config *cfg, const char *key, const char *value);
+
+/* Cross-field validation (tls-port requires readable cert+key files).
+ * Returns 0 ok, -1 and a message in err otherwise. */
+int config_validate(const ddup_config *cfg, char *err, size_t errcap);
 
 #endif /* DDUP_CONFIG_H */

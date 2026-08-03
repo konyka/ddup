@@ -101,8 +101,33 @@ static void test_inline_overrides(void)
     DD_CHECK_EQ_INT(2097152, (long long)cfg.repl_backlog_size);
     DD_CHECK_EQ_INT(-1, config_apply(&cfg, "replicaof", "nohost"));
     DD_CHECK_EQ_INT(-1, config_apply(&cfg, "replicaof", "host 99999"));
+    DD_CHECK_EQ_INT(0, config_apply(&cfg, "tls-port", "6381"));
+    DD_CHECK_EQ_INT(6381, cfg.tls_port);
+    DD_CHECK_EQ_INT(0, config_apply(&cfg, "tls-cert-file", "c.pem"));
+    DD_CHECK_STR("c.pem", cfg.tls_cert_file);
+    DD_CHECK_EQ_INT(0, config_apply(&cfg, "tls-key-file", "k.pem"));
+    DD_CHECK_STR("k.pem", cfg.tls_key_file);
     DD_CHECK_EQ_INT(-1, config_apply(&cfg, "nonsense", "1"));
     DD_CHECK_EQ_INT(-1, config_apply(&cfg, "port", "0"));
+}
+
+static void test_validate_tls(void)
+{
+    ddup_config cfg;
+    char err[256];
+    config_init(&cfg);
+    /* off by default: always valid */
+    DD_CHECK_EQ_INT(0, config_validate(&cfg, err, sizeof(err)));
+    /* tls-port without cert/key files fails with a clear message */
+    DD_CHECK_EQ_INT(0, config_apply(&cfg, "tls-port", "6381"));
+    DD_CHECK_EQ_INT(-1, config_validate(&cfg, err, sizeof(err)));
+    DD_CHECK(strstr(err, "tls-cert-file") != NULL);
+    /* point at readable files (this test file itself works as content) */
+    DD_CHECK_EQ_INT(0, config_apply(&cfg, "tls-cert-file", TMP_CONF));
+    DD_CHECK_EQ_INT(0, config_apply(&cfg, "tls-key-file", TMP_CONF));
+    write_file(TMP_CONF, "# x\n");
+    DD_CHECK_EQ_INT(0, config_validate(&cfg, err, sizeof(err)));
+    remove(TMP_CONF);
 }
 
 int main(void)
@@ -111,5 +136,6 @@ int main(void)
     DD_RUN(test_file_parse);
     DD_RUN(test_file_errors);
     DD_RUN(test_inline_overrides);
+    DD_RUN(test_validate_tls);
     return DD_TEST_SUMMARY();
 }

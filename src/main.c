@@ -73,6 +73,28 @@ int main(int argc, char **argv)
         return 1;
     }
 
+    {
+        char verr[256];
+        if (config_validate(&cfg, verr, sizeof(verr)) != 0) {
+            fprintf(stderr, "config error: %s\n", verr);
+            server_destroy(s);
+            pal_socket_cleanup();
+            return 1;
+        }
+    }
+    if (cfg.tls_port > 0) {
+        if (server_enable_tls(s, cfg.bind, cfg.tls_port, cfg.tls_cert_file,
+                              cfg.tls_key_file) != 0) {
+            fprintf(stderr,
+                    "failed to start TLS listener on port %u (TLS support "
+                    "may be unavailable in this build)\n",
+                    (unsigned)cfg.tls_port);
+            server_destroy(s);
+            pal_socket_cleanup();
+            return 1;
+        }
+    }
+
     if (cfg.appendonly) {
         char aof_path[1024];
         snprintf(aof_path, sizeof(aof_path), "%s/%s", cfg.dir,
@@ -116,6 +138,8 @@ int main(int argc, char **argv)
     signal(SIGTERM, on_signal);
 
     printf("listening on port %u\n", (unsigned)server_port(s));
+    if (cfg.tls_port > 0)
+        printf("listening on TLS port %u\n", (unsigned)server_tls_port(s));
     fflush(stdout);
 
     while (!g_stop && !server_shutdown_requested(s))

@@ -26,6 +26,7 @@
 #include "pal/pal_event.h"
 #include "pal/pal_socket.h"
 #include "pal/pal_time.h"
+#include "pal/pal_tls.h"
 #include "server/repl.h"
 #include "resp/resp_parser.h"
 #include "resp/resp_writer.h"
@@ -54,6 +55,7 @@ typedef struct conn_sub {
 
 struct conn {
     pal_socket_t fd;
+    pal_tls *tls; /* NULL for plain connections */
     char *rbuf;  /* receive buffer, malloc'd, compacted after parsing */
     size_t rlen; /* valid bytes in rbuf */
     size_t rcap; /* allocated size of rbuf */
@@ -80,6 +82,9 @@ struct conn {
 struct server {
     pal_loop *loop;
     pal_socket_t listen_fd;
+    pal_socket_t tls_listen_fd; /* PAL_SOCKET_INVALID when TLS is off */
+    pal_tls_ctx *tls_ctx;
+    uint16_t tls_port;
     db db;
     rh_table channels; /* pub/sub: channel -> chan_node list head (8-byte ptr) */
     aof *aof;          /* NULL when appendonly=no */
@@ -372,6 +377,10 @@ static void conn_free(conn *c)
     /* unsubscribe from every channel before disappearing */
     while (c->subs != NULL)
         srv_unsubscribe(c->srv, c->sess, c->subs->ch, c->subs->chlen);
+    if (c->tls != NULL) {
+        pal_tls_shutdown(c->tls);
+        pal_tls_free(c->tls);
+    }
     pal_close(c->fd);
     session_free(c->sess);
     free(c->link_snap);
@@ -379,6 +388,21 @@ static void conn_free(conn *c)
     resp_buf_free(&c->out);
     arena_destroy(&c->arena);
     free(c);
+}
+
+/* conn IO: TLS when attached, plain socket otherwise */
+static ptrdiff_t conn_read(conn *c, void *buf, size_t n)
+{
+    if (c->tls != NULL)
+        return pal_tls_read(c->tls, buf, n);
+    return pal_recv(c->fd, buf, n);
+}
+
+static ptrdiff_t conn_write(conn *c, const void *buf, size_t n)
+{
+    if (c->tls != NULL)
+        return pal_tls_write(c->tls, buf, n);
+    return pal_send(c->fd, buf, n);
 }
 
 /* ------------------------------------------------------------------ */
@@ -455,7 +479,7 @@ static void repl_link_service(server *srv, conn *c)
         c->rbuf = nb;
         c->rcap = ncap;
     }
-    n = pal_recv(c->fd, c->rbuf + c->rlen, c->rcap - c->rlen);
+    n = conn_read(c, c->rbuf + c->rlen, c->rcap - c->rlen);
     if (n == 0 || (n < 0 && !pal_would_block(pal_socket_error()))) {
         repl_link_close(srv); /* link down; the retry timer reconnects */
         return;
@@ -546,6 +570,7 @@ server *server_create(const char *host, uint16_t port)
     if (s == NULL)
         return NULL;
     s->listen_fd = PAL_SOCKET_INVALID;
+    s->tls_listen_fd = PAL_SOCKET_INVALID;
     s->loop = pal_loop_create();
     s->listen_fd = pal_tcp_listen(host, port, 128, &s->port);
     if (s->loop == NULL || s->listen_fd == PAL_SOCKET_INVALID) {
@@ -569,6 +594,36 @@ server *server_create(const char *host, uint16_t port)
 uint16_t server_port(const server *s)
 {
     return s->port;
+}
+
+/* Start a TLS listener alongside the plain one (port 0 = ephemeral).
+ * Returns 0 on success; -1 when TLS is unavailable (stub build) or the
+ * cert/key/listen setup failed. */
+int server_enable_tls(server *s, const char *host, uint16_t port,
+                      const char *cert_file, const char *key_file)
+{
+    s->tls_ctx = pal_tls_ctx_new(cert_file, key_file);
+    if (s->tls_ctx == NULL)
+        return -1;
+    s->tls_listen_fd = pal_tcp_listen(host, port, 128, &s->tls_port);
+    if (s->tls_listen_fd == PAL_SOCKET_INVALID) {
+        pal_tls_ctx_free(s->tls_ctx);
+        s->tls_ctx = NULL;
+        return -1;
+    }
+    if (pal_loop_add(s->loop, s->tls_listen_fd, 1, 0, NULL) != 0) {
+        pal_close(s->tls_listen_fd);
+        s->tls_listen_fd = PAL_SOCKET_INVALID;
+        pal_tls_ctx_free(s->tls_ctx);
+        s->tls_ctx = NULL;
+        return -1;
+    }
+    return 0;
+}
+
+uint16_t server_tls_port(const server *s)
+{
+    return s->tls_port;
 }
 
 int server_enable_aof(server *s, const char *path)
@@ -625,6 +680,11 @@ void server_destroy(server *s)
     if (s->loop != NULL && s->listen_fd != PAL_SOCKET_INVALID)
         pal_loop_del(s->loop, s->listen_fd);
     pal_close(s->listen_fd);
+    if (s->tls_listen_fd != PAL_SOCKET_INVALID) {
+        pal_loop_del(s->loop, s->tls_listen_fd);
+        pal_close(s->tls_listen_fd);
+    }
+    pal_tls_ctx_free(s->tls_ctx);
     if (s->loop != NULL)
         pal_loop_free(s->loop);
     rh_destroy(&s->channels);
@@ -639,19 +699,31 @@ void server_destroy(server *s)
 /* connection lifecycle                                               */
 /* ------------------------------------------------------------------ */
 
-static void server_accept(server *s)
+static void server_accept(server *s, pal_socket_t lfd, int use_tls)
 {
     /* The listener socket is blocking, but a readiness event guarantees at
      * least one pending connection, so this accept does not block. */
-    pal_socket_t fd = pal_accept(s->listen_fd);
+    pal_socket_t fd = pal_accept(lfd);
     conn *c;
+    pal_tls *tls = NULL;
     if (fd == PAL_SOCKET_INVALID)
         return;
+    if (use_tls) {
+        /* blocking accept handshake (documented simplification) */
+        tls = pal_tls_new(s->tls_ctx, fd);
+        if (tls == NULL || pal_tls_accept_handshake(tls) != 0) {
+            pal_tls_free(tls);
+            pal_close(fd);
+            return;
+        }
+    }
     c = conn_create(s, fd);
     if (c == NULL) {
+        pal_tls_free(tls);
         pal_close(fd);
         return;
     }
+    c->tls = tls;
     if (s->nconns == s->cap) {
         size_t ncap = s->cap == 0 ? 16 : s->cap * 2;
         conn **nc = (conn **)realloc(s->conns, ncap * sizeof(*nc));
@@ -683,7 +755,7 @@ static int conn_flush(conn *c)
 {
     size_t sent = 0;
     while (sent < c->out.len) {
-        ptrdiff_t n = pal_send(c->fd, c->out.data + sent, c->out.len - sent);
+        ptrdiff_t n = conn_write(c, c->out.data + sent, c->out.len - sent);
         if (n <= 0)
             return -1;
         sent += (size_t)n;
@@ -732,7 +804,12 @@ int server_run_once(server *s, int timeout_ms)
 
     for (i = 0; i < nev; i++) {
         if (evs[i].fd == s->listen_fd) {
-            server_accept(s);
+            server_accept(s, s->listen_fd, 0);
+            continue;
+        }
+        if (evs[i].fd == s->tls_listen_fd &&
+            s->tls_listen_fd != PAL_SOCKET_INVALID) {
+            server_accept(s, s->tls_listen_fd, 1);
             continue;
         }
         /* connection readiness */
@@ -766,7 +843,7 @@ int server_run_once(server *s, int timeout_ms)
                 c->rcap = ncap;
             }
 
-            n = pal_recv(c->fd, c->rbuf + c->rlen, c->rcap - c->rlen);
+            n = conn_read(c, c->rbuf + c->rlen, c->rcap - c->rlen);
             if (n == 0 || (n < 0 && !pal_would_block(pal_socket_error()))) {
                 conn_close(s, idx); /* orderly close or hard error */
                 continue;
@@ -795,7 +872,7 @@ int server_run_once(server *s, int timeout_ms)
                 }
                 if (protocol_error) {
                     static const char proto_err[] = "-ERR Protocol error\r\n";
-                    (void)pal_send(c->fd, proto_err, sizeof(proto_err) - 1);
+                    (void)conn_write(c, proto_err, sizeof(proto_err) - 1);
                     conn_close(s, idx);
                     continue;
                 }
