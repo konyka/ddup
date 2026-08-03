@@ -7,7 +7,7 @@
   四平台 CI（Windows/Linux/macOS/FreeBSD）、文档骨架
 - [x] **Phase 1 — RESP 协议**
   RESP2 解析器（含流式/分包边界）、写出器、解析-回写一致性随机测试、RESP3 类型
-- [ ] **Phase 2 — 内存 KV 核心**
+- [x] **Phase 2 — 内存 KV 核心**
   arena 分配器、对象池、Robin Hood 哈希表 + 增量 rehash、命令分发表、
   PING/ECHO/GET/SET/DEL/EXISTS/INCR/DECR/APPEND/STRLEN/MGET/MSET
 - [ ] **Phase 3 — 网络服务器**
