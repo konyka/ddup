@@ -15,6 +15,8 @@ endif()
 # ---------------------------------------------------------------------------
 add_library(ddup_core STATIC
     src/pal/pal_time.c
+    src/core/arena.c
+    src/resp/resp_parser.c
 )
 target_include_directories(ddup_core PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/src")
 ddup_apply_options(ddup_core)
@@ -48,9 +50,11 @@ function(ddup_add_test name source)
 endfunction()
 
 ddup_add_test(test_pal tests/test_pal.c)
+ddup_add_test(test_arena tests/test_arena.c)
+ddup_add_test(test_resp_parser tests/test_resp_parser.c)
 
 add_custom_target(check
     COMMAND ${CMAKE_CTEST_COMMAND} --output-on-failure
-    DEPENDS test_pal
+    DEPENDS test_pal test_arena test_resp_parser
     WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
 )
