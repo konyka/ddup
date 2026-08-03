@@ -36,6 +36,13 @@ if(WIN32)
     target_link_libraries(ddup_core PUBLIC ws2_32)
 endif()
 
+# glibc hides POSIX functions (clock_gettime, addrinfo, epoll...) under
+# strict -std=cNN; _GNU_SOURCE exposes them. macOS/FreeBSD expose them
+# by default, so this is Linux-only.
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    target_compile_definitions(ddup_core PUBLIC _GNU_SOURCE)
+endif()
+
 # ---------------------------------------------------------------------------
 # Server executable
 # ---------------------------------------------------------------------------
