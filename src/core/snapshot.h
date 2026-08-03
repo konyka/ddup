@@ -29,8 +29,14 @@
 /* Write the whole db to path. Returns 0 on success, -1 on IO error. */
 int snapshot_save(db *d, const char *path);
 
+/* Serialize the whole db (magic + all entries) into out. Same format. */
+void snapshot_serialize(db *d, resp_buf *out);
+
 /* Load path into d. now_ms decides which expiries are already dead.
  * Returns 0 on success, -1 on unreadable/corrupt file (d untouched). */
 int snapshot_load(db *d, const char *path, uint64_t now_ms);
+
+/* Load from an in-memory buffer (same all-or-nothing policy). */
+int snapshot_load_mem(db *d, const char *buf, size_t len, uint64_t now_ms);
 
 #endif /* DDUP_SNAPSHOT_H */

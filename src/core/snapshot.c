@@ -146,19 +146,24 @@ static void save_entry_cb(const char *key, size_t klen, const char *val,
     }
 }
 
+void snapshot_serialize(db *d, resp_buf *out)
+{
+    save_ctx ctx;
+    buf_bytes(out, "DDUP0001", 8);
+    ctx.d = d;
+    ctx.buf = out;
+    rh_each(&d->table, save_entry_cb, &ctx);
+}
+
 int snapshot_save(db *d, const char *path)
 {
     resp_buf buf;
-    save_ctx ctx;
     char tmp[1024];
     pal_file *f;
     int rc = -1;
 
     resp_buf_init(&buf);
-    buf_bytes(&buf, "DDUP0001", 8);
-    ctx.d = d;
-    ctx.buf = &buf;
-    rh_each(&d->table, save_entry_cb, &ctx);
+    snapshot_serialize(d, &buf);
 
     if (strlen(path) + 5 < sizeof(tmp)) {
         snprintf(tmp, sizeof(tmp), "%s.tmp", path);
@@ -347,46 +352,14 @@ static char *load_payload(reader *r, int tag, char blob[9], size_t *out_len)
     }
 }
 
-int snapshot_load(db *d, const char *path, uint64_t now_ms)
+int snapshot_load_mem(db *d, const char *buf, size_t len, uint64_t now_ms)
 {
-    pal_file *f = pal_file_open_read(path);
-    char *buf = NULL;
-    size_t len = 0, cap = 0;
     reader r;
     db tmp;
-    int ok = 0;
+    int ok;
 
-    if (f == NULL)
+    if (len < 8 || memcmp(buf, "DDUP0001", 8) != 0)
         return -1;
-    for (;;) {
-        ptrdiff_t n;
-        if (len == cap) {
-            size_t ncap = cap == 0 ? 65536 : cap * 2;
-            char *nb = (char *)realloc(buf, ncap);
-            if (nb == NULL) {
-                free(buf);
-                pal_file_close(f);
-                return -1;
-            }
-            buf = nb;
-            cap = ncap;
-        }
-        n = pal_file_read(f, buf + len, cap - len);
-        if (n < 0) {
-            free(buf);
-            pal_file_close(f);
-            return -1;
-        }
-        if (n == 0)
-            break;
-        len += (size_t)n;
-    }
-    pal_file_close(f);
-
-    if (len < 8 || memcmp(buf, "DDUP0001", 8) != 0) {
-        free(buf);
-        return -1;
-    }
     r.p = buf;
     r.len = len;
     r.off = 8;
@@ -425,7 +398,6 @@ int snapshot_load(db *d, const char *path, uint64_t now_ms)
             free(owned);
     }
     ok = r.ok && r.off == r.len;
-    free(buf);
 
     if (!ok) {
         db_destroy(&tmp);
@@ -434,4 +406,43 @@ int snapshot_load(db *d, const char *path, uint64_t now_ms)
     db_destroy(d);
     *d = tmp; /* move the parsed db into place */
     return 0;
+}
+
+int snapshot_load(db *d, const char *path, uint64_t now_ms)
+{
+    pal_file *f = pal_file_open_read(path);
+    char *buf = NULL;
+    size_t len = 0, cap = 0;
+    int rc;
+
+    if (f == NULL)
+        return -1;
+    for (;;) {
+        ptrdiff_t n;
+        if (len == cap) {
+            size_t ncap = cap == 0 ? 65536 : cap * 2;
+            char *nb = (char *)realloc(buf, ncap);
+            if (nb == NULL) {
+                free(buf);
+                pal_file_close(f);
+                return -1;
+            }
+            buf = nb;
+            cap = ncap;
+        }
+        n = pal_file_read(f, buf + len, cap - len);
+        if (n < 0) {
+            free(buf);
+            pal_file_close(f);
+            return -1;
+        }
+        if (n == 0)
+            break;
+        len += (size_t)n;
+    }
+    pal_file_close(f);
+
+    rc = snapshot_load_mem(d, buf, len, now_ms);
+    free(buf);
+    return rc;
 }

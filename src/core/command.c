@@ -1347,7 +1347,7 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
         }
         {
             char human[32];
-            char buf[512];
+            char buf[768];
             int n2;
             human_bytes(d->used_memory, human, sizeof(human));
             n2 = snprintf(buf, sizeof(buf),
@@ -1367,6 +1367,26 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
                           (unsigned long long)d->expired_keys,
                           (unsigned long long)d->evicted_keys,
                           (unsigned long long)rh_size(&d->table));
+            if (s->repl != NULL) {
+                const repl_info *ri = s->repl;
+                n2 += snprintf(buf + n2, sizeof(buf) - (size_t)n2,
+                               "# Replication\r\n"
+                               "role:%s\r\n"
+                               "connected_slaves:%llu\r\n"
+                               "master_repl_offset:%llu\r\n",
+                               ri->role == SESSION_ROLE_REPLICA ? "slave"
+                                                                : "master",
+                               (unsigned long long)ri->connected_slaves,
+                               (unsigned long long)ri->offset);
+                if (ri->role == SESSION_ROLE_REPLICA)
+                    n2 += snprintf(buf + n2, sizeof(buf) - (size_t)n2,
+                                   "master_host:%s\r\n"
+                                   "master_port:%u\r\n"
+                                   "master_link_status:%s\r\n",
+                                   ri->master_host,
+                                   (unsigned)ri->master_port,
+                                   ri->link_up ? "up" : "down");
+            }
             resp_write_bulk(out, buf, (size_t)n2);
         }
         return;
@@ -2800,6 +2820,22 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
         return;
     }
 
+    if (ci_equal(name, nlen, "SYNC")) {
+        if (argc != 1) {
+            wrong_args(out, "sync");
+            return;
+        }
+        if (s->sync_hook == NULL) {
+            resp_write_error(out, "ERR sync not supported in this context",
+                             41);
+            return;
+        }
+        /* the server writes the $<len> snapshot frame itself and marks the
+         * connection as a downstream replica */
+        s->sync_hook(s->sync_ctx, s);
+        return;
+    }
+
     if (ci_equal(name, nlen, "UNWATCH")) {
         if (argc != 1) {
             wrong_args(out, "unwatch");
@@ -2876,6 +2912,7 @@ static const cmd_arity CMD_ARITY[] = {
     {"unwatch", 1, 1, 0},       {"subscribe", 2, -1, 0},
     {"unsubscribe", 1, -1, 0},  {"publish", 3, 3, 0},
     {"quit", 1, 1, 0},
+    {"sync", 1, 1, 0},
     {"save", 1, 1, 0},
     {"lastsave", 1, 1, 0},
     {"shutdown", 1, 1, 0},

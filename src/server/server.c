@@ -34,6 +34,8 @@
 #define SERVER_RECV_CHUNK (64 * 1024)
 /* Readiness events consumed per server_run_once() call. */
 #define SERVER_MAX_EVENTS 64
+/* Replicas with more pending output than this are dropped (re-SYNC). */
+#define REPL_MAX_OUTBUF (4 * 1024 * 1024)
 
 typedef struct conn conn;
 
@@ -249,6 +251,32 @@ static void srv_request_shutdown(void *ctx)
     ((server *)ctx)->shutdown_flag = 1;
 }
 
+/* SYNC: write the $<len>\r\n<snapshot> full-resync frame into the conn's
+ * out buffer, then mark it as a downstream replica. */
+static void srv_sync(void *ctx, session *sess)
+{
+    server *srv = (server *)ctx;
+    conn *c = (conn *)sess->owner;
+    resp_buf snap;
+    char hdr[32];
+    int hl;
+
+    resp_buf_init(&snap);
+    snapshot_serialize(&srv->db, &snap);
+    hl = snprintf(hdr, sizeof(hdr), "$%llu\r\n",
+                  (unsigned long long)snap.len);
+    resp_buf_reserve(&c->out, (size_t)hl + snap.len);
+    memcpy(c->out.data + c->out.len, hdr, (size_t)hl);
+    c->out.len += (size_t)hl;
+    memcpy(c->out.data + c->out.len, snap.data, snap.len);
+    c->out.len += snap.len;
+    resp_buf_free(&snap);
+    if (!c->is_replica) {
+        c->is_replica = 1;
+        srv->repl.connected_slaves++;
+    }
+}
+
 static conn *conn_create(server *srv, pal_socket_t fd)
 {
     conn *c = (conn *)calloc(1, sizeof(*c));
@@ -276,6 +304,8 @@ static conn *conn_create(server *srv, pal_socket_t fd)
     c->sess->request_shutdown = srv_request_shutdown;
     c->sess->repl = &srv->repl;
     c->sess->role = &srv->role;
+    c->sess->sync_ctx = srv;
+    c->sess->sync_hook = srv_sync;
     /* every conn propagates mutations through the server mux (AOF +
      * backlog + downstream replicas) */
     c->sess->aof_ctx = srv;
@@ -430,6 +460,8 @@ static void server_accept(server *s)
 static void conn_close(server *s, size_t idx)
 {
     conn *c = s->conns[idx];
+    if (c->is_replica && s->repl.connected_slaves > 0)
+        s->repl.connected_slaves--;
     pal_loop_del(s->loop, c->fd);
     conn_free(c);
     s->conns[idx] = s->conns[s->nconns - 1];
@@ -563,6 +595,12 @@ int server_run_once(server *s, int timeout_ms)
         size_t ci;
         for (ci = 0; ci < s->nconns; ci++) {
             conn *c = s->conns[ci];
+            /* drop replicas that fell too far behind: they must re-SYNC */
+            if (c->is_replica && c->out.len > REPL_MAX_OUTBUF) {
+                conn_close(s, ci);
+                ci--;
+                continue;
+            }
             if (c->out.len > 0 && conn_flush(c) != 0) {
                 conn_close(s, ci);
                 ci--;
