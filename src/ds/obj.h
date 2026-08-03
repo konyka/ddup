@@ -19,6 +19,7 @@
 #include <stdint.h>
 
 #include "core/rhtable.h"
+#include "ds/skiplist.h"
 
 enum {
     DDUP_OBJ_STRING = 0,
@@ -111,5 +112,24 @@ uint64_t obj_set_mem(const obj_set *s);
 int obj_set_add(obj_set *s, const char *m, size_t mlen);
 int obj_set_has(obj_set *s, const char *m, size_t mlen);
 int obj_set_rem(obj_set *s, const char *m, size_t mlen);
+
+/* ------------------------------------------------------------------ */
+/* zset object: dict (member -> 8-byte score) + skiplist, Redis-style */
+/* ------------------------------------------------------------------ */
+typedef struct obj_zset {
+    rh_table dict;    /* member -> raw double (8 bytes) */
+    zskiplist *sl;    /* (score, member) ordering */
+    uint64_t dict_mem;
+} obj_zset;
+
+obj_zset *obj_zset_new(void);
+void obj_zset_free(obj_zset *z);
+uint64_t obj_zset_mem(const obj_zset *z);
+
+/* Insert or update score. Returns 1 if the member is new. */
+int obj_zset_add(obj_zset *z, const char *m, size_t mlen, double score);
+/* Returns 1 and the score when present. */
+int obj_zset_score(obj_zset *z, const char *m, size_t mlen, double *score);
+int obj_zset_rem(obj_zset *z, const char *m, size_t mlen);
 
 #endif /* DDUP_OBJ_H */

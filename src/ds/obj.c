@@ -41,6 +41,8 @@ uint64_t obj_extra_mem(const char *val, size_t vlen)
         return obj_list_mem((obj_list *)obj_unpack_ptr(val, vlen));
     case DDUP_OBJ_SET:
         return obj_set_mem((obj_set *)obj_unpack_ptr(val, vlen));
+    case DDUP_OBJ_ZSET:
+        return obj_zset_mem((obj_zset *)obj_unpack_ptr(val, vlen));
     default:
         return 0;
     }
@@ -57,6 +59,9 @@ void obj_free_value(const char *val, size_t vlen)
         break;
     case DDUP_OBJ_SET:
         obj_set_free((obj_set *)obj_unpack_ptr(val, vlen));
+        break;
+    case DDUP_OBJ_ZSET:
+        obj_zset_free((obj_zset *)obj_unpack_ptr(val, vlen));
         break;
     default:
         break;
@@ -327,5 +332,91 @@ int obj_set_rem(obj_set *s, const char *m, size_t mlen)
         return 0;
     rh_del(&s->members, m, mlen);
     s->mem -= field_bytes(mlen, 0);
+    return 1;
+}
+
+/* ------------------------------------------------------------------ */
+/* zset object                                                        */
+/* ------------------------------------------------------------------ */
+
+obj_zset *obj_zset_new(void)
+{
+    obj_zset *z = (obj_zset *)malloc(sizeof(*z));
+    if (z == NULL) {
+        fprintf(stderr, "ddup: out of memory\n");
+        exit(1);
+    }
+    rh_init(&z->dict);
+    z->sl = zsl_create();
+    z->dict_mem = 0;
+    return z;
+}
+
+void obj_zset_free(obj_zset *z)
+{
+    if (z == NULL)
+        return;
+    rh_destroy(&z->dict);
+    zsl_free(z->sl);
+    free(z);
+}
+
+uint64_t obj_zset_mem(const obj_zset *z)
+{
+    return (uint64_t)sizeof(*z) + z->dict_mem + z->sl->mem;
+}
+
+static void put_score(char buf[8], double score)
+{
+    memcpy(buf, &score, 8);
+}
+
+static double get_score(const char *buf)
+{
+    double v;
+    memcpy(&v, buf, 8);
+    return v;
+}
+
+int obj_zset_add(obj_zset *z, const char *m, size_t mlen, double score)
+{
+    const char *old;
+    size_t oldl;
+    char b[8];
+    if (rh_get(&z->dict, m, mlen, &old, &oldl) && oldl == 8) {
+        double oldscore = get_score(old);
+        if (oldscore == score)
+            return 0;
+        zsl_delete(z->sl, oldscore, m, mlen);
+        zsl_insert(z->sl, score, m, mlen);
+        put_score(b, score);
+        rh_set(&z->dict, m, mlen, b, 8); /* same size: dict_mem unchanged */
+        return 0;
+    }
+    put_score(b, score);
+    rh_set(&z->dict, m, mlen, b, 8);
+    z->dict_mem += field_bytes(mlen, 8);
+    zsl_insert(z->sl, score, m, mlen);
+    return 1;
+}
+
+int obj_zset_score(obj_zset *z, const char *m, size_t mlen, double *score)
+{
+    const char *old;
+    size_t oldl;
+    if (!rh_get(&z->dict, m, mlen, &old, &oldl) || oldl != 8)
+        return 0;
+    *score = get_score(old);
+    return 1;
+}
+
+int obj_zset_rem(obj_zset *z, const char *m, size_t mlen)
+{
+    double score;
+    if (!obj_zset_score(z, m, mlen, &score))
+        return 0;
+    zsl_delete(z->sl, score, m, mlen);
+    rh_del(&z->dict, m, mlen);
+    z->dict_mem -= field_bytes(mlen, 8);
     return 1;
 }

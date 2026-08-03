@@ -15,6 +15,8 @@
 #include "ds/obj.h"
 #include "pal/pal_time.h"
 
+#include <math.h>
+
 static void free_obj_cb(const char *key, size_t klen, const char *val,
                         size_t vlen, void *ctx);
 
@@ -395,6 +397,80 @@ static int get_set(db *d, resp_buf *out, const char *k, size_t kl, int create,
     return 1;
 }
 
+/* Fetch the zset object for key; create when missing && create != 0.
+ * Returns 1 (*z set), 0 missing, -1 WRONGTYPE (reply written). */
+static int get_zset(db *d, resp_buf *out, const char *k, size_t kl, int create,
+                    uint64_t now, obj_zset **z)
+{
+    const char *v;
+    size_t vl;
+    if (!db_get(d, k, kl, &v, &vl, now)) {
+        char blob[9];
+        obj_zset *nz;
+        if (!create)
+            return 0;
+        nz = obj_zset_new();
+        obj_pack_ptr(blob, DDUP_OBJ_ZSET, nz);
+        db_set_kv(d, k, kl, blob, 9, now);
+        *z = nz;
+        return 1;
+    }
+    if (obj_tag_of(v, vl) != DDUP_OBJ_ZSET) {
+        wrongtype(out);
+        return -1;
+    }
+    *z = (obj_zset *)obj_unpack_ptr(v, vl);
+    return 1;
+}
+
+/* Strict double parse (strtod, full consumption, NaN rejected). */
+static int parse_double(const char *s, size_t len, double *out)
+{
+    char buf[128];
+    char *end;
+    double v;
+    if (len == 0 || len >= sizeof(buf) || s[0] == ' ')
+        return 0;
+    memcpy(buf, s, len);
+    buf[len] = '\0';
+    v = strtod(buf, &end);
+    if (end != buf + len || v != v)
+        return 0;
+    *out = v;
+    return 1;
+}
+
+/* Redis-compatible score formatting (%.17g; inf/-inf). */
+static int fmt_score(char *buf, size_t cap, double v)
+{
+    return snprintf(buf, cap, "%.17g", v);
+}
+
+/* Range bound: optional '(' exclusive prefix, inf/+inf/-inf, or a double. */
+static int parse_bound(const char *s, size_t len, double *v, int *ex)
+{
+    *ex = 0;
+    if (len > 0 && s[0] == '(') {
+        *ex = 1;
+        s++;
+        len--;
+    }
+    if (len == 3 && (s[0] == 'i' || s[0] == 'I') &&
+        (s[1] == 'n' || s[1] == 'N') && (s[2] == 'f' || s[2] == 'F')) {
+        *v = HUGE_VAL;
+        return 1;
+    }
+    if (len == 4 && s[0] == '+' && (s[1] == 'i' || s[1] == 'I')) {
+        *v = HUGE_VAL;
+        return 1;
+    }
+    if (len == 4 && s[0] == '-' && (s[1] == 'i' || s[1] == 'I')) {
+        *v = -HUGE_VAL;
+        return 1;
+    }
+    return parse_double(s, len, v);
+}
+
 /* Fold an object's mem delta (mutations done in place) into used_memory. */
 static void mem_sync(db *d, uint64_t before, uint64_t after)
 {
@@ -582,6 +658,7 @@ static int parse_i64(const char *s, size_t len, long long *out)
 static const char ERR_NOT_INT[] = "ERR value is not an integer or out of range";
 static const char ERR_OVERFLOW[] = "ERR increment or decrement would overflow";
 static const char ERR_SYNTAX[] = "ERR syntax error";
+static const char ERR_NOT_FLOAT[] = "ERR value is not a valid float";
 
 static const char *policy_name(int policy)
 {
@@ -2030,6 +2107,464 @@ static void command_dispatch(db *d, const resp_value *argv, size_t argc,
             }
             rh_destroy(&result);
             free(sets);
+        }
+        return;
+    }
+
+    /* ---------------- zset commands ---------------- */
+
+    if (ci_equal(name, nlen, "ZADD")) {
+        if (argc < 4 || argc % 2 != 0) {
+            wrong_args(out, "zadd");
+            return;
+        }
+        const char *k;
+        size_t kl;
+        size_t pairs = (argc - 2) / 2;
+        double *scores = (double *)malloc(pairs * sizeof(double));
+        size_t j;
+        if (!arg_str(&argv[1], &k, &kl))
+            goto bad_type;
+        for (j = 0; j < pairs; j++) {
+            const char *sv;
+            size_t svl;
+            if (!arg_str(&argv[2 + 2 * j], &sv, &svl))
+                goto bad_type;
+            if (!parse_double(sv, svl, &scores[j])) {
+                free(scores);
+                resp_write_error(out, ERR_NOT_FLOAT, sizeof(ERR_NOT_FLOAT) - 1);
+                return;
+            }
+        }
+        if (oom_blocked(d, out)) {
+            free(scores);
+            return;
+        }
+        {
+            obj_zset *z;
+            long long added = 0;
+            uint64_t before;
+            if (get_zset(d, out, k, kl, 1, now_ms, &z) <= 0) {
+                free(scores);
+                return;
+            }
+            before = obj_zset_mem(z);
+            for (j = 0; j < pairs; j++) {
+                const char *m;
+                size_t ml;
+                if (!arg_str(&argv[3 + 2 * j], &m, &ml))
+                    goto bad_type;
+                added += obj_zset_add(z, m, ml, scores[j]);
+            }
+            mem_sync(d, before, obj_zset_mem(z));
+            free(scores);
+            resp_write_integer(out, added);
+        }
+        return;
+    }
+
+    if (ci_equal(name, nlen, "ZSCORE")) {
+        if (argc != 3) {
+            wrong_args(out, "zscore");
+            return;
+        }
+        const char *k, *m;
+        size_t kl, ml;
+        if (!arg_str(&argv[1], &k, &kl) || !arg_str(&argv[2], &m, &ml))
+            goto bad_type;
+        obj_zset *z;
+        int rc = get_zset(d, out, k, kl, 0, now_ms, &z);
+        if (rc < 0)
+            return;
+        double sc;
+        if (rc == 1 && obj_zset_score(z, m, ml, &sc)) {
+            char num[40];
+            int nl = fmt_score(num, sizeof(num), sc);
+            resp_write_bulk(out, num, (size_t)nl);
+        } else {
+            resp_write_bulk(out, NULL, 0);
+        }
+        return;
+    }
+
+    if (ci_equal(name, nlen, "ZCARD")) {
+        if (argc != 2) {
+            wrong_args(out, "zcard");
+            return;
+        }
+        const char *k;
+        size_t kl;
+        if (!arg_str(&argv[1], &k, &kl))
+            goto bad_type;
+        obj_zset *z;
+        int rc = get_zset(d, out, k, kl, 0, now_ms, &z);
+        if (rc < 0)
+            return;
+        resp_write_integer(out, rc == 1 ? (long long)rh_size(&z->dict) : 0);
+        return;
+    }
+
+    if (ci_equal(name, nlen, "ZINCRBY")) {
+        if (argc != 4) {
+            wrong_args(out, "zincrby");
+            return;
+        }
+        const char *k, *dv, *m;
+        size_t kl, dvl, ml;
+        double delta, cur = 0.0;
+        if (!arg_str(&argv[1], &k, &kl) || !arg_str(&argv[2], &dv, &dvl) ||
+            !arg_str(&argv[3], &m, &ml))
+            goto bad_type;
+        if (!parse_double(dv, dvl, &delta)) {
+            resp_write_error(out, ERR_NOT_FLOAT, sizeof(ERR_NOT_FLOAT) - 1);
+            return;
+        }
+        if (oom_blocked(d, out))
+            return;
+        obj_zset *z;
+        if (get_zset(d, out, k, kl, 1, now_ms, &z) <= 0)
+            return;
+        obj_zset_score(z, m, ml, &cur);
+        cur += delta;
+        if (cur != cur) {
+            resp_write_error(out, "ERR resulting score is not a number (NaN)",
+                             41);
+            return;
+        }
+        {
+            uint64_t before = obj_zset_mem(z);
+            char num[40];
+            int nl;
+            obj_zset_add(z, m, ml, cur);
+            mem_sync(d, before, obj_zset_mem(z));
+            nl = fmt_score(num, sizeof(num), cur);
+            resp_write_bulk(out, num, (size_t)nl);
+        }
+        return;
+    }
+
+    if (ci_equal(name, nlen, "ZREM")) {
+        if (argc < 3) {
+            wrong_args(out, "zrem");
+            return;
+        }
+        const char *k;
+        size_t kl;
+        if (!arg_str(&argv[1], &k, &kl))
+            goto bad_type;
+        obj_zset *z;
+        int rc = get_zset(d, out, k, kl, 0, now_ms, &z);
+        if (rc < 0)
+            return;
+        if (rc == 0) {
+            resp_write_integer(out, 0);
+            return;
+        }
+        long long removed = 0;
+        uint64_t before = obj_zset_mem(z);
+        for (size_t i = 2; i < argc; i++) {
+            const char *m;
+            size_t ml;
+            if (!arg_str(&argv[i], &m, &ml))
+                goto bad_type;
+            removed += obj_zset_rem(z, m, ml);
+        }
+        mem_sync(d, before, obj_zset_mem(z));
+        if (rh_size(&z->dict) == 0)
+            db_del_kv(d, k, kl); /* empty zset: the key goes away */
+        resp_write_integer(out, removed);
+        return;
+    }
+
+    if (ci_equal(name, nlen, "ZRANGE") || ci_equal(name, nlen, "ZREVRANGE")) {
+        int rev = ci_equal(name, nlen, "ZREVRANGE");
+        if (argc != 4 && argc != 5) {
+            wrong_args(out, rev ? "zrevrange" : "zrange");
+            return;
+        }
+        const char *k, *sv, *ev;
+        size_t kl, svl, evl;
+        long long start, stop;
+        int withscores = 0;
+        if (!arg_str(&argv[1], &k, &kl) || !arg_str(&argv[2], &sv, &svl) ||
+            !arg_str(&argv[3], &ev, &evl))
+            goto bad_type;
+        if (argc == 5) {
+            const char *o;
+            size_t ol;
+            if (!arg_str(&argv[4], &o, &ol))
+                goto bad_type;
+            if (!ci_equal(o, ol, "WITHSCORES")) {
+                resp_write_error(out, ERR_SYNTAX, sizeof(ERR_SYNTAX) - 1);
+                return;
+            }
+            withscores = 1;
+        }
+        if (!parse_i64(sv, svl, &start) || !parse_i64(ev, evl, &stop)) {
+            resp_write_error(out, ERR_NOT_INT, sizeof(ERR_NOT_INT) - 1);
+            return;
+        }
+        obj_zset *z;
+        int rc = get_zset(d, out, k, kl, 0, now_ms, &z);
+        if (rc < 0)
+            return;
+        if (rc == 0) {
+            resp_write_array_header(out, 0);
+            return;
+        }
+        {
+            long long len = (long long)z->sl->length;
+            long long i;
+            zsl_node *n;
+            if (start < 0)
+                start += len;
+            if (start < 0)
+                start = 0;
+            if (stop < 0)
+                stop += len;
+            if (stop >= len)
+                stop = len - 1;
+            if (start > stop || start >= len || stop < 0) {
+                resp_write_array_header(out, 0);
+                return;
+            }
+            resp_write_array_header(out,
+                                    (size_t)(stop - start + 1) *
+                                        (withscores ? 2u : 1u));
+            if (!rev) {
+                n = zsl_at(z->sl, (size_t)start);
+                for (i = start; i <= stop && n != NULL;
+                     i++, n = n->forward[0]) {
+                    resp_write_bulk(out, n->member, n->mlen);
+                    if (withscores) {
+                        char num[40];
+                        int nl = fmt_score(num, sizeof(num), n->score);
+                        resp_write_bulk(out, num, (size_t)nl);
+                    }
+                }
+            } else {
+                /* reversed index p == forward index len-1-p */
+                n = zsl_at(z->sl, (size_t)(len - 1 - start));
+                for (i = start; i <= stop && n != NULL;
+                     i++, n = n->backward) {
+                    resp_write_bulk(out, n->member, n->mlen);
+                    if (withscores) {
+                        char num[40];
+                        int nl = fmt_score(num, sizeof(num), n->score);
+                        resp_write_bulk(out, num, (size_t)nl);
+                    }
+                }
+            }
+        }
+        return;
+    }
+
+    if (ci_equal(name, nlen, "ZRANK") || ci_equal(name, nlen, "ZREVRANK")) {
+        int rev = ci_equal(name, nlen, "ZREVRANK");
+        if (argc != 3) {
+            wrong_args(out, rev ? "zrevrank" : "zrank");
+            return;
+        }
+        const char *k, *m;
+        size_t kl, ml;
+        if (!arg_str(&argv[1], &k, &kl) || !arg_str(&argv[2], &m, &ml))
+            goto bad_type;
+        obj_zset *z;
+        int rc = get_zset(d, out, k, kl, 0, now_ms, &z);
+        if (rc < 0)
+            return;
+        double sc;
+        if (rc == 0 || !obj_zset_score(z, m, ml, &sc)) {
+            resp_write_bulk(out, NULL, 0);
+            return;
+        }
+        {
+            long rank = zsl_rank(z->sl, sc, m, ml);
+            if (rank < 0) {
+                resp_write_bulk(out, NULL, 0);
+                return;
+            }
+            resp_write_integer(out, rev ? (long long)z->sl->length - 1 - rank
+                                        : rank);
+        }
+        return;
+    }
+
+    if (ci_equal(name, nlen, "ZCOUNT")) {
+        if (argc != 4) {
+            wrong_args(out, "zcount");
+            return;
+        }
+        const char *k, *minv, *maxv;
+        size_t kl, minvl, maxvl;
+        zrangespec spec;
+        if (!arg_str(&argv[1], &k, &kl) || !arg_str(&argv[2], &minv, &minvl) ||
+            !arg_str(&argv[3], &maxv, &maxvl))
+            goto bad_type;
+        if (!parse_bound(minv, minvl, &spec.min, &spec.minex) ||
+            !parse_bound(maxv, maxvl, &spec.max, &spec.maxex)) {
+            resp_write_error(out, ERR_NOT_FLOAT, sizeof(ERR_NOT_FLOAT) - 1);
+            return;
+        }
+        obj_zset *z;
+        int rc = get_zset(d, out, k, kl, 0, now_ms, &z);
+        if (rc < 0)
+            return;
+        resp_write_integer(out,
+                           rc == 1
+                               ? (long long)zsl_count_in_range(z->sl, &spec)
+                               : 0);
+        return;
+    }
+
+    if (ci_equal(name, nlen, "ZRANGEBYSCORE")) {
+        if (argc < 4) {
+            wrong_args(out, "zrangebyscore");
+            return;
+        }
+        const char *k, *minv, *maxv;
+        size_t kl, minvl, maxvl;
+        zrangespec spec;
+        int withscores = 0;
+        long long off = 0, cnt = -1;
+        if (!arg_str(&argv[1], &k, &kl) || !arg_str(&argv[2], &minv, &minvl) ||
+            !arg_str(&argv[3], &maxv, &maxvl))
+            goto bad_type;
+        if (!parse_bound(minv, minvl, &spec.min, &spec.minex) ||
+            !parse_bound(maxv, maxvl, &spec.max, &spec.maxex)) {
+            resp_write_error(out, ERR_NOT_FLOAT, sizeof(ERR_NOT_FLOAT) - 1);
+            return;
+        }
+        for (size_t i = 4; i < argc; i++) {
+            const char *o;
+            size_t ol;
+            if (!arg_str(&argv[i], &o, &ol))
+                goto bad_type;
+            if (ci_equal(o, ol, "WITHSCORES") && !withscores) {
+                withscores = 1;
+            } else if (ci_equal(o, ol, "LIMIT") && i + 2 < argc) {
+                const char *ov, *cv;
+                size_t ovl, cvl;
+                if (!arg_str(&argv[i + 1], &ov, &ovl) ||
+                    !arg_str(&argv[i + 2], &cv, &cvl))
+                    goto bad_type;
+                if (!parse_i64(ov, ovl, &off) ||
+                    !parse_i64(cv, cvl, &cnt)) {
+                    resp_write_error(out, ERR_NOT_INT,
+                                     sizeof(ERR_NOT_INT) - 1);
+                    return;
+                }
+                i += 2;
+            } else {
+                resp_write_error(out, ERR_SYNTAX, sizeof(ERR_SYNTAX) - 1);
+                return;
+            }
+        }
+        if (off < 0)
+            off = 0;
+        obj_zset *z;
+        int rc = get_zset(d, out, k, kl, 0, now_ms, &z);
+        if (rc < 0)
+            return;
+        if (rc == 0) {
+            resp_write_array_header(out, 0);
+            return;
+        }
+        {
+            /* two passes over the range: count, then emit */
+            long long emitted = 0;
+            long long c;
+            zsl_node *n;
+            c = 0;
+            n = zsl_first_in_range(z->sl, &spec);
+            while (n != NULL && (spec.maxex ? n->score < spec.max
+                                            : n->score <= spec.max)) {
+                if (c >= off)
+                    emitted++;
+                c++;
+                n = n->forward[0];
+            }
+            if (cnt >= 0 && emitted > cnt)
+                emitted = cnt;
+            resp_write_array_header(out,
+                                    (size_t)emitted * (withscores ? 2u : 1u));
+            c = 0;
+            n = zsl_first_in_range(z->sl, &spec);
+            while (n != NULL && (spec.maxex ? n->score < spec.max
+                                            : n->score <= spec.max)) {
+                if (c >= off && (cnt < 0 || c - off < cnt)) {
+                    resp_write_bulk(out, n->member, n->mlen);
+                    if (withscores) {
+                        char num[40];
+                        int nl = fmt_score(num, sizeof(num), n->score);
+                        resp_write_bulk(out, num, (size_t)nl);
+                    }
+                }
+                c++;
+                n = n->forward[0];
+            }
+        }
+        return;
+    }
+
+    if (ci_equal(name, nlen, "ZREMRANGEBYSCORE")) {
+        if (argc != 4) {
+            wrong_args(out, "zremrangebyscore");
+            return;
+        }
+        const char *k, *minv, *maxv;
+        size_t kl, minvl, maxvl;
+        zrangespec spec;
+        if (!arg_str(&argv[1], &k, &kl) || !arg_str(&argv[2], &minv, &minvl) ||
+            !arg_str(&argv[3], &maxv, &maxvl))
+            goto bad_type;
+        if (!parse_bound(minv, minvl, &spec.min, &spec.minex) ||
+            !parse_bound(maxv, maxvl, &spec.max, &spec.maxex)) {
+            resp_write_error(out, ERR_NOT_FLOAT, sizeof(ERR_NOT_FLOAT) - 1);
+            return;
+        }
+        obj_zset *z;
+        int rc = get_zset(d, out, k, kl, 0, now_ms, &z);
+        if (rc < 0)
+            return;
+        if (rc == 0) {
+            resp_write_integer(out, 0);
+            return;
+        }
+        {
+            /* collect node views first, then delete (views stay valid:
+             * deleting a node frees only that node) */
+            zsl_node **nodes = NULL;
+            size_t nn = 0, cap = 0;
+            zsl_node *n = zsl_first_in_range(z->sl, &spec);
+            long long removed = 0;
+            uint64_t before = obj_zset_mem(z);
+            size_t i;
+            while (n != NULL &&
+                   (spec.maxex ? n->score < spec.max
+                               : n->score <= spec.max)) {
+                if (nn == cap) {
+                    size_t ncap = cap == 0 ? 16 : cap * 2;
+                    zsl_node **nn2 = (zsl_node **)realloc(
+                        nodes, ncap * sizeof(*nn2));
+                    if (nn2 == NULL) {
+                        free(nodes);
+                        fprintf(stderr, "ddup: out of memory\n");
+                        exit(1);
+                    }
+                    nodes = nn2;
+                    cap = ncap;
+                }
+                nodes[nn++] = n;
+                n = n->forward[0];
+            }
+            for (i = 0; i < nn; i++)
+                removed += obj_zset_rem(z, nodes[i]->member, nodes[i]->mlen);
+            free(nodes);
+            mem_sync(d, before, obj_zset_mem(z));
+            if (rh_size(&z->dict) == 0)
+                db_del_kv(d, k, kl);
+            resp_write_integer(out, removed);
         }
         return;
     }
