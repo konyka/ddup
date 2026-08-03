@@ -240,6 +240,7 @@ void rh_set(rh_table *t, const char *key, size_t klen,
     memcpy(e.kv, key, klen);
     memcpy(e.kv + klen, val, vlen);
     e.psl = 0;
+    e.meta = 0;
     rh_insert_entry(t->slots, t->cap, e);
     t->size++;
 }
@@ -257,7 +258,7 @@ static const rh_entry *rh_scan_occupied(const rh_entry *slots, size_t cap,
 }
 
 int rh_random_entry(rh_table *t, uint32_t rand, const char **key, size_t *klen,
-                    const char **val, size_t *vlen)
+                    const char **val, size_t *vlen, uint32_t *meta)
 {
     const rh_entry *e = NULL;
     if (t->size == 0)
@@ -272,6 +273,26 @@ int rh_random_entry(rh_table *t, uint32_t rand, const char **key, size_t *klen,
     *klen = e->klen;
     *val = e->kv + e->klen;
     *vlen = e->vlen;
+    if (meta != NULL)
+        *meta = e->meta;
+    return 1;
+}
+
+int rh_touch(rh_table *t, const char *key, size_t klen, uint32_t meta)
+{
+    uint64_t h = rh_hash(key, klen);
+    rh_entry *e = NULL;
+    long i = rh_find_in(t->slots, t->cap, h, key, klen);
+    if (i >= 0) {
+        e = &t->slots[i];
+    } else if (t->old_slots) {
+        long oi = rh_find_in(t->old_slots, t->old_cap, h, key, klen);
+        if (oi >= 0)
+            e = &t->old_slots[oi];
+    }
+    if (e == NULL)
+        return 0;
+    e->meta = meta;
     return 1;
 }
 

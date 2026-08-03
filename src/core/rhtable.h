@@ -22,6 +22,7 @@ typedef struct rh_entry {
     uint32_t klen;
     uint32_t vlen;
     int32_t psl;     /* probe sequence length; -1 = empty slot */
+    uint32_t meta;   /* opaque to the table; db uses it as a 24-bit LRU clock */
 } rh_entry;
 
 typedef struct rh_table {
@@ -49,12 +50,15 @@ void rh_set(rh_table *t, const char *key, size_t klen,
 /* Returns 1 if the key existed and was removed. */
 int rh_del(rh_table *t, const char *key, size_t klen);
 
+/* Set the caller-owned meta field of an existing key. Returns 1 if found. */
+int rh_touch(rh_table *t, const char *key, size_t klen, uint32_t meta);
+
 /* Sample a pseudo-random live entry: start at bucket (rand & (cap-1)) and
  * scan forward for the first occupied slot. Returns 1 and sets views into
  * the entry (valid until the next table mutation), 0 if the table is
- * empty. Used by active expiration and eviction sampling. */
+ * empty. meta may be NULL. Used by active expiration and eviction. */
 int rh_random_entry(rh_table *t, uint32_t rand, const char **key, size_t *klen,
-                    const char **val, size_t *vlen);
+                    const char **val, size_t *vlen, uint32_t *meta);
 
 size_t rh_size(const rh_table *t);
 

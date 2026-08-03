@@ -9,12 +9,22 @@
 #include "resp/resp.h"
 #include "resp/resp_writer.h"
 
+/* Eviction policies (db.maxmemory_policy). */
+#define DB_POLICY_ALLKEYS_LRU 0 /* default */
+#define DB_POLICY_NOEVICTION 1
+
 /* One logical database. Shared-nothing: each IO thread owns its own.
- * `expires` maps key -> 8-byte absolute wall-ms expiry (raw uint64). */
+ * `expires` maps key -> 8-byte absolute wall-ms expiry (raw uint64).
+ * used_memory is an incremental estimate: per live entry
+ * sizeof(rh_entry) + 16 (malloc overhead) + klen + vlen, for both tables. */
 typedef struct db {
     rh_table table;
     rh_table expires;
     uint64_t expired_keys; /* lazy + active expirations */
+    uint64_t evicted_keys;
+    uint64_t used_memory;
+    uint64_t maxmemory;    /* bytes; 0 = unlimited */
+    int maxmemory_policy;  /* DB_POLICY_* */
     uint32_t rng_state;    /* sampling PRNG (xorshift32, always nonzero) */
 } db;
 

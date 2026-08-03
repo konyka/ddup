@@ -19,6 +19,10 @@ void db_init(db *d)
     rh_init(&d->table);
     rh_init(&d->expires);
     d->expired_keys = 0;
+    d->evicted_keys = 0;
+    d->used_memory = 0;
+    d->maxmemory = 0;
+    d->maxmemory_policy = DB_POLICY_ALLKEYS_LRU;
     d->rng_state = 0x9E3779B9u; /* nonzero xorshift seed */
 }
 
@@ -44,6 +48,18 @@ static uint64_t get_u64(const char *buf)
     return v;
 }
 
+/* Per-entry memory estimate: slot + malloc overhead + key + value bytes. */
+static uint64_t entry_bytes(size_t klen, size_t vlen)
+{
+    return (uint64_t)sizeof(rh_entry) + 16 + klen + vlen;
+}
+
+/* 24-bit LRU clock in seconds resolution (like Redis LRU_CLOCK). */
+static uint32_t lru_clock(uint64_t now_ms)
+{
+    return (uint32_t)((now_ms / 1000ULL) & 0xFFFFFFu);
+}
+
 int db_expire_if_needed(db *d, const char *key, size_t klen, uint64_t now_ms)
 {
     const char *v;
@@ -53,38 +69,69 @@ int db_expire_if_needed(db *d, const char *key, size_t klen, uint64_t now_ms)
     if (get_u64(v) > now_ms)
         return 0;
     rh_del(&d->expires, key, klen);
-    rh_del(&d->table, key, klen);
+    d->used_memory -= entry_bytes(klen, 8);
+    if (rh_get(&d->table, key, klen, &v, &vl)) {
+        rh_del(&d->table, key, klen);
+        d->used_memory -= entry_bytes(klen, vl);
+    }
     d->expired_keys++;
     return 1;
 }
 
-/* Expire-aware lookup. */
+/* Expire-aware lookup; a hit also refreshes the LRU clock. */
 static int db_get(db *d, const char *key, size_t klen, const char **val,
                   size_t *vlen, uint64_t now_ms)
 {
     db_expire_if_needed(d, key, klen, now_ms);
-    return rh_get(&d->table, key, klen, val, vlen);
+    if (!rh_get(&d->table, key, klen, val, vlen))
+        return 0;
+    rh_touch(&d->table, key, klen, lru_clock(now_ms));
+    return 1;
 }
 
-/* Overwrite a value; clears any expiry. */
+/* Overwrite a value; clears any expiry; refreshes the LRU clock. */
 static void db_set_kv(db *d, const char *key, size_t klen, const char *val,
-                      size_t vlen)
+                      size_t vlen, uint64_t now_ms)
 {
-    rh_del(&d->expires, key, klen);
+    const char *old;
+    size_t oldl;
+    if (rh_get(&d->expires, key, klen, &old, &oldl)) {
+        rh_del(&d->expires, key, klen);
+        d->used_memory -= entry_bytes(klen, 8);
+    }
+    if (rh_get(&d->table, key, klen, &old, &oldl))
+        d->used_memory -= entry_bytes(klen, oldl);
     rh_set(&d->table, key, klen, val, vlen);
+    rh_touch(&d->table, key, klen, lru_clock(now_ms));
+    d->used_memory += entry_bytes(klen, vlen);
 }
 
 /* Delete key and expiry. Returns 1 if the key existed. */
 static int db_del_kv(db *d, const char *key, size_t klen)
 {
-    rh_del(&d->expires, key, klen);
-    return rh_del(&d->table, key, klen);
+    const char *old;
+    size_t oldl;
+    int existed;
+    if (rh_get(&d->expires, key, klen, &old, &oldl)) {
+        rh_del(&d->expires, key, klen);
+        d->used_memory -= entry_bytes(klen, 8);
+    }
+    existed = rh_get(&d->table, key, klen, &old, &oldl);
+    if (existed) {
+        rh_del(&d->table, key, klen);
+        d->used_memory -= entry_bytes(klen, oldl);
+    }
+    return existed;
 }
 
 static void db_set_expiry(db *d, const char *key, size_t klen, uint64_t when_ms)
 {
     char b[8];
+    const char *old;
+    size_t oldl;
     put_u64(b, when_ms);
+    if (!rh_get(&d->expires, key, klen, &old, &oldl))
+        d->used_memory += entry_bytes(klen, 8);
     rh_set(&d->expires, key, klen, b, 8);
 }
 
@@ -112,7 +159,7 @@ size_t db_active_expire(db *d, uint64_t now_ms, int max_samples)
             const char *key, *val;
             size_t klen, vlen;
             if (!rh_random_entry(&d->expires, db_rand(d), &key, &klen, &val,
-                                 &vlen))
+                                 &vlen, NULL))
                 break; /* expires table empty */
             sampled++;
             if (vlen == 8 && get_u64(val) <= now_ms) {
@@ -133,6 +180,81 @@ size_t db_active_expire(db *d, uint64_t now_ms, int max_samples)
             break; /* <= 25% expired: stop */
     }
     return expired_total;
+}
+
+/* ------------------------------------------------------------------ */
+/* eviction                                                           */
+/* ------------------------------------------------------------------ */
+
+#define DB_EVICT_SAMPLES 5
+
+/* Sample up to DB_EVICT_SAMPLES keys and evict the one with the oldest
+ * 24-bit LRU clock. Returns 1 if a key was evicted. */
+static int db_evict_one(db *d)
+{
+    const char *cand_key[DB_EVICT_SAMPLES];
+    size_t cand_klen[DB_EVICT_SAMPLES];
+    uint32_t cand_meta[DB_EVICT_SAMPLES];
+    int n = 0;
+    int oldest = 0;
+    int i;
+
+    for (i = 0; i < DB_EVICT_SAMPLES; i++) {
+        const char *key, *val;
+        size_t klen, vlen;
+        uint32_t meta;
+        if (!rh_random_entry(&d->table, db_rand(d), &key, &klen, &val, &vlen,
+                             &meta))
+            break;
+        cand_key[n] = key;
+        cand_klen[n] = klen;
+        cand_meta[n] = meta;
+        n++;
+    }
+    if (n == 0)
+        return 0;
+    for (i = 1; i < n; i++)
+        if (cand_meta[i] < cand_meta[oldest])
+            oldest = i;
+
+    /* the sampled views dangle once we delete: copy the victim key first */
+    {
+        char stackbuf[256];
+        char *kb = stackbuf;
+        size_t kl = cand_klen[oldest];
+        if (kl > sizeof(stackbuf))
+            kb = (char *)malloc(kl);
+        memcpy(kb, cand_key[oldest], kl);
+        db_del_kv(d, kb, kl);
+        if (kb != stackbuf)
+            free(kb);
+    }
+    d->evicted_keys++;
+    return 1;
+}
+
+static void db_evict_if_needed(db *d)
+{
+    if (d->maxmemory == 0)
+        return;
+    while (d->used_memory > d->maxmemory && rh_size(&d->table) > 0) {
+        if (!db_evict_one(d))
+            break;
+    }
+}
+
+static const char OOM_MSG[] =
+    "OOM command not allowed when used memory > 'maxmemory'.";
+
+/* noeviction policy: reject writes while over the cap. */
+static int oom_blocked(db *d, resp_buf *out)
+{
+    if (d->maxmemory != 0 && d->maxmemory_policy == DB_POLICY_NOEVICTION &&
+        d->used_memory > d->maxmemory) {
+        resp_write_error(out, OOM_MSG, sizeof(OOM_MSG) - 1);
+        return 1;
+    }
+    return 0;
 }
 
 /* ------------------------------------------------------------------ */
@@ -210,6 +332,23 @@ static int parse_i64(const char *s, size_t len, long long *out)
 static const char ERR_NOT_INT[] = "ERR value is not an integer or out of range";
 static const char ERR_OVERFLOW[] = "ERR increment or decrement would overflow";
 static const char ERR_SYNTAX[] = "ERR syntax error";
+
+static const char *policy_name(int policy)
+{
+    return policy == DB_POLICY_NOEVICTION ? "noeviction" : "allkeys-lru";
+}
+
+static void human_bytes(uint64_t b, char *buf, size_t cap)
+{
+    if (b < 1024ULL)
+        snprintf(buf, cap, "%lluB", (unsigned long long)b);
+    else if (b < 1024ULL * 1024ULL)
+        snprintf(buf, cap, "%.2fK", (double)b / 1024.0);
+    else if (b < 1024ULL * 1024ULL * 1024ULL)
+        snprintf(buf, cap, "%.2fM", (double)b / (1024.0 * 1024.0));
+    else
+        snprintf(buf, cap, "%.2fG", (double)b / (1024.0 * 1024.0 * 1024.0));
+}
 
 /* ------------------------------------------------------------------ */
 /* expiration commands                                                */
@@ -290,8 +429,8 @@ static void cmd_ttl(db *d, const resp_value *argv, resp_buf *out, uint64_t now,
 /* dispatch                                                           */
 /* ------------------------------------------------------------------ */
 
-void command_execute_at(db *d, const resp_value *argv, size_t argc,
-                        resp_buf *out, uint64_t now_ms)
+static void command_dispatch(db *d, const resp_value *argv, size_t argc,
+                             resp_buf *out, uint64_t now_ms)
 {
     if (argc == 0) {
         resp_write_error(out, "ERR empty command", 17);
@@ -407,7 +546,9 @@ void command_execute_at(db *d, const resp_value *argv, size_t argc,
                 return;
             }
         }
-        db_set_kv(d, k, kl, v, vl);
+        if (oom_blocked(d, out))
+            return;
+        db_set_kv(d, k, kl, v, vl, now_ms);
         if (has_ttl)
             db_set_expiry(d, k, kl, now_ms + ttl_ms);
         resp_write_simple_string(out, "OK", 2);
@@ -478,7 +619,9 @@ void command_execute_at(db *d, const resp_value *argv, size_t argc,
         cur += delta;
         char num[24];
         int nl = snprintf(num, sizeof(num), "%lld", cur);
-        db_set_kv(d, k, kl, num, (size_t)nl);
+        if (oom_blocked(d, out))
+            return;
+        db_set_kv(d, k, kl, num, (size_t)nl, now_ms);
         resp_write_integer(out, cur);
         return;
     }
@@ -494,6 +637,8 @@ void command_execute_at(db *d, const resp_value *argv, size_t argc,
             goto bad_type;
         const char *old;
         size_t oldl;
+        if (oom_blocked(d, out))
+            return;
         if (db_get(d, k, kl, &old, &oldl, now_ms)) {
             resp_buf tmp;
             resp_buf_init(&tmp);
@@ -501,11 +646,11 @@ void command_execute_at(db *d, const resp_value *argv, size_t argc,
             memcpy(tmp.data, old, oldl);
             memcpy(tmp.data + oldl, v, vl);
             tmp.len = oldl + vl;
-            db_set_kv(d, k, kl, tmp.data, tmp.len);
+            db_set_kv(d, k, kl, tmp.data, tmp.len, now_ms);
             resp_write_integer(out, (long long)tmp.len);
             resp_buf_free(&tmp);
         } else {
-            db_set_kv(d, k, kl, v, vl);
+            db_set_kv(d, k, kl, v, vl, now_ms);
             resp_write_integer(out, (long long)vl);
         }
         return;
@@ -553,12 +698,14 @@ void command_execute_at(db *d, const resp_value *argv, size_t argc,
             wrong_args(out, "mset");
             return;
         }
+        if (oom_blocked(d, out))
+            return;
         for (size_t i = 1; i + 1 < argc; i += 2) {
             const char *k, *v;
             size_t kl, vl;
             if (!arg_str(&argv[i], &k, &kl) || !arg_str(&argv[i + 1], &v, &vl))
                 goto bad_type;
-            db_set_kv(d, k, kl, v, vl);
+            db_set_kv(d, k, kl, v, vl, now_ms);
         }
         resp_write_simple_string(out, "OK", 2);
         return;
@@ -597,7 +744,17 @@ void command_execute_at(db *d, const resp_value *argv, size_t argc,
         if (!arg_str(&argv[1], &k, &kl))
             goto bad_type;
         db_expire_if_needed(d, k, kl, now_ms);
-        resp_write_integer(out, rh_del(&d->expires, k, kl));
+        {
+            const char *v;
+            size_t vl;
+            if (rh_get(&d->expires, k, kl, &v, &vl)) {
+                rh_del(&d->expires, k, kl);
+                d->used_memory -= entry_bytes(kl, 8);
+                resp_write_integer(out, 1);
+            } else {
+                resp_write_integer(out, 0);
+            }
+        }
         return;
     }
 
@@ -620,7 +777,129 @@ void command_execute_at(db *d, const resp_value *argv, size_t argc,
         rh_destroy(&d->expires);
         rh_init(&d->table);
         rh_init(&d->expires);
+        d->used_memory = 0;
         resp_write_simple_string(out, "OK", 2);
+        return;
+    }
+
+    if (ci_equal(name, nlen, "CONFIG")) {
+        if (argc < 3) {
+            wrong_args(out, "config");
+            return;
+        }
+        const char *sub;
+        size_t sl;
+        if (!arg_str(&argv[1], &sub, &sl))
+            goto bad_type;
+        if (ci_equal(sub, sl, "GET")) {
+            const char *p;
+            size_t pl;
+            if (argc != 3) {
+                wrong_args(out, "config");
+                return;
+            }
+            if (!arg_str(&argv[2], &p, &pl))
+                goto bad_type;
+            if (ci_equal(p, pl, "maxmemory")) {
+                char num[24];
+                int nl2 = snprintf(num, sizeof(num), "%llu",
+                                   (unsigned long long)d->maxmemory);
+                resp_write_array_header(out, 2);
+                resp_write_bulk(out, "maxmemory", 9);
+                resp_write_bulk(out, num, (size_t)nl2);
+            } else if (ci_equal(p, pl, "maxmemory-policy")) {
+                const char *pn = policy_name(d->maxmemory_policy);
+                resp_write_array_header(out, 2);
+                resp_write_bulk(out, "maxmemory-policy", 16);
+                resp_write_bulk(out, pn, strlen(pn));
+            } else {
+                resp_write_array_header(out, 0);
+            }
+            return;
+        }
+        if (ci_equal(sub, sl, "SET")) {
+            const char *p, *v;
+            size_t pl, vl2;
+            if (argc != 4) {
+                wrong_args(out, "config");
+                return;
+            }
+            if (!arg_str(&argv[2], &p, &pl) || !arg_str(&argv[3], &v, &vl2))
+                goto bad_type;
+            if (ci_equal(p, pl, "maxmemory")) {
+                long long mv;
+                if (!parse_i64(v, vl2, &mv)) {
+                    resp_write_error(out, ERR_NOT_INT,
+                                     sizeof(ERR_NOT_INT) - 1);
+                    return;
+                }
+                if (mv < 0) {
+                    static const char E[] =
+                        "ERR invalid argument for CONFIG SET 'maxmemory'";
+                    resp_write_error(out, E, sizeof(E) - 1);
+                    return;
+                }
+                d->maxmemory = (uint64_t)mv;
+                resp_write_simple_string(out, "OK", 2);
+                return;
+            }
+            if (ci_equal(p, pl, "maxmemory-policy")) {
+                if (ci_equal(v, vl2, "allkeys-lru")) {
+                    d->maxmemory_policy = DB_POLICY_ALLKEYS_LRU;
+                } else if (ci_equal(v, vl2, "noeviction")) {
+                    d->maxmemory_policy = DB_POLICY_NOEVICTION;
+                } else {
+                    static const char E[] =
+                        "ERR invalid argument for CONFIG SET "
+                        "'maxmemory-policy'";
+                    resp_write_error(out, E, sizeof(E) - 1);
+                    return;
+                }
+                resp_write_simple_string(out, "OK", 2);
+                return;
+            }
+            {
+                char msg[128];
+                int n2 = snprintf(msg, sizeof(msg),
+                                  "ERR Unsupported CONFIG parameter: %.*s",
+                                  (int)pl, p);
+                resp_write_error(out, msg, (size_t)n2);
+            }
+            return;
+        }
+        resp_write_error(out, "ERR unknown CONFIG subcommand", 29);
+        return;
+    }
+
+    if (ci_equal(name, nlen, "INFO")) {
+        if (argc != 1) {
+            wrong_args(out, "info");
+            return;
+        }
+        {
+            char human[32];
+            char buf[512];
+            int n2;
+            human_bytes(d->used_memory, human, sizeof(human));
+            n2 = snprintf(buf, sizeof(buf),
+                          "# Memory\r\n"
+                          "used_memory:%llu\r\n"
+                          "used_memory_human:%s\r\n"
+                          "maxmemory:%llu\r\n"
+                          "maxmemory_policy:%s\r\n"
+                          "# Stats\r\n"
+                          "expired_keys:%llu\r\n"
+                          "evicted_keys:%llu\r\n"
+                          "# Keyspace\r\n"
+                          "dbsize:%llu\r\n",
+                          (unsigned long long)d->used_memory, human,
+                          (unsigned long long)d->maxmemory,
+                          policy_name(d->maxmemory_policy),
+                          (unsigned long long)d->expired_keys,
+                          (unsigned long long)d->evicted_keys,
+                          (unsigned long long)rh_size(&d->table));
+            resp_write_bulk(out, buf, (size_t)n2);
+        }
         return;
     }
 
@@ -634,6 +913,15 @@ void command_execute_at(db *d, const resp_value *argv, size_t argc,
 
 bad_type:
     resp_write_error(out, "ERR invalid argument type", 24);
+}
+
+void command_execute_at(db *d, const resp_value *argv, size_t argc,
+                        resp_buf *out, uint64_t now_ms)
+{
+    command_dispatch(d, argv, argc, out, now_ms);
+    /* allkeys-lru eviction runs after write commands (and CONFIG SET) */
+    if (d->maxmemory_policy == DB_POLICY_ALLKEYS_LRU)
+        db_evict_if_needed(d);
 }
 
 void command_execute(db *d, const resp_value *argv, size_t argc, resp_buf *out)
