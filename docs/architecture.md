@@ -35,6 +35,43 @@
 6. **C 标准自适应**：构建期探测 C23→C17→C11→C99，取最高可用标准；
    原子操作优先 C11 `<stdatomic.h>`，缺失时降级平台原生 API。
 
+## 过期设计（Phase 4）
+
+- **存储**：`db.expires` 为第二张 rh_table，key → 8 字节绝对过期时刻
+  （wall-ms，`pal_wall_ms()`）。主表与 expires 表严格同生共死：
+  覆盖写（SET/INCR/APPEND/MSET）与 DEL 同时清除过期项。
+- **惰性过期**：所有命令的 key 查找经 `db_expire_if_needed()`，过期即删
+  并计入 `expired_keys`。
+- **主动过期**：server 每 100ms（`pal_now_ms`）跑一轮 `db_active_expire()`：
+  从 expires 表随机采样至多 20 个 key（随机桶 + 前向扫描），删除已过期者；
+  单轮过期率 >25% 则继续，至多 10 轮。
+- **时间注入**：命令分发入口为 `command_execute_at(db, argv, argc, out,
+  now_ms)`，`command_execute()` 传真实墙钟；单测全部用合成时间，无 sleep。
+
+## 淘汰设计（Phase 4）
+
+- **LRU 时钟**：`rh_entry.meta`（表本身不解释）存 24 位秒级时钟
+  `(now_ms/1000) & 0xFFFFFF`，创建/访问时刷新（`rh_touch`）。
+- **内存记账**：`db.used_memory` 增量维护，每个存活条目计
+  `sizeof(rh_entry) + 16（malloc 开销）+ klen + vlen`，主表与 expires 表
+  同口径；set/del/expire/persist/flush 时增减，无全表扫描。
+- **淘汰策略**：`db.maxmemory`（0=不限，默认 0）+ `db.maxmemory_policy`
+  （默认 allkeys-lru）。allkeys-lru：命令执行后若超限，循环采样 5 个
+  key 淘汰时钟最旧者，直至达标，计 `evicted_keys`。noeviction：写命令
+  （SET/MSET/INCR/DECR/APPEND）在超限时直接返回 OOM 错误。
+- **采样随机源**：db 内置 xorshift32（`rng_state`），测试可固定种子，
+  淘汰场景确定性复现。
+
+## 命令清单
+
+PING ECHO GET SET(NX/XX/EX/PX) DEL UNLINK EXISTS INCR DECR APPEND STRLEN
+MGET MSET ｜ EXPIRE PEXPIRE EXPIREAT PEXPIREAT TTL PTTL PERSIST ｜
+DBSIZE FLUSHDB CONFIG(GET/SET maxmemory, maxmemory-policy) INFO
+
+注：TTL 返回值四舍五入（(rem+500)/1000，同 Redis）；PTTL 精确到 ms。
+INCR/APPEND 在本实现中清除 TTL（与 Redis 保留 TTL 不同，有意简化）。
+DBSIZE 为 O(1)，可能计入尚未回收的过期 key。
+
 ## 目录结构
 
 ```

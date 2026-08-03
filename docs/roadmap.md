@@ -14,8 +14,11 @@
   readiness 事件循环（Linux epoll、macOS/FreeBSD kqueue、Windows select；
   IOCP/io_uring 列为后续优化）、TCP 监听、连接生命周期、pipelining、
   socket 级集成测试、压测客户端与基准记录
-- [ ] **Phase 4 — 过期与淘汰**
-  EXPIRE/TTL/PTTL/PERSIST、惰性 + 主动过期扫描、maxmemory 与 LRU 近似淘汰
+- [x] **Phase 4 — 过期与淘汰**
+  EXPIRE/PEXPIRE/EXPIREAT/PEXPIREAT/TTL/PTTL/PERSIST、SET NX/XX/EX/PX、
+  惰性过期 + 主动采样过期（每 100ms，样本 20，>25% 过期则循环）、
+  maxmemory 与 allkeys-lru/noeviction 采样淘汰、CONFIG GET/SET、INFO、
+  DBSIZE、FLUSHDB、增量内存记账
 - [ ] **Phase 5 — 复杂数据结构**
   Hash/List/Set/ZSet（跳表）、MULTI/EXEC/DISCARD/WATCH、SUBSCRIBE/PUBLISH
 - [ ] **Phase 6 — 持久化与配置**
