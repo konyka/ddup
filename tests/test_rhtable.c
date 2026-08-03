@@ -1,0 +1,228 @@
+/* test_rhtable.c - Robin Hood hash table tests (written before the impl). */
+#include "test.h"
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+#include "core/rhtable.h"
+#include "pal/pal_time.h"
+
+static void test_set_get(void)
+{
+    rh_table t;
+    rh_init(&t);
+    rh_set(&t, "foo", 3, "bar", 3);
+    const char *v;
+    size_t vl;
+    DD_CHECK(rh_get(&t, "foo", 3, &v, &vl) == 1);
+    DD_CHECK_MEM("bar", 3, v, vl);
+    DD_CHECK(rh_get(&t, "nope", 4, &v, &vl) == 0);
+    DD_CHECK_EQ_INT(1, rh_size(&t));
+    rh_destroy(&t);
+}
+
+static void test_overwrite(void)
+{
+    rh_table t;
+    rh_init(&t);
+    rh_set(&t, "k", 1, "v1", 2);
+    rh_set(&t, "k", 1, "v2-longer", 9);
+    const char *v;
+    size_t vl;
+    DD_CHECK(rh_get(&t, "k", 1, &v, &vl) == 1);
+    DD_CHECK_MEM("v2-longer", 9, v, vl);
+    DD_CHECK_EQ_INT(1, rh_size(&t)); /* overwrite must not grow size */
+    rh_destroy(&t);
+}
+
+static void test_delete(void)
+{
+    rh_table t;
+    rh_init(&t);
+    rh_set(&t, "a", 1, "1", 1);
+    rh_set(&t, "b", 1, "2", 1);
+    DD_CHECK(rh_del(&t, "a", 1) == 1);
+    DD_CHECK(rh_del(&t, "a", 1) == 0); /* already gone */
+    const char *v;
+    size_t vl;
+    DD_CHECK(rh_get(&t, "a", 1, &v, &vl) == 0);
+    DD_CHECK(rh_get(&t, "b", 1, &v, &vl) == 1);
+    DD_CHECK_EQ_INT(1, rh_size(&t));
+    rh_destroy(&t);
+}
+
+static void test_binary_keys_values(void)
+{
+    rh_table t;
+    rh_init(&t);
+    const char key[] = {'k', '\0', 'y'};
+    const char val[] = {'\0', '\r', '\n', '\0'};
+    rh_set(&t, key, sizeof(key), val, sizeof(val));
+    const char *v;
+    size_t vl;
+    DD_CHECK(rh_get(&t, key, sizeof(key), &v, &vl) == 1);
+    DD_CHECK_MEM(val, sizeof(val), v, vl);
+    rh_destroy(&t);
+}
+
+static void test_many_keys_growth(void)
+{
+    /* Forces multiple doublings incl. incremental migration; all lookups must
+     * succeed at every point (mid-migration included). */
+    rh_table t;
+    rh_init(&t);
+    char key[32], val[32];
+    const int N = 100000;
+    for (int i = 0; i < N; i++) {
+        int kl = snprintf(key, sizeof(key), "key:%d", i);
+        int vl2 = snprintf(val, sizeof(val), "val:%d", i);
+        rh_set(&t, key, (size_t)kl, val, (size_t)vl2);
+        /* verify a recent and an old key mid-growth */
+        const char *v;
+        size_t vl;
+        DD_CHECK(rh_get(&t, key, (size_t)kl, &v, &vl) == 1);
+        DD_CHECK(rh_get(&t, "key:0", 5, &v, &vl) == 1);
+    }
+    DD_CHECK_EQ_INT(N, rh_size(&t));
+    for (int i = 0; i < N; i++) {
+        int kl = snprintf(key, sizeof(key), "key:%d", i);
+        const char *v;
+        size_t vl;
+        if (rh_get(&t, key, (size_t)kl, &v, &vl) != 1) {
+            DD_CHECK(0 && "missing key after growth");
+            break;
+        }
+        char want[32];
+        int wl = snprintf(want, sizeof(want), "val:%d", i);
+        DD_CHECK_MEM(want, (size_t)wl, v, vl);
+    }
+    rh_destroy(&t);
+}
+
+static void test_delete_half_then_verify(void)
+{
+    rh_table t;
+    rh_init(&t);
+    char key[32];
+    const int N = 20000;
+    for (int i = 0; i < N; i++) {
+        int kl = snprintf(key, sizeof(key), "k%d", i);
+        rh_set(&t, key, (size_t)kl, "v", 1);
+    }
+    for (int i = 0; i < N; i += 2) {
+        int kl = snprintf(key, sizeof(key), "k%d", i);
+        DD_CHECK(rh_del(&t, key, (size_t)kl) == 1);
+    }
+    DD_CHECK_EQ_INT(N / 2, rh_size(&t));
+    for (int i = 0; i < N; i++) {
+        int kl = snprintf(key, sizeof(key), "k%d", i);
+        const char *v;
+        size_t vl;
+        int found = rh_get(&t, key, (size_t)kl, &v, &vl);
+        DD_CHECK(found == (i % 2));
+    }
+    rh_destroy(&t);
+}
+
+/* Naive reference model for the randomized differential test. */
+typedef struct {
+    char key[32];
+    int klen;
+    char val[32];
+    int vlen;
+    int present;
+} model_entry;
+
+static unsigned long long g_rng = 0x9E3779B97F4A7C15ULL;
+static unsigned rng_next(void)
+{
+    g_rng ^= g_rng << 13;
+    g_rng ^= g_rng >> 7;
+    g_rng ^= g_rng << 17;
+    return (unsigned)(g_rng >> 32);
+}
+
+static void test_randomized_vs_model(void)
+{
+    rh_table t;
+    rh_init(&t);
+    static model_entry model[512];
+    memset(model, 0, sizeof(model));
+
+    for (int iter = 0; iter < 60000; iter++) {
+        unsigned slot = rng_next() % 512;
+        model_entry *m = &model[slot];
+        unsigned op = rng_next() % 100;
+        const char *v;
+        size_t vl;
+        if (op < 45) { /* set */
+            m->klen = snprintf(m->key, sizeof(m->key), "u%u", slot);
+            m->vlen = snprintf(m->val, sizeof(m->val), "%u", iter);
+            m->present = 1;
+            rh_set(&t, m->key, (size_t)m->klen, m->val, (size_t)m->vlen);
+        } else if (op < 70) { /* delete */
+            m->klen = snprintf(m->key, sizeof(m->key), "u%u", slot);
+            int got = rh_del(&t, m->key, (size_t)m->klen);
+            DD_CHECK(got == m->present);
+            m->present = 0;
+        } else { /* get */
+            m->klen = snprintf(m->key, sizeof(m->key), "u%u", slot);
+            int got = rh_get(&t, m->key, (size_t)m->klen, &v, &vl);
+            DD_CHECK(got == m->present);
+            if (got && m->present)
+                DD_CHECK_MEM(m->val, (size_t)m->vlen, v, vl);
+        }
+    }
+    /* final size cross-check */
+    size_t expect = 0;
+    for (int i = 0; i < 512; i++)
+        expect += model[i].present ? 1u : 0u;
+    DD_CHECK_EQ_INT((long long)expect, (long long)rh_size(&t));
+    rh_destroy(&t);
+}
+
+static void bench_throughput(void)
+{
+    /* Not an assertion: prints ops/sec for docs/performance.md. */
+    rh_table t;
+    rh_init(&t);
+    char key[32];
+    const int N = 1000000;
+    uint64_t t0 = pal_now_ms();
+    for (int i = 0; i < N; i++) {
+        int kl = snprintf(key, sizeof(key), "bench:%d", i);
+        rh_set(&t, key, (size_t)kl, "v", 1);
+    }
+    uint64_t t1 = pal_now_ms();
+    const char *v;
+    size_t vl;
+    for (int i = 0; i < N; i++) {
+        int kl = snprintf(key, sizeof(key), "bench:%d", i);
+        if (rh_get(&t, key, (size_t)kl, &v, &vl) != 1) {
+            fprintf(stderr, "bench: missing key\n");
+            break;
+        }
+    }
+    uint64_t t2 = pal_now_ms();
+    double set_s = (double)(t1 - t0) / 1000.0;
+    double get_s = (double)(t2 - t1) / 1000.0;
+    printf("bench: %d SET in %.3fs (%.0f ops/s), %d GET in %.3fs (%.0f ops/s)\n",
+           N, set_s, set_s > 0 ? N / set_s : 0,
+           N, get_s, get_s > 0 ? N / get_s : 0);
+    dd_test_checks++;
+    rh_destroy(&t);
+}
+
+int main(void)
+{
+    DD_RUN(test_set_get);
+    DD_RUN(test_overwrite);
+    DD_RUN(test_delete);
+    DD_RUN(test_binary_keys_values);
+    DD_RUN(test_many_keys_growth);
+    DD_RUN(test_delete_half_then_verify);
+    DD_RUN(test_randomized_vs_model);
+    DD_RUN(bench_throughput);
+    return DD_TEST_SUMMARY();
+}
