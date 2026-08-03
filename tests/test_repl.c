@@ -46,12 +46,16 @@ static void test_backlog_wrap(void)
 }
 
 static void test_sync_master(void);
+static void test_replica_full_cycle(void);
+static void test_replica_reconnect_resync(void);
 
 int main(void)
 {
     DD_RUN(test_backlog_basic);
     DD_RUN(test_backlog_wrap);
     DD_RUN(test_sync_master);
+    DD_RUN(test_replica_full_cycle);
+    DD_RUN(test_replica_reconnect_resync);
     return DD_TEST_SUMMARY();
 }
 
@@ -197,4 +201,212 @@ static void test_sync_master(void)
     server_destroy(m);
     pal_socket_cleanup();
     resp_buf_free(&out);
+}
+
+/* ------------------------------------------------------------------ */
+/* replica side: REPLICAOF full cycle (sub-step 3)                    */
+/* ------------------------------------------------------------------ */
+
+/* pump two servers; bounded request/response against one of them */
+static void pump2(server *x, server *y)
+{
+    server_run_once(x, 5);
+    server_run_once(y, 5);
+}
+
+static void rt2(server *x, server *y, pal_socket_t c, const char *req,
+                const char *expected, char *buf, size_t bufcap)
+{
+    size_t elen = strlen(expected);
+    size_t rlen = strlen(req);
+    size_t got = 0;
+    int iter = 0;
+    DD_CHECK(elen <= bufcap);
+    DD_CHECK_EQ_INT((long long)rlen,
+                    (long long)pal_send(c, req, rlen));
+    while (got < elen && iter < 10000) {
+        ptrdiff_t n;
+        iter++;
+        pump2(x, y);
+        n = pal_recv(c, buf + got, bufcap - got);
+        if (n > 0)
+            got += (size_t)n;
+    }
+    DD_CHECK_EQ_INT((long long)elen, (long long)got);
+    DD_CHECK_MEM(expected, elen, buf, got);
+}
+
+static pal_socket_t nb_client(uint16_t port)
+{
+    pal_socket_t c = pal_tcp_connect("127.0.0.1", port);
+    DD_CHECK(c != PAL_SOCKET_INVALID);
+    DD_CHECK_EQ_INT(0, pal_set_nonblocking(c, 1));
+    return c;
+}
+
+static void test_replica_full_cycle(void)
+{
+    server *m, *r;
+    pal_socket_t mc, rc;
+    char buf[8192];
+    char port_str[16];
+    int i;
+    int synced;
+
+    DD_CHECK_EQ_INT(0, pal_socket_init());
+    m = server_create("127.0.0.1", 0);
+    r = server_create("127.0.0.1", 0);
+    DD_CHECK(m != NULL && r != NULL);
+    mc = nb_client(server_port(m));
+    rc = nb_client(server_port(r));
+
+    /* key does not exist on the replica yet */
+    rt2(m, r, rc, "*2\r\n$3\r\nGET\r\n$1\r\nx\r\n", "$-1\r\n", buf,
+        sizeof(buf));
+
+    /* link the replica */
+    snprintf(port_str, sizeof(port_str), "%u", (unsigned)server_port(m));
+    {
+        char req[128];
+        const char *p1 = "*3\r\n$9\r\nREPLICAOF\r\n$9\r\n127.0.0.1\r\n$";
+        snprintf(req, sizeof(req), "%s%zu\r\n%s\r\n", p1, strlen(port_str),
+                 port_str);
+        rt2(m, r, rc, req, "+OK\r\n", buf, sizeof(buf));
+    }
+
+    /* write on the master; the replica catches up (bounded poll) */
+    rt2(m, r, mc, "*3\r\n$3\r\nSET\r\n$1\r\nx\r\n$5\r\nhello\r\n", "+OK\r\n",
+        buf, sizeof(buf));
+    synced = 0;
+    for (i = 0; i < 500 && !synced; i++) {
+        ptrdiff_t n;
+        pump2(m, r);
+        if (pal_send(rc, "*2\r\n$3\r\nGET\r\n$1\r\nx\r\n", 20) != 20)
+            break;
+        pump2(m, r);
+        n = pal_recv(rc, buf, sizeof(buf));
+        if (n > 0 && memcmp(buf, "$5\r\nhello\r\n", (size_t)n) == 0)
+            synced = 1;
+    }
+    DD_CHECK_EQ_INT(1, synced);
+
+    /* replica is read-only for client writes */
+    rt2(m, r, rc, "*3\r\n$3\r\nSET\r\n$1\r\ny\r\n$1\r\n1\r\n",
+        "-READONLY You can't write against a read only replica.\r\n", buf,
+        sizeof(buf));
+    rt2(m, r, rc, "*2\r\n$3\r\nDEL\r\n$1\r\nx\r\n",
+        "-READONLY You can't write against a read only replica.\r\n", buf,
+        sizeof(buf));
+
+    /* INFO replication on the replica */
+    {
+        size_t got = 0;
+        int iter = 0;
+        DD_CHECK_EQ_INT(14, pal_send(rc, "*1\r\n$4\r\nINFO\r\n", 14));
+        while (got < sizeof(buf) - 1 && iter < 10000) {
+            ptrdiff_t n;
+            iter++;
+            pump2(m, r);
+            n = pal_recv(rc, buf + got, sizeof(buf) - 1 - got);
+            if (n > 0) {
+                got += (size_t)n;
+                buf[got] = '\0';
+                if (strstr(buf, "master_link_status:up\r\n") != NULL)
+                    break;
+            }
+        }
+        buf[got] = '\0';
+        DD_CHECK(strstr(buf, "role:slave\r\n") != NULL);
+        DD_CHECK(strstr(buf, "master_host:127.0.0.1\r\n") != NULL);
+        DD_CHECK(strstr(buf, "master_link_status:up\r\n") != NULL);
+    }
+
+    /* REPLICAOF NO ONE promotes to master and allows writes */
+    rt2(m, r, rc,
+        "*3\r\n$9\r\nREPLICAOF\r\n$2\r\nNO\r\n$3\r\nONE\r\n", "+OK\r\n", buf,
+        sizeof(buf));
+    rt2(m, r, rc, "*3\r\n$3\r\nSET\r\n$1\r\ny\r\n$1\r\n1\r\n", "+OK\r\n",
+        buf, sizeof(buf));
+
+    pal_close(rc);
+    pal_close(mc);
+    server_destroy(r);
+    server_destroy(m);
+    pal_socket_cleanup();
+}
+
+static void test_replica_reconnect_resync(void)
+{
+    server *m, *r;
+    pal_socket_t mc, rc;
+    char buf[8192];
+    char port_str[16];
+    uint16_t mport;
+    int i;
+    int synced;
+
+    DD_CHECK_EQ_INT(0, pal_socket_init());
+    m = server_create("127.0.0.1", 0);
+    r = server_create("127.0.0.1", 0);
+    DD_CHECK(m != NULL && r != NULL);
+    mport = server_port(m);
+    mc = nb_client(mport);
+    rc = nb_client(server_port(r));
+
+    snprintf(port_str, sizeof(port_str), "%u", (unsigned)mport);
+    {
+        char req[128];
+        const char *p1 = "*3\r\n$9\r\nREPLICAOF\r\n$9\r\n127.0.0.1\r\n$";
+        snprintf(req, sizeof(req), "%s%zu\r\n%s\r\n", p1, strlen(port_str),
+                 port_str);
+        rt2(m, r, rc, req, "+OK\r\n", buf, sizeof(buf));
+    }
+    rt2(m, r, mc, "*3\r\n$3\r\nSET\r\n$3\r\nold\r\n$3\r\nval\r\n", "+OK\r\n",
+        buf, sizeof(buf));
+
+    /* wait for the initial sync */
+    synced = 0;
+    for (i = 0; i < 500 && !synced; i++) {
+        ptrdiff_t n;
+        pump2(m, r);
+        if (pal_send(rc, "*2\r\n$3\r\nGET\r\n$3\r\nold\r\n", 22) != 22)
+            break;
+        pump2(m, r);
+        n = pal_recv(rc, buf, sizeof(buf));
+        if (n > 0 && memcmp(buf, "$3\r\nval\r\n", (size_t)n) == 0)
+            synced = 1;
+    }
+    DD_CHECK_EQ_INT(1, synced);
+
+    /* master "restarts": a fresh empty master on the same port */
+    pal_close(mc);
+    server_destroy(m);
+    m = server_create("127.0.0.1", mport);
+    DD_CHECK(m != NULL);
+    mc = nb_client(mport);
+    rt2(m, r, mc, "*3\r\n$3\r\nSET\r\n$5\r\nfresh\r\n$3\r\nnew\r\n",
+        "+OK\r\n", buf, sizeof(buf));
+
+    /* replica reconnects and full-resyncs: old key gone, fresh key there */
+    synced = 0;
+    for (i = 0; i < 1000 && !synced; i++) {
+        ptrdiff_t n;
+        pump2(m, r);
+        if (pal_send(rc, "*2\r\n$3\r\nGET\r\n$5\r\nfresh\r\n", 24) != 24)
+            break;
+        pump2(m, r);
+        n = pal_recv(rc, buf, sizeof(buf));
+        if (n > 0 && memcmp(buf, "$3\r\nnew\r\n", (size_t)n) == 0)
+            synced = 1;
+    }
+    DD_CHECK_EQ_INT(1, synced);
+    /* the pre-restart key was wiped by the full resync */
+    rt2(m, r, rc, "*2\r\n$3\r\nGET\r\n$3\r\nold\r\n", "$-1\r\n", buf,
+        sizeof(buf));
+
+    pal_close(rc);
+    pal_close(mc);
+    server_destroy(r);
+    server_destroy(m);
+    pal_socket_cleanup();
 }

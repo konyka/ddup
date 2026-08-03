@@ -36,6 +36,9 @@ typedef struct db {
 void db_init(db *d);
 void db_destroy(db *d);
 
+/* Empty the db (data + expiries), keeping configuration and stats. */
+void db_flush(db *d);
+
 /* WATCH support: bump/read the modification version of a key. Versions are
  * monotonic per key name (never reused, even across delete/recreate). */
 void db_touch_key(db *d, const char *key, size_t klen);

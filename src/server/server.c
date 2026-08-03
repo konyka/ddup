@@ -64,7 +64,18 @@ struct conn {
     struct server *srv;
     int is_replica;     /* downstream replica (we are the master) */
     int is_master_link; /* our outbound link to the master (we are replica) */
+    /* master-link receive state ($<len> snapshot frame, then RESP stream) */
+    int link_state;
+    size_t link_hdrlen;
+    size_t link_need;
+    size_t link_got;
+    char *link_snap;
 };
+
+/* master link states */
+#define LINK_SYNC_SENT 0
+#define LINK_SNAPSHOT 1
+#define LINK_STREAMING 2
 
 struct server {
     pal_loop *loop;
@@ -81,6 +92,8 @@ struct server {
     repl_backlog backlog; /* propagated command stream (master side) */
     resp_buf prop_buf;    /* reusable propagation serialization buffer */
     repl_info repl;       /* INFO replication snapshot */
+    conn *master_link;    /* outbound link to the master (replica side) */
+    uint64_t last_reconnect; /* pal_now_ms of the last connect attempt */
     conn **conns;
     size_t nconns;
     size_t cap;
@@ -89,6 +102,9 @@ struct server {
 };
 
 static void conn_close(server *s, size_t idx);
+static conn *conn_create(server *srv, pal_socket_t fd);
+static void repl_link_close(server *srv);
+static int repl_link_connect(server *srv);
 
 /* ------------------------------------------------------------------ */
 /* pub/sub registry + session hooks                                   */
@@ -251,6 +267,32 @@ static void srv_request_shutdown(void *ctx)
     ((server *)ctx)->shutdown_flag = 1;
 }
 
+/* REPLICAOF hook: (re)point the replica at a master, or promote when
+ * host == NULL (REPLICAOF NO ONE). */
+static int srv_replicaof(void *ctx, const char *host, uint16_t port)
+{
+    server *srv = (server *)ctx;
+    repl_link_close(srv);
+    if (host == NULL) {
+        srv->role = SESSION_ROLE_MASTER;
+        srv->repl.role = SESSION_ROLE_MASTER;
+        srv->repl.link_up = 0;
+        return 0;
+    }
+    snprintf(srv->repl.master_host, sizeof(srv->repl.master_host), "%s",
+             host);
+    srv->repl.master_port = port;
+    srv->role = SESSION_ROLE_REPLICA;
+    srv->repl.role = SESSION_ROLE_REPLICA;
+    srv->repl.link_up = 0;
+    return repl_link_connect(srv);
+}
+
+int server_replicaof(server *s, const char *host, uint16_t port)
+{
+    return srv_replicaof(s, host, port);
+}
+
 /* SYNC: write the $<len>\r\n<snapshot> full-resync frame into the conn's
  * out buffer, then mark it as a downstream replica. */
 static void srv_sync(void *ctx, session *sess)
@@ -306,6 +348,8 @@ static conn *conn_create(server *srv, pal_socket_t fd)
     c->sess->role = &srv->role;
     c->sess->sync_ctx = srv;
     c->sess->sync_hook = srv_sync;
+    c->sess->replicaof_ctx = srv;
+    c->sess->replicaof_hook = srv_replicaof;
     /* every conn propagates mutations through the server mux (AOF +
      * backlog + downstream replicas) */
     c->sess->aof_ctx = srv;
@@ -324,10 +368,170 @@ static void conn_free(conn *c)
         srv_unsubscribe(c->srv, c->sess, c->subs->ch, c->subs->chlen);
     pal_close(c->fd);
     session_free(c->sess);
+    free(c->link_snap);
     free(c->rbuf);
     resp_buf_free(&c->out);
     arena_destroy(&c->arena);
     free(c);
+}
+
+/* ------------------------------------------------------------------ */
+/* master link (replica side)                                         */
+/* ------------------------------------------------------------------ */
+
+static int repl_link_connect(server *srv)
+{
+    pal_socket_t fd;
+    conn *c;
+    static const char sync_cmd[] = "*1\r\n$4\r\nSYNC\r\n";
+
+    srv->last_reconnect = pal_now_ms();
+    fd = pal_tcp_connect(srv->repl.master_host, srv->repl.master_port);
+    if (fd == PAL_SOCKET_INVALID)
+        return -1;
+    c = conn_create(srv, fd);
+    if (c == NULL) {
+        pal_close(fd);
+        return -1;
+    }
+    c->is_master_link = 1;
+    c->sess->repl_link = 1;
+    if (srv->nconns == srv->cap) {
+        size_t ncap = srv->cap == 0 ? 16 : srv->cap * 2;
+        conn **nc = (conn **)realloc(srv->conns, ncap * sizeof(*nc));
+        if (nc == NULL) {
+            conn_free(c);
+            return -1;
+        }
+        srv->conns = nc;
+        srv->cap = ncap;
+    }
+    srv->conns[srv->nconns++] = c;
+    if (pal_loop_add(srv->loop, fd, 1, 0, c) != 0) {
+        conn_close(srv, srv->nconns - 1);
+        return -1;
+    }
+    srv->master_link = c;
+    resp_buf_reserve(&c->out, sizeof(sync_cmd) - 1);
+    memcpy(c->out.data, sync_cmd, sizeof(sync_cmd) - 1);
+    c->out.len = sizeof(sync_cmd) - 1;
+    c->link_state = LINK_SYNC_SENT;
+    return 0;
+}
+
+static void repl_link_close(server *srv)
+{
+    size_t i;
+    if (srv->master_link == NULL)
+        return;
+    for (i = 0; i < srv->nconns; i++)
+        if (srv->conns[i] == srv->master_link) {
+            conn_close(srv, i);
+            break;
+        }
+    srv->master_link = NULL;
+    srv->repl.link_up = 0;
+}
+
+/* Service the outbound master link: read the $<len> snapshot frame, load
+ * it, then apply the streamed commands (replies discarded). */
+static void repl_link_service(server *srv, conn *c)
+{
+    ptrdiff_t n;
+
+    if (c->rcap - c->rlen < SERVER_RECV_CHUNK) {
+        size_t ncap = c->rcap * 2;
+        char *nb = (char *)realloc(c->rbuf, ncap);
+        if (nb == NULL) {
+            repl_link_close(srv);
+            return;
+        }
+        c->rbuf = nb;
+        c->rcap = ncap;
+    }
+    n = pal_recv(c->fd, c->rbuf + c->rlen, c->rcap - c->rlen);
+    if (n == 0 || (n < 0 && !pal_would_block(pal_socket_error()))) {
+        repl_link_close(srv); /* link down; the retry timer reconnects */
+        return;
+    }
+    if (n < 0)
+        return;
+    c->rlen += (size_t)n;
+
+    if (c->link_state == LINK_SYNC_SENT) {
+        size_t pos = 0;
+        size_t i;
+        uint64_t slen = 0;
+        while (pos < c->rlen && c->rbuf[pos] != '\n')
+            pos++;
+        if (pos == c->rlen) {
+            if (c->rlen > 64)
+                repl_link_close(srv); /* garbage instead of a frame */
+            return;                 /* wait for the rest of the header */
+        }
+        if (c->rbuf[0] != '$') {
+            repl_link_close(srv);
+            return;
+        }
+        for (i = 1; i < pos && c->rbuf[i] >= '0' && c->rbuf[i] <= '9'; i++)
+            slen = slen * 10 + (unsigned)(c->rbuf[i] - '0');
+        c->link_need = (size_t)slen;
+        c->link_snap = (char *)malloc(c->link_need == 0 ? 1 : c->link_need);
+        if (c->link_snap == NULL) {
+            repl_link_close(srv);
+            return;
+        }
+        c->link_got = 0;
+        c->link_hdrlen = pos + 1;
+        c->link_state = LINK_SNAPSHOT;
+    }
+    if (c->link_state == LINK_SNAPSHOT) {
+        size_t avail = c->rlen - c->link_hdrlen - c->link_got;
+        size_t want = c->link_need - c->link_got;
+        size_t take = avail < want ? avail : want;
+        memcpy(c->link_snap + c->link_got,
+               c->rbuf + c->link_hdrlen + c->link_got, take);
+        c->link_got += take;
+        if (c->link_got < c->link_need) {
+            c->rlen = 0; /* snapshot may exceed the recv chunk; restart fill */
+            return;
+        }
+        db_flush(&srv->db);
+        (void)snapshot_load_mem(&srv->db, c->link_snap, c->link_need,
+                                pal_wall_ms());
+        free(c->link_snap);
+        c->link_snap = NULL;
+        {
+            size_t used = c->link_hdrlen + c->link_need;
+            memmove(c->rbuf, c->rbuf + used, c->rlen - used);
+            c->rlen -= used;
+        }
+        c->link_state = LINK_STREAMING;
+        srv->repl.link_up = 1;
+    }
+    if (c->link_state == LINK_STREAMING) {
+        size_t off = 0;
+        while (off < c->rlen) {
+            resp_value v;
+            ptrdiff_t used =
+                resp_parse(c->rbuf + off, c->rlen - off, &v, &c->arena);
+            if (used == 0)
+                break; /* incomplete command: wait for more bytes */
+            if (used < 0 || v.type != RESP_ARRAY || v.is_null) {
+                repl_link_close(srv); /* stream desync: full resync */
+                return;
+            }
+            c->out.len = 0; /* replies are discarded */
+            session_execute(c->sess, v.items, v.count, &c->out);
+            c->out.len = 0;
+            arena_reset(&c->arena);
+            off += (size_t)used;
+        }
+        if (off > 0) {
+            memmove(c->rbuf, c->rbuf + off, c->rlen - off);
+            c->rlen -= off;
+        }
+    }
 }
 
 server *server_create(const char *host, uint16_t port)
@@ -511,6 +715,11 @@ int server_run_once(server *s, int timeout_ms)
         }
     }
 
+    /* replica: reconnect a dead master link (full resync every time) */
+    if (s->role == SESSION_ROLE_REPLICA && s->master_link == NULL &&
+        pal_now_ms() - s->last_reconnect >= 500)
+        (void)repl_link_connect(s);
+
     nev = pal_loop_wait(s->loop, evs, SERVER_MAX_EVENTS, timeout_ms);
     if (nev <= 0)
         return nev;
@@ -532,6 +741,12 @@ int server_run_once(server *s, int timeout_ms)
                     break;
             if (idx == s->nconns)
                 continue; /* already closed within this iteration */
+
+            /* the outbound master link has its own protocol path */
+            if (c->is_master_link) {
+                repl_link_service(s, c);
+                continue;
+            }
 
             /* grow the receive buffer if a full chunk is pending */
             if (c->rcap - c->rlen < SERVER_RECV_CHUNK) {

@@ -36,6 +36,10 @@ int server_shutdown_requested(const server *s);
  * and, if a save interval was configured and AOF is off, save a snapshot. */
 void server_graceful_stop(server *s);
 
+/* Point this server at a master (host/port), or promote it when host is
+ * NULL (REPLICAOF NO ONE). Returns 0 on success. */
+int server_replicaof(server *s, const char *host, uint16_t port);
+
 /* Run exactly one event-loop iteration: wait up to timeout_ms for readiness,
  * accept new connections and service ready ones. Returns the number of
  * readiness events handled (0 = timeout). */

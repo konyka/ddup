@@ -48,6 +48,16 @@ void db_destroy(db *d)
     rh_destroy(&d->keyvers);
 }
 
+void db_flush(db *d)
+{
+    rh_each(&d->table, free_obj_cb, NULL);
+    rh_destroy(&d->table);
+    rh_destroy(&d->expires);
+    rh_init(&d->table);
+    rh_init(&d->expires);
+    d->used_memory = 0;
+}
+
 /* ------------------------------------------------------------------ */
 /* db-level helpers                                                   */
 /* ------------------------------------------------------------------ */
@@ -848,6 +858,24 @@ static void cmd_ttl(db *d, const resp_value *argv, resp_buf *out, uint64_t now,
 /* dispatch                                                           */
 /* ------------------------------------------------------------------ */
 
+static const char *const WRITE_COMMANDS[] = {
+    "set",    "del",     "unlink",  "incr",       "decr",    "append",
+    "mset",   "expire",  "pexpire", "expireat",   "pexpireat", "persist",
+    "flushdb","hset",    "hmset",   "hdel",       "hincrby", "hsetnx",
+    "lpush",  "rpush",   "lpushx",  "rpushx",     "lpop",    "rpop",
+    "lset",   "sadd",    "srem",    "spop",       "smove",
+    "zadd",   "zincrby", "zrem",    "zremrangebyscore",
+};
+
+static int is_write_command(const char *name, size_t nlen)
+{
+    size_t i;
+    for (i = 0; i < sizeof(WRITE_COMMANDS) / sizeof(WRITE_COMMANDS[0]); i++)
+        if (ci_equal(name, nlen, WRITE_COMMANDS[i]))
+            return 1;
+    return 0;
+}
+
 static void command_dispatch(session *s, const resp_value *argv, size_t argc,
                              resp_buf *out, uint64_t now_ms)
 {
@@ -860,6 +888,15 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
     size_t nlen;
     if (!arg_str(&argv[0], &name, &nlen)) {
         resp_write_error(out, "ERR invalid command name", 23);
+        return;
+    }
+
+    /* replicas are read-only for client writes (replication link bypasses) */
+    if (s->role != NULL && *s->role == SESSION_ROLE_REPLICA &&
+        !s->repl_link && is_write_command(name, nlen)) {
+        static const char E[] =
+            "READONLY You can't write against a read only replica.";
+        resp_write_error(out, E, sizeof(E) - 1);
         return;
     }
 
@@ -2836,6 +2873,49 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
         return;
     }
 
+    if (ci_equal(name, nlen, "REPLICAOF")) {
+        if (argc != 3) {
+            wrong_args(out, "replicaof");
+            return;
+        }
+        const char *host, *portv;
+        size_t hl, pl;
+        if (!arg_str(&argv[1], &host, &hl) || !arg_str(&argv[2], &portv, &pl))
+            goto bad_type;
+        if (s->replicaof_hook == NULL) {
+            resp_write_error(out,
+                             "ERR replicaof not supported in this context",
+                             45);
+            return;
+        }
+        if (ci_equal(host, hl, "NO") && ci_equal(portv, pl, "ONE")) {
+            s->replicaof_hook(s->replicaof_ctx, NULL, 0); /* promote */
+            resp_write_simple_string(out, "OK", 2);
+            return;
+        }
+        {
+            long long p;
+            char hostbuf[64];
+            if (!parse_i64(portv, pl, &p) || p <= 0 || p > 65535) {
+                resp_write_error(out, ERR_NOT_INT, sizeof(ERR_NOT_INT) - 1);
+                return;
+            }
+            if (hl >= sizeof(hostbuf)) {
+                resp_write_error(out, "ERR invalid master host", 23);
+                return;
+            }
+            memcpy(hostbuf, host, hl);
+            hostbuf[hl] = '\0';
+            if (s->replicaof_hook(s->replicaof_ctx, hostbuf, (uint16_t)p) !=
+                0) {
+                resp_write_error(out, "ERR could not connect to master", 29);
+                return;
+            }
+        }
+        resp_write_simple_string(out, "OK", 2);
+        return;
+    }
+
     if (ci_equal(name, nlen, "UNWATCH")) {
         if (argc != 1) {
             wrong_args(out, "unwatch");
@@ -2913,6 +2993,7 @@ static const cmd_arity CMD_ARITY[] = {
     {"unsubscribe", 1, -1, 0},  {"publish", 3, 3, 0},
     {"quit", 1, 1, 0},
     {"sync", 1, 1, 0},
+    {"replicaof", 3, 3, 0},
     {"save", 1, 1, 0},
     {"lastsave", 1, 1, 0},
     {"shutdown", 1, 1, 0},
