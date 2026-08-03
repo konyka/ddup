@@ -20,6 +20,8 @@
 typedef struct db {
     rh_table table;
     rh_table expires;
+    rh_table keyvers;  /* WATCH: key -> uint64 modification version */
+    uint64_t flush_epoch; /* bumped by FLUSHDB (invalidates all watches) */
     uint64_t expired_keys; /* lazy + active expirations */
     uint64_t evicted_keys;
     uint64_t used_memory;
@@ -30,6 +32,11 @@ typedef struct db {
 
 void db_init(db *d);
 void db_destroy(db *d);
+
+/* WATCH support: bump/read the modification version of a key. Versions are
+ * monotonic per key name (never reused, even across delete/recreate). */
+void db_touch_key(db *d, const char *key, size_t klen);
+uint64_t db_key_version(db *d, const char *key, size_t klen);
 
 /* Lazy expiration: if key has an expiry <= now_ms, delete it (and its
  * expiry entry) and return 1. Otherwise return 0. */
