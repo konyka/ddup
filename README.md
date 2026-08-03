@@ -15,6 +15,7 @@ redis c 的另一种实现 —— 参考微软 [Garnet](https://github.com/micro
   （原子写、定时自动保存）
 - 复制：master/replica 全量同步（SYNC + 命令推流）、只读副本、
   断线自动重连重同步
+- TLS：可选 OpenSSL 支持（独立 tls-port，与明文端口并行）
 - 跨平台：Windows / Linux / macOS / FreeBSD（其他 POSIX 系统走通用路径）
 - TDD 开发：每个模块先写测试，全部测试通过后才提交
 
@@ -58,6 +59,23 @@ maxmemory-policy/dir/appendonly/appendfilename/dbfilename/save）。
 `dbfilename` 快照（`save N` 开启每 N 秒自动快照，SAVE 命令手动快照）。
 SIGINT/SIGTERM 或 SHUTDOWN 命令优雅退出：AOF 必定落盘，配置了 save
 间隔时额外写一次快照。
+
+## TLS（可选，需 OpenSSL）
+
+构建时找到 OpenSSL 即自动启用（`-DDDUP_TLS=OFF` 可强制关闭；未找到时
+编译为 stub，`tls-port` 启动会报明确错误）。
+
+```sh
+# 生成自签名证书（示例）
+openssl req -x509 -newkey rsa:2048 -keyout key.pem -out cert.pem \
+    -days 3650 -nodes -subj "/CN=localhost"
+
+./build/ddup-server --tls-port 6380 \
+    --tls-cert-file cert.pem --tls-key-file key.pem
+
+# 客户端连接（redis-cli）
+redis-cli -p 6380 --tls --insecure
+```
 
 ## 文档
 

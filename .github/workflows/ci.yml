@@ -28,8 +28,21 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Install OpenSSL (ubuntu)
+        if: matrix.os == 'ubuntu-latest'
+        run: sudo apt-get update && sudo apt-get install -y libssl-dev
+
+      - name: Install OpenSSL (macOS)
+        if: matrix.os == 'macos-latest'
+        run: brew install openssl
+
       - name: Configure
-        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release 2>&1 | tee configure.log
+        run: |
+          EXTRA=""
+          if [ "${{ matrix.os }}" = "macos-latest" ]; then
+            EXTRA="-DOPENSSL_ROOT_DIR=$(brew --prefix openssl)"
+          fi
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release $EXTRA 2>&1 | tee configure.log
         env:
           CC: ${{ matrix.cc }}
 

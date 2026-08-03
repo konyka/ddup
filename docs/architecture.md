@@ -190,6 +190,18 @@ DBSIZE 为 O(1)，可能计入尚未回收的过期 key。
 - INFO 增加 # Replication 段：role、connected_slaves、master_repl_offset、
   master_host/port/link_status。
 
+## TLS（Phase 7.2）
+
+- **可选依赖**：CMake `find_package(OpenSSL)` + `DDUP_TLS` 选项；找到则
+  `DDUP_HAS_TLS=1` 并链接 OpenSSL::SSL/Crypto，否则 `pal_tls` 全部为
+  stub（创建 ctx 返回 NULL，`tls-port` 启动报明确错误）。OpenSSL 头文件
+  只出现在 `pal_tls.c` 与 `tests/test_tls.c`。
+- **独立端口**：`tls-port`（默认 0=off）与明文端口并行监听；配置校验
+  `config_validate()` 要求 cert/key 文件可读。conn 增加 `pal_tls*`，
+  server 的所有读写经 conn_read/conn_write 包装分发到 TLS 或明文。
+- **简化（记录在案）**：accept 上的握手为阻塞式（回环即时完成）；
+  复制 master link 暂不支持 TLS。
+
 ## 目录结构
 
 ```

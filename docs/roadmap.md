@@ -36,4 +36,5 @@
   集群模式、TLS、io_uring 优化落地、SIMD 解析优化、与 Garnet/Redis 基准对比
   - [x] 主从复制：全量同步（SYNC 快照帧 + 命令推流）、REPLICAOF/NO ONE、
     只读副本、断线全量重同步（无 PSYNC，backlog 预留）（Phase 7.1）
+  - [x] TLS：可选 OpenSSL（独立 tls-port、阻塞握手、DDUP_HAS_TLS 门控）（Phase 7.2）
   - [ ] PSYNC 部分重同步、复制积压区利用、链式复制拓扑测试
