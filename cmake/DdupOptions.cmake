@@ -10,6 +10,10 @@ function(ddup_apply_options target)
     else()
         target_compile_options(${target} PRIVATE -Wall -Wextra -Wpedantic)
     endif()
+    if(WIN32)
+        # Silence UCRT deprecation noise for standard C89 file/string APIs.
+        target_compile_definitions(${target} PRIVATE _CRT_SECURE_NO_WARNINGS)
+    endif()
 
     # Link-time optimization for non-Debug builds when the toolchain supports it.
     check_ipo_supported(RESULT _ipo_ok OUTPUT _ipo_msg)

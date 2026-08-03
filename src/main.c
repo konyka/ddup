@@ -4,6 +4,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "core/config.h"
 #include "pal/pal_platform.h"
 #include "pal/pal_socket.h"
 #include "server/server.h"
@@ -18,32 +19,37 @@ static void on_signal(int sig)
 
 static void usage(const char *prog)
 {
-    printf("Usage: %s [--port N] [--help]\n", prog);
-    printf("  --port N   TCP port to listen on (default 6379)\n");
-    printf("  --help     show this help and exit\n");
+    printf("Usage: %s [path/to/ddup.conf] [--key value ...] [--help]\n",
+           prog);
+    printf("  config file  redis-style 'key value' lines (see ddup.conf)\n");
+    printf("  --key value  inline override (e.g. --port 6380)\n");
+    printf("  --help       show this help and exit\n");
 }
 
 int main(int argc, char **argv)
 {
-    uint16_t port = 6379;
+    ddup_config cfg;
     server *s;
     int i;
 
+    config_init(&cfg);
+
     for (i = 1; i < argc; i++) {
-        if (strcmp(argv[i], "--port") == 0 && i + 1 < argc) {
-            long p = strtol(argv[++i], NULL, 10);
-            if (p <= 0 || p > 65535) {
-                fprintf(stderr, "invalid port: %s\n", argv[i]);
-                return 1;
-            }
-            port = (uint16_t)p;
-        } else if (strcmp(argv[i], "--help") == 0) {
+        if (strcmp(argv[i], "--help") == 0) {
             usage(argv[0]);
             return 0;
+        }
+        if (argv[i][0] == '-' && argv[i][1] == '-') {
+            if (i + 1 >= argc ||
+                config_apply(&cfg, argv[i] + 2, argv[i + 1]) != 0) {
+                fprintf(stderr, "invalid option: %s %s\n", argv[i],
+                        i + 1 < argc ? argv[i + 1] : "");
+                return 1;
+            }
+            i++;
         } else {
-            fprintf(stderr, "unknown argument: %s\n", argv[i]);
-            usage(argv[0]);
-            return 1;
+            if (config_load_file(&cfg, argv[i]) != 0)
+                return 1;
         }
     }
 
@@ -56,10 +62,10 @@ int main(int argc, char **argv)
         return 1;
     }
 
-    /* Bind all IPv4 interfaces (IPv6/dual-stack is a later refinement). */
-    s = server_create("0.0.0.0", port);
+    s = server_create(cfg.bind, cfg.port);
     if (s == NULL) {
-        fprintf(stderr, "failed to listen on port %u\n", (unsigned)port);
+        fprintf(stderr, "failed to listen on %s:%u\n", cfg.bind,
+                (unsigned)cfg.port);
         pal_socket_cleanup();
         return 1;
     }
