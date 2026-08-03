@@ -85,6 +85,20 @@ int pal_tls_accept_handshake(pal_tls *t)
     return SSL_accept(t->ssl) == 1 ? 0 : -1;
 }
 
+int pal_tls_handshake_nb(pal_tls *t)
+{
+    int rc = SSL_accept(t->ssl);
+    int err;
+    if (rc == 1)
+        return 1;
+    err = SSL_get_error(t->ssl, rc);
+    if (err == SSL_ERROR_WANT_READ)
+        return 0;
+    if (err == SSL_ERROR_WANT_WRITE)
+        return 2;
+    return -1;
+}
+
 ptrdiff_t pal_tls_read(pal_tls *t, void *buf, size_t n)
 {
     int rc = SSL_read(t->ssl, buf, (int)n);
@@ -143,6 +157,12 @@ pal_tls *pal_tls_new(pal_tls_ctx *ctx, pal_socket_t fd)
 }
 
 int pal_tls_accept_handshake(pal_tls *t)
+{
+    (void)t;
+    return -1;
+}
+
+int pal_tls_handshake_nb(pal_tls *t)
 {
     (void)t;
     return -1;

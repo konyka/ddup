@@ -56,6 +56,7 @@ typedef struct conn_sub {
 struct conn {
     pal_socket_t fd;
     pal_tls *tls; /* NULL for plain connections */
+    int tls_handshaking; /* non-blocking handshake in progress */
     char *rbuf;  /* receive buffer, malloc'd, compacted after parsing */
     size_t rlen; /* valid bytes in rbuf */
     size_t rcap; /* allocated size of rbuf */
@@ -709,10 +710,13 @@ static void server_accept(server *s, pal_socket_t lfd, int use_tls)
     if (fd == PAL_SOCKET_INVALID)
         return;
     if (use_tls) {
-        /* blocking accept handshake (documented simplification) */
+        /* non-blocking accept handshake: completes in the event loop */
+        if (pal_set_nonblocking(fd, 1) != 0) {
+            pal_close(fd);
+            return;
+        }
         tls = pal_tls_new(s->tls_ctx, fd);
-        if (tls == NULL || pal_tls_accept_handshake(tls) != 0) {
-            pal_tls_free(tls);
+        if (tls == NULL) {
             pal_close(fd);
             return;
         }
@@ -724,6 +728,7 @@ static void server_accept(server *s, pal_socket_t lfd, int use_tls)
         return;
     }
     c->tls = tls;
+    c->tls_handshaking = use_tls;
     if (s->nconns == s->cap) {
         size_t ncap = s->cap == 0 ? 16 : s->cap * 2;
         conn **nc = (conn **)realloc(s->conns, ncap * sizeof(*nc));
@@ -735,7 +740,7 @@ static void server_accept(server *s, pal_socket_t lfd, int use_tls)
         s->cap = ncap;
     }
     s->conns[s->nconns++] = c;
-    if (pal_loop_add(s->loop, fd, 1, 0, c) != 0)
+    if (pal_loop_add(s->loop, fd, 1, use_tls ? 1 : 0, c) != 0)
         conn_close(s, s->nconns - 1);
 }
 
@@ -828,6 +833,18 @@ int server_run_once(server *s, int timeout_ms)
             /* the outbound master link has its own protocol path */
             if (c->is_master_link) {
                 repl_link_service(s, c);
+                continue;
+            }
+
+            /* TLS handshake in progress: drive it instead of commands */
+            if (c->tls_handshaking) {
+                int hs = pal_tls_handshake_nb(c->tls);
+                if (hs == 1) {
+                    c->tls_handshaking = 0;
+                    pal_loop_mod(s->loop, c->fd, 1, 0, c);
+                } else if (hs < 0) {
+                    conn_close(s, idx);
+                }
                 continue;
             }
 

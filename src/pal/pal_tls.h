@@ -29,6 +29,9 @@ void pal_tls_ctx_free(pal_tls_ctx *ctx);
 pal_tls *pal_tls_new(pal_tls_ctx *ctx, pal_socket_t fd);
 /* Blocking server-side handshake. 0 on success, -1 on error. */
 int pal_tls_accept_handshake(pal_tls *t);
+/* Non-blocking handshake step (fd must be non-blocking):
+ * 1 = done, 0 = want-read, 2 = want-write, -1 = error. */
+int pal_tls_handshake_nb(pal_tls *t);
 /* > 0 bytes read, 0 clean close, -1 error (incl. unclean close). */
 ptrdiff_t pal_tls_read(pal_tls *t, void *buf, size_t n);
 /* > 0 bytes written, -1 error. */
