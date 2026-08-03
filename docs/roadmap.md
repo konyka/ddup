@@ -19,14 +19,15 @@
   惰性过期 + 主动采样过期（每 100ms，样本 20，>25% 过期则循环）、
   maxmemory 与 allkeys-lru/noeviction 采样淘汰、CONFIG GET/SET、INFO、
   DBSIZE、FLUSHDB、增量内存记账
-- [ ] **Phase 5 — 复杂数据结构**
+- [x] **Phase 5 — 复杂数据结构**
   Hash/List/Set/ZSet（跳表）、MULTI/EXEC/DISCARD/WATCH、SUBSCRIBE/PUBLISH
   - [x] 对象存储模型（tagged value blob）+ WRONGTYPE 矩阵（Phase 5.1）
   - [x] Hash：HSET/HGET/HDEL/HEXISTS/HLEN/HGETALL/HKEYS/HVALS/HMSET/HMGET/HINCRBY/HSETNX（Phase 5.1）
   - [x] List：LPUSH/RPUSH/LPUSHX/RPUSHX/LPOP/RPOP/LLEN/LRANGE/LINDEX/LSET（Phase 5.1）
   - [x] Set：SADD/SREM/SISMEMBER/SMISMEMBER/SCARD/SMEMBERS/SPOP/SRANDMEMBER/SMOVE/SINTER/SUNION/SDIFF（Phase 5.2）
   - [x] ZSet：skiplist（无 span）+ ZADD/ZSCORE/ZCARD/ZINCRBY/ZREM/ZRANGE/ZREVRANGE/ZRANK/ZREVRANK/ZCOUNT/ZRANGEBYSCORE/ZREMRANGEBYSCORE（Phase 5.2）
-  - [ ] 事务与发布订阅（Phase 5.3）
+  - [x] 事务：session 上下文、MULTI/EXEC/DISCARD/WATCH/UNWATCH（key 版本表）（Phase 5.3）
+  - [x] 发布订阅：SUBSCRIBE/UNSUBSCRIBE/PUBLISH（server 级频道注册表）（Phase 5.3）
 - [ ] **Phase 6 — 持久化与配置**
   AOF（追加 + 重写）、RDB 风格快照、配置文件、信号处理优雅退出
 - [ ] **Phase 7+ — 长期**

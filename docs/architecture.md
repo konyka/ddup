@@ -72,7 +72,8 @@ LPUSH RPUSH LPUSHX RPUSHX LPOP RPOP LLEN LRANGE LINDEX LSET ｜
 SADD SREM SISMEMBER SMISMEMBER SCARD SMEMBERS SPOP SRANDMEMBER SMOVE
 SINTER SUNION SDIFF ｜
 ZADD ZSCORE ZCARD ZINCRBY ZREM ZRANGE ZREVRANGE ZRANK ZREVRANK ZCOUNT
-ZRANGEBYSCORE ZREMRANGEBYSCORE
+ZRANGEBYSCORE ZREMRANGEBYSCORE ｜
+MULTI EXEC DISCARD WATCH UNWATCH ｜ SUBSCRIBE UNSUBSCRIBE PUBLISH QUIT
 
 注：TTL 返回值四舍五入（(rem+500)/1000，同 Redis）；PTTL 精确到 ms。
 INCR/APPEND 在本实现中清除 TTL（与 Redis 保留 TTL 不同，有意简化）。
@@ -123,12 +124,35 @@ DBSIZE 为 O(1)，可能计入尚未回收的过期 key。
 - **范围语法**：ZCOUNT/ZRANGEBYSCORE/ZREMRANGEBYSCORE 支持 `(x` 开区间
   与 `-inf`/`+inf`；范围比较只看 score（同分 member 同进同出）。
 
+## Session、事务与发布订阅（Phase 5.3）
+
+- **Session（src/core/session.h）**：每个连接一个执行上下文：db 指针 +
+  MULTI 队列 + WATCH 条目 + pub/sub 钩子。分发入口
+  `session_execute_at()`；`command_execute[_at]()` 以栈 session 包装，
+  db 级旧测试零改动。server 在 accept 时创建 session、关闭时释放。
+- **事务**：MULTI 后命令经静态 arity 表做入队时校验（未知命令/参数个数
+  错误立即报错并置 multi_error，EXEC 回复 EXECABORT）；合法命令深拷贝
+  入队（接收缓冲会复用），回复 +QUEUED。EXEC 顺序重放并打包为数组。
+  MULTI/EXEC/DISCARD/WATCH 本身不入队。
+- **WATCH**：db 内置 key 版本表 `keyvers`（key -> uint64 单调版本，
+  删除/重建不复用）+ `flush_epoch`（FLUSHDB 递增）。所有写路径
+  （db_set_kv/db_del_kv/惰性+主动过期/淘汰/对象原地修改经 mem_sync/
+  FLUSHDB）bump 版本。EXEC 前逐条比对，失配回复 `*-1`。
+  注意：keyvers 表只增不减（写过的 key 常驻一个版本条目），且不计入
+  used_memory——有意的简化，记录于此。
+- **发布订阅**：注册表在 server（`rh_table channels`：频道 -> 连接链表），
+  不在 db。core 命令经 session 钩子（subscribe/unsubscribe/each_channel/
+  publish/deliver）回调 server；推送直接写入订阅者 conn->out，
+  server_run_once 末尾统一 flush 所有连接（单线程保证安全）。连接关闭
+  自动退订。订阅态仅允许 (P)SUBSCRIBE/(P)UNSUBSCRIBE/PING/QUIT/SHUTDOWN。
+  QUIT 当前只回 +OK 不断连（简化，后续补）。
+
 ## 目录结构
 
 ```
 src/pal/     平台抽象：pal_platform(宏), pal_time, pal_socket(TCP), pal_event(事件循环)
 src/resp/    RESP 协议（Phase 1）
-src/core/    KV 存储、哈希表、过期、淘汰、命令分发（Phase 2/4）
+src/core/    KV 存储、哈希表、过期、淘汰、命令分发、session（事务/订阅态）（Phase 2/4/5.3）
 src/ds/      对象类型：obj（tagged blob、Hash 嵌套表、List 双链表、Set、
              ZSet dict+skiplist）、skiplist（无 span 跳表）（Phase 5.1/5.2）
 src/server/  连接与服务器主循环（Phase 3）：单线程事件循环、recv 缓冲按需增长、
