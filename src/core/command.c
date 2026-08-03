@@ -615,6 +615,50 @@ static void set_union_cb(const char *m, size_t mlen, const char *v,
     rh_set((rh_table *)c, m, mlen, "", 0);
 }
 
+/* RESP2 push triple: [kind, channel-or-nil, count]. */
+static void write_sub_reply(resp_buf *out, const char *kind, size_t klen,
+                            const char *ch, size_t chlen, long long count)
+{
+    resp_write_array_header(out, 3);
+    resp_write_bulk(out, kind, klen);
+    if (ch != NULL)
+        resp_write_bulk(out, ch, chlen);
+    else
+        resp_write_bulk(out, NULL, 0);
+    resp_write_integer(out, count);
+}
+
+/* Collect owned copies of channel names (UNSUBSCRIBE without args). */
+typedef struct unsub_ctx {
+    char **names;
+    size_t *lens;
+    size_t n;
+    size_t cap;
+} unsub_ctx;
+
+static void unsub_collect_cb(const char *ch, size_t len, void *arg)
+{
+    unsub_ctx *u = (unsub_ctx *)arg;
+    if (u->n == u->cap) {
+        size_t ncap = u->cap == 0 ? 8 : u->cap * 2;
+        char **nn = (char **)realloc(u->names, ncap * sizeof(*nn));
+        size_t *nl = (size_t *)realloc(u->lens, ncap * sizeof(*nl));
+        if (nn == NULL || nl == NULL) {
+            free(nn);
+            free(nl);
+            fprintf(stderr, "ddup: out of memory\n");
+            exit(1);
+        }
+        u->names = nn;
+        u->lens = nl;
+        u->cap = ncap;
+    }
+    u->names[u->n] = (char *)malloc(len);
+    memcpy(u->names[u->n], ch, len);
+    u->lens[u->n] = len;
+    u->n++;
+}
+
 /* ------------------------------------------------------------------ */
 /* helpers                                                            */
 /* ------------------------------------------------------------------ */
@@ -2605,6 +2649,96 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
         return;
     }
 
+    if (ci_equal(name, nlen, "SUBSCRIBE")) {
+        size_t i;
+        if (argc < 2) {
+            wrong_args(out, "subscribe");
+            return;
+        }
+        for (i = 1; i < argc; i++) {
+            const char *ch;
+            size_t cl;
+            if (!arg_str(&argv[i], &ch, &cl))
+                goto bad_type;
+            if (s->subscribe != NULL) {
+                write_sub_reply(out, "subscribe", 9, ch, cl,
+                                (long long)s->subscribe(s->ps_ctx, s, ch, cl));
+            } else {
+                s->nsub++; /* no registry (stack session) */
+                write_sub_reply(out, "subscribe", 9, ch, cl,
+                                (long long)s->nsub);
+            }
+        }
+        return;
+    }
+
+    if (ci_equal(name, nlen, "UNSUBSCRIBE")) {
+        if (argc > 1) {
+            size_t i;
+            for (i = 1; i < argc; i++) {
+                const char *ch;
+                size_t cl;
+                size_t cnt = 0;
+                if (!arg_str(&argv[i], &ch, &cl))
+                    goto bad_type;
+                if (s->unsubscribe != NULL)
+                    cnt = s->unsubscribe(s->ps_ctx, s, ch, cl);
+                else if (s->nsub > 0)
+                    cnt = --s->nsub;
+                write_sub_reply(out, "unsubscribe", 11, ch, cl,
+                                (long long)cnt);
+            }
+            return;
+        }
+        /* no args: unsubscribe everything, one push per channel */
+        if (s->nsub == 0 || s->each_channel == NULL) {
+            s->nsub = 0; /* registry-less session: just clear */
+            write_sub_reply(out, "unsubscribe", 11, NULL, 0, 0);
+            return;
+        }
+        {
+            unsub_ctx u = {0};
+            size_t i;
+            s->each_channel(s->ps_ctx, s, unsub_collect_cb, &u);
+            for (i = 0; i < u.n; i++) {
+                size_t cnt = s->unsubscribe(s->ps_ctx, s, u.names[i],
+                                            u.lens[i]);
+                write_sub_reply(out, "unsubscribe", 11, u.names[i], u.lens[i],
+                                (long long)cnt);
+                free(u.names[i]);
+            }
+            free(u.names);
+            free(u.lens);
+        }
+        return;
+    }
+
+    if (ci_equal(name, nlen, "PUBLISH")) {
+        if (argc != 3) {
+            wrong_args(out, "publish");
+            return;
+        }
+        const char *ch, *msg;
+        size_t cl, ml;
+        if (!arg_str(&argv[1], &ch, &cl) || !arg_str(&argv[2], &msg, &ml))
+            goto bad_type;
+        resp_write_integer(out, s->publish != NULL
+                                  ? s->publish(s->ps_ctx, ch, cl, msg, ml)
+                                  : 0);
+        return;
+    }
+
+    if (ci_equal(name, nlen, "QUIT")) {
+        if (argc != 1) {
+            wrong_args(out, "quit");
+            return;
+        }
+        /* acknowledged; the server does not close the connection yet
+         * (documented simplification) */
+        resp_write_simple_string(out, "OK", 2);
+        return;
+    }
+
     if (ci_equal(name, nlen, "UNWATCH")) {
         if (argc != 1) {
             wrong_args(out, "unwatch");
@@ -2678,7 +2812,9 @@ static const cmd_arity CMD_ARITY[] = {
     {"zrangebyscore", 4, -1, 0},{"zremrangebyscore", 4, 4, 0},
     {"multi", 1, 1, 0},         {"exec", 1, 1, 0},
     {"discard", 1, 1, 0},       {"watch", 2, -1, 0},
-    {"unwatch", 1, 1, 0},
+    {"unwatch", 1, 1, 0},       {"subscribe", 2, -1, 0},
+    {"unsubscribe", 1, -1, 0},  {"publish", 3, 3, 0},
+    {"quit", 1, 1, 0},
 };
 
 /* Queue-time check: unknown command or bad arity writes the error reply,
@@ -2762,6 +2898,32 @@ void session_execute_at(session *s, const resp_value *argv, size_t argc,
     size_t nlen = 0;
     if (argc > 0)
         (void)arg_str(&argv[0], &name, &nlen);
+
+    /* subscribed mode: only a small command set is allowed */
+    if (s->nsub > 0 && name != NULL &&
+        !ci_equal(name, nlen, "SUBSCRIBE") &&
+        !ci_equal(name, nlen, "UNSUBSCRIBE") &&
+        !ci_equal(name, nlen, "PSUBSCRIBE") &&
+        !ci_equal(name, nlen, "PUNSUBSCRIBE") &&
+        !ci_equal(name, nlen, "PING") && !ci_equal(name, nlen, "QUIT") &&
+        !ci_equal(name, nlen, "SHUTDOWN")) {
+        char lc[32];
+        char msg[192];
+        size_t i;
+        int n;
+        for (i = 0; i < nlen && i < sizeof(lc) - 1; i++)
+            lc[i] = (name[i] >= 'A' && name[i] <= 'Z')
+                        ? (char)(name[i] + ('a' - 'A'))
+                        : name[i];
+        lc[i] = '\0';
+        n = snprintf(msg, sizeof(msg),
+                     "ERR Can't execute '%s': only (P)SUBSCRIBE / "
+                     "(P)UNSUBSCRIBE / PING / QUIT / SHUTDOWN are allowed in "
+                     "this context",
+                     lc);
+        resp_write_error(out, msg, (size_t)n);
+        return;
+    }
 
     /* transaction control commands are never queued */
     if (name != NULL && ci_equal(name, nlen, "MULTI")) {

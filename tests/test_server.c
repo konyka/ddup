@@ -199,6 +199,44 @@ static void test_protocol_error_closes_conn(void)
     server_destroy(s);
 }
 
+static void test_pubsub_over_socket(void)
+{
+    server *s = server_create("127.0.0.1", 0);
+    pal_socket_t a, b;
+    char buf[256];
+    const char *want = "*3\r\n$7\r\nmessage\r\n$2\r\nch\r\n$5\r\nhello\r\n";
+    size_t wlen = strlen(want), got = 0;
+    ptrdiff_t n;
+    int iter = 0;
+    DD_CHECK(s != NULL);
+    a = connect_client(s);
+    b = connect_client(s);
+
+    /* A subscribes; B publishes; A gets the push without sending */
+    roundtrip(s, a, "*2\r\n$9\r\nSUBSCRIBE\r\n$2\r\nch\r\n",
+              "*3\r\n$9\r\nsubscribe\r\n$2\r\nch\r\n:1\r\n");
+    roundtrip(s, b, "*3\r\n$7\r\nPUBLISH\r\n$2\r\nch\r\n$5\r\nhello\r\n",
+              ":1\r\n");
+    while (got < wlen && iter < 10000) {
+        iter++;
+        server_run_once(s, 50);
+        n = pal_recv(a, buf + got, sizeof(buf) - got);
+        if (n > 0)
+            got += (size_t)n;
+    }
+    DD_CHECK_EQ_INT((long long)wlen, (long long)got);
+    DD_CHECK_MEM(want, wlen, buf, got);
+
+    /* closing A unsubscribes it: nobody receives anymore */
+    pal_close(a);
+    server_run_once(s, 50);
+    roundtrip(s, b, "*3\r\n$7\r\nPUBLISH\r\n$2\r\nch\r\n$5\r\nhello\r\n",
+              ":0\r\n");
+
+    pal_close(b);
+    server_destroy(s);
+}
+
 int main(void)
 {
     DD_CHECK_EQ_INT(0, pal_socket_init());
@@ -209,6 +247,7 @@ int main(void)
     DD_RUN(test_split_delivery);
     DD_RUN(test_many_connections);
     DD_RUN(test_protocol_error_closes_conn);
+    DD_RUN(test_pubsub_over_socket);
     pal_socket_cleanup();
     return DD_TEST_SUMMARY();
 }
