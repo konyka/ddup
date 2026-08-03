@@ -5,7 +5,7 @@
 - [x] **Phase 0 — 脚手架**
   CMake 工程、C 标准探测（C23→C99）、自研测试框架、PAL 骨架（时间/平台宏）、
   四平台 CI（Windows/Linux/macOS/FreeBSD）、文档骨架
-- [ ] **Phase 1 — RESP 协议**
+- [x] **Phase 1 — RESP 协议**
   RESP2 解析器（含流式/分包边界）、写出器、解析-回写一致性随机测试、RESP3 类型
 - [ ] **Phase 2 — 内存 KV 核心**
   arena 分配器、对象池、Robin Hood 哈希表 + 增量 rehash、命令分发表、

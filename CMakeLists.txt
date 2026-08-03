@@ -54,9 +54,10 @@ ddup_add_test(test_pal tests/test_pal.c)
 ddup_add_test(test_arena tests/test_arena.c)
 ddup_add_test(test_resp_parser tests/test_resp_parser.c)
 ddup_add_test(test_resp_writer tests/test_resp_writer.c)
+ddup_add_test(test_resp3 tests/test_resp3.c)
 
 add_custom_target(check
     COMMAND ${CMAKE_CTEST_COMMAND} --output-on-failure
-    DEPENDS test_pal test_arena test_resp_parser test_resp_writer
+    DEPENDS test_pal test_arena test_resp_parser test_resp_writer test_resp3
     WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
 )

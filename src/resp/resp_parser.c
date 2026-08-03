@@ -126,6 +126,8 @@ static int parse_at(const char *start, const char *end, const char **pos,
                 /* strtod needs NUL termination; copy into a small arena
                  * scratch buffer (payloads are short by design). */
                 size_t n = (size_t)(crlf - p);
+                if (n == 0)
+                    return -1;
                 char *tmp = arena_alloc(a, n + 1);
                 if (!tmp)
                     return -1;
