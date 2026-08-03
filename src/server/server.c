@@ -293,6 +293,12 @@ int server_replicaof(server *s, const char *host, uint16_t port)
     return srv_replicaof(s, host, port);
 }
 
+void server_set_backlog_size(server *s, size_t bytes)
+{
+    repl_backlog_free(&s->backlog);
+    repl_backlog_init(&s->backlog, bytes);
+}
+
 /* SYNC: write the $<len>\r\n<snapshot> full-resync frame into the conn's
  * out buffer, then mark it as a downstream replica. */
 static void srv_sync(void *ctx, session *sess)

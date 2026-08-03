@@ -33,4 +33,7 @@
   （原子写、全有或全无加载、过期 key 跳过）、SAVE/LASTSAVE/SHUTDOWN、
   redis 风格配置文件 + 命令行覆盖、save 间隔自动快照、信号/命令优雅退出
 - [ ] **Phase 7+ — 长期**
-  复制、集群模式、TLS、io_uring 优化落地、SIMD 解析优化、与 Garnet/Redis 基准对比
+  集群模式、TLS、io_uring 优化落地、SIMD 解析优化、与 Garnet/Redis 基准对比
+  - [x] 主从复制：全量同步（SYNC 快照帧 + 命令推流）、REPLICAOF/NO ONE、
+    只读副本、断线全量重同步（无 PSYNC，backlog 预留）（Phase 7.1）
+  - [ ] PSYNC 部分重同步、复制积压区利用、链式复制拓扑测试

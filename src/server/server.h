@@ -40,6 +40,9 @@ void server_graceful_stop(server *s);
  * NULL (REPLICAOF NO ONE). Returns 0 on success. */
 int server_replicaof(server *s, const char *host, uint16_t port);
 
+/* Resize the replication backlog ring (drops current contents). */
+void server_set_backlog_size(server *s, size_t bytes);
+
 /* Run exactly one event-loop iteration: wait up to timeout_ms for readiness,
  * accept new connections and service ready ones. Returns the number of
  * readiness events handled (0 = timeout). */

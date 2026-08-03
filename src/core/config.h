@@ -18,6 +18,9 @@ typedef struct ddup_config {
     char appendfilename[256];
     char dbfilename[256];
     int save_sec;             /* snapshot interval, 0 = off */
+    char replicaof_host[64];  /* "" = master role */
+    uint16_t replicaof_port;  /* 0 = unset */
+    uint64_t repl_backlog_size; /* replication backlog ring bytes */
 } ddup_config;
 
 void config_init(ddup_config *cfg);

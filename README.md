@@ -9,6 +9,12 @@ redis c 的另一种实现 —— 参考微软 [Garnet](https://github.com/micro
 - 性能优先：thread-per-core 无共享模型、平台最优 IO 多路复用
   （Linux: io_uring/epoll，macOS/FreeBSD: kqueue，Windows: IOCP）、
   零拷贝解析、arena/对象池内存管理
+- 数据类型：String/Hash/List/Set/ZSet（跳表）；事务 MULTI/EXEC/WATCH；
+  发布订阅；过期与 maxmemory 淘汰
+- 持久化：AOF（命令流追加 + 启动重放）与 RDB 风格二进制快照
+  （原子写、定时自动保存）
+- 复制：master/replica 全量同步（SYNC + 命令推流）、只读副本、
+  断线自动重连重同步
 - 跨平台：Windows / Linux / macOS / FreeBSD（其他 POSIX 系统走通用路径）
 - TDD 开发：每个模块先写测试，全部测试通过后才提交
 

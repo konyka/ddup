@@ -94,6 +94,13 @@ static void test_inline_overrides(void)
     DD_CHECK_EQ_INT(1, cfg.appendonly);
     DD_CHECK_EQ_INT(0, config_apply(&cfg, "save", "30"));
     DD_CHECK_EQ_INT(30, cfg.save_sec);
+    DD_CHECK_EQ_INT(0, config_apply(&cfg, "replicaof", "127.0.0.1 6380"));
+    DD_CHECK_STR("127.0.0.1", cfg.replicaof_host);
+    DD_CHECK_EQ_INT(6380, cfg.replicaof_port);
+    DD_CHECK_EQ_INT(0, config_apply(&cfg, "repl-backlog-size", "2097152"));
+    DD_CHECK_EQ_INT(2097152, (long long)cfg.repl_backlog_size);
+    DD_CHECK_EQ_INT(-1, config_apply(&cfg, "replicaof", "nohost"));
+    DD_CHECK_EQ_INT(-1, config_apply(&cfg, "replicaof", "host 99999"));
     DD_CHECK_EQ_INT(-1, config_apply(&cfg, "nonsense", "1"));
     DD_CHECK_EQ_INT(-1, config_apply(&cfg, "port", "0"));
 }

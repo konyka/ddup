@@ -100,6 +100,17 @@ int main(int argc, char **argv)
         }
     }
     server_set_save_interval(s, cfg.save_sec);
+    server_set_backlog_size(s, (size_t)cfg.repl_backlog_size);
+    if (cfg.replicaof_port > 0) {
+        if (server_replicaof(s, cfg.replicaof_host, cfg.replicaof_port) !=
+            0)
+            fprintf(stderr,
+                    "warning: connect to master %s:%u failed; will retry\n",
+                    cfg.replicaof_host, (unsigned)cfg.replicaof_port);
+        else
+            printf("replica of %s:%u\n", cfg.replicaof_host,
+                   (unsigned)cfg.replicaof_port);
+    }
 
     signal(SIGINT, on_signal);
     signal(SIGTERM, on_signal);

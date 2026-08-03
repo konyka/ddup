@@ -74,7 +74,7 @@ SINTER SUNION SDIFF ｜
 ZADD ZSCORE ZCARD ZINCRBY ZREM ZRANGE ZREVRANGE ZRANK ZREVRANK ZCOUNT
 ZRANGEBYSCORE ZREMRANGEBYSCORE ｜
 MULTI EXEC DISCARD WATCH UNWATCH ｜ SUBSCRIBE UNSUBSCRIBE PUBLISH QUIT ｜
-SAVE LASTSAVE SHUTDOWN
+SAVE LASTSAVE SHUTDOWN ｜ SYNC REPLICAOF
 
 注：TTL 返回值四舍五入（(rem+500)/1000，同 Redis）；PTTL 精确到 ms。
 INCR/APPEND 在本实现中清除 TTL（与 Redis 保留 TTL 不同，有意简化）。
@@ -168,6 +168,27 @@ DBSIZE 为 O(1)，可能计入尚未回收的过期 key。
   快照（AOF 优先于 RDB，同 Redis）。`save N` 秒自动快照（dirty 变化才
   写）。优雅退出（SIGINT/SIGTERM/SHUTDOWN）：AOF 必定 flush；配置了
   save 间隔且 AOF 关闭时额外写一次最终快照。
+
+## 复制（Phase 7.1）
+
+- **传播流**：分发层对每个成功应用的写命令（含 EXEC 内逐条）按原始
+  argv 重序列化为 RESP 数组，经 server 复用缓冲 fan-out 到三类 sink：
+  AOF、复制 backlog（环形缓冲，默认 1MB，`repl-backlog-size` 可调）、
+  下游 replica 连接的 out 缓冲（run_once 末尾统一 flush）。
+- **全量同步**：replica 发 SYNC；master 用 `snapshot_serialize` 把内存快照
+  按 `$<len>\r\n<bytes>` 帧发回（二进制帧，非 RESP），随后把该连接标记
+  为 replica 并持续推流。落后超过 4MB 未读的 replica 连接被丢弃
+  （须重新 SYNC）。
+- **复制侧**：REPLICAOF host port 建立 master link（同一事件循环内的
+  特殊 conn），先按帧读快照（flush db 后 snapshot_load_mem 全量加载），
+  随后切到 RESP 命令流模式逐条应用（回包丢弃）。link 断开每 500ms
+  重连并**全量重同步**——无 PSYNC/部分重同步（记录为后续工作，backlog
+  正是为此预留）。REPLICAOF NO ONE 断链并提升为 master。
+- **只读副本**：replica 角色下客户端写命令一律 `-READONLY ...`（静态
+  写命令表判定），master link 的复制会话豁免。replica 的 AOF 照常记录
+  传播来的命令（同 Redis appendonly 行为）。
+- INFO 增加 # Replication 段：role、connected_slaves、master_repl_offset、
+  master_host/port/link_status。
 
 ## 目录结构
 

@@ -17,6 +17,9 @@ void config_init(ddup_config *cfg)
     strcpy(cfg->appendfilename, "appendonly.aof");
     strcpy(cfg->dbfilename, "dump.ddr");
     cfg->save_sec = 0;
+    cfg->replicaof_host[0] = '\0';
+    cfg->replicaof_port = 0;
+    cfg->repl_backlog_size = 1024 * 1024;
 }
 
 static int key_eq(const char *a, const char *b)
@@ -117,6 +120,28 @@ int config_apply(ddup_config *cfg, const char *key, const char *value)
         return copy_str(cfg->dbfilename, sizeof(cfg->dbfilename), value);
     if (key_eq(key, "save"))
         return parse_int_nonneg(value, &cfg->save_sec);
+    if (key_eq(key, "replicaof")) {
+        /* value is "<host> <port>" */
+        char host[64];
+        const char *sp = value;
+        const char *space = NULL;
+        size_t hl = 0;
+        while (sp[hl] && sp[hl] != ' ' && sp[hl] != '\t')
+            hl++;
+        space = sp + hl;
+        if (hl == 0 || hl >= sizeof(host) || *space == '\0')
+            return -1;
+        memcpy(host, sp, hl);
+        host[hl] = '\0';
+        while (*space == ' ' || *space == '\t')
+            space++;
+        if (parse_port(space, &cfg->replicaof_port) != 0)
+            return -1;
+        memcpy(cfg->replicaof_host, host, hl + 1);
+        return 0;
+    }
+    if (key_eq(key, "repl-backlog-size"))
+        return parse_u64(value, &cfg->repl_backlog_size);
     return -1;
 }
 
