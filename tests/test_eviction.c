@@ -39,6 +39,12 @@ static uint64_t eb(size_t klen, size_t vlen)
     return (uint64_t)sizeof(rh_entry) + 16 + klen + vlen;
 }
 
+/* string values are stored as {1-byte type tag}{payload} since Phase 5.1 */
+static uint64_t ebs(size_t klen, size_t slen)
+{
+    return eb(klen, slen + 1);
+}
+
 static void test_memory_accounting(void)
 {
     db d;
@@ -49,26 +55,26 @@ static void test_memory_accounting(void)
     DD_CHECK_EQ_INT(0, (long long)d.used_memory);
     exec_cmd(&d, T0, &out, 3, "SET", "k", "v");
     EXPECT(out, "+OK\r\n");
-    DD_CHECK((long long)d.used_memory == (long long)eb(1, 1));
+    DD_CHECK((long long)d.used_memory == (long long)ebs(1, 1));
 
     /* overwrite adjusts instead of accumulating */
     exec_cmd(&d, T0, &out, 3, "SET", "k", "vvvvv");
     EXPECT(out, "+OK\r\n");
-    DD_CHECK((long long)d.used_memory == (long long)eb(1, 5));
+    DD_CHECK((long long)d.used_memory == (long long)ebs(1, 5));
 
     /* expiry entry is accounted too */
     exec_cmd(&d, T0, &out, 3, "EXPIRE", "k", "100");
     EXPECT(out, ":1\r\n");
-    DD_CHECK((long long)d.used_memory == (long long)(eb(1, 5) + eb(1, 8)));
+    DD_CHECK((long long)d.used_memory == (long long)(ebs(1, 5) + eb(1, 8)));
 
     /* touch (GET) must not change accounting */
     exec_cmd(&d, T0, &out, 2, "GET", "k");
     EXPECT(out, "$5\r\nvvvvv\r\n");
-    DD_CHECK((long long)d.used_memory == (long long)(eb(1, 5) + eb(1, 8)));
+    DD_CHECK((long long)d.used_memory == (long long)(ebs(1, 5) + eb(1, 8)));
 
     exec_cmd(&d, T0, &out, 2, "PERSIST", "k");
     EXPECT(out, ":1\r\n");
-    DD_CHECK((long long)d.used_memory == (long long)eb(1, 5));
+    DD_CHECK((long long)d.used_memory == (long long)ebs(1, 5));
 
     exec_cmd(&d, T0, &out, 2, "DEL", "k");
     EXPECT(out, ":1\r\n");
@@ -103,7 +109,7 @@ static void test_allkeys_lru_eviction(void)
     }
     /* 1 * eb(6,1) + 9 * eb(3,1) bytes in use; cap at ~2 entries so the
      * eviction loop must remove most of them */
-    snprintf(maxmem, sizeof(maxmem), "%llu", (unsigned long long)(2 * eb(3, 1)));
+    snprintf(maxmem, sizeof(maxmem), "%llu", (unsigned long long)(2 * ebs(3, 1)));
     exec_cmd(&d, LATER, &out, 3, "CONFIG", "SET", "maxmemory");
     EXPECT(out, "-ERR wrong number of arguments for 'config' command\r\n");
     exec_cmd(&d, LATER, &out, 4, "CONFIG", "SET", "maxmemory", maxmem);
@@ -141,7 +147,7 @@ static void test_noeviction_oom(void)
              "noeviction");
     EXPECT(out, "+OK\r\n");
     /* room for exactly 2 entries */
-    snprintf(maxmem, sizeof(maxmem), "%llu", (unsigned long long)(2 * eb(1, 1)));
+    snprintf(maxmem, sizeof(maxmem), "%llu", (unsigned long long)(2 * ebs(1, 1)));
     exec_cmd(&d, T0, &out, 4, "CONFIG", "SET", "maxmemory", maxmem);
     EXPECT(out, "+OK\r\n");
 

@@ -20,6 +20,7 @@ add_library(ddup_core STATIC
     src/core/arena.c
     src/core/rhtable.c
     src/core/command.c
+    src/ds/obj.c
     src/resp/resp_parser.c
     src/resp/resp_writer.c
     src/server/server.c

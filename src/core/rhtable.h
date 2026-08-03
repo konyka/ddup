@@ -62,4 +62,10 @@ int rh_random_entry(rh_table *t, uint32_t rand, const char **key, size_t *klen,
 
 size_t rh_size(const rh_table *t);
 
+/* Visit every live entry (both tables while migrating). The callback must
+ * not mutate the table. Used for whole-db teardown and HGETALL/HKEYS/HVALS. */
+typedef void (*rh_iter_fn)(const char *key, size_t klen, const char *val,
+                           size_t vlen, void *ctx);
+void rh_each(const rh_table *t, rh_iter_fn fn, void *ctx);
+
 #endif /* DDUP_RHTABLE_H */

@@ -175,6 +175,21 @@ size_t rh_size(const rh_table *t)
     return t->size;
 }
 
+void rh_each(const rh_table *t, rh_iter_fn fn, void *ctx)
+{
+    size_t i;
+    for (i = 0; i < t->cap; i++) {
+        const rh_entry *e = &t->slots[i];
+        if (e->psl >= 0)
+            fn(e->kv, e->klen, e->kv + e->klen, e->vlen, ctx);
+    }
+    for (i = 0; i < t->old_cap; i++) {
+        const rh_entry *e = &t->old_slots[i];
+        if (e->psl >= 0)
+            fn(e->kv, e->klen, e->kv + e->klen, e->vlen, ctx);
+    }
+}
+
 int rh_get(rh_table *t, const char *key, size_t klen,
            const char **val, size_t *vlen)
 {

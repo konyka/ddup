@@ -12,7 +12,11 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "ds/obj.h"
 #include "pal/pal_time.h"
+
+static void free_obj_cb(const char *key, size_t klen, const char *val,
+                        size_t vlen, void *ctx);
 
 void db_init(db *d)
 {
@@ -28,6 +32,7 @@ void db_init(db *d)
 
 void db_destroy(db *d)
 {
+    rh_each(&d->table, free_obj_cb, NULL);
     rh_destroy(&d->table);
     rh_destroy(&d->expires);
 }
@@ -71,8 +76,9 @@ int db_expire_if_needed(db *d, const char *key, size_t klen, uint64_t now_ms)
     rh_del(&d->expires, key, klen);
     d->used_memory -= entry_bytes(klen, 8);
     if (rh_get(&d->table, key, klen, &v, &vl)) {
+        d->used_memory -= entry_bytes(klen, vl) + obj_extra_mem(v, vl);
+        obj_free_value(v, vl);
         rh_del(&d->table, key, klen);
-        d->used_memory -= entry_bytes(klen, vl);
     }
     d->expired_keys++;
     return 1;
@@ -89,7 +95,8 @@ static int db_get(db *d, const char *key, size_t klen, const char **val,
     return 1;
 }
 
-/* Overwrite a value; clears any expiry; refreshes the LRU clock. */
+/* Overwrite a value blob (tagged; see ds/obj.h); clears any expiry;
+ * refreshes the LRU clock; frees/adjusts a replaced object. */
 static void db_set_kv(db *d, const char *key, size_t klen, const char *val,
                       size_t vlen, uint64_t now_ms)
 {
@@ -99,14 +106,31 @@ static void db_set_kv(db *d, const char *key, size_t klen, const char *val,
         rh_del(&d->expires, key, klen);
         d->used_memory -= entry_bytes(klen, 8);
     }
-    if (rh_get(&d->table, key, klen, &old, &oldl))
-        d->used_memory -= entry_bytes(klen, oldl);
+    if (rh_get(&d->table, key, klen, &old, &oldl)) {
+        d->used_memory -= entry_bytes(klen, oldl) + obj_extra_mem(old, oldl);
+        obj_free_value(old, oldl);
+    }
     rh_set(&d->table, key, klen, val, vlen);
     rh_touch(&d->table, key, klen, lru_clock(now_ms));
-    d->used_memory += entry_bytes(klen, vlen);
+    d->used_memory += entry_bytes(klen, vlen) + obj_extra_mem(val, vlen);
 }
 
-/* Delete key and expiry. Returns 1 if the key existed. */
+/* Store a string payload (adds the type tag). */
+static void db_set_string(db *d, const char *key, size_t klen, const char *val,
+                          size_t vlen, uint64_t now_ms)
+{
+    char stackbuf[256];
+    char *buf = stackbuf;
+    if (vlen + 1 > sizeof(stackbuf))
+        buf = (char *)malloc(vlen + 1);
+    buf[0] = (char)DDUP_OBJ_STRING;
+    memcpy(buf + 1, val, vlen);
+    db_set_kv(d, key, klen, buf, vlen + 1, now_ms);
+    if (buf != stackbuf)
+        free(buf);
+}
+
+/* Delete key and expiry (and any owned object). Returns 1 if existed. */
 static int db_del_kv(db *d, const char *key, size_t klen)
 {
     const char *old;
@@ -118,8 +142,9 @@ static int db_del_kv(db *d, const char *key, size_t klen)
     }
     existed = rh_get(&d->table, key, klen, &old, &oldl);
     if (existed) {
+        d->used_memory -= entry_bytes(klen, oldl) + obj_extra_mem(old, oldl);
+        obj_free_value(old, oldl);
         rh_del(&d->table, key, klen);
-        d->used_memory -= entry_bytes(klen, oldl);
     }
     return existed;
 }
@@ -133,6 +158,16 @@ static void db_set_expiry(db *d, const char *key, size_t klen, uint64_t when_ms)
     if (!rh_get(&d->expires, key, klen, &old, &oldl))
         d->used_memory += entry_bytes(klen, 8);
     rh_set(&d->expires, key, klen, b, 8);
+}
+
+/* rh_each callback: free any owned object value (FLUSHDB teardown). */
+static void free_obj_cb(const char *key, size_t klen, const char *val,
+                        size_t vlen, void *ctx)
+{
+    (void)key;
+    (void)klen;
+    (void)ctx;
+    obj_free_value(val, vlen);
 }
 
 /* xorshift32 over db->rng_state (deterministic; tests may reseed). */
@@ -332,6 +367,26 @@ static int parse_i64(const char *s, size_t len, long long *out)
 static const char ERR_NOT_INT[] = "ERR value is not an integer or out of range";
 static const char ERR_OVERFLOW[] = "ERR increment or decrement would overflow";
 static const char ERR_SYNTAX[] = "ERR syntax error";
+static const char WRONGTYPE_MSG[] =
+    "WRONGTYPE Operation against a key holding the wrong kind of value";
+
+static void wrongtype(resp_buf *out)
+{
+    resp_write_error(out, WRONGTYPE_MSG, sizeof(WRONGTYPE_MSG) - 1);
+}
+
+/* String payload of a value blob; writes WRONGTYPE and returns 0 if the
+ * value is not a string. */
+static int as_string(resp_buf *out, const char *val, size_t vlen,
+                     const char **s, size_t *len)
+{
+    if (obj_tag_of(val, vlen) != DDUP_OBJ_STRING) {
+        wrongtype(out);
+        return 0;
+    }
+    obj_str(val, vlen, s, len);
+    return 1;
+}
 
 static const char *policy_name(int policy)
 {
@@ -482,10 +537,15 @@ static void command_dispatch(db *d, const resp_value *argv, size_t argc,
             goto bad_type;
         const char *v;
         size_t vl;
-        if (db_get(d, k, kl, &v, &vl, now_ms))
-            resp_write_bulk(out, v, vl);
-        else
+        if (db_get(d, k, kl, &v, &vl, now_ms)) {
+            const char *s;
+            size_t sl2;
+            if (!as_string(out, v, vl, &s, &sl2))
+                return;
+            resp_write_bulk(out, s, sl2);
+        } else {
             resp_write_bulk(out, NULL, 0);
+        }
         return;
     }
 
@@ -541,6 +601,10 @@ static void command_dispatch(db *d, const resp_value *argv, size_t argc,
             const char *old;
             size_t oldl;
             int exists = db_get(d, k, kl, &old, &oldl, now_ms);
+            if (exists && obj_tag_of(old, oldl) != DDUP_OBJ_STRING) {
+                wrongtype(out);
+                return;
+            }
             if ((nx && exists) || (xx && !exists)) {
                 resp_write_bulk(out, NULL, 0);
                 return;
@@ -548,7 +612,7 @@ static void command_dispatch(db *d, const resp_value *argv, size_t argc,
         }
         if (oom_blocked(d, out))
             return;
-        db_set_kv(d, k, kl, v, vl, now_ms);
+        db_set_string(d, k, kl, v, vl, now_ms);
         if (has_ttl)
             db_set_expiry(d, k, kl, now_ms + ttl_ms);
         resp_write_simple_string(out, "OK", 2);
@@ -606,7 +670,11 @@ static void command_dispatch(db *d, const resp_value *argv, size_t argc,
         const char *v;
         size_t vl;
         if (db_get(d, k, kl, &v, &vl, now_ms)) {
-            if (!parse_i64(v, vl, &cur)) {
+            const char *s;
+            size_t sl2;
+            if (!as_string(out, v, vl, &s, &sl2))
+                return;
+            if (!parse_i64(s, sl2, &cur)) {
                 resp_write_error(out, ERR_NOT_INT, sizeof(ERR_NOT_INT) - 1);
                 return;
             }
@@ -621,7 +689,7 @@ static void command_dispatch(db *d, const resp_value *argv, size_t argc,
         int nl = snprintf(num, sizeof(num), "%lld", cur);
         if (oom_blocked(d, out))
             return;
-        db_set_kv(d, k, kl, num, (size_t)nl, now_ms);
+        db_set_string(d, k, kl, num, (size_t)nl, now_ms);
         resp_write_integer(out, cur);
         return;
     }
@@ -640,17 +708,21 @@ static void command_dispatch(db *d, const resp_value *argv, size_t argc,
         if (oom_blocked(d, out))
             return;
         if (db_get(d, k, kl, &old, &oldl, now_ms)) {
+            const char *os;
+            size_t osl;
             resp_buf tmp;
+            if (!as_string(out, old, oldl, &os, &osl))
+                return;
             resp_buf_init(&tmp);
-            resp_buf_reserve(&tmp, oldl + vl);
-            memcpy(tmp.data, old, oldl);
-            memcpy(tmp.data + oldl, v, vl);
-            tmp.len = oldl + vl;
-            db_set_kv(d, k, kl, tmp.data, tmp.len, now_ms);
+            resp_buf_reserve(&tmp, osl + vl);
+            memcpy(tmp.data, os, osl);
+            memcpy(tmp.data + osl, v, vl);
+            tmp.len = osl + vl;
+            db_set_string(d, k, kl, tmp.data, tmp.len, now_ms);
             resp_write_integer(out, (long long)tmp.len);
             resp_buf_free(&tmp);
         } else {
-            db_set_kv(d, k, kl, v, vl, now_ms);
+            db_set_string(d, k, kl, v, vl, now_ms);
             resp_write_integer(out, (long long)vl);
         }
         return;
@@ -667,8 +739,17 @@ static void command_dispatch(db *d, const resp_value *argv, size_t argc,
             goto bad_type;
         const char *v;
         size_t vl;
-        resp_write_integer(
-            out, db_get(d, k, kl, &v, &vl, now_ms) ? (long long)vl : 0);
+        if (!db_get(d, k, kl, &v, &vl, now_ms)) {
+            resp_write_integer(out, 0);
+            return;
+        }
+        {
+            const char *s;
+            size_t sl2;
+            if (!as_string(out, v, vl, &s, &sl2))
+                return;
+            resp_write_integer(out, (long long)sl2);
+        }
         return;
     }
 
@@ -685,10 +766,17 @@ static void command_dispatch(db *d, const resp_value *argv, size_t argc,
                 goto bad_type;
             const char *v;
             size_t vl;
-            if (db_get(d, k, kl, &v, &vl, now_ms))
-                resp_write_bulk(out, v, vl);
-            else
+            if (!db_get(d, k, kl, &v, &vl, now_ms)) {
                 resp_write_bulk(out, NULL, 0);
+                continue;
+            }
+            {
+                const char *s;
+                size_t sl2;
+                if (!as_string(out, v, vl, &s, &sl2))
+                    return;
+                resp_write_bulk(out, s, sl2);
+            }
         }
         return;
     }
@@ -705,7 +793,7 @@ static void command_dispatch(db *d, const resp_value *argv, size_t argc,
             size_t kl, vl;
             if (!arg_str(&argv[i], &k, &kl) || !arg_str(&argv[i + 1], &v, &vl))
                 goto bad_type;
-            db_set_kv(d, k, kl, v, vl, now_ms);
+            db_set_string(d, k, kl, v, vl, now_ms);
         }
         resp_write_simple_string(out, "OK", 2);
         return;
@@ -773,6 +861,7 @@ static void command_dispatch(db *d, const resp_value *argv, size_t argc,
             wrong_args(out, "flushdb");
             return;
         }
+        rh_each(&d->table, free_obj_cb, NULL);
         rh_destroy(&d->table);
         rh_destroy(&d->expires);
         rh_init(&d->table);
