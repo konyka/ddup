@@ -18,6 +18,7 @@ add_library(ddup_core STATIC
     src/pal/pal_socket.c
     src/pal/pal_event.c
     src/pal/pal_file.c
+    src/pal/pal_tls.c
     src/core/arena.c
     src/core/rhtable.c
     src/core/command.c
@@ -42,6 +43,26 @@ target_compile_definitions(ddup_core PUBLIC
 
 if(WIN32)
     target_link_libraries(ddup_core PUBLIC ws2_32)
+endif()
+
+# ---------------------------------------------------------------------------
+# Optional TLS (OpenSSL)
+# ---------------------------------------------------------------------------
+option(DDUP_TLS "Build with TLS support (requires OpenSSL)" ON)
+find_package(OpenSSL QUIET)
+if(DDUP_TLS AND OpenSSL_FOUND)
+    set(DDUP_HAS_TLS 1)
+    target_compile_definitions(ddup_core PUBLIC DDUP_HAS_TLS=1)
+    target_link_libraries(ddup_core PUBLIC OpenSSL::SSL OpenSSL::Crypto)
+    message(STATUS "ddup: TLS enabled (OpenSSL ${OPENSSL_VERSION})")
+else()
+    set(DDUP_HAS_TLS 0)
+    target_compile_definitions(ddup_core PUBLIC DDUP_HAS_TLS=0)
+    if(NOT DDUP_TLS)
+        message(STATUS "ddup: TLS disabled (DDUP_TLS=OFF)")
+    else()
+        message(STATUS "ddup: TLS disabled (OpenSSL not found)")
+    endif()
 endif()
 
 # glibc hides POSIX functions (clock_gettime, addrinfo, epoll...) under
@@ -103,8 +124,14 @@ ddup_add_test(test_aof tests/test_aof.c)
 ddup_add_test(test_snapshot tests/test_snapshot.c)
 ddup_add_test(test_repl tests/test_repl.c)
 
+if(DDUP_HAS_TLS)
+    ddup_add_test(test_tls tests/test_tls.c)
+    target_compile_definitions(test_tls PRIVATE
+        DDUP_TEST_CERT_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests/certs")
+endif()
+
 add_custom_target(check
     COMMAND ${CMAKE_CTEST_COMMAND} --output-on-failure
-    DEPENDS test_pal test_socket test_event test_server test_arena test_resp_parser test_resp_writer test_resp3 test_rhtable test_command test_expire test_eviction test_hash test_list test_skiplist test_set test_zset test_session test_multi test_pubsub test_config test_aof test_snapshot test_repl
+    DEPENDS test_pal test_socket test_event test_server test_arena test_resp_parser test_resp_writer test_resp3 test_rhtable test_command test_expire test_eviction test_hash test_list test_skiplist test_set test_zset test_session test_multi test_pubsub test_config test_aof test_snapshot test_repl $<$<BOOL:${DDUP_HAS_TLS}>:test_tls>
     WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
 )
