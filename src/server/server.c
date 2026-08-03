@@ -36,7 +36,7 @@
 /* Readiness events consumed per server_run_once() call. */
 #define SERVER_MAX_EVENTS 64
 /* Replicas with more pending output than this are dropped (re-SYNC). */
-#define REPL_MAX_OUTBUF (4 * 1024 * 1024)
+#define REPL_MAX_OUTBUF (16 * 1024 * 1024)
 
 typedef struct conn conn;
 
@@ -57,6 +57,7 @@ struct conn {
     pal_socket_t fd;
     pal_tls *tls; /* NULL for plain connections */
     int tls_handshaking; /* non-blocking handshake in progress */
+    int want_write;      /* registered for write readiness (out pending) */
     char *rbuf;  /* receive buffer, malloc'd, compacted after parsing */
     size_t rlen; /* valid bytes in rbuf */
     size_t rcap; /* allocated size of rbuf */
@@ -722,6 +723,9 @@ static void server_accept(server *s, pal_socket_t lfd, int use_tls)
             pal_close(fd);
             return;
         }
+    } else if (pal_set_nonblocking(fd, 1) != 0) {
+        pal_close(fd); /* all conns are non-blocking (event-driven writes) */
+        return;
     }
     c = conn_create(s, fd);
     if (c == NULL) {
@@ -757,15 +761,17 @@ static void conn_close(server *s, size_t idx)
     s->nconns--;
 }
 
-/* Flush conn->out; on would-block (-2, non-blocking TLS conns) the
- * remainder is kept and retried by a later flush pass. */
-static int conn_flush(conn *c)
+/* Flush conn->out without ever blocking the loop: send until the socket
+ * would block, keep the remainder, and track write-readiness registration
+ * (read+write while anything is pending, read-only when fully flushed).
+ * Returns 0 (possibly with remainder kept), -1 on fatal error. */
+static int conn_flush(server *s, conn *c)
 {
     size_t sent = 0;
     while (sent < c->out.len) {
         ptrdiff_t n = conn_write(c, c->out.data + sent, c->out.len - sent);
-        if (n == -2)
-            break; /* would-block: keep the remainder for the next pass */
+        if (n == -2 || (n < 0 && pal_would_block(pal_socket_error())))
+            break; /* would-block: keep the remainder for writable events */
         if (n <= 0)
             return -1;
         sent += (size_t)n;
@@ -773,6 +779,13 @@ static int conn_flush(conn *c)
     if (sent > 0) {
         memmove(c->out.data, c->out.data + sent, c->out.len - sent);
         c->out.len -= sent;
+    }
+    {
+        int want = c->out.len > 0 ? 1 : 0;
+        if (want != c->want_write) {
+            pal_loop_mod(s->loop, c->fd, 1, want, c);
+            c->want_write = want;
+        }
     }
     return 0;
 }
@@ -849,12 +862,23 @@ int server_run_once(server *s, int timeout_ms)
                 int hs = pal_tls_handshake_nb(c->tls);
                 if (hs == 1) {
                     c->tls_handshaking = 0;
+                    c->want_write = 0;
                     pal_loop_mod(s->loop, c->fd, 1, 0, c);
                 } else if (hs < 0) {
                     conn_close(s, idx);
                 }
                 continue;
             }
+
+            /* writable readiness: flush any pending output first */
+            if (evs[i].writable && c->out.len > 0 &&
+                conn_flush(s, c) != 0) {
+                conn_close(s, idx);
+                continue;
+            }
+
+            if (!evs[i].readable)
+                continue; /* writable-only event: nothing to read */
 
             /* grow the receive buffer if a full chunk is pending */
             if (c->rcap - c->rlen < SERVER_RECV_CHUNK) {
@@ -906,7 +930,7 @@ int server_run_once(server *s, int timeout_ms)
                     memmove(c->rbuf, c->rbuf + off, c->rlen - off);
                     c->rlen -= off;
                 }
-                if (c->out.len > 0 && conn_flush(c) != 0) {
+                if (c->out.len > 0 && conn_flush(s, c) != 0) {
                     conn_close(s, idx);
                     continue;
                 }
@@ -925,7 +949,7 @@ int server_run_once(server *s, int timeout_ms)
                 ci--;
                 continue;
             }
-            if (c->out.len > 0 && conn_flush(c) != 0) {
+            if (c->out.len > 0 && conn_flush(s, c) != 0) {
                 conn_close(s, ci);
                 ci--;
             }
