@@ -257,6 +257,8 @@ static void srv_propagate(void *ctx, const resp_value *argv, size_t argc)
     }
     repl_backlog_append(&srv->backlog, srv->prop_buf.data, srv->prop_buf.len);
     srv->repl.offset = srv->backlog.offset;
+    if (srv->repl.connected_slaves == 0)
+        return; /* O(1): no downstream replicas to fan out to */
     for (i = 0; i < srv->nconns; i++) {
         conn *rc = srv->conns[i];
         if (rc->is_replica) {

@@ -28,6 +28,22 @@
 | 2026-08-03 | 7.3 opt-B（A+B 累计） | bench_core GET（30 万×3 median） | 同上 | 7.50M→8.19M ops/s (+9%) | - | 累计 opt-A+B |
 | 2026-08-03 | 7.3 opt-C：get+touch 单次探测 | bench_core GET（30 万×4 median） | 同上 | 7.49M→9.29M ops/s (+24%) | - | 累计 A+B+C；rh_get_touch 合并 LRU 刷新与读取 |
 | 2026-08-03 | 7.3 opt-C（A+B+C 累计） | bench_core SET（30 万×3 median） | 同上 | 3.03M→5.18M ops/s (+71%) | - | 累计 opt-A+B+C |
+| 2026-08-03 | 7.3 opt-D：传播 fan-out 无副本时 O(1) | 服务器 SET（run_bench ×2） | 同上 | 625k/625k req/s | - | connected_slaves==0 时跳过全连接扫描 |
+| 2026-08-03 | 7.3 opt-D（最终累计） | 服务器 GET（run_bench ×2） | 同上 | 746k/752k req/s | - | 最终：SET 564k→625k (+11%)，GET 695k→749k (+8%) |
+
+最终对比（Phase 7.3 baseline → 全部优化后，同机同旗标）：
+
+| 场景 | baseline | 最终 | 提升 |
+|------|----------|------|------|
+| bench_core SET | 3.03M ops/s | 5.18M ops/s | +71% |
+| bench_core GET | 7.49M ops/s | 9.29M ops/s | +24% |
+| 服务器 SET (P16) | 564k req/s | 625k req/s | +11% |
+| 服务器 GET (P16) | 695k req/s | 749k req/s | +8% |
+
+CPU 侧提升主要来自写路径去重哈希查询（opt-B 去 keyvers 写入、
+opt-A 去过期表查询、opt-C 合并 LRU 探测）；端到端受 loopback syscall
+主导，提升相应被摊薄。服务器数字为两次运行，bench_core 为 3–5 次
+交替运行中位数。
 
 ## Phase 7.3 性能剖析记录
 
