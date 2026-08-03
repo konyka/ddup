@@ -62,4 +62,35 @@ int obj_hash_get(obj_hash *h, const char *f, size_t flen, const char **v,
                  size_t *vlen);
 int obj_hash_del(obj_hash *h, const char *f, size_t flen);
 
+/* ------------------------------------------------------------------ */
+/* list object: doubly-linked list, one node per element              */
+/* (quicklist/block deque is a documented future optimization)        */
+/* ------------------------------------------------------------------ */
+typedef struct list_node {
+    struct list_node *prev;
+    struct list_node *next;
+    uint32_t len;
+    char data[]; /* element bytes */
+} list_node;
+
+typedef struct obj_list {
+    list_node *head;
+    list_node *tail;
+    uint64_t len; /* element count */
+    uint64_t mem; /* sizeof(obj_list) + per-node cost, incremental */
+} obj_list;
+
+obj_list *obj_list_new(void);
+void obj_list_free(obj_list *l);
+uint64_t obj_list_mem(const obj_list *l);
+
+void obj_list_push(obj_list *l, int left, const char *data, size_t len);
+/* Returns 1 and hands the caller a malloc'd copy of the element
+ * (free with free()), 0 when the list is empty. */
+int obj_list_pop(obj_list *l, int left, char **data, size_t *len);
+/* Walks from the nearer end; NULL when idx >= len. */
+list_node *obj_list_at(obj_list *l, size_t idx);
+/* Replace element data at idx. Returns 0 when idx >= len. */
+int obj_list_set_at(obj_list *l, size_t idx, const char *data, size_t len);
+
 #endif /* DDUP_OBJ_H */

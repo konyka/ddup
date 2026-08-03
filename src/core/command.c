@@ -343,6 +343,32 @@ static int get_hash(db *d, resp_buf *out, const char *k, size_t kl, int create,
     return 1;
 }
 
+/* Fetch the list object for key; create when missing && create != 0.
+ * Returns 1 (*l set), 0 missing, -1 WRONGTYPE (reply written). */
+static int get_list(db *d, resp_buf *out, const char *k, size_t kl, int create,
+                    uint64_t now, obj_list **l)
+{
+    const char *v;
+    size_t vl;
+    if (!db_get(d, k, kl, &v, &vl, now)) {
+        char blob[9];
+        obj_list *nl;
+        if (!create)
+            return 0;
+        nl = obj_list_new();
+        obj_pack_ptr(blob, DDUP_OBJ_LIST, nl);
+        db_set_kv(d, k, kl, blob, 9, now);
+        *l = nl;
+        return 1;
+    }
+    if (obj_tag_of(v, vl) != DDUP_OBJ_LIST) {
+        wrongtype(out);
+        return -1;
+    }
+    *l = (obj_list *)obj_unpack_ptr(v, vl);
+    return 1;
+}
+
 /* Fold an object's mem delta (mutations done in place) into used_memory. */
 static void mem_sync(db *d, uint64_t before, uint64_t after)
 {
@@ -1315,6 +1341,227 @@ static void command_dispatch(db *d, const resp_value *argv, size_t argc,
             mem_sync(d, before, obj_hash_mem(h));
         }
         resp_write_integer(out, 1);
+        return;
+    }
+
+    /* ---------------- list commands ---------------- */
+
+    if (ci_equal(name, nlen, "LPUSH") || ci_equal(name, nlen, "RPUSH") ||
+        ci_equal(name, nlen, "LPUSHX") || ci_equal(name, nlen, "RPUSHX")) {
+        int left = ci_equal(name, nlen, "LPUSH") || ci_equal(name, nlen, "LPUSHX");
+        int only_if_exists =
+            ci_equal(name, nlen, "LPUSHX") || ci_equal(name, nlen, "RPUSHX");
+        if (argc < 3) {
+            wrong_args(out, left ? (only_if_exists ? "lpushx" : "lpush")
+                                 : (only_if_exists ? "rpushx" : "rpush"));
+            return;
+        }
+        const char *k;
+        size_t kl;
+        if (!arg_str(&argv[1], &k, &kl))
+            goto bad_type;
+        if (oom_blocked(d, out))
+            return;
+        obj_list *l;
+        int rc = get_list(d, out, k, kl, !only_if_exists, now_ms, &l);
+        if (rc < 0)
+            return;
+        if (rc == 0) { /* LPUSHX/RPUSHX on missing key */
+            resp_write_integer(out, 0);
+            return;
+        }
+        {
+            uint64_t before = obj_list_mem(l);
+            for (size_t i = 2; i < argc; i++) {
+                const char *v;
+                size_t vl;
+                if (!arg_str(&argv[i], &v, &vl))
+                    goto bad_type;
+                obj_list_push(l, left, v, vl);
+            }
+            mem_sync(d, before, obj_list_mem(l));
+        }
+        resp_write_integer(out, (long long)l->len);
+        return;
+    }
+
+    if (ci_equal(name, nlen, "LPOP") || ci_equal(name, nlen, "RPOP")) {
+        int left = ci_equal(name, nlen, "LPOP");
+        if (argc != 2) {
+            wrong_args(out, left ? "lpop" : "rpop");
+            return;
+        }
+        const char *k;
+        size_t kl;
+        if (!arg_str(&argv[1], &k, &kl))
+            goto bad_type;
+        obj_list *l;
+        int rc = get_list(d, out, k, kl, 0, now_ms, &l);
+        if (rc < 0)
+            return;
+        if (rc == 0) {
+            resp_write_bulk(out, NULL, 0);
+            return;
+        }
+        {
+            char *data = NULL;
+            size_t dlen = 0;
+            uint64_t before = obj_list_mem(l);
+            if (!obj_list_pop(l, left, &data, &dlen)) {
+                resp_write_bulk(out, NULL, 0);
+                return;
+            }
+            mem_sync(d, before, obj_list_mem(l));
+            if (l->len == 0)
+                db_del_kv(d, k, kl); /* empty list: the key goes away */
+            resp_write_bulk(out, data, dlen);
+            free(data);
+        }
+        return;
+    }
+
+    if (ci_equal(name, nlen, "LLEN")) {
+        if (argc != 2) {
+            wrong_args(out, "llen");
+            return;
+        }
+        const char *k;
+        size_t kl;
+        if (!arg_str(&argv[1], &k, &kl))
+            goto bad_type;
+        obj_list *l;
+        int rc = get_list(d, out, k, kl, 0, now_ms, &l);
+        if (rc < 0)
+            return;
+        resp_write_integer(out, rc == 1 ? (long long)l->len : 0);
+        return;
+    }
+
+    if (ci_equal(name, nlen, "LRANGE")) {
+        if (argc != 4) {
+            wrong_args(out, "lrange");
+            return;
+        }
+        const char *k, *sv, *ev;
+        size_t kl, svl, evl;
+        long long start, stop;
+        if (!arg_str(&argv[1], &k, &kl) || !arg_str(&argv[2], &sv, &svl) ||
+            !arg_str(&argv[3], &ev, &evl))
+            goto bad_type;
+        if (!parse_i64(sv, svl, &start) || !parse_i64(ev, evl, &stop)) {
+            resp_write_error(out, ERR_NOT_INT, sizeof(ERR_NOT_INT) - 1);
+            return;
+        }
+        obj_list *l;
+        int rc = get_list(d, out, k, kl, 0, now_ms, &l);
+        if (rc < 0)
+            return;
+        if (rc == 0) {
+            resp_write_array_header(out, 0);
+            return;
+        }
+        {
+            long long len = (long long)l->len;
+            long long i;
+            list_node *n;
+            if (start < 0)
+                start += len;
+            if (start < 0)
+                start = 0;
+            if (stop < 0)
+                stop += len;
+            if (stop >= len)
+                stop = len - 1;
+            if (start > stop || start >= len || stop < 0) {
+                resp_write_array_header(out, 0);
+                return;
+            }
+            resp_write_array_header(out, (size_t)(stop - start + 1));
+            n = obj_list_at(l, (size_t)start);
+            for (i = start; i <= stop && n != NULL; i++, n = n->next)
+                resp_write_bulk(out, n->data, n->len);
+        }
+        return;
+    }
+
+    if (ci_equal(name, nlen, "LINDEX")) {
+        if (argc != 3) {
+            wrong_args(out, "lindex");
+            return;
+        }
+        const char *k, *iv;
+        size_t kl, ivl;
+        long long idx;
+        if (!arg_str(&argv[1], &k, &kl) || !arg_str(&argv[2], &iv, &ivl))
+            goto bad_type;
+        if (!parse_i64(iv, ivl, &idx)) {
+            resp_write_error(out, ERR_NOT_INT, sizeof(ERR_NOT_INT) - 1);
+            return;
+        }
+        obj_list *l;
+        int rc = get_list(d, out, k, kl, 0, now_ms, &l);
+        if (rc < 0)
+            return;
+        if (rc == 0) {
+            resp_write_bulk(out, NULL, 0);
+            return;
+        }
+        if (idx < 0)
+            idx += (long long)l->len;
+        {
+            list_node *n =
+                idx >= 0 ? obj_list_at(l, (size_t)idx) : NULL;
+            if (n != NULL)
+                resp_write_bulk(out, n->data, n->len);
+            else
+                resp_write_bulk(out, NULL, 0);
+        }
+        return;
+    }
+
+    if (ci_equal(name, nlen, "LSET")) {
+        if (argc != 4) {
+            wrong_args(out, "lset");
+            return;
+        }
+        const char *k, *iv, *v;
+        size_t kl, ivl, vl;
+        long long idx;
+        if (!arg_str(&argv[1], &k, &kl) || !arg_str(&argv[2], &iv, &ivl) ||
+            !arg_str(&argv[3], &v, &vl))
+            goto bad_type;
+        if (!parse_i64(iv, ivl, &idx)) {
+            resp_write_error(out, ERR_NOT_INT, sizeof(ERR_NOT_INT) - 1);
+            return;
+        }
+        if (oom_blocked(d, out))
+            return;
+        obj_list *l;
+        int rc = get_list(d, out, k, kl, 0, now_ms, &l);
+        if (rc < 0)
+            return;
+        if (rc == 0) {
+            static const char E_NOKEY[] = "ERR no such key";
+            resp_write_error(out, E_NOKEY, sizeof(E_NOKEY) - 1);
+            return;
+        }
+        if (idx < 0)
+            idx += (long long)l->len;
+        if (idx < 0) {
+            static const char E_RANGE[] = "ERR index out of range";
+            resp_write_error(out, E_RANGE, sizeof(E_RANGE) - 1);
+            return;
+        }
+        {
+            uint64_t before = obj_list_mem(l);
+            if (!obj_list_set_at(l, (size_t)idx, v, vl)) {
+                static const char E_RANGE[] = "ERR index out of range";
+                resp_write_error(out, E_RANGE, sizeof(E_RANGE) - 1);
+                return;
+            }
+            mem_sync(d, before, obj_list_mem(l));
+        }
+        resp_write_simple_string(out, "OK", 2);
         return;
     }
 

@@ -37,6 +37,8 @@ uint64_t obj_extra_mem(const char *val, size_t vlen)
     switch (obj_tag_of(val, vlen)) {
     case DDUP_OBJ_HASH:
         return obj_hash_mem((obj_hash *)obj_unpack_ptr(val, vlen));
+    case DDUP_OBJ_LIST:
+        return obj_list_mem((obj_list *)obj_unpack_ptr(val, vlen));
     default:
         return 0;
     }
@@ -47,6 +49,9 @@ void obj_free_value(const char *val, size_t vlen)
     switch (obj_tag_of(val, vlen)) {
     case DDUP_OBJ_HASH:
         obj_hash_free((obj_hash *)obj_unpack_ptr(val, vlen));
+        break;
+    case DDUP_OBJ_LIST:
+        obj_list_free((obj_list *)obj_unpack_ptr(val, vlen));
         break;
     default:
         break;
@@ -115,5 +120,151 @@ int obj_hash_del(obj_hash *h, const char *f, size_t flen)
         return 0;
     h->mem -= field_bytes(flen, oldl);
     rh_del(&h->fields, f, flen);
+    return 1;
+}
+
+/* ------------------------------------------------------------------ */
+/* list object                                                        */
+/* ------------------------------------------------------------------ */
+
+/* Same per-allocation estimate as the db layer (16 bytes malloc overhead). */
+static uint64_t node_bytes(size_t elen)
+{
+    return (uint64_t)sizeof(list_node) + 16 + elen;
+}
+
+static list_node *node_new(const char *data, size_t len)
+{
+    list_node *n = (list_node *)malloc(sizeof(list_node) + len);
+    if (n == NULL) {
+        fprintf(stderr, "ddup: out of memory\n");
+        exit(1);
+    }
+    n->prev = NULL;
+    n->next = NULL;
+    n->len = (uint32_t)len;
+    memcpy(n->data, data, len);
+    return n;
+}
+
+obj_list *obj_list_new(void)
+{
+    obj_list *l = (obj_list *)malloc(sizeof(*l));
+    if (l == NULL) {
+        fprintf(stderr, "ddup: out of memory\n");
+        exit(1);
+    }
+    l->head = NULL;
+    l->tail = NULL;
+    l->len = 0;
+    l->mem = (uint64_t)sizeof(*l);
+    return l;
+}
+
+void obj_list_free(obj_list *l)
+{
+    list_node *n;
+    if (l == NULL)
+        return;
+    n = l->head;
+    while (n != NULL) {
+        list_node *next = n->next;
+        free(n);
+        n = next;
+    }
+    free(l);
+}
+
+uint64_t obj_list_mem(const obj_list *l)
+{
+    return l->mem;
+}
+
+void obj_list_push(obj_list *l, int left, const char *data, size_t len)
+{
+    list_node *n = node_new(data, len);
+    if (left) {
+        n->next = l->head;
+        if (l->head != NULL)
+            l->head->prev = n;
+        else
+            l->tail = n;
+        l->head = n;
+    } else {
+        n->prev = l->tail;
+        if (l->tail != NULL)
+            l->tail->next = n;
+        else
+            l->head = n;
+        l->tail = n;
+    }
+    l->len++;
+    l->mem += node_bytes(len);
+}
+
+int obj_list_pop(obj_list *l, int left, char **data, size_t *len)
+{
+    list_node *n = left ? l->head : l->tail;
+    if (n == NULL)
+        return 0;
+    *data = (char *)malloc(n->len);
+    if (*data == NULL) {
+        fprintf(stderr, "ddup: out of memory\n");
+        exit(1);
+    }
+    memcpy(*data, n->data, n->len);
+    *len = n->len;
+    if (n->prev != NULL)
+        n->prev->next = n->next;
+    else
+        l->head = n->next;
+    if (n->next != NULL)
+        n->next->prev = n->prev;
+    else
+        l->tail = n->prev;
+    l->len--;
+    l->mem -= node_bytes(n->len);
+    free(n);
+    return 1;
+}
+
+list_node *obj_list_at(obj_list *l, size_t idx)
+{
+    size_t i;
+    list_node *n;
+    if (idx >= l->len)
+        return NULL;
+    if (idx < l->len / 2) {
+        n = l->head;
+        for (i = 0; i < idx; i++)
+            n = n->next;
+    } else {
+        n = l->tail;
+        for (i = l->len - 1; i > idx; i--)
+            n = n->prev;
+    }
+    return n;
+}
+
+int obj_list_set_at(obj_list *l, size_t idx, const char *data, size_t len)
+{
+    list_node *old = obj_list_at(l, idx);
+    list_node *n;
+    if (old == NULL)
+        return 0;
+    n = node_new(data, len);
+    n->prev = old->prev;
+    n->next = old->next;
+    if (old->prev != NULL)
+        old->prev->next = n;
+    else
+        l->head = n;
+    if (old->next != NULL)
+        old->next->prev = n;
+    else
+        l->tail = n;
+    l->mem -= node_bytes(old->len);
+    l->mem += node_bytes(len);
+    free(old);
     return 1;
 }
