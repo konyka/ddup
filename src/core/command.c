@@ -18,6 +18,7 @@
 #include <math.h>
 
 #include "core/session.h"
+#include "core/snapshot.h"
 
 static void free_obj_cb(const char *key, size_t klen, const char *val,
                         size_t vlen, void *ctx);
@@ -34,6 +35,8 @@ void db_init(db *d)
     d->dirty = 0;
     d->maxmemory = 0;
     d->maxmemory_policy = DB_POLICY_ALLKEYS_LRU;
+    d->snapshot_path = NULL;
+    d->last_save = 0;
     d->rng_state = 0x9E3779B9u; /* nonzero xorshift seed */
 }
 
@@ -191,6 +194,17 @@ static void db_set_expiry(db *d, const char *key, size_t klen, uint64_t when_ms)
     if (!rh_get(&d->expires, key, klen, &old, &oldl))
         d->used_memory += entry_bytes(klen, 8);
     rh_set(&d->expires, key, klen, b, 8);
+}
+
+void db_install_blob(db *d, const char *key, size_t klen, const char *blob,
+                     size_t bloblen, uint64_t now_ms)
+{
+    db_set_kv(d, key, klen, blob, bloblen, now_ms);
+}
+
+void db_install_expiry(db *d, const char *key, size_t klen, uint64_t when_ms)
+{
+    db_set_expiry(d, key, klen, when_ms);
 }
 
 /* rh_each callback: free any owned object value (FLUSHDB teardown). */
@@ -2742,6 +2756,35 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
         return;
     }
 
+    if (ci_equal(name, nlen, "SAVE")) {
+        if (argc != 1) {
+            wrong_args(out, "save");
+            return;
+        }
+        if (d->snapshot_path == NULL) {
+            static const char E[] = "ERR snapshot path not configured";
+            resp_write_error(out, E, sizeof(E) - 1);
+            return;
+        }
+        if (snapshot_save(d, d->snapshot_path) != 0) {
+            static const char E[] = "ERR snapshot save failed";
+            resp_write_error(out, E, sizeof(E) - 1);
+            return;
+        }
+        d->last_save = now_ms / 1000;
+        resp_write_simple_string(out, "OK", 2);
+        return;
+    }
+
+    if (ci_equal(name, nlen, "LASTSAVE")) {
+        if (argc != 1) {
+            wrong_args(out, "lastsave");
+            return;
+        }
+        resp_write_integer(out, (long long)d->last_save);
+        return;
+    }
+
     if (ci_equal(name, nlen, "UNWATCH")) {
         if (argc != 1) {
             wrong_args(out, "unwatch");
@@ -2818,6 +2861,8 @@ static const cmd_arity CMD_ARITY[] = {
     {"unwatch", 1, 1, 0},       {"subscribe", 2, -1, 0},
     {"unsubscribe", 1, -1, 0},  {"publish", 3, 3, 0},
     {"quit", 1, 1, 0},
+    {"save", 1, 1, 0},
+    {"lastsave", 1, 1, 0},
 };
 
 /* Queue-time check: unknown command or bad arity writes the error reply,

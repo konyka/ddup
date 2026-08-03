@@ -5,6 +5,7 @@
 #include <string.h>
 
 #include "core/config.h"
+#include "pal/pal_file.h"
 #include "pal/pal_platform.h"
 #include "pal/pal_socket.h"
 #include "server/server.h"
@@ -81,6 +82,21 @@ int main(int argc, char **argv)
             return 1;
         }
         printf("AOF enabled: %s\n", aof_path);
+    } else {
+        /* AOF wins over the snapshot when both exist (Redis rule) */
+        char snap_path[1024];
+        snprintf(snap_path, sizeof(snap_path), "%s/%s", cfg.dir,
+                 cfg.dbfilename);
+        server_set_snapshot_path(s, snap_path);
+        if (pal_file_exists(snap_path)) {
+            if (server_load_snapshot(s) != 0) {
+                fprintf(stderr, "failed to load snapshot '%s'\n", snap_path);
+                server_destroy(s);
+                pal_socket_cleanup();
+                return 1;
+            }
+            printf("snapshot loaded: %s\n", snap_path);
+        }
     }
 
     signal(SIGINT, on_signal);

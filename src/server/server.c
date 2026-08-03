@@ -21,6 +21,7 @@
 #include "core/arena.h"
 #include "core/command.h"
 #include "core/session.h"
+#include "core/snapshot.h"
 #include "server/aof.h"
 #include "pal/pal_event.h"
 #include "pal/pal_socket.h"
@@ -283,6 +284,18 @@ int server_enable_aof(server *s, const char *path)
         aof_replay(&s->db, path);
     s->aof = aof_open(path);
     return s->aof != NULL ? 0 : -1;
+}
+
+void server_set_snapshot_path(server *s, const char *path)
+{
+    s->db.snapshot_path = path;
+}
+
+int server_load_snapshot(server *s)
+{
+    if (s->db.snapshot_path == NULL)
+        return -1;
+    return snapshot_load(&s->db, s->db.snapshot_path, pal_wall_ms());
 }
 
 void server_destroy(server *s)

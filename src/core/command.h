@@ -28,6 +28,8 @@ typedef struct db {
     uint64_t dirty;        /* mutation counter (AOF hook trigger) */
     uint64_t maxmemory;    /* bytes; 0 = unlimited */
     int maxmemory_policy;  /* DB_POLICY_* */
+    const char *snapshot_path; /* SAVE target (not owned; may be NULL) */
+    uint64_t last_save;    /* unix seconds of the last successful SAVE */
     uint32_t rng_state;    /* sampling PRNG (xorshift32, always nonzero) */
 } db;
 
@@ -38,6 +40,12 @@ void db_destroy(db *d);
  * monotonic per key name (never reused, even across delete/recreate). */
 void db_touch_key(db *d, const char *key, size_t klen);
 uint64_t db_key_version(db *d, const char *key, size_t klen);
+
+/* Persistence loaders: install a pre-built value blob (with accounting and
+ * LRU/version bookkeeping). Load paths only. */
+void db_install_blob(db *d, const char *key, size_t klen, const char *blob,
+                     size_t bloblen, uint64_t now_ms);
+void db_install_expiry(db *d, const char *key, size_t klen, uint64_t when_ms);
 
 /* Lazy expiration: if key has an expiry <= now_ms, delete it (and its
  * expiry entry) and return 1. Otherwise return 0. */

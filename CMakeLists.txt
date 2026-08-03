@@ -25,6 +25,7 @@ add_library(ddup_core STATIC
     src/ds/skiplist.c
     src/core/session.c
     src/core/config.c
+    src/core/snapshot.c
     src/resp/resp_parser.c
     src/resp/resp_writer.c
     src/server/server.c
@@ -98,9 +99,10 @@ ddup_add_test(test_multi tests/test_multi.c)
 ddup_add_test(test_pubsub tests/test_pubsub.c)
 ddup_add_test(test_config tests/test_config.c)
 ddup_add_test(test_aof tests/test_aof.c)
+ddup_add_test(test_snapshot tests/test_snapshot.c)
 
 add_custom_target(check
     COMMAND ${CMAKE_CTEST_COMMAND} --output-on-failure
-    DEPENDS test_pal test_socket test_event test_server test_arena test_resp_parser test_resp_writer test_resp3 test_rhtable test_command test_expire test_eviction test_hash test_list test_skiplist test_set test_zset test_session test_multi test_pubsub test_config test_aof
+    DEPENDS test_pal test_socket test_event test_server test_arena test_resp_parser test_resp_writer test_resp3 test_rhtable test_command test_expire test_eviction test_hash test_list test_skiplist test_set test_zset test_session test_multi test_pubsub test_config test_aof test_snapshot
     WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
 )

@@ -23,6 +23,11 @@ uint16_t server_port(const server *s);
  * mutating command. Returns 0 on success. */
 int server_enable_aof(server *s, const char *path);
 
+/* Point SAVE at path (not owned) and, if the file exists, load it into the
+ * db. load returns 0 on success, -1 on corrupt/missing file. */
+void server_set_snapshot_path(server *s, const char *path);
+int server_load_snapshot(server *s);
+
 /* Run exactly one event-loop iteration: wait up to timeout_ms for readiness,
  * accept new connections and service ready ones. Returns the number of
  * readiness events handled (0 = timeout). */
