@@ -481,7 +481,7 @@ static void repl_link_service(server *srv, conn *c)
         c->rcap = ncap;
     }
     n = conn_read(c, c->rbuf + c->rlen, c->rcap - c->rlen);
-    if (n == 0 || (n < 0 && !pal_would_block(pal_socket_error()))) {
+    if (n == 0 || (n < 0 && n != -2 && !pal_would_block(pal_socket_error()))) {
         repl_link_close(srv); /* link down; the retry timer reconnects */
         return;
     }
@@ -755,17 +755,23 @@ static void conn_close(server *s, size_t idx)
     s->nconns--;
 }
 
-/* Flush conn->out with a blocking send loop (see file header). */
+/* Flush conn->out; on would-block (-2, non-blocking TLS conns) the
+ * remainder is kept and retried by a later flush pass. */
 static int conn_flush(conn *c)
 {
     size_t sent = 0;
     while (sent < c->out.len) {
         ptrdiff_t n = conn_write(c, c->out.data + sent, c->out.len - sent);
+        if (n == -2)
+            break; /* would-block: keep the remainder for the next pass */
         if (n <= 0)
             return -1;
         sent += (size_t)n;
     }
-    c->out.len = 0;
+    if (sent > 0) {
+        memmove(c->out.data, c->out.data + sent, c->out.len - sent);
+        c->out.len -= sent;
+    }
     return 0;
 }
 
@@ -861,7 +867,8 @@ int server_run_once(server *s, int timeout_ms)
             }
 
             n = conn_read(c, c->rbuf + c->rlen, c->rcap - c->rlen);
-            if (n == 0 || (n < 0 && !pal_would_block(pal_socket_error()))) {
+            if (n == 0 ||
+                (n < 0 && n != -2 && !pal_would_block(pal_socket_error()))) {
                 conn_close(s, idx); /* orderly close or hard error */
                 continue;
             }

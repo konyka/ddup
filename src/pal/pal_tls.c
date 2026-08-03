@@ -110,14 +110,20 @@ ptrdiff_t pal_tls_read(pal_tls *t, void *buf, size_t n)
         return 0; /* clean close_notify */
     if (err == SSL_ERROR_SYSCALL && rc == 0)
         return 0; /* unclean close: treat as close */
+    if (err == SSL_ERROR_WANT_READ || err == SSL_ERROR_WANT_WRITE)
+        return -2;
     return -1;
 }
 
 ptrdiff_t pal_tls_write(pal_tls *t, const void *buf, size_t n)
 {
     int rc = SSL_write(t->ssl, buf, (int)n);
+    int err;
     if (rc > 0)
         return (ptrdiff_t)rc;
+    err = SSL_get_error(t->ssl, rc);
+    if (err == SSL_ERROR_WANT_READ || err == SSL_ERROR_WANT_WRITE)
+        return -2;
     return -1;
 }
 

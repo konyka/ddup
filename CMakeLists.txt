@@ -97,6 +97,7 @@ function(ddup_add_test name source)
     target_include_directories(${name} PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/tests")
     ddup_apply_options(${name})
     add_test(NAME ${name} COMMAND ${name})
+    set_tests_properties(${name} PROPERTIES TIMEOUT 180)
 endfunction()
 
 ddup_add_test(test_pal tests/test_pal.c)

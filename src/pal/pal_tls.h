@@ -32,9 +32,10 @@ int pal_tls_accept_handshake(pal_tls *t);
 /* Non-blocking handshake step (fd must be non-blocking):
  * 1 = done, 0 = want-read, 2 = want-write, -1 = error. */
 int pal_tls_handshake_nb(pal_tls *t);
-/* > 0 bytes read, 0 clean close, -1 error (incl. unclean close). */
+/* > 0 bytes read, 0 clean close, -1 error (incl. unclean close),
+ * -2 would-block (WANT_READ/WANT_WRITE on a non-blocking fd). */
 ptrdiff_t pal_tls_read(pal_tls *t, void *buf, size_t n);
-/* > 0 bytes written, -1 error. */
+/* > 0 bytes written, -1 error, -2 would-block. */
 ptrdiff_t pal_tls_write(pal_tls *t, const void *buf, size_t n);
 /* Best-effort close_notify. */
 void pal_tls_shutdown(pal_tls *t);
