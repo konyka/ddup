@@ -211,6 +211,28 @@ int rh_get(rh_table *t, const char *key, size_t klen,
     return 1;
 }
 
+int rh_get_touch(rh_table *t, const char *key, size_t klen,
+                 const char **val, size_t *vlen, uint32_t meta)
+{
+    rh_migrate_some(t);
+    uint64_t h = rh_hash(key, klen);
+    rh_entry *e = NULL;
+    long i = rh_find_in(t->slots, t->cap, h, key, klen);
+    if (i >= 0) {
+        e = &t->slots[i];
+    } else if (t->old_slots) {
+        long oi = rh_find_in(t->old_slots, t->old_cap, h, key, klen);
+        if (oi >= 0)
+            e = &t->old_slots[oi];
+    }
+    if (!e)
+        return 0;
+    e->meta = meta;
+    *val = e->kv + e->klen;
+    *vlen = e->vlen;
+    return 1;
+}
+
 void rh_set(rh_table *t, const char *key, size_t klen,
             const char *val, size_t vlen)
 {

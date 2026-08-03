@@ -43,6 +43,11 @@ void rh_destroy(rh_table *t);
 int rh_get(rh_table *t, const char *key, size_t klen,
            const char **val, size_t *vlen);
 
+/* Same as rh_get, but also sets meta in the same lookup pass (avoids a
+ * second probe for the common read+touch pattern). */
+int rh_get_touch(rh_table *t, const char *key, size_t klen,
+                 const char **val, size_t *vlen, uint32_t meta);
+
 /* Insert or overwrite. The table copies key and value. */
 void rh_set(rh_table *t, const char *key, size_t klen,
             const char *val, size_t vlen);

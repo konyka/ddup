@@ -135,15 +135,12 @@ int db_expire_if_needed(db *d, const char *key, size_t klen, uint64_t now_ms)
     return 1;
 }
 
-/* Expire-aware lookup; a hit also refreshes the LRU clock. */
+/* Expire-aware lookup; a hit also refreshes the LRU clock (single probe). */
 static int db_get(db *d, const char *key, size_t klen, const char **val,
                   size_t *vlen, uint64_t now_ms)
 {
     db_expire_if_needed(d, key, klen, now_ms);
-    if (!rh_get(&d->table, key, klen, val, vlen))
-        return 0;
-    rh_touch(&d->table, key, klen, lru_clock(now_ms));
-    return 1;
+    return rh_get_touch(&d->table, key, klen, val, vlen, lru_clock(now_ms));
 }
 
 /* Overwrite a value blob (tagged; see ds/obj.h); clears any expiry;
