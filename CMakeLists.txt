@@ -86,6 +86,11 @@ add_executable(ddup-bench bench/ddup-bench.c)
 target_link_libraries(ddup-bench PRIVATE ddup_core)
 ddup_apply_options(ddup-bench)
 
+# In-process hot-path benchmark (profiling harness, not a ctest test)
+add_executable(bench_core bench/bench_core.c)
+target_link_libraries(bench_core PRIVATE ddup_core)
+ddup_apply_options(bench_core)
+
 # ---------------------------------------------------------------------------
 # Tests (TDD: every module has a test target; `ctest` or `cmake --build . --target check`)
 # ---------------------------------------------------------------------------
