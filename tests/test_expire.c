@@ -253,11 +253,83 @@ static void test_overwrite_clears_ttl(void)
     db_destroy(&d);
 }
 
+static void test_active_expire(void)
+{
+    db d;
+    resp_buf out;
+    char name[32];
+    int i;
+    db_init(&d);
+    resp_buf_init(&out);
+
+    /* 100 keys expiring at T0+1000 */
+    for (i = 0; i < 100; i++) {
+        snprintf(name, sizeof(name), "a%03d", i);
+        exec_cmd(&d, T0, &out, 3, "SET", name, "v");
+        exec_cmd(&d, T0, &out, 3, "PEXPIREAT", name, "1001000");
+    }
+    DD_CHECK_EQ_INT(100, (long long)rh_size(&d.table));
+
+    /* before expiry: nothing collected */
+    DD_CHECK_EQ_INT(0, (long long)db_active_expire(&d, T0, 20));
+    DD_CHECK_EQ_INT(100, (long long)rh_size(&d.table));
+
+    /* after expiry: a single cycle collects all 100 (repeats while
+     * >25% of the sample is expired) */
+    DD_CHECK_EQ_INT(100, (long long)db_active_expire(&d, T0 + 2000, 20));
+    DD_CHECK_EQ_INT(0, (long long)rh_size(&d.table));
+    DD_CHECK_EQ_INT(0, (long long)rh_size(&d.expires));
+    DD_CHECK_EQ_INT(100, (long long)d.expired_keys);
+
+    /* keys with future expiry are kept */
+    for (i = 0; i < 20; i++) {
+        snprintf(name, sizeof(name), "b%03d", i);
+        exec_cmd(&d, T0, &out, 3, "SET", name, "v");
+        exec_cmd(&d, T0, &out, 3, "PEXPIREAT", name, "1100000");
+    }
+    DD_CHECK_EQ_INT(0, (long long)db_active_expire(&d, T0, 20));
+    DD_CHECK_EQ_INT(20, (long long)rh_size(&d.table));
+
+    resp_buf_free(&out);
+    db_destroy(&d);
+}
+
+static void test_dbsize_flushdb(void)
+{
+    db d;
+    resp_buf out;
+    db_init(&d);
+    resp_buf_init(&out);
+
+    exec_cmd(&d, T0, &out, 1, "DBSIZE");
+    EXPECT(out, ":0\r\n");
+    exec_cmd(&d, T0, &out, 3, "SET", "a", "1");
+    EXPECT(out, "+OK\r\n");
+    exec_cmd(&d, T0, &out, 5, "SET", "b", "2", "EX", "100");
+    EXPECT(out, "+OK\r\n");
+    exec_cmd(&d, T0, &out, 1, "DBSIZE");
+    EXPECT(out, ":2\r\n");
+
+    exec_cmd(&d, T0, &out, 1, "FLUSHDB");
+    EXPECT(out, "+OK\r\n");
+    exec_cmd(&d, T0, &out, 1, "DBSIZE");
+    EXPECT(out, ":0\r\n");
+    exec_cmd(&d, T0, &out, 2, "GET", "a");
+    EXPECT(out, "$-1\r\n");
+    /* expiry entries were cleared too */
+    DD_CHECK_EQ_INT(0, (long long)rh_size(&d.expires));
+
+    resp_buf_free(&out);
+    db_destroy(&d);
+}
+
 int main(void)
 {
     DD_RUN(test_expire_and_ttl);
     DD_RUN(test_expire_variants);
     DD_RUN(test_set_options);
     DD_RUN(test_overwrite_clears_ttl);
+    DD_RUN(test_active_expire);
+    DD_RUN(test_dbsize_flushdb);
     return DD_TEST_SUMMARY();
 }

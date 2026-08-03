@@ -19,6 +19,7 @@ void db_init(db *d)
     rh_init(&d->table);
     rh_init(&d->expires);
     d->expired_keys = 0;
+    d->rng_state = 0x9E3779B9u; /* nonzero xorshift seed */
 }
 
 void db_destroy(db *d)
@@ -85,6 +86,53 @@ static void db_set_expiry(db *d, const char *key, size_t klen, uint64_t when_ms)
     char b[8];
     put_u64(b, when_ms);
     rh_set(&d->expires, key, klen, b, 8);
+}
+
+/* xorshift32 over db->rng_state (deterministic; tests may reseed). */
+static uint32_t db_rand(db *d)
+{
+    uint32_t x = d->rng_state;
+    x ^= x << 13;
+    x ^= x >> 17;
+    x ^= x << 5;
+    d->rng_state = x;
+    return x;
+}
+
+size_t db_active_expire(db *d, uint64_t now_ms, int max_samples)
+{
+    size_t expired_total = 0;
+    int iter;
+    if (max_samples <= 0)
+        return 0;
+    for (iter = 0; iter < 10; iter++) {
+        int sampled = 0, expired = 0;
+        int i;
+        for (i = 0; i < max_samples; i++) {
+            const char *key, *val;
+            size_t klen, vlen;
+            if (!rh_random_entry(&d->expires, db_rand(d), &key, &klen, &val,
+                                 &vlen))
+                break; /* expires table empty */
+            sampled++;
+            if (vlen == 8 && get_u64(val) <= now_ms) {
+                /* the entry is freed on delete: copy the key first */
+                char stackbuf[256];
+                char *kb = stackbuf;
+                if (klen > sizeof(stackbuf))
+                    kb = (char *)malloc(klen);
+                memcpy(kb, key, klen);
+                db_expire_if_needed(d, kb, klen, now_ms);
+                if (kb != stackbuf)
+                    free(kb);
+                expired++;
+            }
+        }
+        expired_total += (size_t)expired;
+        if (sampled == 0 || expired * 4 <= sampled)
+            break; /* <= 25% expired: stop */
+    }
+    return expired_total;
 }
 
 /* ------------------------------------------------------------------ */
@@ -550,6 +598,29 @@ void command_execute_at(db *d, const resp_value *argv, size_t argc,
             goto bad_type;
         db_expire_if_needed(d, k, kl, now_ms);
         resp_write_integer(out, rh_del(&d->expires, k, kl));
+        return;
+    }
+
+    if (ci_equal(name, nlen, "DBSIZE")) {
+        if (argc != 1) {
+            wrong_args(out, "dbsize");
+            return;
+        }
+        /* O(1) size; may include expired keys not yet collected. */
+        resp_write_integer(out, (long long)rh_size(&d->table));
+        return;
+    }
+
+    if (ci_equal(name, nlen, "FLUSHDB")) {
+        if (argc != 1) {
+            wrong_args(out, "flushdb");
+            return;
+        }
+        rh_destroy(&d->table);
+        rh_destroy(&d->expires);
+        rh_init(&d->table);
+        rh_init(&d->expires);
+        resp_write_simple_string(out, "OK", 2);
         return;
     }
 

@@ -49,6 +49,13 @@ void rh_set(rh_table *t, const char *key, size_t klen,
 /* Returns 1 if the key existed and was removed. */
 int rh_del(rh_table *t, const char *key, size_t klen);
 
+/* Sample a pseudo-random live entry: start at bucket (rand & (cap-1)) and
+ * scan forward for the first occupied slot. Returns 1 and sets views into
+ * the entry (valid until the next table mutation), 0 if the table is
+ * empty. Used by active expiration and eviction sampling. */
+int rh_random_entry(rh_table *t, uint32_t rand, const char **key, size_t *klen,
+                    const char **val, size_t *vlen);
+
 size_t rh_size(const rh_table *t);
 
 #endif /* DDUP_RHTABLE_H */

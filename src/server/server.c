@@ -21,6 +21,7 @@
 #include "core/command.h"
 #include "pal/pal_event.h"
 #include "pal/pal_socket.h"
+#include "pal/pal_time.h"
 #include "resp/resp_parser.h"
 #include "resp/resp_writer.h"
 
@@ -46,6 +47,7 @@ struct server {
     size_t nconns;
     size_t cap;
     uint16_t port;
+    uint64_t last_active_expire; /* pal_now_ms of the last active cycle */
 };
 
 static void conn_close(server *s, size_t idx);
@@ -178,8 +180,19 @@ static int conn_flush(conn *c)
 int server_run_once(server *s, int timeout_ms)
 {
     pal_event evs[SERVER_MAX_EVENTS];
-    int nev = pal_loop_wait(s->loop, evs, SERVER_MAX_EVENTS, timeout_ms);
+    int nev;
     int i;
+
+    /* active expiration: at most one cycle per 100 ms of monotonic time */
+    {
+        uint64_t now = pal_now_ms();
+        if (now - s->last_active_expire >= 100) {
+            s->last_active_expire = now;
+            db_active_expire(&s->db, pal_wall_ms(), 20);
+        }
+    }
+
+    nev = pal_loop_wait(s->loop, evs, SERVER_MAX_EVENTS, timeout_ms);
     if (nev <= 0)
         return nev;
 

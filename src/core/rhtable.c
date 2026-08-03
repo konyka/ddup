@@ -244,6 +244,37 @@ void rh_set(rh_table *t, const char *key, size_t klen,
     t->size++;
 }
 
+/* First occupied slot at or after start (wrapping), or NULL. */
+static const rh_entry *rh_scan_occupied(const rh_entry *slots, size_t cap,
+                                        size_t start)
+{
+    for (size_t k = 0; k < cap; k++) {
+        const rh_entry *e = &slots[(start + k) & (cap - 1)];
+        if (e->psl >= 0)
+            return e;
+    }
+    return NULL;
+}
+
+int rh_random_entry(rh_table *t, uint32_t rand, const char **key, size_t *klen,
+                    const char **val, size_t *vlen)
+{
+    const rh_entry *e = NULL;
+    if (t->size == 0)
+        return 0;
+    e = rh_scan_occupied(t->slots, t->cap, (size_t)rand & (t->cap - 1));
+    if (e == NULL && t->old_slots != NULL)
+        e = rh_scan_occupied(t->old_slots, t->old_cap,
+                             (size_t)rand & (t->old_cap - 1));
+    if (e == NULL)
+        return 0;
+    *key = e->kv;
+    *klen = e->klen;
+    *val = e->kv + e->klen;
+    *vlen = e->vlen;
+    return 1;
+}
+
 int rh_del(rh_table *t, const char *key, size_t klen)
 {
     rh_migrate_some(t);
