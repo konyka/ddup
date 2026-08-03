@@ -78,4 +78,27 @@ jobs:
           run: |
             cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
             cmake --build build
-            ctest --test-dir build --output-on-failure
+            ctest --test-dir build --output-on-failure || \
+              cp build/Testing/Temporary/LastTest.log lasttest-freebsd.log
+      - name: Publish failure logs
+        if: failure()
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -x
+          REPO_URL="https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          cd "$RUNNER_TEMP"
+          rm -rf cilog
+          if ! git clone --quiet --branch ci-logs-freebsd --single-branch "$REPO_URL" cilog; then
+            git clone --quiet --no-checkout --depth 1 "$REPO_URL" cilog
+            git -C cilog checkout --orphan ci-logs-freebsd
+            git -C cilog rm -rf . 2>/dev/null || true
+          fi
+          cd cilog
+          rm -f *.log
+          cp "$GITHUB_WORKSPACE/lasttest-freebsd.log" . 2>/dev/null || true
+          git config user.email ci@ddup.local
+          git config user.name "ddup-ci"
+          git add -A
+          git commit -m "CI failure logs: freebsd @ ${GITHUB_SHA:0:7}" || exit 0
+          git push -f origin ci-logs-freebsd
