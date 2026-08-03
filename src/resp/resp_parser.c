@@ -7,6 +7,7 @@
 #include "resp/resp_parser.h"
 
 #include <limits.h>
+#include <math.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -117,11 +118,11 @@ static int parse_at(const char *start, const char *end, const char **pos,
         case ',': {
             out->type = RESP_DOUBLE;
             if (crlf - p == 3 && memcmp(p, "inf", 3) == 0)
-                out->dbl = 1.0 / 0.0;
+                out->dbl = INFINITY;
             else if (crlf - p == 4 && memcmp(p, "-inf", 4) == 0)
-                out->dbl = -1.0 / 0.0;
+                out->dbl = -INFINITY;
             else if (crlf - p == 3 && memcmp(p, "nan", 3) == 0)
-                out->dbl = 0.0 / 0.0;
+                out->dbl = NAN;
             else {
                 /* strtod needs NUL termination; copy into a small arena
                  * scratch buffer (payloads are short by design). */

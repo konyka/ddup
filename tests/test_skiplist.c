@@ -1,4 +1,5 @@
 /* test_skiplist.c - unit + differential tests for src/ds/skiplist. */
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -125,8 +126,8 @@ static void test_ranges(void)
         DD_CHECK_EQ_INT(4, (long long)zsl_count_in_range(z, &r));
     }
     {
-        zrangespec all = {-1.0 / 0.0, 1.0 / 0.0, 0, 0};
-        zrangespec hi = {8.0, 1.0 / 0.0, 0, 0};
+        zrangespec all = {-INFINITY, INFINITY, 0, 0};
+        zrangespec hi = {8.0, INFINITY, 0, 0};
         zrangespec none = {20.0, 30.0, 0, 0};
         DD_CHECK_EQ_INT(10, (long long)zsl_count_in_range(z, &all));
         DD_CHECK_EQ_INT(3, (long long)zsl_count_in_range(z, &hi));
