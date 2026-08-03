@@ -22,6 +22,7 @@ add_library(ddup_core STATIC
     src/core/command.c
     src/resp/resp_parser.c
     src/resp/resp_writer.c
+    src/server/server.c
 )
 target_include_directories(ddup_core PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/src")
 ddup_apply_options(ddup_core)
@@ -57,6 +58,7 @@ endfunction()
 ddup_add_test(test_pal tests/test_pal.c)
 ddup_add_test(test_socket tests/test_socket.c)
 ddup_add_test(test_event tests/test_event.c)
+ddup_add_test(test_server tests/test_server.c)
 ddup_add_test(test_arena tests/test_arena.c)
 ddup_add_test(test_resp_parser tests/test_resp_parser.c)
 ddup_add_test(test_resp_writer tests/test_resp_writer.c)
@@ -66,6 +68,6 @@ ddup_add_test(test_command tests/test_command.c)
 
 add_custom_target(check
     COMMAND ${CMAKE_CTEST_COMMAND} --output-on-failure
-    DEPENDS test_pal test_socket test_event test_arena test_resp_parser test_resp_writer test_resp3 test_rhtable test_command
+    DEPENDS test_pal test_socket test_event test_server test_arena test_resp_parser test_resp_writer test_resp3 test_rhtable test_command
     WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
 )
