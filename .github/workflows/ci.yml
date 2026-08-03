@@ -76,10 +76,11 @@ jobs:
         with:
           prepare: pkg install -y cmake
           run: |
-            cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
-            cmake --build build
-            ctest --test-dir build --output-on-failure || \
-              cp build/Testing/Temporary/LastTest.log lasttest-freebsd.log
+            {
+              cmake -S . -B build -DCMAKE_BUILD_TYPE=Release &&
+              cmake --build build &&
+              ctest --test-dir build --output-on-failure
+            } 2>&1 | tee freebsd-full.log
       - name: Publish failure logs
         if: failure()
         env:
@@ -96,6 +97,7 @@ jobs:
           fi
           cd cilog
           rm -f *.log
+          cp "$GITHUB_WORKSPACE/freebsd-full.log" . 2>/dev/null || true
           cp "$GITHUB_WORKSPACE/lasttest-freebsd.log" . 2>/dev/null || true
           git config user.email ci@ddup.local
           git config user.name "ddup-ci"
