@@ -35,6 +35,19 @@ typedef socklen_t pal_socklen_t;
 
 #endif
 
+/* Suppress SIGPIPE on platforms without MSG_NOSIGNAL (macOS): writing to a
+ * peer-closed socket would otherwise kill the process. Must be applied to
+ * every socket — it is not inherited across accept(). */
+static void pal_no_sigpipe(pal_socket_t fd)
+{
+#if !DDUP_OS_WINDOWS && !defined(MSG_NOSIGNAL) && defined(SO_NOSIGPIPE)
+    int one = 1;
+    setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &one, (pal_socklen_t)sizeof(one));
+#else
+    (void)fd;
+#endif
+}
+
 int pal_socket_init(void)
 {
 #if DDUP_OS_WINDOWS
@@ -171,6 +184,7 @@ pal_socket_t pal_tcp_connect(const char *host, uint16_t port)
                                   ai->ai_protocol);
         if (fd == PAL_SOCKET_INVALID)
             continue;
+        pal_no_sigpipe(fd);
         if (connect(fd, ai->ai_addr, (pal_socklen_t)ai->ai_addrlen) == 0)
             break;
         pal_close(fd);
@@ -182,7 +196,9 @@ pal_socket_t pal_tcp_connect(const char *host, uint16_t port)
 
 pal_socket_t pal_accept(pal_socket_t listen_fd)
 {
-    return (pal_socket_t)accept(listen_fd, NULL, NULL);
+    pal_socket_t fd = (pal_socket_t)accept(listen_fd, NULL, NULL);
+    pal_no_sigpipe(fd);
+    return fd;
 }
 
 ptrdiff_t pal_recv(pal_socket_t fd, void *buf, size_t n)
