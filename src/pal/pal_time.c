@@ -31,6 +31,16 @@ uint64_t pal_now_ms(void)
     return pal_now_us() / 1000ULL;
 }
 
+uint64_t pal_wall_ms(void)
+{
+    FILETIME ft;
+    uint64_t ticks;
+    GetSystemTimeAsFileTime(&ft);
+    /* 100-ns ticks since 1601-01-01 -> ms since 1970-01-01. */
+    ticks = ((uint64_t)ft.dwHighDateTime << 32) | (uint64_t)ft.dwLowDateTime;
+    return ticks / 10000ULL - 11644473600000ULL;
+}
+
 #else /* POSIX */
 
 #include <time.h>
@@ -45,6 +55,13 @@ uint64_t pal_now_us(void)
 uint64_t pal_now_ms(void)
 {
     return pal_now_us() / 1000ULL;
+}
+
+uint64_t pal_wall_ms(void)
+{
+    struct timespec ts;
+    clock_gettime(CLOCK_REALTIME, &ts);
+    return (uint64_t)ts.tv_sec * 1000ULL + (uint64_t)ts.tv_nsec / 1000000ULL;
 }
 
 #endif
