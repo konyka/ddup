@@ -17,6 +17,8 @@
 
 #include <math.h>
 
+#include "core/session.h"
+
 static void free_obj_cb(const char *key, size_t klen, const char *val,
                         size_t vlen, void *ctx);
 
@@ -756,9 +758,10 @@ static void cmd_ttl(db *d, const resp_value *argv, resp_buf *out, uint64_t now,
 /* dispatch                                                           */
 /* ------------------------------------------------------------------ */
 
-static void command_dispatch(db *d, const resp_value *argv, size_t argc,
+static void command_dispatch(session *s, const resp_value *argv, size_t argc,
                              resp_buf *out, uint64_t now_ms)
 {
+    db *d = s->d;
     if (argc == 0) {
         resp_write_error(out, "ERR empty command", 17);
         return;
@@ -2581,13 +2584,28 @@ bad_type:
     resp_write_error(out, "ERR invalid argument type", 24);
 }
 
+void session_execute_at(session *s, const resp_value *argv, size_t argc,
+                        resp_buf *out, uint64_t now_ms)
+{
+    command_dispatch(s, argv, argc, out, now_ms);
+    /* allkeys-lru eviction runs after write commands (and CONFIG SET) */
+    if (s->d->maxmemory_policy == DB_POLICY_ALLKEYS_LRU)
+        db_evict_if_needed(s->d);
+}
+
+void session_execute(session *s, const resp_value *argv, size_t argc,
+                     resp_buf *out)
+{
+    session_execute_at(s, argv, argc, out, pal_wall_ms());
+}
+
 void command_execute_at(db *d, const resp_value *argv, size_t argc,
                         resp_buf *out, uint64_t now_ms)
 {
-    command_dispatch(d, argv, argc, out, now_ms);
-    /* allkeys-lru eviction runs after write commands (and CONFIG SET) */
-    if (d->maxmemory_policy == DB_POLICY_ALLKEYS_LRU)
-        db_evict_if_needed(d);
+    session s;
+    session_init(&s, d);
+    session_execute_at(&s, argv, argc, out, now_ms);
+    session_release(&s);
 }
 
 void command_execute(db *d, const resp_value *argv, size_t argc, resp_buf *out)

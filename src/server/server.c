@@ -19,6 +19,7 @@
 
 #include "core/arena.h"
 #include "core/command.h"
+#include "core/session.h"
 #include "pal/pal_event.h"
 #include "pal/pal_socket.h"
 #include "pal/pal_time.h"
@@ -37,6 +38,7 @@ typedef struct conn {
     size_t rcap; /* allocated size of rbuf */
     resp_buf out;
     arena arena;
+    session *sess; /* per-connection command context (MULTI/WATCH/pubsub) */
 } conn;
 
 struct server {
@@ -52,15 +54,18 @@ struct server {
 
 static void conn_close(server *s, size_t idx);
 
-static conn *conn_create(pal_socket_t fd)
+static conn *conn_create(pal_socket_t fd, db *d)
 {
     conn *c = (conn *)calloc(1, sizeof(*c));
     if (c == NULL)
         return NULL;
     c->fd = fd;
+    c->sess = session_create(d);
     c->rcap = SERVER_RECV_CHUNK;
     c->rbuf = (char *)malloc(c->rcap);
-    if (c->rbuf == NULL) {
+    if (c->rbuf == NULL || c->sess == NULL) {
+        session_free(c->sess);
+        free(c->rbuf);
         free(c);
         return NULL;
     }
@@ -74,6 +79,7 @@ static void conn_free(conn *c)
     if (c == NULL)
         return;
     pal_close(c->fd);
+    session_free(c->sess);
     free(c->rbuf);
     resp_buf_free(&c->out);
     arena_destroy(&c->arena);
@@ -134,7 +140,7 @@ static void server_accept(server *s)
     conn *c;
     if (fd == PAL_SOCKET_INVALID)
         return;
-    c = conn_create(fd);
+    c = conn_create(fd, &s->db);
     if (c == NULL) {
         pal_close(fd);
         return;
@@ -249,7 +255,7 @@ int server_run_once(server *s, int timeout_ms)
                         protocol_error = 1;
                         break;
                     }
-                    command_execute(&s->db, v.items, v.count, &c->out);
+                    session_execute(c->sess, v.items, v.count, &c->out);
                     arena_reset(&c->arena);
                     off += (size_t)used;
                 }
