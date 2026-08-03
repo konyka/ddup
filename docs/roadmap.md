@@ -40,4 +40,6 @@
   - [x] 剖析驱动优化：bench_core 进程内基准 + expires 空表早退、无 WATCH 免
     keyvers 写入、get+touch 单探测、传播 fan-out O(1)（CPU 侧 SET +71%/
     GET +24%，端到端 +8–11%）（Phase 7.3）
+  - [x] 非阻塞写出缓冲：连接全非阻塞，out 缓冲 + writable 事件驱动 flush，
+    慢客户端不阻塞主循环（Phase 7.4）
   - [ ] PSYNC 部分重同步、复制积压区利用、链式复制拓扑测试

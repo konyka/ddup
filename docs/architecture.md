@@ -204,6 +204,20 @@ DBSIZE 为 O(1)，可能计入尚未回收的过期 key。
   （握手在 Windows  runner 上超时，调查中）；TLS 库与服务器集成代码在
   Windows 正常编译，Linux/macOS/FreeBSD CI 覆盖完整 test_tls。
 
+## 非阻塞写出（Phase 7.4）
+
+- 所有 accept 的连接 `pal_set_nonblocking(fd, 1)`；读路径把 would-block
+  视为"本轮无数据"（仅 0/硬错误才关闭）。
+- 每个 conn 的回复先写入 out 缓冲（resp_buf），随后立即尽力 flush：
+  pal_send/pal_tls_write 直到 would-block（普通 socket 经 pal_would_block
+  判定，TLS 经 -2 约定）。剩余字节保留，conn 通过 pal_loop_mod 注册
+  read+write；可写事件到达时继续 flush，全部发完改回 read-only。
+  want_write 状态记忆避免重复 mod 系统调用。
+- 慢副本（replica conn）pending 输出超过 16MB 仍按原策略丢弃（须重新
+  SYNC）。SYNC 快照帧走同一 out 缓冲路径，无阻塞发送循环残留。
+- 单线程服务器不再会被停滞客户端拖死：socket 级测试覆盖 2000 条流水
+  命令、慢客户端并行服务、分片读取恢复。
+
 ## 目录结构
 
 ```
@@ -214,9 +228,9 @@ src/core/    KV 存储、哈希表、过期、淘汰、命令分发、session、
 src/ds/      对象类型：obj（tagged blob、Hash 嵌套表、List 双链表、Set、
              ZSet dict+skiplist）、skiplist（无 span 跳表）（Phase 5.1/5.2）
 src/server/  连接与服务器主循环（Phase 3）、aof（Phase 6）：单线程事件循环、
-             recv 缓冲按需增长、解析→执行→推进零拷贝流水线；当前连接为阻塞
-             socket（单次 recv + 阻塞发送循环），非阻塞写出缓冲随
-             thread-per-core 阶段引入
+             recv 缓冲按需增长、解析→执行→推进零拷贝流水线；连接全部
+             非阻塞（Phase 7.4）：写出经 out 缓冲 + writable 事件驱动，
+             慢客户端不再阻塞主循环（详见 architecture 网络层说明）
 tests/       单元测试（test.h 自研框架）+ 集成测试
 bench/       压测客户端 ddup-bench（Phase 3，非 ctest 目标）
 ```
