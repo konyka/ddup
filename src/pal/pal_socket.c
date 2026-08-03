@@ -1,0 +1,227 @@
+/* pal_socket.c - cross-platform TCP socket wrapper; see pal_socket.h.
+ *
+ * This file is one of the few places where platform ifdefs are allowed
+ * (project rule: platform code lives only under src/pal/).
+ */
+#include "pal/pal_socket.h"
+
+#include <stdio.h>
+#include <string.h>
+
+#if DDUP_OS_WINDOWS
+
+#  include <winsock2.h>
+#  include <ws2tcpip.h>
+
+typedef int pal_socklen_t;
+
+#else /* POSIX */
+
+#  include <errno.h>
+#  include <fcntl.h>
+#  include <netdb.h>
+#  include <netinet/in.h>
+#  include <netinet/tcp.h>
+#  include <sys/socket.h>
+#  include <unistd.h>
+
+typedef socklen_t pal_socklen_t;
+
+#  ifdef MSG_NOSIGNAL
+#    define PAL_SEND_FLAGS MSG_NOSIGNAL
+#  else
+#    define PAL_SEND_FLAGS 0
+#  endif
+
+#endif
+
+int pal_socket_init(void)
+{
+#if DDUP_OS_WINDOWS
+    WSADATA wsa;
+    return WSAStartup(MAKEWORD(2, 2), &wsa) == 0 ? 0 : -1;
+#else
+    return 0;
+#endif
+}
+
+void pal_socket_cleanup(void)
+{
+#if DDUP_OS_WINDOWS
+    WSACleanup();
+#endif
+}
+
+int pal_socket_error(void)
+{
+#if DDUP_OS_WINDOWS
+    return WSAGetLastError();
+#else
+    return errno;
+#endif
+}
+
+int pal_would_block(int err)
+{
+#if DDUP_OS_WINDOWS
+    return err == WSAEWOULDBLOCK;
+#else
+    return err == EAGAIN || err == EWOULDBLOCK;
+#endif
+}
+
+int pal_set_nonblocking(pal_socket_t fd, int on)
+{
+#if DDUP_OS_WINDOWS
+    u_long mode = on ? 1u : 0u;
+    return ioctlsocket((SOCKET)fd, FIONBIO, &mode) == 0 ? 0 : -1;
+#else
+    int flags = fcntl(fd, F_GETFL, 0);
+    if (flags < 0)
+        return -1;
+    if (on)
+        flags |= O_NONBLOCK;
+    else
+        flags &= ~O_NONBLOCK;
+    return fcntl(fd, F_SETFL, flags) == 0 ? 0 : -1;
+#endif
+}
+
+/* Set the usual ddup socket options on a listener. */
+static void pal_listen_opts(pal_socket_t fd)
+{
+#if DDUP_OS_WINDOWS
+    /* SO_EXCLUSIVEADDRUSE prevents port hijacking; SO_REUSEADDR on Windows
+     * has dangerously different semantics than on POSIX. */
+    int one = 1;
+    setsockopt((SOCKET)fd, SOL_SOCKET, SO_EXCLUSIVEADDRUSE,
+               (const char *)&one, (pal_socklen_t)sizeof(one));
+#else
+    int one = 1;
+    setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &one, (pal_socklen_t)sizeof(one));
+#endif
+}
+
+pal_socket_t pal_tcp_listen(const char *host, uint16_t port, int backlog,
+                            uint16_t *bound_port)
+{
+    char port_str[8];
+    struct addrinfo hints;
+    struct addrinfo *res = NULL;
+    struct addrinfo *ai;
+    pal_socket_t fd = PAL_SOCKET_INVALID;
+
+    snprintf(port_str, sizeof(port_str), "%u", (unsigned)port);
+    memset(&hints, 0, sizeof(hints));
+    hints.ai_family = AF_UNSPEC;
+    hints.ai_socktype = SOCK_STREAM;
+    if (host == NULL)
+        hints.ai_flags = AI_PASSIVE;
+
+    if (getaddrinfo(host, port_str, &hints, &res) != 0)
+        return PAL_SOCKET_INVALID;
+
+    for (ai = res; ai != NULL; ai = ai->ai_next) {
+        fd = (pal_socket_t)socket(ai->ai_family, ai->ai_socktype,
+                                  ai->ai_protocol);
+        if (fd == PAL_SOCKET_INVALID)
+            continue;
+        pal_listen_opts(fd);
+        if (bind(fd, ai->ai_addr, (pal_socklen_t)ai->ai_addrlen) != 0 ||
+            listen(fd, backlog) != 0) {
+            pal_close(fd);
+            fd = PAL_SOCKET_INVALID;
+            continue;
+        }
+        break;
+    }
+    freeaddrinfo(res);
+
+    if (fd != PAL_SOCKET_INVALID && bound_port != NULL) {
+        struct sockaddr_storage ss;
+        pal_socklen_t sl = (pal_socklen_t)sizeof(ss);
+        if (getsockname(fd, (struct sockaddr *)&ss, &sl) == 0) {
+            if (ss.ss_family == AF_INET)
+                *bound_port = ntohs(((struct sockaddr_in *)&ss)->sin_port);
+            else if (ss.ss_family == AF_INET6)
+                *bound_port = ntohs(((struct sockaddr_in6 *)&ss)->sin6_port);
+        }
+    }
+    return fd;
+}
+
+pal_socket_t pal_tcp_connect(const char *host, uint16_t port)
+{
+    char port_str[8];
+    struct addrinfo hints;
+    struct addrinfo *res = NULL;
+    struct addrinfo *ai;
+    pal_socket_t fd = PAL_SOCKET_INVALID;
+
+    snprintf(port_str, sizeof(port_str), "%u", (unsigned)port);
+    memset(&hints, 0, sizeof(hints));
+    hints.ai_family = AF_UNSPEC;
+    hints.ai_socktype = SOCK_STREAM;
+
+    if (getaddrinfo(host, port_str, &hints, &res) != 0)
+        return PAL_SOCKET_INVALID;
+
+    for (ai = res; ai != NULL; ai = ai->ai_next) {
+        fd = (pal_socket_t)socket(ai->ai_family, ai->ai_socktype,
+                                  ai->ai_protocol);
+        if (fd == PAL_SOCKET_INVALID)
+            continue;
+        if (connect(fd, ai->ai_addr, (pal_socklen_t)ai->ai_addrlen) == 0)
+            break;
+        pal_close(fd);
+        fd = PAL_SOCKET_INVALID;
+    }
+    freeaddrinfo(res);
+    return fd;
+}
+
+pal_socket_t pal_accept(pal_socket_t listen_fd)
+{
+    return (pal_socket_t)accept(listen_fd, NULL, NULL);
+}
+
+ptrdiff_t pal_recv(pal_socket_t fd, void *buf, size_t n)
+{
+#if DDUP_OS_WINDOWS
+    int rc = recv((SOCKET)fd, (char *)buf, (int)n, 0);
+    if (rc == SOCKET_ERROR)
+        return -1;
+    return (ptrdiff_t)rc;
+#else
+    ssize_t rc = recv(fd, buf, n, 0);
+    if (rc < 0)
+        return -1;
+    return (ptrdiff_t)rc;
+#endif
+}
+
+ptrdiff_t pal_send(pal_socket_t fd, const void *buf, size_t n)
+{
+#if DDUP_OS_WINDOWS
+    int rc = send((SOCKET)fd, (const char *)buf, (int)n, 0);
+    if (rc == SOCKET_ERROR)
+        return -1;
+    return (ptrdiff_t)rc;
+#else
+    ssize_t rc = send(fd, buf, n, PAL_SEND_FLAGS);
+    if (rc < 0)
+        return -1;
+    return (ptrdiff_t)rc;
+#endif
+}
+
+void pal_close(pal_socket_t fd)
+{
+    if (fd == PAL_SOCKET_INVALID)
+        return;
+#if DDUP_OS_WINDOWS
+    closesocket((SOCKET)fd);
+#else
+    close(fd);
+#endif
+}
