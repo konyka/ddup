@@ -112,6 +112,9 @@ int db_expire_if_needed(db *d, const char *key, size_t klen, uint64_t now_ms)
 {
     const char *v;
     size_t vl;
+    /* fast path: nothing has a TTL (O(1), skips the expires-table lookup) */
+    if (rh_size(&d->expires) == 0)
+        return 0;
     if (!rh_get(&d->expires, key, klen, &v, &vl) || vl != 8)
         return 0;
     if (get_u64(v) > now_ms)
