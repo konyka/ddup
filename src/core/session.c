@@ -30,6 +30,8 @@ void session_watch_clear(session *s)
     size_t i;
     for (i = 0; i < s->nwatch; i++)
         free(s->watches[i].key);
+    if (s->d != NULL && s->d->watch_refs >= s->nwatch)
+        s->d->watch_refs -= s->nwatch;
     s->nwatch = 0;
 }
 
@@ -120,4 +122,6 @@ void session_watch_add(session *s, const char *key, size_t klen,
     w->klen = klen;
     w->version = version;
     w->epoch = epoch;
+    if (s->d != NULL)
+        s->d->watch_refs++;
 }

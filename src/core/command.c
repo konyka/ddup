@@ -28,6 +28,7 @@ void db_init(db *d)
     rh_init(&d->table);
     rh_init(&d->expires);
     rh_init(&d->keyvers);
+    d->watch_refs = 0;
     d->flush_epoch = 0;
     d->expired_keys = 0;
     d->evicted_keys = 0;
@@ -80,11 +81,14 @@ void db_touch_key(db *d, const char *key, size_t klen)
     size_t vl;
     uint64_t ver = 0;
     char b[8];
+    d->dirty++;
+    /* version bumps are only needed while at least one WATCH is active */
+    if (d->watch_refs == 0)
+        return;
     if (rh_get(&d->keyvers, key, klen, &v, &vl) && vl == 8)
         ver = get_u64(v);
     put_u64(b, ver + 1);
     rh_set(&d->keyvers, key, klen, b, 8);
-    d->dirty++;
 }
 
 uint64_t db_key_version(db *d, const char *key, size_t klen)

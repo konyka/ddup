@@ -21,6 +21,7 @@ typedef struct db {
     rh_table table;
     rh_table expires;
     rh_table keyvers;  /* WATCH: key -> uint64 modification version */
+    uint64_t watch_refs;  /* active watch entries; 0 = skip keyvers writes */
     uint64_t flush_epoch; /* bumped by FLUSHDB (invalidates all watches) */
     uint64_t expired_keys; /* lazy + active expirations */
     uint64_t evicted_keys;
