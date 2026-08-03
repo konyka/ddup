@@ -21,6 +21,10 @@
   DBSIZE、FLUSHDB、增量内存记账
 - [ ] **Phase 5 — 复杂数据结构**
   Hash/List/Set/ZSet（跳表）、MULTI/EXEC/DISCARD/WATCH、SUBSCRIBE/PUBLISH
+  - [x] 对象存储模型（tagged value blob）+ WRONGTYPE 矩阵（Phase 5.1）
+  - [x] Hash：HSET/HGET/HDEL/HEXISTS/HLEN/HGETALL/HKEYS/HVALS/HMSET/HMGET/HINCRBY/HSETNX（Phase 5.1）
+  - [x] List：LPUSH/RPUSH/LPUSHX/RPUSHX/LPOP/RPOP/LLEN/LRANGE/LINDEX/LSET（Phase 5.1）
+  - [ ] Set/ZSet（Phase 5.2）、事务与发布订阅（Phase 5.3）
 - [ ] **Phase 6 — 持久化与配置**
   AOF（追加 + 重写）、RDB 风格快照、配置文件、信号处理优雅退出
 - [ ] **Phase 7+ — 长期**

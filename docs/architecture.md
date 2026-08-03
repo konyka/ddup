@@ -66,19 +66,46 @@
 
 PING ECHO GET SET(NX/XX/EX/PX) DEL UNLINK EXISTS INCR DECR APPEND STRLEN
 MGET MSET ｜ EXPIRE PEXPIRE EXPIREAT PEXPIREAT TTL PTTL PERSIST ｜
-DBSIZE FLUSHDB CONFIG(GET/SET maxmemory, maxmemory-policy) INFO
+DBSIZE FLUSHDB CONFIG(GET/SET maxmemory, maxmemory-policy) INFO ｜
+HSET HGET HDEL HEXISTS HLEN HGETALL HKEYS HVALS HMSET HMGET HINCRBY HSETNX ｜
+LPUSH RPUSH LPUSHX RPUSHX LPOP RPOP LLEN LRANGE LINDEX LSET
 
 注：TTL 返回值四舍五入（(rem+500)/1000，同 Redis）；PTTL 精确到 ms。
 INCR/APPEND 在本实现中清除 TTL（与 Redis 保留 TTL 不同，有意简化）。
 DBSIZE 为 O(1)，可能计入尚未回收的过期 key。
+
+## 对象存储模型（Phase 5.1）
+
+主表保持字节通用（rh_table 不解释值）；所有值均为带类型标签的 blob：
+
+```
+{1 字节类型标签}{payload}
+  DDUP_OBJ_STRING: payload = 原始字符串字节
+  DDUP_OBJ_HASH:   payload = 8 字节指针 -> obj_hash（嵌套 rh_table：field -> 值）
+  DDUP_OBJ_LIST:   payload = 8 字节指针 -> obj_list（双链表，每元素一个节点）
+```
+
+- **所有权**：db 层拥有指针对象。任何覆盖/删除/过期/淘汰/FLUSHDB 路径
+  经 `obj_free_value()` 释放对象；`obj_extra_mem()` 返回对象占用用于
+  内存记账（hash：sizeof(obj_hash) + 每字段 entry 成本；list：
+  sizeof(obj_list) + 每节点 sizeof(list_node)+16+元素字节；均为近似值，
+  不含嵌套表的 slot 数组）。
+- **类型错误**：字符串命令作用于 hash/list key（或反向）回复
+  `-WRONGTYPE Operation against a key holding the wrong kind of value`。
+  注：SET 覆盖其它类型在 Redis 中是允许的，本实现按 WRONGTYPE 处理
+  （有意收紧）；MGET 对非字符串 key 先校验后统一报错（Redis 返回 null）。
+- **空对象自动删除**：hash 字段清空 / list 弹空时 key 一并删除。
+- **quicklist**：list 当前为逐节点双链表；块式 quicklist 列为后续优化。
+- 过期、淘汰、LRU touch 对对象值透明生效（共用 db 层路径）。
 
 ## 目录结构
 
 ```
 src/pal/     平台抽象：pal_platform(宏), pal_time, pal_socket(TCP), pal_event(事件循环)
 src/resp/    RESP 协议（Phase 1）
-src/core/    KV 存储、哈希表、过期、命令分发（Phase 2/4）
-src/ds/      Hash/List/Set/ZSet（Phase 5）
+src/core/    KV 存储、哈希表、过期、淘汰、命令分发（Phase 2/4）
+src/ds/      对象类型：obj（tagged blob、Hash 嵌套表、List 双链表）（Phase 5.1；
+             Set/ZSet 见 Phase 5.2）
 src/server/  连接与服务器主循环（Phase 3）：单线程事件循环、recv 缓冲按需增长、
              解析→执行→推进零拷贝流水线；当前连接为阻塞 socket（单次 recv +
              阻塞发送循环），非阻塞写出缓冲随 thread-per-core 阶段引入
