@@ -39,6 +39,8 @@ uint64_t obj_extra_mem(const char *val, size_t vlen)
         return obj_hash_mem((obj_hash *)obj_unpack_ptr(val, vlen));
     case DDUP_OBJ_LIST:
         return obj_list_mem((obj_list *)obj_unpack_ptr(val, vlen));
+    case DDUP_OBJ_SET:
+        return obj_set_mem((obj_set *)obj_unpack_ptr(val, vlen));
     default:
         return 0;
     }
@@ -52,6 +54,9 @@ void obj_free_value(const char *val, size_t vlen)
         break;
     case DDUP_OBJ_LIST:
         obj_list_free((obj_list *)obj_unpack_ptr(val, vlen));
+        break;
+    case DDUP_OBJ_SET:
+        obj_set_free((obj_set *)obj_unpack_ptr(val, vlen));
         break;
     default:
         break;
@@ -266,5 +271,61 @@ int obj_list_set_at(obj_list *l, size_t idx, const char *data, size_t len)
     l->mem -= node_bytes(old->len);
     l->mem += node_bytes(len);
     free(old);
+    return 1;
+}
+
+/* ------------------------------------------------------------------ */
+/* set object                                                         */
+/* ------------------------------------------------------------------ */
+
+obj_set *obj_set_new(void)
+{
+    obj_set *s = (obj_set *)malloc(sizeof(*s));
+    if (s == NULL) {
+        fprintf(stderr, "ddup: out of memory\n");
+        exit(1);
+    }
+    rh_init(&s->members);
+    s->mem = (uint64_t)sizeof(*s);
+    return s;
+}
+
+void obj_set_free(obj_set *s)
+{
+    if (s == NULL)
+        return;
+    rh_destroy(&s->members);
+    free(s);
+}
+
+uint64_t obj_set_mem(const obj_set *s)
+{
+    return s->mem;
+}
+
+int obj_set_add(obj_set *s, const char *m, size_t mlen)
+{
+    const char *old;
+    size_t oldl;
+    if (rh_get(&s->members, m, mlen, &old, &oldl))
+        return 0;
+    rh_set(&s->members, m, mlen, "", 0);
+    s->mem += field_bytes(mlen, 0);
+    return 1;
+}
+
+int obj_set_has(obj_set *s, const char *m, size_t mlen)
+{
+    const char *old;
+    size_t oldl;
+    return rh_get(&s->members, m, mlen, &old, &oldl);
+}
+
+int obj_set_rem(obj_set *s, const char *m, size_t mlen)
+{
+    if (!obj_set_has(s, m, mlen))
+        return 0;
+    rh_del(&s->members, m, mlen);
+    s->mem -= field_bytes(mlen, 0);
     return 1;
 }

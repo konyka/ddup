@@ -23,7 +23,9 @@
 enum {
     DDUP_OBJ_STRING = 0,
     DDUP_OBJ_HASH = 1,
-    DDUP_OBJ_LIST = 2
+    DDUP_OBJ_LIST = 2,
+    DDUP_OBJ_SET = 3,
+    DDUP_OBJ_ZSET = 4
 };
 
 /* Type tag of a value blob. */
@@ -92,5 +94,22 @@ int obj_list_pop(obj_list *l, int left, char **data, size_t *len);
 list_node *obj_list_at(obj_list *l, size_t idx);
 /* Replace element data at idx. Returns 0 when idx >= len. */
 int obj_list_set_at(obj_list *l, size_t idx, const char *data, size_t len);
+
+/* ------------------------------------------------------------------ */
+/* set object: rh_table member -> empty value (uniqueness via table)  */
+/* ------------------------------------------------------------------ */
+typedef struct obj_set {
+    rh_table members;
+    uint64_t mem; /* sizeof(obj_set) + per-member entry cost, incremental */
+} obj_set;
+
+obj_set *obj_set_new(void);
+void obj_set_free(obj_set *s);
+uint64_t obj_set_mem(const obj_set *s);
+
+/* Returns 1 if the member is new. */
+int obj_set_add(obj_set *s, const char *m, size_t mlen);
+int obj_set_has(obj_set *s, const char *m, size_t mlen);
+int obj_set_rem(obj_set *s, const char *m, size_t mlen);
 
 #endif /* DDUP_OBJ_H */

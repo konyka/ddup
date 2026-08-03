@@ -369,6 +369,32 @@ static int get_list(db *d, resp_buf *out, const char *k, size_t kl, int create,
     return 1;
 }
 
+/* Fetch the set object for key; create when missing && create != 0.
+ * Returns 1 (*s set), 0 missing, -1 WRONGTYPE (reply written). */
+static int get_set(db *d, resp_buf *out, const char *k, size_t kl, int create,
+                   uint64_t now, obj_set **s)
+{
+    const char *v;
+    size_t vl;
+    if (!db_get(d, k, kl, &v, &vl, now)) {
+        char blob[9];
+        obj_set *ns;
+        if (!create)
+            return 0;
+        ns = obj_set_new();
+        obj_pack_ptr(blob, DDUP_OBJ_SET, ns);
+        db_set_kv(d, k, kl, blob, 9, now);
+        *s = ns;
+        return 1;
+    }
+    if (obj_tag_of(v, vl) != DDUP_OBJ_SET) {
+        wrongtype(out);
+        return -1;
+    }
+    *s = (obj_set *)obj_unpack_ptr(v, vl);
+    return 1;
+}
+
 /* Fold an object's mem delta (mutations done in place) into used_memory. */
 static void mem_sync(db *d, uint64_t before, uint64_t after)
 {
@@ -390,6 +416,95 @@ static void hdump_cb(const char *f, size_t flen, const char *v, size_t vlen,
         resp_write_bulk(ctx->out, f, flen);
     if (ctx->vals)
         resp_write_bulk(ctx->out, v, vlen);
+}
+
+/* Collect views of all members of an rh_table-backed set (valid until the
+ * next mutation of that table). */
+typedef struct collect_ctx {
+    const char **keys;
+    size_t *lens;
+    size_t n;
+    size_t cap;
+} collect_ctx;
+
+static void collect_cb(const char *k, size_t klen, const char *v, size_t vlen,
+                       void *c)
+{
+    collect_ctx *ctx = (collect_ctx *)c;
+    (void)v;
+    (void)vlen;
+    if (ctx->n == ctx->cap) {
+        size_t ncap = ctx->cap == 0 ? 16 : ctx->cap * 2;
+        const char **nk =
+            (const char **)realloc(ctx->keys, ncap * sizeof(*nk));
+        size_t *nl = (size_t *)realloc(ctx->lens, ncap * sizeof(*nl));
+        if (nk == NULL || nl == NULL) {
+            free(nk);
+            free(nl);
+            fprintf(stderr, "ddup: out of memory\n");
+            exit(1);
+        }
+        ctx->keys = nk;
+        ctx->lens = nl;
+        ctx->cap = ncap;
+    }
+    ctx->keys[ctx->n] = k;
+    ctx->lens[ctx->n] = klen;
+    ctx->n++;
+}
+
+/* Fisher-Yates shuffle of the first k entries of a collected view array. */
+static void collect_shuffle(db *d, collect_ctx *ctx, size_t k)
+{
+    size_t i;
+    if (k > ctx->n)
+        k = ctx->n;
+    for (i = 0; i + 1 < k; i++) {
+        size_t j = i + (size_t)(db_rand(d) % (uint32_t)(ctx->n - i));
+        const char *tk = ctx->keys[i];
+        size_t tl = ctx->lens[i];
+        ctx->keys[i] = ctx->keys[j];
+        ctx->lens[i] = ctx->lens[j];
+        ctx->keys[j] = tk;
+        ctx->lens[j] = tl;
+    }
+}
+
+/* SINTER/SDIFF member filter over sets[1..n). */
+typedef struct setop_ctx {
+    obj_set **sets;
+    size_t n;
+    rh_table *result;
+    int inter;
+} setop_ctx;
+
+static void setop_cb(const char *m, size_t mlen, const char *v, size_t vlen,
+                     void *c)
+{
+    setop_ctx *ctx = (setop_ctx *)c;
+    size_t j;
+    int include = 1;
+    (void)v;
+    (void)vlen;
+    for (j = 1; j < ctx->n && include; j++) {
+        if (ctx->inter)
+            include = ctx->sets[j] != NULL &&
+                      obj_set_has(ctx->sets[j], m, mlen);
+        else
+            include = ctx->sets[j] == NULL ||
+                      !obj_set_has(ctx->sets[j], m, mlen);
+    }
+    if (include)
+        rh_set(ctx->result, m, mlen, "", 0);
+}
+
+/* SUNION member collector (dedupe via the result table). */
+static void set_union_cb(const char *m, size_t mlen, const char *v,
+                         size_t vlen, void *c)
+{
+    (void)v;
+    (void)vlen;
+    rh_set((rh_table *)c, m, mlen, "", 0);
 }
 
 /* ------------------------------------------------------------------ */
@@ -1562,6 +1677,360 @@ static void command_dispatch(db *d, const resp_value *argv, size_t argc,
             mem_sync(d, before, obj_list_mem(l));
         }
         resp_write_simple_string(out, "OK", 2);
+        return;
+    }
+
+    /* ---------------- set commands ---------------- */
+
+    if (ci_equal(name, nlen, "SADD")) {
+        if (argc < 3) {
+            wrong_args(out, "sadd");
+            return;
+        }
+        const char *k;
+        size_t kl;
+        if (!arg_str(&argv[1], &k, &kl))
+            goto bad_type;
+        if (oom_blocked(d, out))
+            return;
+        obj_set *s;
+        if (get_set(d, out, k, kl, 1, now_ms, &s) <= 0)
+            return;
+        long long added = 0;
+        uint64_t before = obj_set_mem(s);
+        for (size_t i = 2; i < argc; i++) {
+            const char *m;
+            size_t ml;
+            if (!arg_str(&argv[i], &m, &ml))
+                goto bad_type;
+            added += obj_set_add(s, m, ml);
+        }
+        mem_sync(d, before, obj_set_mem(s));
+        resp_write_integer(out, added);
+        return;
+    }
+
+    if (ci_equal(name, nlen, "SREM")) {
+        if (argc < 3) {
+            wrong_args(out, "srem");
+            return;
+        }
+        const char *k;
+        size_t kl;
+        if (!arg_str(&argv[1], &k, &kl))
+            goto bad_type;
+        obj_set *s;
+        int rc = get_set(d, out, k, kl, 0, now_ms, &s);
+        if (rc < 0)
+            return;
+        if (rc == 0) {
+            resp_write_integer(out, 0);
+            return;
+        }
+        long long removed = 0;
+        uint64_t before = obj_set_mem(s);
+        for (size_t i = 2; i < argc; i++) {
+            const char *m;
+            size_t ml;
+            if (!arg_str(&argv[i], &m, &ml))
+                goto bad_type;
+            removed += obj_set_rem(s, m, ml);
+        }
+        mem_sync(d, before, obj_set_mem(s));
+        if (rh_size(&s->members) == 0)
+            db_del_kv(d, k, kl); /* empty set: the key goes away */
+        resp_write_integer(out, removed);
+        return;
+    }
+
+    if (ci_equal(name, nlen, "SISMEMBER")) {
+        if (argc != 3) {
+            wrong_args(out, "sismember");
+            return;
+        }
+        const char *k, *m;
+        size_t kl, ml;
+        if (!arg_str(&argv[1], &k, &kl) || !arg_str(&argv[2], &m, &ml))
+            goto bad_type;
+        obj_set *s;
+        int rc = get_set(d, out, k, kl, 0, now_ms, &s);
+        if (rc < 0)
+            return;
+        resp_write_integer(out, rc == 1 && obj_set_has(s, m, ml) ? 1 : 0);
+        return;
+    }
+
+    if (ci_equal(name, nlen, "SMISMEMBER")) {
+        if (argc < 3) {
+            wrong_args(out, "smismember");
+            return;
+        }
+        const char *k;
+        size_t kl;
+        if (!arg_str(&argv[1], &k, &kl))
+            goto bad_type;
+        obj_set *s;
+        int rc = get_set(d, out, k, kl, 0, now_ms, &s);
+        if (rc < 0)
+            return;
+        resp_write_array_header(out, argc - 2);
+        for (size_t i = 2; i < argc; i++) {
+            const char *m;
+            size_t ml;
+            if (!arg_str(&argv[i], &m, &ml))
+                goto bad_type;
+            resp_write_integer(out, rc == 1 && obj_set_has(s, m, ml) ? 1 : 0);
+        }
+        return;
+    }
+
+    if (ci_equal(name, nlen, "SCARD")) {
+        if (argc != 2) {
+            wrong_args(out, "scard");
+            return;
+        }
+        const char *k;
+        size_t kl;
+        if (!arg_str(&argv[1], &k, &kl))
+            goto bad_type;
+        obj_set *s;
+        int rc = get_set(d, out, k, kl, 0, now_ms, &s);
+        if (rc < 0)
+            return;
+        resp_write_integer(out,
+                           rc == 1 ? (long long)rh_size(&s->members) : 0);
+        return;
+    }
+
+    if (ci_equal(name, nlen, "SMEMBERS")) {
+        if (argc != 2) {
+            wrong_args(out, "smembers");
+            return;
+        }
+        const char *k;
+        size_t kl;
+        if (!arg_str(&argv[1], &k, &kl))
+            goto bad_type;
+        obj_set *s;
+        int rc = get_set(d, out, k, kl, 0, now_ms, &s);
+        if (rc < 0)
+            return;
+        if (rc == 0) {
+            resp_write_array_header(out, 0);
+            return;
+        }
+        {
+            hdump_ctx ctx;
+            ctx.out = out;
+            ctx.keys = 1;
+            ctx.vals = 0;
+            resp_write_array_header(out, rh_size(&s->members));
+            rh_each(&s->members, hdump_cb, &ctx);
+        }
+        return;
+    }
+
+    if (ci_equal(name, nlen, "SPOP") || ci_equal(name, nlen, "SRANDMEMBER")) {
+        int pop = ci_equal(name, nlen, "SPOP");
+        if (argc != 2 && argc != 3) {
+            wrong_args(out, pop ? "spop" : "srandmember");
+            return;
+        }
+        const char *k;
+        size_t kl;
+        long long count = 0;
+        if (!arg_str(&argv[1], &k, &kl))
+            goto bad_type;
+        if (argc == 3) {
+            const char *cv;
+            size_t cvl;
+            if (!arg_str(&argv[2], &cv, &cvl))
+                goto bad_type;
+            if (!parse_i64(cv, cvl, &count)) {
+                resp_write_error(out, ERR_NOT_INT, sizeof(ERR_NOT_INT) - 1);
+                return;
+            }
+        }
+        if (pop && oom_blocked(d, out))
+            return;
+        obj_set *s;
+        int rc = get_set(d, out, k, kl, 0, now_ms, &s);
+        if (rc < 0)
+            return;
+        if (argc == 2) {
+            /* single member form: bulk reply */
+            collect_ctx cc = {0};
+            size_t idx;
+            if (rc == 0) {
+                resp_write_bulk(out, NULL, 0);
+                return;
+            }
+            rh_each(&s->members, collect_cb, &cc);
+            idx = (size_t)(db_rand(d) % (uint32_t)cc.n);
+            if (pop) {
+                char *copy = (char *)malloc(cc.lens[idx] + 1);
+                uint64_t before;
+                memcpy(copy, cc.keys[idx], cc.lens[idx]);
+                before = obj_set_mem(s);
+                obj_set_rem(s, copy, cc.lens[idx]);
+                mem_sync(d, before, obj_set_mem(s));
+                if (rh_size(&s->members) == 0)
+                    db_del_kv(d, k, kl);
+                resp_write_bulk(out, copy, cc.lens[idx]);
+                free(copy);
+            } else {
+                resp_write_bulk(out, cc.keys[idx], cc.lens[idx]);
+            }
+            free(cc.keys);
+            free(cc.lens);
+            return;
+        }
+        /* count form: array reply */
+        if (rc == 0 || (count == 0 && pop) || (count == 0 && !pop)) {
+            resp_write_array_header(out, 0);
+            return;
+        }
+        {
+            collect_ctx cc = {0};
+            size_t n, i, k2;
+            uint64_t before = obj_set_mem(s);
+            rh_each(&s->members, collect_cb, &cc);
+            n = cc.n;
+            if (count < 0) {
+                /* with repeats */
+                resp_write_array_header(out, (size_t)-count);
+                for (i = 0; i < (size_t)-count; i++) {
+                    size_t idx = (size_t)(db_rand(d) % (uint32_t)n);
+                    resp_write_bulk(out, cc.keys[idx], cc.lens[idx]);
+                }
+            } else {
+                k2 = (size_t)count < n ? (size_t)count : n;
+                collect_shuffle(d, &cc, k2);
+                resp_write_array_header(out, k2);
+                for (i = 0; i < k2; i++) {
+                    if (pop) {
+                        char *copy = (char *)malloc(cc.lens[i] + 1);
+                        memcpy(copy, cc.keys[i], cc.lens[i]);
+                        obj_set_rem(s, copy, cc.lens[i]);
+                        resp_write_bulk(out, copy, cc.lens[i]);
+                        free(copy);
+                    } else {
+                        resp_write_bulk(out, cc.keys[i], cc.lens[i]);
+                    }
+                }
+            }
+            if (pop) {
+                mem_sync(d, before, obj_set_mem(s));
+                if (rh_size(&s->members) == 0)
+                    db_del_kv(d, k, kl);
+            }
+            free(cc.keys);
+            free(cc.lens);
+        }
+        return;
+    }
+
+    if (ci_equal(name, nlen, "SMOVE")) {
+        if (argc != 4) {
+            wrong_args(out, "smove");
+            return;
+        }
+        const char *sk, *dk, *m;
+        size_t skl, dkl, ml;
+        if (!arg_str(&argv[1], &sk, &skl) || !arg_str(&argv[2], &dk, &dkl) ||
+            !arg_str(&argv[3], &m, &ml))
+            goto bad_type;
+        obj_set *src, *dst;
+        int rcs = get_set(d, out, sk, skl, 0, now_ms, &src);
+        if (rcs < 0)
+            return;
+        if (rcs == 0 || !obj_set_has(src, m, ml)) {
+            resp_write_integer(out, 0);
+            return;
+        }
+        if (skl == dkl && memcmp(sk, dk, skl) == 0) {
+            resp_write_integer(out, 1); /* same key: no-op */
+            return;
+        }
+        /* type-check dst before mutating src */
+        {
+            int rcd = get_set(d, out, dk, dkl, 0, now_ms, &dst);
+            if (rcd < 0)
+                return;
+        }
+        if (oom_blocked(d, out))
+            return;
+        {
+            uint64_t before = obj_set_mem(src);
+            obj_set_rem(src, m, ml);
+            mem_sync(d, before, obj_set_mem(src));
+        }
+        if (rh_size(&src->members) == 0)
+            db_del_kv(d, sk, skl);
+        get_set(d, out, dk, dkl, 1, now_ms, &dst);
+        {
+            uint64_t before = obj_set_mem(dst);
+            obj_set_add(dst, m, ml);
+            mem_sync(d, before, obj_set_mem(dst));
+        }
+        resp_write_integer(out, 1);
+        return;
+    }
+
+    if (ci_equal(name, nlen, "SINTER") || ci_equal(name, nlen, "SUNION") ||
+        ci_equal(name, nlen, "SDIFF")) {
+        int inter = ci_equal(name, nlen, "SINTER");
+        int sunion = ci_equal(name, nlen, "SUNION");
+        if (argc < 2) {
+            wrong_args(out, inter ? "sinter" : sunion ? "sunion" : "sdiff");
+            return;
+        }
+        {
+            size_t nkeys = argc - 1;
+            obj_set **sets =
+                (obj_set **)malloc(nkeys * sizeof(*sets));
+            rh_table result;
+            size_t i;
+            rh_init(&result);
+            /* resolve operands with type checks first */
+            for (i = 0; i < nkeys; i++) {
+                const char *k;
+                size_t kl;
+                obj_set *s = NULL;
+                int rc;
+                if (!arg_str(&argv[i + 1], &k, &kl))
+                    goto bad_type;
+                rc = get_set(d, out, k, kl, 0, now_ms, &s);
+                if (rc < 0) {
+                    rh_destroy(&result);
+                    free(sets);
+                    return;
+                }
+                sets[i] = rc == 1 ? s : NULL;
+            }
+            if (sunion) {
+                for (i = 0; i < nkeys; i++)
+                    if (sets[i] != NULL)
+                        rh_each(&sets[i]->members, set_union_cb, &result);
+            } else if (sets[0] != NULL) {
+                setop_ctx ctx;
+                ctx.sets = sets;
+                ctx.n = nkeys;
+                ctx.result = &result;
+                ctx.inter = inter;
+                rh_each(&sets[0]->members, setop_cb, &ctx);
+            }
+            {
+                hdump_ctx dctx;
+                dctx.out = out;
+                dctx.keys = 1;
+                dctx.vals = 0;
+                resp_write_array_header(out, rh_size(&result));
+                rh_each(&result, hdump_cb, &dctx);
+            }
+            rh_destroy(&result);
+            free(sets);
+        }
         return;
     }
 
