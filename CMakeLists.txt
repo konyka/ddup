@@ -82,9 +82,10 @@ ddup_add_test(test_rhtable tests/test_rhtable.c)
 ddup_add_test(test_command tests/test_command.c)
 ddup_add_test(test_expire tests/test_expire.c)
 ddup_add_test(test_eviction tests/test_eviction.c)
+ddup_add_test(test_hash tests/test_hash.c)
 
 add_custom_target(check
     COMMAND ${CMAKE_CTEST_COMMAND} --output-on-failure
-    DEPENDS test_pal test_socket test_event test_server test_arena test_resp_parser test_resp_writer test_resp3 test_rhtable test_command test_expire test_eviction
+    DEPENDS test_pal test_socket test_event test_server test_arena test_resp_parser test_resp_writer test_resp3 test_rhtable test_command test_expire test_eviction test_hash
     WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
 )

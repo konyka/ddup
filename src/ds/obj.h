@@ -18,6 +18,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "core/rhtable.h"
+
 enum {
     DDUP_OBJ_STRING = 0,
     DDUP_OBJ_HASH = 1,
@@ -40,5 +42,24 @@ uint64_t obj_extra_mem(const char *val, size_t vlen);
 
 /* Free the owned object of a value blob (no-op for strings). */
 void obj_free_value(const char *val, size_t vlen);
+
+/* ------------------------------------------------------------------ */
+/* hash object: nested rh_table of field -> raw string (untagged)     */
+/* ------------------------------------------------------------------ */
+typedef struct obj_hash {
+    rh_table fields;
+    uint64_t mem; /* sizeof(obj_hash) + per-field entry cost, incremental */
+} obj_hash;
+
+obj_hash *obj_hash_new(void);
+void obj_hash_free(obj_hash *h);
+uint64_t obj_hash_mem(const obj_hash *h);
+
+/* Returns 1 if the field is new. */
+int obj_hash_set(obj_hash *h, const char *f, size_t flen, const char *v,
+                 size_t vlen);
+int obj_hash_get(obj_hash *h, const char *f, size_t flen, const char **v,
+                 size_t *vlen);
+int obj_hash_del(obj_hash *h, const char *f, size_t flen);
 
 #endif /* DDUP_OBJ_H */

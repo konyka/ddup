@@ -293,6 +293,80 @@ static int oom_blocked(db *d, resp_buf *out)
 }
 
 /* ------------------------------------------------------------------ */
+/* object fetch helpers (hash/list commands)                          */
+/* ------------------------------------------------------------------ */
+
+static const char WRONGTYPE_MSG[] =
+    "WRONGTYPE Operation against a key holding the wrong kind of value";
+
+static void wrongtype(resp_buf *out)
+{
+    resp_write_error(out, WRONGTYPE_MSG, sizeof(WRONGTYPE_MSG) - 1);
+}
+
+/* String payload of a value blob; writes WRONGTYPE and returns 0 if the
+ * value is not a string. */
+static int as_string(resp_buf *out, const char *val, size_t vlen,
+                     const char **s, size_t *len)
+{
+    if (obj_tag_of(val, vlen) != DDUP_OBJ_STRING) {
+        wrongtype(out);
+        return 0;
+    }
+    obj_str(val, vlen, s, len);
+    return 1;
+}
+
+/* Fetch the hash object for key; create when missing && create != 0.
+ * Returns 1 (*h set), 0 missing, -1 WRONGTYPE (reply written). */
+static int get_hash(db *d, resp_buf *out, const char *k, size_t kl, int create,
+                    uint64_t now, obj_hash **h)
+{
+    const char *v;
+    size_t vl;
+    if (!db_get(d, k, kl, &v, &vl, now)) {
+        char blob[9];
+        obj_hash *nh;
+        if (!create)
+            return 0;
+        nh = obj_hash_new();
+        obj_pack_ptr(blob, DDUP_OBJ_HASH, nh);
+        db_set_kv(d, k, kl, blob, 9, now);
+        *h = nh;
+        return 1;
+    }
+    if (obj_tag_of(v, vl) != DDUP_OBJ_HASH) {
+        wrongtype(out);
+        return -1;
+    }
+    *h = (obj_hash *)obj_unpack_ptr(v, vl);
+    return 1;
+}
+
+/* Fold an object's mem delta (mutations done in place) into used_memory. */
+static void mem_sync(db *d, uint64_t before, uint64_t after)
+{
+    d->used_memory =
+        (uint64_t)((int64_t)d->used_memory + ((int64_t)after - (int64_t)before));
+}
+
+typedef struct hdump_ctx {
+    resp_buf *out;
+    int keys;
+    int vals;
+} hdump_ctx;
+
+static void hdump_cb(const char *f, size_t flen, const char *v, size_t vlen,
+                     void *c)
+{
+    hdump_ctx *ctx = (hdump_ctx *)c;
+    if (ctx->keys)
+        resp_write_bulk(ctx->out, f, flen);
+    if (ctx->vals)
+        resp_write_bulk(ctx->out, v, vlen);
+}
+
+/* ------------------------------------------------------------------ */
 /* helpers                                                            */
 /* ------------------------------------------------------------------ */
 
@@ -367,26 +441,6 @@ static int parse_i64(const char *s, size_t len, long long *out)
 static const char ERR_NOT_INT[] = "ERR value is not an integer or out of range";
 static const char ERR_OVERFLOW[] = "ERR increment or decrement would overflow";
 static const char ERR_SYNTAX[] = "ERR syntax error";
-static const char WRONGTYPE_MSG[] =
-    "WRONGTYPE Operation against a key holding the wrong kind of value";
-
-static void wrongtype(resp_buf *out)
-{
-    resp_write_error(out, WRONGTYPE_MSG, sizeof(WRONGTYPE_MSG) - 1);
-}
-
-/* String payload of a value blob; writes WRONGTYPE and returns 0 if the
- * value is not a string. */
-static int as_string(resp_buf *out, const char *val, size_t vlen,
-                     const char **s, size_t *len)
-{
-    if (obj_tag_of(val, vlen) != DDUP_OBJ_STRING) {
-        wrongtype(out);
-        return 0;
-    }
-    obj_str(val, vlen, s, len);
-    return 1;
-}
 
 static const char *policy_name(int policy)
 {
@@ -758,6 +812,18 @@ static void command_dispatch(db *d, const resp_value *argv, size_t argc,
             wrong_args(out, "mget");
             return;
         }
+        /* validate types first: the reply must be a single RESP value */
+        for (size_t i = 1; i < argc; i++) {
+            const char *k, *v;
+            size_t kl, vl;
+            if (!arg_str(&argv[i], &k, &kl))
+                goto bad_type;
+            if (db_get(d, k, kl, &v, &vl, now_ms) &&
+                obj_tag_of(v, vl) != DDUP_OBJ_STRING) {
+                wrongtype(out);
+                return;
+            }
+        }
         resp_write_array_header(out, argc - 1);
         for (size_t i = 1; i < argc; i++) {
             const char *k;
@@ -773,8 +839,7 @@ static void command_dispatch(db *d, const resp_value *argv, size_t argc,
             {
                 const char *s;
                 size_t sl2;
-                if (!as_string(out, v, vl, &s, &sl2))
-                    return;
+                obj_str(v, vl, &s, &sl2);
                 resp_write_bulk(out, s, sl2);
             }
         }
@@ -989,6 +1054,267 @@ static void command_dispatch(db *d, const resp_value *argv, size_t argc,
                           (unsigned long long)rh_size(&d->table));
             resp_write_bulk(out, buf, (size_t)n2);
         }
+        return;
+    }
+
+    /* ---------------- hash commands ---------------- */
+
+    if (ci_equal(name, nlen, "HSET") || ci_equal(name, nlen, "HMSET")) {
+        int mset = ci_equal(name, nlen, "HMSET");
+        if (argc < 4 || argc % 2 != 0) {
+            wrong_args(out, mset ? "hmset" : "hset");
+            return;
+        }
+        const char *k;
+        size_t kl;
+        if (!arg_str(&argv[1], &k, &kl))
+            goto bad_type;
+        if (oom_blocked(d, out))
+            return;
+        obj_hash *h;
+        if (get_hash(d, out, k, kl, 1, now_ms, &h) <= 0)
+            return;
+        long long added = 0;
+        uint64_t before = obj_hash_mem(h);
+        for (size_t i = 2; i + 1 < argc; i += 2) {
+            const char *f, *v;
+            size_t fl, vl;
+            if (!arg_str(&argv[i], &f, &fl) || !arg_str(&argv[i + 1], &v, &vl))
+                goto bad_type;
+            added += obj_hash_set(h, f, fl, v, vl);
+        }
+        mem_sync(d, before, obj_hash_mem(h));
+        if (mset)
+            resp_write_simple_string(out, "OK", 2);
+        else
+            resp_write_integer(out, added);
+        return;
+    }
+
+    if (ci_equal(name, nlen, "HGET")) {
+        if (argc != 3) {
+            wrong_args(out, "hget");
+            return;
+        }
+        const char *k, *f;
+        size_t kl, fl;
+        if (!arg_str(&argv[1], &k, &kl) || !arg_str(&argv[2], &f, &fl))
+            goto bad_type;
+        obj_hash *h;
+        int rc = get_hash(d, out, k, kl, 0, now_ms, &h);
+        if (rc < 0)
+            return;
+        const char *v;
+        size_t vl;
+        if (rc == 1 && obj_hash_get(h, f, fl, &v, &vl))
+            resp_write_bulk(out, v, vl);
+        else
+            resp_write_bulk(out, NULL, 0);
+        return;
+    }
+
+    if (ci_equal(name, nlen, "HDEL")) {
+        if (argc < 3) {
+            wrong_args(out, "hdel");
+            return;
+        }
+        const char *k;
+        size_t kl;
+        if (!arg_str(&argv[1], &k, &kl))
+            goto bad_type;
+        obj_hash *h;
+        int rc = get_hash(d, out, k, kl, 0, now_ms, &h);
+        if (rc < 0)
+            return;
+        if (rc == 0) {
+            resp_write_integer(out, 0);
+            return;
+        }
+        long long deleted = 0;
+        uint64_t before = obj_hash_mem(h);
+        for (size_t i = 2; i < argc; i++) {
+            const char *f;
+            size_t fl;
+            if (!arg_str(&argv[i], &f, &fl))
+                goto bad_type;
+            deleted += obj_hash_del(h, f, fl);
+        }
+        mem_sync(d, before, obj_hash_mem(h));
+        if (rh_size(&h->fields) == 0)
+            db_del_kv(d, k, kl); /* empty hash: the key goes away */
+        resp_write_integer(out, deleted);
+        return;
+    }
+
+    if (ci_equal(name, nlen, "HEXISTS")) {
+        if (argc != 3) {
+            wrong_args(out, "hexists");
+            return;
+        }
+        const char *k, *f;
+        size_t kl, fl;
+        if (!arg_str(&argv[1], &k, &kl) || !arg_str(&argv[2], &f, &fl))
+            goto bad_type;
+        obj_hash *h;
+        int rc = get_hash(d, out, k, kl, 0, now_ms, &h);
+        if (rc < 0)
+            return;
+        const char *v;
+        size_t vl;
+        resp_write_integer(out,
+                           rc == 1 && obj_hash_get(h, f, fl, &v, &vl) ? 1 : 0);
+        return;
+    }
+
+    if (ci_equal(name, nlen, "HLEN")) {
+        if (argc != 2) {
+            wrong_args(out, "hlen");
+            return;
+        }
+        const char *k;
+        size_t kl;
+        if (!arg_str(&argv[1], &k, &kl))
+            goto bad_type;
+        obj_hash *h;
+        int rc = get_hash(d, out, k, kl, 0, now_ms, &h);
+        if (rc < 0)
+            return;
+        resp_write_integer(out, rc == 1 ? (long long)rh_size(&h->fields) : 0);
+        return;
+    }
+
+    if (ci_equal(name, nlen, "HGETALL") || ci_equal(name, nlen, "HKEYS") ||
+        ci_equal(name, nlen, "HVALS")) {
+        if (argc != 2) {
+            wrong_args(out, ci_equal(name, nlen, "HGETALL") ? "hgetall"
+                           : ci_equal(name, nlen, "HKEYS")  ? "hkeys"
+                                                            : "hvals");
+            return;
+        }
+        const char *k;
+        size_t kl;
+        if (!arg_str(&argv[1], &k, &kl))
+            goto bad_type;
+        obj_hash *h;
+        int rc = get_hash(d, out, k, kl, 0, now_ms, &h);
+        if (rc < 0)
+            return;
+        if (rc == 0) {
+            resp_write_array_header(out, 0);
+            return;
+        }
+        hdump_ctx ctx;
+        ctx.out = out;
+        ctx.keys = !ci_equal(name, nlen, "HVALS");
+        ctx.vals = !ci_equal(name, nlen, "HKEYS");
+        resp_write_array_header(out, ci_equal(name, nlen, "HGETALL")
+                                        ? rh_size(&h->fields) * 2
+                                        : rh_size(&h->fields));
+        rh_each(&h->fields, hdump_cb, &ctx);
+        return;
+    }
+
+    if (ci_equal(name, nlen, "HMGET")) {
+        if (argc < 3) {
+            wrong_args(out, "hmget");
+            return;
+        }
+        const char *k;
+        size_t kl;
+        if (!arg_str(&argv[1], &k, &kl))
+            goto bad_type;
+        obj_hash *h;
+        int rc = get_hash(d, out, k, kl, 0, now_ms, &h);
+        if (rc < 0)
+            return;
+        resp_write_array_header(out, argc - 2);
+        for (size_t i = 2; i < argc; i++) {
+            const char *f, *v;
+            size_t fl, vl;
+            if (!arg_str(&argv[i], &f, &fl))
+                goto bad_type;
+            if (rc == 1 && obj_hash_get(h, f, fl, &v, &vl))
+                resp_write_bulk(out, v, vl);
+            else
+                resp_write_bulk(out, NULL, 0);
+        }
+        return;
+    }
+
+    if (ci_equal(name, nlen, "HINCRBY")) {
+        if (argc != 4) {
+            wrong_args(out, "hincrby");
+            return;
+        }
+        const char *k, *f, *iv;
+        size_t kl, fl, ivl;
+        long long inc, cur = 0;
+        if (!arg_str(&argv[1], &k, &kl) || !arg_str(&argv[2], &f, &fl) ||
+            !arg_str(&argv[3], &iv, &ivl))
+            goto bad_type;
+        if (!parse_i64(iv, ivl, &inc)) {
+            resp_write_error(out, ERR_NOT_INT, sizeof(ERR_NOT_INT) - 1);
+            return;
+        }
+        if (oom_blocked(d, out))
+            return;
+        obj_hash *h;
+        if (get_hash(d, out, k, kl, 1, now_ms, &h) <= 0)
+            return;
+        {
+            const char *v;
+            size_t vl;
+            if (obj_hash_get(h, f, fl, &v, &vl) && !parse_i64(v, vl, &cur)) {
+                resp_write_error(out, ERR_NOT_INT, sizeof(ERR_NOT_INT) - 1);
+                return;
+            }
+        }
+        if ((inc > 0 && cur > LLONG_MAX - inc) ||
+            (inc < 0 && cur < LLONG_MIN - inc)) {
+            resp_write_error(out, ERR_OVERFLOW, sizeof(ERR_OVERFLOW) - 1);
+            return;
+        }
+        cur += inc;
+        {
+            char num[24];
+            int nl = snprintf(num, sizeof(num), "%lld", cur);
+            uint64_t before = obj_hash_mem(h);
+            obj_hash_set(h, f, fl, num, (size_t)nl);
+            mem_sync(d, before, obj_hash_mem(h));
+        }
+        resp_write_integer(out, cur);
+        return;
+    }
+
+    if (ci_equal(name, nlen, "HSETNX")) {
+        if (argc != 4) {
+            wrong_args(out, "hsetnx");
+            return;
+        }
+        const char *k, *f, *v;
+        size_t kl, fl, vl;
+        if (!arg_str(&argv[1], &k, &kl) || !arg_str(&argv[2], &f, &fl) ||
+            !arg_str(&argv[3], &v, &vl))
+            goto bad_type;
+        if (oom_blocked(d, out))
+            return;
+        obj_hash *h;
+        if (get_hash(d, out, k, kl, 1, now_ms, &h) <= 0)
+            return;
+        {
+            const char *old;
+            size_t oldl;
+            if (obj_hash_get(h, f, fl, &old, &oldl)) {
+                resp_write_integer(out, 0);
+                return;
+            }
+        }
+        {
+            uint64_t before = obj_hash_mem(h);
+            obj_hash_set(h, f, fl, v, vl);
+            mem_sync(d, before, obj_hash_mem(h));
+        }
+        resp_write_integer(out, 1);
         return;
     }
 
