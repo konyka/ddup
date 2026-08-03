@@ -10,9 +10,10 @@
 - [x] **Phase 2 — 内存 KV 核心**
   arena 分配器、对象池、Robin Hood 哈希表 + 增量 rehash、命令分发表、
   PING/ECHO/GET/SET/DEL/EXISTS/INCR/DECR/APPEND/STRLEN/MGET/MSET
-- [ ] **Phase 3 — 网络服务器**
-  Windows IOCP、Linux epoll、macOS/FreeBSD kqueue 事件循环、TCP 监听、
-  连接生命周期、pipelining、socket 级集成测试、压测客户端与基准记录
+- [x] **Phase 3 — 网络服务器**
+  readiness 事件循环（Linux epoll、macOS/FreeBSD kqueue、Windows select；
+  IOCP/io_uring 列为后续优化）、TCP 监听、连接生命周期、pipelining、
+  socket 级集成测试、压测客户端与基准记录
 - [ ] **Phase 4 — 过期与淘汰**
   EXPIRE/TTL/PTTL/PERSIST、惰性 + 主动过期扫描、maxmemory 与 LRU 近似淘汰
 - [ ] **Phase 5 — 复杂数据结构**
