@@ -17,6 +17,9 @@ MSBuild version 18.8.2+ce25c0108 for .NET Framework
   snapshot.c
   resp_parser.c
   resp_writer.c
+  server.c
+  aof.c
+  repl.c
 D:\a\ddup\ddup\src\core\command.c(907,25): warning C4457: declaration of 's' hides function parameter [D:\a\ddup\ddup\build\ddup_core.vcxproj]
       D:\a\ddup\ddup\src\core\command.c(879,39):
       see declaration of 's'
@@ -73,9 +76,6 @@ D:\a\ddup\ddup\src\core\command.c(2230,26): warning C4457: declaration of 's' hi
       D:\a\ddup\ddup\src\core\command.c(879,39):
       see declaration of 's'
   
-  server.c
-  aof.c
-  repl.c
   ddup_core.vcxproj -> D:\a\ddup\ddup\build\Release\ddup_core.lib
   Building Custom Rule D:/a/ddup/ddup/CMakeLists.txt
   ddup-bench.c
@@ -731,45 +731,103 @@ D:\a\ddup\ddup\src\core\command.c(2693): warning C4703: potentially uninitialize
   test_socket.vcxproj -> D:\a\ddup\ddup\build\Release\test_socket.exe
   Building Custom Rule D:/a/ddup/ddup/CMakeLists.txt
   test_tls.c
-  Generating code
-  Previous IPDB not found, fall back to full compilation.
-D:\a\ddup\ddup\src\core\command.c(1506): warning C4701: potentially uninitialized local variable 'h' used [D:\a\ddup\ddup\build\test_tls.vcxproj]
-D:\a\ddup\ddup\src\core\command.c(1506): warning C4703: potentially uninitialized local pointer variable 'h' used [D:\a\ddup\ddup\build\test_tls.vcxproj]
-D:\a\ddup\ddup\src\core\command.c(1585): warning C4701: potentially uninitialized local variable 'h' used [D:\a\ddup\ddup\build\test_tls.vcxproj]
-D:\a\ddup\ddup\src\core\command.c(1585): warning C4703: potentially uninitialized local pointer variable 'h' used [D:\a\ddup\ddup\build\test_tls.vcxproj]
-D:\a\ddup\ddup\src\core\command.c(1720): warning C4701: potentially uninitialized local variable 'l' used [D:\a\ddup\ddup\build\test_tls.vcxproj]
-D:\a\ddup\ddup\src\core\command.c(1720): warning C4703: potentially uninitialized local pointer variable 'l' used [D:\a\ddup\ddup\build\test_tls.vcxproj]
-D:\a\ddup\ddup\src\core\command.c(1755): warning C4701: potentially uninitialized local variable 'l' used [D:\a\ddup\ddup\build\test_tls.vcxproj]
-D:\a\ddup\ddup\src\core\command.c(1755): warning C4703: potentially uninitialized local pointer variable 'l' used [D:\a\ddup\ddup\build\test_tls.vcxproj]
-D:\a\ddup\ddup\src\core\command.c(1810): warning C4701: potentially uninitialized local variable 'l' used [D:\a\ddup\ddup\build\test_tls.vcxproj]
-D:\a\ddup\ddup\src\core\command.c(1810): warning C4703: potentially uninitialized local pointer variable 'l' used [D:\a\ddup\ddup\build\test_tls.vcxproj]
-D:\a\ddup\ddup\src\core\command.c(1856): warning C4701: potentially uninitialized local variable 'l' used [D:\a\ddup\ddup\build\test_tls.vcxproj]
-D:\a\ddup\ddup\src\core\command.c(1856): warning C4703: potentially uninitialized local pointer variable 'l' used [D:\a\ddup\ddup\build\test_tls.vcxproj]
-D:\a\ddup\ddup\src\core\command.c(1895): warning C4701: potentially uninitialized local variable 'l' used [D:\a\ddup\ddup\build\test_tls.vcxproj]
-D:\a\ddup\ddup\src\core\command.c(1895): warning C4703: potentially uninitialized local pointer variable 'l' used [D:\a\ddup\ddup\build\test_tls.vcxproj]
-D:\a\ddup\ddup\src\core\command.c(1962): warning C4701: potentially uninitialized local variable 's' used [D:\a\ddup\ddup\build\test_tls.vcxproj]
-D:\a\ddup\ddup\src\core\command.c(1962): warning C4703: potentially uninitialized local pointer variable 's' used [D:\a\ddup\ddup\build\test_tls.vcxproj]
-D:\a\ddup\ddup\src\core\command.c(2058): warning C4701: potentially uninitialized local variable 's' used [D:\a\ddup\ddup\build\test_tls.vcxproj]
-D:\a\ddup\ddup\src\core\command.c(2058): warning C4703: potentially uninitialized local pointer variable 's' used [D:\a\ddup\ddup\build\test_tls.vcxproj]
-D:\a\ddup\ddup\src\core\command.c(2099): warning C4701: potentially uninitialized local variable 's' used [D:\a\ddup\ddup\build\test_tls.vcxproj]
-D:\a\ddup\ddup\src\core\command.c(2099): warning C4703: potentially uninitialized local pointer variable 's' used [D:\a\ddup\ddup\build\test_tls.vcxproj]
-D:\a\ddup\ddup\src\core\command.c(2178): warning C4701: potentially uninitialized local variable 'src' used [D:\a\ddup\ddup\build\test_tls.vcxproj]
-D:\a\ddup\ddup\src\core\command.c(2178): warning C4703: potentially uninitialized local pointer variable 'src' used [D:\a\ddup\ddup\build\test_tls.vcxproj]
-D:\a\ddup\ddup\src\core\command.c(2203): warning C4701: potentially uninitialized local variable 'dst' used [D:\a\ddup\ddup\build\test_tls.vcxproj]
-D:\a\ddup\ddup\src\core\command.c(2203): warning C4703: potentially uninitialized local pointer variable 'dst' used [D:\a\ddup\ddup\build\test_tls.vcxproj]
-D:\a\ddup\ddup\src\core\command.c(2418): warning C4701: potentially uninitialized local variable 'z' used [D:\a\ddup\ddup\build\test_tls.vcxproj]
-D:\a\ddup\ddup\src\core\command.c(2418): warning C4703: potentially uninitialized local pointer variable 'z' used [D:\a\ddup\ddup\build\test_tls.vcxproj]
-D:\a\ddup\ddup\src\core\command.c(2470): warning C4701: potentially uninitialized local variable 'z' used [D:\a\ddup\ddup\build\test_tls.vcxproj]
-D:\a\ddup\ddup\src\core\command.c(2470): warning C4703: potentially uninitialized local pointer variable 'z' used [D:\a\ddup\ddup\build\test_tls.vcxproj]
-D:\a\ddup\ddup\src\core\command.c(2531): warning C4701: potentially uninitialized local variable 'z' used [D:\a\ddup\ddup\build\test_tls.vcxproj]
-D:\a\ddup\ddup\src\core\command.c(2531): warning C4703: potentially uninitialized local pointer variable 'z' used [D:\a\ddup\ddup\build\test_tls.vcxproj]
-D:\a\ddup\ddup\src\core\command.c(2633): warning C4701: potentially uninitialized local variable 'z' used [D:\a\ddup\ddup\build\test_tls.vcxproj]
-D:\a\ddup\ddup\src\core\command.c(2633): warning C4703: potentially uninitialized local pointer variable 'z' used [D:\a\ddup\ddup\build\test_tls.vcxproj]
-D:\a\ddup\ddup\src\core\command.c(2693): warning C4701: potentially uninitialized local variable 'z' used [D:\a\ddup\ddup\build\test_tls.vcxproj]
-D:\a\ddup\ddup\src\core\command.c(2693): warning C4703: potentially uninitialized local pointer variable 'z' used [D:\a\ddup\ddup\build\test_tls.vcxproj]
-  All 258 functions were compiled because no usable IPDB/IOBJ from previous compilation was found.
-  Finished generating code
-  test_tls.vcxproj -> D:\a\ddup\ddup\build\Release\test_tls.exe
+D:\a\ddup\ddup\tests\test_tls.c(19,21): error C2001: newline in string literal [D:\a\ddup\ddup\build\test_tls.vcxproj]
+D:\a\ddup\ddup\tests\test_tls.c(20,1): error C2001: newline in string literal [D:\a\ddup\ddup\build\test_tls.vcxproj]
+D:\a\ddup\ddup\tests\test_tls.c(21,5): error C2146: syntax error: missing ')' before identifier 'ctx' [D:\a\ddup\ddup\build\test_tls.vcxproj]
+D:\a\ddup\ddup\tests\test_tls.c(23,21): error C2001: newline in string literal [D:\a\ddup\ddup\build\test_tls.vcxproj]
+D:\a\ddup\ddup\tests\test_tls.c(24,1): error C2001: newline in string literal [D:\a\ddup\ddup\build\test_tls.vcxproj]
+D:\a\ddup\ddup\tests\test_tls.c(25,5): error C2143: syntax error: missing ')' before 'do' [D:\a\ddup\ddup\build\test_tls.vcxproj]
+D:\a\ddup\ddup\tests\test_tls.c(25,5): error C2059: syntax error: 'while' [D:\a\ddup\ddup\build\test_tls.vcxproj]
+D:\a\ddup\ddup\tests\test_tls.c(26,5): warning C4131: 'pal_tls_ctx_free': uses old-style declarator [D:\a\ddup\ddup\build\test_tls.vcxproj]
+D:\a\ddup\ddup\tests\test_tls.c(26,5): warning C4431: missing type specifier - int assumed. Note: C no longer supports default-int [D:\a\ddup\ddup\build\test_tls.vcxproj]
+D:\a\ddup\ddup\tests\test_tls.c(26,5): error C2371: 'pal_tls_ctx_free': redefinition; different basic types [D:\a\ddup\ddup\build\test_tls.vcxproj]
+      D:\a\ddup\ddup\src\pal\pal_tls.h(27,6):
+      see declaration of 'pal_tls_ctx_free'
+  
+D:\a\ddup\ddup\tests\test_tls.c(26,26): warning C4218: nonstandard extension used: must specify at least a storage class or a type [D:\a\ddup\ddup\build\test_tls.vcxproj]
+D:\a\ddup\ddup\tests\test_tls.c(27,1): error C2059: syntax error: '}' [D:\a\ddup\ddup\build\test_tls.vcxproj]
+D:\a\ddup\ddup\tests\test_tls.c(119,21): error C2001: newline in string literal [D:\a\ddup\ddup\build\test_tls.vcxproj]
+D:\a\ddup\ddup\tests\test_tls.c(120,1): error C2001: newline in string literal [D:\a\ddup\ddup\build\test_tls.vcxproj]
+D:\a\ddup\ddup\tests\test_tls.c(121,5): error C2143: syntax error: missing ')' before 'do' [D:\a\ddup\ddup\build\test_tls.vcxproj]
+D:\a\ddup\ddup\tests\test_tls.c(121,5): error C2065: '_e': undeclared identifier [D:\a\ddup\ddup\build\test_tls.vcxproj]
+D:\a\ddup\ddup\tests\test_tls.c(121,5): warning C4477: 'fprintf' : format string '%lld' requires an argument of type '__int64', but variadic argument 3 has type 'int' [D:\a\ddup\ddup\build\test_tls.vcxproj]
+      D:\a\ddup\ddup\tests\test_tls.c(121,5):
+      consider using '%d' in the format string
+      D:\a\ddup\ddup\tests\test_tls.c(121,5):
+      consider using '%I32d' in the format string
+  
+D:\a\ddup\ddup\tests\test_tls.c(121,5): error C2059: syntax error: 'while' [D:\a\ddup\ddup\build\test_tls.vcxproj]
+D:\a\ddup\ddup\tests\test_tls.c(122,5): error C2143: syntax error: missing ')' before 'constant' [D:\a\ddup\ddup\build\test_tls.vcxproj]
+D:\a\ddup\ddup\tests\test_tls.c(122,5): error C2143: syntax error: missing '{' before 'constant' [D:\a\ddup\ddup\build\test_tls.vcxproj]
+D:\a\ddup\ddup\tests\test_tls.c(122,5): error C2059: syntax error: 'constant' [D:\a\ddup\ddup\build\test_tls.vcxproj]
+D:\a\ddup\ddup\tests\test_tls.c(123,13): error C2143: syntax error: missing ')' before '(' [D:\a\ddup\ddup\build\test_tls.vcxproj]
+D:\a\ddup\ddup\tests\test_tls.c(123,5): error C2091: function returns function [D:\a\ddup\ddup\build\test_tls.vcxproj]
+D:\a\ddup\ddup\tests\test_tls.c(123,13): error C2143: syntax error: missing ')' before 'constant' [D:\a\ddup\ddup\build\test_tls.vcxproj]
+D:\a\ddup\ddup\tests\test_tls.c(123,13): error C2143: syntax error: missing '{' before 'constant' [D:\a\ddup\ddup\build\test_tls.vcxproj]
+D:\a\ddup\ddup\tests\test_tls.c(123,13): error C2059: syntax error: 'constant' [D:\a\ddup\ddup\build\test_tls.vcxproj]
+D:\a\ddup\ddup\tests\test_tls.c(123,13): error C2059: syntax error: ')' [D:\a\ddup\ddup\build\test_tls.vcxproj]
+D:\a\ddup\ddup\tests\test_tls.c(123,21): error C2001: newline in string literal [D:\a\ddup\ddup\build\test_tls.vcxproj]
+D:\a\ddup\ddup\tests\test_tls.c(124,1): error C2001: newline in string literal [D:\a\ddup\ddup\build\test_tls.vcxproj]
+D:\a\ddup\ddup\tests\test_tls.c(126,21): error C2001: newline in string literal [D:\a\ddup\ddup\build\test_tls.vcxproj]
+D:\a\ddup\ddup\tests\test_tls.c(127,1): error C2001: newline in string literal [D:\a\ddup\ddup\build\test_tls.vcxproj]
+D:\a\ddup\ddup\tests\test_tls.c(129,13): error C2143: syntax error: missing ')' before '(' [D:\a\ddup\ddup\build\test_tls.vcxproj]
+D:\a\ddup\ddup\tests\test_tls.c(129,5): error C2091: function returns function [D:\a\ddup\ddup\build\test_tls.vcxproj]
+D:\a\ddup\ddup\tests\test_tls.c(129,13): error C2143: syntax error: missing ')' before 'constant' [D:\a\ddup\ddup\build\test_tls.vcxproj]
+D:\a\ddup\ddup\tests\test_tls.c(129,13): error C2143: syntax error: missing '{' before 'constant' [D:\a\ddup\ddup\build\test_tls.vcxproj]
+D:\a\ddup\ddup\tests\test_tls.c(129,13): error C2059: syntax error: 'constant' [D:\a\ddup\ddup\build\test_tls.vcxproj]
+D:\a\ddup\ddup\tests\test_tls.c(129,13): error C2059: syntax error: ')' [D:\a\ddup\ddup\build\test_tls.vcxproj]
+D:\a\ddup\ddup\tests\test_tls.c(129,21): error C2001: newline in string literal [D:\a\ddup\ddup\build\test_tls.vcxproj]
+D:\a\ddup\ddup\tests\test_tls.c(130,1): error C2001: newline in string literal [D:\a\ddup\ddup\build\test_tls.vcxproj]
+D:\a\ddup\ddup\tests\test_tls.c(131,5): error C2059: syntax error: 'while' [D:\a\ddup\ddup\build\test_tls.vcxproj]
+D:\a\ddup\ddup\tests\test_tls.c(132,5): error C2059: syntax error: 'do' [D:\a\ddup\ddup\build\test_tls.vcxproj]
+D:\a\ddup\ddup\tests\test_tls.c(132,5): error C2059: syntax error: 'while' [D:\a\ddup\ddup\build\test_tls.vcxproj]
+D:\a\ddup\ddup\tests\test_tls.c(136,5): error C2059: syntax error: 'do' [D:\a\ddup\ddup\build\test_tls.vcxproj]
+D:\a\ddup\ddup\tests\test_tls.c(136,5): error C2059: syntax error: 'while' [D:\a\ddup\ddup\build\test_tls.vcxproj]
+D:\a\ddup\ddup\tests\test_tls.c(138,13): error C2143: syntax error: missing ')' before '(' [D:\a\ddup\ddup\build\test_tls.vcxproj]
+D:\a\ddup\ddup\tests\test_tls.c(138,5): error C2091: function returns function [D:\a\ddup\ddup\build\test_tls.vcxproj]
+D:\a\ddup\ddup\tests\test_tls.c(138,13): error C2143: syntax error: missing ')' before 'constant' [D:\a\ddup\ddup\build\test_tls.vcxproj]
+D:\a\ddup\ddup\tests\test_tls.c(138,13): error C2143: syntax error: missing '{' before 'constant' [D:\a\ddup\ddup\build\test_tls.vcxproj]
+D:\a\ddup\ddup\tests\test_tls.c(138,13): error C2059: syntax error: 'constant' [D:\a\ddup\ddup\build\test_tls.vcxproj]
+D:\a\ddup\ddup\tests\test_tls.c(138,13): error C2059: syntax error: ')' [D:\a\ddup\ddup\build\test_tls.vcxproj]
+D:\a\ddup\ddup\tests\test_tls.c(138,21): error C2001: newline in string literal [D:\a\ddup\ddup\build\test_tls.vcxproj]
+D:\a\ddup\ddup\tests\test_tls.c(139,1): error C2001: newline in string literal [D:\a\ddup\ddup\build\test_tls.vcxproj]
+D:\a\ddup\ddup\tests\test_tls.c(141,5): error C2059: syntax error: 'do' [D:\a\ddup\ddup\build\test_tls.vcxproj]
+D:\a\ddup\ddup\tests\test_tls.c(141,5): error C2059: syntax error: 'while' [D:\a\ddup\ddup\build\test_tls.vcxproj]
+D:\a\ddup\ddup\tests\test_tls.c(142,30): error C2059: syntax error: 'constant' [D:\a\ddup\ddup\build\test_tls.vcxproj]
+D:\a\ddup\ddup\tests\test_tls.c(142,47): error C2059: syntax error: '(' [D:\a\ddup\ddup\build\test_tls.vcxproj]
+D:\a\ddup\ddup\tests\test_tls.c(142,47): error C2143: syntax error: missing ')' before '(' [D:\a\ddup\ddup\build\test_tls.vcxproj]
+D:\a\ddup\ddup\tests\test_tls.c(142,47): error C2059: syntax error: ')' [D:\a\ddup\ddup\build\test_tls.vcxproj]
+D:\a\ddup\ddup\tests\test_tls.c(142,47): error C2143: syntax error: missing ')' before 'constant' [D:\a\ddup\ddup\build\test_tls.vcxproj]
+D:\a\ddup\ddup\tests\test_tls.c(142,5): error C2091: function returns function [D:\a\ddup\ddup\build\test_tls.vcxproj]
+D:\a\ddup\ddup\tests\test_tls.c(142,47): error C2143: syntax error: missing '{' before 'constant' [D:\a\ddup\ddup\build\test_tls.vcxproj]
+D:\a\ddup\ddup\tests\test_tls.c(142,47): error C2059: syntax error: 'constant' [D:\a\ddup\ddup\build\test_tls.vcxproj]
+D:\a\ddup\ddup\tests\test_tls.c(142,51): error C2059: syntax error: ')' [D:\a\ddup\ddup\build\test_tls.vcxproj]
+D:\a\ddup\ddup\tests\test_tls.c(145,13): error C2143: syntax error: missing ')' before '(' [D:\a\ddup\ddup\build\test_tls.vcxproj]
+D:\a\ddup\ddup\tests\test_tls.c(145,5): error C2091: function returns function [D:\a\ddup\ddup\build\test_tls.vcxproj]
+D:\a\ddup\ddup\tests\test_tls.c(145,13): error C2143: syntax error: missing ')' before 'constant' [D:\a\ddup\ddup\build\test_tls.vcxproj]
+D:\a\ddup\ddup\tests\test_tls.c(145,13): error C2143: syntax error: missing '{' before 'constant' [D:\a\ddup\ddup\build\test_tls.vcxproj]
+D:\a\ddup\ddup\tests\test_tls.c(145,13): error C2059: syntax error: 'constant' [D:\a\ddup\ddup\build\test_tls.vcxproj]
+D:\a\ddup\ddup\tests\test_tls.c(145,13): error C2059: syntax error: ')' [D:\a\ddup\ddup\build\test_tls.vcxproj]
+D:\a\ddup\ddup\tests\test_tls.c(145,21): error C2001: newline in string literal [D:\a\ddup\ddup\build\test_tls.vcxproj]
+D:\a\ddup\ddup\tests\test_tls.c(146,1): error C2001: newline in string literal [D:\a\ddup\ddup\build\test_tls.vcxproj]
+D:\a\ddup\ddup\tests\test_tls.c(148,13): error C2143: syntax error: missing ')' before '(' [D:\a\ddup\ddup\build\test_tls.vcxproj]
+D:\a\ddup\ddup\tests\test_tls.c(148,5): error C2091: function returns function [D:\a\ddup\ddup\build\test_tls.vcxproj]
+D:\a\ddup\ddup\tests\test_tls.c(148,13): error C2143: syntax error: missing ')' before 'constant' [D:\a\ddup\ddup\build\test_tls.vcxproj]
+D:\a\ddup\ddup\tests\test_tls.c(148,13): error C2143: syntax error: missing '{' before 'constant' [D:\a\ddup\ddup\build\test_tls.vcxproj]
+D:\a\ddup\ddup\tests\test_tls.c(148,13): error C2059: syntax error: 'constant' [D:\a\ddup\ddup\build\test_tls.vcxproj]
+D:\a\ddup\ddup\tests\test_tls.c(148,13): error C2059: syntax error: ')' [D:\a\ddup\ddup\build\test_tls.vcxproj]
+D:\a\ddup\ddup\tests\test_tls.c(148,21): error C2001: newline in string literal [D:\a\ddup\ddup\build\test_tls.vcxproj]
+D:\a\ddup\ddup\tests\test_tls.c(149,1): error C2001: newline in string literal [D:\a\ddup\ddup\build\test_tls.vcxproj]
+D:\a\ddup\ddup\tests\test_tls.c(153,15): error C2059: syntax error: '&' [D:\a\ddup\ddup\build\test_tls.vcxproj]
+D:\a\ddup\ddup\tests\test_tls.c(153,16): error C2146: syntax error: missing ')' before identifier 'c' [D:\a\ddup\ddup\build\test_tls.vcxproj]
+D:\a\ddup\ddup\tests\test_tls.c(153,16): error C2061: syntax error: identifier 'c' [D:\a\ddup\ddup\build\test_tls.vcxproj]
+D:\a\ddup\ddup\tests\test_tls.c(153,16): error C2059: syntax error: ';' [D:\a\ddup\ddup\build\test_tls.vcxproj]
+D:\a\ddup\ddup\tests\test_tls.c(153,17): error C2059: syntax error: ',' [D:\a\ddup\ddup\build\test_tls.vcxproj]
+D:\a\ddup\ddup\tests\test_tls.c(153,73): error C2059: syntax error: ')' [D:\a\ddup\ddup\build\test_tls.vcxproj]
+D:\a\ddup\ddup\tests\test_tls.c(154,15): error C2059: syntax error: '&' [D:\a\ddup\ddup\build\test_tls.vcxproj]
+D:\a\ddup\ddup\tests\test_tls.c(154,16): error C2146: syntax error: missing ')' before identifier 'c' [D:\a\ddup\ddup\build\test_tls.vcxproj]
+D:\a\ddup\ddup\tests\test_tls.c(154,16): error C2061: syntax error: identifier 'c' [D:\a\ddup\ddup\build\test_tls.vcxproj]
+D:\a\ddup\ddup\tests\test_tls.c(154,16): error C1003: error count exceeds 100; stopping compilation [D:\a\ddup\ddup\build\test_tls.vcxproj]
   Building Custom Rule D:/a/ddup/ddup/CMakeLists.txt
   test_zset.c
   Generating code
@@ -811,4 +869,3 @@ D:\a\ddup\ddup\src\core\command.c(2693): warning C4703: potentially uninitialize
   All 173 functions were compiled because no usable IPDB/IOBJ from previous compilation was found.
   Finished generating code
   test_zset.vcxproj -> D:\a\ddup\ddup\build\Release\test_zset.exe
-  Building Custom Rule D:/a/ddup/ddup/CMakeLists.txt
