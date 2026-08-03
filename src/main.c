@@ -70,6 +70,19 @@ int main(int argc, char **argv)
         return 1;
     }
 
+    if (cfg.appendonly) {
+        char aof_path[1024];
+        snprintf(aof_path, sizeof(aof_path), "%s/%s", cfg.dir,
+                 cfg.appendfilename);
+        if (server_enable_aof(s, aof_path) != 0) {
+            fprintf(stderr, "failed to open AOF '%s'\n", aof_path);
+            server_destroy(s);
+            pal_socket_cleanup();
+            return 1;
+        }
+        printf("AOF enabled: %s\n", aof_path);
+    }
+
     signal(SIGINT, on_signal);
     signal(SIGTERM, on_signal);
 

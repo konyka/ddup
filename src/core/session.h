@@ -58,6 +58,10 @@ typedef struct session {
     void (*deliver)(void *owner, const char *ch, size_t chlen,
                     const char *msg, size_t mlen);
     size_t nsub; /* channels this session is subscribed to */
+    /* AOF hook (server-owned): called with the original argv of every
+     * successful mutating command. NULL = no persistence logging. */
+    void *aof_ctx;
+    void (*aof_log)(void *ctx, const resp_value *argv, size_t argc);
 } session;
 
 void session_init(session *s, db *d);

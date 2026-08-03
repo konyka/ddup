@@ -19,6 +19,10 @@ server *server_create(const char *host, uint16_t port);
 /* Actual bound port. */
 uint16_t server_port(const server *s);
 
+/* Enable AOF persistence: replay the file if it exists, then append every
+ * mutating command. Returns 0 on success. */
+int server_enable_aof(server *s, const char *path);
+
 /* Run exactly one event-loop iteration: wait up to timeout_ms for readiness,
  * accept new connections and service ready ones. Returns the number of
  * readiness events handled (0 = timeout). */

@@ -31,6 +31,7 @@ void db_init(db *d)
     d->expired_keys = 0;
     d->evicted_keys = 0;
     d->used_memory = 0;
+    d->dirty = 0;
     d->maxmemory = 0;
     d->maxmemory_policy = DB_POLICY_ALLKEYS_LRU;
     d->rng_state = 0x9E3779B9u; /* nonzero xorshift seed */
@@ -70,6 +71,7 @@ void db_touch_key(db *d, const char *key, size_t klen)
         ver = get_u64(v);
     put_u64(b, ver + 1);
     rh_set(&d->keyvers, key, klen, b, 8);
+    d->dirty++;
 }
 
 uint64_t db_key_version(db *d, const char *key, size_t klen)
@@ -1230,6 +1232,7 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
         rh_init(&d->keyvers);
         d->used_memory = 0;
         d->flush_epoch++; /* invalidates all WATCHes */
+        d->dirty++;
         resp_write_simple_string(out, "OK", 2);
         return;
     }
@@ -2878,9 +2881,17 @@ static void exec_transaction(session *s, resp_buf *out, uint64_t now_ms)
         resp_write_error(out, E, sizeof(E) - 1);
         goto done;
     }
-    resp_write_array_header(out, s->queue_len);
-    for (i = 0; i < s->queue_len; i++)
-        command_dispatch(s, s->queue[i].argv, s->queue[i].argc, out, now_ms);
+    {
+        uint64_t dirty_before = s->d->dirty;
+        resp_write_array_header(out, s->queue_len);
+        for (i = 0; i < s->queue_len; i++)
+            command_dispatch(s, s->queue[i].argv, s->queue[i].argc, out,
+                             now_ms);
+        /* AOF: log each applied command individually (no MULTI wrapper) */
+        if (s->d->dirty != dirty_before && s->aof_log != NULL)
+            for (i = 0; i < s->queue_len; i++)
+                s->aof_log(s->aof_ctx, s->queue[i].argv, s->queue[i].argc);
+    }
     /* queued writes may have crossed maxmemory */
     if (s->d->maxmemory_policy == DB_POLICY_ALLKEYS_LRU)
         db_evict_if_needed(s->d);
@@ -2896,6 +2907,7 @@ void session_execute_at(session *s, const resp_value *argv, size_t argc,
 {
     const char *name = NULL;
     size_t nlen = 0;
+    uint64_t dirty_before = s->d->dirty;
     if (argc > 0)
         (void)arg_str(&argv[0], &name, &nlen);
 
@@ -3004,6 +3016,9 @@ void session_execute_at(session *s, const resp_value *argv, size_t argc,
     }
 
     command_dispatch(s, argv, argc, out, now_ms);
+    /* AOF: log the original command if it mutated the db */
+    if (s->d->dirty != dirty_before && s->aof_log != NULL)
+        s->aof_log(s->aof_ctx, argv, argc);
     /* allkeys-lru eviction runs after write commands (and CONFIG SET) */
     if (s->d->maxmemory_policy == DB_POLICY_ALLKEYS_LRU)
         db_evict_if_needed(s->d);

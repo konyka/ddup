@@ -17,6 +17,7 @@ add_library(ddup_core STATIC
     src/pal/pal_time.c
     src/pal/pal_socket.c
     src/pal/pal_event.c
+    src/pal/pal_file.c
     src/core/arena.c
     src/core/rhtable.c
     src/core/command.c
@@ -27,6 +28,7 @@ add_library(ddup_core STATIC
     src/resp/resp_parser.c
     src/resp/resp_writer.c
     src/server/server.c
+    src/server/aof.c
 )
 target_include_directories(ddup_core PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/src")
 ddup_apply_options(ddup_core)
@@ -95,9 +97,10 @@ ddup_add_test(test_session tests/test_session.c)
 ddup_add_test(test_multi tests/test_multi.c)
 ddup_add_test(test_pubsub tests/test_pubsub.c)
 ddup_add_test(test_config tests/test_config.c)
+ddup_add_test(test_aof tests/test_aof.c)
 
 add_custom_target(check
     COMMAND ${CMAKE_CTEST_COMMAND} --output-on-failure
-    DEPENDS test_pal test_socket test_event test_server test_arena test_resp_parser test_resp_writer test_resp3 test_rhtable test_command test_expire test_eviction test_hash test_list test_skiplist test_set test_zset test_session test_multi test_pubsub test_config
+    DEPENDS test_pal test_socket test_event test_server test_arena test_resp_parser test_resp_writer test_resp3 test_rhtable test_command test_expire test_eviction test_hash test_list test_skiplist test_set test_zset test_session test_multi test_pubsub test_config test_aof
     WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
 )

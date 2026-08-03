@@ -21,6 +21,7 @@
 #include "core/arena.h"
 #include "core/command.h"
 #include "core/session.h"
+#include "server/aof.h"
 #include "pal/pal_event.h"
 #include "pal/pal_socket.h"
 #include "pal/pal_time.h"
@@ -64,6 +65,7 @@ struct server {
     pal_socket_t listen_fd;
     db db;
     rh_table channels; /* pub/sub: channel -> chan_node list head (8-byte ptr) */
+    aof *aof;          /* NULL when appendonly=no */
     conn **conns;
     size_t nconns;
     size_t cap;
@@ -197,6 +199,11 @@ static void srv_deliver(void *owner, const char *ch, size_t chlen,
     resp_write_bulk(&c->out, msg, mlen);
 }
 
+static void srv_aof_log(void *ctx, const resp_value *argv, size_t argc)
+{
+    aof_log_cmd((aof *)ctx, argv, argc);
+}
+
 static conn *conn_create(server *srv, pal_socket_t fd)
 {
     conn *c = (conn *)calloc(1, sizeof(*c));
@@ -220,6 +227,10 @@ static conn *conn_create(server *srv, pal_socket_t fd)
     c->sess->each_channel = srv_each_channel;
     c->sess->publish = srv_publish;
     c->sess->deliver = srv_deliver;
+    if (srv->aof != NULL) {
+        c->sess->aof_ctx = srv->aof;
+        c->sess->aof_log = srv_aof_log;
+    }
     resp_buf_init(&c->out);
     arena_init(&c->arena, 4096);
     return c;
@@ -266,6 +277,14 @@ uint16_t server_port(const server *s)
     return s->port;
 }
 
+int server_enable_aof(server *s, const char *path)
+{
+    if (pal_file_exists(path))
+        aof_replay(&s->db, path);
+    s->aof = aof_open(path);
+    return s->aof != NULL ? 0 : -1;
+}
+
 void server_destroy(server *s)
 {
     size_t i;
@@ -280,6 +299,7 @@ void server_destroy(server *s)
     if (s->loop != NULL)
         pal_loop_free(s->loop);
     rh_destroy(&s->channels);
+    aof_close(s->aof);
     db_destroy(&s->db);
     free(s);
 }
@@ -444,5 +464,8 @@ int server_run_once(server *s, int timeout_ms)
             }
         }
     }
+    /* flush the AOF buffer once per loop iteration */
+    if (s->aof != NULL)
+        aof_flush(s->aof);
     return nev;
 }
