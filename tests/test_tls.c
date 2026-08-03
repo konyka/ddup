@@ -37,6 +37,7 @@ typedef struct tls_client {
 static void tls_client_open(server *s, SSL_CTX *cctx, tls_client *c)
 {
     int rc;
+    int iter = 0;
     c->fd = pal_tcp_connect("127.0.0.1", server_tls_port(s));
     DD_CHECK(c->fd != PAL_SOCKET_INVALID);
     DD_CHECK_EQ_INT(0, pal_set_nonblocking(c->fd, 1));
@@ -50,7 +51,10 @@ static void tls_client_open(server *s, SSL_CTX *cctx, tls_client *c)
         rc = SSL_get_error(c->ssl, rc);
         DD_CHECK(rc == SSL_ERROR_WANT_READ || rc == SSL_ERROR_WANT_WRITE);
         server_run_once(s, 10);
+        if (++iter > 10000)
+            break; /* fail via the check above on the next iteration */
     }
+    DD_CHECK(iter <= 10000);
 }
 
 static void tls_client_close(tls_client *c)
@@ -79,7 +83,11 @@ static void tls_rt(server *s, tls_client *c, const char *req,
         rc = SSL_get_error(c->ssl, rc);
         DD_CHECK(rc == SSL_ERROR_WANT_READ || rc == SSL_ERROR_WANT_WRITE);
         server_run_once(s, 10);
+        if (++iter > 10000)
+            break;
     }
+    DD_CHECK(iter <= 10000);
+    iter = 0;
     while (got < elen && iter < 10000) {
         iter++;
         server_run_once(s, 10);
