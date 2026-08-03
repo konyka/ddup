@@ -67,6 +67,10 @@ struct server {
     db db;
     rh_table channels; /* pub/sub: channel -> chan_node list head (8-byte ptr) */
     aof *aof;          /* NULL when appendonly=no */
+    int shutdown_flag;
+    int save_sec;               /* automatic snapshot interval, 0 = off */
+    uint64_t last_save_check;   /* pal_now_ms of the last interval check */
+    uint64_t dirty_at_last_save;
     conn **conns;
     size_t nconns;
     size_t cap;
@@ -205,6 +209,11 @@ static void srv_aof_log(void *ctx, const resp_value *argv, size_t argc)
     aof_log_cmd((aof *)ctx, argv, argc);
 }
 
+static void srv_request_shutdown(void *ctx)
+{
+    ((server *)ctx)->shutdown_flag = 1;
+}
+
 static conn *conn_create(server *srv, pal_socket_t fd)
 {
     conn *c = (conn *)calloc(1, sizeof(*c));
@@ -228,6 +237,8 @@ static conn *conn_create(server *srv, pal_socket_t fd)
     c->sess->each_channel = srv_each_channel;
     c->sess->publish = srv_publish;
     c->sess->deliver = srv_deliver;
+    c->sess->shutdown_ctx = srv;
+    c->sess->request_shutdown = srv_request_shutdown;
     if (srv->aof != NULL) {
         c->sess->aof_ctx = srv->aof;
         c->sess->aof_log = srv_aof_log;
@@ -296,6 +307,29 @@ int server_load_snapshot(server *s)
     if (s->db.snapshot_path == NULL)
         return -1;
     return snapshot_load(&s->db, s->db.snapshot_path, pal_wall_ms());
+}
+
+void server_set_save_interval(server *s, int sec)
+{
+    s->save_sec = sec;
+    s->last_save_check = pal_now_ms();
+    s->dirty_at_last_save = s->db.dirty;
+}
+
+int server_shutdown_requested(const server *s)
+{
+    return s->shutdown_flag;
+}
+
+void server_graceful_stop(server *s)
+{
+    /* snapshot only when an interval was configured (and AOF is off);
+     * the AOF is flushed by server_destroy -> aof_close. */
+    if (s->aof == NULL && s->save_sec > 0 &&
+        s->db.snapshot_path != NULL &&
+        s->db.dirty != s->dirty_at_last_save &&
+        snapshot_save(&s->db, s->db.snapshot_path) == 0)
+        s->db.last_save = pal_wall_ms() / 1000;
 }
 
 void server_destroy(server *s)
@@ -384,6 +418,20 @@ int server_run_once(server *s, int timeout_ms)
         if (now - s->last_active_expire >= 100) {
             s->last_active_expire = now;
             db_active_expire(&s->db, pal_wall_ms(), 20);
+        }
+    }
+
+    /* automatic snapshot: save interval elapsed and the db changed */
+    if (s->aof == NULL && s->save_sec > 0 &&
+        s->db.snapshot_path != NULL) {
+        uint64_t now = pal_now_ms();
+        if (now - s->last_save_check >= (uint64_t)s->save_sec * 1000) {
+            s->last_save_check = now;
+            if (s->db.dirty != s->dirty_at_last_save &&
+                snapshot_save(&s->db, s->db.snapshot_path) == 0) {
+                s->db.last_save = now / 1000;
+                s->dirty_at_last_save = s->db.dirty;
+            }
         }
     }
 

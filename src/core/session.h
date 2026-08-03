@@ -62,6 +62,9 @@ typedef struct session {
      * successful mutating command. NULL = no persistence logging. */
     void *aof_ctx;
     void (*aof_log)(void *ctx, const resp_value *argv, size_t argc);
+    /* SHUTDOWN hook (server-owned): flips the server shutdown flag. */
+    void *shutdown_ctx;
+    void (*request_shutdown)(void *ctx);
 } session;
 
 void session_init(session *s, db *d);

@@ -32,6 +32,8 @@ int main(int argc, char **argv)
     ddup_config cfg;
     server *s;
     int i;
+    /* must outlive main()'s stack frame usage: db.snapshot_path points here */
+    static char snap_path[1024];
 
     config_init(&cfg);
 
@@ -84,7 +86,6 @@ int main(int argc, char **argv)
         printf("AOF enabled: %s\n", aof_path);
     } else {
         /* AOF wins over the snapshot when both exist (Redis rule) */
-        char snap_path[1024];
         snprintf(snap_path, sizeof(snap_path), "%s/%s", cfg.dir,
                  cfg.dbfilename);
         server_set_snapshot_path(s, snap_path);
@@ -98,6 +99,7 @@ int main(int argc, char **argv)
             printf("snapshot loaded: %s\n", snap_path);
         }
     }
+    server_set_save_interval(s, cfg.save_sec);
 
     signal(SIGINT, on_signal);
     signal(SIGTERM, on_signal);
@@ -105,10 +107,11 @@ int main(int argc, char **argv)
     printf("listening on port %u\n", (unsigned)server_port(s));
     fflush(stdout);
 
-    while (!g_stop)
+    while (!g_stop && !server_shutdown_requested(s))
         server_run_once(s, 100);
 
     printf("shutting down\n");
+    server_graceful_stop(s);
     server_destroy(s);
     pal_socket_cleanup();
     return 0;

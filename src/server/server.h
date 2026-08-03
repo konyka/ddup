@@ -28,6 +28,14 @@ int server_enable_aof(server *s, const char *path);
 void server_set_snapshot_path(server *s, const char *path);
 int server_load_snapshot(server *s);
 
+/* Automatic snapshot interval in seconds (0 = off). */
+void server_set_save_interval(server *s, int sec);
+/* Nonzero after a SHUTDOWN command was processed. */
+int server_shutdown_requested(const server *s);
+/* Final persistence steps before server_destroy: flush AOF (via destroy)
+ * and, if a save interval was configured and AOF is off, save a snapshot. */
+void server_graceful_stop(server *s);
+
 /* Run exactly one event-loop iteration: wait up to timeout_ms for readiness,
  * accept new connections and service ready ones. Returns the number of
  * readiness events handled (0 = timeout). */

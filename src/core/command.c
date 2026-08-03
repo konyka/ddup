@@ -2785,6 +2785,21 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
         return;
     }
 
+    if (ci_equal(name, nlen, "SHUTDOWN")) {
+        if (argc != 1) {
+            wrong_args(out, "shutdown");
+            return;
+        }
+        if (s->request_shutdown != NULL) {
+            /* no reply: the server flushes persistence and goes down */
+            s->request_shutdown(s->shutdown_ctx);
+            return;
+        }
+        resp_write_error(out, "ERR shutdown not supported in this context",
+                         44);
+        return;
+    }
+
     if (ci_equal(name, nlen, "UNWATCH")) {
         if (argc != 1) {
             wrong_args(out, "unwatch");
@@ -2863,6 +2878,7 @@ static const cmd_arity CMD_ARITY[] = {
     {"quit", 1, 1, 0},
     {"save", 1, 1, 0},
     {"lastsave", 1, 1, 0},
+    {"shutdown", 1, 1, 0},
 };
 
 /* Queue-time check: unknown command or bad arity writes the error reply,

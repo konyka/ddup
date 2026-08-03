@@ -31,6 +31,28 @@ ctest --test-dir build --output-on-failure
 cmake --build build --target check
 ```
 
+## 运行
+
+```sh
+# 默认端口 6379，无持久化
+./build/ddup-server
+
+# 指定配置文件 + 命令行覆盖（redis 风格 --key value）
+./build/ddup-server ddup.conf --port 6380 --appendonly yes
+
+# 压测（另开一个终端）
+./build/ddup-bench -p 6379 -n 100000 -c 50 -P 16 -t set
+./build/ddup-bench -p 6379 -n 100000 -c 50 -P 16 -t get
+```
+
+配置项见仓库根目录的 [ddup.conf](ddup.conf)（bind/port/maxmemory/
+maxmemory-policy/dir/appendonly/appendfilename/dbfilename/save）。
+
+持久化：`appendonly yes` 开启 AOF（启动时自动重放）；否则启动时加载
+`dbfilename` 快照（`save N` 开启每 N 秒自动快照，SAVE 命令手动快照）。
+SIGINT/SIGTERM 或 SHUTDOWN 命令优雅退出：AOF 必定落盘，配置了 save
+间隔时额外写一次快照。
+
 ## 文档
 
 - [架构设计](docs/architecture.md)

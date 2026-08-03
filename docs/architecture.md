@@ -73,7 +73,8 @@ SADD SREM SISMEMBER SMISMEMBER SCARD SMEMBERS SPOP SRANDMEMBER SMOVE
 SINTER SUNION SDIFF ｜
 ZADD ZSCORE ZCARD ZINCRBY ZREM ZRANGE ZREVRANGE ZRANK ZREVRANK ZCOUNT
 ZRANGEBYSCORE ZREMRANGEBYSCORE ｜
-MULTI EXEC DISCARD WATCH UNWATCH ｜ SUBSCRIBE UNSUBSCRIBE PUBLISH QUIT
+MULTI EXEC DISCARD WATCH UNWATCH ｜ SUBSCRIBE UNSUBSCRIBE PUBLISH QUIT ｜
+SAVE LASTSAVE SHUTDOWN
 
 注：TTL 返回值四舍五入（(rem+500)/1000，同 Redis）；PTTL 精确到 ms。
 INCR/APPEND 在本实现中清除 TTL（与 Redis 保留 TTL 不同，有意简化）。
@@ -147,17 +148,40 @@ DBSIZE 为 O(1)，可能计入尚未回收的过期 key。
   自动退订。订阅态仅允许 (P)SUBSCRIBE/(P)UNSUBSCRIBE/PING/QUIT/SHUTDOWN。
   QUIT 当前只回 +OK 不断连（简化，后续补）。
 
+## 持久化（Phase 6）
+
+- **配置**：redis 风格扁平配置文件（`key value` 行、`#` 注释、键大小写
+  不敏感）+ `--key value` 命令行覆盖（src/core/config.c）。样例见根目录
+  ddup.conf。
+- **AOF（src/server/aof.c）**：格式即 RESP 命令流。session 分发钩子对比
+  命令前后的 `db.dirty` 计数（db_touch_key/FLUSHDB 递增），发生变更就把
+  **原始 argv** 重序列化为 RESP 数组追加到缓冲；每个 server 循环刷盘一次
+  （appendfsync everysec 式简化，stdio 缓冲，无 fsync——记录为后续优化）。
+  EXEC 按逐条命令记录（不写 MULTI 包装）。启动时 `appendonly yes` 且文件
+  存在则先重放（容忍截断尾部）。
+- **快照（src/core/snapshot.c）**：自有二进制格式 `DDUP0001`，逐 key 存
+  {类型标签、key、绝对过期毫秒、按类型的 payload}，显式小端编码。保存
+  原子化（写 `<path>.tmp` 后 rename 覆盖）。加载**全有或全无**：先解析
+  到临时 db，截断/损坏返回 -1 且目标 db 不变；加载时跳过已过期 key。
+  SAVE 命令同步落盘（BGSAVE 不做真后台，单线程下无意义，记录在案）。
+- **启动优先级**：`appendonly yes` 时只走 AOF；否则加载 dbfilename
+  快照（AOF 优先于 RDB，同 Redis）。`save N` 秒自动快照（dirty 变化才
+  写）。优雅退出（SIGINT/SIGTERM/SHUTDOWN）：AOF 必定 flush；配置了
+  save 间隔且 AOF 关闭时额外写一次最终快照。
+
 ## 目录结构
 
 ```
 src/pal/     平台抽象：pal_platform(宏), pal_time, pal_socket(TCP), pal_event(事件循环)
 src/resp/    RESP 协议（Phase 1）
-src/core/    KV 存储、哈希表、过期、淘汰、命令分发、session（事务/订阅态）（Phase 2/4/5.3）
+src/core/    KV 存储、哈希表、过期、淘汰、命令分发、session、config、
+             snapshot（Phase 2/4/5.3/6）
 src/ds/      对象类型：obj（tagged blob、Hash 嵌套表、List 双链表、Set、
              ZSet dict+skiplist）、skiplist（无 span 跳表）（Phase 5.1/5.2）
-src/server/  连接与服务器主循环（Phase 3）：单线程事件循环、recv 缓冲按需增长、
-             解析→执行→推进零拷贝流水线；当前连接为阻塞 socket（单次 recv +
-             阻塞发送循环），非阻塞写出缓冲随 thread-per-core 阶段引入
+src/server/  连接与服务器主循环（Phase 3）、aof（Phase 6）：单线程事件循环、
+             recv 缓冲按需增长、解析→执行→推进零拷贝流水线；当前连接为阻塞
+             socket（单次 recv + 阻塞发送循环），非阻塞写出缓冲随
+             thread-per-core 阶段引入
 tests/       单元测试（test.h 自研框架）+ 集成测试
 bench/       压测客户端 ddup-bench（Phase 3，非 ctest 目标）
 ```

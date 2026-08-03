@@ -28,7 +28,9 @@
   - [x] ZSet：skiplist（无 span）+ ZADD/ZSCORE/ZCARD/ZINCRBY/ZREM/ZRANGE/ZREVRANGE/ZRANK/ZREVRANK/ZCOUNT/ZRANGEBYSCORE/ZREMRANGEBYSCORE（Phase 5.2）
   - [x] 事务：session 上下文、MULTI/EXEC/DISCARD/WATCH/UNWATCH（key 版本表）（Phase 5.3）
   - [x] 发布订阅：SUBSCRIBE/UNSUBSCRIBE/PUBLISH（server 级频道注册表）（Phase 5.3）
-- [ ] **Phase 6 — 持久化与配置**
-  AOF（追加 + 重写）、RDB 风格快照、配置文件、信号处理优雅退出
+- [x] **Phase 6 — 持久化与配置**
+  AOF（RESP 命令流追加，启动重放，容忍截断尾部）、RDB 风格二进制快照
+  （原子写、全有或全无加载、过期 key 跳过）、SAVE/LASTSAVE/SHUTDOWN、
+  redis 风格配置文件 + 命令行覆盖、save 间隔自动快照、信号/命令优雅退出
 - [ ] **Phase 7+ — 长期**
   复制、集群模式、TLS、io_uring 优化落地、SIMD 解析优化、与 Garnet/Redis 基准对比

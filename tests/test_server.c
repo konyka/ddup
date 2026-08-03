@@ -237,6 +237,26 @@ static void test_pubsub_over_socket(void)
     server_destroy(s);
 }
 
+static void test_shutdown_command(void)
+{
+    server *s = server_create("127.0.0.1", 0);
+    pal_socket_t c;
+    int iter = 0;
+    DD_CHECK(s != NULL);
+    c = connect_client(s);
+
+    DD_CHECK_EQ_INT(0, server_shutdown_requested(s));
+    DD_CHECK_EQ_INT(18, pal_send(c, "*1\r\n$8\r\nSHUTDOWN\r\n", 18));
+    while (!server_shutdown_requested(s) && iter < 10000) {
+        iter++;
+        server_run_once(s, 50);
+    }
+    DD_CHECK_EQ_INT(1, server_shutdown_requested(s));
+
+    pal_close(c);
+    server_destroy(s);
+}
+
 int main(void)
 {
     DD_CHECK_EQ_INT(0, pal_socket_init());
@@ -248,6 +268,7 @@ int main(void)
     DD_RUN(test_many_connections);
     DD_RUN(test_protocol_error_closes_conn);
     DD_RUN(test_pubsub_over_socket);
+    DD_RUN(test_shutdown_command);
     pal_socket_cleanup();
     return DD_TEST_SUMMARY();
 }
