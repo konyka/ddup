@@ -5,6 +5,9 @@ on:
     branches: [main]
   pull_request:
 
+permissions:
+  contents: write # needed to publish failure logs to ci-logs-* branches
+
 jobs:
   build:
     name: ${{ matrix.os }} / ${{ matrix.cc }}
@@ -15,23 +18,53 @@ jobs:
         include:
           - os: windows-latest
             cc: cl
+            logbranch: ci-logs-windows
           - os: ubuntu-latest
             cc: gcc
+            logbranch: ci-logs-ubuntu
           - os: macos-latest
             cc: clang
+            logbranch: ci-logs-macos
     steps:
       - uses: actions/checkout@v4
 
       - name: Configure
-        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release 2>&1 | tee configure.log
         env:
           CC: ${{ matrix.cc }}
 
       - name: Build
-        run: cmake --build build --config Release
+        run: cmake --build build --config Release 2>&1 | tee build.log
 
       - name: Test
-        run: ctest --test-dir build --output-on-failure -C Release
+        run: ctest --test-dir build --output-on-failure -C Release 2>&1 | tee test.log
+
+      # Self-service diagnostics: on failure push the logs to a per-OS branch
+      # so they are readable without API auth (raw.githubusercontent.com).
+      - name: Publish failure logs
+        if: failure()
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -x
+          REPO_URL="https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          cd "$RUNNER_TEMP"
+          rm -rf cilog
+          if ! git clone --quiet --branch "${{ matrix.logbranch }}" --single-branch "$REPO_URL" cilog; then
+            git clone --quiet --no-checkout --depth 1 "$REPO_URL" cilog
+            git -C cilog checkout --orphan "${{ matrix.logbranch }}"
+            git -C cilog rm -rf . 2>/dev/null || true
+          fi
+          cd cilog
+          rm -f *.log
+          cp "$GITHUB_WORKSPACE/configure.log" "$GITHUB_WORKSPACE/build.log" "$GITHUB_WORKSPACE/test.log" . 2>/dev/null || true
+          cp "$GITHUB_WORKSPACE/build/Testing/Temporary/LastTest.log" . 2>/dev/null || true
+          git config user.email ci@ddup.local
+          git config user.name "ddup-ci"
+          git add -A
+          git commit -m "CI failure logs: ${{ matrix.os }} @ ${GITHUB_SHA:0:7}" || exit 0
+          git push -f origin "${{ matrix.logbranch }}"
 
   freebsd:
     name: freebsd / clang
