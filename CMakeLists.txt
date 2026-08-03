@@ -30,6 +30,7 @@ add_library(ddup_core STATIC
     src/resp/resp_writer.c
     src/server/server.c
     src/server/aof.c
+    src/server/repl.c
 )
 target_include_directories(ddup_core PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/src")
 ddup_apply_options(ddup_core)
@@ -100,9 +101,10 @@ ddup_add_test(test_pubsub tests/test_pubsub.c)
 ddup_add_test(test_config tests/test_config.c)
 ddup_add_test(test_aof tests/test_aof.c)
 ddup_add_test(test_snapshot tests/test_snapshot.c)
+ddup_add_test(test_repl tests/test_repl.c)
 
 add_custom_target(check
     COMMAND ${CMAKE_CTEST_COMMAND} --output-on-failure
-    DEPENDS test_pal test_socket test_event test_server test_arena test_resp_parser test_resp_writer test_resp3 test_rhtable test_command test_expire test_eviction test_hash test_list test_skiplist test_set test_zset test_session test_multi test_pubsub test_config test_aof test_snapshot
+    DEPENDS test_pal test_socket test_event test_server test_arena test_resp_parser test_resp_writer test_resp3 test_rhtable test_command test_expire test_eviction test_hash test_list test_skiplist test_set test_zset test_session test_multi test_pubsub test_config test_aof test_snapshot test_repl
     WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
 )

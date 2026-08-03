@@ -30,6 +30,21 @@ typedef struct watch_entry {
     uint64_t epoch;
 } watch_entry;
 
+/* replication roles (session.repl->role and server role) */
+#define SESSION_ROLE_MASTER 0
+#define SESSION_ROLE_REPLICA 1
+
+/* Read-only snapshot of a server's replication state, owned by the server
+ * and shared with sessions for INFO replication. */
+typedef struct repl_info {
+    int role; /* SESSION_ROLE_* */
+    char master_host[64];
+    uint16_t master_port;
+    int link_up; /* replica side: master link status */
+    size_t connected_slaves;
+    uint64_t offset; /* master side: bytes propagated so far */
+} repl_info;
+
 typedef struct session {
     db *d;
     /* MULTI state */
@@ -65,6 +80,14 @@ typedef struct session {
     /* SHUTDOWN hook (server-owned): flips the server shutdown flag. */
     void *shutdown_ctx;
     void (*request_shutdown)(void *ctx);
+    /* replication (server-owned; NULL for stack sessions) */
+    const repl_info *repl;  /* INFO replication source */
+    const int *role;        /* server role, for READONLY checks */
+    int repl_link;          /* this session is the inbound master link */
+    void (*sync_hook)(void *ctx, struct session *s);
+    void *sync_ctx;
+    int (*replicaof_hook)(void *ctx, const char *host, uint16_t port);
+    void *replicaof_ctx;
 } session;
 
 void session_init(session *s, db *d);

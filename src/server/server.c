@@ -26,6 +26,7 @@
 #include "pal/pal_event.h"
 #include "pal/pal_socket.h"
 #include "pal/pal_time.h"
+#include "server/repl.h"
 #include "resp/resp_parser.h"
 #include "resp/resp_writer.h"
 
@@ -59,6 +60,8 @@ struct conn {
     session *sess; /* per-connection command context (MULTI/WATCH/pubsub) */
     conn_sub *subs; /* channels this conn is subscribed to */
     struct server *srv;
+    int is_replica;     /* downstream replica (we are the master) */
+    int is_master_link; /* our outbound link to the master (we are replica) */
 };
 
 struct server {
@@ -71,6 +74,11 @@ struct server {
     int save_sec;               /* automatic snapshot interval, 0 = off */
     uint64_t last_save_check;   /* pal_now_ms of the last interval check */
     uint64_t dirty_at_last_save;
+    /* replication */
+    int role;             /* SESSION_ROLE_* */
+    repl_backlog backlog; /* propagated command stream (master side) */
+    resp_buf prop_buf;    /* reusable propagation serialization buffer */
+    repl_info repl;       /* INFO replication snapshot */
     conn **conns;
     size_t nconns;
     size_t cap;
@@ -204,9 +212,36 @@ static void srv_deliver(void *owner, const char *ch, size_t chlen,
     resp_write_bulk(&c->out, msg, mlen);
 }
 
-static void srv_aof_log(void *ctx, const resp_value *argv, size_t argc)
+/* Propagation sink for every successfully-applied mutating command:
+ * serialize once, then fan out to AOF (if any), the replication backlog
+ * and all downstream replica conns (flushed at end of run_once). */
+static void srv_propagate(void *ctx, const resp_value *argv, size_t argc)
 {
-    aof_log_cmd((aof *)ctx, argv, argc);
+    server *srv = (server *)ctx;
+    size_t i;
+    if (srv->aof != NULL)
+        aof_log_cmd(srv->aof, argv, argc);
+
+    srv->prop_buf.len = 0;
+    resp_write_array_header(&srv->prop_buf, argc);
+    for (i = 0; i < argc; i++) {
+        if (argv[i].type == RESP_BULK_STRING ||
+            argv[i].type == RESP_SIMPLE_STRING)
+            resp_write_bulk(&srv->prop_buf, argv[i].str, argv[i].len);
+        else
+            resp_write_bulk(&srv->prop_buf, "", 0);
+    }
+    repl_backlog_append(&srv->backlog, srv->prop_buf.data, srv->prop_buf.len);
+    srv->repl.offset = srv->backlog.offset;
+    for (i = 0; i < srv->nconns; i++) {
+        conn *rc = srv->conns[i];
+        if (rc->is_replica) {
+            resp_buf_reserve(&rc->out, srv->prop_buf.len);
+            memcpy(rc->out.data + rc->out.len, srv->prop_buf.data,
+                   srv->prop_buf.len);
+            rc->out.len += srv->prop_buf.len;
+        }
+    }
 }
 
 static void srv_request_shutdown(void *ctx)
@@ -239,10 +274,12 @@ static conn *conn_create(server *srv, pal_socket_t fd)
     c->sess->deliver = srv_deliver;
     c->sess->shutdown_ctx = srv;
     c->sess->request_shutdown = srv_request_shutdown;
-    if (srv->aof != NULL) {
-        c->sess->aof_ctx = srv->aof;
-        c->sess->aof_log = srv_aof_log;
-    }
+    c->sess->repl = &srv->repl;
+    c->sess->role = &srv->role;
+    /* every conn propagates mutations through the server mux (AOF +
+     * backlog + downstream replicas) */
+    c->sess->aof_ctx = srv;
+    c->sess->aof_log = srv_propagate;
     resp_buf_init(&c->out);
     arena_init(&c->arena, 4096);
     return c;
@@ -277,6 +314,11 @@ server *server_create(const char *host, uint16_t port)
     }
     db_init(&s->db);
     rh_init(&s->channels);
+    s->role = SESSION_ROLE_MASTER;
+    repl_backlog_init(&s->backlog, 1024 * 1024);
+    resp_buf_init(&s->prop_buf);
+    memset(&s->repl, 0, sizeof(s->repl));
+    s->repl.role = SESSION_ROLE_MASTER;
     if (pal_loop_add(s->loop, s->listen_fd, 1, 0, NULL) != 0) {
         server_destroy(s);
         return NULL;
@@ -347,6 +389,8 @@ void server_destroy(server *s)
         pal_loop_free(s->loop);
     rh_destroy(&s->channels);
     aof_close(s->aof);
+    repl_backlog_free(&s->backlog);
+    resp_buf_free(&s->prop_buf);
     db_destroy(&s->db);
     free(s);
 }
