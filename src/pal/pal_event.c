@@ -175,14 +175,16 @@ static int kq_apply(pal_loop *l, pal_socket_t fd, int want_read,
                     int want_write, void *userdata)
 {
     struct kevent kev[2];
-    int n = 0;
-    /* Re-adding with EV_ADD replaces the existing filter (incl. udata);
-     * EV_DELETE of an absent filter is an ignorable error. */
-    EV_SET(&kev[n++], (uintptr_t)fd, EVFILT_READ,
-           want_read ? EV_ADD : EV_DELETE, 0, 0, userdata);
-    EV_SET(&kev[n++], (uintptr_t)fd, EVFILT_WRITE,
-           want_write ? EV_ADD : EV_DELETE, 0, 0, userdata);
-    return kevent(l->kq, kev, n, NULL, 0, NULL);
+    /* Both filters are always registered with EV_ADD (which also replaces
+     * udata/flags on re-add, so this works for add AND mod); unwanted
+     * filters are EV_DISABLEd rather than deleted. A plain EV_ADD +
+     * EV_DELETE mix fails with ENOENT when the deleted filter was never
+     * registered, and kevent() then applies NOTHING. */
+    EV_SET(&kev[0], (uintptr_t)fd, EVFILT_READ,
+           EV_ADD | (want_read ? EV_ENABLE : EV_DISABLE), 0, 0, userdata);
+    EV_SET(&kev[1], (uintptr_t)fd, EVFILT_WRITE,
+           EV_ADD | (want_write ? EV_ENABLE : EV_DISABLE), 0, 0, userdata);
+    return kevent(l->kq, kev, 2, NULL, 0, NULL);
 }
 
 int pal_loop_add(pal_loop *l, pal_socket_t fd, int want_read, int want_write,
