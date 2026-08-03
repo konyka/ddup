@@ -73,6 +73,7 @@ static int parse_at(const char *start, const char *end, const char **pos,
 
     const char *p = *pos;
     char type = *p++;
+    out->is_null = 0;
 
     switch (type) {
     case '+':
@@ -196,6 +197,7 @@ static int parse_at(const char *start, const char *end, const char **pos,
             out->type = RESP_ARRAY;
             out->items = NULL;
             out->count = 0;
+            out->is_null = 1;
             *pos = crlf + 2;
             return 1;
         }

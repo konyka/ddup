@@ -32,6 +32,7 @@ typedef struct resp_value {
     double dbl;              /* RESP_DOUBLE */
     struct resp_value *items;/* RESP_ARRAY/MAP/SET/PUSH children (arena) */
     size_t count;            /* child count; for RESP_MAP: 2 * pair count */
+    int is_null;             /* RESP_ARRAY: distinguishes *-1 from *0 */
 } resp_value;
 
 #endif /* DDUP_RESP_H */
