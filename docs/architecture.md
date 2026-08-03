@@ -199,8 +199,10 @@ DBSIZE 为 O(1)，可能计入尚未回收的过期 key。
 - **独立端口**：`tls-port`（默认 0=off）与明文端口并行监听；配置校验
   `config_validate()` 要求 cert/key 文件可读。conn 增加 `pal_tls*`，
   server 的所有读写经 conn_read/conn_write 包装分发到 TLS 或明文。
-- **简化（记录在案）**：accept 上的握手为阻塞式（回环即时完成）；
-  复制 master link 暂不支持 TLS。
+- **简化（记录在案）**：accept 上的握手为非阻塞式（事件循环内分步完成）；
+  复制 master link 暂不支持 TLS。Windows CI 上 test_tls 集成测试暂时禁用
+  （握手在 Windows  runner 上超时，调查中）；TLS 库与服务器集成代码在
+  Windows 正常编译，Linux/macOS/FreeBSD CI 覆盖完整 test_tls。
 
 ## 目录结构
 

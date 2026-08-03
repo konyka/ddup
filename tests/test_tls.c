@@ -1,5 +1,4 @@
 /* test_tls.c - TLS tests (registered in CTest only when DDUP_HAS_TLS=1). */
-#include <stdio.h>
 #include <string.h>
 
 #include <openssl/err.h>
@@ -15,13 +14,8 @@
 
 static void test_ctx_load(void)
 {
-    pal_tls_ctx *ctx;
-    fprintf(stderr, "DBG ctx_load enter
-");
-    ctx = pal_tls_ctx_new(DDUP_TEST_CERT_DIR "/cert.pem",
-                          DDUP_TEST_CERT_DIR "/key.pem");
-    fprintf(stderr, "DBG ctx_load done
-");
+    pal_tls_ctx *ctx = pal_tls_ctx_new(DDUP_TEST_CERT_DIR "/cert.pem",
+                                       DDUP_TEST_CERT_DIR "/key.pem");
     DD_CHECK(ctx != NULL);
     pal_tls_ctx_free(ctx);
 }
@@ -116,18 +110,10 @@ static void test_tls_server_roundtrip(void)
     tls_client c;
     pal_socket_t plain;
 
-    fprintf(stderr, "DBG roundtrip enter
-");
     DD_CHECK_EQ_INT(0, pal_socket_init());
     SSL_library_init();
-    fprintf(stderr, "DBG ssl init done
-");
 
-    fprintf(stderr, "DBG before server_create
-");
     s = server_create("127.0.0.1", 0);
-    fprintf(stderr, "DBG after server_create
-");
     DD_CHECK(s != NULL);
     DD_CHECK_EQ_INT(0,
                     server_enable_tls(s, "127.0.0.1", 0,
@@ -135,18 +121,12 @@ static void test_tls_server_roundtrip(void)
                                       DDUP_TEST_CERT_DIR "/key.pem"));
     DD_CHECK(server_tls_port(s) != 0);
 
-    fprintf(stderr, "DBG tls enabled on server
-");
     cctx = SSL_CTX_new(TLS_client_method());
     DD_CHECK(cctx != NULL);
     SSL_CTX_set_verify(cctx, SSL_VERIFY_NONE, NULL);
 
     /* handshake + PING */
-    fprintf(stderr, "DBG before handshake
-");
     tls_client_open(s, cctx, &c);
-    fprintf(stderr, "DBG handshake done
-");
     tls_rt(s, &c, "*1\r\n$4\r\nPING\r\n", "+PONG\r\n");
 
     /* SET/GET over TLS */
