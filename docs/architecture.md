@@ -68,7 +68,11 @@ PING ECHO GET SET(NX/XX/EX/PX) DEL UNLINK EXISTS INCR DECR APPEND STRLEN
 MGET MSET ｜ EXPIRE PEXPIRE EXPIREAT PEXPIREAT TTL PTTL PERSIST ｜
 DBSIZE FLUSHDB CONFIG(GET/SET maxmemory, maxmemory-policy) INFO ｜
 HSET HGET HDEL HEXISTS HLEN HGETALL HKEYS HVALS HMSET HMGET HINCRBY HSETNX ｜
-LPUSH RPUSH LPUSHX RPUSHX LPOP RPOP LLEN LRANGE LINDEX LSET
+LPUSH RPUSH LPUSHX RPUSHX LPOP RPOP LLEN LRANGE LINDEX LSET ｜
+SADD SREM SISMEMBER SMISMEMBER SCARD SMEMBERS SPOP SRANDMEMBER SMOVE
+SINTER SUNION SDIFF ｜
+ZADD ZSCORE ZCARD ZINCRBY ZREM ZRANGE ZREVRANGE ZRANK ZREVRANK ZCOUNT
+ZRANGEBYSCORE ZREMRANGEBYSCORE
 
 注：TTL 返回值四舍五入（(rem+500)/1000，同 Redis）；PTTL 精确到 ms。
 INCR/APPEND 在本实现中清除 TTL（与 Redis 保留 TTL 不同，有意简化）。
@@ -83,6 +87,8 @@ DBSIZE 为 O(1)，可能计入尚未回收的过期 key。
   DDUP_OBJ_STRING: payload = 原始字符串字节
   DDUP_OBJ_HASH:   payload = 8 字节指针 -> obj_hash（嵌套 rh_table：field -> 值）
   DDUP_OBJ_LIST:   payload = 8 字节指针 -> obj_list（双链表，每元素一个节点）
+  DDUP_OBJ_SET:    payload = 8 字节指针 -> obj_set（rh_table：member -> 空值）
+  DDUP_OBJ_ZSET:   payload = 8 字节指针 -> obj_zset（dict + skiplist）
 ```
 
 - **所有权**：db 层拥有指针对象。任何覆盖/删除/过期/淘汰/FLUSHDB 路径
@@ -98,14 +104,33 @@ DBSIZE 为 O(1)，可能计入尚未回收的过期 key。
 - **quicklist**：list 当前为逐节点双链表；块式 quicklist 列为后续优化。
 - 过期、淘汰、LRU touch 对对象值透明生效（共用 db 层路径）。
 
+## Set / ZSet 设计（Phase 5.2）
+
+- **Set**：`obj_set` 即一张 member -> 空值的 rh_table（去重由表保证）。
+  SPOP/SRANDMEMBER 用 db 内置 xorshift 随机源：先收集 member 视图，
+  部分 Fisher-Yates 后取前 k 个（SPOP 删除选中的）；count<0 时有放回抽样。
+  SINTER/SUNION/SDIFF 结果为临时 rh_table（天然去重），SINTER/SDIFF 遇
+  缺失 key 结果为空，SUNION 忽略缺失 key。
+- **ZSet**：Redis 风格 dict + skiplist。dict（rh_table）member -> 8 字节
+  double，ZSCORE/ZINCRBY/ZREM 均 O(log N)；skiplist（src/ds/skiplist.c）
+  维护 (score, member 字节序) 排序：分数升序，同分按 member 字典序
+  （与 Redis 一致）。跳表为**无 span 简化变体**：ZRANK/索引访问走
+  level-0 链 O(N)，span 优化列为后续工作。层数几何分布 p=1/4、上限 32，
+  内部 xorshift32 随机源（确定性种子，测试可复现）。
+- **分数格式**：`%.17g`（inf/-inf 原样），解析用 strtod 全量消费，
+  NaN 一律拒绝（`ERR value is not a valid float`）；inf + -inf 的结果
+  NaN 报 `ERR resulting score is not a number (NaN)`。
+- **范围语法**：ZCOUNT/ZRANGEBYSCORE/ZREMRANGEBYSCORE 支持 `(x` 开区间
+  与 `-inf`/`+inf`；范围比较只看 score（同分 member 同进同出）。
+
 ## 目录结构
 
 ```
 src/pal/     平台抽象：pal_platform(宏), pal_time, pal_socket(TCP), pal_event(事件循环)
 src/resp/    RESP 协议（Phase 1）
 src/core/    KV 存储、哈希表、过期、淘汰、命令分发（Phase 2/4）
-src/ds/      对象类型：obj（tagged blob、Hash 嵌套表、List 双链表）（Phase 5.1；
-             Set/ZSet 见 Phase 5.2）
+src/ds/      对象类型：obj（tagged blob、Hash 嵌套表、List 双链表、Set、
+             ZSet dict+skiplist）、skiplist（无 span 跳表）（Phase 5.1/5.2）
 src/server/  连接与服务器主循环（Phase 3）：单线程事件循环、recv 缓冲按需增长、
              解析→执行→推进零拷贝流水线；当前连接为阻塞 socket（单次 recv +
              阻塞发送循环），非阻塞写出缓冲随 thread-per-core 阶段引入
