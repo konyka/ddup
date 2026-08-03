@@ -56,7 +56,8 @@ int main(int argc, char **argv)
         return 1;
     }
 
-    s = server_create(NULL, port);
+    /* Bind all IPv4 interfaces (IPv6/dual-stack is a later refinement). */
+    s = server_create("0.0.0.0", port);
     if (s == NULL) {
         fprintf(stderr, "failed to listen on port %u\n", (unsigned)port);
         pal_socket_cleanup();

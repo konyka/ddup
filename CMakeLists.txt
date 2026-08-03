@@ -43,6 +43,13 @@ add_executable(ddup-server src/main.c)
 target_link_libraries(ddup-server PRIVATE ddup_core)
 
 # ---------------------------------------------------------------------------
+# Benchmark client (tool, not a ctest test)
+# ---------------------------------------------------------------------------
+add_executable(ddup-bench bench/ddup-bench.c)
+target_link_libraries(ddup-bench PRIVATE ddup_core)
+ddup_apply_options(ddup-bench)
+
+# ---------------------------------------------------------------------------
 # Tests (TDD: every module has a test target; `ctest` or `cmake --build . --target check`)
 # ---------------------------------------------------------------------------
 enable_testing()
