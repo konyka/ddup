@@ -238,6 +238,22 @@ DBSIZE 为 O(1)，可能计入尚未回收的过期 key。
   侧供流正常。pal_iocp 在非 Windows 为空 stub（创建返回 NULL）。
 - ping-pong 基准见 docs/performance.md Phase 7.5 表。
 
+## 单节点集群模式（Phase 7.7）
+
+- **范围**：兼容 Redis cluster-enabled 的单节点形态，独占 16384 个槽。
+  多节点 gossip/MEET/迁移为后续工作。
+- **hash slot**：`slot = crc16(hashtag) % 16384`（CRC16-XMODEM，表驱位运算；
+  hashtag 取首个非空 `{}` 内容，规则同 Redis）。
+- **节点身份**：`cluster-enabled yes` 时首次启动生成 40 位 hex node id 并
+  写入 `cluster-config-file`（Redis nodes.conf 风格单行），重启复用。
+- **命令族**：CLUSTER INFO/MYID/NODES/SLOTS/KEYSLOT/COUNTKEYSINSLOT/
+  GETKEYSINSLOT；未启用时统一 `-ERR This instance has cluster support
+  disabled`。INFO 增 # Cluster 段（cluster_enabled:0/1）。
+- **CROSSSLOT 执行**：启用后 MGET/MSET/DEL/UNLINK/EXISTS/SINTER/SUNION/
+  SDIFF 的所有 key、SMOVE 两端、WATCH 的 key 必须同槽；EXEC 重放前用共享
+  槽累加器检查队列内全部命令的 key，违例以 CROSSSLOT 整体中止且无副作用。
+- **快照/AOF**：不受影响（对象存储路径一致）。
+
 ## 目录结构
 
 ```

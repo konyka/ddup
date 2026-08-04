@@ -16,6 +16,8 @@ redis c 的另一种实现 —— 参考微软 [Garnet](https://github.com/micro
 - 复制：master/replica 全量同步（SYNC + 命令推流）、只读副本、
   断线自动重连重同步
 - TLS：可选 OpenSSL 支持（独立 tls-port，与明文端口并行）
+- 单节点集群模式：Redis cluster 兼容（16384 槽、CLUSTER 命令族、
+  CROSSSLOT 多键约束）
 - 跨平台：Windows / Linux / macOS / FreeBSD（其他 POSIX 系统走通用路径）
 - TDD 开发：每个模块先写测试，全部测试通过后才提交
 

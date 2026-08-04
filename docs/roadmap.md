@@ -46,4 +46,7 @@
     （--io select|iocp，Windows 默认 iocp；全套 socket 测试双后端跑）（Phase 7.5）
   - [x] CI 对比压测：bench.yml 每周 ddup vs Garnet vs Redis
     （ubuntu-latest，结果发布 bench-results 分支）（Phase 7.6）
+  - [x] 单节点集群模式：CRC16 hash slot、节点身份、CLUSTER 命令族、
+    CROSSSLOT 执行（Phase 7.7）
   - [ ] PSYNC 部分重同步、复制积压区利用、链式复制拓扑测试
+  - [ ] 集群多节点：gossip/MEET、槽迁移、故障转移（多节点集群的后续阶段）
