@@ -18,6 +18,7 @@
 #include <math.h>
 
 #include "core/session.h"
+#include "core/hashslot.h"
 #include "core/snapshot.h"
 
 static void free_obj_cb(const char *key, size_t klen, const char *val,
@@ -38,6 +39,8 @@ void db_init(db *d)
     d->maxmemory_policy = DB_POLICY_ALLKEYS_LRU;
     d->cluster_enabled = 0;
     d->node_id[0] = '\0';
+    strcpy(d->cluster_ip, "0.0.0.0");
+    d->cluster_port = 0;
     d->snapshot_path = NULL;
     d->last_save = 0;
     d->rng_state = 0x9E3779B9u; /* nonzero xorshift seed */
@@ -378,6 +381,32 @@ static int as_string(resp_buf *out, const char *val, size_t vlen,
     }
     obj_str(val, vlen, s, len);
     return 1;
+}
+
+/* rh_each callback for CLUSTER COUNTKEYSINSLOT/GETKEYSINSLOT. */
+typedef struct slot_scan_ctx {
+    uint32_t slot;
+    long long limit;   /* -1 = count only */
+    long long emitted;
+    resp_buf *out;
+} slot_scan_ctx;
+
+static void slot_scan_cb(const char *key, size_t klen, const char *v,
+                         size_t vlen, void *c)
+{
+    slot_scan_ctx *ctx = (slot_scan_ctx *)c;
+    (void)v;
+    (void)vlen;
+    if (hash_slot(key, klen) != ctx->slot)
+        return;
+    if (ctx->limit < 0) {
+        ctx->emitted++;
+        return;
+    }
+    if (ctx->emitted < ctx->limit) {
+        resp_write_bulk(ctx->out, key, klen);
+        ctx->emitted++;
+    }
 }
 
 /* Fetch the hash object for key; create when missing && create != 0.
@@ -2935,6 +2964,145 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
         return;
     }
 
+    /* ---------------- cluster commands (single-node mode) ------------- */
+
+    if (ci_equal(name, nlen, "CLUSTER")) {
+        if (!d->cluster_enabled) {
+            static const char E[] =
+                "ERR This instance has cluster support disabled";
+            resp_write_error(out, E, sizeof(E) - 1);
+            return;
+        }
+        {
+            const char *sub;
+            size_t sl;
+            if (argc < 2 || !arg_str(&argv[1], &sub, &sl))
+                goto bad_type;
+            if (ci_equal(sub, sl, "INFO") && argc == 2) {
+                static const char INFO_BODY[] =
+                    "cluster_enabled:1\r\ncluster_state:ok\r\n"
+                    "cluster_slots_assigned:16384\r\n"
+                    "cluster_slots_ok:16384\r\ncluster_known_nodes:1\r\n"
+                    "cluster_size:1\r\ncluster_current_epoch:1\r\n"
+                    "cluster_my_epoch:1\r\n";
+                resp_write_bulk(out, INFO_BODY, sizeof(INFO_BODY) - 1);
+                return;
+            }
+            if (ci_equal(sub, sl, "MYID") && argc == 2) {
+                resp_write_bulk(out, d->node_id, strlen(d->node_id));
+                return;
+            }
+            if (ci_equal(sub, sl, "NODES") && argc == 2) {
+                char line[128];
+                int ll = snprintf(
+                    line, sizeof(line),
+                    "%s :0@0 myself,master - 0 0 1 connected 0-16383\n",
+                    d->node_id);
+                resp_write_bulk(out, line, (size_t)ll);
+                return;
+            }
+            if (ci_equal(sub, sl, "SLOTS") && argc == 2) {
+                resp_write_array_header(out, 1);
+                resp_write_array_header(out, 3);
+                resp_write_integer(out, 0);
+                resp_write_integer(out, 16383);
+                resp_write_array_header(out, 3);
+                resp_write_bulk(out, d->cluster_ip, strlen(d->cluster_ip));
+                resp_write_integer(out, d->cluster_port);
+                resp_write_bulk(out, d->node_id, strlen(d->node_id));
+                return;
+            }
+            if (ci_equal(sub, sl, "KEYSLOT") && argc == 3) {
+                const char *k;
+                size_t kl;
+                if (!arg_str(&argv[2], &k, &kl))
+                    goto bad_type;
+                resp_write_integer(out, (long long)hash_slot(k, kl));
+                return;
+            }
+            if (ci_equal(sub, sl, "COUNTKEYSINSLOT") && argc == 3) {
+                const char *sv;
+                size_t svl;
+                long long slot;
+                if (!arg_str(&argv[2], &sv, &svl))
+                    goto bad_type;
+                if (!parse_i64(sv, svl, &slot)) {
+                    resp_write_error(out, ERR_NOT_INT,
+                                     sizeof(ERR_NOT_INT) - 1);
+                    return;
+                }
+                if (slot < 0 || slot >= 16384) {
+                    resp_write_error(out, "ERR Invalid slot", 16);
+                    return;
+                }
+                {
+                    slot_scan_ctx ctx;
+                    ctx.slot = (uint32_t)slot;
+                    ctx.limit = -1;
+                    ctx.emitted = 0;
+                    ctx.out = NULL;
+                    rh_each(&d->table, slot_scan_cb, &ctx);
+                    resp_write_integer(out, ctx.emitted);
+                }
+                return;
+            }
+            if (ci_equal(sub, sl, "GETKEYSINSLOT") && argc == 4) {
+                const char *sv, *cv;
+                size_t svl, cvl;
+                long long slot, count;
+                if (!arg_str(&argv[2], &sv, &svl) ||
+                    !arg_str(&argv[3], &cv, &cvl))
+                    goto bad_type;
+                if (!parse_i64(sv, svl, &slot) ||
+                    !parse_i64(cv, cvl, &count)) {
+                    resp_write_error(out, ERR_NOT_INT,
+                                     sizeof(ERR_NOT_INT) - 1);
+                    return;
+                }
+                if (slot < 0 || slot >= 16384) {
+                    resp_write_error(out, "ERR Invalid slot", 16);
+                    return;
+                }
+                if (count < 0)
+                    count = 0;
+                {
+                    slot_scan_ctx ctx;
+                    /* pass 1: count; pass 2: emit up to count */
+                    ctx.slot = (uint32_t)slot;
+                    ctx.limit = -1;
+                    ctx.emitted = 0;
+                    ctx.out = NULL;
+                    rh_each(&d->table, slot_scan_cb, &ctx);
+                    if (count > ctx.emitted)
+                        count = ctx.emitted;
+                    resp_write_array_header(out, (size_t)count);
+                    ctx.limit = count;
+                    ctx.emitted = 0;
+                    ctx.out = out;
+                    rh_each(&d->table, slot_scan_cb, &ctx);
+                }
+                return;
+            }
+            {
+                char lc[32];
+                char msg[160];
+                size_t i;
+                int n2;
+                for (i = 0; i < sl && i < sizeof(lc) - 1; i++)
+                    lc[i] = (sub[i] >= 'A' && sub[i] <= 'Z')
+                                ? (char)(sub[i] + ('a' - 'A'))
+                                : sub[i];
+                lc[i] = '\0';
+                n2 = snprintf(msg, sizeof(msg),
+                              "ERR Unknown CLUSTER subcommand or wrong "
+                              "number of arguments for '%s'",
+                              lc);
+                resp_write_error(out, msg, (size_t)n2);
+            }
+        }
+        return;
+    }
+
     {
         char msg[128];
         int n = snprintf(msg, sizeof(msg), "ERR unknown command '%.*s'",
@@ -3006,6 +3174,7 @@ static const cmd_arity CMD_ARITY[] = {
     {"save", 1, 1, 0},
     {"lastsave", 1, 1, 0},
     {"shutdown", 1, 1, 0},
+    {"cluster", 2, 4, 0},
 };
 
 /* Queue-time check: unknown command or bad arity writes the error reply,

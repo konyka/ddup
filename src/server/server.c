@@ -613,6 +613,9 @@ server *server_create_ex(const char *host, uint16_t port, int backend)
     }
     db_init(&s->db);
     rh_init(&s->channels);
+    if (host != NULL)
+        snprintf(s->db.cluster_ip, sizeof(s->db.cluster_ip), "%s", host);
+    s->db.cluster_port = s->port;
     s->role = SESSION_ROLE_MASTER;
     repl_backlog_init(&s->backlog, 1024 * 1024);
     resp_buf_init(&s->prop_buf);
