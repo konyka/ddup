@@ -39,7 +39,8 @@ jobs:
         run: |
           cd "$RUNNER_TEMP/garnet"
           rm -f global.json
-          dotnet publish main/GarnetServer -c Release -o "$RUNNER_TEMP/garnet-out" 2>&1 | tail -5
+          dotnet publish main/GarnetServer -c Release -o "$RUNNER_TEMP/garnet-out" >"$GITHUB_WORKSPACE/garnet-build.log" 2>&1
+          tail -5 "$GITHUB_WORKSPACE/garnet-build.log"
 
       - name: Start all three servers
         run: |
@@ -70,7 +71,7 @@ jobs:
 
           rps() { # $1=port $2=test
             timeout 120 redis-benchmark -p "$1" -t "$2" -n 200000 -c 50 -P 16 -q 2>/dev/null \
-              | grep -i "\"$2\"" | sed -E 's/.*: ([0-9.]+) requests.*/\1/'
+              | grep -i "^$2:" | sed -E 's/.*: ([0-9.]+) requests.*/\1/'
           }
           median3() { # 3 runs of $1 $2
             a=$(rps "$1" "$2"); b=$(rps "$1" "$2"); c=$(rps "$1" "$2")
@@ -140,6 +141,7 @@ jobs:
           [ -f "$GITHUB_WORKSPACE/ddup.log" ] && cp "$GITHUB_WORKSPACE/ddup.log" . || true
           [ -f "$GITHUB_WORKSPACE/redis.log" ] && cp "$GITHUB_WORKSPACE/redis.log" . || true
           [ -f "$GITHUB_WORKSPACE/garnet.log" ] && cp "$GITHUB_WORKSPACE/garnet.log" . || true
+          [ -f "$GITHUB_WORKSPACE/garnet-build.log" ] && cp "$GITHUB_WORKSPACE/garnet-build.log" . || true
           git config user.email ci@ddup.local
           git config user.name ddup-ci
           git add -A
