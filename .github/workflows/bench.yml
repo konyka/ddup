@@ -39,7 +39,7 @@ jobs:
         run: |
           cd "$RUNNER_TEMP/garnet"
           rm -f global.json
-          dotnet publish main/GarnetServer -c Release -o "$RUNNER_TEMP/garnet-out" >"$GITHUB_WORKSPACE/garnet-build.log" 2>&1
+          dotnet publish main/GarnetServer -c Release -f net10.0 -o "$RUNNER_TEMP/garnet-out" >"$GITHUB_WORKSPACE/garnet-build.log" 2>&1
           tail -5 "$GITHUB_WORKSPACE/garnet-build.log"
 
       - name: Start all three servers
