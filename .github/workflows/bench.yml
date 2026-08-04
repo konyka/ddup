@@ -1,0 +1,136 @@
+name: bench
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "23 3 * * 0" # weekly, Sunday 03:23 UTC
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  bench:
+    name: ddup vs garnet vs redis
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build ddup (Release)
+        run: |
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+          cmake --build build
+
+      - name: Install redis server + tools
+        run: sudo apt-get update && sudo apt-get install -y redis-server redis-tools
+
+      - name: Clone Garnet (shallow)
+        run: git clone --depth 1 https://github.com/microsoft/garnet.git "$RUNNER_TEMP/garnet"
+
+      - name: Build Garnet (tolerate failure)
+        id: garnet
+        continue-on-error: true
+        env:
+          DOTNET_ROLL_FORWARD: LatestMajor
+        run: |
+          cd "$RUNNER_TEMP/garnet"
+          rm -f global.json
+          dotnet publish main/GarnetServer -c Release -o "$RUNNER_TEMP/garnet-out" 2>&1 | tail -5
+
+      - name: Start all three servers
+        run: |
+          "$GITHUB_WORKSPACE/build/ddup-server" --port 7771 --io select >"$GITHUB_WORKSPACE/ddup.log" 2>&1 &
+          redis-server --port 7773 --save '' --appendonly no --protected-mode no >"$GITHUB_WORKSPACE/redis.log" 2>&1 &
+          if [ -f "$RUNNER_TEMP/garnet-out/GarnetServer.dll" ]; then
+            dotnet "$RUNNER_TEMP/garnet-out/GarnetServer.dll" --bind 127.0.0.1 --port 7772 >"$GITHUB_WORKSPACE/garnet.log" 2>&1 &
+          fi
+          for p in 7771 7772 7773; do
+            ok=0
+            for i in $(seq 1 60); do
+              if (echo > /dev/tcp/127.0.0.1/$p) 2>/dev/null; then ok=1; break; fi
+              sleep 1
+            done
+            echo "port $p ready=$ok"
+          done
+          redis-cli -p 7771 PING
+          redis-cli -p 7773 PING
+
+      - name: Measure (same client for all)
+        run: |
+          set -x
+          cd "$GITHUB_WORKSPACE"
+          GARNET_OK=1
+          redis-cli -p 7772 PING >/dev/null 2>&1 || GARNET_OK=0
+
+          rps() { # $1=port $2=test
+            redis-benchmark -p "$1" -t "$2" -n 200000 -c 50 -P 16 -q 2>/dev/null \
+              | grep -i "\"$2\"" | sed -E 's/.*: ([0-9.]+) requests.*/\1/'
+          }
+          median3() { # 3 runs of $1 $2
+            a=$(rps "$1" "$2"); b=$(rps "$1" "$2"); c=$(rps "$1" "$2")
+            printf '%s\n%s\n%s\n' "${a:-0}" "${b:-0}" "${c:-0}" | sort -n | sed -n '2p'
+          }
+          warm() { redis-benchmark -p "$1" -n 10000 -c 50 -P 16 -t set,get -q >/dev/null 2>&1 || true; }
+
+          warm 7771; warm 7773
+          DD_SET=$(median3 7771 set); DD_GET=$(median3 7771 get)
+          RD_SET=$(median3 7773 set); RD_GET=$(median3 7773 get)
+          if [ "$GARNET_OK" = "1" ]; then
+            warm 7772
+            GA_SET=$(median3 7772 set); GA_GET=$(median3 7772 get)
+          else
+            GA_SET="n/a"; GA_GET="n/a"
+          fi
+
+          # internal consistency: ddup-bench against ddup
+          DB_SET=$(./build/ddup-bench -p 7771 -n 200000 -c 50 -P 16 -t set | tail -1 | grep -oE '[0-9.]+')
+          DB_GET=$(./build/ddup-bench -p 7771 -n 200000 -c 50 -P 16 -t get | tail -1 | grep -oE '[0-9.]+')
+
+          GA_VER="unavailable"
+          if [ "$GARNET_OK" = "1" ]; then
+            GA_VER=$(git -C "$RUNNER_TEMP/garnet" rev-parse --short HEAD)
+          fi
+
+          {
+            echo "# ddup vs Garnet vs Redis — loopback benchmark"
+            echo
+            echo "- date (UTC): $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            echo "- runner: $(uname -a), CPUs: $(nproc)"
+            echo "- ddup commit: $(git rev-parse --short HEAD)"
+            echo "- garnet commit: $GA_VER"
+            echo "- $(redis-server --version)"
+            echo "- client: redis-benchmark -t set|get -n 200000 -c 50 -P 16, median of 3"
+            echo
+            echo "| server | SET req/s | GET req/s |"
+            echo "|--------|-----------|-----------|"
+            echo "| ddup   | $DD_SET | $DD_GET |"
+            echo "| garnet | $GA_SET | $GA_GET |"
+            echo "| redis  | $RD_SET | $RD_GET |"
+            echo
+            echo "internal consistency (ddup-bench on ddup): SET $DB_SET req/s, GET $DB_GET req/s"
+          } > bench-report.md
+          cat bench-report.md
+
+      - name: Publish results to bench-results branch
+        if: always()
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -e
+          REPO_URL="https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          cd "$RUNNER_TEMP"
+          rm -rf bres
+          if ! git clone --quiet --branch bench-results --single-branch "$REPO_URL" bres; then
+            git clone --quiet --no-checkout --depth 1 "$REPO_URL" bres
+            git -C bres checkout --orphan bench-results
+            git -C bres rm -rf . 2>/dev/null || true
+          fi
+          cd bres
+          cp "$GITHUB_WORKSPACE/bench-report.md" bench-latest.md
+          cp "$GITHUB_WORKSPACE/bench-report.md" "bench-$(date -u +%Y%m%d-%H%M).md"
+          git config user.email ci@ddup.local
+          git config user.name ddup-ci
+          git add -A
+          git commit -m "bench: $(date -u +%Y-%m-%d) @ ${GITHUB_SHA:0:7}" || exit 0
+          git push -f origin bench-results
