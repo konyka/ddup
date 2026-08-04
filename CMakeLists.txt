@@ -28,6 +28,7 @@ add_library(ddup_core STATIC
     src/core/session.c
     src/core/config.c
     src/core/snapshot.c
+    src/core/crc64.c
     src/core/hashslot.c
     src/core/cluster.c
     src/resp/resp_parser.c
@@ -138,6 +139,7 @@ ddup_add_test(test_cluster_cmds tests/test_cluster_cmds.c)
 ddup_add_test(test_cluster_nodes tests/test_cluster_nodes.c)
 ddup_add_test(test_cluster_bus tests/test_cluster_bus.c)
 ddup_add_test(test_cluster_slots tests/test_cluster_slots.c)
+ddup_add_test(test_dump tests/test_dump.c)
 
 if(WIN32)
     ddup_add_test(test_iocp tests/test_iocp.c)
@@ -155,7 +157,7 @@ if(DDUP_HAS_TLS)
     endif()
 endif()
 
-set(DDUP_CHECK_DEPS test_pal test_socket test_event test_server test_arena test_resp_parser test_resp_writer test_resp3 test_rhtable test_command test_expire test_eviction test_hash test_list test_skiplist test_set test_zset test_session test_multi test_pubsub test_config test_aof test_snapshot test_repl test_hashslot test_cluster_id test_cluster_cmds test_cluster_nodes test_cluster_bus test_cluster_slots)
+set(DDUP_CHECK_DEPS test_pal test_socket test_event test_server test_arena test_resp_parser test_resp_writer test_resp3 test_rhtable test_command test_expire test_eviction test_hash test_list test_skiplist test_set test_zset test_session test_multi test_pubsub test_config test_aof test_snapshot test_repl test_hashslot test_cluster_id test_cluster_cmds test_cluster_nodes test_cluster_bus test_cluster_slots test_dump)
 if(DDUP_HAS_TLS AND NOT WIN32)
     list(APPEND DDUP_CHECK_DEPS test_tls)
 endif()

@@ -1110,7 +1110,7 @@ static const char *const WRITE_COMMANDS[] = {
     "flushdb","hset",    "hmset",   "hdel",       "hincrby", "hsetnx",
     "lpush",  "rpush",   "lpushx",  "rpushx",     "lpop",    "rpop",
     "lset",   "sadd",    "srem",    "spop",       "smove",
-    "zadd",   "zincrby", "zrem",    "zremrangebyscore",
+    "zadd",   "zincrby", "zrem",    "zremrangebyscore", "restore",
 };
 
 static int is_write_command(const char *name, size_t nlen)
@@ -1267,6 +1267,80 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
         db_set_string(d, k, kl, v, vl, now_ms);
         if (has_ttl)
             db_set_expiry(d, k, kl, now_ms + ttl_ms);
+        resp_write_simple_string(out, "OK", 2);
+        return;
+    }
+
+    if (ci_equal(name, nlen, "DUMP")) {
+        if (argc != 2) {
+            wrong_args(out, "dump");
+            return;
+        }
+        const char *k;
+        size_t kl;
+        if (!arg_str(&argv[1], &k, &kl))
+            goto bad_type;
+        db_expire_if_needed(d, k, kl, now_ms);
+        {
+            resp_buf payload;
+            resp_buf_init(&payload);
+            if (snapshot_dump_key(d, k, kl, &payload) == 0)
+                resp_write_bulk(out, payload.data, payload.len);
+            else
+                resp_write_bulk(out, NULL, 0);
+            resp_buf_free(&payload);
+        }
+        return;
+    }
+
+    if (ci_equal(name, nlen, "RESTORE")) {
+        if (argc != 4 && argc != 5) {
+            wrong_args(out, "restore");
+            return;
+        }
+        const char *k, *t, *p;
+        size_t kl, tl, pl;
+        long long ttl;
+        int replace = 0;
+        int rc;
+        if (!arg_str(&argv[1], &k, &kl) || !arg_str(&argv[2], &t, &tl) ||
+            !arg_str(&argv[3], &p, &pl))
+            goto bad_type;
+        if (!parse_i64(t, tl, &ttl)) {
+            resp_write_error(out, ERR_NOT_INT, sizeof(ERR_NOT_INT) - 1);
+            return;
+        }
+        if (ttl < 0) {
+            static const char E[] = "ERR Invalid TTL value, must be >= 0";
+            resp_write_error(out, E, sizeof(E) - 1);
+            return;
+        }
+        if (argc == 5) {
+            const char *o;
+            size_t ol;
+            if (!arg_str(&argv[4], &o, &ol))
+                goto bad_type;
+            if (!ci_equal(o, ol, "REPLACE")) {
+                resp_write_error(out, ERR_SYNTAX, sizeof(ERR_SYNTAX) - 1);
+                return;
+            }
+            replace = 1;
+        }
+        if (oom_blocked(d, out))
+            return;
+        rc = snapshot_restore_key(d, k, kl, p, pl,
+                                  ttl > 0 ? now_ms + (uint64_t)ttl : 0,
+                                  replace, now_ms);
+        if (rc == 1) {
+            static const char E[] = "BUSYKEY Target key name already exists.";
+            resp_write_error(out, E, sizeof(E) - 1);
+            return;
+        }
+        if (rc != 0) {
+            static const char E[] = "ERR Bad data format";
+            resp_write_error(out, E, sizeof(E) - 1);
+            return;
+        }
         resp_write_simple_string(out, "OK", 2);
         return;
     }
@@ -3536,6 +3610,7 @@ typedef struct cmd_arity {
 static const cmd_arity CMD_ARITY[] = {
     {"ping", 1, 2, 0},          {"echo", 2, 2, 0},
     {"get", 2, 2, 0},           {"set", 3, -1, 0},
+    {"dump", 2, 2, 0},          {"restore", 4, 5, 0},
     {"del", 2, -1, 0},          {"unlink", 2, -1, 0},
     {"exists", 2, -1, 0},       {"incr", 2, 2, 0},
     {"decr", 2, 2, 0},          {"append", 3, 3, 0},

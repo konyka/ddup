@@ -39,4 +39,29 @@ int snapshot_load(db *d, const char *path, uint64_t now_ms);
 /* Load from an in-memory buffer (same all-or-nothing policy). */
 int snapshot_load_mem(db *d, const char *buf, size_t len, uint64_t now_ms);
 
+/* ------------------------------------------------------------------ */
+/* per-key serialization (DUMP/RESTORE/MIGRATE)                       */
+/* ------------------------------------------------------------------ */
+
+/* Payload layout (all integers little-endian):
+ *   u16   format version (SNAPSHOT_DUMP_VERSION)
+ *   u8    type tag + value payload (same encoding as the snapshot entries,
+ *         without key/expiry)
+ *   u64   crc64 over all preceding bytes
+ */
+#define SNAPSHOT_DUMP_VERSION 1
+
+/* Serialize one live key, appending the payload to out.
+ * Returns 0 on success, -1 when the key does not exist. Callers expire
+ * lazily first (db_expire_if_needed) so dead keys report -1. */
+int snapshot_dump_key(db *d, const char *key, size_t klen, resp_buf *out);
+
+/* Install a key from a payload produced by snapshot_dump_key.
+ * expire_ms is an absolute wall-ms expiry, 0 for none.
+ * Returns 0 on success, 1 when the key exists and replace is 0,
+ * -1 on a malformed payload or crc mismatch (db untouched). */
+int snapshot_restore_key(db *d, const char *key, size_t klen,
+                         const char *payload, size_t plen,
+                         uint64_t expire_ms, int replace, uint64_t now_ms);
+
 #endif /* DDUP_SNAPSHOT_H */

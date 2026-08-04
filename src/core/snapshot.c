@@ -6,6 +6,7 @@
 #include <string.h>
 
 #include "ds/obj.h"
+#include "core/crc64.h"
 #include "pal/pal_file.h"
 #include "resp/resp_writer.h"
 
@@ -17,6 +18,14 @@ static void buf_u8(resp_buf *b, uint8_t v)
 {
     resp_buf_reserve(b, 1);
     b->data[b->len++] = (char)v;
+}
+
+static void buf_u16le(resp_buf *b, uint16_t v)
+{
+    int i;
+    resp_buf_reserve(b, 2);
+    for (i = 0; i < 2; i++)
+        b->data[b->len++] = (char)((v >> (8 * i)) & 0xFFu);
 }
 
 static void buf_u32le(resp_buf *b, uint32_t v)
@@ -79,26 +88,10 @@ static void dump_member_cb(const char *m, size_t mlen, const char *v,
     buf_bytes(buf, m, mlen);
 }
 
-static void save_entry_cb(const char *key, size_t klen, const char *val,
-                          size_t vlen, void *c)
+/* append a value's payload (no key/expiry) in the per-type encoding */
+static void write_value_payload(resp_buf *buf, int tag, const char *val,
+                                size_t vlen)
 {
-    save_ctx *ctx = (save_ctx *)c;
-    resp_buf *buf = ctx->buf;
-    int tag = obj_tag_of(val, vlen);
-    const char *ev;
-    size_t evl;
-    int64_t expire = -1;
-
-    if (rh_get(&ctx->d->expires, key, klen, &ev, &evl) && evl == 8) {
-        uint64_t u;
-        memcpy(&u, ev, 8);
-        expire = (int64_t)u;
-    }
-    buf_u8(buf, (uint8_t)tag);
-    buf_u32le(buf, (uint32_t)klen);
-    buf_bytes(buf, key, klen);
-    buf_u64le(buf, (uint64_t)expire);
-
     switch (tag) {
     case DDUP_OBJ_STRING: {
         const char *s;
@@ -144,6 +137,28 @@ static void save_entry_cb(const char *key, size_t klen, const char *val,
     default:
         break; /* unknown tag: skipped by the loader too */
     }
+}
+
+static void save_entry_cb(const char *key, size_t klen, const char *val,
+                          size_t vlen, void *c)
+{
+    save_ctx *ctx = (save_ctx *)c;
+    resp_buf *buf = ctx->buf;
+    int tag = obj_tag_of(val, vlen);
+    const char *ev;
+    size_t evl;
+    int64_t expire = -1;
+
+    if (rh_get(&ctx->d->expires, key, klen, &ev, &evl) && evl == 8) {
+        uint64_t u;
+        memcpy(&u, ev, 8);
+        expire = (int64_t)u;
+    }
+    buf_u8(buf, (uint8_t)tag);
+    buf_u32le(buf, (uint32_t)klen);
+    buf_bytes(buf, key, klen);
+    buf_u64le(buf, (uint64_t)expire);
+    write_value_payload(buf, tag, val, vlen);
 }
 
 void snapshot_serialize(db *d, resp_buf *out)
@@ -445,4 +460,76 @@ int snapshot_load(db *d, const char *path, uint64_t now_ms)
     rc = snapshot_load_mem(d, buf, len, now_ms);
     free(buf);
     return rc;
+}
+
+/* ------------------------------------------------------------------ */
+/* per-key serialization (DUMP/RESTORE/MIGRATE)                       */
+/* ------------------------------------------------------------------ */
+
+int snapshot_dump_key(db *d, const char *key, size_t klen, resp_buf *out)
+{
+    const char *v;
+    size_t vl, start;
+
+    if (!rh_get(&d->table, key, klen, &v, &vl))
+        return -1;
+    start = out->len;
+    buf_u16le(out, SNAPSHOT_DUMP_VERSION);
+    buf_u8(out, (uint8_t)obj_tag_of(v, vl));
+    write_value_payload(out, obj_tag_of(v, vl), v, vl);
+    buf_u64le(out, crc64(0, out->data + start, out->len - start));
+    return 0;
+}
+
+int snapshot_restore_key(db *d, const char *key, size_t klen,
+                         const char *payload, size_t plen,
+                         uint64_t expire_ms, int replace, uint64_t now_ms)
+{
+    reader r;
+    uint16_t version;
+    int tag;
+    char blob[9];
+    char *owned;
+    const char *vblob;
+    size_t vbloblen = 0;
+    uint64_t stored = 0;
+    int i;
+
+    db_expire_if_needed(d, key, klen, now_ms);
+    if (!replace && rh_get(&d->table, key, klen, &vblob, &vbloblen))
+        return 1;
+
+    if (plen < 11) /* u16 version + u8 tag + u64 crc */
+        return -1;
+    for (i = 0; i < 8; i++)
+        stored |= (uint64_t)(uint8_t)payload[plen - 8 + i] << (8 * i);
+    if (crc64(0, payload, plen - 8) != stored)
+        return -1;
+
+    r.p = payload;
+    r.len = plen - 8;
+    r.off = 0;
+    r.ok = 1;
+    version = (uint16_t)(rd_u8(&r) | ((uint16_t)rd_u8(&r) << 8));
+    if (version != SNAPSHOT_DUMP_VERSION)
+        return -1;
+    tag = rd_u8(&r);
+    owned = load_payload(&r, tag, blob, &vbloblen);
+    if (!r.ok || r.off != r.len) {
+        if (r.ok) {
+            /* parsed but trailing bytes remain: free the decoded value */
+            if (owned != NULL)
+                free(owned);
+            else
+                obj_free_value(blob, vbloblen);
+        }
+        return -1;
+    }
+    vblob = owned != NULL ? owned : blob;
+    db_install_blob(d, key, klen, vblob, vbloblen, now_ms);
+    if (expire_ms != 0)
+        db_install_expiry(d, key, klen, expire_ms);
+    if (owned != NULL)
+        free(owned);
+    return 0;
 }
