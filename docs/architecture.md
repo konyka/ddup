@@ -259,22 +259,26 @@ DBSIZE 为 O(1)，可能计入尚未回收的过期 key。
 - **集群总线**：cluster-enabled 时在 `port+10000` 开第二个监听（仅
   readiness 后端；IOCP 后端强制回落 select，同 TLS）。总线连接非阻塞，
   接入同一事件循环；慢连接按常规 out 缓冲冲刷策略处理。
-- **协议（ddup cluster protocol v1，简化自有格式，不与 Redis 总线逐字节
-  兼容，记录在案）**：`"RCMB"` + u32le totlen + u16le type
-  （PING=1/PONG=2/MEET=3），body 为发送者 id/ip/port@bus/flags/完整槽位图
-  + 至多 10 条 gossip 条目（id/ip/port/flags/槽区间串）。总包 ≤16KB，
-  防御式解析（坏包/超长直接关闭）。
+- **协议（ddup cluster protocol，简化自有格式，不与 Redis 总线逐字节
+  兼容，记录在案）**：`"RCM2"`（v2；v1 魔数 `"RCMB"` 仍可解析——v1
+  发送者没有角色/master_id/epoch 字段，按 master、"-"、epoch 0 处理）
+  + u32le totlen + u16le type（PING=1/PONG=2/MEET=3），body 为发送者
+  id/ip/port@bus/flags/完整槽位图/master_id/config_epoch + 至多 10 条
+  gossip 条目（同构字段，槽以区间串表示）。总包 ≤16KB，防御式解析
+  （坏包/超长直接关闭）。
 - **gossip**：每 1s 向全部出站连接发 PING（携带 gossip 条目）；收 PING/
-  MEET 回 PONG；PONG 刷新 last_seen；gossip 条目只增不改（新节点以
-  handshake 标记加入）。MEET 由 `CLUSTER MEET ip port` 触发（主动建连并发
-  MEET 帧）。收敛方式与 Redis 相同：A 认识 B、B 认识 C ⇒ A 经由 B 的
-  gossip 负载学会 C。
+  MEET 回 PONG；PONG 刷新 last_seen。发送者段直接合并；gossip 条目对新
+  节点全量加入（handshake 标记），对已知节点只在 epoch 不更旧时合并槽
+  声明（flags/ip 不被第三方改写）。MEET 由 `CLUSTER MEET ip port` 触发
+  （主动建连并发 MEET 帧）。收敛方式与 Redis 相同：A 认识 B、B 认识 C
+  ⇒ A 经由 B 的 gossip 负载学会 C。
 - **节点表**：db 内置 32 节点表（id/ip/port@bus/flags/槽位图/last_seen），
   nodes.conf 多行格式 render/parse 双向序列化；每 10s 脏检测持久化
   （原子 rename），启动时先装载再覆盖 myself 条目。
-- **故障检测**：NODE_TIMEOUT 默认 15s（测试可调）；超时标记 disconnected。
+- **故障检测**：NODE_TIMEOUT 默认 15s（测试可调；必须大于 1s 的 gossip
+  周期，否则在线节点会在 PING 间隔内被误标）；超时标记 disconnected。
   cluster_state = ok 当 16384 槽被在线节点全覆盖且无 disconnected 节点
-  持有槽，否则 fail。无自动故障转移（后续阶段）。
+  持有槽，否则 fail。自动故障转移见 Phase 7.10。
 - **TLS**：总线不支持 TLS（记录在案）。
 
 ## 槽分配与重定向（Phase 7.8b，多节点第二部分）
@@ -324,6 +328,34 @@ DBSIZE 为 O(1)，可能计入尚未回收的过期 key。
   <ip>:<port>`（键仍在则照常服务）。导入端槽属他人但 slot_importing
   匹配时，客户端先发 ASKING（+OK，置一次性 session 标志），下一条
   命令豁免所有权检查一次，随后标志被消费、恢复 -MOVED。
+
+## 副本与故障转移（Phase 7.10，多节点第四部分）
+
+- **副本角色**：cluster_node 增加 slave 标志位与 master_id（nodes.conf
+  的 master 列、v2 总线帧均携带）。`CLUSTER REPLICATE <id>` 使 myself
+  成为某已知 master 的副本（`Unknown node` / `Can't replicate myself` /
+  `I can only replicate a master`），并经由 session 钩子同时启动数据
+  复制（等价于对目标自动执行 REPLICAOF；提升时自动 NO ONE）。snapshot
+  装载改为仅替换数据（保留集群/配置状态），副本全量重同步不再清空
+  节点表。
+- **config epoch**：`db.cluster_current_epoch`（初始 1）；认领槽位的
+  节点把 claim 打上 `++current_epoch`（ADDSLOTS→myself、SETSLOT NODE→
+  目标、failover→提升者）。冲突裁决（cluster_merge_claims，对发送者段
+  与足够新的 gossip 条目生效）：epoch 高者胜，平局取节点 id 字典序大者
+  （Redis 规则），败者位图即时清除——包括 myself 的让步；未再声明的位
+  被收回。CLUSTER INFO 如实上报 current/my epoch。
+- **自动故障转移**：master 被标记 disconnected 且（按本地视图）持有槽
+  时，其 slave 设定选举定时（node_timeout + 500ms，记录在案的简化：无
+  投票/法定人数，多 slave 同时提升时靠 epoch 平局规则收敛）；到期且
+  master 仍失联即提升：转 master、清 master_id、以新 epoch 认领其全部
+  槽、停止数据复制并立即 gossip。死亡 master 重新上线后看到更高 epoch
+  的声明即让步。
+- **手动**：`CLUSTER FAILOVER [TAKEOVER]`，仅副本可执行（否则
+  `You should send CLUSTER FAILOVER to a replica`）。简化：无 TAKEOVER
+  时不等待 master 同意，与 TAKEOVER 行为一致（记录在案）。
+- **其余简化（记录在案）**：无 FAILOVER AUTH 授权、无副本迁移
+  （replica migration）、无 PFAIL 主观失联状态；last_seen 只被直连
+  帧刷新（第三方 gossip 不影响失联判定）。
 
 ## 目录结构
 

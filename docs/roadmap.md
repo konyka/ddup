@@ -54,5 +54,8 @@
     -CLUSTERDOWN 所有权执行、owner 缓存（Phase 7.8b）
   - [x] 多节点集群（三）：DUMP/RESTORE/MIGRATE、SETSLOT MIGRATING/
     IMPORTING、ASKING 与 -ASK 重定向、双端迁移流程（Phase 7.9）
+  - [x] 多节点集群（四）：CLUSTER REPLICATE 副本角色、config epoch 冲突
+    裁决、自动故障转移 + CLUSTER FAILOVER TAKEOVER（Phase 7.10）
   - [ ] PSYNC 部分重同步、复制积压区利用、链式复制拓扑测试
-  - [ ] 集群多节点（四）：副本故障转移
+  - [ ] 集群运维工具：reshard 工具（redis-cli 风格）、真正的 Redis 总线
+    协议兼容
