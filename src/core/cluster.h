@@ -61,4 +61,23 @@ void cluster_slots_parse(uint8_t *bm, const char *s, size_t len);
 int cluster_nodes_render(struct db *d, resp_buf *out);
 int cluster_nodes_parse_line(struct db *d, const char *line, size_t len);
 
+/* ------------------------------------------------------------------ */
+/* ddup cluster bus protocol v1 (simplified; see docs/architecture.md) */
+/* ------------------------------------------------------------------ */
+#define CLUSTER_MSG_PING 1
+#define CLUSTER_MSG_PONG 2
+#define CLUSTER_MSG_MEET 3
+#define CLUSTER_MSG_MAX 16384
+
+/* Build a PING/PONG/MEET frame from the myself node + up to 10 gossip
+ * entries (other known nodes). */
+void cluster_bus_build_frame(struct db *d, int type, resp_buf *out);
+
+/* Parse one frame defensively: upsert the sender, merge gossip entries,
+ * update last_seen (MEET additionally completes the handshake). On PING or
+ * MEET a PONG frame is appended to reply_out (empty on PONG). Returns 0 on
+ * success, -1 on malformed input. */
+int cluster_bus_handle_frame(struct db *d, const char *frame, size_t len,
+                             resp_buf *reply_out, uint64_t now_ms);
+
 #endif /* DDUP_CLUSTER_H */
