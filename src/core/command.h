@@ -2,9 +2,12 @@
 #ifndef DDUP_COMMAND_H
 #define DDUP_COMMAND_H
 
+#include "core/command.h"
+
 #include <stddef.h>
 #include <stdint.h>
 
+#include "core/cluster.h"
 #include "core/rhtable.h"
 #include "resp/resp.h"
 #include "resp/resp_writer.h"
@@ -31,6 +34,8 @@ typedef struct db {
     int maxmemory_policy;  /* DB_POLICY_* */
     int cluster_enabled;   /* single-node cluster mode */
     char node_id[41];      /* 40-hex cluster node id (when enabled) */
+    cluster_node nodes[CLUSTER_MAX_NODES]; /* cluster node table */
+    int nnodes;
     char cluster_ip[64];   /* bind address reported by CLUSTER SLOTS */
     uint16_t cluster_port; /* listen port reported by CLUSTER SLOTS */
     const char *snapshot_path; /* SAVE target (not owned; may be NULL) */

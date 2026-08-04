@@ -39,6 +39,7 @@ void db_init(db *d)
     d->maxmemory_policy = DB_POLICY_ALLKEYS_LRU;
     d->cluster_enabled = 0;
     d->node_id[0] = '\0';
+    cluster_nodes_init(d);
     strcpy(d->cluster_ip, "0.0.0.0");
     d->cluster_port = 0;
     d->snapshot_path = NULL;
