@@ -68,14 +68,14 @@ jobs:
           redis-cli -p 7772 PING >/dev/null 2>&1 || GARNET_OK=0
 
           rps() { # $1=port $2=test
-            redis-benchmark -p "$1" -t "$2" -n 200000 -c 50 -P 16 -q 2>/dev/null \
+            timeout 120 redis-benchmark -p "$1" -t "$2" -n 200000 -c 50 -P 16 -q 2>/dev/null \
               | grep -i "\"$2\"" | sed -E 's/.*: ([0-9.]+) requests.*/\1/'
           }
           median3() { # 3 runs of $1 $2
             a=$(rps "$1" "$2"); b=$(rps "$1" "$2"); c=$(rps "$1" "$2")
             printf '%s\n%s\n%s\n' "${a:-0}" "${b:-0}" "${c:-0}" | sort -n | sed -n '2p'
           }
-          warm() { redis-benchmark -p "$1" -n 10000 -c 50 -P 16 -t set,get -q >/dev/null 2>&1 || true; }
+          warm() { timeout 60 redis-benchmark -p "$1" -n 10000 -c 50 -P 16 -t set,get -q >/dev/null 2>&1 || true; }
 
           warm 7771; warm 7773
           DD_SET=$(median3 7771 set); DD_GET=$(median3 7771 get)
