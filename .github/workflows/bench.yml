@@ -71,7 +71,8 @@ jobs:
 
           rps() { # $1=port $2=test
             timeout 120 redis-benchmark -p "$1" -t "$2" -n 200000 -c 50 -P 16 -q 2>/dev/null \
-              | tr '\r' '\n' | grep -i "^$2:" | sed -E 's/.*: ([0-9.]+) requests.*/\1/'
+              | tr '\r' '\n' | grep -i "^$2: .*requests per second" \
+              | sed -E 's/.*: ([0-9.]+) requests per second.*/\1/'
           }
           median3() { # 3 runs of $1 $2
             a=$(rps "$1" "$2"); b=$(rps "$1" "$2"); c=$(rps "$1" "$2")
