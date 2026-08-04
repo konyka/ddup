@@ -79,6 +79,10 @@ jobs:
           }
           warm() { timeout 60 redis-benchmark -p "$1" -n 10000 -c 50 -P 16 -t set,get -q >/dev/null 2>&1 || true; }
 
+          # one raw sample for debugging the parse pipeline
+          timeout 120 redis-benchmark -p 7771 -t set -n 1000 -c 50 -P 16 -q > bench-raw-set.txt 2>&1 || true
+          cat bench-raw-set.txt
+
           warm 7771; warm 7773
           DD_SET=$(median3 7771 set); DD_GET=$(median3 7771 get)
           RD_SET=$(median3 7773 set); RD_GET=$(median3 7773 get)
@@ -142,6 +146,7 @@ jobs:
           [ -f "$GITHUB_WORKSPACE/redis.log" ] && cp "$GITHUB_WORKSPACE/redis.log" . || true
           [ -f "$GITHUB_WORKSPACE/garnet.log" ] && cp "$GITHUB_WORKSPACE/garnet.log" . || true
           [ -f "$GITHUB_WORKSPACE/garnet-build.log" ] && cp "$GITHUB_WORKSPACE/garnet-build.log" . || true
+          [ -f "$GITHUB_WORKSPACE/bench-raw-set.txt" ] && cp "$GITHUB_WORKSPACE/bench-raw-set.txt" . || true
           git config user.email ci@ddup.local
           git config user.name ddup-ci
           git add -A
