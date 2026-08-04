@@ -14,6 +14,7 @@
 #include <winsock2.h>
 #include <windows.h>
 #include <mswsock.h>
+#include <ws2tcpip.h>
 
 #include "pal/pal_time.h"
 
