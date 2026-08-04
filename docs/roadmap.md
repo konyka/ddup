@@ -44,4 +44,6 @@
     慢客户端不阻塞主循环（Phase 7.4）
   - [x] Windows IOCP 后端：pal_iocp proactor + server 双后端可切换
     （--io select|iocp，Windows 默认 iocp；全套 socket 测试双后端跑）（Phase 7.5）
+  - [x] CI 对比压测：bench.yml 每周 ddup vs Garnet vs Redis
+    （ubuntu-latest，结果发布 bench-results 分支）（Phase 7.6）
   - [ ] PSYNC 部分重同步、复制积压区利用、链式复制拓扑测试

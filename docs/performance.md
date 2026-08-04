@@ -36,6 +36,24 @@
 | 2026-08-03 | Phase 7.5 IOCP | 服务器 SET/GET c50 P16（iocp） | 同上 | 324k / 382k req/s | - | select: 389k / 442k（iocp 慢 ~15%） |
 | 2026-08-03 | Phase 7.5 IOCP | 服务器 SET/GET c200 P16（iocp） | 同上 | 315k / 348k req/s | - | select: 303k / 375k（基本持平） |
 
+## 对比压测 (CI, Phase 7.6)
+
+每周 CI（.github/workflows/bench.yml，ubuntu-latest 4 vCPU，loopback）对
+ddup / Garnet / Redis 用同一 redis-benchmark（-t set|get -n 200000
+-c 50 -P 16，三次取中位数）压测，结果发布在 `bench-results` 分支
+（bench-latest.md + 按日期归档）。首次实测（2026-08-04，Redis 7.0.15）：
+
+| server | SET req/s | GET req/s |
+|--------|-----------|-----------|
+| ddup   | 1,092,896 | 1,010,101 |
+| redis  | 1,058,201 | 1,197,605 |
+| garnet | n/a（dotnet 构建失败，见分支内 garnet-build.log） | n/a |
+
+ddup 与 Redis 同量级：SET 略快 ~3%，GET 慢 ~16%（GET 路径的过期检查与
+LRU touch 成本）。内部一致性：ddup-bench 顺序客户端仅 ~311k/380k，
+说明 ddup-bench 客户端本身无法打满 50 并发下的服务器，后续应增强
+bench 客户端并发能力。
+
 ## Phase 7.5 IOCP 备注
 
 ping-pong 型流水负载下 IOCP 每个往返比 readiness 多一次完成等待
