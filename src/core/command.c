@@ -40,6 +40,9 @@ void db_init(db *d)
     d->cluster_enabled = 0;
     d->node_id[0] = '\0';
     cluster_nodes_init(d);
+    memset(d->slot_owner, 0xFF, sizeof(d->slot_owner));
+    d->slot_owner_dirty = 0;
+    d->cluster_changes = 0;
     strcpy(d->cluster_ip, "0.0.0.0");
     d->cluster_port = 0;
     d->snapshot_path = NULL;
@@ -3177,6 +3180,124 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
                 }
                 return;
             }
+            if (ci_equal(sub, sl, "ADDSLOTS") && argc >= 3) {
+                size_t i;
+                int j;
+                for (i = 2; i < argc; i++) {
+                    const char *sv;
+                    size_t svl;
+                    long long slot;
+                    if (!arg_str(&argv[i], &sv, &svl))
+                        goto bad_type;
+                    if (!parse_i64(sv, svl, &slot)) {
+                        resp_write_error(out, ERR_NOT_INT,
+                                         sizeof(ERR_NOT_INT) - 1);
+                        return;
+                    }
+                    if (slot < 0 || slot >= 16384) {
+                        resp_write_error(out, "ERR Invalid slot", 16);
+                        return;
+                    }
+                    for (j = 0; j < d->nnodes; j++)
+                        if (cluster_slots_get(d->nodes[j].slots,
+                                              (uint32_t)slot)) {
+                            char msg[64];
+                            int n2 = snprintf(msg, sizeof(msg),
+                                              "ERR Slot %lld is already busy",
+                                              slot);
+                            resp_write_error(out, msg, (size_t)n2);
+                            return;
+                        }
+                    cluster_slots_set(cluster_myself(d)->slots, (uint32_t)slot,
+                                      1);
+                    d->cluster_changes++;
+                    d->slot_owner_dirty = 1;
+                }
+                resp_write_simple_string(out, "OK", 2);
+                return;
+            }
+            if (ci_equal(sub, sl, "DELSLOTS") && argc >= 3) {
+                size_t i;
+                for (i = 2; i < argc; i++) {
+                    const char *sv;
+                    size_t svl;
+                    long long slot;
+                    if (!arg_str(&argv[i], &sv, &svl))
+                        goto bad_type;
+                    if (!parse_i64(sv, svl, &slot)) {
+                        resp_write_error(out, ERR_NOT_INT,
+                                         sizeof(ERR_NOT_INT) - 1);
+                        return;
+                    }
+                    if (slot < 0 || slot >= 16384) {
+                        resp_write_error(out, "ERR Invalid slot", 16);
+                        return;
+                    }
+                    if (!cluster_slots_get(cluster_myself(d)->slots,
+                                           (uint32_t)slot)) {
+                        char msg[64];
+                        int n2 = snprintf(
+                            msg, sizeof(msg),
+                            "ERR Slot %lld is already unassigned", slot);
+                        resp_write_error(out, msg, (size_t)n2);
+                        return;
+                    }
+                    cluster_slots_set(cluster_myself(d)->slots, (uint32_t)slot,
+                                      0);
+                    d->cluster_changes++;
+                    d->slot_owner_dirty = 1;
+                }
+                resp_write_simple_string(out, "OK", 2);
+                return;
+            }
+            if (ci_equal(sub, sl, "SETSLOT") && argc == 5) {
+                const char *sv, *ids;
+                size_t svl, idl;
+                long long slot;
+                char id[41];
+                cluster_node *target;
+                int j;
+                if (!arg_str(&argv[2], &sv, &svl) ||
+                    !arg_str(&argv[3], &ids, &idl))
+                    goto bad_type;
+                if (!ci_equal(ids, idl, "NODE")) {
+                    resp_write_error(out, ERR_SYNTAX, sizeof(ERR_SYNTAX) - 1);
+                    return;
+                }
+                if (!arg_str(&argv[4], &ids, &idl))
+                    goto bad_type;
+                if (!parse_i64(sv, svl, &slot)) {
+                    resp_write_error(out, ERR_NOT_INT,
+                                     sizeof(ERR_NOT_INT) - 1);
+                    return;
+                }
+                if (slot < 0 || slot >= 16384) {
+                    resp_write_error(out, "ERR Invalid slot", 16);
+                    return;
+                }
+                if (idl != 40) {
+                    resp_write_error(out, "ERR Unknown node ", 17);
+                    return;
+                }
+                memcpy(id, ids, 40);
+                id[40] = '\0';
+                target = cluster_node_find(d, id);
+                if (target == NULL) {
+                    char msg[96];
+                    int n2 = snprintf(msg, sizeof(msg), "ERR Unknown node %s",
+                                      id);
+                    resp_write_error(out, msg, (size_t)n2);
+                    return;
+                }
+                for (j = 0; j < d->nnodes; j++)
+                    cluster_slots_set(d->nodes[j].slots, (uint32_t)slot, 0);
+                cluster_slots_set(target->slots, (uint32_t)slot, 1);
+                d->cluster_changes++;
+                d->slot_owner_dirty = 1;
+                resp_write_simple_string(out, "OK", 2);
+                return;
+            }
+
             if (ci_equal(sub, sl, "MEET") && argc == 4) {
                 const char *ip, *pv;
                 size_t ipl, pvl;

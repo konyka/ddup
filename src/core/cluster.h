@@ -47,6 +47,9 @@ void cluster_nodes_init(struct db *d);
 cluster_node *cluster_node_find(struct db *d, const char *id);
 cluster_node *cluster_node_add(struct db *d, const char *id);
 
+/* the node flagged MYSELF, or NULL */
+cluster_node *cluster_myself(struct db *d);
+
 /* slot bitmap */
 void cluster_slots_set(uint8_t *bm, uint32_t slot, int on);
 int cluster_slots_get(const uint8_t *bm, uint32_t slot);

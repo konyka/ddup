@@ -101,6 +101,8 @@ int main(void)
 /* ------------------------------------------------------------------ */
 /* multi-server gossip: MEET, convergence, failure detection          */
 /* ------------------------------------------------------------------ */
+#include <stdlib.h>
+
 #include "pal/pal_socket.h"
 #include "server/server.h"
 
@@ -218,7 +220,63 @@ static void test_meet_convergence(void)
         }
         DD_CHECK_EQ_INT(1, ok);
     }
-    /* CLUSTER INFO reflects 2 known nodes, state ok */
+    /* fresh-boot semantics: state is fail until slots are assigned */
+    ask2(a, b, ca, "*2\r\n$7\r\nCLUSTER\r\n$4\r\nINFO\r\n", buf, sizeof(buf));
+    DD_CHECK(strstr(buf, "cluster_state:fail\r\n") != NULL);
+
+    /* assign the full range to A (chunked ADDSLOTS commands); gossip
+     * carries the bitmap to B */
+    {
+        int base, okc = 0;
+        for (base = 0; base < 16384 && okc < 8; base += 2048) {
+            size_t bl = 0, off = 0, got = 0;
+            int sl, iter = 0;
+            char *big = malloc(32768);
+            DD_CHECK(big != NULL);
+            bl += (size_t)snprintf(big + bl, 32768 - bl,
+                                   "*2050\r\n$7\r\nCLUSTER\r\n$8\r\nADDSLOTS\r\n");
+            for (sl = base; sl < base + 2048; sl++) {
+                char num[8];
+                int nl = snprintf(num, sizeof(num), "%d", sl);
+                bl += (size_t)snprintf(big + bl, 32768 - bl, "$%d\r\n%s\r\n",
+                                       nl, num);
+            }
+            while (off < bl) {
+                ptrdiff_t w = pal_send(ca, big + off, bl - off);
+                if (w > 0)
+                    off += (size_t)w;
+                else
+                    pump2(a, b);
+            }
+            while (got < 5 && iter < 2000) {
+                ptrdiff_t n;
+                iter++;
+                pump2(a, b);
+                n = pal_recv(ca, buf + got, sizeof(buf) - got);
+                if (n > 0)
+                    got += (size_t)n;
+            }
+            DD_CHECK(got >= 5 && memcmp(buf, "+OK\r\n", 5) == 0);
+            free(big);
+            okc++;
+        }
+        DD_CHECK_EQ_INT(8, okc);
+    }
+
+    /* CLUSTER INFO reflects 2 known nodes, state ok (slots gossiped over) */
+    {
+        int ok = 0, i;
+        for (i = 0; i < 400 && !ok; i++) {
+            pump2(a, b);
+            if (i % 40 == 0) {
+                ask2(a, b, cb, "*2\r\n$7\r\nCLUSTER\r\n$4\r\nINFO\r\n", req,
+                     sizeof(req));
+                if (strstr(req, "cluster_state:ok\r\n") != NULL)
+                    ok = 1;
+            }
+        }
+        DD_CHECK_EQ_INT(1, ok);
+    }
     ask2(a, b, ca, "*2\r\n$7\r\nCLUSTER\r\n$4\r\nINFO\r\n", buf, sizeof(buf));
     DD_CHECK(strstr(buf, "cluster_known_nodes:2\r\n") != NULL);
     DD_CHECK(strstr(buf, "cluster_state:ok\r\n") != NULL);

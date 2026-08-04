@@ -115,6 +115,7 @@ struct server {
     bus_conn *bus;
     char nodes_path[1024];
     int nodes_dirty;
+    uint64_t last_cluster_changes;
     uint64_t last_gossip;
     uint64_t last_nodes_save;
     uint64_t node_timeout_ms;
@@ -756,14 +757,14 @@ void server_enable_cluster(server *s, const char *node_id)
     s->db.cluster_enabled = 1;
     snprintf(s->db.node_id, sizeof(s->db.node_id), "%s", node_id);
 
-    /* myself in the node table: owns all slots */
+    /* myself in the node table. Fresh boot owns NOTHING (Redis behavior);
+     * assignments come from ADDSLOTS/SETSLOT or a reloaded nodes.conf. */
     me = cluster_node_add(&s->db, node_id);
     if (me != NULL) {
         snprintf(me->ip, sizeof(me->ip), "%s", s->db.cluster_ip);
         me->port = s->db.cluster_port;
         me->bus_port = (uint16_t)(s->db.cluster_port + 10000);
         me->flags = CLUSTER_NODE_MYSELF | CLUSTER_NODE_MASTER;
-        memset(me->slots, 0xFF, sizeof(me->slots));
         me->last_seen_ms = pal_wall_ms();
         s->nodes_dirty = 1;
     }
@@ -1173,7 +1174,9 @@ static void cluster_nodes_save(server *s)
     resp_buf buf;
     char tmp[1088];
     pal_file *f;
-    if (s->nodes_path[0] == '\0' || !s->nodes_dirty)
+    if (s->nodes_path[0] == '\0')
+        return;
+    if (!s->nodes_dirty && s->last_cluster_changes == s->db.cluster_changes)
         return;
     resp_buf_init(&buf);
     if (cluster_nodes_render(&s->db, &buf) != 0) {
@@ -1186,8 +1189,10 @@ static void cluster_nodes_save(server *s)
         if (pal_file_write(f, buf.data, buf.len) == (ptrdiff_t)buf.len &&
             pal_file_flush(f) == 0) {
             pal_file_close(f);
-            if (pal_file_rename(tmp, s->nodes_path) == 0)
+            if (pal_file_rename(tmp, s->nodes_path) == 0) {
                 s->nodes_dirty = 0;
+                s->last_cluster_changes = s->db.cluster_changes;
+            }
         } else {
             pal_file_close(f);
             pal_file_unlink(tmp);

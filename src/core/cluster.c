@@ -566,5 +566,16 @@ int cluster_bus_handle_frame(struct db *d, const char *frame, size_t len,
 
     if (type != CLUSTER_MSG_PONG)
         cluster_bus_build_frame(d, CLUSTER_MSG_PONG, reply_out);
+    d->cluster_changes++;
+    d->slot_owner_dirty = 1;
     return 0;
+}
+
+cluster_node *cluster_myself(struct db *d)
+{
+    int i;
+    for (i = 0; i < d->nnodes; i++)
+        if (d->nodes[i].flags & CLUSTER_NODE_MYSELF)
+            return &d->nodes[i];
+    return NULL;
 }

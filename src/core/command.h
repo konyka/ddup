@@ -36,6 +36,9 @@ typedef struct db {
     char node_id[41];      /* 40-hex cluster node id (when enabled) */
     cluster_node nodes[CLUSTER_MAX_NODES]; /* cluster node table */
     int nnodes;
+    uint16_t slot_owner[16384]; /* node index per slot; 0xFFFF = unassigned */
+    int slot_owner_dirty;       /* rebuild slot_owner lazily */
+    uint64_t cluster_changes;   /* bumped on any node-table mutation */
     char cluster_ip[64];   /* bind address reported by CLUSTER SLOTS */
     uint16_t cluster_port; /* listen port reported by CLUSTER SLOTS */
     const char *snapshot_path; /* SAVE target (not owned; may be NULL) */
