@@ -4,6 +4,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "core/cluster.h"
 #include "core/config.h"
 #include "pal/pal_file.h"
 #include "pal/pal_iocp.h"
@@ -145,6 +146,22 @@ int main(int argc, char **argv)
     }
     server_set_save_interval(s, cfg.save_sec);
     server_set_backlog_size(s, (size_t)cfg.repl_backlog_size);
+
+    if (cfg.cluster_enabled) {
+        char cpath[1024];
+        char nid[41];
+        snprintf(cpath, sizeof(cpath), "%s/%s", cfg.dir,
+                 cfg.cluster_config_file);
+        if (cluster_node_id_load_or_create(cpath, nid) != 0) {
+            fprintf(stderr, "failed to load/create cluster config '%s'\n",
+                    cpath);
+            server_destroy(s);
+            pal_socket_cleanup();
+            return 1;
+        }
+        server_enable_cluster(s, nid);
+        printf("cluster: enabled, node %s\n", nid);
+    }
     if (cfg.replicaof_port > 0) {
         if (server_replicaof(s, cfg.replicaof_host, cfg.replicaof_port) !=
             0)

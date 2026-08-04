@@ -29,6 +29,8 @@ typedef struct db {
     uint64_t dirty;        /* mutation counter (AOF hook trigger) */
     uint64_t maxmemory;    /* bytes; 0 = unlimited */
     int maxmemory_policy;  /* DB_POLICY_* */
+    int cluster_enabled;   /* single-node cluster mode */
+    char node_id[41];      /* 40-hex cluster node id (when enabled) */
     const char *snapshot_path; /* SAVE target (not owned; may be NULL) */
     uint64_t last_save;    /* unix seconds of the last successful SAVE */
     uint32_t rng_state;    /* sampling PRNG (xorshift32, always nonzero) */

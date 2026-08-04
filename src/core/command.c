@@ -36,6 +36,8 @@ void db_init(db *d)
     d->dirty = 0;
     d->maxmemory = 0;
     d->maxmemory_policy = DB_POLICY_ALLKEYS_LRU;
+    d->cluster_enabled = 0;
+    d->node_id[0] = '\0';
     d->snapshot_path = NULL;
     d->last_save = 0;
     d->rng_state = 0x9E3779B9u; /* nonzero xorshift seed */
@@ -1401,13 +1403,16 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
                           "expired_keys:%llu\r\n"
                           "evicted_keys:%llu\r\n"
                           "# Keyspace\r\n"
-                          "dbsize:%llu\r\n",
+                          "dbsize:%llu\r\n"
+                          "# Cluster\r\n"
+                          "cluster_enabled:%d\r\n",
                           (unsigned long long)d->used_memory, human,
                           (unsigned long long)d->maxmemory,
                           policy_name(d->maxmemory_policy),
                           (unsigned long long)d->expired_keys,
                           (unsigned long long)d->evicted_keys,
-                          (unsigned long long)rh_size(&d->table));
+                          (unsigned long long)rh_size(&d->table),
+                          d->cluster_enabled);
             if (s->repl != NULL) {
                 const repl_info *ri = s->repl;
                 n2 += snprintf(buf + n2, sizeof(buf) - (size_t)n2,

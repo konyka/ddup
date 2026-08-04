@@ -24,6 +24,8 @@ void config_init(ddup_config *cfg)
     cfg->tls_cert_file[0] = '\0';
     cfg->tls_key_file[0] = '\0';
     cfg->io[0] = '\0';
+    cfg->cluster_enabled = 0;
+    strcpy(cfg->cluster_config_file, "nodes.conf");
 }
 
 static int key_eq(const char *a, const char *b)
@@ -159,6 +161,11 @@ int config_apply(ddup_config *cfg, const char *key, const char *value)
             return -1;
         return copy_str(cfg->io, sizeof(cfg->io), value);
     }
+    if (key_eq(key, "cluster-enabled"))
+        return parse_bool(value, &cfg->cluster_enabled);
+    if (key_eq(key, "cluster-config-file"))
+        return copy_str(cfg->cluster_config_file,
+                        sizeof(cfg->cluster_config_file), value);
     return -1;
 }
 

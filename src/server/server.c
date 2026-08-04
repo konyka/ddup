@@ -688,6 +688,12 @@ int server_load_snapshot(server *s)
     return snapshot_load(&s->db, s->db.snapshot_path, pal_wall_ms());
 }
 
+void server_enable_cluster(server *s, const char *node_id)
+{
+    s->db.cluster_enabled = 1;
+    snprintf(s->db.node_id, sizeof(s->db.node_id), "%s", node_id);
+}
+
 void server_set_save_interval(server *s, int sec)
 {
     s->save_sec = sec;

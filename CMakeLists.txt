@@ -29,6 +29,7 @@ add_library(ddup_core STATIC
     src/core/config.c
     src/core/snapshot.c
     src/core/hashslot.c
+    src/core/cluster.c
     src/resp/resp_parser.c
     src/resp/resp_writer.c
     src/server/server.c
@@ -132,6 +133,7 @@ ddup_add_test(test_aof tests/test_aof.c)
 ddup_add_test(test_snapshot tests/test_snapshot.c)
 ddup_add_test(test_repl tests/test_repl.c)
 ddup_add_test(test_hashslot tests/test_hashslot.c)
+ddup_add_test(test_cluster_id tests/test_cluster_id.c)
 
 if(WIN32)
     ddup_add_test(test_iocp tests/test_iocp.c)
@@ -149,7 +151,7 @@ if(DDUP_HAS_TLS)
     endif()
 endif()
 
-set(DDUP_CHECK_DEPS test_pal test_socket test_event test_server test_arena test_resp_parser test_resp_writer test_resp3 test_rhtable test_command test_expire test_eviction test_hash test_list test_skiplist test_set test_zset test_session test_multi test_pubsub test_config test_aof test_snapshot test_repl test_hashslot)
+set(DDUP_CHECK_DEPS test_pal test_socket test_event test_server test_arena test_resp_parser test_resp_writer test_resp3 test_rhtable test_command test_expire test_eviction test_hash test_list test_skiplist test_set test_zset test_session test_multi test_pubsub test_config test_aof test_snapshot test_repl test_hashslot test_cluster_id)
 if(DDUP_HAS_TLS AND NOT WIN32)
     list(APPEND DDUP_CHECK_DEPS test_tls)
 endif()
