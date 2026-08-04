@@ -7,6 +7,7 @@
 #ifndef DDUP_SERVER_H
 #define DDUP_SERVER_H
 
+#include <stddef.h>
 #include <stdint.h>
 
 typedef struct server server;
