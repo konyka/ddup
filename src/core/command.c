@@ -46,6 +46,7 @@ void db_init(db *d)
     memset(d->slot_importing, 0xFF, sizeof(d->slot_importing));
     d->slot_owner_dirty = 1;
     d->cluster_changes = 0;
+    d->cluster_current_epoch = 1;
     strcpy(d->cluster_ip, "0.0.0.0");
     d->cluster_port = 0;
     d->snapshot_path = NULL;
@@ -3437,13 +3438,17 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
                 }
                 state = (covered == 16384 && !fail_slots) ? "ok" : "fail";
                 {
+                    cluster_node *me = cluster_myself(d);
                     int nb = snprintf(
                         body, sizeof(body),
                         "cluster_enabled:1\r\ncluster_state:%s\r\n"
                         "cluster_slots_assigned:%d\r\ncluster_slots_ok:%d\r\n"
                         "cluster_known_nodes:%d\r\ncluster_size:%d\r\n"
-                        "cluster_current_epoch:1\r\ncluster_my_epoch:1\r\n",
-                        state, covered, covered, d->nnodes, d->nnodes);
+                        "cluster_current_epoch:%llu\r\n"
+                        "cluster_my_epoch:%llu\r\n",
+                        state, covered, covered, d->nnodes, d->nnodes,
+                        (unsigned long long)d->cluster_current_epoch,
+                        (unsigned long long)(me != NULL ? me->epoch : 0));
                     resp_write_bulk(out, body, (size_t)nb);
                 }
                 return;
@@ -3543,6 +3548,8 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
                     d->cluster_changes++;
                     d->slot_owner_dirty = 1;
                 }
+                /* claiming slots bumps our config epoch (Redis rule) */
+                cluster_myself(d)->epoch = cluster_next_epoch(d);
                 resp_write_simple_string(out, "OK", 2);
                 return;
             }
@@ -3700,6 +3707,7 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
                 cluster_slots_set(target->slots, (uint32_t)slot, 1);
                 d->slot_migrating[slot] = 0xFFFFu;
                 d->slot_importing[slot] = 0xFFFFu;
+                target->epoch = cluster_next_epoch(d);
                 d->cluster_changes++;
                 d->slot_owner_dirty = 1;
                 resp_write_simple_string(out, "OK", 2);

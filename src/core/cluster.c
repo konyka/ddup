@@ -169,6 +169,58 @@ void cluster_slots_parse(uint8_t *bm, const char *s, size_t len)
     }
 }
 
+uint64_t cluster_next_epoch(struct db *d)
+{
+    return ++d->cluster_current_epoch;
+}
+
+void cluster_merge_claims(struct db *d, cluster_node *claimant,
+                          const uint8_t *bm, uint64_t epoch)
+{
+    cluster_node *me = cluster_myself(d);
+    uint32_t s;
+    int i;
+    if (epoch > claimant->epoch)
+        claimant->epoch = epoch;
+    if (epoch > d->cluster_current_epoch)
+        d->cluster_current_epoch = epoch;
+    if (claimant == me)
+        return; /* our own claims are locally authoritative */
+    for (s = 0; s < 16384; s++) {
+        int claims = cluster_slots_get(bm, s);
+        int has = cluster_slots_get(claimant->slots, s);
+        if (!claims) {
+            if (has)
+                cluster_slots_set(claimant->slots, s, 0); /* retraction */
+            continue;
+        }
+        /* contested slot: resolve pairwise against every other holder */
+        {
+            int wins = 1;
+            for (i = 0; i < d->nnodes; i++) {
+                cluster_node *o = &d->nodes[i];
+                if (o == claimant || !cluster_slots_get(o->slots, s))
+                    continue;
+                if (claimant->epoch > o->epoch ||
+                    (claimant->epoch == o->epoch &&
+                     memcmp(claimant->id, o->id, 40) > 0)) {
+                    cluster_slots_set(o->slots, s, 0); /* loser yields */
+                } else {
+                    wins = 0;
+                }
+            }
+            if (wins) {
+                if (!has)
+                    cluster_slots_set(claimant->slots, s, 1);
+            } else if (has) {
+                cluster_slots_set(claimant->slots, s, 0);
+            }
+        }
+    }
+    d->slot_owner_dirty = 1;
+    d->cluster_changes++;
+}
+
 static void flags_render(uint32_t flags, char *out, size_t cap)
 {
     out[0] = '\0';
@@ -554,20 +606,22 @@ int cluster_bus_handle_frame(struct db *d, const char *frame, size_t len,
     n->flags = flags & ~(uint32_t)CLUSTER_NODE_MYSELF;
     if (type == CLUSTER_MSG_MEET)
         n->flags &= ~(uint32_t)CLUSTER_NODE_HANDSHAKE;
-    memcpy(n->slots, p, 2048);
-    p += 2048;
     n->last_seen_ms = now_ms;
     if (v2) {
-        if ((size_t)(end - p) < 48)
+        if ((size_t)(end - p) < 2048 + 48)
             return -1;
-        memcpy(master_id, p, 40);
+        memcpy(master_id, p + 2048, 40);
         master_id[40] = '\0';
-        p += 40;
-        epoch = get64(p);
-        p += 8;
+        epoch = get64(p + 2048 + 40);
         snprintf(n->master_id, sizeof(n->master_id), "%s", master_id);
-        n->epoch = epoch;
+    } else {
+        epoch = 0; /* v1: no epochs on the wire */
     }
+    /* slot claims go through epoch conflict resolution */
+    cluster_merge_claims(d, n, (const uint8_t *)p, epoch);
+    p += 2048;
+    if (v2)
+        p += 48;
 
     /* gossip entries */
     if ((size_t)(end - p) < 2)
@@ -605,23 +659,32 @@ int cluster_bus_handle_frame(struct db *d, const char *frame, size_t len,
                 if ((size_t)(end - p) < (size_t)sl + 48)
                     return -1;
             }
-            /* gossip-known nodes: only add when unseen, never overwrite */
+            /* unseen nodes are added, then claims merged (epoch rules);
+             * known nodes only accept gossip at least as fresh as ours */
             g = cluster_node_find(d, id);
+            epoch = 0;
+            if (v2)
+                epoch = get64(p + sl + 40);
             if (g == NULL) {
                 g = cluster_node_add(d, id);
                 if (g != NULL) {
+                    uint8_t gbm[2048];
                     snprintf(g->ip, sizeof(g->ip), "%s", ip);
                     g->port = port;
                     g->bus_port = busport;
                     g->flags = (flags & ~(uint32_t)CLUSTER_NODE_MYSELF) |
                                CLUSTER_NODE_HANDSHAKE;
-                    cluster_slots_parse(g->slots, p, sl);
                     if (v2) {
                         memcpy(g->master_id, p + sl, 40);
                         g->master_id[40] = '\0';
-                        g->epoch = get64(p + sl + 40);
                     }
+                    cluster_slots_parse(gbm, p, sl);
+                    cluster_merge_claims(d, g, gbm, epoch);
                 }
+            } else if (v2 && epoch >= g->epoch) {
+                uint8_t gbm[2048];
+                cluster_slots_parse(gbm, p, sl);
+                cluster_merge_claims(d, g, gbm, epoch);
             }
             p += sl;
             if (v2)

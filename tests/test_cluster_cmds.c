@@ -45,6 +45,7 @@ static session *cluster_session(db *d)
     me->bus_port = 17777;
     me->flags = CLUSTER_NODE_MYSELF | CLUSTER_NODE_MASTER;
     memset(me->slots, 0xFF, sizeof(me->slots));
+    me->epoch = 1; /* pre-epochs ownership: config epoch 1 */
     d->slot_owner_dirty = 1;
     return s;
 }

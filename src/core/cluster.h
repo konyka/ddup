@@ -60,6 +60,18 @@ int cluster_slots_render(const uint8_t *bm, char *out, size_t cap);
 /* parse ranges/singles back into the bitmap */
 void cluster_slots_parse(uint8_t *bm, const char *s, size_t len);
 
+/* Next config epoch for a new slot claim (++db.cluster_current_epoch). */
+uint64_t cluster_next_epoch(struct db *d);
+
+/* Merge a wire slot claim into the local table: higher config epoch wins
+ * a contested slot, ties go to the lexicographically larger node id
+ * (Redis rule); losers' bits are cleared (myself yields too). Bits the
+ * claimant holds locally but does not claim are retracted. The claimant's
+ * epoch/current_epoch are raised to the wire epoch. A claim for myself's
+ * own entry is never applied (our claims are locally authoritative). */
+void cluster_merge_claims(struct db *d, cluster_node *claimant,
+                          const uint8_t *bm, uint64_t epoch);
+
 /* nodes.conf format: one line per node
  * "<id> <ip:port@busport> <flags> <master> <ping> <pong> <epoch>
  *  <link> <slots>" */
