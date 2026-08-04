@@ -6,9 +6,19 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "pal/pal_iocp.h"
 #include "pal/pal_socket.h"
 #include "server/server.h"
 #include "test.h"
+
+/* Backend under test: SERVER_BACKEND_SELECT, or SERVER_BACKEND_IOCP when
+ * available (Windows). Every scenario runs on both. */
+static int g_backend = SERVER_BACKEND_SELECT;
+
+static server *make_server(void)
+{
+    return server_create_ex("127.0.0.1", 0, g_backend);
+}
 
 /* Send req, pump the server, and read exactly strlen(expected) reply bytes;
  * assert the reply matches expected. Client socket must be non-blocking. */
@@ -51,7 +61,7 @@ static pal_socket_t connect_client(server *s)
 
 static void test_ping_set_get(void)
 {
-    server *s = server_create("127.0.0.1", 0);
+    server *s = make_server();
     pal_socket_t c;
     DD_CHECK(s != NULL);
     DD_CHECK(server_port(s) != 0);
@@ -69,7 +79,7 @@ static void test_ping_set_get(void)
 
 static void test_pipeline(void)
 {
-    server *s = server_create("127.0.0.1", 0);
+    server *s = make_server();
     pal_socket_t c;
     DD_CHECK(s != NULL);
     c = connect_client(s);
@@ -87,7 +97,7 @@ static void test_pipeline(void)
 
 static void test_mget_missing_key(void)
 {
-    server *s = server_create("127.0.0.1", 0);
+    server *s = make_server();
     pal_socket_t c;
     DD_CHECK(s != NULL);
     c = connect_client(s);
@@ -102,7 +112,7 @@ static void test_mget_missing_key(void)
 
 static void test_unknown_command(void)
 {
-    server *s = server_create("127.0.0.1", 0);
+    server *s = make_server();
     pal_socket_t c;
     DD_CHECK(s != NULL);
     c = connect_client(s);
@@ -116,7 +126,7 @@ static void test_unknown_command(void)
 
 static void test_split_delivery(void)
 {
-    server *s = server_create("127.0.0.1", 0);
+    server *s = make_server();
     pal_socket_t c;
     char buf[64];
     ptrdiff_t n = -1;
@@ -150,7 +160,7 @@ static void test_split_delivery(void)
 
 static void test_many_connections(void)
 {
-    server *s = server_create("127.0.0.1", 0);
+    server *s = make_server();
     int i;
     DD_CHECK(s != NULL);
 
@@ -168,7 +178,7 @@ static void test_many_connections(void)
 
 static void test_protocol_error_closes_conn(void)
 {
-    server *s = server_create("127.0.0.1", 0);
+    server *s = make_server();
     pal_socket_t c;
     char buf[64];
     ptrdiff_t n = -1;
@@ -202,7 +212,7 @@ static void test_protocol_error_closes_conn(void)
 
 static void test_pubsub_over_socket(void)
 {
-    server *s = server_create("127.0.0.1", 0);
+    server *s = make_server();
     pal_socket_t a, b;
     char buf[256];
     const char *want = "*3\r\n$7\r\nmessage\r\n$2\r\nch\r\n$5\r\nhello\r\n";
@@ -240,7 +250,7 @@ static void test_pubsub_over_socket(void)
 
 static void test_shutdown_command(void)
 {
-    server *s = server_create("127.0.0.1", 0);
+    server *s = make_server();
     pal_socket_t c;
     int iter = 0;
     DD_CHECK(s != NULL);
@@ -297,7 +307,7 @@ static size_t read_all(server *s, pal_socket_t c, char *buf, size_t len,
 static void test_pipeline_2000(void)
 {
     enum { NCMD = 2000, CMDLEN = 14, REPLYLEN = 7 };
-    server *s = server_create("127.0.0.1", 0);
+    server *s = make_server();
     pal_socket_t c;
     char *req, *rep;
     int i, ok = 1;
@@ -347,7 +357,7 @@ static char *make_bigval_cmd(const char *key, size_t *outlen)
 
 static void test_slow_client_no_stall(void)
 {
-    server *s = server_create("127.0.0.1", 0);
+    server *s = make_server();
     pal_socket_t a, b, c;
     char *cmd, *big;
     size_t cmdlen, got;
@@ -407,7 +417,7 @@ static void test_slow_client_no_stall(void)
 
 static void test_partial_reads(void)
 {
-    server *s = server_create("127.0.0.1", 0);
+    server *s = make_server();
     pal_socket_t a, b;
     char *cmd, *big;
     size_t cmdlen, got;
@@ -443,9 +453,8 @@ static void test_partial_reads(void)
     server_destroy(s);
 }
 
-int main(void)
+static void run_all_tests(void)
 {
-    DD_CHECK_EQ_INT(0, pal_socket_init());
     DD_RUN(test_ping_set_get);
     DD_RUN(test_pipeline);
     DD_RUN(test_mget_missing_key);
@@ -458,6 +467,24 @@ int main(void)
     DD_RUN(test_pipeline_2000);
     DD_RUN(test_slow_client_no_stall);
     DD_RUN(test_partial_reads);
+}
+
+int main(void)
+{
+    DD_CHECK_EQ_INT(0, pal_socket_init());
+    g_backend = SERVER_BACKEND_SELECT;
+    printf("=== backend: readiness (select) ===\n");
+    run_all_tests();
+    {
+        /* run the whole suite again on the IOCP backend when available */
+        pal_iocp *probe = pal_iocp_create();
+        if (probe != NULL) {
+            pal_iocp_free(probe);
+            g_backend = SERVER_BACKEND_IOCP;
+            printf("=== backend: IOCP ===\n");
+            run_all_tests();
+        }
+    }
     pal_socket_cleanup();
     return DD_TEST_SUMMARY();
 }
