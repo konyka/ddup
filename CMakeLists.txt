@@ -19,6 +19,7 @@ add_library(ddup_core STATIC
     src/pal/pal_event.c
     src/pal/pal_file.c
     src/pal/pal_tls.c
+    src/pal/pal_iocp.c
     src/core/arena.c
     src/core/rhtable.c
     src/core/command.c
@@ -130,6 +131,10 @@ ddup_add_test(test_aof tests/test_aof.c)
 ddup_add_test(test_snapshot tests/test_snapshot.c)
 ddup_add_test(test_repl tests/test_repl.c)
 
+if(WIN32)
+    ddup_add_test(test_iocp tests/test_iocp.c)
+endif()
+
 if(DDUP_HAS_TLS)
     if(NOT WIN32)
         ddup_add_test(test_tls tests/test_tls.c)
@@ -145,6 +150,9 @@ endif()
 set(DDUP_CHECK_DEPS test_pal test_socket test_event test_server test_arena test_resp_parser test_resp_writer test_resp3 test_rhtable test_command test_expire test_eviction test_hash test_list test_skiplist test_set test_zset test_session test_multi test_pubsub test_config test_aof test_snapshot test_repl)
 if(DDUP_HAS_TLS AND NOT WIN32)
     list(APPEND DDUP_CHECK_DEPS test_tls)
+endif()
+if(WIN32)
+    list(APPEND DDUP_CHECK_DEPS test_iocp)
 endif()
 
 add_custom_target(check
