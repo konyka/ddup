@@ -88,6 +88,7 @@ static void test_frame_roundtrip(void)
 static void test_meet_convergence(void);
 static void test_gossip_carry(void);
 static void test_fail_detect(void);
+static void test_moved_wire(void);
 
 int main(void)
 {
@@ -95,6 +96,7 @@ int main(void)
     DD_RUN(test_meet_convergence);
     DD_RUN(test_gossip_carry);
     DD_RUN(test_fail_detect);
+    DD_RUN(test_moved_wire);
     return DD_TEST_SUMMARY();
 }
 
@@ -403,6 +405,124 @@ static void test_fail_detect(void)
     }
 
     pal_close(ca);
+    server_destroy(a);
+    pal_socket_cleanup();
+}
+
+static void test_moved_wire(void)
+{
+    server *a, *b;
+    pal_socket_t ca, cb;
+    char buf[4096], req[256], exp[128];
+    int base;
+
+    DD_CHECK_EQ_INT(0, pal_socket_init());
+    a = server_create_ex("127.0.0.1", 0, SERVER_BACKEND_SELECT);
+    b = server_create_ex("127.0.0.1", 0, SERVER_BACKEND_SELECT);
+    DD_CHECK(a != NULL && b != NULL);
+    server_enable_cluster(a, IDA);
+    server_enable_cluster(b, IDB);
+    ca = cli(server_port(a));
+    cb = cli(server_port(b));
+
+    /* MEET first so the tables know each other */
+    {
+        char port[16];
+        size_t pl;
+        snprintf(port, sizeof(port), "%u", (unsigned)server_port(b));
+        pl = strlen(port);
+        snprintf(req, sizeof(req),
+                 "*4\r\n$7\r\nCLUSTER\r\n$4\r\nMEET\r\n$9\r\n127.0.0.1\r\n"
+                 "$%zu\r\n%s\r\n",
+                 pl, port);
+        ask2(a, b, ca, req, buf, sizeof(buf));
+        DD_CHECK_STR("+OK\r\n", buf);
+    }
+
+    /* A: 0..8191, B: 8192..16383 via chunked ADDSLOTS */
+    for (base = 0; base < 16384; base += 2048) {
+        pal_socket_t ct = base < 8192 ? ca : cb;
+        size_t bl = 0, off = 0, got = 0;
+        int sl, iter = 0;
+        char *big = malloc(32768);
+        DD_CHECK(big != NULL);
+        bl += (size_t)snprintf(big + bl, 32768 - bl,
+                               "*2050\r\n$7\r\nCLUSTER\r\n$8\r\nADDSLOTS\r\n");
+        for (sl = base; sl < base + 2048; sl++) {
+            char num[8];
+            int nl = snprintf(num, sizeof(num), "%d", sl);
+            bl += (size_t)snprintf(big + bl, 32768 - bl, "$%d\r\n%s\r\n", nl,
+                                   num);
+        }
+        while (off < bl) {
+            ptrdiff_t w = pal_send(ct, big + off, bl - off);
+            if (w > 0)
+                off += (size_t)w;
+            else
+                pump2(a, b);
+        }
+        while (got < 5 && iter < 2000) {
+            ptrdiff_t n;
+            iter++;
+            pump2(a, b);
+            n = pal_recv(ct, buf + got, sizeof(buf) - got);
+            if (n > 0)
+                got += (size_t)n;
+        }
+        DD_CHECK(got >= 5 && memcmp(buf, "+OK\r\n", 5) == 0);
+        free(big);
+    }
+
+    /* wait for gossip convergence of the assignments on both sides */
+    {
+        int ok = 0, i;
+        for (i = 0; i < 400 && !ok; i++) {
+            pump2(a, b);
+            if (i % 40 == 0) {
+                ask2(a, b, cb, "*2\r\n$7\r\nCLUSTER\r\n$4\r\nINFO\r\n", req,
+                     sizeof(req));
+                if (strstr(req, "cluster_state:ok\r\n") != NULL)
+                    ok = 1;
+            }
+        }
+        DD_CHECK_EQ_INT(1, ok);
+    }
+
+    /* SET foo (slot 12182, B's) on A -> MOVED to B's ip:port */
+    snprintf(exp, sizeof(exp), "-MOVED 12182 127.0.0.1:%u\r\n",
+             (unsigned)server_port(b));
+    ask2(a, b, ca, "*3\r\n$3\r\nSET\r\n$3\r\nfoo\r\n$1\r\nv\r\n", buf,
+         sizeof(buf));
+    DD_CHECK_MEM(exp, strlen(exp), buf, strlen(buf));
+
+    /* SET foo on B works (B owns that slot) */
+    ask2(a, b, cb, "*3\r\n$3\r\nSET\r\n$3\r\nfoo\r\n$1\r\nv\r\n", buf,
+         sizeof(buf));
+    DD_CHECK_STR("+OK\r\n", buf);
+    ask2(a, b, cb, "*2\r\n$3\r\nGET\r\n$3\r\nfoo\r\n", buf, sizeof(buf));
+    DD_CHECK_STR("$1\r\nv\r\n", buf);
+
+    /* unassigned slot -> CLUSTERDOWN: delete B's slot 12182, then write */
+    ask2(a, b, cb, "*3\r\n$7\r\nCLUSTER\r\n$8\r\nDELSLOTS\r\n$5\r\n12182\r\n",
+         buf, sizeof(buf));
+    DD_CHECK_STR("+OK\r\n", buf);
+    {
+        int ok = 0, i;
+        for (i = 0; i < 400 && !ok; i++) {
+            pump2(a, b);
+            if (i % 40 == 0) {
+                ask2(a, b, ca, "*3\r\n$3\r\nSET\r\n$3\r\nfoo\r\n$1\r\nx\r\n",
+                     buf, sizeof(buf));
+                if (strstr(buf, "CLUSTERDOWN") != NULL)
+                    ok = 1;
+            }
+        }
+        DD_CHECK_EQ_INT(1, ok);
+    }
+
+    pal_close(cb);
+    pal_close(ca);
+    server_destroy(b);
     server_destroy(a);
     pal_socket_cleanup();
 }

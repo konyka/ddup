@@ -186,11 +186,173 @@ static void test_busy_across_nodes(void)
     db_destroy(&d);
 }
 
+static void test_moved_wire(void);
+static void test_moved_basic(void);
+static void test_moved_exec_partial(void);
+static void test_moved_disabled_unaffected(void);
+
 int main(void)
 {
     DD_RUN(test_addslots);
     DD_RUN(test_delslots);
     DD_RUN(test_setslot);
     DD_RUN(test_busy_across_nodes);
+    DD_RUN(test_moved_basic);
+    DD_RUN(test_moved_exec_partial);
+    DD_RUN(test_moved_disabled_unaffected);
     return DD_TEST_SUMMARY();
+}
+
+/* ---------------- -MOVED / -CLUSTERDOWN enforcement ---------------- */
+
+static uint32_t pick_slot_key(char *out, int above, int start)
+{
+    int i;
+    for (i = start; i < start + 100000; i++) {
+        uint32_t sl;
+        snprintf(out, 16, "key%d", i);
+        sl = hash_slot(out, strlen(out));
+        if (above ? sl >= 8192u : sl < 8192u)
+            return sl;
+    }
+    return 0;
+}
+
+static void test_moved_wire(void);
+static void test_moved_basic(void)
+{
+    db d;
+    session *s;
+    resp_buf out;
+    cluster_node *me, *other;
+    char ownk[16], exp[96];
+    int i;
+    db_init(&d);
+    resp_buf_init(&out);
+    s = fresh_session(&d);
+
+    /* unassigned slot -> CLUSTERDOWN */
+    exec_sess(s, T0, &out, 3, "SET", "foo", "v");
+    EXPECT(out, "-CLUSTERDOWN Hash slot not served\r\n");
+    exec_sess(s, T0, &out, 2, "GET", "foo");
+    EXPECT(out, "-CLUSTERDOWN Hash slot not served\r\n");
+
+    /* myself: 0..8191, other: 8192..16383 (test-only direct bitmap setup) */
+    me = cluster_node_find(&d, TEST_ID);
+    for (i = 0; i < 8192; i++)
+        cluster_slots_set(me->slots, (uint32_t)i, 1);
+    other = cluster_node_add(&d, OTHER_ID);
+    snprintf(other->ip, sizeof(other->ip), "10.0.0.2");
+    other->port = 7002;
+    other->flags = CLUSTER_NODE_MASTER;
+    for (i = 8192; i < 16384; i++)
+        cluster_slots_set(other->slots, (uint32_t)i, 1);
+    d.slot_owner_dirty = 1;
+
+    /* key "foo" (slot 12182) belongs to the other node -> MOVED */
+    exec_sess(s, T0, &out, 3, "SET", "foo", "v");
+    EXPECT(out, "-MOVED 12182 10.0.0.2:7002\r\n");
+    exec_sess(s, T0, &out, 2, "GET", "foo");
+    EXPECT(out, "-MOVED 12182 10.0.0.2:7002\r\n");
+
+    /* own slot works */
+    (void)pick_slot_key(ownk, 0, 1);
+    exec_sess(s, T0, &out, 3, "SET", ownk, "v");
+    EXPECT(out, "+OK\r\n");
+    exec_sess(s, T0, &out, 2, "GET", ownk);
+    EXPECT(out, "$1\r\nv\r\n");
+
+    /* MGET spanning both -> MOVED for the first offending key */
+    exec_sess(s, T0, &out, 3, "MGET", ownk, "foo");
+    EXPECT(out, "-MOVED 12182 10.0.0.2:7002\r\n");
+
+    /* DEL on other's key -> MOVED */
+    exec_sess(s, T0, &out, 2, "DEL", "foo");
+    EXPECT(out, "-MOVED 12182 10.0.0.2:7002\r\n");
+
+    session_free(s);
+    resp_buf_free(&out);
+    db_destroy(&d);
+}
+
+static void test_moved_exec_partial(void)
+{
+    db d;
+    session *s;
+    resp_buf out;
+    cluster_node *other;
+    char tag[16], cmd[24], exp[160];
+    uint32_t sl;
+    int i;
+    db_init(&d);
+    resp_buf_init(&out);
+    s = fresh_session(&d);
+
+    /* myself owns nothing; other owns everything */
+    other = cluster_node_add(&d, OTHER_ID);
+    snprintf(other->ip, sizeof(other->ip), "10.0.0.2");
+    other->port = 7002;
+    other->flags = CLUSTER_NODE_MASTER;
+    for (i = 0; i < 16384; i++)
+        cluster_slots_set(other->slots, (uint32_t)i, 1);
+    d.slot_owner_dirty = 1;
+
+    /* pick a hashtag (same slot for both keys) that is NOT mine */
+    for (i = 1; i < 100; i++) {
+        snprintf(tag, sizeof(tag), "z%d", i);
+        if (hash_slot(tag, strlen(tag)) > 0) {
+            sl = hash_slot(tag, strlen(tag));
+            break;
+        }
+    }
+    (void)pick_slot_key(tag, 1, 1);
+    sl = hash_slot(tag, strlen(tag));
+    snprintf(cmd, sizeof(cmd), "{%s}.a", tag);
+
+    exec_sess(s, T0, &out, 1, "MULTI");
+    EXPECT(out, "+OK\r\n");
+    exec_sess(s, T0, &out, 3, "SET", cmd, "1");
+    EXPECT(out, "+QUEUED\r\n");
+    {
+        char cmd2[24];
+        snprintf(cmd2, sizeof(cmd2), "{%s}.b", tag);
+        exec_sess(s, T0, &out, 3, "SET", cmd2, "2");
+        EXPECT(out, "+QUEUED\r\n");
+    }
+    /* each queued element replies MOVED; others still execute (here: both) */
+    snprintf(exp, sizeof(exp), "*2\r\n-MOVED %u 10.0.0.2:7002\r\n-MOVED %u 10.0.0.2:7002\r\n",
+             sl, sl);
+    exec_sess(s, T0, &out, 1, "EXEC");
+    EXPECT(out, exp);
+
+    /* and nothing was written locally */
+    {
+        char getexp[96];
+        snprintf(getexp, sizeof(getexp), "-MOVED %u 10.0.0.2:7002\r\n", sl);
+        exec_sess(s, T0, &out, 2, "GET", cmd);
+        EXPECT(out, getexp);
+    }
+
+    session_free(s);
+    resp_buf_free(&out);
+    db_destroy(&d);
+}
+
+static void test_moved_disabled_unaffected(void)
+{
+    db d;
+    session *s;
+    resp_buf out;
+    db_init(&d);
+    resp_buf_init(&out);
+    s = session_create(&d); /* cluster disabled */
+
+    exec_sess(s, T0, &out, 3, "SET", "foo", "v");
+    EXPECT(out, "+OK\r\n");
+    exec_sess(s, T0, &out, 2, "GET", "foo");
+    EXPECT(out, "$1\r\nv\r\n");
+
+    session_free(s);
+    resp_buf_free(&out);
+    db_destroy(&d);
 }

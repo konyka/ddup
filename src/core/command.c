@@ -41,7 +41,7 @@ void db_init(db *d)
     d->node_id[0] = '\0';
     cluster_nodes_init(d);
     memset(d->slot_owner, 0xFF, sizeof(d->slot_owner));
-    d->slot_owner_dirty = 0;
+    d->slot_owner_dirty = 1;
     d->cluster_changes = 0;
     strcpy(d->cluster_ip, "0.0.0.0");
     d->cluster_port = 0;
@@ -987,6 +987,123 @@ static int crossslot_reject(db *d, resp_buf *out, const resp_value *argv,
     return 0;
 }
 
+/* Rebuild the slot->owner-node-index cache after any bitmap change. */
+static void db_rebuild_slot_owner(db *d)
+{
+    int i, s;
+    memset(d->slot_owner, 0xFF, sizeof(d->slot_owner));
+    for (i = 0; i < d->nnodes; i++)
+        for (s = 0; s < 16384; s++)
+            if (cluster_slots_get(d->nodes[i].slots, (uint32_t)s))
+                d->slot_owner[s] = (uint16_t)i;
+    d->slot_owner_dirty = 0;
+}
+
+/* Cluster ownership for one key. Returns 1 when the key is served here
+ * (myself owns its slot, or cluster mode is off); otherwise writes the
+ * MOVED (assigned to a peer) or CLUSTERDOWN (unassigned) reply and
+ * returns 0. */
+static int db_key_served(db *d, const char *key, size_t klen, resp_buf *out)
+{
+    uint32_t slot, idx;
+    if (!d->cluster_enabled)
+        return 1;
+    slot = hash_slot(key, klen);
+    if (d->slot_owner_dirty)
+        db_rebuild_slot_owner(d);
+    idx = d->slot_owner[slot];
+    if (idx == 0xFFFFu) {
+        static const char E[] = "CLUSTERDOWN Hash slot not served";
+        resp_write_error(out, E, sizeof(E) - 1);
+        return 0;
+    }
+    if (d->nodes[idx].flags & CLUSTER_NODE_MYSELF)
+        return 1;
+    {
+        char msg[128];
+        int n = snprintf(msg, sizeof(msg), "MOVED %u %s:%u", slot,
+                         d->nodes[idx].ip, (unsigned)d->nodes[idx].port);
+        resp_write_error(out, msg, (size_t)n);
+        return 0;
+    }
+}
+
+static int cluster_keyless(const char *name, size_t nlen)
+{
+    static const char *const KL[] = {
+        "ping",    "echo",      "config",  "info",     "save",
+        "lastsave","shutdown",  "sync",    "replicaof","subscribe",
+        "unsubscribe", "publish","quit",   "multi",    "exec",
+        "discard", "unwatch",   "dbsize",  "flushdb",  "cluster",
+        "persist",
+    };
+    size_t i;
+    for (i = 0; i < sizeof(KL) / sizeof(KL[0]); i++)
+        if (ci_equal(name, nlen, KL[i]))
+            return 1;
+    return 0;
+}
+
+/* -MOVED/-CLUSTERDOWN check for one command (cluster mode only): extracts
+ * the command's key positions and verifies ownership of each. Returns 1 to
+ * proceed, 0 when a reply was already written. */
+static int cluster_check_ownership(db *d, const resp_value *argv, size_t argc,
+                                   resp_buf *out)
+{
+    const char *name;
+    size_t nlen;
+    size_t i;
+    if (!d->cluster_enabled)
+        return 1;
+    if (argc == 0 || !arg_str(&argv[0], &name, &nlen))
+        return 1;
+    if (argc < 2)
+        return 1;
+    if (cluster_keyless(name, nlen))
+        return 1;
+    if (ci_equal(name, nlen, "MGET") || ci_equal(name, nlen, "DEL") ||
+        ci_equal(name, nlen, "UNLINK") || ci_equal(name, nlen, "EXISTS") ||
+        ci_equal(name, nlen, "SINTER") || ci_equal(name, nlen, "SUNION") ||
+        ci_equal(name, nlen, "SDIFF") || ci_equal(name, nlen, "WATCH")) {
+        for (i = 1; i < argc; i++) {
+            const char *k;
+            size_t kl;
+            if (arg_str(&argv[i], &k, &kl) &&
+                !db_key_served(d, k, kl, out))
+                return 0;
+        }
+        return 1;
+    }
+    if (ci_equal(name, nlen, "MSET")) {
+        for (i = 1; i + 1 < argc; i += 2) {
+            const char *k;
+            size_t kl;
+            if (arg_str(&argv[i], &k, &kl) &&
+                !db_key_served(d, k, kl, out))
+                return 0;
+        }
+        return 1;
+    }
+    if (ci_equal(name, nlen, "SMOVE")) {
+        for (i = 1; i < argc && i < 3; i++) {
+            const char *k;
+            size_t kl;
+            if (arg_str(&argv[i], &k, &kl) &&
+                !db_key_served(d, k, kl, out))
+                return 0;
+        }
+        return 1;
+    }
+    /* everything else: single key at argv[1] */
+    {
+        const char *k;
+        size_t kl;
+        if (!arg_str(&argv[1], &k, &kl))
+            return 1;
+        return db_key_served(d, k, kl, out);
+    }
+}
+
 static const char *const WRITE_COMMANDS[] = {
     "set",    "del",     "unlink",  "incr",       "decr",    "append",
     "mset",   "expire",  "pexpire", "expireat",   "pexpireat", "persist",
@@ -1028,6 +1145,10 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
         resp_write_error(out, E, sizeof(E) - 1);
         return;
     }
+
+    /* cluster mode: ownership enforcement (-MOVED / -CLUSTERDOWN) */
+    if (!cluster_check_ownership(d, argv, argc, out))
+        return;
 
     if (ci_equal(name, nlen, "PING")) {
         if (argc == 1) {
@@ -3651,6 +3772,8 @@ void session_execute_at(session *s, const resp_value *argv, size_t argc,
             return;
         }
         if (crossslot_reject(s->d, out, argv, argc))
+            return;
+        if (!cluster_check_ownership(s->d, argv, argc, out))
             return;
         for (i = 1; i < argc; i++) {
             const char *k;
