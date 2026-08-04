@@ -1,0 +1,89 @@
+-- The C compiler identification is GNU 13.3.0
+-- Detecting C compiler ABI info
+-- Detecting C compiler ABI info - done
+-- Check for working C compiler: /usr/bin/cc - skipped
+-- Detecting C compile features
+-- Detecting C compile features - done
+-- ddup: C standard set to C23 (compiler: GNU 13.3.0)
+-- ddup: TLS enabled (OpenSSL 3.0.13)
+-- Configuring done (5.7s)
+-- Generating done (0.1s)
+-- Build files have been written to: /home/runner/work/ddup/ddup/build
+[  1%] Building C object CMakeFiles/ddup_core.dir/src/pal/pal_time.c.o
+[  2%] Building C object CMakeFiles/ddup_core.dir/src/pal/pal_socket.c.o
+[  3%] Building C object CMakeFiles/ddup_core.dir/src/pal/pal_event.c.o
+[  5%] Building C object CMakeFiles/ddup_core.dir/src/pal/pal_file.c.o
+[  6%] Building C object CMakeFiles/ddup_core.dir/src/pal/pal_tls.c.o
+[  7%] Building C object CMakeFiles/ddup_core.dir/src/pal/pal_iocp.c.o
+[  9%] Building C object CMakeFiles/ddup_core.dir/src/core/arena.c.o
+[ 10%] Building C object CMakeFiles/ddup_core.dir/src/core/rhtable.c.o
+[ 11%] Building C object CMakeFiles/ddup_core.dir/src/core/command.c.o
+[ 13%] Building C object CMakeFiles/ddup_core.dir/src/ds/obj.c.o
+[ 14%] Building C object CMakeFiles/ddup_core.dir/src/ds/skiplist.c.o
+[ 15%] Building C object CMakeFiles/ddup_core.dir/src/core/session.c.o
+[ 17%] Building C object CMakeFiles/ddup_core.dir/src/core/config.c.o
+[ 18%] Building C object CMakeFiles/ddup_core.dir/src/core/snapshot.c.o
+[ 19%] Building C object CMakeFiles/ddup_core.dir/src/resp/resp_parser.c.o
+[ 21%] Building C object CMakeFiles/ddup_core.dir/src/resp/resp_writer.c.o
+[ 22%] Building C object CMakeFiles/ddup_core.dir/src/server/server.c.o
+In file included from /home/runner/work/ddup/ddup/src/server/server.c:15:
+/home/runner/work/ddup/ddup/src/server/server.h:57:41: error: unknown type name ‘size_t’
+   57 | void server_set_backlog_size(server *s, size_t bytes);
+      |                                         ^~~~~~
+/home/runner/work/ddup/ddup/src/server/server.h:11:1: note: ‘size_t’ is defined in header ‘<stddef.h>’; did you forget to ‘#include <stddef.h>’?
+   10 | #include <stdint.h>
+  +++ |+#include <stddef.h>
+   11 | 
+gmake[2]: *** [CMakeFiles/ddup_core.dir/build.make:303: CMakeFiles/ddup_core.dir/src/server/server.c.o] Error 1
+gmake[1]: *** [CMakeFiles/Makefile2:172: CMakeFiles/ddup_core.dir/all] Error 2
+gmake: *** [Makefile:101: all] Error 2
+Reading package lists...
+Building dependency tree...
+Reading state information...
+The following additional packages will be installed:
+  libjemalloc2 liblzf1
+Suggested packages:
+  ruby-redis
+The following NEW packages will be installed:
+  libjemalloc2 liblzf1 redis-server redis-tools
+0 upgraded, 4 newly installed, 0 to remove and 80 not upgraded.
+Need to get 1482 kB of archives.
+After this operation, 7568 kB of additional disk space will be used.
+Get:1 file:/etc/apt/apt-mirrors.txt Mirrorlist [144 B]
+Get:2 http://azure.archive.ubuntu.com/ubuntu noble/universe amd64 libjemalloc2 amd64 5.3.0-2build1 [256 kB]
+Get:3 http://azure.archive.ubuntu.com/ubuntu noble/universe amd64 liblzf1 amd64 3.6-4 [7624 B]
+Get:4 http://azure.archive.ubuntu.com/ubuntu noble-updates/universe amd64 redis-tools amd64 5:7.0.15-1ubuntu0.24.04.4 [1166 kB]
+Get:5 http://azure.archive.ubuntu.com/ubuntu noble-updates/universe amd64 redis-server amd64 5:7.0.15-1ubuntu0.24.04.4 [51.7 kB]
+Fetched 1482 kB in 0s (30.0 MB/s)
+Selecting previously unselected package libjemalloc2:amd64.
+(Reading database ... (Reading database ... 5%(Reading database ... 10%(Reading database ... 15%(Reading database ... 20%(Reading database ... 25%(Reading database ... 30%(Reading database ... 35%(Reading database ... 40%(Reading database ... 45%(Reading database ... 50%(Reading database ... 55%(Reading database ... 60%(Reading database ... 65%(Reading database ... 70%(Reading database ... 75%(Reading database ... 80%(Reading database ... 85%(Reading database ... 90%(Reading database ... 95%(Reading database ... 100%(Reading database ... 202954 files and directories currently installed.)
+Preparing to unpack .../libjemalloc2_5.3.0-2build1_amd64.deb ...
+Unpacking libjemalloc2:amd64 (5.3.0-2build1) ...
+Selecting previously unselected package liblzf1:amd64.
+Preparing to unpack .../liblzf1_3.6-4_amd64.deb ...
+Unpacking liblzf1:amd64 (3.6-4) ...
+Selecting previously unselected package redis-tools.
+Preparing to unpack .../redis-tools_5%3a7.0.15-1ubuntu0.24.04.4_amd64.deb ...
+Unpacking redis-tools (5:7.0.15-1ubuntu0.24.04.4) ...
+Selecting previously unselected package redis-server.
+Preparing to unpack .../redis-server_5%3a7.0.15-1ubuntu0.24.04.4_amd64.deb ...
+Unpacking redis-server (5:7.0.15-1ubuntu0.24.04.4) ...
+Setting up libjemalloc2:amd64 (5.3.0-2build1) ...
+Setting up liblzf1:amd64 (3.6-4) ...
+Setting up redis-tools (5:7.0.15-1ubuntu0.24.04.4) ...
+Setting up redis-server (5:7.0.15-1ubuntu0.24.04.4) ...
+Created symlink /etc/systemd/system/redis.service → /usr/lib/systemd/system/redis-server.service.
+Created symlink /etc/systemd/system/multi-user.target.wants/redis-server.service → /usr/lib/systemd/system/redis-server.service.
+Processing triggers for man-db (2.12.0-4build2) ...
+Not building database; man-db/auto-update is not 'true'.
+Processing triggers for libc-bin (2.39-0ubuntu8.7) ...
+
+Running kernel seems to be up-to-date.
+
+No services need to be restarted.
+
+No containers need to be restarted.
+
+No user sessions are running outdated binaries.
+
+No VM guests are running outdated hypervisor (qemu) binaries on this host.
