@@ -41,6 +41,11 @@ uint64_t pal_wall_ms(void)
     return ticks / 10000ULL - 11644473600000ULL;
 }
 
+void pal_sleep_ms(uint64_t ms)
+{
+    Sleep((DWORD)ms);
+}
+
 #else /* POSIX */
 
 #include <time.h>
@@ -62,6 +67,14 @@ uint64_t pal_wall_ms(void)
     struct timespec ts;
     clock_gettime(CLOCK_REALTIME, &ts);
     return (uint64_t)ts.tv_sec * 1000ULL + (uint64_t)ts.tv_nsec / 1000000ULL;
+}
+
+void pal_sleep_ms(uint64_t ms)
+{
+    struct timespec ts;
+    ts.tv_sec = (time_t)(ms / 1000ULL);
+    ts.tv_nsec = (long)((ms % 1000ULL) * 1000000ULL);
+    nanosleep(&ts, NULL);
 }
 
 #endif

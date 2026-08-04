@@ -20,6 +20,7 @@
 #include "core/session.h"
 #include "core/hashslot.h"
 #include "core/snapshot.h"
+#include "core/migrate.h"
 
 static void free_obj_cb(const char *key, size_t klen, const char *val,
                         size_t vlen, void *ctx);
@@ -189,7 +190,7 @@ static void db_set_string(db *d, const char *key, size_t klen, const char *val,
 }
 
 /* Delete key and expiry (and any owned object). Returns 1 if existed. */
-static int db_del_kv(db *d, const char *key, size_t klen)
+int db_del_kv(db *d, const char *key, size_t klen)
 {
     const char *old;
     size_t oldl;
@@ -1035,7 +1036,7 @@ static int cluster_keyless(const char *name, size_t nlen)
         "lastsave","shutdown",  "sync",    "replicaof","subscribe",
         "unsubscribe", "publish","quit",   "multi",    "exec",
         "discard", "unwatch",   "dbsize",  "flushdb",  "cluster",
-        "persist",
+        "persist", "migrate",
     };
     size_t i;
     for (i = 0; i < sizeof(KL) / sizeof(KL[0]); i++)
@@ -1111,6 +1112,7 @@ static const char *const WRITE_COMMANDS[] = {
     "lpush",  "rpush",   "lpushx",  "rpushx",     "lpop",    "rpop",
     "lset",   "sadd",    "srem",    "spop",       "smove",
     "zadd",   "zincrby", "zrem",    "zremrangebyscore", "restore",
+    "migrate",
 };
 
 static int is_write_command(const char *name, size_t nlen)
@@ -1338,6 +1340,96 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
         }
         if (rc != 0) {
             static const char E[] = "ERR Bad data format";
+            resp_write_error(out, E, sizeof(E) - 1);
+            return;
+        }
+        resp_write_simple_string(out, "OK", 2);
+        return;
+    }
+
+    if (ci_equal(name, nlen, "MIGRATE")) {
+        if (argc < 6) {
+            wrong_args(out, "migrate");
+            return;
+        }
+        const char *host, *ports, *key, *dbids, *tos;
+        size_t hostl, portl, keyl, dbidl, tosl;
+        long long port, dbid, timeout;
+        int copy = 0, replace = 0;
+        size_t first_key = 0; /* argv index of the KEYS list, 0 = single */
+        size_t i;
+        const resp_value *keys;
+        size_t nkeys;
+        char hostbuf[256];
+        if (!arg_str(&argv[1], &host, &hostl) ||
+            !arg_str(&argv[2], &ports, &portl) ||
+            !arg_str(&argv[3], &key, &keyl) ||
+            !arg_str(&argv[4], &dbids, &dbidl) ||
+            !arg_str(&argv[5], &tos, &tosl))
+            goto bad_type;
+        if (!parse_i64(ports, portl, &port) || port <= 0 || port > 65535 ||
+            !parse_i64(dbids, dbidl, &dbid) ||
+            !parse_i64(tos, tosl, &timeout) || timeout < 0) {
+            resp_write_error(out, ERR_NOT_INT, sizeof(ERR_NOT_INT) - 1);
+            return;
+        }
+        if (dbid != 0) {
+            static const char E[] = "ERR DB index is out of range";
+            resp_write_error(out, E, sizeof(E) - 1);
+            return;
+        }
+        if (hostl >= sizeof(hostbuf)) {
+            resp_write_error(out, ERR_SYNTAX, sizeof(ERR_SYNTAX) - 1);
+            return;
+        }
+        memcpy(hostbuf, host, hostl);
+        hostbuf[hostl] = '\0';
+        if (timeout == 0)
+            timeout = 1000;
+        for (i = 6; i < argc; i++) {
+            const char *o;
+            size_t ol;
+            if (!arg_str(&argv[i], &o, &ol))
+                goto bad_type;
+            if (ci_equal(o, ol, "COPY") && !copy) {
+                copy = 1;
+            } else if (ci_equal(o, ol, "REPLACE") && !replace) {
+                replace = 1;
+            } else if (ci_equal(o, ol, "KEYS") && first_key == 0 &&
+                       i + 1 < argc) {
+                first_key = i + 1;
+                break;
+            } else {
+                resp_write_error(out, ERR_SYNTAX, sizeof(ERR_SYNTAX) - 1);
+                return;
+            }
+        }
+        if (first_key != 0) {
+            if (keyl != 0) {
+                static const char E[] =
+                    "ERR When using MIGRATE KEYS option, the key argument "
+                    "must be set to the empty string";
+                resp_write_error(out, E, sizeof(E) - 1);
+                return;
+            }
+            keys = argv + first_key;
+            nkeys = argc - first_key;
+        } else {
+            const char *v;
+            size_t vl;
+            if (!db_get(d, key, keyl, &v, &vl, now_ms)) {
+                static const char E[] = "NOKEY No such key";
+                resp_write_error(out, E, sizeof(E) - 1);
+                return;
+            }
+            keys = &argv[3];
+            nkeys = 1;
+        }
+        if (migrate_run(d, hostbuf, (uint16_t)port, keys, nkeys,
+                        (uint64_t)timeout, copy, replace, now_ms) !=
+            MIGRATE_OK) {
+            static const char E[] =
+                "IOERR error or timeout writing to target instance";
             resp_write_error(out, E, sizeof(E) - 1);
             return;
         }
@@ -3611,6 +3703,7 @@ static const cmd_arity CMD_ARITY[] = {
     {"ping", 1, 2, 0},          {"echo", 2, 2, 0},
     {"get", 2, 2, 0},           {"set", 3, -1, 0},
     {"dump", 2, 2, 0},          {"restore", 4, 5, 0},
+    {"migrate", 6, -1, 0},
     {"del", 2, -1, 0},          {"unlink", 2, -1, 0},
     {"exists", 2, -1, 0},       {"incr", 2, 2, 0},
     {"decr", 2, 2, 0},          {"append", 3, 3, 0},

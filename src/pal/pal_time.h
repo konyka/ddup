@@ -14,4 +14,7 @@ uint64_t pal_now_us(void);
 /* Milliseconds since the Unix epoch (wall clock, may jump on NTP changes). */
 uint64_t pal_wall_ms(void);
 
+/* Sleep the calling thread for ms milliseconds. */
+void pal_sleep_ms(uint64_t ms);
+
 #endif /* DDUP_PAL_TIME_H */

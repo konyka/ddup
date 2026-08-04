@@ -186,7 +186,6 @@ static void test_busy_across_nodes(void)
     db_destroy(&d);
 }
 
-static void test_moved_wire(void);
 static void test_moved_basic(void);
 static void test_moved_exec_partial(void);
 static void test_moved_disabled_unaffected(void);
@@ -218,14 +217,13 @@ static uint32_t pick_slot_key(char *out, int above, int start)
     return 0;
 }
 
-static void test_moved_wire(void);
 static void test_moved_basic(void)
 {
     db d;
     session *s;
     resp_buf out;
     cluster_node *me, *other;
-    char ownk[16], exp[96];
+    char ownk[16];
     int i;
     db_init(&d);
     resp_buf_init(&out);

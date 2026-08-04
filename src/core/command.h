@@ -67,6 +67,9 @@ void db_install_expiry(db *d, const char *key, size_t klen, uint64_t when_ms);
  * expiry entry) and return 1. Otherwise return 0. */
 int db_expire_if_needed(db *d, const char *key, size_t klen, uint64_t now_ms);
 
+/* Delete key and expiry (and any owned object). Returns 1 if existed. */
+int db_del_kv(db *d, const char *key, size_t klen);
+
 /* Execute one command with an injected wall clock (testability; unit tests
  * use synthetic time, no sleeps). argv items must be string-typed values
  * (bulk/simple); the RESP reply is appended to out. */
