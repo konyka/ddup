@@ -159,7 +159,9 @@ int main(int argc, char **argv)
             pal_socket_cleanup();
             return 1;
         }
+        server_load_nodes(s, cpath);
         server_enable_cluster(s, nid);
+        server_set_nodes_path(s, cpath);
         printf("cluster: enabled, node %s\n", nid);
     }
     if (cfg.replicaof_port > 0) {

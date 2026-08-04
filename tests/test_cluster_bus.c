@@ -85,8 +85,266 @@ static void test_frame_roundtrip(void)
     db_destroy(&d);
 }
 
+static void test_meet_convergence(void);
+static void test_gossip_carry(void);
+static void test_fail_detect(void);
+
 int main(void)
 {
     DD_RUN(test_frame_roundtrip);
+    DD_RUN(test_meet_convergence);
+    DD_RUN(test_gossip_carry);
+    DD_RUN(test_fail_detect);
     return DD_TEST_SUMMARY();
+}
+
+/* ------------------------------------------------------------------ */
+/* multi-server gossip: MEET, convergence, failure detection          */
+/* ------------------------------------------------------------------ */
+#include "pal/pal_socket.h"
+#include "server/server.h"
+
+#define IDA "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+#define IDB "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+#define IDC "cccccccccccccccccccccccccccccccccccccccc"
+
+static void pump2(server *x, server *y)
+{
+    server_run_once(x, 5);
+    server_run_once(y, 5);
+}
+
+static void pump3(server *x, server *y, server *z)
+{
+    server_run_once(x, 5);
+    server_run_once(y, 5);
+    server_run_once(z, 5);
+}
+
+static pal_socket_t cli(uint16_t port)
+{
+    pal_socket_t c = pal_tcp_connect("127.0.0.1", port);
+    DD_CHECK(c != PAL_SOCKET_INVALID);
+    DD_CHECK_EQ_INT(0, pal_set_nonblocking(c, 1));
+    return c;
+}
+
+/* send a command, pump two servers, read the whole reply into buf */
+static size_t ask2(server *x, server *y, pal_socket_t c, const char *req,
+                   char *buf, size_t cap)
+{
+    size_t got = 0;
+    int iter = 0;
+    DD_CHECK_EQ_INT((long long)strlen(req),
+                    (long long)pal_send(c, req, strlen(req)));
+    while (iter < 2000) {
+        ptrdiff_t n;
+        iter++;
+        pump2(x, y);
+        n = pal_recv(c, buf + got, cap - got - 1);
+        if (n > 0)
+            got += (size_t)n;
+        if (n <= 0 && got > 0)
+            break;
+        if (n > 0)
+            break; /* full reply for single command */
+    }
+    buf[got] = '\0';
+    return got;
+}
+
+static size_t ask3(server *x, server *y, server *z, pal_socket_t c,
+                   const char *req, char *buf, size_t cap)
+{
+    size_t got = 0;
+    int iter = 0;
+    DD_CHECK_EQ_INT((long long)strlen(req),
+                    (long long)pal_send(c, req, strlen(req)));
+    while (iter < 2000) {
+        ptrdiff_t n;
+        iter++;
+        pump3(x, y, z);
+        n = pal_recv(c, buf + got, cap - got - 1);
+        if (n > 0)
+            got += (size_t)n;
+        if (n > 0)
+            break;
+    }
+    buf[got] = '\0';
+    return got;
+}
+
+static void test_meet_convergence(void)
+{
+    server *a, *b;
+    pal_socket_t ca, cb;
+    char buf[4096], req[128];
+
+    DD_CHECK_EQ_INT(0, pal_socket_init());
+    a = server_create_ex("127.0.0.1", 0, SERVER_BACKEND_SELECT);
+    b = server_create_ex("127.0.0.1", 0, SERVER_BACKEND_SELECT);
+    DD_CHECK(a != NULL && b != NULL);
+    server_enable_cluster(a, IDA);
+    server_enable_cluster(b, IDB);
+    ca = cli(server_port(a));
+    cb = cli(server_port(b));
+
+    {
+        char port[16];
+        size_t pl;
+        snprintf(port, sizeof(port), "%u", (unsigned)server_port(b));
+        pl = strlen(port);
+        snprintf(req, sizeof(req),
+                 "*4\r\n$7\r\nCLUSTER\r\n$4\r\nMEET\r\n$9\r\n127.0.0.1\r\n"
+                 "$%zu\r\n%s\r\n",
+                 pl, port);
+    }
+    ask2(a, b, ca, req, buf, sizeof(buf));
+    DD_CHECK_STR("+OK\r\n", buf);
+
+    /* both sides learn each other (bounded polls) */
+    {
+        int ok = 0, i;
+        for (i = 0; i < 400 && !ok; i++) {
+            pump2(a, b);
+            if (i % 40 == 0) {
+                ask2(a, b, ca, "*2\r\n$7\r\nCLUSTER\r\n$5\r\nNODES\r\n", buf,
+                     sizeof(buf));
+                ask2(a, b, cb, "*2\r\n$7\r\nCLUSTER\r\n$5\r\nNODES\r\n",
+                     req, sizeof(req));
+                if (strstr(buf, IDB) != NULL && strstr(req, IDA) != NULL)
+                    ok = 1;
+            }
+        }
+        DD_CHECK_EQ_INT(1, ok);
+    }
+    /* CLUSTER INFO reflects 2 known nodes, state ok */
+    ask2(a, b, ca, "*2\r\n$7\r\nCLUSTER\r\n$4\r\nINFO\r\n", buf, sizeof(buf));
+    DD_CHECK(strstr(buf, "cluster_known_nodes:2\r\n") != NULL);
+    DD_CHECK(strstr(buf, "cluster_state:ok\r\n") != NULL);
+
+    pal_close(cb);
+    pal_close(ca);
+    server_destroy(b);
+    server_destroy(a);
+    pal_socket_cleanup();
+}
+
+static void test_gossip_carry(void)
+{
+    server *a, *b, *c;
+    pal_socket_t ca, cb;
+    char buf[4096], req[128];
+
+    DD_CHECK_EQ_INT(0, pal_socket_init());
+    a = server_create_ex("127.0.0.1", 0, SERVER_BACKEND_SELECT);
+    b = server_create_ex("127.0.0.1", 0, SERVER_BACKEND_SELECT);
+    c = server_create_ex("127.0.0.1", 0, SERVER_BACKEND_SELECT);
+    DD_CHECK(a != NULL && b != NULL && c != NULL);
+    server_enable_cluster(a, IDA);
+    server_enable_cluster(b, IDB);
+    server_enable_cluster(c, IDC);
+    ca = cli(server_port(a));
+    cb = cli(server_port(b));
+
+    /* A meets B; B meets C */
+    {
+        char port[16];
+        size_t pl;
+        snprintf(port, sizeof(port), "%u", (unsigned)server_port(b));
+        pl = strlen(port);
+        snprintf(req, sizeof(req),
+                 "*4\r\n$7\r\nCLUSTER\r\n$4\r\nMEET\r\n$9\r\n127.0.0.1\r\n"
+                 "$%zu\r\n%s\r\n",
+                 pl, port);
+        ask3(a, b, c, ca, req, buf, sizeof(buf));
+        snprintf(port, sizeof(port), "%u", (unsigned)server_port(c));
+        pl = strlen(port);
+        snprintf(req, sizeof(req),
+                 "*4\r\n$7\r\nCLUSTER\r\n$4\r\nMEET\r\n$9\r\n127.0.0.1\r\n"
+                 "$%zu\r\n%s\r\n",
+                 pl, port);
+        ask3(a, b, c, cb, req, buf, sizeof(buf));
+        DD_CHECK_STR("+OK\r\n", buf);
+    }
+
+    /* A learns C via gossip carried by B */
+    {
+        int ok = 0, i;
+        for (i = 0; i < 600 && !ok; i++) {
+            pump3(a, b, c);
+            if (i % 50 == 0) {
+                ask3(a, b, c, ca, "*2\r\n$7\r\nCLUSTER\r\n$5\r\nNODES\r\n",
+                     buf, sizeof(buf));
+                if (strstr(buf, IDC) != NULL)
+                    ok = 1;
+            }
+        }
+        DD_CHECK_EQ_INT(1, ok);
+    }
+
+    pal_close(cb);
+    pal_close(ca);
+    server_destroy(c);
+    server_destroy(b);
+    server_destroy(a);
+    pal_socket_cleanup();
+}
+
+static void test_fail_detect(void)
+{
+    server *a, *b;
+    pal_socket_t ca;
+    char buf[4096], req[128];
+
+    DD_CHECK_EQ_INT(0, pal_socket_init());
+    a = server_create_ex("127.0.0.1", 0, SERVER_BACKEND_SELECT);
+    b = server_create_ex("127.0.0.1", 0, SERVER_BACKEND_SELECT);
+    DD_CHECK(a != NULL && b != NULL);
+    server_enable_cluster(a, IDA);
+    server_enable_cluster(b, IDB);
+    server_set_node_timeout(a, 200);
+    ca = cli(server_port(a));
+
+    {
+        char port[16];
+        size_t pl;
+        snprintf(port, sizeof(port), "%u", (unsigned)server_port(b));
+        pl = strlen(port);
+        snprintf(req, sizeof(req),
+                 "*4\r\n$7\r\nCLUSTER\r\n$4\r\nMEET\r\n$9\r\n127.0.0.1\r\n"
+                 "$%zu\r\n%s\r\n",
+                 pl, port);
+        ask2(a, b, ca, req, buf, sizeof(buf));
+        DD_CHECK_STR("+OK\r\n", buf);
+    }
+
+    /* let them exchange a couple of pings */
+    {
+        int i;
+        for (i = 0; i < 60; i++)
+            pump2(a, b);
+    }
+
+    /* B goes down: A marks it disconnected -> state fail (B holds slots) */
+    pal_close(ca);
+    server_destroy(b);
+    ca = cli(server_port(a));
+    {
+        int ok = 0, i;
+        for (i = 0; i < 400 && !ok; i++) {
+            server_run_once(a, 5);
+            if (i % 20 == 0) {
+                ask2(a, a, ca, "*2\r\n$7\r\nCLUSTER\r\n$4\r\nINFO\r\n", buf,
+                     sizeof(buf));
+                if (strstr(buf, "cluster_state:fail\r\n") != NULL)
+                    ok = 1;
+            }
+        }
+        DD_CHECK_EQ_INT(1, ok);
+    }
+
+    pal_close(ca);
+    server_destroy(a);
+    pal_socket_cleanup();
 }

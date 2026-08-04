@@ -44,6 +44,12 @@ int server_load_snapshot(server *s);
 
 /* Enable single-node cluster mode with a stable 40-hex node id. */
 void server_enable_cluster(server *s, const char *node_id);
+/* nodes.conf persistence path (empty = no persistence). */
+void server_set_nodes_path(server *s, const char *path);
+/* Reload persisted nodes.conf into the node table (best-effort). */
+void server_load_nodes(server *s, const char *path);
+/* Node failure timeout in ms (default 15000; tests can shrink it). */
+void server_set_node_timeout(server *s, uint64_t ms);
 
 /* Automatic snapshot interval in seconds (0 = off). */
 void server_set_save_interval(server *s, int sec);

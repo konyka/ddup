@@ -92,12 +92,32 @@ struct conn {
 #define LINK_SNAPSHOT 1
 #define LINK_STREAMING 2
 
+/* cluster bus connection (cluster bus protocol v1, server side) */
+typedef struct bus_conn {
+    struct bus_conn *next;
+    pal_socket_t fd;
+    int outbound;      /* we initiated it (MEET / gossip target) */
+    char *rbuf;
+    size_t rlen;
+    size_t rcap;
+    resp_buf out;
+    int want_write;
+} bus_conn;
+
 struct server {
     pal_loop *loop;
     pal_socket_t listen_fd;
     pal_socket_t tls_listen_fd; /* PAL_SOCKET_INVALID when TLS is off */
     pal_tls_ctx *tls_ctx;
     uint16_t tls_port;
+    /* cluster bus (second listener on port+10000) */
+    pal_socket_t bus_listen_fd;
+    bus_conn *bus;
+    char nodes_path[1024];
+    int nodes_dirty;
+    uint64_t last_gossip;
+    uint64_t last_nodes_save;
+    uint64_t node_timeout_ms;
     db db;
     rh_table channels; /* pub/sub: channel -> chan_node list head (8-byte ptr) */
     aof *aof;          /* NULL when appendonly=no */
@@ -130,6 +150,9 @@ static conn *conn_create(server *srv, pal_socket_t fd);
 static void repl_link_close(server *srv);
 static int repl_link_connect(server *srv);
 static int server_run_once_iocp(server *s, int timeout_ms);
+static void bus_conn_free(server *s, bus_conn *bc);
+static void cluster_nodes_save(server *s);
+static int srv_cluster_meet(void *ctx, const char *ip, uint16_t port);
 
 /* ------------------------------------------------------------------ */
 /* pub/sub registry + session hooks                                   */
@@ -385,6 +408,8 @@ static conn *conn_create(server *srv, pal_socket_t fd)
     c->sess->sync_hook = srv_sync;
     c->sess->replicaof_ctx = srv;
     c->sess->replicaof_hook = srv_replicaof;
+    c->sess->cluster_ctx = srv;
+    c->sess->cluster_meet = srv_cluster_meet;
     /* every conn propagates mutations through the server mux (AOF +
      * backlog + downstream replicas) */
     c->sess->aof_ctx = srv;
@@ -596,6 +621,8 @@ server *server_create_ex(const char *host, uint16_t port, int backend)
         return NULL;
     s->listen_fd = PAL_SOCKET_INVALID;
     s->tls_listen_fd = PAL_SOCKET_INVALID;
+    s->bus_listen_fd = PAL_SOCKET_INVALID;
+    s->node_timeout_ms = 15000;
     s->backend = backend;
     s->loop = pal_loop_create();
     if (backend == SERVER_BACKEND_IOCP) {
@@ -691,10 +718,65 @@ int server_load_snapshot(server *s)
     return snapshot_load(&s->db, s->db.snapshot_path, pal_wall_ms());
 }
 
+/* Load persisted nodes.conf lines into the node table (multi-node reload).
+ * Best-effort: malformed lines are skipped. */
+void server_load_nodes(server *s, const char *path)
+{
+    pal_file *f;
+    char line[512];
+    if (!pal_file_exists(path))
+        return;
+    f = pal_file_open_read(path);
+    if (f == NULL)
+        return;
+    {
+        size_t used = 0;
+        char ch;
+        while (pal_file_read(f, &ch, 1) == 1) {
+            if (ch == '\n') {
+                if (used > 0)
+                    (void)cluster_nodes_parse_line(&s->db, line, used);
+                used = 0;
+            } else if (used + 1 < sizeof(line)) {
+                line[used++] = ch;
+            } else {
+                used = 0; /* overlong line: drop it */
+            }
+        }
+        if (used > 0)
+            (void)cluster_nodes_parse_line(&s->db, line, used);
+    }
+    pal_file_close(f);
+}
+
 void server_enable_cluster(server *s, const char *node_id)
 {
+    cluster_node *me;
+
     s->db.cluster_enabled = 1;
     snprintf(s->db.node_id, sizeof(s->db.node_id), "%s", node_id);
+
+    /* myself in the node table: owns all slots */
+    me = cluster_node_add(&s->db, node_id);
+    if (me != NULL) {
+        snprintf(me->ip, sizeof(me->ip), "%s", s->db.cluster_ip);
+        me->port = s->db.cluster_port;
+        me->bus_port = (uint16_t)(s->db.cluster_port + 10000);
+        me->flags = CLUSTER_NODE_MYSELF | CLUSTER_NODE_MASTER;
+        memset(me->slots, 0xFF, sizeof(me->slots));
+        me->last_seen_ms = pal_wall_ms();
+        s->nodes_dirty = 1;
+    }
+
+    /* cluster bus listener on port+10000 (readiness backend only) */
+    if (s->backend == SERVER_BACKEND_IOCP ||
+        s->bus_listen_fd != PAL_SOCKET_INVALID)
+        return; /* unsupported backend, or already listening */
+    s->bus_listen_fd = pal_tcp_listen("0.0.0.0",
+                                      (uint16_t)(s->db.cluster_port + 10000),
+                                      128, NULL);
+    if (s->bus_listen_fd != PAL_SOCKET_INVALID)
+        (void)pal_loop_add(s->loop, s->bus_listen_fd, 1, 0, NULL);
 }
 
 void server_set_save_interval(server *s, int sec)
@@ -725,6 +807,16 @@ void server_destroy(server *s)
     size_t i;
     if (s == NULL)
         return;
+    if (s->db.cluster_enabled) {
+        s->nodes_dirty = 1;
+        cluster_nodes_save(s);
+    }
+    while (s->bus != NULL)
+        bus_conn_free(s, s->bus);
+    if (s->bus_listen_fd != PAL_SOCKET_INVALID) {
+        pal_loop_del(s->loop, s->bus_listen_fd);
+        pal_close(s->bus_listen_fd);
+    }
     for (i = 0; i < s->nconns; i++)
         conn_free(s->conns[i]);
     free(s->conns);
@@ -868,6 +960,240 @@ static int conn_flush(server *s, conn *c)
         }
     }
     return 0;
+}
+
+/* ------------------------------------------------------------------ */
+/* cluster bus (ddup cluster protocol v1)                             */
+/* ------------------------------------------------------------------ */
+
+void server_set_nodes_path(server *s, const char *path)
+{
+    snprintf(s->nodes_path, sizeof(s->nodes_path), "%s", path);
+}
+
+void server_set_node_timeout(server *s, uint64_t ms)
+{
+    s->node_timeout_ms = ms;
+}
+
+static bus_conn *bus_conn_new(pal_socket_t fd, int outbound)
+{
+    bus_conn *bc = (bus_conn *)calloc(1, sizeof(*bc));
+    if (bc == NULL)
+        return NULL;
+    bc->fd = fd;
+    bc->outbound = outbound;
+    bc->rcap = CLUSTER_MSG_MAX;
+    bc->rbuf = (char *)malloc(bc->rcap);
+    if (bc->rbuf == NULL) {
+        free(bc);
+        return NULL;
+    }
+    resp_buf_init(&bc->out);
+    return bc;
+}
+
+static void bus_conn_free(server *s, bus_conn *bc)
+{
+    bus_conn **pp;
+    if (bc == NULL)
+        return;
+    for (pp = &s->bus; *pp != NULL; pp = &(*pp)->next) {
+        if (*pp == bc) {
+            *pp = bc->next;
+            break;
+        }
+    }
+    pal_loop_del(s->loop, bc->fd);
+    pal_close(bc->fd);
+    free(bc->rbuf);
+    resp_buf_free(&bc->out);
+    free(bc);
+}
+
+static void bus_conn_add(server *s, bus_conn *bc)
+{
+    bc->next = s->bus;
+    s->bus = bc;
+    (void)pal_loop_add(s->loop, bc->fd, 1, bc->want_write, bc);
+}
+
+/* non-blocking flush of a bus conn's out buffer */
+static int bus_flush(server *s, bus_conn *bc)
+{
+    size_t sent = 0;
+    while (sent < bc->out.len) {
+        ptrdiff_t n = pal_send(bc->fd, bc->out.data + sent,
+                               bc->out.len - sent);
+        if (n < 0 && pal_would_block(pal_socket_error()))
+            break;
+        if (n <= 0)
+            return -1;
+        sent += (size_t)n;
+    }
+    if (sent > 0) {
+        memmove(bc->out.data, bc->out.data + sent, bc->out.len - sent);
+        bc->out.len -= sent;
+    }
+    {
+        int want = bc->out.len > 0 ? 1 : 0;
+        if (want != bc->want_write) {
+            bc->want_write = want;
+            pal_loop_mod(s->loop, bc->fd, 1, want, bc);
+        }
+    }
+    return 0;
+}
+
+static void bus_queue_frame(server *s, bus_conn *bc, int type)
+{
+    cluster_bus_build_frame(&s->db, type, &bc->out);
+    bus_flush(s, bc);
+}
+
+static void bus_accept(server *s)
+{
+    pal_socket_t fd = pal_accept(s->bus_listen_fd);
+    bus_conn *bc;
+    if (fd == PAL_SOCKET_INVALID)
+        return;
+    if (pal_set_nonblocking(fd, 1) != 0) {
+        pal_close(fd);
+        return;
+    }
+    bc = bus_conn_new(fd, 0);
+    if (bc == NULL) {
+        pal_close(fd);
+        return;
+    }
+    bus_conn_add(s, bc);
+}
+
+/* open an outbound bus conn to a peer's bus port (loopback-fast blocking
+ * connect, documented simplification) */
+static bus_conn *bus_connect(server *s, const char *ip, uint16_t bus_port)
+{
+    pal_socket_t fd = pal_tcp_connect(ip, bus_port);
+    bus_conn *bc;
+    if (fd == PAL_SOCKET_INVALID)
+        return NULL;
+    if (pal_set_nonblocking(fd, 1) != 0) {
+        pal_close(fd);
+        return NULL;
+    }
+    bc = bus_conn_new(fd, 1);
+    if (bc == NULL) {
+        pal_close(fd);
+        return NULL;
+    }
+    bus_conn_add(s, bc);
+    return bc;
+}
+
+static int srv_cluster_meet(void *ctx, const char *ip, uint16_t port)
+{
+    server *s = (server *)ctx;
+    bus_conn *bc = bus_connect(s, ip, (uint16_t)(port + 10000));
+    if (bc == NULL)
+        return -1;
+    bus_queue_frame(s, bc, CLUSTER_MSG_MEET);
+    return 0;
+}
+
+static void bus_service(server *s, bus_conn *bc, int writable)
+{
+    if (writable && bus_flush(s, bc) != 0) {
+        bus_conn_free(s, bc);
+        return;
+    }
+    for (;;) {
+        ptrdiff_t n = pal_recv(bc->fd, bc->rbuf + bc->rlen,
+                               bc->rcap - bc->rlen);
+        if (n == 0 ||
+            (n < 0 && !pal_would_block(pal_socket_error()))) {
+            bus_conn_free(s, bc);
+            return;
+        }
+        if (n < 0)
+            break;
+        bc->rlen += (size_t)n;
+        if ((size_t)n < bc->rcap - bc->rlen)
+            break;
+    }
+    /* parse complete frames */
+    while (bc->rlen >= 10) {
+        uint32_t totlen = (uint32_t)(uint8_t)bc->rbuf[4] |
+                          ((uint32_t)(uint8_t)bc->rbuf[5] << 8) |
+                          ((uint32_t)(uint8_t)bc->rbuf[6] << 16) |
+                          ((uint32_t)(uint8_t)bc->rbuf[7] << 24);
+        if (totlen > CLUSTER_MSG_MAX || totlen < 10) {
+            bus_conn_free(s, bc);
+            return;
+        }
+        if (bc->rlen < totlen)
+            break; /* incomplete frame */
+        if (cluster_bus_handle_frame(&s->db, bc->rbuf, totlen, &bc->out,
+                                     pal_wall_ms()) != 0) {
+            bus_conn_free(s, bc);
+            return;
+        }
+        s->nodes_dirty = 1;
+        memmove(bc->rbuf, bc->rbuf + totlen, bc->rlen - totlen);
+        bc->rlen -= totlen;
+    }
+    bus_flush(s, bc);
+}
+
+static void cluster_gossip_round(server *s)
+{
+    bus_conn *bc;
+    /* ping every outbound conn and every known peer we can reach */
+    for (bc = s->bus; bc != NULL; bc = bc->next)
+        if (bc->outbound)
+            bus_queue_frame(s, bc, CLUSTER_MSG_PING);
+}
+
+static void cluster_fail_check(server *s, uint64_t now_ms)
+{
+    int i;
+    for (i = 0; i < s->db.nnodes; i++) {
+        cluster_node *n = &s->db.nodes[i];
+        if ((n->flags & (CLUSTER_NODE_MYSELF | CLUSTER_NODE_DISCONNECTED)) ==
+            0 &&
+            n->last_seen_ms > 0 &&
+            now_ms - n->last_seen_ms > s->node_timeout_ms) {
+            n->flags |= CLUSTER_NODE_DISCONNECTED;
+            s->nodes_dirty = 1;
+        }
+    }
+}
+
+static void cluster_nodes_save(server *s)
+{
+    resp_buf buf;
+    char tmp[1088];
+    pal_file *f;
+    if (s->nodes_path[0] == '\0' || !s->nodes_dirty)
+        return;
+    resp_buf_init(&buf);
+    if (cluster_nodes_render(&s->db, &buf) != 0) {
+        resp_buf_free(&buf);
+        return;
+    }
+    snprintf(tmp, sizeof(tmp), "%s.tmp", s->nodes_path);
+    f = pal_file_open_write(tmp);
+    if (f != NULL) {
+        if (pal_file_write(f, buf.data, buf.len) == (ptrdiff_t)buf.len &&
+            pal_file_flush(f) == 0) {
+            pal_file_close(f);
+            if (pal_file_rename(tmp, s->nodes_path) == 0)
+                s->nodes_dirty = 0;
+        } else {
+            pal_file_close(f);
+            pal_file_unlink(tmp);
+        }
+    }
+    resp_buf_free(&buf);
 }
 
 /* Parse and execute all complete commands in the conn recv buffer and
@@ -1101,6 +1427,20 @@ int server_run_once(server *s, int timeout_ms)
         pal_now_ms() - s->last_reconnect >= 500)
         (void)repl_link_connect(s);
 
+    /* cluster bus: gossip round, failure detection, nodes.conf persistence */
+    if (s->db.cluster_enabled) {
+        uint64_t now = pal_now_ms();
+        if (now - s->last_gossip >= 1000) {
+            s->last_gossip = now;
+            cluster_gossip_round(s);
+            cluster_fail_check(s, pal_wall_ms());
+        }
+        if (now - s->last_nodes_save >= 10000) {
+            s->last_nodes_save = now;
+            cluster_nodes_save(s);
+        }
+    }
+
     if (s->backend == SERVER_BACKEND_IOCP)
         return server_run_once_iocp(s, timeout_ms);
 
@@ -1117,6 +1457,27 @@ int server_run_once(server *s, int timeout_ms)
             s->tls_listen_fd != PAL_SOCKET_INVALID) {
             server_accept(s, s->tls_listen_fd, 1);
             continue;
+        }
+        if (evs[i].fd == s->bus_listen_fd &&
+            s->bus_listen_fd != PAL_SOCKET_INVALID) {
+            bus_accept(s);
+            continue;
+        }
+        /* bus conn events are handled by the bus protocol path */
+        {
+            bus_conn *bc = s->bus;
+            int is_bus = 0;
+            while (bc != NULL) {
+                if (bc->fd == evs[i].fd) {
+                    is_bus = 1;
+                    break;
+                }
+                bc = bc->next;
+            }
+            if (is_bus) {
+                bus_service(s, bc, evs[i].writable);
+                continue;
+            }
         }
         /* connection readiness */
         {

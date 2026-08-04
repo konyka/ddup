@@ -3080,13 +3080,39 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
             if (argc < 2 || !arg_str(&argv[1], &sub, &sl))
                 goto bad_type;
             if (ci_equal(sub, sl, "INFO") && argc == 2) {
-                static const char INFO_BODY[] =
-                    "cluster_enabled:1\r\ncluster_state:ok\r\n"
-                    "cluster_slots_assigned:16384\r\n"
-                    "cluster_slots_ok:16384\r\ncluster_known_nodes:1\r\n"
-                    "cluster_size:1\r\ncluster_current_epoch:1\r\n"
-                    "cluster_my_epoch:1\r\n";
-                resp_write_bulk(out, INFO_BODY, sizeof(INFO_BODY) - 1);
+                char body[384];
+                int covered = 0, fail_slots = 0;
+                int i, sl2;
+                uint8_t bm[2048];
+                const char *state;
+                memset(bm, 0, sizeof(bm));
+                for (i = 0; i < d->nnodes; i++) {
+                    if (d->nodes[i].flags & CLUSTER_NODE_DISCONNECTED) {
+                        for (sl2 = 0; sl2 < 16384 && !fail_slots; sl2++)
+                            if (cluster_slots_get(d->nodes[i].slots,
+                                                  (uint32_t)sl2))
+                                fail_slots = 1;
+                        continue;
+                    }
+                    for (sl2 = 0; sl2 < 16384; sl2++)
+                        if (cluster_slots_get(d->nodes[i].slots,
+                                              (uint32_t)sl2) &&
+                            !cluster_slots_get(bm, (uint32_t)sl2)) {
+                            cluster_slots_set(bm, (uint32_t)sl2, 1);
+                            covered++;
+                        }
+                }
+                state = (covered == 16384 && !fail_slots) ? "ok" : "fail";
+                {
+                    int nb = snprintf(
+                        body, sizeof(body),
+                        "cluster_enabled:1\r\ncluster_state:%s\r\n"
+                        "cluster_slots_assigned:%d\r\ncluster_slots_ok:%d\r\n"
+                        "cluster_known_nodes:%d\r\ncluster_size:%d\r\n"
+                        "cluster_current_epoch:1\r\ncluster_my_epoch:1\r\n",
+                        state, covered, covered, d->nnodes, d->nnodes);
+                    resp_write_bulk(out, body, (size_t)nb);
+                }
                 return;
             }
             if (ci_equal(sub, sl, "MYID") && argc == 2) {
@@ -3094,12 +3120,16 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
                 return;
             }
             if (ci_equal(sub, sl, "NODES") && argc == 2) {
-                char line[128];
-                int ll = snprintf(
-                    line, sizeof(line),
-                    "%s :0@0 myself,master - 0 0 1 connected 0-16383\n",
-                    d->node_id);
-                resp_write_bulk(out, line, (size_t)ll);
+                resp_buf lines;
+                resp_buf_init(&lines);
+                if (cluster_nodes_render(d, &lines) != 0) {
+                    resp_buf_free(&lines);
+                    resp_write_error(out,
+                                     "ERR node table render failed", 27);
+                    return;
+                }
+                resp_write_bulk(out, lines.data, lines.len);
+                resp_buf_free(&lines);
                 return;
             }
             if (ci_equal(sub, sl, "SLOTS") && argc == 2) {
@@ -3147,6 +3177,38 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
                 }
                 return;
             }
+            if (ci_equal(sub, sl, "MEET") && argc == 4) {
+                const char *ip, *pv;
+                size_t ipl, pvl;
+                long long port;
+                if (!arg_str(&argv[2], &ip, &ipl) ||
+                    !arg_str(&argv[3], &pv, &pvl))
+                    goto bad_type;
+                if (!parse_i64(pv, pvl, &port) || port <= 0 || port > 65535) {
+                    resp_write_error(out, ERR_NOT_INT,
+                                     sizeof(ERR_NOT_INT) - 1);
+                    return;
+                }
+                {
+                    char hostbuf[64];
+                    if (ipl >= sizeof(hostbuf)) {
+                        resp_write_error(out, "ERR invalid ip", 16);
+                        return;
+                    }
+                    memcpy(hostbuf, ip, ipl);
+                    hostbuf[ipl] = '\0';
+                    if (s->cluster_meet == NULL ||
+                        s->cluster_meet(s->cluster_ctx, hostbuf,
+                                        (uint16_t)port) != 0) {
+                        resp_write_error(out,
+                                         "ERR cluster meet failed", 22);
+                        return;
+                    }
+                }
+                resp_write_simple_string(out, "OK", 2);
+                return;
+            }
+
             if (ci_equal(sub, sl, "GETKEYSINSLOT") && argc == 4) {
                 const char *sv, *cv;
                 size_t svl, cvl;

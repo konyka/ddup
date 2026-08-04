@@ -33,10 +33,18 @@ static void exec_sess(session *s, uint64_t now, resp_buf *out, int argc, ...)
 static session *cluster_session(db *d)
 {
     session *s = session_create(d);
+    cluster_node *me;
     d->cluster_enabled = 1;
     snprintf(d->node_id, sizeof(d->node_id), "%s", TEST_ID);
     snprintf(d->cluster_ip, sizeof(d->cluster_ip), "127.0.0.1");
     d->cluster_port = 7777;
+    /* mirror server_enable_cluster: myself in the table with all slots */
+    me = cluster_node_add(d, TEST_ID);
+    snprintf(me->ip, sizeof(me->ip), "127.0.0.1");
+    me->port = 7777;
+    me->bus_port = 17777;
+    me->flags = CLUSTER_NODE_MYSELF | CLUSTER_NODE_MASTER;
+    memset(me->slots, 0xFF, sizeof(me->slots));
     return s;
 }
 
@@ -85,16 +93,18 @@ static void test_cluster_info_myid_nodes(void)
     exec_sess(s, T0, &out, 2, "CLUSTER", "MYID");
     EXPECT(out, "$40\r\n" TEST_ID "\r\n");
 
-    /* NODES returns the myself line, nodes.conf style */
-    {
-        char line[128];
-        int ll = snprintf(line, sizeof(line),
-                          "%s :0@0 myself,master - 0 0 1 connected 0-16383\n",
-                          TEST_ID);
-        snprintf(exp, sizeof(exp), "$%d\r\n%s\r\n", ll, line);
-    }
+    /* NODES renders the table: myself line with real addr/flags/slots */
     exec_sess(s, T0, &out, 2, "CLUSTER", "NODES");
-    EXPECT(out, exp);
+    {
+        char nul[512];
+        DD_CHECK(out.len > 0 && out.len < sizeof(nul) - 1);
+        memcpy(nul, out.data, out.len);
+        nul[out.len] = '\0';
+        DD_CHECK(strstr(nul, TEST_ID) != NULL);
+        DD_CHECK(strstr(nul, "127.0.0.1:7777@17777") != NULL);
+        DD_CHECK(strstr(nul, "myself,master") != NULL);
+        DD_CHECK(strstr(nul, "connected 0-16383") != NULL);
+    }
 
     session_free(s);
     resp_buf_free(&out);

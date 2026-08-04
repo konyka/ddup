@@ -80,6 +80,9 @@ typedef struct session {
     /* SHUTDOWN hook (server-owned): flips the server shutdown flag. */
     void *shutdown_ctx;
     void (*request_shutdown)(void *ctx);
+    /* CLUSTER MEET hook (server-owned): open a bus conn and send MEET. */
+    void *cluster_ctx;
+    int (*cluster_meet)(void *ctx, const char *ip, uint16_t port);
     /* replication (server-owned; NULL for stack sessions) */
     const repl_info *repl;  /* INFO replication source */
     const int *role;        /* server role, for READONLY checks */
