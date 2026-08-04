@@ -66,7 +66,7 @@ static void test_cluster_info_myid_nodes(void)
     db d;
     session *s;
     resp_buf out;
-    char exp[128];
+    char exp[256];
     db_init(&d);
     resp_buf_init(&out);
     s = cluster_session(&d);
