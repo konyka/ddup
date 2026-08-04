@@ -3796,6 +3796,35 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
                 return;
             }
 
+            if (ci_equal(sub, sl, "FAILOVER") && (argc == 2 || argc == 3)) {
+                cluster_node *me;
+                if (argc == 3) {
+                    const char *o;
+                    size_t ol;
+                    if (!arg_str(&argv[2], &o, &ol))
+                        goto bad_type;
+                    if (!ci_equal(o, ol, "TAKEOVER")) {
+                        resp_write_error(out, ERR_SYNTAX,
+                                         sizeof(ERR_SYNTAX) - 1);
+                        return;
+                    }
+                }
+                me = cluster_myself(d);
+                if (me == NULL || !(me->flags & CLUSTER_NODE_SLAVE)) {
+                    static const char E[] =
+                        "ERR You should send CLUSTER FAILOVER to a replica";
+                    resp_write_error(out, E, sizeof(E) - 1);
+                    return;
+                }
+                /* simplified: no master consent/vote; plain FAILOVER acts
+                 * like TAKEOVER (documented) */
+                if (cluster_failover_promote(d) &&
+                    s->cluster_replicate != NULL)
+                    s->cluster_replicate(s->cluster_ctx, NULL, 0);
+                resp_write_simple_string(out, "OK", 2);
+                return;
+            }
+
             if (ci_equal(sub, sl, "GETKEYSINSLOT") && argc == 4) {
                 const char *sv, *cv;
                 size_t svl, cvl;

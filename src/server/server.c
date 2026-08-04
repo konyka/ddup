@@ -119,6 +119,7 @@ struct server {
     uint64_t last_gossip;
     uint64_t last_nodes_save;
     uint64_t node_timeout_ms;
+    uint64_t failover_deadline_ms; /* wall ms; 0 = no pending failover */
     db db;
     rh_table channels; /* pub/sub: channel -> chan_node list head (8-byte ptr) */
     aof *aof;          /* NULL when appendonly=no */
@@ -1164,9 +1165,47 @@ static void cluster_fail_check(server *s, uint64_t now_ms)
             0 &&
             n->last_seen_ms > 0 &&
             now_ms - n->last_seen_ms > s->node_timeout_ms) {
+            cluster_node *me;
             n->flags |= CLUSTER_NODE_DISCONNECTED;
             s->nodes_dirty = 1;
+            /* failover: a slave of a dead, slot-owning master schedules
+             * its promotion (election delay = node timeout + 500 ms) */
+            me = cluster_myself(&s->db);
+            if (me != NULL && (me->flags & CLUSTER_NODE_SLAVE) &&
+                memcmp(me->master_id, n->id, 40) == 0 &&
+                (n->flags & CLUSTER_NODE_MASTER) &&
+                s->failover_deadline_ms == 0) {
+                uint32_t sl;
+                for (sl = 0; sl < 16384; sl++)
+                    if (cluster_slots_get(n->slots, sl)) {
+                        s->failover_deadline_ms =
+                            now_ms + s->node_timeout_ms + 500;
+                        break;
+                    }
+            }
         }
+    }
+}
+
+/* promote myself when the failover election delay has elapsed and the
+ * master is still down; announce the claims immediately */
+static void cluster_failover_check(server *s, uint64_t now_ms)
+{
+    cluster_node *me, *m;
+    if (s->failover_deadline_ms == 0 || now_ms < s->failover_deadline_ms)
+        return;
+    s->failover_deadline_ms = 0;
+    me = cluster_myself(&s->db);
+    m = me != NULL && !(me->master_id[0] == '-' && me->master_id[1] == '\0')
+            ? cluster_node_find(&s->db, me->master_id)
+            : NULL;
+    if (me == NULL || !(me->flags & CLUSTER_NODE_SLAVE) || m == NULL ||
+        !(m->flags & CLUSTER_NODE_DISCONNECTED))
+        return; /* master recovered (or we were promoted) meanwhile */
+    if (cluster_failover_promote(&s->db)) {
+        srv_replicaof(s, NULL, 0); /* stop data replication */
+        s->nodes_dirty = 1;
+        cluster_gossip_round(s); /* announce the claims now */
     }
 }
 
@@ -1440,6 +1479,7 @@ int server_run_once(server *s, int timeout_ms)
             s->last_gossip = now;
             cluster_gossip_round(s);
             cluster_fail_check(s, pal_wall_ms());
+            cluster_failover_check(s, pal_wall_ms());
         }
         if (now - s->last_nodes_save >= 10000) {
             s->last_nodes_save = now;

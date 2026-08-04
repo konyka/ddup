@@ -63,6 +63,11 @@ void cluster_slots_parse(uint8_t *bm, const char *s, size_t len);
 /* Next config epoch for a new slot claim (++db.cluster_current_epoch). */
 uint64_t cluster_next_epoch(struct db *d);
 
+/* Failover promotion: a slave becomes master, clears master_id, claims all
+ * of its master's slots with a bumped config epoch. Returns 1 when the
+ * promotion happened, 0 when myself is not a slave. */
+int cluster_failover_promote(struct db *d);
+
 /* Merge a wire slot claim into the local table: higher config epoch wins
  * a contested slot, ties go to the lexicographically larger node id
  * (Redis rule); losers' bits are cleared (myself yields too). Bits the

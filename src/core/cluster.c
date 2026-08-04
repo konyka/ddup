@@ -174,6 +174,34 @@ uint64_t cluster_next_epoch(struct db *d)
     return ++d->cluster_current_epoch;
 }
 
+int cluster_failover_promote(struct db *d)
+{
+    cluster_node *me = cluster_myself(d);
+    cluster_node *master;
+    char mid[41];
+    uint32_t s;
+    if (me == NULL || !(me->flags & CLUSTER_NODE_SLAVE))
+        return 0;
+    memcpy(mid, me->master_id, sizeof(mid));
+    me->flags |= CLUSTER_NODE_MASTER;
+    me->flags &= ~(uint32_t)CLUSTER_NODE_SLAVE;
+    me->master_id[0] = '-';
+    me->master_id[1] = '\0';
+    me->epoch = cluster_next_epoch(d);
+    master = cluster_node_find(d, mid);
+    if (master != NULL) {
+        for (s = 0; s < 16384; s++) {
+            if (cluster_slots_get(master->slots, s)) {
+                cluster_slots_set(master->slots, s, 0);
+                cluster_slots_set(me->slots, s, 1);
+            }
+        }
+    }
+    d->slot_owner_dirty = 1;
+    d->cluster_changes++;
+    return 1;
+}
+
 void cluster_merge_claims(struct db *d, cluster_node *claimant,
                           const uint8_t *bm, uint64_t epoch)
 {
