@@ -6,7 +6,7 @@
 -- Detecting C compile features - done
 -- ddup: C standard set to C23 (compiler: GNU 13.3.0)
 -- ddup: TLS enabled (OpenSSL 3.0.13)
--- Configuring done (5.4s)
+-- Configuring done (4.8s)
 -- Generating done (0.1s)
 -- Build files have been written to: /home/runner/work/ddup/ddup/build
 [  1%] Building C object CMakeFiles/ddup_core.dir/src/pal/pal_time.c.o
@@ -26,17 +26,94 @@
 [ 19%] Building C object CMakeFiles/ddup_core.dir/src/resp/resp_parser.c.o
 [ 21%] Building C object CMakeFiles/ddup_core.dir/src/resp/resp_writer.c.o
 [ 22%] Building C object CMakeFiles/ddup_core.dir/src/server/server.c.o
-In file included from /home/runner/work/ddup/ddup/src/server/server.c:15:
-/home/runner/work/ddup/ddup/src/server/server.h:57:41: error: unknown type name ‘size_t’
-   57 | void server_set_backlog_size(server *s, size_t bytes);
-      |                                         ^~~~~~
-/home/runner/work/ddup/ddup/src/server/server.h:11:1: note: ‘size_t’ is defined in header ‘<stddef.h>’; did you forget to ‘#include <stddef.h>’?
-   10 | #include <stdint.h>
-  +++ |+#include <stddef.h>
-   11 | 
-gmake[2]: *** [CMakeFiles/ddup_core.dir/build.make:303: CMakeFiles/ddup_core.dir/src/server/server.c.o] Error 1
-gmake[1]: *** [CMakeFiles/Makefile2:172: CMakeFiles/ddup_core.dir/all] Error 2
-gmake: *** [Makefile:101: all] Error 2
+[ 23%] Building C object CMakeFiles/ddup_core.dir/src/server/aof.c.o
+[ 25%] Building C object CMakeFiles/ddup_core.dir/src/server/repl.c.o
+[ 26%] Linking C static library libddup_core.a
+[ 26%] Built target ddup_core
+[ 27%] Building C object CMakeFiles/ddup-server.dir/src/main.c.o
+[ 28%] Linking C executable ddup-server
+[ 28%] Built target ddup-server
+[ 30%] Building C object CMakeFiles/ddup-bench.dir/bench/ddup-bench.c.o
+[ 31%] Linking C executable ddup-bench
+[ 31%] Built target ddup-bench
+[ 32%] Building C object CMakeFiles/bench_core.dir/bench/bench_core.c.o
+[ 34%] Linking C executable bench_core
+[ 34%] Built target bench_core
+[ 35%] Building C object CMakeFiles/test_pal.dir/tests/test_pal.c.o
+[ 36%] Linking C executable test_pal
+[ 36%] Built target test_pal
+[ 38%] Building C object CMakeFiles/test_socket.dir/tests/test_socket.c.o
+[ 39%] Linking C executable test_socket
+[ 39%] Built target test_socket
+[ 40%] Building C object CMakeFiles/test_event.dir/tests/test_event.c.o
+[ 42%] Linking C executable test_event
+[ 42%] Built target test_event
+[ 43%] Building C object CMakeFiles/test_server.dir/tests/test_server.c.o
+[ 44%] Linking C executable test_server
+[ 44%] Built target test_server
+[ 46%] Building C object CMakeFiles/test_arena.dir/tests/test_arena.c.o
+[ 47%] Linking C executable test_arena
+[ 47%] Built target test_arena
+[ 48%] Building C object CMakeFiles/test_resp_parser.dir/tests/test_resp_parser.c.o
+[ 50%] Linking C executable test_resp_parser
+[ 50%] Built target test_resp_parser
+[ 51%] Building C object CMakeFiles/test_resp_writer.dir/tests/test_resp_writer.c.o
+[ 52%] Linking C executable test_resp_writer
+[ 52%] Built target test_resp_writer
+[ 53%] Building C object CMakeFiles/test_resp3.dir/tests/test_resp3.c.o
+[ 55%] Linking C executable test_resp3
+[ 55%] Built target test_resp3
+[ 56%] Building C object CMakeFiles/test_rhtable.dir/tests/test_rhtable.c.o
+[ 57%] Linking C executable test_rhtable
+[ 57%] Built target test_rhtable
+[ 59%] Building C object CMakeFiles/test_command.dir/tests/test_command.c.o
+[ 60%] Linking C executable test_command
+[ 60%] Built target test_command
+[ 61%] Building C object CMakeFiles/test_expire.dir/tests/test_expire.c.o
+[ 63%] Linking C executable test_expire
+[ 63%] Built target test_expire
+[ 64%] Building C object CMakeFiles/test_eviction.dir/tests/test_eviction.c.o
+[ 65%] Linking C executable test_eviction
+[ 65%] Built target test_eviction
+[ 67%] Building C object CMakeFiles/test_hash.dir/tests/test_hash.c.o
+[ 68%] Linking C executable test_hash
+[ 68%] Built target test_hash
+[ 69%] Building C object CMakeFiles/test_list.dir/tests/test_list.c.o
+[ 71%] Linking C executable test_list
+[ 71%] Built target test_list
+[ 72%] Building C object CMakeFiles/test_skiplist.dir/tests/test_skiplist.c.o
+[ 73%] Linking C executable test_skiplist
+[ 73%] Built target test_skiplist
+[ 75%] Building C object CMakeFiles/test_set.dir/tests/test_set.c.o
+[ 76%] Linking C executable test_set
+[ 76%] Built target test_set
+[ 77%] Building C object CMakeFiles/test_zset.dir/tests/test_zset.c.o
+[ 78%] Linking C executable test_zset
+[ 78%] Built target test_zset
+[ 80%] Building C object CMakeFiles/test_session.dir/tests/test_session.c.o
+[ 81%] Linking C executable test_session
+[ 81%] Built target test_session
+[ 82%] Building C object CMakeFiles/test_multi.dir/tests/test_multi.c.o
+[ 84%] Linking C executable test_multi
+[ 84%] Built target test_multi
+[ 85%] Building C object CMakeFiles/test_pubsub.dir/tests/test_pubsub.c.o
+[ 86%] Linking C executable test_pubsub
+[ 86%] Built target test_pubsub
+[ 88%] Building C object CMakeFiles/test_config.dir/tests/test_config.c.o
+[ 89%] Linking C executable test_config
+[ 89%] Built target test_config
+[ 90%] Building C object CMakeFiles/test_aof.dir/tests/test_aof.c.o
+[ 92%] Linking C executable test_aof
+[ 92%] Built target test_aof
+[ 93%] Building C object CMakeFiles/test_snapshot.dir/tests/test_snapshot.c.o
+[ 94%] Linking C executable test_snapshot
+[ 94%] Built target test_snapshot
+[ 96%] Building C object CMakeFiles/test_repl.dir/tests/test_repl.c.o
+[ 97%] Linking C executable test_repl
+[ 97%] Built target test_repl
+[ 98%] Building C object CMakeFiles/test_tls.dir/tests/test_tls.c.o
+[100%] Linking C executable test_tls
+[100%] Built target test_tls
 Reading package lists...
 Building dependency tree...
 Reading state information...
@@ -54,7 +131,7 @@ Get:2 http://azure.archive.ubuntu.com/ubuntu noble/universe amd64 libjemalloc2 a
 Get:3 http://azure.archive.ubuntu.com/ubuntu noble/universe amd64 liblzf1 amd64 3.6-4 [7624 B]
 Get:4 http://azure.archive.ubuntu.com/ubuntu noble-updates/universe amd64 redis-tools amd64 5:7.0.15-1ubuntu0.24.04.4 [1166 kB]
 Get:5 http://azure.archive.ubuntu.com/ubuntu noble-updates/universe amd64 redis-server amd64 5:7.0.15-1ubuntu0.24.04.4 [51.7 kB]
-Fetched 1482 kB in 0s (11.3 MB/s)
+Fetched 1482 kB in 0s (4495 kB/s)
 Selecting previously unselected package libjemalloc2:amd64.
 (Reading database ... (Reading database ... 5%(Reading database ... 10%(Reading database ... 15%(Reading database ... 20%(Reading database ... 25%(Reading database ... 30%(Reading database ... 35%(Reading database ... 40%(Reading database ... 45%(Reading database ... 50%(Reading database ... 55%(Reading database ... 60%(Reading database ... 65%(Reading database ... 70%(Reading database ... 75%(Reading database ... 80%(Reading database ... 85%(Reading database ... 90%(Reading database ... 95%(Reading database ... 100%(Reading database ... 202954 files and directories currently installed.)
 Preparing to unpack .../libjemalloc2_5.3.0-2build1_amd64.deb ...
