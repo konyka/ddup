@@ -6,7 +6,7 @@
 -- Detecting C compile features - done
 -- ddup: C standard set to C23 (compiler: GNU 13.3.0)
 -- ddup: TLS enabled (OpenSSL 3.0.13)
--- Configuring done (6.3s)
+-- Configuring done (8.1s)
 -- Generating done (0.1s)
 -- Build files have been written to: /home/runner/work/ddup/ddup/build
 [  1%] Building C object CMakeFiles/ddup_core.dir/src/pal/pal_time.c.o
@@ -136,6 +136,14 @@ lto1: note: destination object is likely at address zero
 [ 95%] Linking C executable test_cluster_bus
 [ 95%] Built target test_cluster_bus
 [ 96%] Building C object CMakeFiles/test_cluster_slots.dir/tests/test_cluster_slots.c.o
+/home/runner/work/ddup/ddup/tests/test_cluster_slots.c: In function ‘test_moved_basic’:
+/home/runner/work/ddup/ddup/tests/test_cluster_slots.c:228:20: warning: unused variable ‘exp’ [-Wunused-variable]
+  228 |     char ownk[16], exp[96];
+      |                    ^~~
+/home/runner/work/ddup/ddup/tests/test_cluster_slots.c: At top level:
+/home/runner/work/ddup/ddup/tests/test_cluster_slots.c:221:13: warning: ‘test_moved_wire’ declared ‘static’ but never defined [-Wunused-function]
+  221 | static void test_moved_wire(void);
+      |             ^~~~~~~~~~~~~~~
 [ 97%] Linking C executable test_cluster_slots
 [ 97%] Built target test_cluster_slots
 [ 98%] Building C object CMakeFiles/test_tls.dir/tests/test_tls.c.o
@@ -158,7 +166,7 @@ Get:2 http://azure.archive.ubuntu.com/ubuntu noble/universe amd64 libjemalloc2 a
 Get:3 http://azure.archive.ubuntu.com/ubuntu noble/universe amd64 liblzf1 amd64 3.6-4 [7624 B]
 Get:4 http://azure.archive.ubuntu.com/ubuntu noble-updates/universe amd64 redis-tools amd64 5:7.0.15-1ubuntu0.24.04.4 [1166 kB]
 Get:5 http://azure.archive.ubuntu.com/ubuntu noble-updates/universe amd64 redis-server amd64 5:7.0.15-1ubuntu0.24.04.4 [51.7 kB]
-Fetched 1482 kB in 0s (26.6 MB/s)
+Fetched 1482 kB in 0s (10.0 MB/s)
 Selecting previously unselected package libjemalloc2:amd64.
 (Reading database ... (Reading database ... 5%(Reading database ... 10%(Reading database ... 15%(Reading database ... 20%(Reading database ... 25%(Reading database ... 30%(Reading database ... 35%(Reading database ... 40%(Reading database ... 45%(Reading database ... 50%(Reading database ... 55%(Reading database ... 60%(Reading database ... 65%(Reading database ... 70%(Reading database ... 75%(Reading database ... 80%(Reading database ... 85%(Reading database ... 90%(Reading database ... 95%(Reading database ... 100%(Reading database ... 202954 files and directories currently installed.)
 Preparing to unpack .../libjemalloc2_5.3.0-2build1_amd64.deb ...
