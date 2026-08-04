@@ -33,6 +33,16 @@
 | 2026-08-03 | Phase 7.4 非阻塞写出 | 服务器 SET（run_bench ×2） | 同上 | 606k/621k req/s | - | 与 7.3 持平（噪声内）；收益在慢客户端韧性 |
 | 2026-08-03 | Phase 7.4 非阻塞写出 | 服务器 GET（run_bench ×2） | 同上 | 735k/746k req/s | - | 同上 |
 | 2026-08-03 | Phase 7.4 非阻塞写出 | bench_core SET / GET | 同上 | 5.01M / 8.89M ops/s | - | 同上 |
+| 2026-08-03 | Phase 7.5 IOCP | 服务器 SET/GET c50 P16（iocp） | 同上 | 324k / 382k req/s | - | select: 389k / 442k（iocp 慢 ~15%） |
+| 2026-08-03 | Phase 7.5 IOCP | 服务器 SET/GET c200 P16（iocp） | 同上 | 315k / 348k req/s | - | select: 303k / 375k（基本持平） |
+
+## Phase 7.5 IOCP 备注
+
+ping-pong 型流水负载下 IOCP 每个往返比 readiness 多一次完成等待
+（recv 完成 → 执行 → 发 send → send 完成），c50 慢约 15%；并发连接数
+升高后差距消失（c200 持平）。本 bench 客户端为顺序连接，未压出
+select 的 1024 fd 上限与 FD_SET 重建成本——IOCP 的真正优势场景
+（海量并发长连接）当前基准无法体现，如实记录。
 
 最终对比（Phase 7.3 baseline → 全部优化后，同机同旗标）：
 

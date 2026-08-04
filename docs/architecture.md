@@ -219,6 +219,25 @@ DBSIZE 为 O(1)，可能计入尚未回收的过期 key。
 - 单线程服务器不再会被停滞客户端拖死：socket 级测试覆盖 2000 条流水
   命令、慢客户端并行服务、分片读取恢复。
 
+## IOCP 后端（Phase 7.5，Windows）
+
+- **后端选择**：`server_create_ex(host, port, backend)`；`--io select|iocp`
+  配置项，默认运行时探测（Windows 用 IOCP，其他平台 select）。IOCP 不可
+  用时自动回落 readiness。
+- **流程**：`pal_iocp_listen` 监听；ACCEPT 完成 → 建 conn（session/arena/
+  64KB recv 缓冲）→ post 首个 WSARecv 并重挂 AcceptEx；RECV 完成 → 同一
+  parse→execute 流水线（与 readiness 共享 conn_process_input）→
+  kick_flush；SEND 完成 → 推进 out_sent，未发完则续发（单块 ≤256KB，经
+  conn 私有稳定 sbuf 发送，避免 resp_buf 扩容导致悬垂）。发布订阅、复制
+  推流、SYNC 帧共用 kick_flush（有 send 在飞时自动跳过）。16MB 慢副本
+  丢弃策略一致；AOF flush/主动过期与 autosave 照旧。
+- **生命周期**：conn 有在飞操作时关闭走 zombie 路径（CancelIoEx 后等
+  pending_ops 归零再真正释放，避免完成事件悬垂引用）。
+- **限制（记录在案）**：IOCP 后端不支持 TLS（tls-port 自动回落
+  readiness）；不支持复制副本侧 master link（REPLICAOF 报错），master
+  侧供流正常。pal_iocp 在非 Windows 为空 stub（创建返回 NULL）。
+- ping-pong 基准见 docs/performance.md Phase 7.5 表。
+
 ## 目录结构
 
 ```

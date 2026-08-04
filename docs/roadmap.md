@@ -42,4 +42,6 @@
     GET +24%，端到端 +8–11%）（Phase 7.3）
   - [x] 非阻塞写出缓冲：连接全非阻塞，out 缓冲 + writable 事件驱动 flush，
     慢客户端不阻塞主循环（Phase 7.4）
+  - [x] Windows IOCP 后端：pal_iocp proactor + server 双后端可切换
+    （--io select|iocp，Windows 默认 iocp；全套 socket 测试双后端跑）（Phase 7.5）
   - [ ] PSYNC 部分重同步、复制积压区利用、链式复制拓扑测试
