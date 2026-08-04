@@ -254,6 +254,29 @@ DBSIZE 为 O(1)，可能计入尚未回收的过期 key。
   槽累加器检查队列内全部命令的 key，违例以 CROSSSLOT 整体中止且无副作用。
 - **快照/AOF**：不受影响（对象存储路径一致）。
 
+## 集群总线与 gossip（Phase 7.8a，多节点第一部分）
+
+- **集群总线**：cluster-enabled 时在 `port+10000` 开第二个监听（仅
+  readiness 后端；IOCP 后端强制回落 select，同 TLS）。总线连接非阻塞，
+  接入同一事件循环；慢连接按常规 out 缓冲冲刷策略处理。
+- **协议（ddup cluster protocol v1，简化自有格式，不与 Redis 总线逐字节
+  兼容，记录在案）**：`"RCMB"` + u32le totlen + u16le type
+  （PING=1/PONG=2/MEET=3），body 为发送者 id/ip/port@bus/flags/完整槽位图
+  + 至多 10 条 gossip 条目（id/ip/port/flags/槽区间串）。总包 ≤16KB，
+  防御式解析（坏包/超长直接关闭）。
+- **gossip**：每 1s 向全部出站连接发 PING（携带 gossip 条目）；收 PING/
+  MEET 回 PONG；PONG 刷新 last_seen；gossip 条目只增不改（新节点以
+  handshake 标记加入）。MEET 由 `CLUSTER MEET ip port` 触发（主动建连并发
+  MEET 帧）。收敛方式与 Redis 相同：A 认识 B、B 认识 C ⇒ A 经由 B 的
+  gossip 负载学会 C。
+- **节点表**：db 内置 32 节点表（id/ip/port@bus/flags/槽位图/last_seen），
+  nodes.conf 多行格式 render/parse 双向序列化；每 10s 脏检测持久化
+  （原子 rename），启动时先装载再覆盖 myself 条目。
+- **故障检测**：NODE_TIMEOUT 默认 15s（测试可调）；超时标记 disconnected。
+  cluster_state = ok 当 16384 槽被在线节点全覆盖且无 disconnected 节点
+  持有槽，否则 fail。无自动故障转移（后续阶段）。
+- **TLS**：总线不支持 TLS（记录在案）。
+
 ## 目录结构
 
 ```

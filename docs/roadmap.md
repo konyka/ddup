@@ -48,5 +48,7 @@
     （ubuntu-latest，结果发布 bench-results 分支）（Phase 7.6）
   - [x] 单节点集群模式：CRC16 hash slot、节点身份、CLUSTER 命令族、
     CROSSSLOT 执行（Phase 7.7）
+  - [x] 多节点集群（一）：集群总线（port+10000）、gossip PING/PONG/MEET、
+    CLUSTER MEET、节点表持久化、故障检测（Phase 7.8a）
   - [ ] PSYNC 部分重同步、复制积压区利用、链式复制拓扑测试
-  - [ ] 集群多节点：gossip/MEET、槽迁移、故障转移（多节点集群的后续阶段）
+  - [ ] 集群多节点（二）：ADDSLOTS/SETSLOT、MOVED 重定向、槽迁移、故障转移
