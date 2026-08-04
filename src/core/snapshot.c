@@ -209,6 +209,16 @@ typedef struct reader {
     int ok;
 } reader;
 
+/* free any owned object value (data-only swap in snapshot_load_mem) */
+static void free_val_cb(const char *key, size_t klen, const char *val,
+                        size_t vlen, void *ctx)
+{
+    (void)key;
+    (void)klen;
+    (void)ctx;
+    obj_free_value(val, vlen);
+}
+
 static uint8_t rd_u8(reader *r)
 {
     if (r->off + 1 > r->len) {
@@ -418,8 +428,18 @@ int snapshot_load_mem(db *d, const char *buf, size_t len, uint64_t now_ms)
         db_destroy(&tmp);
         return -1;
     }
-    db_destroy(d);
-    *d = tmp; /* move the parsed db into place */
+    /* Data-only swap: the load replaces key contents, never configuration
+     * (cluster state, maxmemory, WATCH bookkeeping...). A replica applying
+     * a SYNC snapshot must not lose its cluster node table. */
+    {
+        rh_each(&d->table, free_val_cb, NULL);
+        rh_destroy(&d->table);
+        rh_destroy(&d->expires);
+        d->table = tmp.table;
+        d->expires = tmp.expires;
+        d->used_memory = tmp.used_memory;
+        rh_destroy(&tmp.keyvers); /* tmp's unused empty table */
+    }
     return 0;
 }
 

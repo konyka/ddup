@@ -3738,6 +3738,56 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
                 return;
             }
 
+            if (ci_equal(sub, sl, "REPLICATE") && argc == 3) {
+                const char *ids;
+                size_t idl;
+                char id[41];
+                cluster_node *target, *me;
+                if (!arg_str(&argv[2], &ids, &idl))
+                    goto bad_type;
+                if (idl != 40) {
+                    resp_write_error(out, "ERR Unknown node ", 17);
+                    return;
+                }
+                memcpy(id, ids, 40);
+                id[40] = '\0';
+                target = cluster_node_find(d, id);
+                if (target == NULL) {
+                    char msg[96];
+                    int n2 = snprintf(msg, sizeof(msg), "ERR Unknown node %s",
+                                      id);
+                    resp_write_error(out, msg, (size_t)n2);
+                    return;
+                }
+                if (target->flags & CLUSTER_NODE_MYSELF) {
+                    static const char E[] = "ERR Can't replicate myself";
+                    resp_write_error(out, E, sizeof(E) - 1);
+                    return;
+                }
+                if (!(target->flags & CLUSTER_NODE_MASTER)) {
+                    static const char E[] =
+                        "ERR I can only replicate a master";
+                    resp_write_error(out, E, sizeof(E) - 1);
+                    return;
+                }
+                me = cluster_myself(d);
+                if (me == NULL) {
+                    resp_write_error(out, "ERR Unknown node ", 17);
+                    return;
+                }
+                me->flags &= ~(uint32_t)CLUSTER_NODE_MASTER;
+                me->flags |= CLUSTER_NODE_SLAVE;
+                snprintf(me->master_id, sizeof(me->master_id), "%s", id);
+                d->cluster_changes++;
+                /* data replication rides along (server hook; NULL in
+                 * stack-session tests) */
+                if (s->cluster_replicate != NULL)
+                    s->cluster_replicate(s->cluster_ctx, target->ip,
+                                         target->port);
+                resp_write_simple_string(out, "OK", 2);
+                return;
+            }
+
             if (ci_equal(sub, sl, "GETKEYSINSLOT") && argc == 4) {
                 const char *sv, *cv;
                 size_t svl, cvl;

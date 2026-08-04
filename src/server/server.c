@@ -411,6 +411,7 @@ static conn *conn_create(server *srv, pal_socket_t fd)
     c->sess->replicaof_hook = srv_replicaof;
     c->sess->cluster_ctx = srv;
     c->sess->cluster_meet = srv_cluster_meet;
+    c->sess->cluster_replicate = srv_replicaof;
     /* every conn propagates mutations through the server mux (AOF +
      * backlog + downstream replicas) */
     c->sess->aof_ctx = srv;

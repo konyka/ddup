@@ -18,6 +18,7 @@
 #define CLUSTER_NODE_HANDSHAKE    (1u << 2)
 #define CLUSTER_NODE_NOADDR       (1u << 3)
 #define CLUSTER_NODE_DISCONNECTED (1u << 4)
+#define CLUSTER_NODE_SLAVE        (1u << 5)
 
 /* node table cap (documented; single node table per db) */
 #define CLUSTER_MAX_NODES 32
@@ -31,6 +32,7 @@ typedef struct cluster_node {
     uint64_t last_seen_ms; /* last PONG (or direct contact) */
     uint64_t ping_sent_ms;
     uint64_t epoch;
+    char master_id[41]; /* 40-hex master id, or "-" when a master */
     uint8_t slots[2048]; /* 16384-bit slot bitmap */
 } cluster_node;
 
@@ -65,12 +67,17 @@ int cluster_nodes_render(struct db *d, resp_buf *out);
 int cluster_nodes_parse_line(struct db *d, const char *line, size_t len);
 
 /* ------------------------------------------------------------------ */
-/* ddup cluster bus protocol v1 (simplified; see docs/architecture.md) */
+/* ddup cluster bus protocol (simplified; see docs/architecture.md)   */
 /* ------------------------------------------------------------------ */
 #define CLUSTER_MSG_PING 1
 #define CLUSTER_MSG_PONG 2
 #define CLUSTER_MSG_MEET 3
 #define CLUSTER_MSG_MAX 16384
+
+/* Wire magic: "RCMB" = v1 (no role/master_id/epoch fields; senders are
+ * treated as masters), "RCM2" = v2 (per-node master_id + config epoch). */
+#define CLUSTER_BUS_MAGIC_V1 "RCMB"
+#define CLUSTER_BUS_MAGIC_V2 "RCM2"
 
 /* Build a PING/PONG/MEET frame from the myself node + up to 10 gossip
  * entries (other known nodes). */

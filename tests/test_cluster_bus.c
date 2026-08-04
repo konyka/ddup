@@ -42,7 +42,7 @@ static void test_frame_roundtrip(void)
 
     cluster_bus_build_frame(&d, CLUSTER_MSG_MEET, &frame);
     DD_CHECK(frame.len > 10 && frame.len <= CLUSTER_MSG_MAX);
-    DD_CHECK(memcmp(frame.data, "RCMB", 4) == 0);
+    DD_CHECK(memcmp(frame.data, "RCM2", 4) == 0);
 
     /* receiver side: unknown sender -> node created, PONG produced */
     DD_CHECK_EQ_INT(0, cluster_bus_handle_frame(&d2, frame.data, frame.len,
@@ -54,7 +54,7 @@ static void test_frame_roundtrip(void)
     /* MEET -> handshake cleared on receiver's view of the sender */
     DD_CHECK((cluster_node_find(&d2, ID1)->flags &
               CLUSTER_NODE_HANDSHAKE) == 0);
-    DD_CHECK(reply.len > 10 && memcmp(reply.data, "RCMB", 4) == 0);
+    DD_CHECK(reply.len > 10 && memcmp(reply.data, "RCM2", 4) == 0);
 
     /* PONG back: type 2, updates last_seen on the original sender */
     {

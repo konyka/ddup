@@ -97,6 +97,8 @@ cluster_node *cluster_node_add(struct db *d, const char *id)
     memcpy(n->id, id, 40);
     n->id[40] = '\0';
     n->flags = CLUSTER_NODE_MASTER;
+    n->master_id[0] = '-';
+    n->master_id[1] = '\0';
     return n;
 }
 
@@ -174,6 +176,8 @@ static void flags_render(uint32_t flags, char *out, size_t cap)
         strcat(out, "myself,");
     if (flags & CLUSTER_NODE_MASTER)
         strcat(out, "master,");
+    if (flags & CLUSTER_NODE_SLAVE)
+        strcat(out, "slave,");
     if (flags & CLUSTER_NODE_HANDSHAKE)
         strcat(out, "handshake,");
     if (flags & CLUSTER_NODE_NOADDR)
@@ -210,6 +214,8 @@ static uint32_t flags_parse(const char *s, size_t len)
         f |= CLUSTER_NODE_MYSELF;
     if (strnstr(s, len, "master", 6) != NULL)
         f |= CLUSTER_NODE_MASTER;
+    if (strnstr(s, len, "slave", 5) != NULL)
+        f |= CLUSTER_NODE_SLAVE;
     if (strnstr(s, len, "handshake", 9) != NULL)
         f |= CLUSTER_NODE_HANDSHAKE;
     if (strnstr(s, len, "noaddr", 6) != NULL)
@@ -232,8 +238,9 @@ int cluster_nodes_render(struct db *d, resp_buf *out)
         flags_render(n->flags, flags, sizeof(flags));
         cluster_slots_render(n->slots, slots, sizeof(slots));
         w = snprintf(out->data + out->len, out->cap - out->len,
-                     "%s %s:%u@%u %s - %llu %llu %llu %s %s\n", n->id, n->ip,
-                     (unsigned)n->port, (unsigned)n->bus_port, flags,
+                     "%s %s:%u@%u %s %s %llu %llu %llu %s %s\n", n->id,
+                     n->ip, (unsigned)n->port, (unsigned)n->bus_port, flags,
+                     n->master_id,
                      (unsigned long long)n->ping_sent_ms,
                      (unsigned long long)n->last_seen_ms,
                      (unsigned long long)n->epoch,
@@ -249,7 +256,7 @@ int cluster_nodes_render(struct db *d, resp_buf *out)
 
 int cluster_nodes_parse_line(struct db *d, const char *line, size_t len)
 {
-    char id[41], ip[64], flags[64], slots[512], addr[128];
+    char id[41], ip[64], flags[64], slots[512], addr[128], master[41];
     unsigned port = 0, bus = 0;
     unsigned long long ping, pong, epoch;
     cluster_node *n;
@@ -259,6 +266,7 @@ int cluster_nodes_parse_line(struct db *d, const char *line, size_t len)
     memset(flags, 0, sizeof(flags));
     memset(slots, 0, sizeof(slots));
     memset(addr, 0, sizeof(addr));
+    memset(master, 0, sizeof(master));
     used = 0;
     if (len < 40)
         return -1;
@@ -297,7 +305,9 @@ int cluster_nodes_parse_line(struct db *d, const char *line, size_t len)
         while (p < end && *p != ' ')
             p++;
         mlen = (size_t)(p - s);
-        (void)mlen;
+        if (mlen >= sizeof(master))
+            return -1;
+        memcpy(master, s, mlen);
         /* ping pong epoch link */
         while (p < end && *p == ' ')
             p++;
@@ -346,6 +356,8 @@ int cluster_nodes_parse_line(struct db *d, const char *line, size_t len)
     n->ping_sent_ms = ping;
     n->last_seen_ms = pong;
     n->epoch = epoch;
+    if (master[0] != '\0')
+        snprintf(n->master_id, sizeof(n->master_id), "%s", master);
     cluster_slots_parse(n->slots, slots, strlen(slots));
     return 0;
 }
@@ -384,6 +396,22 @@ static uint32_t get32(const char *p)
     return v;
 }
 
+static void put64(char *p, uint64_t v)
+{
+    int i;
+    for (i = 0; i < 8; i++)
+        p[i] = (char)((v >> (8 * i)) & 0xFFu);
+}
+
+static uint64_t get64(const char *p)
+{
+    uint64_t v = 0;
+    int i;
+    for (i = 0; i < 8; i++)
+        v |= (uint64_t)(uint8_t)p[i] << (8 * i);
+    return v;
+}
+
 void cluster_bus_build_frame(struct db *d, int type, resp_buf *out)
 {
     const cluster_node *sn = NULL;
@@ -405,7 +433,7 @@ void cluster_bus_build_frame(struct db *d, int type, resp_buf *out)
     start = out->len;
     resp_buf_reserve(out, 4096);
     p = out->data + out->len;
-    memcpy(p, "RCMB", 4);
+    memcpy(p, CLUSTER_BUS_MAGIC_V2, 4);
     p += 4;
     p += 4; /* totlen patched below */
     put16(p, (uint16_t)type);
@@ -425,6 +453,10 @@ void cluster_bus_build_frame(struct db *d, int type, resp_buf *out)
     p += 4;
     memcpy(p, sn->slots, 2048);
     p += 2048;
+    memcpy(p, sn->master_id, 40); /* v2: role master_id + config epoch */
+    p += 40;
+    put64(p, sn->epoch);
+    p += 8;
 
     gcp = p;
     p += 2; /* gossip count */
@@ -452,6 +484,10 @@ void cluster_bus_build_frame(struct db *d, int type, resp_buf *out)
         p += 2;
         memcpy(p, slots, (size_t)sl);
         p += sl;
+        memcpy(p, n->master_id, 40); /* v2 extras */
+        p += 40;
+        put64(p, n->epoch);
+        p += 8;
         gc++;
     }
     put16(gcp, gc);
@@ -467,11 +503,20 @@ int cluster_bus_handle_frame(struct db *d, const char *frame, size_t len,
     const char *p, *end;
     uint32_t totlen, flags;
     uint16_t type, ipl, port, busport;
-    char id[41], ip[64];
+    char id[41], ip[64], master_id[41];
+    uint64_t epoch;
+    int v2;
     cluster_node *n;
 
-    if (len < 10 || memcmp(frame, "RCMB", 4) != 0)
+    if (len < 10)
         return -1;
+    if (memcmp(frame, CLUSTER_BUS_MAGIC_V2, 4) == 0) {
+        v2 = 1;
+    } else if (memcmp(frame, CLUSTER_BUS_MAGIC_V1, 4) == 0) {
+        v2 = 0;
+    } else {
+        return -1;
+    }
     totlen = get32(frame + 4);
     if (totlen != len || totlen > CLUSTER_MSG_MAX)
         return -1;
@@ -512,6 +557,17 @@ int cluster_bus_handle_frame(struct db *d, const char *frame, size_t len,
     memcpy(n->slots, p, 2048);
     p += 2048;
     n->last_seen_ms = now_ms;
+    if (v2) {
+        if ((size_t)(end - p) < 48)
+            return -1;
+        memcpy(master_id, p, 40);
+        master_id[40] = '\0';
+        p += 40;
+        epoch = get64(p);
+        p += 8;
+        snprintf(n->master_id, sizeof(n->master_id), "%s", master_id);
+        n->epoch = epoch;
+    }
 
     /* gossip entries */
     if ((size_t)(end - p) < 2)
@@ -545,6 +601,10 @@ int cluster_bus_handle_frame(struct db *d, const char *frame, size_t len,
             p += 2;
             if ((size_t)(end - p) < sl)
                 return -1;
+            if (v2) {
+                if ((size_t)(end - p) < (size_t)sl + 48)
+                    return -1;
+            }
             /* gossip-known nodes: only add when unseen, never overwrite */
             g = cluster_node_find(d, id);
             if (g == NULL) {
@@ -556,9 +616,16 @@ int cluster_bus_handle_frame(struct db *d, const char *frame, size_t len,
                     g->flags = (flags & ~(uint32_t)CLUSTER_NODE_MYSELF) |
                                CLUSTER_NODE_HANDSHAKE;
                     cluster_slots_parse(g->slots, p, sl);
+                    if (v2) {
+                        memcpy(g->master_id, p + sl, 40);
+                        g->master_id[40] = '\0';
+                        g->epoch = get64(p + sl + 40);
+                    }
                 }
             }
             p += sl;
+            if (v2)
+                p += 48;
         }
         if (p != end)
             return -1;

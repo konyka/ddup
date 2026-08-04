@@ -83,6 +83,9 @@ typedef struct session {
     /* CLUSTER MEET hook (server-owned): open a bus conn and send MEET. */
     void *cluster_ctx;
     int (*cluster_meet)(void *ctx, const char *ip, uint16_t port);
+    /* CLUSTER REPLICATE / FAILOVER hook (server-owned): start (ip != NULL)
+     * or stop (ip == NULL) data replication of the given master. */
+    int (*cluster_replicate)(void *ctx, const char *ip, uint16_t port);
     int asking; /* cluster: one-shot ASKING flag for the next command */
     /* replication (server-owned; NULL for stack sessions) */
     const repl_info *repl;  /* INFO replication source */
