@@ -50,5 +50,7 @@
     CROSSSLOT 执行（Phase 7.7）
   - [x] 多节点集群（一）：集群总线（port+10000）、gossip PING/PONG/MEET、
     CLUSTER MEET、节点表持久化、故障检测（Phase 7.8a）
+  - [x] 多节点集群（二）：ADDSLOTS/DELSLOTS/SETSLOT 槽分配、-MOVED/
+    -CLUSTERDOWN 所有权执行、owner 缓存（Phase 7.8b）
   - [ ] PSYNC 部分重同步、复制积压区利用、链式复制拓扑测试
-  - [ ] 集群多节点（二）：ADDSLOTS/SETSLOT、MOVED 重定向、槽迁移、故障转移
+  - [ ] 集群多节点（三）：ASK 重定向、槽在线迁移、副本故障转移

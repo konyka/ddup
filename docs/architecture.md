@@ -277,6 +277,26 @@ DBSIZE 为 O(1)，可能计入尚未回收的过期 key。
   持有槽，否则 fail。无自动故障转移（后续阶段）。
 - **TLS**：总线不支持 TLS（记录在案）。
 
+## 槽分配与重定向（Phase 7.8b，多节点第二部分）
+
+- **新节点语义**：fresh boot 的 myself 不持有任何槽（Redis 行为；7.7 的
+  "独占全部" 只是单节点便利语义，由 nodes.conf 持久化保留旧部署）。
+  cluster_state 在覆盖完备前为 fail。
+- **槽命令**：CLUSTER ADDSLOTS（空闲才加，"Slot <n> is already busy"）、
+  DELSLOTS（仅 myself 持有才可删，"already unassigned"）、SETSLOT slot
+  NODE id（任意节点间移动，未知 id 报错）。位图变更即时生效并经 gossip
+  传播（负载本就携带槽区间串）；nodes.conf 经 cluster_changes 计数触发
+  周期持久化。
+- **owner 缓存**：`db.slot_owner[16384]`（节点索引，0xFFFF=未分配），任何
+  位图变更置脏，下一个命令前一次性重建（O(16384×节点数)）。常规命令
+  每条一次 O(1) 所有权查询。
+- **-MOVED 执行**：命令分派入口统一做所有权检查（keyless 命令表豁免；
+  MGET/DEL/EXISTS/集合运算/WATCH 全参数、MSET 奇数位、SMOVE 两端、其余
+  取 argv[1]）：槽未分配 → `-CLUSTERDOWN Hash slot not served`；槽属他人
+  → `-MOVED <slot> <ip>:<port>`。EXEC 逐条元素独立判定（Redis 行为：
+  MOVED 是该元素的回复，其余照常执行；CROSSSLOT 检查仍在 MOVED 之前）。
+- **非集群零开销**：cluster_enabled=0 时所有权检查为单分支短路。
+
 ## 目录结构
 
 ```
