@@ -19,11 +19,13 @@ jobs:
 
       - name: Build ddup (Release)
         run: |
-          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
-          cmake --build build
+          {
+            cmake -S . -B build -DCMAKE_BUILD_TYPE=Release &&
+            cmake --build build
+          } 2>&1 | tee build.log
 
       - name: Install redis server + tools
-        run: sudo apt-get update && sudo apt-get install -y redis-server redis-tools
+        run: sudo apt-get update && sudo apt-get install -y redis-server redis-tools 2>&1 | tee -a build.log
 
       - name: Clone Garnet (shallow)
         run: git clone --depth 1 https://github.com/microsoft/garnet.git "$RUNNER_TEMP/garnet"
@@ -127,8 +129,11 @@ jobs:
             git -C bres rm -rf . 2>/dev/null || true
           fi
           cd bres
-          cp "$GITHUB_WORKSPACE/bench-report.md" bench-latest.md
-          cp "$GITHUB_WORKSPACE/bench-report.md" "bench-$(date -u +%Y%m%d-%H%M).md"
+          if [ -f "$GITHUB_WORKSPACE/bench-report.md" ]; then
+            cp "$GITHUB_WORKSPACE/bench-report.md" bench-latest.md
+            cp "$GITHUB_WORKSPACE/bench-report.md" "bench-$(date -u +%Y%m%d-%H%M).md"
+          fi
+          [ -f "$GITHUB_WORKSPACE/build.log" ] && cp "$GITHUB_WORKSPACE/build.log" . || true
           git config user.email ci@ddup.local
           git config user.name ddup-ci
           git add -A
