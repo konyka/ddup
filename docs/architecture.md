@@ -75,7 +75,7 @@ SINTER SUNION SDIFF ｜
 ZADD ZSCORE ZCARD ZINCRBY ZREM ZRANGE ZREVRANGE ZRANK ZREVRANK ZCOUNT
 ZRANGEBYSCORE ZREMRANGEBYSCORE ｜
 MULTI EXEC DISCARD WATCH UNWATCH ｜ SUBSCRIBE UNSUBSCRIBE PUBLISH QUIT ｜
-SAVE LASTSAVE SHUTDOWN ｜ SYNC REPLICAOF
+SAVE LASTSAVE SHUTDOWN ｜ SYNC REPLICAOF ｜ DUMP RESTORE MIGRATE ASKING
 
 注：TTL 返回值四舍五入（(rem+500)/1000，同 Redis）；PTTL 精确到 ms。
 INCR/APPEND 在本实现中清除 TTL（与 Redis 保留 TTL 不同，有意简化）。
@@ -296,6 +296,34 @@ DBSIZE 为 O(1)，可能计入尚未回收的过期 key。
   → `-MOVED <slot> <ip>:<port>`。EXEC 逐条元素独立判定（Redis 行为：
   MOVED 是该元素的回复，其余照常执行；CROSSSLOT 检查仍在 MOVED 之前）。
 - **非集群零开销**：cluster_enabled=0 时所有权检查为单分支短路。
+
+## 槽在线迁移（Phase 7.9，多节点第三部分）
+
+- **DUMP/RESTORE**：DUMP 返回单键二进制 payload（`u16 版本(1) + u8 类型 +
+  值负载 + u64 CRC64`，复用 snapshot 的分类型编码；CRC 覆盖此前全部字节，
+  采用反射 ECMA 多项式 0xC96C5795D7870F42、全 1 初值/异或出（CRC-64/XZ
+  参数，"123456789" 校验值 0x995DC9BBDF1939FA）。RESTORE key ttl-ms
+  payload [REPLACE]：ttl 为相对毫秒（0=不过期），payload 截断/坏 CRC/
+  版本不符 → `Bad data format`；无 REPLACE 且键已存在 → `BUSYKEY`。
+- **MIGRATE host port key dbid timeout [COPY] [REPLACE] [KEYS k...]**：
+  源端把每个存活键 dump 成 RESTORE 命令（前缀一条 ASKING，兼容导入态
+  目标）流水线发往目标，deadline 内逐条等 +OK；目标确认后本地删除
+  （COPY 保留）。任一失败即止（`-IOERR error or timeout writing to
+  target instance`），已确认键仍删除、其余保留。dbid!=0 →
+  `DB index is out of range`；单键形式键不存在 → `-NOKEY No such key`。
+  与 Redis 一样会阻塞事件循环；测试经 pump hook 驱动同进程目标服务器。
+  MIGRATE 属管理命令，豁免所有权检查。
+- **迁移状态**：`db.slot_migrating[] / slot_importing[]`（节点索引，
+  0xFFFF=无），仅本地（不 gossip、不进 nodes.conf）。`SETSLOT slot
+  MIGRATING TO id` 要求 myself 持有该槽（否则 "Can't migrate slot:
+  hash slot is not served by this node"，目标是 myself 报 "Can't
+  migrate slot to myself"）；`SETSLOT slot IMPORTING FROM id` 要求
+  myself 不持有（否则 "Can't import slot: hash slot is already served
+  by this node"）。`SETSLOT slot NODE id` 与 DELSLOTS 清除两态。
+- **-ASK 与 ASKING**：迁移源端槽属 myself 但键已不在 → `-ASK <slot>
+  <ip>:<port>`（键仍在则照常服务）。导入端槽属他人但 slot_importing
+  匹配时，客户端先发 ASKING（+OK，置一次性 session 标志），下一条
+  命令豁免所有权检查一次，随后标志被消费、恢复 -MOVED。
 
 ## 目录结构
 

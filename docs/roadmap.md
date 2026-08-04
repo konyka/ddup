@@ -52,5 +52,7 @@
     CLUSTER MEET、节点表持久化、故障检测（Phase 7.8a）
   - [x] 多节点集群（二）：ADDSLOTS/DELSLOTS/SETSLOT 槽分配、-MOVED/
     -CLUSTERDOWN 所有权执行、owner 缓存（Phase 7.8b）
+  - [x] 多节点集群（三）：DUMP/RESTORE/MIGRATE、SETSLOT MIGRATING/
+    IMPORTING、ASKING 与 -ASK 重定向、双端迁移流程（Phase 7.9）
   - [ ] PSYNC 部分重同步、复制积压区利用、链式复制拓扑测试
-  - [ ] 集群多节点（三）：ASK 重定向、槽在线迁移、副本故障转移
+  - [ ] 集群多节点（四）：副本故障转移
