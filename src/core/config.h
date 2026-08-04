@@ -24,6 +24,7 @@ typedef struct ddup_config {
     uint16_t tls_port;        /* 0 = off */
     char tls_cert_file[512];
     char tls_key_file[512];
+    char io[16]; /* "" = auto (iocp on Windows, select elsewhere) */
 } ddup_config;
 
 void config_init(ddup_config *cfg);

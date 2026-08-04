@@ -23,6 +23,7 @@ void config_init(ddup_config *cfg)
     cfg->tls_port = 0;
     cfg->tls_cert_file[0] = '\0';
     cfg->tls_key_file[0] = '\0';
+    cfg->io[0] = '\0';
 }
 
 static int key_eq(const char *a, const char *b)
@@ -153,6 +154,11 @@ int config_apply(ddup_config *cfg, const char *key, const char *value)
     if (key_eq(key, "tls-key-file"))
         return copy_str(cfg->tls_key_file, sizeof(cfg->tls_key_file),
                         value);
+    if (key_eq(key, "io")) {
+        if (!key_eq(value, "select") && !key_eq(value, "iocp"))
+            return -1;
+        return copy_str(cfg->io, sizeof(cfg->io), value);
+    }
     return -1;
 }
 

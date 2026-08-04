@@ -228,22 +228,14 @@ static int pump_once(pal_iocp *p, pal_iocp_event *ev, DWORD timeout_ms)
 int pal_iocp_wait(pal_iocp *p, pal_iocp_event *evs, int max, int timeout_ms)
 {
     int n = 0;
-    uint64_t deadline = pal_now_ms() + (uint64_t)(timeout_ms < 0 ? 0 : timeout_ms);
+    /* first: wait up to timeout_ms for an event; then only drain what is
+     * already queued (timeout 0), never lingering for more */
+    DWORD wait = timeout_ms < 0 ? INFINITE : (DWORD)timeout_ms;
     while (n < max) {
-        DWORD wait = 0;
-        if (timeout_ms >= 0 && n > 0) {
-            uint64_t now = pal_now_ms();
-            wait = now >= deadline ? 0 : (DWORD)(deadline - now);
-        } else if (timeout_ms >= 0) {
-            wait = (DWORD)timeout_ms;
-        } else {
-            wait = INFINITE;
-        }
         if (pump_once(p, &evs[n], wait) == 0)
             break;
         n++;
-        if (timeout_ms >= 0 && pal_now_ms() >= deadline)
-            break;
+        wait = 0;
     }
     return n;
 }

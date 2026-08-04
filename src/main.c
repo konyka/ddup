@@ -6,6 +6,7 @@
 
 #include "core/config.h"
 #include "pal/pal_file.h"
+#include "pal/pal_iocp.h"
 #include "pal/pal_platform.h"
 #include "pal/pal_socket.h"
 #include "server/server.h"
@@ -65,7 +66,28 @@ int main(int argc, char **argv)
         return 1;
     }
 
-    s = server_create(cfg.bind, cfg.port);
+    s = NULL;
+    {
+        /* default backend: IOCP where available (Windows), readiness
+         * elsewhere; --io overrides; TLS forces readiness (unsupported on
+         * the IOCP backend) */
+        pal_iocp *probe = pal_iocp_create();
+        int backend = probe != NULL ? SERVER_BACKEND_IOCP
+                                    : SERVER_BACKEND_SELECT;
+        if (probe != NULL)
+            pal_iocp_free(probe);
+        if (cfg.io[0] != '\0')
+            backend = strcmp(cfg.io, "iocp") == 0 ? SERVER_BACKEND_IOCP
+                                                  : SERVER_BACKEND_SELECT;
+        if (cfg.tls_port > 0 && backend == SERVER_BACKEND_IOCP) {
+            printf("note: TLS is unsupported on the IOCP backend; "
+                   "using readiness\n");
+            backend = SERVER_BACKEND_SELECT;
+        }
+        s = server_create_ex(cfg.bind, cfg.port, backend);
+        printf("io backend: %s\n",
+               backend == SERVER_BACKEND_IOCP ? "iocp" : "select");
+    }
     if (s == NULL) {
         fprintf(stderr, "failed to listen on %s:%u\n", cfg.bind,
                 (unsigned)cfg.port);
