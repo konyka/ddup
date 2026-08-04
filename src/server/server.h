@@ -11,10 +11,16 @@
 
 typedef struct server server;
 
+/* Backend selection (server_create_ex). */
+#define SERVER_BACKEND_SELECT 0 /* readiness loop (epoll/kqueue/select) */
+#define SERVER_BACKEND_IOCP 1   /* Windows IOCP proactor (falls back to
+                                   readiness when unavailable) */
+
 /* Create a server bound to host:port. host may be NULL (any interface);
  * port 0 picks an ephemeral port (read it back with server_port()).
  * Returns NULL on failure. */
 server *server_create(const char *host, uint16_t port);
+server *server_create_ex(const char *host, uint16_t port, int backend);
 
 /* Actual bound port. */
 uint16_t server_port(const server *s);

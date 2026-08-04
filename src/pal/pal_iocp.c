@@ -255,8 +255,72 @@ void pal_iocp_close(pal_iocp *p, pal_socket_t fd)
     closesocket((SOCKET)fd);
 }
 
-#else /* !DDUP_OS_WINDOWS: empty translation unit */
+#else /* !DDUP_OS_WINDOWS: stubs so callers link (IOCP is Windows-only) */
 
-typedef int pal_iocp_empty_tu;
+pal_iocp *pal_iocp_create(void)
+{
+    return NULL;
+}
+
+void pal_iocp_free(pal_iocp *p)
+{
+    (void)p;
+}
+
+pal_socket_t pal_iocp_listen(pal_iocp *p, const char *host, uint16_t port,
+                             uint16_t *bound_port, void *userdata)
+{
+    (void)p;
+    (void)host;
+    (void)port;
+    (void)bound_port;
+    (void)userdata;
+    return PAL_SOCKET_INVALID;
+}
+
+int pal_iocp_accept_post(pal_iocp *p, pal_socket_t listen_fd, void *userdata)
+{
+    (void)p;
+    (void)listen_fd;
+    (void)userdata;
+    return -1;
+}
+
+int pal_iocp_recv(pal_iocp *p, pal_socket_t fd, void *buf, size_t cap,
+                  void *userdata)
+{
+    (void)p;
+    (void)fd;
+    (void)buf;
+    (void)cap;
+    (void)userdata;
+    return -1;
+}
+
+int pal_iocp_send(pal_iocp *p, pal_socket_t fd, const void *buf, size_t n,
+                  void *userdata)
+{
+    (void)p;
+    (void)fd;
+    (void)buf;
+    (void)n;
+    (void)userdata;
+    return -1;
+}
+
+int pal_iocp_wait(pal_iocp *p, pal_iocp_event *evs, int max, int timeout_ms)
+{
+    (void)p;
+    (void)evs;
+    (void)max;
+    (void)timeout_ms;
+    return -1;
+}
+
+void pal_iocp_close(pal_iocp *p, pal_socket_t fd)
+{
+    (void)p;
+    (void)fd;
+}
 
 #endif
