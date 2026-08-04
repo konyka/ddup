@@ -25,7 +25,8 @@
 2. **平台最优 IO 模型（readiness 模式已落地）**：
    - Linux：epoll（level-triggered）；io_uring（内核 ≥ 5.10）列为后续优化
    - macOS / FreeBSD：kqueue
-   - Windows：select()（FD_SETSIZE 提升至 1024）；IOCP 列为后续优化
+   - Windows：select()（FD_SETSIZE 提升至 1024）；IOCP proactor 层
+     （pal_iocp，completion 模型）已就位，服务器接入列为下一阶段
    - 统一抽象为 `pal_event`：`pal_loop_add/mod/del/wait`，事件携带
      fd + userdata + readable/writable。
 3. **零拷贝 RESP 解析**：解析结果直接引用接收缓冲，不落盘复制；
@@ -221,7 +222,8 @@ DBSIZE 为 O(1)，可能计入尚未回收的过期 key。
 ## 目录结构
 
 ```
-src/pal/     平台抽象：pal_platform(宏), pal_time, pal_socket(TCP), pal_event(事件循环)
+src/pal/     平台抽象：pal_platform(宏), pal_time, pal_socket(TCP), pal_event(事件循环),
+             pal_file, pal_tls(可选 OpenSSL), pal_iocp(Windows IOCP proactor，仅 Windows)
 src/resp/    RESP 协议（Phase 1）
 src/core/    KV 存储、哈希表、过期、淘汰、命令分发、session、config、
              snapshot（Phase 2/4/5.3/6）

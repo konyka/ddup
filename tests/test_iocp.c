@@ -167,6 +167,34 @@ static void test_concurrent_echo(void)
     pal_iocp_free(p);
 }
 
+static void test_close_cancels_outstanding(void)
+{
+    pal_iocp *p = pal_iocp_create();
+    pal_iocp_event ev;
+    pal_socket_t lfd, cli, srv;
+    uint16_t port = 0;
+    char rbuf[64];
+
+    DD_CHECK(p != NULL);
+    lfd = pal_iocp_listen(p, "127.0.0.1", 0, &port, NULL);
+    DD_CHECK(lfd != PAL_SOCKET_INVALID);
+    cli = pal_tcp_connect("127.0.0.1", port);
+    DD_CHECK(cli != PAL_SOCKET_INVALID);
+    DD_CHECK_EQ_INT(1, pal_iocp_wait(p, &ev, 1, 2000));
+    srv = ev.fd;
+
+    /* outstanding RECV with no data; close cancels it -> completion -1 */
+    DD_CHECK_EQ_INT(0, pal_iocp_recv(p, srv, rbuf, sizeof(rbuf), NULL));
+    pal_iocp_close(p, srv);
+    DD_CHECK_EQ_INT(1, pal_iocp_wait(p, &ev, 1, 2000));
+    DD_CHECK(ev.op == PAL_IOCP_RECV);
+    DD_CHECK_EQ_INT(-1, (long long)ev.bytes);
+
+    pal_close(cli);
+    pal_close(lfd);
+    pal_iocp_free(p);
+}
+
 int main(void)
 {
     DD_CHECK_EQ_INT(0, pal_socket_init());
@@ -174,6 +202,7 @@ int main(void)
     DD_RUN(test_listen_accept);
     DD_RUN(test_echo);
     DD_RUN(test_concurrent_echo);
+    DD_RUN(test_close_cancels_outstanding);
     pal_socket_cleanup();
     return DD_TEST_SUMMARY();
 }

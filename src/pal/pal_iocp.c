@@ -96,19 +96,14 @@ pal_socket_t pal_iocp_listen(pal_iocp *p, const char *host, uint16_t port,
         (void)inet_pton(AF_INET, host, &addr.sin_addr);
     if (bind(fd, (struct sockaddr *)&addr, sizeof(addr)) != 0 ||
         listen(fd, SOMAXCONN) != 0) {
-        fprintf(stderr, "iocp_listen: bind/listen err %d\n",
-                WSAGetLastError());
         closesocket(fd);
         return PAL_SOCKET_INVALID;
     }
     if (!load_acceptex(p, fd)) {
-        fprintf(stderr, "iocp_listen: WSAIoctl err %d\n", WSAGetLastError());
         closesocket(fd);
         return PAL_SOCKET_INVALID;
     }
     if (CreateIoCompletionPort((HANDLE)fd, p->port, 0, 0) == NULL) {
-        fprintf(stderr, "iocp_listen: associate err %lu (port=%p fd=%llu)\n",
-                GetLastError(), p->port, (unsigned long long)fd);
         closesocket(fd);
         return PAL_SOCKET_INVALID;
     }
@@ -150,7 +145,6 @@ int pal_iocp_accept_post(pal_iocp *p, pal_socket_t listen_fd, void *userdata)
     if (!p->acceptex((SOCKET)listen_fd, acc, o->accbuf, 0, IOCP_ACC_BUFSIZE / 2,
                      IOCP_ACC_BUFSIZE / 2, &bytes, &o->ov) &&
         WSAGetLastError() != WSA_IO_PENDING) {
-        fprintf(stderr, "accept_post: AcceptEx err %d\n", WSAGetLastError());
         free(o->accbuf);
         free(o);
         closesocket(acc);
