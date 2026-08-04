@@ -54,6 +54,18 @@ LRU touch 成本）。内部一致性：ddup-bench 顺序客户端仅 ~311k/380k
 说明 ddup-bench 客户端本身无法打满 50 并发下的服务器，后续应增强
 bench 客户端并发能力。
 
+第二次实测（2026-08-04，Garnet 修复为 `-f net10.0` 后补齐三方对比；
+CI runner 波动较大，两次 ddup 数字差 ~40%，以趋势为准）：
+
+| server | SET req/s | GET req/s |
+|--------|-----------|-----------|
+| ddup   | 675,676 | 800,000 |
+| redis  | 675,676 | 677,966 |
+| garnet | 325,203 | 549,451 |
+
+该轮 ddup SET 与 Redis 持平、GET 领先 ~18%，且 SET/GET 均明显领先
+Garnet（~2x / ~1.5x）。
+
 ## Phase 7.5 IOCP 备注
 
 ping-pong 型流水负载下 IOCP 每个往返比 readiness 多一次完成等待
