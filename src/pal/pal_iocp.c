@@ -96,14 +96,19 @@ pal_socket_t pal_iocp_listen(pal_iocp *p, const char *host, uint16_t port,
         (void)inet_pton(AF_INET, host, &addr.sin_addr);
     if (bind(fd, (struct sockaddr *)&addr, sizeof(addr)) != 0 ||
         listen(fd, SOMAXCONN) != 0) {
+        fprintf(stderr, "iocp_listen: bind/listen err %d\n",
+                WSAGetLastError());
         closesocket(fd);
         return PAL_SOCKET_INVALID;
     }
     if (!load_acceptex(p, fd)) {
+        fprintf(stderr, "iocp_listen: WSAIoctl err %d\n", WSAGetLastError());
         closesocket(fd);
         return PAL_SOCKET_INVALID;
     }
-    if (CreateIoCompletionPort(p->port, (HANDLE)fd, 0, 0) == NULL) {
+    if (CreateIoCompletionPort((HANDLE)fd, p->port, 0, 0) == NULL) {
+        fprintf(stderr, "iocp_listen: associate err %lu (port=%p fd=%llu)\n",
+                GetLastError(), p->port, (unsigned long long)fd);
         closesocket(fd);
         return PAL_SOCKET_INVALID;
     }
@@ -145,6 +150,7 @@ int pal_iocp_accept_post(pal_iocp *p, pal_socket_t listen_fd, void *userdata)
     if (!p->acceptex((SOCKET)listen_fd, acc, o->accbuf, 0, IOCP_ACC_BUFSIZE / 2,
                      IOCP_ACC_BUFSIZE / 2, &bytes, &o->ov) &&
         WSAGetLastError() != WSA_IO_PENDING) {
+        fprintf(stderr, "accept_post: AcceptEx err %d\n", WSAGetLastError());
         free(o->accbuf);
         free(o);
         closesocket(acc);
@@ -160,7 +166,7 @@ int pal_iocp_recv(pal_iocp *p, pal_socket_t fd, void *buf, size_t cap,
     WSABUF wb;
     DWORD flags = 0;
 
-    CreateIoCompletionPort(p->port, (HANDLE)fd, 0, 0);
+    CreateIoCompletionPort((HANDLE)fd, p->port, 0, 0);
     o = op_new(PAL_IOCP_RECV, fd, userdata);
     if (o == NULL)
         return -1;
@@ -179,7 +185,7 @@ int pal_iocp_send(pal_iocp *p, pal_socket_t fd, const void *buf, size_t n,
 {
     iocp_op *o;
 
-    CreateIoCompletionPort(p->port, (HANDLE)fd, 0, 0);
+    CreateIoCompletionPort((HANDLE)fd, p->port, 0, 0);
     o = op_new(PAL_IOCP_SEND, fd, userdata);
     if (o == NULL)
         return -1;
@@ -217,7 +223,7 @@ static int pump_once(pal_iocp *p, pal_iocp_event *ev, DWORD timeout_ms)
         /* required before the accepted socket is fully usable */
         setsockopt((SOCKET)o->fd, SOL_SOCKET, SO_UPDATE_ACCEPT_CONTEXT,
                    (char *)&lfd, (int)sizeof(lfd));
-        CreateIoCompletionPort(p->port, (HANDLE)o->fd, 0, 0);
+        CreateIoCompletionPort((HANDLE)o->fd, p->port, 0, 0);
         ev->bytes = 0;
     }
     free(o->accbuf);
