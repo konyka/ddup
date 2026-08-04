@@ -55,8 +55,10 @@ jobs:
             done
             echo "port $p ready=$ok"
           done
-          redis-cli -p 7771 PING
-          redis-cli -p 7773 PING
+          echo "ddup PING: $(redis-cli -p 7771 PING || echo DOWN)"
+          echo "redis PING: $(redis-cli -p 7773 PING || echo DOWN)"
+          echo "garnet PING: $(redis-cli -p 7772 PING || echo DOWN)"
+          true
 
       - name: Measure (same client for all)
         run: |
@@ -134,6 +136,9 @@ jobs:
             cp "$GITHUB_WORKSPACE/bench-report.md" "bench-$(date -u +%Y%m%d-%H%M).md"
           fi
           [ -f "$GITHUB_WORKSPACE/build.log" ] && cp "$GITHUB_WORKSPACE/build.log" . || true
+          [ -f "$GITHUB_WORKSPACE/ddup.log" ] && cp "$GITHUB_WORKSPACE/ddup.log" . || true
+          [ -f "$GITHUB_WORKSPACE/redis.log" ] && cp "$GITHUB_WORKSPACE/redis.log" . || true
+          [ -f "$GITHUB_WORKSPACE/garnet.log" ] && cp "$GITHUB_WORKSPACE/garnet.log" . || true
           git config user.email ci@ddup.local
           git config user.name ddup-ci
           git add -A
