@@ -893,6 +893,96 @@ static void cmd_ttl(db *d, const resp_value *argv, resp_buf *out, uint64_t now,
 /* dispatch                                                           */
 /* ------------------------------------------------------------------ */
 
+static const char CROSSSLOT_MSG[] =
+    "CROSSSLOT Keys in request don't hash to the same slot";
+
+/* Accumulate a key into a single-slot set: 1 ok, 0 on mismatch. */
+static int slot_accum(const char *k, size_t klen, int *have, uint32_t *slot)
+{
+    uint32_t s = hash_slot(k, klen);
+    if (!*have) {
+        *have = 1;
+        *slot = s;
+        return 1;
+    }
+    return *slot == s;
+}
+
+/* Single-slot accumulation for the keys of one command (cluster mode).
+ * Multi-key commands check all their key positions; single-key commands
+ * check argv[1]; keyless commands always pass. The {have,slot} accumulator
+ * can be shared across a MULTI queue to compare commands with each other. */
+static int cmd_keys_accum(const resp_value *argv, size_t argc, int *have,
+                          uint32_t *slot)
+{
+    const char *name;
+    size_t nlen;
+    size_t i;
+    if (argc == 0 || !arg_str(&argv[0], &name, &nlen))
+        return 1;
+    if (argc < 2)
+        return 1;
+    if (ci_equal(name, nlen, "MGET") || ci_equal(name, nlen, "DEL") ||
+        ci_equal(name, nlen, "UNLINK") || ci_equal(name, nlen, "EXISTS") ||
+        ci_equal(name, nlen, "SINTER") || ci_equal(name, nlen, "SUNION") ||
+        ci_equal(name, nlen, "SDIFF") || ci_equal(name, nlen, "WATCH")) {
+        for (i = 1; i < argc; i++) {
+            const char *k;
+            size_t kl;
+            if (arg_str(&argv[i], &k, &kl) &&
+                !slot_accum(k, kl, have, slot))
+                return 0;
+        }
+        return 1;
+    }
+    if (ci_equal(name, nlen, "MSET")) {
+        for (i = 1; i + 1 < argc; i += 2) {
+            const char *k;
+            size_t kl;
+            if (arg_str(&argv[i], &k, &kl) &&
+                !slot_accum(k, kl, have, slot))
+                return 0;
+        }
+        return 1;
+    }
+    if (ci_equal(name, nlen, "SMOVE")) {
+        for (i = 1; i < argc && i < 3; i++) {
+            const char *k;
+            size_t kl;
+            if (arg_str(&argv[i], &k, &kl) &&
+                !slot_accum(k, kl, have, slot))
+                return 0;
+        }
+        return 1;
+    }
+    /* everything else: single key at argv[1] */
+    {
+        const char *k;
+        size_t kl;
+        if (!arg_str(&argv[1], &k, &kl))
+            return 1;
+        return slot_accum(k, kl, have, slot);
+    }
+}
+
+static int cmd_keys_one_slot(const resp_value *argv, size_t argc)
+{
+    int have = 0;
+    uint32_t slot = 0;
+    return cmd_keys_accum(argv, argc, &have, &slot);
+}
+
+/* Write the CROSSSLOT error when cluster mode rejects a command. */
+static int crossslot_reject(db *d, resp_buf *out, const resp_value *argv,
+                            size_t argc)
+{
+    if (d->cluster_enabled && !cmd_keys_one_slot(argv, argc)) {
+        resp_write_error(out, CROSSSLOT_MSG, sizeof(CROSSSLOT_MSG) - 1);
+        return 1;
+    }
+    return 0;
+}
+
 static const char *const WRITE_COMMANDS[] = {
     "set",    "del",     "unlink",  "incr",       "decr",    "append",
     "mset",   "expire",  "pexpire", "expireat",   "pexpireat", "persist",
@@ -1061,6 +1151,8 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
             wrong_args(out, "del");
             return;
         }
+        if (crossslot_reject(d, out, argv, argc))
+            return;
         long long deleted = 0;
         for (size_t i = 1; i < argc; i++) {
             const char *k;
@@ -1079,6 +1171,8 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
             wrong_args(out, "exists");
             return;
         }
+        if (crossslot_reject(d, out, argv, argc))
+            return;
         long long found = 0;
         for (size_t i = 1; i < argc; i++) {
             const char *k;
@@ -1195,6 +1289,8 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
             wrong_args(out, "mget");
             return;
         }
+        if (crossslot_reject(d, out, argv, argc))
+            return;
         /* validate types first: the reply must be a single RESP value */
         for (size_t i = 1; i < argc; i++) {
             const char *k, *v;
@@ -1234,6 +1330,8 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
             wrong_args(out, "mset");
             return;
         }
+        if (crossslot_reject(d, out, argv, argc))
+            return;
         if (oom_blocked(d, out))
             return;
         for (size_t i = 1; i + 1 < argc; i += 2) {
@@ -2254,6 +2352,8 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
             wrong_args(out, inter ? "sinter" : sunion ? "sunion" : "sdiff");
             return;
         }
+        if (crossslot_reject(d, out, argv, argc))
+            return;
         {
             size_t nkeys = argc - 1;
             obj_set **sets =
@@ -3238,6 +3338,21 @@ static void exec_transaction(session *s, resp_buf *out, uint64_t now_ms)
         resp_write_error(out, E, sizeof(E) - 1);
         goto done;
     }
+    /* cluster mode: every queued command's keys must share one slot */
+    if (s->d->cluster_enabled) {
+        int ok = 1, have = 0;
+        uint32_t slot = 0;
+        for (i = 0; i < s->queue_len; i++)
+            if (!cmd_keys_accum(s->queue[i].argv, s->queue[i].argc, &have,
+                                &slot)) {
+                ok = 0;
+                break;
+            }
+        if (!ok) {
+            resp_write_error(out, CROSSSLOT_MSG, sizeof(CROSSSLOT_MSG) - 1);
+            goto done;
+        }
+    }
     {
         uint64_t dirty_before = s->d->dirty;
         resp_write_array_header(out, s->queue_len);
@@ -3351,6 +3466,8 @@ void session_execute_at(session *s, const resp_value *argv, size_t argc,
             resp_write_error(out, E, sizeof(E) - 1);
             return;
         }
+        if (crossslot_reject(s->d, out, argv, argc))
+            return;
         for (i = 1; i < argc; i++) {
             const char *k;
             size_t kl;

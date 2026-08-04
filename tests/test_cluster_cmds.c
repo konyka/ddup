@@ -207,11 +207,140 @@ static void test_count_and_getkeysinslot(void)
     db_destroy(&d);
 }
 
+static void test_crossslot_basic(void);
+static void test_crossslot_setops_watch(void);
+static void test_crossslot_exec(void);
+static void test_crossslot_disabled_allows(void);
+
 int main(void)
 {
     DD_RUN(test_cluster_disabled);
     DD_RUN(test_cluster_info_myid_nodes);
     DD_RUN(test_cluster_slots_and_keyslot);
     DD_RUN(test_count_and_getkeysinslot);
+    DD_RUN(test_crossslot_basic);
+    DD_RUN(test_crossslot_setops_watch);
+    DD_RUN(test_crossslot_exec);
+    DD_RUN(test_crossslot_disabled_allows);
     return DD_TEST_SUMMARY();
+}
+
+/* ---------------- CROSSSLOT enforcement ---------------- */
+
+#define XS "-CROSSSLOT Keys in request don't hash to the same slot\r\n"
+
+static void test_crossslot_basic(void)
+{
+    db d;
+    session *s;
+    resp_buf out;
+    db_init(&d);
+    resp_buf_init(&out);
+    s = cluster_session(&d);
+
+    exec_sess(s, T0, &out, 5, "MSET", "{u}.a", "1", "{u}.b", "2");
+    EXPECT(out, "+OK\r\n");
+    exec_sess(s, T0, &out, 5, "MSET", "{u}.a", "1", "x", "2");
+    EXPECT(out, XS);
+    exec_sess(s, T0, &out, 3, "MGET", "{u}.a", "{u}.b");
+    EXPECT(out, "*2\r\n$1\r\n1\r\n$1\r\n2\r\n");
+    exec_sess(s, T0, &out, 3, "MGET", "{u}.a", "x");
+    EXPECT(out, XS);
+    exec_sess(s, T0, &out, 3, "DEL", "{u}.a", "{u}.b");
+    EXPECT(out, ":2\r\n");
+    exec_sess(s, T0, &out, 3, "DEL", "a", "b");
+    EXPECT(out, XS);
+    exec_sess(s, T0, &out, 3, "EXISTS", "{u}.c", "{u}.d");
+    EXPECT(out, ":0\r\n");
+    exec_sess(s, T0, &out, 3, "EXISTS", "a", "b");
+    EXPECT(out, XS);
+
+    session_free(s);
+    resp_buf_free(&out);
+    db_destroy(&d);
+}
+
+static void test_crossslot_setops_watch(void)
+{
+    db d;
+    session *s;
+    resp_buf out;
+    db_init(&d);
+    resp_buf_init(&out);
+    s = cluster_session(&d);
+
+    exec_sess(s, T0, &out, 3, "SADD", "{u}.s1", "m");
+    EXPECT(out, ":1\r\n");
+    exec_sess(s, T0, &out, 3, "SADD", "{u}.s2", "m");
+    EXPECT(out, ":1\r\n");
+    exec_sess(s, T0, &out, 3, "SINTER", "{u}.s1", "{u}.s2");
+    EXPECT(out, "*1\r\n$1\r\nm\r\n");
+    exec_sess(s, T0, &out, 3, "SUNION", "a", "b");
+    EXPECT(out, XS);
+
+    exec_sess(s, T0, &out, 3, "WATCH", "a", "b");
+    EXPECT(out, XS);
+    exec_sess(s, T0, &out, 3, "WATCH", "{u}.a", "{u}.b");
+    EXPECT(out, "+OK\r\n");
+
+    session_free(s);
+    resp_buf_free(&out);
+    db_destroy(&d);
+}
+
+static void test_crossslot_exec(void)
+{
+    db d;
+    session *s;
+    resp_buf out;
+    db_init(&d);
+    resp_buf_init(&out);
+    s = cluster_session(&d);
+
+    /* mixed-slot transaction: aborted, no partial effects */
+    exec_sess(s, T0, &out, 1, "MULTI");
+    EXPECT(out, "+OK\r\n");
+    exec_sess(s, T0, &out, 3, "SET", "a", "1");
+    EXPECT(out, "+QUEUED\r\n");
+    exec_sess(s, T0, &out, 3, "SET", "b", "2");
+    EXPECT(out, "+QUEUED\r\n");
+    exec_sess(s, T0, &out, 1, "EXEC");
+    EXPECT(out, XS);
+    exec_sess(s, T0, &out, 2, "GET", "a");
+    EXPECT(out, "$-1\r\n");
+    exec_sess(s, T0, &out, 2, "GET", "b");
+    EXPECT(out, "$-1\r\n");
+
+    /* same-slot transaction: executes */
+    exec_sess(s, T0, &out, 1, "MULTI");
+    EXPECT(out, "+OK\r\n");
+    exec_sess(s, T0, &out, 3, "SET", "{u}.a", "1");
+    EXPECT(out, "+QUEUED\r\n");
+    exec_sess(s, T0, &out, 3, "SET", "{u}.b", "2");
+    EXPECT(out, "+QUEUED\r\n");
+    exec_sess(s, T0, &out, 1, "EXEC");
+    EXPECT(out, "*2\r\n+OK\r\n+OK\r\n");
+
+    session_free(s);
+    resp_buf_free(&out);
+    db_destroy(&d);
+}
+
+static void test_crossslot_disabled_allows(void)
+{
+    db d;
+    session *s;
+    resp_buf out;
+    db_init(&d);
+    resp_buf_init(&out);
+    s = session_create(&d); /* cluster disabled by default */
+
+    exec_sess(s, T0, &out, 5, "MSET", "a", "1", "b", "2");
+    EXPECT(out, "+OK\r\n");
+    exec_sess(s, T0, &out, 3, "MGET", "a", "b");
+    EXPECT(out, "*2\r\n$1\r\n1\r\n$1\r\n2\r\n");
+
+    session_free(s);
+    resp_buf_free(&out);
+    db_destroy(&d);
 }
