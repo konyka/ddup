@@ -127,7 +127,12 @@ int migrate_run(db *d, const char *host, uint16_t port,
         if (snapshot_dump_key(d, k, kl, &payload) != 0)
             continue;
         tl = ttl_arg(d, k, kl, now_ms, ttl);
-        resp_buf_reserve(&pipebuf, sizeof(hdr) + kl + tl + payload.len + 32);
+        resp_buf_reserve(&pipebuf, sizeof(hdr) + kl + tl + payload.len + 48);
+        /* ASKING first: the target may be importing this slot (cluster
+         * migration); in non-cluster mode it is a harmless +OK. */
+        pipebuf.len += (size_t)snprintf(pipebuf.data + pipebuf.len,
+                                        sizeof(hdr), "*1\r\n$6\r\nASKING\r\n");
+        resp_buf_reserve(&pipebuf, sizeof(hdr));
         pipebuf.len += (size_t)snprintf(
             pipebuf.data + pipebuf.len, sizeof(hdr), "*%d\r\n$7\r\nRESTORE\r\n",
             replace ? 5 : 4);
@@ -153,7 +158,12 @@ int migrate_run(db *d, const char *host, uint16_t port,
     deadline = pal_now_ms() + timeout_ms;
     if (send_all(fd, pipebuf.data, pipebuf.len, deadline) == 0) {
         char line[256];
+        /* one ASKING + one RESTORE reply per key, both must be +OK */
         while (confirmed < nkeys_live) {
+            if (read_line(fd, line, sizeof(line), deadline) < 0)
+                break;
+            if (line[0] != '+')
+                break;
             if (read_line(fd, line, sizeof(line), deadline) < 0)
                 break;
             if (line[0] != '+')

@@ -42,6 +42,8 @@ void db_init(db *d)
     d->node_id[0] = '\0';
     cluster_nodes_init(d);
     memset(d->slot_owner, 0xFF, sizeof(d->slot_owner));
+    memset(d->slot_migrating, 0xFF, sizeof(d->slot_migrating));
+    memset(d->slot_importing, 0xFF, sizeof(d->slot_importing));
     d->slot_owner_dirty = 1;
     d->cluster_changes = 0;
     strcpy(d->cluster_ip, "0.0.0.0");
@@ -1001,10 +1003,13 @@ static void db_rebuild_slot_owner(db *d)
 }
 
 /* Cluster ownership for one key. Returns 1 when the key is served here
- * (myself owns its slot, or cluster mode is off); otherwise writes the
- * MOVED (assigned to a peer) or CLUSTERDOWN (unassigned) reply and
- * returns 0. */
-static int db_key_served(db *d, const char *key, size_t klen, resp_buf *out)
+ * (myself owns its slot, or cluster mode is off, or a one-shot ASKING
+ * bypass applies to an importing slot); otherwise writes the MOVED
+ * (assigned to a peer), CLUSTERDOWN (unassigned) or ASK (migrating away,
+ * key already gone) reply and returns 0. `asking` is the session's
+ * one-shot ASKING flag. */
+static int db_key_served(db *d, const char *key, size_t klen, resp_buf *out,
+                         uint64_t now_ms, int asking)
 {
     uint32_t slot, idx;
     if (!d->cluster_enabled)
@@ -1014,11 +1019,32 @@ static int db_key_served(db *d, const char *key, size_t klen, resp_buf *out)
         db_rebuild_slot_owner(d);
     idx = d->slot_owner[slot];
     if (idx == 0xFFFFu) {
-        static const char E[] = "CLUSTERDOWN Hash slot not served";
-        resp_write_error(out, E, sizeof(E) - 1);
-        return 0;
+        if (asking && d->slot_importing[slot] != 0xFFFFu)
+            return 1;
+        {
+            static const char E[] = "CLUSTERDOWN Hash slot not served";
+            resp_write_error(out, E, sizeof(E) - 1);
+            return 0;
+        }
     }
-    if (d->nodes[idx].flags & CLUSTER_NODE_MYSELF)
+    if (d->nodes[idx].flags & CLUSTER_NODE_MYSELF) {
+        uint16_t mt = d->slot_migrating[slot];
+        if (mt != 0xFFFFu) {
+            const char *v;
+            size_t vl;
+            db_expire_if_needed(d, key, klen, now_ms);
+            if (!rh_get(&d->table, key, klen, &v, &vl)) {
+                char msg[128];
+                int n = snprintf(msg, sizeof(msg), "ASK %u %s:%u", slot,
+                                 d->nodes[mt].ip,
+                                 (unsigned)d->nodes[mt].port);
+                resp_write_error(out, msg, (size_t)n);
+                return 0;
+            }
+        }
+        return 1;
+    }
+    if (asking && d->slot_importing[slot] == idx)
         return 1;
     {
         char msg[128];
@@ -1036,7 +1062,7 @@ static int cluster_keyless(const char *name, size_t nlen)
         "lastsave","shutdown",  "sync",    "replicaof","subscribe",
         "unsubscribe", "publish","quit",   "multi",    "exec",
         "discard", "unwatch",   "dbsize",  "flushdb",  "cluster",
-        "persist", "migrate",
+        "persist", "migrate",   "asking",
     };
     size_t i;
     for (i = 0; i < sizeof(KL) / sizeof(KL[0]); i++)
@@ -1045,17 +1071,23 @@ static int cluster_keyless(const char *name, size_t nlen)
     return 0;
 }
 
-/* -MOVED/-CLUSTERDOWN check for one command (cluster mode only): extracts
- * the command's key positions and verifies ownership of each. Returns 1 to
- * proceed, 0 when a reply was already written. */
-static int cluster_check_ownership(db *d, const resp_value *argv, size_t argc,
-                                   resp_buf *out)
+/* -MOVED/-CLUSTERDOWN/-ASK check for one command (cluster mode only):
+ * extracts the command's key positions and verifies ownership of each.
+ * Consumes the session's one-shot ASKING flag. Returns 1 to proceed,
+ * 0 when a reply was already written. */
+static int cluster_check_ownership(session *s, const resp_value *argv,
+                                   size_t argc, resp_buf *out,
+                                   uint64_t now_ms)
 {
+    db *d = s->d;
     const char *name;
     size_t nlen;
     size_t i;
+    int asking;
     if (!d->cluster_enabled)
         return 1;
+    asking = s->asking;
+    s->asking = 0;
     if (argc == 0 || !arg_str(&argv[0], &name, &nlen))
         return 1;
     if (argc < 2)
@@ -1070,7 +1102,7 @@ static int cluster_check_ownership(db *d, const resp_value *argv, size_t argc,
             const char *k;
             size_t kl;
             if (arg_str(&argv[i], &k, &kl) &&
-                !db_key_served(d, k, kl, out))
+                !db_key_served(d, k, kl, out, now_ms, asking))
                 return 0;
         }
         return 1;
@@ -1080,7 +1112,7 @@ static int cluster_check_ownership(db *d, const resp_value *argv, size_t argc,
             const char *k;
             size_t kl;
             if (arg_str(&argv[i], &k, &kl) &&
-                !db_key_served(d, k, kl, out))
+                !db_key_served(d, k, kl, out, now_ms, asking))
                 return 0;
         }
         return 1;
@@ -1090,7 +1122,7 @@ static int cluster_check_ownership(db *d, const resp_value *argv, size_t argc,
             const char *k;
             size_t kl;
             if (arg_str(&argv[i], &k, &kl) &&
-                !db_key_served(d, k, kl, out))
+                !db_key_served(d, k, kl, out, now_ms, asking))
                 return 0;
         }
         return 1;
@@ -1101,7 +1133,7 @@ static int cluster_check_ownership(db *d, const resp_value *argv, size_t argc,
         size_t kl;
         if (!arg_str(&argv[1], &k, &kl))
             return 1;
-        return db_key_served(d, k, kl, out);
+        return db_key_served(d, k, kl, out, now_ms, asking);
     }
 }
 
@@ -1148,8 +1180,8 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
         return;
     }
 
-    /* cluster mode: ownership enforcement (-MOVED / -CLUSTERDOWN) */
-    if (!cluster_check_ownership(d, argv, argc, out))
+    /* cluster mode: ownership enforcement (-MOVED / -CLUSTERDOWN / -ASK) */
+    if (!cluster_check_ownership(s, argv, argc, out, now_ms))
         return;
 
     if (ci_equal(name, nlen, "PING")) {
@@ -1269,6 +1301,17 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
         db_set_string(d, k, kl, v, vl, now_ms);
         if (has_ttl)
             db_set_expiry(d, k, kl, now_ms + ttl_ms);
+        resp_write_simple_string(out, "OK", 2);
+        return;
+    }
+
+    if (ci_equal(name, nlen, "ASKING")) {
+        if (argc != 1) {
+            wrong_args(out, "asking");
+            return;
+        }
+        /* one-shot: the next keyed command may pass an importing slot */
+        s->asking = 1;
         resp_write_simple_string(out, "OK", 2);
         return;
     }
@@ -3531,27 +3574,23 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
                     }
                     cluster_slots_set(cluster_myself(d)->slots, (uint32_t)slot,
                                       0);
+                    d->slot_migrating[slot] = 0xFFFFu;
+                    d->slot_importing[slot] = 0xFFFFu;
                     d->cluster_changes++;
                     d->slot_owner_dirty = 1;
                 }
                 resp_write_simple_string(out, "OK", 2);
                 return;
             }
-            if (ci_equal(sub, sl, "SETSLOT") && argc == 5) {
-                const char *sv, *ids;
-                size_t svl, idl;
+            if (ci_equal(sub, sl, "SETSLOT") && (argc == 5 || argc == 6)) {
+                const char *sv, *kw, *ids;
+                size_t svl, kwl, idl;
                 long long slot;
                 char id[41];
                 cluster_node *target;
                 int j;
                 if (!arg_str(&argv[2], &sv, &svl) ||
-                    !arg_str(&argv[3], &ids, &idl))
-                    goto bad_type;
-                if (!ci_equal(ids, idl, "NODE")) {
-                    resp_write_error(out, ERR_SYNTAX, sizeof(ERR_SYNTAX) - 1);
-                    return;
-                }
-                if (!arg_str(&argv[4], &ids, &idl))
+                    !arg_str(&argv[3], &kw, &kwl))
                     goto bad_type;
                 if (!parse_i64(sv, svl, &slot)) {
                     resp_write_error(out, ERR_NOT_INT,
@@ -3562,6 +3601,86 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
                     resp_write_error(out, "ERR Invalid slot", 16);
                     return;
                 }
+                if (ci_equal(kw, kwl, "MIGRATING") ||
+                    ci_equal(kw, kwl, "IMPORTING")) {
+                    /* SETSLOT <slot> MIGRATING TO <id> /
+                     * SETSLOT <slot> IMPORTING FROM <id> */
+                    int migrating = ci_equal(kw, kwl, "MIGRATING");
+                    const char *prep;
+                    size_t prepl;
+                    if (argc != 6 || !arg_str(&argv[4], &prep, &prepl) ||
+                        !arg_str(&argv[5], &ids, &idl))
+                        goto bad_type;
+                    if (!ci_equal(prep, prepl, migrating ? "TO" : "FROM")) {
+                        resp_write_error(out, ERR_SYNTAX,
+                                         sizeof(ERR_SYNTAX) - 1);
+                        return;
+                    }
+                    if (idl != 40) {
+                        resp_write_error(out, "ERR Unknown node ", 17);
+                        return;
+                    }
+                    memcpy(id, ids, 40);
+                    id[40] = '\0';
+                    target = cluster_node_find(d, id);
+                    if (target == NULL) {
+                        char msg[96];
+                        int n2 = snprintf(msg, sizeof(msg),
+                                          "ERR Unknown node %s", id);
+                        resp_write_error(out, msg, (size_t)n2);
+                        return;
+                    }
+                    if (target->flags & CLUSTER_NODE_MYSELF) {
+                        static const char EM[] =
+                            "ERR Can't migrate slot to myself";
+                        static const char EI[] =
+                            "ERR Can't import slot from myself";
+                        const char *e = migrating ? EM : EI;
+                        size_t el = migrating ? sizeof(EM) - 1
+                                              : sizeof(EI) - 1;
+                        resp_write_error(out, e, el);
+                        return;
+                    }
+                    if (migrating) {
+                        if (d->slot_owner_dirty)
+                            db_rebuild_slot_owner(d);
+                        if (d->slot_owner[slot] == 0xFFFFu ||
+                            !(d->nodes[d->slot_owner[slot]].flags &
+                              CLUSTER_NODE_MYSELF)) {
+                            static const char E[] =
+                                "ERR Can't migrate slot: hash slot is not "
+                                "served by this node";
+                            resp_write_error(out, E, sizeof(E) - 1);
+                            return;
+                        }
+                        d->slot_migrating[slot] =
+                            (uint16_t)(target - d->nodes);
+                    } else {
+                        if (d->slot_owner_dirty)
+                            db_rebuild_slot_owner(d);
+                        if (d->slot_owner[slot] != 0xFFFFu &&
+                            (d->nodes[d->slot_owner[slot]].flags &
+                             CLUSTER_NODE_MYSELF)) {
+                            static const char E[] =
+                                "ERR Can't import slot: hash slot is "
+                                "already served by this node";
+                            resp_write_error(out, E, sizeof(E) - 1);
+                            return;
+                        }
+                        d->slot_importing[slot] =
+                            (uint16_t)(target - d->nodes);
+                    }
+                    /* local-only state: not gossiped, no cluster_changes */
+                    resp_write_simple_string(out, "OK", 2);
+                    return;
+                }
+                /* SETSLOT <slot> NODE <id> */
+                if (!ci_equal(kw, kwl, "NODE") || argc != 5) {
+                    resp_write_error(out, ERR_SYNTAX, sizeof(ERR_SYNTAX) - 1);
+                    return;
+                }
+                if (!arg_str(&argv[4], &ids, &idl))
+                    goto bad_type;
                 if (idl != 40) {
                     resp_write_error(out, "ERR Unknown node ", 17);
                     return;
@@ -3579,6 +3698,8 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
                 for (j = 0; j < d->nnodes; j++)
                     cluster_slots_set(d->nodes[j].slots, (uint32_t)slot, 0);
                 cluster_slots_set(target->slots, (uint32_t)slot, 1);
+                d->slot_migrating[slot] = 0xFFFFu;
+                d->slot_importing[slot] = 0xFFFFu;
                 d->cluster_changes++;
                 d->slot_owner_dirty = 1;
                 resp_write_simple_string(out, "OK", 2);
@@ -3703,7 +3824,7 @@ static const cmd_arity CMD_ARITY[] = {
     {"ping", 1, 2, 0},          {"echo", 2, 2, 0},
     {"get", 2, 2, 0},           {"set", 3, -1, 0},
     {"dump", 2, 2, 0},          {"restore", 4, 5, 0},
-    {"migrate", 6, -1, 0},
+    {"migrate", 6, -1, 0},      {"asking", 1, 1, 0},
     {"del", 2, -1, 0},          {"unlink", 2, -1, 0},
     {"exists", 2, -1, 0},       {"incr", 2, 2, 0},
     {"decr", 2, 2, 0},          {"append", 3, 3, 0},
@@ -3747,7 +3868,7 @@ static const cmd_arity CMD_ARITY[] = {
     {"save", 1, 1, 0},
     {"lastsave", 1, 1, 0},
     {"shutdown", 1, 1, 0},
-    {"cluster", 2, 4, 0},
+    {"cluster", 2, -1, 0},
 };
 
 /* Queue-time check: unknown command or bad arity writes the error reply,
@@ -3941,7 +4062,7 @@ void session_execute_at(session *s, const resp_value *argv, size_t argc,
         }
         if (crossslot_reject(s->d, out, argv, argc))
             return;
-        if (!cluster_check_ownership(s->d, argv, argc, out))
+        if (!cluster_check_ownership(s, argv, argc, out, now_ms))
             return;
         for (i = 1; i < argc; i++) {
             const char *k;

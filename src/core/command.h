@@ -38,6 +38,8 @@ typedef struct db {
     int nnodes;
     uint16_t slot_owner[16384]; /* node index per slot; 0xFFFF = unassigned */
     int slot_owner_dirty;       /* rebuild slot_owner lazily */
+    uint16_t slot_migrating[16384]; /* per slot: target node idx, 0xFFFF none */
+    uint16_t slot_importing[16384]; /* per slot: source node idx, 0xFFFF none */
     uint64_t cluster_changes;   /* bumped on any node-table mutation */
     char cluster_ip[64];   /* bind address reported by CLUSTER SLOTS */
     uint16_t cluster_port; /* listen port reported by CLUSTER SLOTS */
