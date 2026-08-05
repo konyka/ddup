@@ -7,6 +7,7 @@
 #include <string.h>
 
 #include "core/buf_pool.h"
+#include "pal/pal_event.h"
 #include "pal/pal_iocp.h"
 #include "pal/pal_socket.h"
 #include "server/server.h"
@@ -534,6 +535,16 @@ int main(void)
             pal_iocp_free(probe);
             g_backend = SERVER_BACKEND_IOCP;
             printf("=== backend: IOCP ===\n");
+            run_all_tests();
+        }
+    }
+    {
+        /* and once more on io_uring when the kernel offers it (Linux) */
+        pal_loop *probe = pal_loop_create_iouring();
+        if (probe != NULL) {
+            pal_loop_free(probe);
+            g_backend = SERVER_BACKEND_IOURING;
+            printf("=== backend: io_uring ===\n");
             run_all_tests();
         }
     }

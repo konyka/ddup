@@ -17,9 +17,11 @@ typedef struct server server;
 typedef struct buf_pool buf_pool;
 
 /* Backend selection (server_create_ex). */
-#define SERVER_BACKEND_SELECT 0 /* readiness loop (epoll/kqueue/select) */
-#define SERVER_BACKEND_IOCP 1   /* Windows IOCP proactor (falls back to
-                                   readiness when unavailable) */
+#define SERVER_BACKEND_SELECT 0  /* readiness loop (epoll/kqueue/select) */
+#define SERVER_BACKEND_IOCP 1    /* Windows IOCP proactor (falls back to
+                                    readiness when unavailable) */
+#define SERVER_BACKEND_IOURING 2 /* Linux io_uring readiness (falls back to
+                                    epoll when unavailable) */
 
 /* Create a server bound to host:port. host may be NULL (any interface);
  * port 0 picks an ephemeral port (read it back with server_port()).

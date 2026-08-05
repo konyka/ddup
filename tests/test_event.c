@@ -1,10 +1,16 @@
-/* test_event.c - pal_event: readiness loop over a loopback TCP pair. */
+/* test_event.c - pal_event: readiness loop over a loopback TCP pair.
+ *
+ * The whole suite runs on the default backend (epoll/kqueue/select) and,
+ * when the kernel offers it, again on io_uring (Linux).
+ */
 #include "pal/pal_event.h"
 #include "test.h"
 
+static pal_loop *(*g_create)(void) = pal_loop_create;
+
 static void test_create_free(void)
 {
-    pal_loop *l = pal_loop_create();
+    pal_loop *l = g_create();
     DD_CHECK(l != NULL);
     /* wait on an empty loop returns 0 after the timeout */
     {
@@ -37,7 +43,7 @@ static void test_read_readiness(void)
     DD_CHECK(server != PAL_SOCKET_INVALID);
 
     {
-        pal_loop *l = pal_loop_create();
+        pal_loop *l = g_create();
         DD_CHECK(l != NULL);
         DD_CHECK_EQ_INT(0, pal_loop_add(l, server, 1, 0, &tag));
 
@@ -71,7 +77,7 @@ static void test_write_readiness_and_mod(void)
     DD_CHECK(server != PAL_SOCKET_INVALID);
 
     {
-        pal_loop *l = pal_loop_create();
+        pal_loop *l = g_create();
         DD_CHECK(l != NULL);
         /* register read-only first */
         DD_CHECK_EQ_INT(0, pal_loop_add(l, server, 1, 0, NULL));
@@ -101,7 +107,7 @@ static void test_del(void)
     DD_CHECK(server != PAL_SOCKET_INVALID);
 
     {
-        pal_loop *l = pal_loop_create();
+        pal_loop *l = g_create();
         DD_CHECK(l != NULL);
         DD_CHECK_EQ_INT(0, pal_loop_add(l, server, 1, 0, NULL));
         DD_CHECK_EQ_INT(0, pal_loop_del(l, server));
@@ -118,11 +124,26 @@ static void test_del(void)
     pal_socket_cleanup();
 }
 
-int main(void)
+static void run_all(void)
 {
     DD_RUN(test_create_free);
     DD_RUN(test_read_readiness);
     DD_RUN(test_write_readiness_and_mod);
     DD_RUN(test_del);
+}
+
+int main(void)
+{
+    run_all();
+    {
+        /* second pass on io_uring when the kernel offers it */
+        pal_loop *probe = pal_loop_create_iouring();
+        if (probe != NULL) {
+            pal_loop_free(probe);
+            g_create = pal_loop_create_iouring;
+            printf("=== backend: io_uring ===\n");
+            run_all();
+        }
+    }
     return DD_TEST_SUMMARY();
 }

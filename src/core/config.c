@@ -158,7 +158,8 @@ int config_apply(ddup_config *cfg, const char *key, const char *value)
         return copy_str(cfg->tls_key_file, sizeof(cfg->tls_key_file),
                         value);
     if (key_eq(key, "io")) {
-        if (!key_eq(value, "select") && !key_eq(value, "iocp"))
+        if (!key_eq(value, "select") && !key_eq(value, "iocp") &&
+            !key_eq(value, "iouring"))
             return -1;
         return copy_str(cfg->io, sizeof(cfg->io), value);
     }

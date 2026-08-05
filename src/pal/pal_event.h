@@ -23,6 +23,9 @@ typedef struct pal_event {
 typedef struct pal_loop pal_loop;
 
 pal_loop *pal_loop_create(void);
+/* Create an io_uring-backed loop (Linux only). Returns NULL when the
+ * kernel does not support io_uring — caller falls back to pal_loop_create. */
+pal_loop *pal_loop_create_iouring(void);
 void pal_loop_free(pal_loop *l);
 
 /* Register fd for read and/or write readiness. Returns 0 on success.

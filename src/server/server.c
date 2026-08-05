@@ -824,7 +824,13 @@ server *server_create_ex(const char *host, uint16_t port, int backend)
     s->wakeup_fd = PAL_SOCKET_INVALID;
     s->node_timeout_ms = 15000;
     s->backend = backend;
-    s->loop = pal_loop_create();
+    if (backend == SERVER_BACKEND_IOURING) {
+        s->loop = pal_loop_create_iouring();
+        if (s->loop == NULL)
+            s->loop = pal_loop_create(); /* unavailable: fall back to epoll */
+    } else {
+        s->loop = pal_loop_create();
+    }
     if (backend == SERVER_BACKEND_IOCP) {
         s->iocp = pal_iocp_create();
         if (s->iocp == NULL)

@@ -140,19 +140,27 @@ int main(int argc, char **argv)
         pal_iocp *probe = pal_iocp_create();
         int backend = probe != NULL ? SERVER_BACKEND_IOCP
                                     : SERVER_BACKEND_SELECT;
+        const char *bname;
         if (probe != NULL)
             pal_iocp_free(probe);
-        if (cfg.io[0] != '\0')
-            backend = strcmp(cfg.io, "iocp") == 0 ? SERVER_BACKEND_IOCP
-                                                  : SERVER_BACKEND_SELECT;
+        if (cfg.io[0] != '\0') {
+            if (strcmp(cfg.io, "iocp") == 0)
+                backend = SERVER_BACKEND_IOCP;
+            else if (strcmp(cfg.io, "iouring") == 0)
+                backend = SERVER_BACKEND_IOURING;
+            else
+                backend = SERVER_BACKEND_SELECT;
+        }
         if (cfg.tls_port > 0 && backend == SERVER_BACKEND_IOCP) {
             printf("note: TLS is unsupported on the IOCP backend; "
                    "using readiness\n");
             backend = SERVER_BACKEND_SELECT;
         }
         s = server_create_ex(cfg.bind, cfg.port, backend);
-        printf("io backend: %s\n",
-               backend == SERVER_BACKEND_IOCP ? "iocp" : "select");
+        bname = backend == SERVER_BACKEND_IOCP ? "iocp"
+                : backend == SERVER_BACKEND_IOURING ? "iouring"
+                                                    : "select";
+        printf("io backend: %s\n", bname);
     }
     if (s == NULL) {
         fprintf(stderr, "failed to listen on %s:%u\n", cfg.bind,
