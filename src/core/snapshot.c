@@ -228,6 +228,20 @@ static uint8_t rd_u8(reader *r)
     return (uint8_t)r->p[r->off++];
 }
 
+static uint16_t rd_u16le(reader *r)
+{
+    uint16_t v = 0;
+    int i;
+    if (r->off + 2 > r->len) {
+        r->ok = 0;
+        r->off = r->len;
+        return 0;
+    }
+    for (i = 0; i < 2; i++)
+        v |= (uint16_t)((uint16_t)(uint8_t)r->p[r->off++] << (8 * i));
+    return v;
+}
+
 static uint32_t rd_u32le(reader *r)
 {
     uint32_t v = 0;
@@ -377,6 +391,61 @@ static char *load_payload(reader *r, int tag, char blob[9], size_t *out_len)
     }
 }
 
+/* Parse `count` entries into tmp (count == UINT32_MAX = until EOF).
+ * Returns 1 when all entries parsed cleanly (and, for the counted form,
+ * the exact count was consumed). */
+static int load_entries(reader *r, db *tmp, uint32_t count, uint64_t now_ms)
+{
+    uint32_t i = 0;
+    while (r->ok && r->off < r->len &&
+           (count == UINT32_MAX || i < count)) {
+        int tag = rd_u8(r);
+        uint32_t klen = rd_u32le(r);
+        const char *key = rd_bytes(r, klen);
+        int64_t expire;
+        char blob[9];
+        char *owned;
+        const char *vblob;
+        size_t vbloblen = 0;
+        if (!r->ok)
+            break;
+        expire = (int64_t)rd_u64le(r);
+        owned = load_payload(r, tag, blob, &vbloblen);
+        if (!r->ok)
+            break;
+        vblob = owned != NULL ? owned : blob;
+        if (expire >= 0 && (uint64_t)expire <= now_ms) {
+            /* already dead at load time: skip */
+            if (owned != NULL)
+                free(owned);
+            else
+                obj_free_value(vblob, vbloblen);
+            i++;
+            continue;
+        }
+        db_install_blob(tmp, key, klen, vblob, vbloblen, now_ms);
+        if (expire >= 0)
+            db_install_expiry(tmp, key, klen, (uint64_t)expire);
+        if (owned != NULL)
+            free(owned);
+        i++;
+    }
+    return r->ok && (count == UINT32_MAX || i == count);
+}
+
+/* Data-only swap: tmp's contents move into d (configuration, cluster
+ * state, WATCH bookkeeping of d are preserved). */
+static void swap_db_data(db *d, db *tmp)
+{
+    rh_each(&d->table, free_val_cb, NULL);
+    rh_destroy(&d->table);
+    rh_destroy(&d->expires);
+    d->table = tmp->table;
+    d->expires = tmp->expires;
+    d->used_memory = tmp->used_memory;
+    rh_destroy(&tmp->keyvers); /* tmp's unused empty table */
+}
+
 int snapshot_load_mem(db *d, const char *buf, size_t len, uint64_t now_ms)
 {
     reader r;
@@ -392,55 +461,179 @@ int snapshot_load_mem(db *d, const char *buf, size_t len, uint64_t now_ms)
 
     /* parse into a temporary db: all-or-nothing */
     db_init(&tmp);
-    while (r.ok && r.off < r.len) {
-        int tag = rd_u8(&r);
-        uint32_t klen = rd_u32le(&r);
-        const char *key = rd_bytes(&r, klen);
-        int64_t expire;
-        char blob[9];
-        char *owned;
-        const char *vblob;
-        size_t vbloblen = 0;
-        if (!r.ok)
-            break;
-        expire = (int64_t)rd_u64le(&r);
-        owned = load_payload(&r, tag, blob, &vbloblen);
-        if (!r.ok)
-            break;
-        vblob = owned != NULL ? owned : blob;
-        if (expire >= 0 && (uint64_t)expire <= now_ms) {
-            /* already dead at load time: skip */
-            if (owned != NULL)
-                free(owned);
-            else
-                obj_free_value(vblob, vbloblen);
-            continue;
-        }
-        db_install_blob(&tmp, key, klen, vblob, vbloblen, now_ms);
-        if (expire >= 0)
-            db_install_expiry(&tmp, key, klen, (uint64_t)expire);
-        if (owned != NULL)
-            free(owned);
-    }
-    ok = r.ok && r.off == r.len;
+    ok = load_entries(&r, &tmp, UINT32_MAX, now_ms) && r.off == r.len;
 
     if (!ok) {
         db_destroy(&tmp);
         return -1;
     }
-    /* Data-only swap: the load replaces key contents, never configuration
-     * (cluster state, maxmemory, WATCH bookkeeping...). A replica applying
-     * a SYNC snapshot must not lose its cluster node table. */
-    {
-        rh_each(&d->table, free_val_cb, NULL);
-        rh_destroy(&d->table);
-        rh_destroy(&d->expires);
-        d->table = tmp.table;
-        d->expires = tmp.expires;
-        d->used_memory = tmp.used_memory;
-        rh_destroy(&tmp.keyvers); /* tmp's unused empty table */
-    }
+    swap_db_data(d, &tmp);
     return 0;
+}
+
+/* ------------------------------------------------------------------ */
+/* multi-database snapshots (DDUP0002)                                 */
+/* ------------------------------------------------------------------ */
+
+void snapshot_serialize_multi(void *ctx, snapshot_db_get get, int ndbs,
+                              resp_buf *out)
+{
+    int i;
+    buf_bytes(out, "DDUP0002", 8);
+    buf_u16le(out, (uint16_t)ndbs);
+    for (i = 0; i < ndbs; i++) {
+        db *d = get(ctx, i);
+        save_ctx sctx;
+        size_t n;
+        if (d == NULL)
+            continue;
+        n = rh_size(&d->table);
+        if (n == 0)
+            continue;
+        buf_u16le(out, (uint16_t)i);
+        buf_u32le(out, (uint32_t)n);
+        sctx.d = d;
+        sctx.buf = out;
+        rh_each(&d->table, save_entry_cb, &sctx);
+    }
+}
+
+int snapshot_save_multi(void *ctx, snapshot_db_get get, int ndbs,
+                        const char *path)
+{
+    resp_buf buf;
+    char tmp[1024];
+    pal_file *f;
+    int rc = -1;
+
+    resp_buf_init(&buf);
+    snapshot_serialize_multi(ctx, get, ndbs, &buf);
+
+    if (strlen(path) + 5 < sizeof(tmp)) {
+        snprintf(tmp, sizeof(tmp), "%s.tmp", path);
+        f = pal_file_open_write(tmp);
+        if (f != NULL) {
+            if (pal_file_write(f, buf.data, buf.len) == (ptrdiff_t)buf.len &&
+                pal_file_flush(f) == 0) {
+                pal_file_close(f);
+                rc = pal_file_rename(tmp, path);
+            } else {
+                pal_file_close(f);
+                pal_file_unlink(tmp);
+            }
+        }
+    }
+    resp_buf_free(&buf);
+    return rc;
+}
+
+int snapshot_load_mem_multi(void *ctx, snapshot_db_get get, int ndbs,
+                            const char *buf, size_t len, uint64_t now_ms)
+{
+    reader r;
+    db *tmps;
+    char *segs;
+    int ok = 1;
+    int i;
+
+    if (len < 8)
+        return -1;
+    if (memcmp(buf, "DDUP0001", 8) == 0) {
+        db *d0 = get(ctx, 0);
+        if (d0 == NULL)
+            return -1;
+        return snapshot_load_mem(d0, buf, len, now_ms);
+    }
+    if (memcmp(buf, "DDUP0002", 8) != 0)
+        return -1;
+
+    r.p = buf;
+    r.len = len;
+    r.off = 8;
+    r.ok = 1;
+    (void)rd_u16le(&r); /* ndbs in the file (informational) */
+
+    tmps = (db *)calloc((size_t)ndbs, sizeof(db));
+    segs = (char *)calloc((size_t)ndbs, 1);
+    if (tmps == NULL || segs == NULL) {
+        free(tmps);
+        free(segs);
+        return -1;
+    }
+
+    /* parse every segment into temporaries (all-or-nothing) */
+    while (r.ok && r.off < r.len) {
+        uint16_t idx = rd_u16le(&r);
+        uint32_t count = rd_u32le(&r);
+        if (!r.ok || idx >= ndbs)
+            break;
+        db_init(&tmps[idx]);
+        segs[idx] = 1;
+        if (!load_entries(&r, &tmps[idx], count, now_ms)) {
+            ok = 0;
+            break;
+        }
+    }
+    ok = ok && r.ok && r.off == r.len;
+
+    if (ok) {
+        /* swap every db: segments replace, missing dbs are emptied */
+        for (i = 0; i < ndbs; i++) {
+            db *d = get(ctx, i);
+            if (d == NULL)
+                continue;
+            if (!segs[i])
+                db_init(&tmps[i]); /* empty temp for the swap */
+            swap_db_data(d, &tmps[i]);
+        }
+    } else {
+        for (i = 0; i < ndbs; i++)
+            if (segs[i])
+                db_destroy(&tmps[i]);
+    }
+    free(tmps);
+    free(segs);
+    return ok ? 0 : -1;
+}
+
+int snapshot_load_multi(void *ctx, snapshot_db_get get, int ndbs,
+                        const char *path, uint64_t now_ms)
+{
+    pal_file *f = pal_file_open_read(path);
+    char *buf = NULL;
+    size_t len = 0, cap = 0;
+    int rc;
+
+    if (f == NULL)
+        return -1;
+    for (;;) {
+        ptrdiff_t n;
+        if (len == cap) {
+            size_t ncap = cap == 0 ? 65536 : cap * 2;
+            char *nb = (char *)realloc(buf, ncap);
+            if (nb == NULL) {
+                free(buf);
+                pal_file_close(f);
+                return -1;
+            }
+            buf = nb;
+            cap = ncap;
+        }
+        n = pal_file_read(f, buf + len, cap - len);
+        if (n < 0) {
+            free(buf);
+            pal_file_close(f);
+            return -1;
+        }
+        if (n == 0)
+            break;
+        len += (size_t)n;
+    }
+    pal_file_close(f);
+
+    rc = snapshot_load_mem_multi(ctx, get, ndbs, buf, len, now_ms);
+    free(buf);
+    return rc;
 }
 
 int snapshot_load(db *d, const char *path, uint64_t now_ms)

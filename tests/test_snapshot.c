@@ -1,6 +1,7 @@
 /* test_snapshot.c - RDB-style snapshot save/load roundtrip. */
 #include <stdarg.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "core/session.h"
@@ -222,11 +223,138 @@ static void test_save_lastsave_command(void)
     remove(TMP_SNAP);
 }
 
+/* ------------------------------------------------------------------ */
+/* multi-database snapshots (DDUP0002 + DDUP0001 compat)               */
+/* ------------------------------------------------------------------ */
+
+typedef struct snap_dbset {
+    db dbs[3];
+} snap_dbset;
+
+static db *snap_get(void *ctx, int idx)
+{
+    return &((snap_dbset *)ctx)->dbs[idx];
+}
+
+/* db structs are huge (cluster tables): always heap-allocate sets of them */
+static snap_dbset *snap_dbset_new(void)
+{
+    int i;
+    snap_dbset *ds = (snap_dbset *)calloc(1, sizeof(*ds));
+    DD_CHECK(ds != NULL);
+    for (i = 0; i < 3; i++)
+        db_init(&ds->dbs[i]);
+    return ds;
+}
+
+static void snap_dbset_free(snap_dbset *ds)
+{
+    int i;
+    for (i = 0; i < 3; i++)
+        db_destroy(&ds->dbs[i]);
+    free(ds);
+}
+
+static void test_multidb_roundtrip(void)
+{
+    snap_dbset *ds, *ds2;
+    session *s;
+    resp_buf out, snap;
+
+    ds = snap_dbset_new();
+    ds2 = snap_dbset_new();
+    resp_buf_init(&out);
+    resp_buf_init(&snap);
+
+    s = session_create(&ds->dbs[0]);
+    s->sel_ctx = ds;
+    s->sel_fn = snap_get;
+    s->sel_ndbs = 3;
+
+    exec_sess(s, T0, &out, 3, "SET", "a", "db0val");
+    exec_sess(s, T0, &out, 2, "SELECT", "1");
+    exec_sess(s, T0, &out, 3, "SET", "b", "db1val");
+    exec_sess(s, T0, &out, 4, "HSET", "h", "f", "v");
+    exec_sess(s, T0, &out, 2, "SELECT", "2");
+    exec_sess(s, T0, &out, 4, "SADD", "st", "x", "y");
+    session_free(s);
+
+    snapshot_serialize_multi(ds, snap_get, 3, &snap);
+    DD_CHECK(snap.len > 8);
+    DD_CHECK_MEM("DDUP0002", 8, snap.data, 8);
+
+    DD_CHECK_EQ_INT(0, snapshot_load_mem_multi(ds2, snap_get, 3, snap.data,
+                                               snap.len, T0));
+
+    /* db0 has only 'a', db1 has 'b' and 'h', db2 has 'st' */
+    {
+        session *r = session_create(&ds2->dbs[0]);
+        r->sel_ctx = ds2;
+        r->sel_fn = snap_get;
+        r->sel_ndbs = 3;
+        exec_sess(r, T0, &out, 2, "GET", "a");
+        EXPECT(out, "$6\r\ndb0val\r\n");
+        exec_sess(r, T0, &out, 2, "GET", "b");
+        EXPECT(out, "$-1\r\n");
+        exec_sess(r, T0, &out, 2, "SELECT", "1");
+        exec_sess(r, T0, &out, 2, "GET", "b");
+        EXPECT(out, "$6\r\ndb1val\r\n");
+        exec_sess(r, T0, &out, 3, "HGET", "h", "f");
+        EXPECT(out, "$1\r\nv\r\n");
+        exec_sess(r, T0, &out, 2, "SELECT", "2");
+        exec_sess(r, T0, &out, 3, "SISMEMBER", "st", "x");
+        EXPECT(out, ":1\r\n");
+        exec_sess(r, T0, &out, 2, "GET", "a");
+        EXPECT(out, "$-1\r\n");
+        session_free(r);
+    }
+
+    snap_dbset_free(ds);
+    snap_dbset_free(ds2);
+    resp_buf_free(&out);
+    resp_buf_free(&snap);
+}
+
+static void test_multidb_v1_compat(void)
+{
+    /* a DDUP0001 (single-db) buffer loads into db 0 via the multi API */
+    db d;
+    snap_dbset *ds2;
+    session *s;
+    resp_buf snap, out;
+
+    db_init(&d);
+    resp_buf_init(&snap);
+    resp_buf_init(&out);
+    s = session_create(&d);
+    exec_sess(s, T0, &out, 3, "SET", "k", "v1");
+    session_free(s);
+    snapshot_serialize(&d, &snap);
+    DD_CHECK_MEM("DDUP0001", 8, snap.data, 8);
+    db_destroy(&d);
+
+    ds2 = snap_dbset_new();
+    DD_CHECK_EQ_INT(0, snapshot_load_mem_multi(ds2, snap_get, 3, snap.data,
+                                               snap.len, T0));
+    {
+        session *r = session_create(&ds2->dbs[0]);
+        exec_sess(r, T0, &out, 2, "GET", "k");
+        EXPECT(out, "$2\r\nv1\r\n");
+        session_free(r);
+    }
+
+    snap_dbset_free(ds2);
+    resp_buf_free(&snap);
+    resp_buf_free(&out);
+}
+
 int main(void)
 {
     DD_RUN(test_roundtrip_all_types);
     DD_RUN(test_expired_keys_skipped_at_load);
     DD_RUN(test_corrupt_and_atomic);
     DD_RUN(test_save_lastsave_command);
+    DD_RUN(test_multidb_roundtrip);
+    DD_RUN(test_multidb_v1_compat);
     return DD_TEST_SUMMARY();
 }

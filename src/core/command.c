@@ -3422,12 +3422,26 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
             resp_write_error(out, E, sizeof(E) - 1);
             return;
         }
-        if (snapshot_save(d, d->snapshot_path) != 0) {
-            static const char E[] = "ERR snapshot save failed";
-            resp_write_error(out, E, sizeof(E) - 1);
-            return;
+        if (s->sel_fn != NULL) {
+            /* multi-db build: every logical db goes into one file */
+            int i;
+            if (snapshot_save_multi(s->sel_ctx,
+                                    (snapshot_db_get)s->sel_fn, s->sel_ndbs,
+                                    d->snapshot_path) != 0) {
+                static const char E[] = "ERR snapshot save failed";
+                resp_write_error(out, E, sizeof(E) - 1);
+                return;
+            }
+            for (i = 0; i < s->sel_ndbs; i++)
+                s->sel_fn(s->sel_ctx, i)->last_save = now_ms / 1000;
+        } else {
+            if (snapshot_save(d, d->snapshot_path) != 0) {
+                static const char E[] = "ERR snapshot save failed";
+                resp_write_error(out, E, sizeof(E) - 1);
+                return;
+            }
+            d->last_save = now_ms / 1000;
         }
-        d->last_save = now_ms / 1000;
         resp_write_simple_string(out, "OK", 2);
         return;
     }

@@ -414,7 +414,7 @@ static void srv_sync(void *ctx, session *sess)
     int hl;
 
     resp_buf_init(&snap);
-    snapshot_serialize(&srv->db, &snap);
+    snapshot_serialize_multi(srv, srv_select_db, srv->ndbs, &snap);
     hl = snprintf(hdr, sizeof(hdr), "$%llu\r\n",
                   (unsigned long long)snap.len);
     resp_buf_reserve(&c->out, (size_t)hl + snap.len);
@@ -794,8 +794,9 @@ static void repl_link_service(server *srv, conn *c)
         if (c->link_got < c->link_need)
             return; /* wait for the rest of the snapshot */
         db_flush(&srv->db);
-        (void)snapshot_load_mem(&srv->db, c->link_snap, c->link_need,
-                                pal_wall_ms());
+        (void)snapshot_load_mem_multi(srv, srv_select_db, srv->ndbs,
+                                      c->link_snap, c->link_need,
+                                      pal_wall_ms());
         free(c->link_snap);
         c->link_snap = NULL;
         c->link_state = LINK_STREAMING;
@@ -992,7 +993,8 @@ int server_load_snapshot(server *s)
 {
     if (s->db.snapshot_path == NULL)
         return -1;
-    return snapshot_load(&s->db, s->db.snapshot_path, pal_wall_ms());
+    return snapshot_load_multi(s, srv_select_db, s->ndbs,
+                               s->db.snapshot_path, pal_wall_ms());
 }
 
 /* Load persisted nodes.conf lines into the node table (multi-node reload).
@@ -1075,7 +1077,8 @@ void server_graceful_stop(server *s)
     if (s->aof == NULL && s->save_sec > 0 &&
         s->db.snapshot_path != NULL &&
         s->db.dirty != s->dirty_at_last_save &&
-        snapshot_save(&s->db, s->db.snapshot_path) == 0)
+        snapshot_save_multi(s, srv_select_db, s->ndbs,
+                            s->db.snapshot_path) == 0)
         s->db.last_save = pal_wall_ms() / 1000;
 }
 
@@ -1928,7 +1931,8 @@ int server_run_once(server *s, int timeout_ms)
         if (now - s->last_save_check >= (uint64_t)s->save_sec * 1000) {
             s->last_save_check = now;
             if (s->db.dirty != s->dirty_at_last_save &&
-                snapshot_save(&s->db, s->db.snapshot_path) == 0) {
+                snapshot_save_multi(s, srv_select_db, s->ndbs,
+                                    s->db.snapshot_path) == 0) {
                 s->db.last_save = now / 1000;
                 s->dirty_at_last_save = s->db.dirty;
             }

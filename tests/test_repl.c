@@ -81,6 +81,13 @@ int main(void)
 #include "pal/pal_socket.h"
 #include "server/server.h"
 
+/* single-db accessor for the multi snapshot loader used by SYNC frames */
+static db *repl_snap_get(void *ctx, int idx)
+{
+    (void)idx;
+    return (db *)ctx;
+}
+
 static void sess_cmd(session *s, resp_buf *out, int argc, ...)
 {
     resp_value argv[8];
@@ -169,7 +176,8 @@ static void test_sync_master(void)
         /* frame is a valid snapshot containing k=v */
         snap = buf + hdrlen;
         db_init(&d2);
-        DD_CHECK_EQ_INT(0, snapshot_load_mem(&d2, snap, snaplen, 1000000));
+        DD_CHECK_EQ_INT(0, snapshot_load_mem_multi(&d2, repl_snap_get, 1,
+                                                   snap, snaplen, 1000000));
         r = session_create(&d2);
         sess_cmd(r, &out, 2, "GET", "k");
         EXPECT(out, "$1\r\nv\r\n");
@@ -303,8 +311,9 @@ static void test_psync_fullresync(void)
             session *r;
             db_init(&d2);
             DD_CHECK_EQ_INT(0,
-                            snapshot_load_mem(&d2, buf + hdrlen, snaplen,
-                                              1000000));
+                            snapshot_load_mem_multi(&d2, repl_snap_get, 1,
+                                                    buf + hdrlen, snaplen,
+                                                    1000000));
             r = session_create(&d2);
             sess_cmd(r, &out, 2, "GET", "k");
             EXPECT(out, "$1\r\nv\r\n");

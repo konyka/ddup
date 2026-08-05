@@ -224,11 +224,13 @@ static void test_aof_multidb_replay(void)
     aof *a;
     resp_buf out;
     resp_value sel[2], cmd3[3];
-    dbset ds;
+    dbset *ds;
     session *r;
     int i;
 
     resp_buf_init(&out);
+    ds = (dbset *)calloc(1, sizeof(*ds));
+    DD_CHECK(ds != NULL);
     a = aof_open(TMP_AOF);
     DD_CHECK(a != NULL);
 
@@ -256,9 +258,9 @@ static void test_aof_multidb_replay(void)
     aof_close(a);
 
     for (i = 0; i < 4; i++)
-        db_init(&ds.dbs[i]);
-    r = session_create(&ds.dbs[0]);
-    r->sel_ctx = &ds;
+        db_init(&ds->dbs[i]);
+    r = session_create(&ds->dbs[0]);
+    r->sel_ctx = ds;
     r->sel_fn = mds_select;
     r->sel_ndbs = 4;
 
@@ -275,7 +277,8 @@ static void test_aof_multidb_replay(void)
 
     session_free(r);
     for (i = 0; i < 4; i++)
-        db_destroy(&ds.dbs[i]);
+        db_destroy(&ds->dbs[i]);
+    free(ds);
     resp_buf_free(&out);
     remove(TMP_AOF);
 }

@@ -40,6 +40,34 @@ int snapshot_load(db *d, const char *path, uint64_t now_ms);
 int snapshot_load_mem(db *d, const char *buf, size_t len, uint64_t now_ms);
 
 /* ------------------------------------------------------------------ */
+/* multi-database snapshots (format "DDUP0002")                        */
+/*                                                                     */
+/*   magic: 8 bytes "DDUP0002"                                         */
+/*   u16   ndbs                                                        */
+/*   per non-empty db:                                                 */
+/*     u16   db index                                                  */
+/*     u32   key count                                                 */
+/*     entries (same per-key encoding as DDUP0001)                     */
+/*                                                                     */
+/* Loading accepts DDUP0001 (falls into db 0). Databases without a     */
+/* segment are emptied (the file is complete). All-or-nothing: the     */
+/* file is parsed into temporaries first; cluster/configuration state  */
+/* of each db is preserved (data-only swap, same as DDUP0001).         */
+/* ------------------------------------------------------------------ */
+
+/* Accessor for db by index (matches the session selection hook). */
+typedef db *(*snapshot_db_get)(void *ctx, int idx);
+
+void snapshot_serialize_multi(void *ctx, snapshot_db_get get, int ndbs,
+                              resp_buf *out);
+int snapshot_save_multi(void *ctx, snapshot_db_get get, int ndbs,
+                        const char *path);
+int snapshot_load_multi(void *ctx, snapshot_db_get get, int ndbs,
+                        const char *path, uint64_t now_ms);
+int snapshot_load_mem_multi(void *ctx, snapshot_db_get get, int ndbs,
+                            const char *buf, size_t len, uint64_t now_ms);
+
+/* ------------------------------------------------------------------ */
 /* per-key serialization (DUMP/RESTORE/MIGRATE)                       */
 /* ------------------------------------------------------------------ */
 

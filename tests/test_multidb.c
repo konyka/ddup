@@ -28,7 +28,8 @@ static void exec_sess(session *s, uint64_t now, resp_buf *out, int argc, ...)
 
 #define T0 1000000ULL
 
-/* minimal two-db server-side stand-in for the selection hook */
+/* minimal two-db server-side stand-in for the selection hook (heap: db
+ * structs are huge due to the embedded cluster tables) */
 typedef struct dbset {
     db dbs[4];
 } dbset;
@@ -42,7 +43,8 @@ static db *set_select(void *ctx, int idx)
 static dbset *set_new(int n)
 {
     int i;
-    dbset *ds = (dbset *)malloc(sizeof(dbset));
+    dbset *ds = (dbset *)calloc(1, sizeof(dbset));
+    DD_CHECK(ds != NULL);
     for (i = 0; i < 4; i++)
         db_init(&ds->dbs[i]);
     (void)n;
