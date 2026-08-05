@@ -273,7 +273,8 @@ static int mt_watch_add(mt_conn_state *st, const char *key, size_t klen,
     return 0;
 }
 
-static void mt_push_task(mt_spsc *q, mt_task *t, pal_wakeup *wake);
+static void mt_push_task(worker *self, mt_spsc *q, mt_task *t,
+                         pal_wakeup *wake);
 static mt_cmd_blob *mt_blob_one(const char *raw, size_t len);
 
 /* Fire-and-forget watch_refs release on the owning worker. */
@@ -313,7 +314,7 @@ static void mt_watch_release_one(worker *home, const mt_watch_entry *e)
     {
         mt_task *t = mt_unwatch_task(e->key, e->klen);
         if (t != NULL)
-            mt_push_task(&home->ms->workers[owner].inbox[home->id], t,
+            mt_push_task(home, &home->ms->workers[owner].inbox[home->id], t,
                          &home->ms->workers[owner].wakeup);
     }
 }
@@ -497,7 +498,7 @@ static int mt_conn_close(void *ctx, void *conn)
             continue;
         }
         t->kind = MT_TASK_UNSUB;
-        mt_push_task(&home->ms->workers[s->owner].inbox[home->id], t,
+        mt_push_task(home, &home->ms->workers[s->owner].inbox[home->id], t,
                      &home->ms->workers[s->owner].wakeup);
     }
     return held;
@@ -773,16 +774,6 @@ static mt_cmd_blob *mt_blob_one(const char *raw, size_t len)
     return b;
 }
 
-/* Push a task with backpressure retry (the consumer is another thread and
- * always makes progress); kick the consumer when it may be asleep. */
-static void mt_push_task(mt_spsc *q, mt_task *t, pal_wakeup *wake)
-{
-    int pr;
-    while ((pr = mt_spsc_push(q, t)) < 0)
-        pal_sleep_ms(1);
-    if (pr == 1)
-        (void)pal_wakeup_kick(wake);
-}
 
 /* Aggregate commands (DBSIZE sum, FLUSHDB broadcast): run the home part
  * inline, fan sub-tasks out to every other worker and finish when all
@@ -842,7 +833,7 @@ static int mt_route_aggregate(worker *home, void *conn,
         if (t != NULL) {
             t->agg = agg;
             mt_pending_inc(home, st);
-            mt_push_task(&home->ms->workers[i].inbox[home->id], t,
+            mt_push_task(home, &home->ms->workers[i].inbox[home->id], t,
                          &home->ms->workers[i].wakeup);
         } else {
             if (blob != NULL)
@@ -868,7 +859,7 @@ static void mt_batch_flush(worker *home, void *conn, mt_conn_state *st)
         mt_blobs_free(st->batch, st->batch_n);
     } else {
         mt_pending_inc(home, st);
-        mt_push_task(&home->ms->workers[target].inbox[home->id], t,
+        mt_push_task(home, &home->ms->workers[target].inbox[home->id], t,
                      &home->ms->workers[target].wakeup);
     }
     st->batch = NULL;
@@ -1079,7 +1070,7 @@ static int mt_txn_watch(worker *home, void *conn, mt_conn_state *st,
         }
         t->kind = MT_TASK_WATCH;
         mt_pending_inc(home, st);
-        mt_push_task(&home->ms->workers[target].inbox[home->id], t,
+        mt_push_task(home, &home->ms->workers[target].inbox[home->id], t,
                      &home->ms->workers[target].wakeup);
         return 1;
     }
@@ -1183,7 +1174,7 @@ static int mt_txn_exec(worker *home, void *conn, mt_conn_state *st,
         return 1;
     }
     mt_pending_inc(home, st);
-    mt_push_task(&home->ms->workers[target].inbox[home->id], t,
+    mt_push_task(home, &home->ms->workers[target].inbox[home->id], t,
                  &home->ms->workers[target].wakeup);
     return 1;
 }
@@ -1277,7 +1268,7 @@ static void mt_pubsub_register(worker *home, void *conn, mt_conn_state *st,
     }
     t->kind = MT_TASK_SUB;
     mt_pending_inc(home, st);
-    mt_push_task(&home->ms->workers[owner].inbox[home->id], t,
+    mt_push_task(home, &home->ms->workers[owner].inbox[home->id], t,
                  &home->ms->workers[owner].wakeup);
 }
 
@@ -1292,7 +1283,7 @@ static void mt_pubsub_unregister(worker *home, void *conn, const char *ch,
         return;
     }
     t->kind = MT_TASK_UNSUB;
-    mt_push_task(&home->ms->workers[owner].inbox[home->id], t,
+    mt_push_task(home, &home->ms->workers[owner].inbox[home->id], t,
                  &home->ms->workers[owner].wakeup);
 }
 
@@ -1418,7 +1409,7 @@ static void mt_publish_execute(worker *owner_w, mt_task *t)
         resp_write_bulk(&d->reply,
                         v.items[2].str == NULL ? "" : v.items[2].str,
                         v.items[2].len);
-        mt_push_task(&sh->completions[owner_w->id], d, &sh->wakeup);
+        mt_push_task(owner_w, &sh->completions[owner_w->id], d, &sh->wakeup);
         receivers++;
     }
     resp_write_integer(&t->reply, receivers);
@@ -1457,7 +1448,7 @@ static int mt_route_publish(worker *home, void *conn, mt_conn_state *st,
         return 1;
     }
     mt_pending_inc(home, st);
-    mt_push_task(&home->ms->workers[owner].inbox[home->id], t,
+    mt_push_task(home, &home->ms->workers[owner].inbox[home->id], t,
                  &home->ms->workers[owner].wakeup);
     return 1;
 }
@@ -1542,9 +1533,9 @@ static int mt_route(void *ctx, void *conn, session *sess,
                                          0, 1, 0, NULL);
                 if (t != NULL) {
                     t->kind = MT_TASK_MIGRATE;
-                    mt_push_task(
-                        &home->ms->workers[target].migrate[home->id], t,
-                        &home->ms->workers[target].wakeup);
+                    mt_push_task(home,
+                                 &home->ms->workers[target].migrate[home->id],
+                                 t, &home->ms->workers[target].wakeup);
                     return 2;
                 }
                 /* task allocation failed: roll back the detach */
@@ -1611,151 +1602,160 @@ static int mt_route(void *ctx, void *conn, session *sess,
     }
 }
 
-static void worker_on_wakeup(void *ctx)
+/* Execute one routed task (all kinds) and push it to the home worker's
+ * completion ring. */
+static void mt_exec_task(worker *w, mt_task *t);
+
+/* Drain every producer's completion ring (delivery side). */
+static void mt_drain_completions(worker *w);
+
+/* Drain every producer's inbox ring (execution side). */
+static void mt_drain_inbox(worker *w);
+
+/* Push a task with backpressure: while the downstream ring is full, drain
+ * our own queues to relieve pressure (breaks circular waits between
+ * workers); kick the consumer when it may be asleep. self may be NULL
+ * (acceptor thread: plain sleep-retry). */
+static void mt_push_task(worker *self, mt_spsc *q, mt_task *t,
+                         pal_wakeup *wake)
 {
-    worker *w = (worker *)ctx;
-    int pi;
-    (void)pal_wakeup_drain(&w->wakeup);
-
-    /* 1. adopt accepted fds */
-    for (;;) {
-        void *p = mt_spsc_pop(&w->accepts);
-        pal_socket_t fd;
-        if (p == NULL)
-            break;
-        fd = (pal_socket_t)(uintptr_t)p;
-        (void)server_adopt_fd(w->srv, fd);
+    int pr = mt_spsc_push(q, t);
+    while (pr < 0) {
+        if (self != NULL) {
+            mt_drain_completions(self);
+            mt_drain_inbox(self);
+        } else {
+            pal_sleep_ms(1);
+        }
+        pr = mt_spsc_push(q, t);
     }
+    if (pr == 1)
+        (void)pal_wakeup_kick(wake);
+}
 
-    /* 1b. adopt connections migrated from other workers (key affinity) */
-    for (pi = 0; pi < w->ms->nworkers; pi++) {
-        for (;;) {
-            mt_task *t = (mt_task *)mt_spsc_pop(&w->migrate[pi]);
-            if (t == NULL)
+static void mt_exec_task(worker *w, mt_task *t)
+{
+    uint32_t ci;
+    if (t->kind == MT_TASK_UNWATCH) {
+        /* fire-and-forget watch_refs release (key bytes in cmds) */
+        db *d = server_db(w->srv);
+        if (d->watch_refs > 0)
+            d->watch_refs--;
+        mt_task_free(t);
+        return;
+    }
+    if (t->kind == MT_TASK_UNSUB) {
+        /* remove (conn, channel) from this worker's registry */
+        mt_sub_entry **pp = &w->subs;
+        while (*pp != NULL) {
+            mt_sub_entry *e = *pp;
+            if (e->conn == t->conn &&
+                e->chlen == t->cmds[0].len &&
+                memcmp(e->ch, t->cmds[0].raw, e->chlen) == 0) {
+                *pp = e->next;
+                free(e->ch);
+                free(e);
                 break;
-            server_conn_rehome(w->srv, t->conn);
-            if (server_conn_adopt(w->srv, t->conn) != 0)
-                server_conn_free_now(w->srv, t->conn);
-            mt_task_free(t);
+            }
+            pp = &(*pp)->next;
+        }
+        mt_task_free(t);
+        return;
+    }
+    if (t->kind == MT_TASK_SUB) {
+        /* register (conn, channel) and report back (round trip so
+         * the subscriber conn stays alive until registered) */
+        mt_sub_entry *e = (mt_sub_entry *)calloc(1, sizeof(*e));
+        if (e != NULL) {
+            e->ch = (char *)malloc(t->cmds[0].len);
+            if (e->ch != NULL) {
+                memcpy(e->ch, t->cmds[0].raw, t->cmds[0].len);
+                e->chlen = t->cmds[0].len;
+                e->home_id = t->home->id;
+                e->conn = t->conn;
+                e->next = w->subs;
+                w->subs = e;
+            } else {
+                free(e);
+            }
+        }
+        /* falls through to the completion push (empty reply) */
+    } else if (t->kind == MT_TASK_PUBLISH) {
+        mt_publish_execute(w, t);
+    } else if (t->kind == MT_TASK_WATCH) {
+        /* read versions for every watched key; they ride back
+         * out-of-band with the +OK reply */
+        resp_value v;
+        ptrdiff_t used;
+        size_t i;
+        db *d = server_db(w->srv);
+        arena_reset(&w->exec_arena);
+        used = resp_parse(t->cmds[0].raw, t->cmds[0].len, &v,
+                          &w->exec_arena);
+        if (used == (ptrdiff_t)t->cmds[0].len &&
+            v.type == RESP_ARRAY && v.count > 1) {
+            t->nwatch_out = v.count - 1;
+            t->watch_out = (uint64_t *)calloc(
+                t->nwatch_out * 2, sizeof(uint64_t));
+            if (t->watch_out != NULL) {
+                for (i = 1; i < v.count; i++) {
+                    t->watch_out[2 * (i - 1)] =
+                        db_key_version(d, v.items[i].str,
+                                       v.items[i].len);
+                    t->watch_out[2 * (i - 1) + 1] = d->flush_epoch;
+                }
+                d->watch_refs += (uint64_t)t->nwatch_out;
+            } else {
+                t->nwatch_out = 0;
+            }
+        }
+        resp_write_simple_string(&t->reply, "OK", 2);
+    } else if (t->kind == MT_TASK_EXEC) {
+        mt_exec_on_db(w->srv, t, &w->exec_arena);
+    } else {
+        for (ci = 0; ci < t->ncmds; ci++) {
+            resp_value v;
+            ptrdiff_t used;
+            uint64_t dirty_before;
+            db *d = server_db(w->srv);
+            arena_reset(&w->exec_arena);
+            used = resp_parse(t->cmds[ci].raw, t->cmds[ci].len, &v,
+                              &w->exec_arena);
+            if (used != (ptrdiff_t)t->cmds[ci].len ||
+                v.type != RESP_ARRAY || v.is_null) {
+                resp_write_error(&t->reply, "ERR Protocol error",
+                                 18);
+                continue;
+            }
+            dirty_before = d->dirty;
+            command_execute_at(d, v.items, v.count, &t->reply,
+                               pal_wall_ms());
+            /* sessionless path: log applied mutations to the
+             * worker's own AOF */
+            if (d->dirty != dirty_before)
+                server_aof_log_cmd(w->srv, v.items, v.count);
         }
     }
+    w->tasks_executed++;
+    mt_push_task(w, &t->home->completions[w->id], t, &t->home->wakeup);
+}
 
-    /* 2. execute commands routed to this worker (merged tasks are re-parsed
-     * per command into the worker's own arena: no argv deep copies) */
+static void mt_drain_inbox(worker *w)
+{
+    int pi;
     for (pi = 0; pi < w->ms->nworkers; pi++) {
         for (;;) {
             mt_task *t = (mt_task *)mt_spsc_pop(&w->inbox[pi]);
-            uint32_t ci;
             if (t == NULL)
                 break;
-            if (t->kind == MT_TASK_UNWATCH) {
-                /* fire-and-forget watch_refs release (key bytes in cmds) */
-                db *d = server_db(w->srv);
-                if (d->watch_refs > 0)
-                    d->watch_refs--;
-                mt_task_free(t);
-                continue;
-            }
-            if (t->kind == MT_TASK_UNSUB) {
-                /* remove (conn, channel) from this worker's registry */
-                mt_sub_entry **pp = &w->subs;
-                while (*pp != NULL) {
-                    mt_sub_entry *e = *pp;
-                    if (e->conn == t->conn &&
-                        e->chlen == t->cmds[0].len &&
-                        memcmp(e->ch, t->cmds[0].raw, e->chlen) == 0) {
-                        *pp = e->next;
-                        free(e->ch);
-                        free(e);
-                        break;
-                    }
-                    pp = &(*pp)->next;
-                }
-                mt_task_free(t);
-                continue;
-            }
-            if (t->kind == MT_TASK_SUB) {
-                /* register (conn, channel) and report back (round trip so
-                 * the subscriber conn stays alive until registered) */
-                mt_sub_entry *e =
-                    (mt_sub_entry *)calloc(1, sizeof(*e));
-                if (e != NULL) {
-                    e->ch = (char *)malloc(t->cmds[0].len);
-                    if (e->ch != NULL) {
-                        memcpy(e->ch, t->cmds[0].raw, t->cmds[0].len);
-                        e->chlen = t->cmds[0].len;
-                        e->home_id = t->home->id;
-                        e->conn = t->conn;
-                        e->next = w->subs;
-                        w->subs = e;
-                    } else {
-                        free(e);
-                    }
-                }
-                /* falls through to the completion push (empty reply) */
-            } else if (t->kind == MT_TASK_PUBLISH) {
-                mt_publish_execute(w, t);
-            } else if (t->kind == MT_TASK_WATCH) {
-                /* read versions for every watched key; they ride back
-                 * out-of-band with the +OK reply */
-                resp_value v;
-                ptrdiff_t used;
-                size_t i;
-                db *d = server_db(w->srv);
-                arena_reset(&w->exec_arena);
-                used = resp_parse(t->cmds[0].raw, t->cmds[0].len, &v,
-                                  &w->exec_arena);
-                if (used == (ptrdiff_t)t->cmds[0].len &&
-                    v.type == RESP_ARRAY && v.count > 1) {
-                    t->nwatch_out = v.count - 1;
-                    t->watch_out = (uint64_t *)calloc(
-                        t->nwatch_out * 2, sizeof(uint64_t));
-                    if (t->watch_out != NULL) {
-                        for (i = 1; i < v.count; i++) {
-                            t->watch_out[2 * (i - 1)] =
-                                db_key_version(d, v.items[i].str,
-                                               v.items[i].len);
-                            t->watch_out[2 * (i - 1) + 1] = d->flush_epoch;
-                        }
-                        d->watch_refs += (uint64_t)t->nwatch_out;
-                    } else {
-                        t->nwatch_out = 0;
-                    }
-                }
-                resp_write_simple_string(&t->reply, "OK", 2);
-            } else if (t->kind == MT_TASK_EXEC) {
-                mt_exec_on_db(w->srv, t, &w->exec_arena);
-            } else {
-                for (ci = 0; ci < t->ncmds; ci++) {
-                    resp_value v;
-                    ptrdiff_t used;
-                    uint64_t dirty_before;
-                    db *d = server_db(w->srv);
-                    arena_reset(&w->exec_arena);
-                    used = resp_parse(t->cmds[ci].raw, t->cmds[ci].len, &v,
-                                      &w->exec_arena);
-                    if (used != (ptrdiff_t)t->cmds[ci].len ||
-                        v.type != RESP_ARRAY || v.is_null) {
-                        resp_write_error(&t->reply, "ERR Protocol error",
-                                         18);
-                        continue;
-                    }
-                    dirty_before = d->dirty;
-                    command_execute_at(d, v.items, v.count, &t->reply,
-                                       pal_wall_ms());
-                    /* sessionless path: log applied mutations to the
-                     * worker's own AOF */
-                    if (d->dirty != dirty_before)
-                        server_aof_log_cmd(w->srv, v.items, v.count);
-                }
-            }
-            w->tasks_executed++;
-            mt_push_task(&t->home->completions[w->id], t,
-                         &t->home->wakeup);
+            mt_exec_task(w, t);
         }
     }
+}
 
-    /* 3. deliver completed replies (home side) */
+static void mt_drain_completions(worker *w)
+{
+    int pi;
     for (pi = 0; pi < w->ms->nworkers; pi++) {
         for (;;) {
             mt_task *t = (mt_task *)mt_spsc_pop(&w->completions[pi]);
@@ -1820,6 +1820,42 @@ static void worker_on_wakeup(void *ctx)
             }
         }
     }
+}
+
+static void worker_on_wakeup(void *ctx)
+{
+    worker *w = (worker *)ctx;
+    int pi;
+    (void)pal_wakeup_drain(&w->wakeup);
+
+    /* 1. adopt accepted fds */
+    for (;;) {
+        void *p = mt_spsc_pop(&w->accepts);
+        pal_socket_t fd;
+        if (p == NULL)
+            break;
+        fd = (pal_socket_t)(uintptr_t)p;
+        (void)server_adopt_fd(w->srv, fd);
+    }
+
+    /* 1b. adopt connections migrated from other workers (key affinity) */
+    for (pi = 0; pi < w->ms->nworkers; pi++) {
+        for (;;) {
+            mt_task *t = (mt_task *)mt_spsc_pop(&w->migrate[pi]);
+            if (t == NULL)
+                break;
+            server_conn_rehome(w->srv, t->conn);
+            if (server_conn_adopt(w->srv, t->conn) != 0)
+                server_conn_free_now(w->srv, t->conn);
+            mt_task_free(t);
+        }
+    }
+
+    /* 2. execute commands routed to this worker */
+    mt_drain_inbox(w);
+
+    /* 3. deliver completed replies (home side) */
+    mt_drain_completions(w);
 }
 
 static void *worker_main(void *arg)
