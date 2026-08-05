@@ -48,6 +48,8 @@ static void test_backlog_wrap(void)
 static void test_sync_master(void);
 static void test_psync_fullresync(void);
 static void test_psync_continue_partial(void);
+static void test_psync_stale_offset_fullresync(void);
+static void test_chained_replication(void);
 static void test_replica_full_cycle(void);
 static void test_replica_reconnect_resync(void);
 
@@ -58,6 +60,8 @@ int main(void)
     DD_RUN(test_sync_master);
     DD_RUN(test_psync_fullresync);
     DD_RUN(test_psync_continue_partial);
+    DD_RUN(test_psync_stale_offset_fullresync);
+    DD_RUN(test_chained_replication);
     DD_RUN(test_replica_full_cycle);
     DD_RUN(test_replica_reconnect_resync);
     return DD_TEST_SUMMARY();
@@ -350,6 +354,10 @@ static void rt2(server *x, server *y, pal_socket_t c, const char *req,
         if (n > 0)
             got += (size_t)n;
     }
+    if (got != elen || memcmp(expected, buf, elen) != 0) {
+        fprintf(stderr, "rt2 mismatch:\n  req: %.*s\n  exp: %.*s\n  got(%zu): %.*s\n",
+                (int)rlen, req, (int)elen, expected, got, (int)got, buf);
+    }
     DD_CHECK_EQ_INT((long long)elen, (long long)got);
     DD_CHECK_MEM(expected, elen, buf, got);
 }
@@ -396,6 +404,199 @@ static int wait_sync_get(server *x, server *y, uint16_t port, const char *key,
             return 1;
     }
     return 0;
+}
+
+/* Three-server variant for chained replication. */
+static int wait_sync_get3(server *x, server *y, server *z, uint16_t port,
+                          const char *key, const char *expected, char *buf,
+                          size_t bufcap)
+{
+    size_t elen = strlen(expected);
+    int i;
+    for (i = 0; i < 500; i++) {
+        pal_socket_t t = nb_client(port);
+        char req[96];
+        size_t got = 0;
+        int iter = 0;
+        int rl = snprintf(req, sizeof(req),
+                          "*2\r\n$3\r\nGET\r\n$%zu\r\n%s\r\n", strlen(key),
+                          key);
+        DD_CHECK(elen <= bufcap);
+        DD_CHECK(rl > 0 && (size_t)rl < sizeof(req));
+        if (pal_send(t, req, (size_t)rl) != rl) {
+            pal_close(t);
+            continue;
+        }
+        while (got < elen && iter < 10000) {
+            ptrdiff_t n;
+            iter++;
+            server_run_once(x, 5);
+            server_run_once(y, 5);
+            server_run_once(z, 5);
+            n = pal_recv(t, buf + got, bufcap - got);
+            if (n > 0)
+                got += (size_t)n;
+        }
+        pal_close(t);
+        if (got == elen && memcmp(buf, expected, elen) == 0)
+            return 1;
+    }
+    return 0;
+}
+
+/* ------------------------------------------------------------------ */
+/* PSYNC fallback: an offset older than the backlog forces FULLRESYNC  */
+/* ------------------------------------------------------------------ */
+
+static void test_psync_stale_offset_fullresync(void)
+{
+    server *m, *r;
+    pal_socket_t mc, rc;
+    char buf[8192];
+    char port_str[16];
+    char req[192];
+    uint16_t mport;
+    int synced;
+    int i;
+
+    DD_CHECK_EQ_INT(0, pal_socket_init());
+    m = server_create("127.0.0.1", 0);
+    r = server_create("127.0.0.1", 0);
+    DD_CHECK(m != NULL && r != NULL);
+    /* tiny backlog: a few dozen bytes of commands evict the resume point */
+    server_set_backlog_size(m, 64);
+    mport = server_port(m);
+    mc = nb_client(mport);
+    rc = nb_client(server_port(r));
+
+    snprintf(port_str, sizeof(port_str), "%u", (unsigned)mport);
+    {
+        const char *p1 = "*3\r\n$9\r\nREPLICAOF\r\n$9\r\n127.0.0.1\r\n$";
+        snprintf(req, sizeof(req), "%s%zu\r\n%s\r\n", p1, strlen(port_str),
+                 port_str);
+        rt2(m, r, rc, req, "+OK\r\n", buf, sizeof(buf));
+    }
+    rt2(m, r, mc, "*3\r\n$3\r\nSET\r\n$2\r\nk1\r\n$2\r\nv1\r\n", "+OK\r\n",
+        buf, sizeof(buf));
+    synced = wait_sync_get(m, r, server_port(r), "k1", "$2\r\nv1\r\n", buf,
+                           sizeof(buf));
+    DD_CHECK_EQ_INT(1, synced);
+
+    /* detach, then overflow the tiny backlog on the master */
+    rt2(m, r, rc, "*3\r\n$9\r\nREPLICAOF\r\n$2\r\nNO\r\n$3\r\nONE\r\n",
+        "+OK\r\n", buf, sizeof(buf));
+    rt2(m, r, rc, "*3\r\n$3\r\nSET\r\n$5\r\nlocal\r\n$4\r\nmine\r\n",
+        "+OK\r\n", buf, sizeof(buf));
+    for (i = 0; i < 20; i++) {
+        char kbuf[8];
+        snprintf(kbuf, sizeof(kbuf), "k%d", i);
+        snprintf(req, sizeof(req),
+                 "*3\r\n$3\r\nSET\r\n$%zu\r\n%s\r\n$7\r\nvalue%02d\r\n",
+                 strlen(kbuf), kbuf, i);
+        rt2(m, r, mc, req, "+OK\r\n", buf, sizeof(buf));
+    }
+
+    /* reconnect: the resume offset is gone from the backlog -> FULLRESYNC
+     * (the replica-local key is wiped, fresh master keys arrive) */
+    {
+        const char *p1 = "*3\r\n$9\r\nREPLICAOF\r\n$9\r\n127.0.0.1\r\n$";
+        snprintf(req, sizeof(req), "%s%zu\r\n%s\r\n", p1, strlen(port_str),
+                 port_str);
+        rt2(m, r, rc, req, "+OK\r\n", buf, sizeof(buf));
+    }
+    synced = wait_sync_get(m, r, server_port(r), "k19", "$7\r\nvalue19\r\n",
+                           buf, sizeof(buf));
+    DD_CHECK_EQ_INT(1, synced);
+    rt2(m, r, rc, "*2\r\n$3\r\nGET\r\n$5\r\nlocal\r\n", "$-1\r\n", buf,
+        sizeof(buf));
+    /* k1 was overwritten by the overflow loop and arrives via FULLRESYNC */
+    rt2(m, r, rc, "*2\r\n$3\r\nGET\r\n$2\r\nk1\r\n", "$7\r\nvalue01\r\n",
+        buf, sizeof(buf));
+
+    pal_close(rc);
+    pal_close(mc);
+    server_destroy(r);
+    server_destroy(m);
+    pal_socket_cleanup();
+}
+
+/* ------------------------------------------------------------------ */
+/* chained replication: A -> B -> C propagates through the middle link */
+/* ------------------------------------------------------------------ */
+
+static void test_chained_replication(void)
+{
+    server *a, *b, *c;
+    pal_socket_t ac, bc, cc;
+    char buf[8192];
+    char port_str[16];
+    char req[192];
+    int synced;
+
+    DD_CHECK_EQ_INT(0, pal_socket_init());
+    a = server_create("127.0.0.1", 0);
+    b = server_create("127.0.0.1", 0);
+    c = server_create("127.0.0.1", 0);
+    DD_CHECK(a != NULL && b != NULL && c != NULL);
+    ac = nb_client(server_port(a));
+    bc = nb_client(server_port(b));
+    cc = nb_client(server_port(c));
+
+    /* B replicates A */
+    snprintf(port_str, sizeof(port_str), "%u", (unsigned)server_port(a));
+    {
+        const char *p1 = "*3\r\n$9\r\nREPLICAOF\r\n$9\r\n127.0.0.1\r\n$";
+        snprintf(req, sizeof(req), "%s%zu\r\n%s\r\n", p1, strlen(port_str),
+                 port_str);
+        rt2(a, b, bc, req, "+OK\r\n", buf, sizeof(buf));
+    }
+    /* C replicates B */
+    snprintf(port_str, sizeof(port_str), "%u", (unsigned)server_port(b));
+    {
+        const char *p1 = "*3\r\n$9\r\nREPLICAOF\r\n$9\r\n127.0.0.1\r\n$";
+        snprintf(req, sizeof(req), "%s%zu\r\n%s\r\n", p1, strlen(port_str),
+                 port_str);
+        rt2(b, c, cc, req, "+OK\r\n", buf, sizeof(buf));
+    }
+
+    /* write on A; it must reach C through B */
+    rt2(a, b, ac, "*3\r\n$3\r\nSET\r\n$5\r\nchain\r\n$5\r\nworks\r\n",
+        "+OK\r\n", buf, sizeof(buf));
+    synced = wait_sync_get3(a, b, c, server_port(c), "chain",
+                            "$5\r\nworks\r\n", buf, sizeof(buf));
+    DD_CHECK_EQ_INT(1, synced);
+
+    /* C reports slave role with an up link to B */
+    {
+        size_t got = 0;
+        int iter = 0;
+        DD_CHECK_EQ_INT(14, pal_send(cc, "*1\r\n$4\r\nINFO\r\n", 14));
+        while (got < sizeof(buf) - 1 && iter < 10000) {
+            ptrdiff_t n;
+            iter++;
+            server_run_once(a, 5);
+            server_run_once(b, 5);
+            server_run_once(c, 5);
+            n = pal_recv(cc, buf + got, sizeof(buf) - 1 - got);
+            if (n > 0) {
+                got += (size_t)n;
+                buf[got] = '\0';
+                if (strstr(buf, "master_link_status:up\r\n") != NULL)
+                    break;
+            }
+        }
+        buf[got] = '\0';
+        DD_CHECK(strstr(buf, "role:slave\r\n") != NULL);
+        DD_CHECK(strstr(buf, "master_link_status:up\r\n") != NULL);
+    }
+
+    pal_close(cc);
+    pal_close(bc);
+    pal_close(ac);
+    server_destroy(c);
+    server_destroy(b);
+    server_destroy(a);
+    pal_socket_cleanup();
 }
 
 static void test_replica_full_cycle(void)
