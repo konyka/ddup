@@ -104,6 +104,14 @@ target_link_libraries(bench_core PRIVATE ddup_core)
 ddup_apply_options(bench_core)
 
 # ---------------------------------------------------------------------------
+# Cluster resharding tool (redis-cli --cluster reshard style)
+# ---------------------------------------------------------------------------
+add_executable(ddup-reshard tools/ddup-reshard.c tools/reshard_client.c)
+target_link_libraries(ddup-reshard PRIVATE ddup_core)
+target_include_directories(ddup-reshard PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/tools")
+ddup_apply_options(ddup-reshard)
+
+# ---------------------------------------------------------------------------
 # Tests (TDD: every module has a test target; `ctest` or `cmake --build . --target check`)
 # ---------------------------------------------------------------------------
 enable_testing()
@@ -161,6 +169,9 @@ ddup_add_test(test_cluster_migrate tests/test_cluster_migrate.c)
 ddup_add_test(test_cluster_replica tests/test_cluster_replica.c)
 ddup_add_test(test_cluster_epoch tests/test_cluster_epoch.c)
 ddup_add_test(test_cluster_failover tests/test_cluster_failover.c)
+ddup_add_test(test_reshard tests/test_reshard.c)
+target_sources(test_reshard PRIVATE tools/reshard_client.c)
+target_include_directories(test_reshard PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/tools")
 
 if(WIN32)
     ddup_add_test(test_iocp tests/test_iocp.c)
@@ -178,7 +189,7 @@ if(DDUP_HAS_TLS)
     endif()
 endif()
 
-set(DDUP_CHECK_DEPS test_pal test_pal_thread test_pal_wakeup test_spsc test_mt_server test_cstd test_cmdid test_buf_pool test_socket test_event test_server test_arena test_resp_parser test_resp_writer test_resp3 test_rhtable test_command test_expire test_eviction test_hash test_list test_skiplist test_set test_zset test_session test_multidb test_multi test_pubsub test_config test_aof test_snapshot test_repl test_hashslot test_cluster_id test_cluster_cmds test_cluster_nodes test_cluster_bus test_cluster_slots test_dump test_migrate test_cluster_migrate test_cluster_replica test_cluster_epoch test_cluster_failover)
+set(DDUP_CHECK_DEPS test_pal test_pal_thread test_pal_wakeup test_spsc test_mt_server test_cstd test_cmdid test_buf_pool test_socket test_event test_server test_arena test_resp_parser test_resp_writer test_resp3 test_rhtable test_command test_expire test_eviction test_hash test_list test_skiplist test_set test_zset test_session test_multidb test_multi test_pubsub test_config test_aof test_snapshot test_repl test_hashslot test_cluster_id test_cluster_cmds test_cluster_nodes test_cluster_bus test_cluster_slots test_dump test_migrate test_cluster_migrate test_cluster_replica test_cluster_epoch test_cluster_failover test_reshard ddup-reshard)
 if(DDUP_HAS_TLS AND NOT WIN32)
     list(APPEND DDUP_CHECK_DEPS test_tls)
 endif()
