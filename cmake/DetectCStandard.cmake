@@ -53,8 +53,10 @@ add_compile_definitions(DDUP_C_STD=${DDUP_C_STD})
 # to compile a minimal snippet at the selected C standard.
 # ---------------------------------------------------------------------------
 
-function(_ddup_check_feature name min_std src)
-    if(DDUP_C_STD GREATER_EQUAL ${min_std})
+function(_ddup_check_feature name stds src)
+    # DDUP_C_STD stores the numeric suffix (99/11/17/23). Compare against the
+    # list of standards that are required for this feature.
+    if(DDUP_C_STD IN_LIST stds)
         check_c_source_compiles("${src}" _DDUP_HAS_C_${name})
         if(_DDUP_HAS_C_${name})
             set(DDUP_HAS_C_${name} 1 PARENT_SCOPE)
@@ -67,7 +69,7 @@ function(_ddup_check_feature name min_std src)
 endfunction()
 
 # C11 family
-_ddup_check_feature(ATOMICS 11 "
+_ddup_check_feature(ATOMICS "11;17;23" "
 #include <stdatomic.h>
 int main(void) {
     atomic_int x;
@@ -76,7 +78,7 @@ int main(void) {
     return atomic_load_explicit(&x, memory_order_relaxed);
 }")
 
-if(DDUP_C_STD GREATER_EQUAL 11)
+if(DDUP_C_STD IN_LIST "11;17;23")
     check_include_file(threads.h _DDUP_HAS_THREADS_H)
     if(_DDUP_HAS_THREADS_H)
         set(DDUP_HAS_C_THREADS 1)
@@ -87,21 +89,21 @@ else()
     set(DDUP_HAS_C_THREADS 0)
 endif()
 
-_ddup_check_feature(ALIGNAS 11 "
+_ddup_check_feature(ALIGNAS "11;17;23" "
 int main(void) {
     _Alignas(64) char buf[64];
     return (int)((unsigned long long)(void *)buf & 63U);
 }")
 
-_ddup_check_feature(STATIC_ASSERT 11 "
+_ddup_check_feature(STATIC_ASSERT "11;17;23" "
 _Static_assert(1 == 1, \"ok\");
 int main(void) { return 0; }")
 
-_ddup_check_feature(NORETURN 11 "
+_ddup_check_feature(NORETURN "11;17;23" "
 _Noreturn void f(void) { while (1) { } }
 int main(void) { (void)f; return 0; }")
 
-_ddup_check_feature(THREAD_LOCAL 11 "
+_ddup_check_feature(THREAD_LOCAL "11;17;23" "
 static _Thread_local int x = 0;
 int main(void) {
     x = 1;
@@ -109,13 +111,13 @@ int main(void) {
 }")
 
 # C23 family
-_ddup_check_feature(TYPEOF 23 "
+_ddup_check_feature(TYPEOF "23" "
 int main(void) {
     typeof(int) x = 0;
     return x;
 }")
 
-_ddup_check_feature(CONSTEXPR 23 "
+_ddup_check_feature(CONSTEXPR "23" "
 int main(void) {
     constexpr int n = 4;
     char arr[n];
@@ -123,7 +125,7 @@ int main(void) {
     return arr[0];
 }")
 
-_ddup_check_feature(STDCKDINT 23 "
+_ddup_check_feature(STDCKDINT "23" "
 #include <stdckdint.h>
 #include <stdbool.h>
 int main(void) {
@@ -133,7 +135,7 @@ int main(void) {
     return r;
 }")
 
-_ddup_check_feature(BITINT 23 "
+_ddup_check_feature(BITINT "23" "
 int main(void) {
     _BitInt(8) x = 0;
     return (int)x;

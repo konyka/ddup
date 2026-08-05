@@ -44,15 +44,18 @@
 /* POSIX-like systems share the sockets/pthread code paths. */
 #define DDUP_OS_POSIX (!DDUP_OS_WINDOWS)
 
-/* C11 atomics available (and not opted out by the implementation). */
-#if defined(DDUP_C_STD) && DDUP_C_STD >= 11 && \
-    defined(__has_include)
-#  if __has_include(<stdatomic.h>) && !defined(__STDC_NO_ATOMICS__)
-#    define DDUP_HAS_C_ATOMICS 1
-#  endif
-#endif
+/* C11 atomics available (and not opted out by the implementation).
+ * If CMake already probed and defined DDUP_HAS_C_ATOMICS, keep that value. */
 #ifndef DDUP_HAS_C_ATOMICS
-#  define DDUP_HAS_C_ATOMICS 0
+#  if defined(DDUP_C_STD) && DDUP_C_STD >= 11 && \
+      defined(__has_include)
+#    if __has_include(<stdatomic.h>) && !defined(__STDC_NO_ATOMICS__)
+#      define DDUP_HAS_C_ATOMICS 1
+#    endif
+#  endif
+#  ifndef DDUP_HAS_C_ATOMICS
+#    define DDUP_HAS_C_ATOMICS 0
+#  endif
 #endif
 
 #endif /* DDUP_PAL_PLATFORM_H */

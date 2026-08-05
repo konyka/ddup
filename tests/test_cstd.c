@@ -18,10 +18,14 @@ static void test_capability_macros_are_boolean(void)
     DD_CHECK(DDUP_HAS_C_BITINT == 0 || DDUP_HAS_C_BITINT == 1);
 }
 
+/* Compile-time assertions at file scope: some compilers warn about an unused
+ * local typedef created by the C99 fallback, so keep them at file scope. */
+ddup_static_assert(1 == 1, "trivially true");
+ddup_static_assert(sizeof(int) == 4, "int size assumption");
+
 static void test_static_assert_compiles(void)
 {
-    ddup_static_assert(1 == 1, "trivially true");
-    ddup_static_assert(sizeof(int) == 4, "int size assumption");
+    /* Static assertions are already verified at compile time above. */
 }
 
 ddup_alignas(64) static char aligned_buf[128];
