@@ -29,85 +29,8 @@
 #include "pal/pal_wakeup.h"
 #include "resp/resp_parser.h"
 #include "resp/resp_writer.h"
+#include "server/mt_spsc.h"
 #include "server/server.h"
-
-/* ------------------------------------------------------------------ */
-/* generic mutex-protected pointer queue                               */
-/* ------------------------------------------------------------------ */
-
-typedef struct qnode {
-    struct qnode *next;
-    void *ptr;
-} qnode;
-
-typedef struct mt_queue {
-    pal_mutex mu;
-    qnode *head;
-    qnode *tail;
-} mt_queue;
-
-static int mt_queue_init(mt_queue *q)
-{
-    q->head = NULL;
-    q->tail = NULL;
-    return pal_mutex_init(&q->mu);
-}
-
-static void mt_queue_destroy(mt_queue *q, void (*free_fn)(void *))
-{
-    qnode *n = q->head;
-    while (n != NULL) {
-        qnode *next = n->next;
-        if (free_fn != NULL)
-            free_fn(n->ptr);
-        free(n);
-        n = next;
-    }
-    q->head = NULL;
-    q->tail = NULL;
-    pal_mutex_destroy(&q->mu);
-}
-
-/* Push ptr. Returns 1 when the queue was empty (caller should kick the
- * consumer), 0 when it was non-empty (consumer is already awake or will
- * see the item when draining), -1 on allocation failure. */
-static int mt_queue_push(mt_queue *q, void *ptr)
-{
-    qnode *n = (qnode *)malloc(sizeof(*n));
-    int was_empty;
-    if (n == NULL)
-        return -1;
-    n->ptr = ptr;
-    n->next = NULL;
-    pal_mutex_lock(&q->mu);
-    was_empty = q->head == NULL;
-    if (q->tail != NULL)
-        q->tail->next = n;
-    else
-        q->head = n;
-    q->tail = n;
-    pal_mutex_unlock(&q->mu);
-    return was_empty ? 1 : 0;
-}
-
-static void *mt_queue_pop(mt_queue *q)
-{
-    qnode *n;
-    void *ptr;
-    pal_mutex_lock(&q->mu);
-    n = q->head;
-    if (n == NULL) {
-        pal_mutex_unlock(&q->mu);
-        return NULL;
-    }
-    q->head = n->next;
-    if (q->head == NULL)
-        q->tail = NULL;
-    pal_mutex_unlock(&q->mu);
-    ptr = n->ptr;
-    free(n);
-    return ptr;
-}
 
 /* ------------------------------------------------------------------ */
 /* routed tasks                                                        */
@@ -438,13 +361,16 @@ static int mt_classify(int nworkers, uint16_t cmd, const resp_value *argv,
     case CMD_UNLINK:
     case CMD_EXISTS:
     case CMD_SMOVE:
+    case CMD_SINTER:
+    case CMD_SUNION:
+    case CMD_SDIFF:
         return mt_multikey_target(nworkers, cmd, argv, argc);
     default:
         break;
     }
     if (mt_is_keyless(cmd))
         return MT_LOCAL;
-    return MT_PASS; /* SINTER/SUNION/SDIFF stay on the legacy path for now */
+    return MT_PASS; /* unknown commands fall through to the legacy path */
 }
 
 /* ------------------------------------------------------------------ */
@@ -457,9 +383,12 @@ struct worker {
     server *srv;
     pal_thread thread;
     pal_wakeup wakeup;
-    mt_queue accepts;     /* pal_socket_t values as void* */
-    mt_queue inbox;       /* mt_task*: commands to execute on this worker */
-    mt_queue completions; /* mt_task*: executed replies to deliver home */
+    /* SPSC rings: one per producer. inbox[h] carries tasks from home worker
+     * h; completions[t] carries executed replies from executing worker t;
+     * accepts carries fds from the acceptor thread. */
+    mt_spsc accepts;
+    mt_spsc *inbox;
+    mt_spsc *completions;
     arena exec_arena;     /* re-parse scratch for routed commands */
     uint64_t tasks_executed; /* routed tasks executed (test/observability) */
     volatile int running;
@@ -488,6 +417,17 @@ static mt_cmd_blob *mt_blob_one(const char *raw, size_t len)
     memcpy(b->raw, raw, len);
     b->len = len;
     return b;
+}
+
+/* Push a task with backpressure retry (the consumer is another thread and
+ * always makes progress); kick the consumer when it may be asleep. */
+static void mt_push_task(mt_spsc *q, mt_task *t, pal_wakeup *wake)
+{
+    int pr;
+    while ((pr = mt_spsc_push(q, t)) < 0)
+        pal_sleep_ms(1);
+    if (pr == 1)
+        (void)pal_wakeup_kick(wake);
 }
 
 /* Aggregate commands (DBSIZE sum, FLUSHDB broadcast): run the home part
@@ -545,19 +485,16 @@ static int mt_route_aggregate(worker *home, void *conn,
         blob = mt_blob_one(raw, rawlen);
         if (blob != NULL)
             t = mt_task_new(conn, home, seq, 1, blob);
-        if (t != NULL)
+        if (t != NULL) {
             t->agg = agg;
-        if (t == NULL ||
-            mt_queue_push(&home->ms->workers[i].inbox, t) < 0) {
-            if (t != NULL)
-                mt_task_free(t);
-            else if (blob != NULL)
+            server_conn_mt_inc(conn);
+            mt_push_task(&home->ms->workers[i].inbox[home->id], t,
+                         &home->ms->workers[i].wakeup);
+        } else {
+            if (blob != NULL)
                 mt_blobs_free(blob, 1);
             agg->pending--;
-            continue;
         }
-        server_conn_mt_inc(conn);
-        (void)pal_wakeup_kick(&home->ms->workers[i].wakeup);
     }
     if (agg->pending == 0)
         mt_agg_finish(home->srv, conn, st, agg);
@@ -569,7 +506,6 @@ static void mt_batch_flush(worker *home, void *conn, mt_conn_state *st)
 {
     int target = st->batch_target;
     mt_task *t;
-    int pr;
     if (st->batch_n == 0)
         return;
     t = mt_task_new(conn, home, st->batch_seq, (uint32_t)st->batch_n,
@@ -578,13 +514,8 @@ static void mt_batch_flush(worker *home, void *conn, mt_conn_state *st)
         mt_blobs_free(st->batch, st->batch_n);
     } else {
         server_conn_mt_inc(conn);
-        pr = mt_queue_push(&home->ms->workers[target].inbox, t);
-        if (pr < 0) {
-            server_conn_mt_dec(home->srv, conn);
-            mt_task_free(t);
-        } else if (pr == 1) {
-            (void)pal_wakeup_kick(&home->ms->workers[target].wakeup);
-        }
+        mt_push_task(&home->ms->workers[target].inbox[home->id], t,
+                     &home->ms->workers[target].wakeup);
     }
     st->batch = NULL;
     st->batch_n = 0;
@@ -724,11 +655,12 @@ static int mt_route(void *ctx, void *conn, session *sess,
 static void worker_on_wakeup(void *ctx)
 {
     worker *w = (worker *)ctx;
+    int pi;
     (void)pal_wakeup_drain(&w->wakeup);
 
     /* 1. adopt accepted fds */
     for (;;) {
-        void *p = mt_queue_pop(&w->accepts);
+        void *p = mt_spsc_pop(&w->accepts);
         pal_socket_t fd;
         if (p == NULL)
             break;
@@ -738,72 +670,70 @@ static void worker_on_wakeup(void *ctx)
 
     /* 2. execute commands routed to this worker (merged tasks are re-parsed
      * per command into the worker's own arena: no argv deep copies) */
-    for (;;) {
-        mt_task *t = (mt_task *)mt_queue_pop(&w->inbox);
-        uint32_t ci;
-        if (t == NULL)
-            break;
-        for (ci = 0; ci < t->span; ci++) {
-            resp_value v;
-            ptrdiff_t used;
-            arena_reset(&w->exec_arena);
-            used = resp_parse(t->cmds[ci].raw, t->cmds[ci].len, &v,
-                              &w->exec_arena);
-            if (used != (ptrdiff_t)t->cmds[ci].len ||
-                v.type != RESP_ARRAY || v.is_null) {
-                resp_write_error(&t->reply, "ERR Protocol error", 18);
-                continue;
+    for (pi = 0; pi < w->ms->nworkers; pi++) {
+        for (;;) {
+            mt_task *t = (mt_task *)mt_spsc_pop(&w->inbox[pi]);
+            uint32_t ci;
+            if (t == NULL)
+                break;
+            for (ci = 0; ci < t->span; ci++) {
+                resp_value v;
+                ptrdiff_t used;
+                arena_reset(&w->exec_arena);
+                used = resp_parse(t->cmds[ci].raw, t->cmds[ci].len, &v,
+                                  &w->exec_arena);
+                if (used != (ptrdiff_t)t->cmds[ci].len ||
+                    v.type != RESP_ARRAY || v.is_null) {
+                    resp_write_error(&t->reply, "ERR Protocol error", 18);
+                    continue;
+                }
+                command_execute_at(server_db(w->srv), v.items, v.count,
+                                   &t->reply, pal_wall_ms());
             }
-            command_execute_at(server_db(w->srv), v.items, v.count,
-                               &t->reply, pal_wall_ms());
-        }
-        w->tasks_executed++;
-        {
-            int pr = mt_queue_push(&t->home->completions, t);
-            if (pr < 0) {
-                mt_task_free(t); /* OOM: drop the reply (conn times out) */
-            } else if (pr == 1) {
-                (void)pal_wakeup_kick(&t->home->wakeup);
-            }
+            w->tasks_executed++;
+            mt_push_task(&t->home->completions[w->id], t,
+                         &t->home->wakeup);
         }
     }
 
     /* 3. deliver completed replies (home side) */
-    for (;;) {
-        mt_task *t = (mt_task *)mt_queue_pop(&w->completions);
-        void *conn;
-        mt_conn_state *st;
-        if (t == NULL)
-            break;
-        conn = t->conn;
-        st = (mt_conn_state *)server_conn_mt_state(conn);
-        if (t->agg != NULL) {
-            /* broadcast part: accumulate and finish when complete */
-            mt_agg *agg = t->agg;
-            mt_agg_accumulate(agg, &t->reply);
-            mt_task_free(t);
-            agg->pending--;
-            if (agg->pending == 0) {
-                if (st != NULL)
-                    mt_agg_finish(w->srv, conn, st, agg);
-                else
-                    free(agg);
+    for (pi = 0; pi < w->ms->nworkers; pi++) {
+        for (;;) {
+            mt_task *t = (mt_task *)mt_spsc_pop(&w->completions[pi]);
+            void *conn;
+            mt_conn_state *st;
+            if (t == NULL)
+                break;
+            conn = t->conn;
+            st = (mt_conn_state *)server_conn_mt_state(conn);
+            if (t->agg != NULL) {
+                /* broadcast part: accumulate and finish when complete */
+                mt_agg *agg = t->agg;
+                mt_agg_accumulate(agg, &t->reply);
+                mt_task_free(t);
+                agg->pending--;
+                if (agg->pending == 0) {
+                    if (st != NULL)
+                        mt_agg_finish(w->srv, conn, st, agg);
+                    else
+                        free(agg);
+                }
+                server_conn_mt_dec(w->srv, conn);
+                continue;
+            }
+            if (st != NULL) {
+                mt_reorder_insert(st, t);
+                if (server_conn_mt_is_zombie(conn)) {
+                    mt_drain_ready(w->srv, conn, st, 0);
+                } else {
+                    mt_drain_ready(w->srv, conn, st, 1);
+                    (void)server_conn_flush(w->srv, conn);
+                }
+            } else {
+                mt_task_free(t);
             }
             server_conn_mt_dec(w->srv, conn);
-            continue;
         }
-        if (st != NULL) {
-            mt_reorder_insert(st, t);
-            if (server_conn_mt_is_zombie(conn)) {
-                mt_drain_ready(w->srv, conn, st, 0);
-            } else {
-                mt_drain_ready(w->srv, conn, st, 1);
-                (void)server_conn_flush(w->srv, conn);
-            }
-        } else {
-            mt_task_free(t);
-        }
-        server_conn_mt_dec(w->srv, conn);
     }
 }
 
@@ -841,8 +771,8 @@ static void *acceptor_main(void *arg)
                 w = &ms->workers[rr % ms->nworkers];
                 rr++;
                 {
-                    int pr = mt_queue_push(&w->accepts,
-                                           (void *)(uintptr_t)fd);
+                    int pr = mt_spsc_push(&w->accepts,
+                                          (void *)(uintptr_t)fd);
                     if (pr < 0) {
                         pal_close(fd);
                         continue;
@@ -882,16 +812,27 @@ mt_server *mt_server_create(const char *host, uint16_t port, int nworkers)
     }
     for (i = 0; i < nworkers; i++) {
         worker *w = &ms->workers[i];
+        int j;
         w->id = i;
         w->ms = ms;
         w->srv = server_create_ex("127.0.0.1", 0, SERVER_BACKEND_SELECT);
-        if (w->srv == NULL || mt_queue_init(&w->accepts) != 0 ||
-            mt_queue_init(&w->inbox) != 0 ||
-            mt_queue_init(&w->completions) != 0 ||
+        w->inbox = (mt_spsc *)calloc((size_t)nworkers, sizeof(mt_spsc));
+        w->completions =
+            (mt_spsc *)calloc((size_t)nworkers, sizeof(mt_spsc));
+        if (w->srv == NULL || w->inbox == NULL || w->completions == NULL ||
+            mt_spsc_init(&w->accepts, 256) != 0 ||
             pal_wakeup_create(&w->wakeup) != 0) {
             ms->nworkers = i; /* destroy only initialized workers */
             mt_server_destroy(ms);
             return NULL;
+        }
+        for (j = 0; j < nworkers; j++) {
+            if (mt_spsc_init(&w->inbox[j], 1024) != 0 ||
+                mt_spsc_init(&w->completions[j], 1024) != 0) {
+                ms->nworkers = i + 1;
+                mt_server_destroy(ms);
+                return NULL;
+            }
         }
         arena_init(&w->exec_arena, 4096);
         server_close_listener(w->srv);
@@ -962,14 +903,31 @@ void mt_server_destroy(mt_server *ms)
     pal_close(ms->listen_fd);
     for (i = 0; i < ms->nworkers; i++) {
         worker *w = &ms->workers[i];
-        if (w->srv != NULL) {
-            mt_queue_destroy(&w->accepts, NULL);
-            mt_queue_destroy(&w->inbox, mt_task_free);
-            mt_queue_destroy(&w->completions, mt_task_free);
-            pal_wakeup_destroy(&w->wakeup);
-            arena_destroy(&w->exec_arena);
-            server_destroy(w->srv);
+        if (w->srv == NULL)
+            continue;
+        if (w->inbox != NULL) {
+            int j;
+            void *p;
+            for (j = 0; j < ms->nworkers; j++) {
+                while ((p = mt_spsc_pop(&w->inbox[j])) != NULL)
+                    mt_task_free(p);
+                mt_spsc_destroy(&w->inbox[j]);
+                while ((p = mt_spsc_pop(&w->completions[j])) != NULL)
+                    mt_task_free(p);
+                mt_spsc_destroy(&w->completions[j]);
+            }
+            free(w->inbox);
+            free(w->completions);
         }
+        {
+            void *p;
+            while ((p = mt_spsc_pop(&w->accepts)) != NULL)
+                pal_close((pal_socket_t)(uintptr_t)p);
+            mt_spsc_destroy(&w->accepts);
+        }
+        pal_wakeup_destroy(&w->wakeup);
+        arena_destroy(&w->exec_arena);
+        server_destroy(w->srv);
     }
     free(ms->workers);
     free(ms);
