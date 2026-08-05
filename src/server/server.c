@@ -746,6 +746,12 @@ db *server_db(server *s)
     return &s->db;
 }
 
+void server_aof_log_cmd(server *s, const resp_value *argv, size_t argc)
+{
+    if (s->aof != NULL)
+        aof_log_cmd(s->aof, argv, argc);
+}
+
 /* Start a TLS listener alongside the plain one (port 0 = ephemeral).
  * Returns 0 on success; -1 when TLS is unavailable (stub build) or the
  * cert/key/listen setup failed. */

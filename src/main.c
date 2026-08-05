@@ -87,6 +87,27 @@ int main(int argc, char **argv)
             pal_socket_cleanup();
             return 1;
         }
+        /* per-worker persistence (worker-<id>-<file> under dir) */
+        if (cfg.appendonly) {
+            if (mt_server_enable_aof(ms, cfg.dir,
+                                     cfg.appendfilename) != 0) {
+                fprintf(stderr, "failed to open per-worker AOF in '%s'\n",
+                        cfg.dir);
+                mt_server_destroy(ms);
+                pal_socket_cleanup();
+                return 1;
+            }
+            printf("AOF enabled (per worker): %s/worker-*-%s\n", cfg.dir,
+                   cfg.appendfilename);
+        } else {
+            if (mt_server_enable_snapshots(ms, cfg.dir, cfg.dbfilename,
+                                           cfg.save_sec) != 0) {
+                fprintf(stderr, "failed to load per-worker snapshot\n");
+                mt_server_destroy(ms);
+                pal_socket_cleanup();
+                return 1;
+            }
+        }
         if (mt_server_start(ms) != 0) {
             fprintf(stderr, "failed to start %d io threads\n",
                     cfg.io_threads);

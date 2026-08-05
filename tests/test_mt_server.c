@@ -9,6 +9,7 @@
 #include <string.h>
 
 #include "core/hashslot.h"
+#include "pal/pal_file.h"
 #include "pal/pal_socket.h"
 #include "pal/pal_time.h"
 #include "server/mt_server.h"
@@ -749,6 +750,138 @@ static void test_pubsub_conn_close_unsubscribes(void)
     pal_socket_cleanup();
 }
 
+static void test_aof_persistence_mt(void)
+{
+    mt_server *ms;
+    pal_socket_t a;
+    char k0[32], k1[32];
+    char req[192];
+
+    DD_CHECK_EQ_INT(0, pal_socket_init());
+    pick_key_for_worker(0, 2, k0, sizeof(k0));
+    pick_key_for_worker(1, 2, k1, sizeof(k1));
+
+    (void)pal_file_unlink("./worker-0-mttest.aof");
+    (void)pal_file_unlink("./worker-1-mttest.aof");
+
+    ms = mt_server_create("127.0.0.1", 0, 2);
+    DD_CHECK(ms != NULL);
+    DD_CHECK_EQ_INT(0, mt_server_enable_aof(ms, ".", "mttest.aof"));
+    DD_CHECK_EQ_INT(0, mt_server_start(ms));
+    a = connect_client(mt_server_port(ms));
+
+    /* one local write, one routed write */
+    snprintf(req, sizeof(req), "*3\r\n$3\r\nSET\r\n$%zu\r\n%s\r\n$2\r\nv0\r\n",
+             strlen(k0), k0);
+    roundtrip(a, req, "+OK\r\n");
+    snprintf(req, sizeof(req), "*3\r\n$3\r\nSET\r\n$%zu\r\n%s\r\n$2\r\nv1\r\n",
+             strlen(k1), k1);
+    roundtrip(a, req, "+OK\r\n");
+
+    pal_close(a);
+    mt_server_stop(ms);
+    mt_server_destroy(ms);
+
+    DD_CHECK(pal_file_exists("./worker-0-mttest.aof"));
+    DD_CHECK(pal_file_exists("./worker-1-mttest.aof"));
+
+    /* restart: the AOF is replayed per worker */
+    ms = mt_server_create("127.0.0.1", 0, 2);
+    DD_CHECK(ms != NULL);
+    DD_CHECK_EQ_INT(0, mt_server_enable_aof(ms, ".", "mttest.aof"));
+    DD_CHECK_EQ_INT(0, mt_server_start(ms));
+    a = connect_client(mt_server_port(ms));
+    snprintf(req, sizeof(req), "*2\r\n$3\r\nGET\r\n$%zu\r\n%s\r\n",
+             strlen(k0), k0);
+    roundtrip(a, req, "$2\r\nv0\r\n");
+    snprintf(req, sizeof(req), "*2\r\n$3\r\nGET\r\n$%zu\r\n%s\r\n",
+             strlen(k1), k1);
+    roundtrip(a, req, "$2\r\nv1\r\n");
+
+    pal_close(a);
+    mt_server_stop(ms);
+    mt_server_destroy(ms);
+    (void)pal_file_unlink("./worker-0-mttest.aof");
+    (void)pal_file_unlink("./worker-1-mttest.aof");
+    pal_socket_cleanup();
+}
+
+static void test_snapshot_mt(void)
+{
+    mt_server *ms;
+    pal_socket_t a;
+    char k0[32], k1[32];
+    char req[192];
+    char buf[32];
+    size_t got;
+
+    DD_CHECK_EQ_INT(0, pal_socket_init());
+    pick_key_for_worker(0, 2, k0, sizeof(k0));
+    pick_key_for_worker(1, 2, k1, sizeof(k1));
+
+    (void)pal_file_unlink("./worker-0-mttest.ddr");
+    (void)pal_file_unlink("./worker-1-mttest.ddr");
+
+    ms = mt_server_create("127.0.0.1", 0, 2);
+    DD_CHECK(ms != NULL);
+    DD_CHECK_EQ_INT(0,
+                    mt_server_enable_snapshots(ms, ".", "mttest.ddr", 0));
+    DD_CHECK_EQ_INT(0, mt_server_start(ms));
+    a = connect_client(mt_server_port(ms));
+
+    snprintf(req, sizeof(req), "*3\r\n$3\r\nSET\r\n$%zu\r\n%s\r\n$2\r\nv0\r\n",
+             strlen(k0), k0);
+    roundtrip(a, req, "+OK\r\n");
+    snprintf(req, sizeof(req), "*3\r\n$3\r\nSET\r\n$%zu\r\n%s\r\n$2\r\nv1\r\n",
+             strlen(k1), k1);
+    roundtrip(a, req, "+OK\r\n");
+
+    roundtrip(a, "*1\r\n$4\r\nSAVE\r\n", "+OK\r\n");
+    /* LASTSAVE aggregates the workers' save times */
+    {
+        size_t sent = 0;
+        const char *ls = "*1\r\n$8\r\nLASTSAVE\r\n";
+        while (sent < strlen(ls)) {
+            ptrdiff_t n = pal_send(a, ls + sent, strlen(ls) - sent);
+            if (n > 0)
+                sent += (size_t)n;
+        }
+        got = recv_deadline(a, buf, sizeof(buf) - 1, 3000);
+        DD_CHECK(got >= 4);
+        buf[got] = '\0';
+        DD_CHECK(buf[0] == ':');
+        DD_CHECK(memcmp(buf, ":0\r\n", 4) != 0);
+    }
+
+    pal_close(a);
+    mt_server_stop(ms);
+    mt_server_destroy(ms);
+
+    DD_CHECK(pal_file_exists("./worker-0-mttest.ddr"));
+    DD_CHECK(pal_file_exists("./worker-1-mttest.ddr"));
+
+    /* restart: snapshots are loaded per worker */
+    ms = mt_server_create("127.0.0.1", 0, 2);
+    DD_CHECK(ms != NULL);
+    DD_CHECK_EQ_INT(0,
+                    mt_server_enable_snapshots(ms, ".", "mttest.ddr", 0));
+    DD_CHECK_EQ_INT(0, mt_server_start(ms));
+    a = connect_client(mt_server_port(ms));
+    snprintf(req, sizeof(req), "*2\r\n$3\r\nGET\r\n$%zu\r\n%s\r\n",
+             strlen(k0), k0);
+    roundtrip(a, req, "$2\r\nv0\r\n");
+    snprintf(req, sizeof(req), "*2\r\n$3\r\nGET\r\n$%zu\r\n%s\r\n",
+             strlen(k1), k1);
+    roundtrip(a, req, "$2\r\nv1\r\n");
+
+    pal_close(a);
+    mt_server_stop(ms);
+    mt_server_destroy(ms);
+    (void)pal_file_unlink("./worker-0-mttest.ddr");
+    (void)pal_file_unlink("./worker-1-mttest.ddr");
+    pal_socket_cleanup();
+}
+
 static void test_same_target_pipeline_merges_into_one_task(void)
 {
     mt_server *ms;
@@ -828,6 +961,8 @@ int main(void)
     DD_RUN(test_discard);
     DD_RUN(test_watch_aborts_exec_on_change);
     DD_RUN(test_watch_routed_and_unwatch);
+    DD_RUN(test_aof_persistence_mt);
+    DD_RUN(test_snapshot_mt);
     DD_RUN(test_same_target_pipeline_merges_into_one_task);
     DD_RUN(test_many_connections_across_workers);
     return DD_TEST_SUMMARY();

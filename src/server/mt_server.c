@@ -24,6 +24,7 @@
 #include "core/hashslot.h"
 #include "core/session.h"
 #include "pal/pal_event.h"
+#include "pal/pal_file.h"
 #include "pal/pal_socket.h"
 #include "pal/pal_thread.h"
 #include "pal/pal_time.h"
@@ -127,6 +128,10 @@ struct worker {
     size_t zombie_cap;
     /* pub/sub channel registry (channels owned by this worker) */
     mt_sub_entry *subs;
+    /* per-worker persistence paths (server stores the pointer, not a copy,
+     * so these must outlive the worker) */
+    char aof_path[1088];
+    char snap_path[1088];
     volatile int running;
 };
 
@@ -148,8 +153,9 @@ struct mt_agg {
     worker *home;
     uint64_t seq;
     uint16_t cmd;
-    int pending;   /* parts still awaited */
-    long long sum; /* DBSIZE accumulation */
+    int pending;    /* parts still awaited */
+    long long sum;  /* DBSIZE sum / LASTSAVE max */
+    int err;        /* any part replied with an error */
 };
 
 /* Per-conn routing state (stored via server_conn_set_mt_state). */
@@ -533,10 +539,18 @@ static void mt_state_free_cb(void *ctx, void *ptr)
 /* Accumulate one part of a broadcast reply (home thread only). */
 static void mt_agg_accumulate(mt_agg *agg, const resp_buf *part)
 {
-    if (agg->cmd == CMD_DBSIZE && part->data != NULL && part->len > 2 &&
-        part->data[0] == ':')
-        agg->sum += strtoll(part->data + 1, NULL, 10);
-    /* FLUSHDB parts are "+OK"; nothing to accumulate. */
+    if (part->data != NULL && part->len > 0) {
+        if (part->data[0] == '-')
+            agg->err = 1;
+        else if (part->data[0] == ':' && part->len > 2) {
+            long long v = strtoll(part->data + 1, NULL, 10);
+            if (agg->cmd == CMD_DBSIZE)
+                agg->sum += v;
+            else if (agg->cmd == CMD_LASTSAVE && v > agg->sum)
+                agg->sum = v;
+        }
+    }
+    /* FLUSHDB/SAVE parts are "+OK" (or an error, tracked above). */
 }
 
 /* All parts arrived: build the aggregated reply and queue it in pipeline
@@ -546,7 +560,10 @@ static void mt_agg_finish(server *srv, void *conn, mt_conn_state *st,
 {
     mt_task *fin = mt_task_new(conn, agg->home, agg->seq, 1, 0, NULL);
     if (fin != NULL) {
-        if (agg->cmd == CMD_DBSIZE)
+        if (agg->err)
+            resp_write_error(&fin->reply,
+                             "ERR command failed on a worker", 29);
+        else if (agg->cmd == CMD_DBSIZE || agg->cmd == CMD_LASTSAVE)
             resp_write_integer(&fin->reply, agg->sum);
         else
             resp_write_simple_string(&fin->reply, "OK", 2);
@@ -576,8 +593,6 @@ static int mt_is_blocked(uint16_t cmd)
     case CMD_SHUTDOWN:
     case CMD_SYNC:
     case CMD_REPLICAOF:
-    case CMD_SAVE:
-    case CMD_LASTSAVE:
     case CMD_CLUSTER:
     case CMD_MIGRATE:
     case CMD_ASKING:
@@ -953,11 +968,13 @@ static void mt_mq_clear(mt_conn_state *st)
     st->mq_cap = 0;
 }
 
-/* Execute an EXEC bundle on db d: validate watches, then replay every
- * queued command, packing the replies into a RESP array. Watch references
- * are released on the owner (all entries map to this worker). */
-static void mt_exec_on_db(db *d, mt_task *t, arena *ar)
+/* Execute an EXEC bundle on the given worker's db: validate watches, then
+ * replay every queued command, packing the replies into a RESP array.
+ * Watch references are released on the owner (all entries map to this
+ * worker); applied commands are logged to the worker's own AOF. */
+static void mt_exec_on_db(server *srv, mt_task *t, arena *ar)
 {
+    db *d = server_db(srv);
     size_t i;
     int aborted = 0;
     for (i = 0; i < t->nexec_watches; i++) {
@@ -983,13 +1000,18 @@ static void mt_exec_on_db(db *d, mt_task *t, arena *ar)
     for (i = 0; i < t->ncmds; i++) {
         resp_value v;
         ptrdiff_t used;
+        uint64_t dirty_before;
         arena_reset(ar);
         used = resp_parse(t->cmds[i].raw, t->cmds[i].len, &v, ar);
         if (used != (ptrdiff_t)t->cmds[i].len || v.type != RESP_ARRAY) {
             resp_write_error(&t->reply, "ERR Protocol error", 18);
             continue;
         }
+        dirty_before = d->dirty;
         command_execute_at(d, v.items, v.count, &t->reply, pal_wall_ms());
+        /* EXEC logs the applied commands individually (no MULTI wrapper) */
+        if (d->dirty != dirty_before)
+            server_aof_log_cmd(srv, v.items, v.count);
     }
 }
 
@@ -1150,7 +1172,7 @@ static int mt_txn_exec(worker *home, void *conn, mt_conn_state *st,
     st->in_multi = 0;
 
     if (target == home->id) {
-        mt_exec_on_db(server_db(home->srv), t, &home->exec_arena);
+        mt_exec_on_db(home->srv, t, &home->exec_arena);
         mt_reorder_insert(st, t);
         mt_drain_ready(home->srv, &home->exec_arena, conn, st, 1);
         return 1;
@@ -1486,7 +1508,8 @@ static int mt_route(void *ctx, void *conn, session *sess,
                                 seq, out);
     }
 
-    if (cmd == CMD_DBSIZE || cmd == CMD_FLUSHDB) {
+    if (cmd == CMD_DBSIZE || cmd == CMD_FLUSHDB || cmd == CMD_SAVE ||
+        cmd == CMD_LASTSAVE) {
         mt_batch_flush(home, conn, st);
         return mt_route_aggregate(home, conn, argv, argc, raw, rawlen, cmd);
     }
@@ -1655,11 +1678,13 @@ static void worker_on_wakeup(void *ctx)
                 }
                 resp_write_simple_string(&t->reply, "OK", 2);
             } else if (t->kind == MT_TASK_EXEC) {
-                mt_exec_on_db(server_db(w->srv), t, &w->exec_arena);
+                mt_exec_on_db(w->srv, t, &w->exec_arena);
             } else {
                 for (ci = 0; ci < t->ncmds; ci++) {
                     resp_value v;
                     ptrdiff_t used;
+                    uint64_t dirty_before;
+                    db *d = server_db(w->srv);
                     arena_reset(&w->exec_arena);
                     used = resp_parse(t->cmds[ci].raw, t->cmds[ci].len, &v,
                                       &w->exec_arena);
@@ -1669,8 +1694,13 @@ static void worker_on_wakeup(void *ctx)
                                          18);
                         continue;
                     }
-                    command_execute_at(server_db(w->srv), v.items, v.count,
-                                       &t->reply, pal_wall_ms());
+                    dirty_before = d->dirty;
+                    command_execute_at(d, v.items, v.count, &t->reply,
+                                       pal_wall_ms());
+                    /* sessionless path: log applied mutations to the
+                     * worker's own AOF */
+                    if (d->dirty != dirty_before)
+                        server_aof_log_cmd(w->srv, v.items, v.count);
                 }
             }
             w->tasks_executed++;
@@ -1871,6 +1901,37 @@ uint64_t mt_server_tasks_executed(const mt_server *ms)
     for (i = 0; i < ms->nworkers; i++)
         total += ms->workers[i].tasks_executed;
     return total;
+}
+
+int mt_server_enable_aof(mt_server *ms, const char *dir,
+                         const char *appendfilename)
+{
+    int i;
+    for (i = 0; i < ms->nworkers; i++) {
+        worker *w = &ms->workers[i];
+        snprintf(w->aof_path, sizeof(w->aof_path), "%s/worker-%d-%s", dir,
+                 w->id, appendfilename);
+        if (server_enable_aof(w->srv, w->aof_path) != 0)
+            return -1;
+    }
+    return 0;
+}
+
+int mt_server_enable_snapshots(mt_server *ms, const char *dir,
+                               const char *dbfilename, int save_sec)
+{
+    int i;
+    for (i = 0; i < ms->nworkers; i++) {
+        worker *w = &ms->workers[i];
+        snprintf(w->snap_path, sizeof(w->snap_path), "%s/worker-%d-%s",
+                 dir, w->id, dbfilename);
+        server_set_snapshot_path(w->srv, w->snap_path);
+        if (pal_file_exists(w->snap_path) &&
+            server_load_snapshot(w->srv) != 0)
+            return -1;
+        server_set_save_interval(w->srv, save_sec);
+    }
+    return 0;
 }
 
 int mt_server_start(mt_server *ms)

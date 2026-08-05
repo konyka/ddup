@@ -22,6 +22,15 @@ uint16_t mt_server_port(const mt_server *ms);
 /* Total routed tasks executed across all workers (test/observability). */
 uint64_t mt_server_tasks_executed(const mt_server *ms);
 
+/* Per-worker persistence: each worker owns
+ * "<dir>/worker-<id>-<filename>". enable_aof replays the file when it
+ * exists; enable_snapshots loads existing snapshots and arms the save
+ * interval (0 = manual SAVE only). Return 0 on success. */
+int mt_server_enable_aof(mt_server *ms, const char *dir,
+                         const char *appendfilename);
+int mt_server_enable_snapshots(mt_server *ms, const char *dir,
+                               const char *dbfilename, int save_sec);
+
 /* Spawn the acceptor and worker threads. Returns 0 on success. */
 int mt_server_start(mt_server *ms);
 

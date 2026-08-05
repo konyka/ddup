@@ -42,18 +42,23 @@ static void test_io_threads(void)
     DD_CHECK_EQ_INT(-1, config_apply(&cfg, "io-threads", "0"));
     DD_CHECK_EQ_INT(-1, config_apply(&cfg, "io-threads", "abc"));
 
-    /* mt mode conflicts with not-yet-supported subsystems */
+    /* persistence is supported in mt mode (per-worker files); cluster,
+     * TLS and replication still conflict */
     config_init(&cfg);
     DD_CHECK_EQ_INT(0, config_apply(&cfg, "io-threads", "2"));
-    DD_CHECK_EQ_INT(0, config_validate(&cfg, err, sizeof(err)));
     DD_CHECK_EQ_INT(0, config_apply(&cfg, "appendonly", "yes"));
-    DD_CHECK_EQ_INT(-1, config_validate(&cfg, err, sizeof(err)));
-    DD_CHECK(strstr(err, "io-threads") != NULL);
+    DD_CHECK_EQ_INT(0, config_validate(&cfg, err, sizeof(err)));
+
+    config_init(&cfg);
+    DD_CHECK_EQ_INT(0, config_apply(&cfg, "io-threads", "2"));
+    DD_CHECK_EQ_INT(0, config_apply(&cfg, "save", "60"));
+    DD_CHECK_EQ_INT(0, config_validate(&cfg, err, sizeof(err)));
 
     config_init(&cfg);
     DD_CHECK_EQ_INT(0, config_apply(&cfg, "io-threads", "2"));
     DD_CHECK_EQ_INT(0, config_apply(&cfg, "cluster-enabled", "yes"));
     DD_CHECK_EQ_INT(-1, config_validate(&cfg, err, sizeof(err)));
+    DD_CHECK(strstr(err, "io-threads") != NULL);
 }
 
 static void test_file_parse(void)
