@@ -178,6 +178,7 @@ struct mt_agg {
     long long sum;  /* DBSIZE sum / LASTSAVE max */
     int err;        /* any part replied with an error */
     int db_index;   /* logical db for DBSIZE/FLUSHDB (SELECT-aware) */
+    info_stats *stats; /* INFO: summed machine-format parts (or NULL) */
 };
 
 /* Per-conn routing state (stored via server_conn_set_mt_state). */
@@ -566,11 +567,88 @@ static void mt_state_free_cb(void *ctx, void *ptr)
 }
 
 /* Accumulate one part of a broadcast reply (home thread only). */
+/* Machine-format INFO request fanned out to every worker (internal). */
+#define MT_INFO_STATS_REQ "*2\r\n$4\r\nINFO\r\n$9\r\n__STATS__\r\n"
+
+/* Parse one "k:v" line of an INFO __STATS__ part into the running sum. */
+static void mt_agg_info_line(mt_agg *agg, const char *p, size_t n)
+{
+    info_stats *st = agg->stats;
+    if (n >= 12 && memcmp(p, "used_memory:", 12) == 0) {
+        st->used_memory += strtoull(p + 12, NULL, 10);
+    } else if (n >= 13 && memcmp(p, "expired_keys:", 13) == 0) {
+        st->expired_keys += strtoull(p + 13, NULL, 10);
+    } else if (n >= 13 && memcmp(p, "evicted_keys:", 13) == 0) {
+        st->evicted_keys += strtoull(p + 13, NULL, 10);
+    } else if (n >= 7 && memcmp(p, "dbsize:", 7) == 0) {
+        st->dbsize += strtoull(p + 7, NULL, 10);
+    } else if (n >= 5 && memcmp(p, "ndbs:", 5) == 0) {
+        int v = (int)strtol(p + 5, NULL, 10);
+        if (v > INFO_STATS_MAX_DBS)
+            v = INFO_STATS_MAX_DBS;
+        if (v > st->ndbs)
+            st->ndbs = v;
+    } else if (n >= 4 && memcmp(p, "db:", 3) == 0) {
+        char *q = NULL;
+        unsigned long i = strtoul(p + 3, &q, 10);
+        if (q != NULL && *q == ':' && i < INFO_STATS_MAX_DBS) {
+            unsigned long long keys = strtoull(q + 1, &q, 10);
+            if (q != NULL && *q == ':') {
+                st->db_keys[i] += keys;
+                st->db_expires[i] += strtoull(q + 1, NULL, 10);
+            }
+        }
+    } else if (n >= 4 && memcmp(p, "c:", 2) == 0) {
+        char *q = NULL;
+        unsigned long id = strtoul(p + 2, &q, 10);
+        if (q != NULL && *q == ':' && id >= 1 && id <= CMD_MAX) {
+            unsigned long long calls = strtoull(q + 1, &q, 10);
+            if (q != NULL && *q == ':') {
+                st->cmd_calls[id] += calls;
+                st->cmd_usecs[id] += strtoull(q + 1, NULL, 10);
+            }
+        }
+    }
+}
+
+/* Accumulate one worker's INFO __STATS__ part (a bulk string of "k:v"
+ * lines) into the running sum (home thread only). */
+static void mt_agg_info_accumulate(mt_agg *agg, const char *data, size_t len)
+{
+    const char *p = data;
+    const char *end = data + len;
+    const char *eol;
+    if (len == 0 || p[0] != '$') {
+        agg->err = 1;
+        return;
+    }
+    eol = (const char *)memchr(p, '\n', len);
+    if (eol == NULL) {
+        agg->err = 1;
+        return;
+    }
+    p = eol + 1;
+    while (p < end) {
+        const char *nl = (const char *)memchr(p, '\n', (size_t)(end - p));
+        size_t linelen =
+            nl != NULL ? (size_t)(nl - p) : (size_t)(end - p);
+        if (linelen > 0 && p[linelen - 1] == '\r')
+            linelen--;
+        if (linelen > 0)
+            mt_agg_info_line(agg, p, linelen);
+        if (nl == NULL)
+            break;
+        p = nl + 1;
+    }
+}
+
 static void mt_agg_accumulate(mt_agg *agg, const resp_buf *part)
 {
     if (part->data != NULL && part->len > 0) {
         if (part->data[0] == '-')
             agg->err = 1;
+        else if (agg->cmd == CMD_INFO && agg->stats != NULL)
+            mt_agg_info_accumulate(agg, part->data, part->len);
         else if (part->data[0] == ':' && part->len > 2) {
             long long v = strtoll(part->data + 1, NULL, 10);
             if (agg->cmd == CMD_DBSIZE)
@@ -592,6 +670,9 @@ static void mt_agg_finish(server *srv, void *conn, mt_conn_state *st,
         if (agg->err)
             resp_write_error(&fin->reply,
                              "ERR command failed on a worker", 29);
+        else if (agg->cmd == CMD_INFO)
+            command_info_render(server_db_at(agg->home->srv, agg->db_index),
+                                NULL, agg->stats, &fin->reply);
         else if (agg->cmd == CMD_DBSIZE || agg->cmd == CMD_LASTSAVE)
             resp_write_integer(&fin->reply, agg->sum);
         else
@@ -604,6 +685,7 @@ static void mt_agg_finish(server *srv, void *conn, mt_conn_state *st,
             (void)server_conn_flush(srv, conn);
         }
     }
+    free(agg->stats);
     free(agg);
 }
 
@@ -705,7 +787,6 @@ static int mt_is_keyless(uint16_t cmd)
     case CMD_AUTH:
     case CMD_SELECT:
     case CMD_CONFIG:
-    case CMD_INFO:
     case CMD_DBSIZE:
     case CMD_FLUSHDB:
     case CMD_QUIT:
@@ -846,6 +927,29 @@ static void mt_swapdb_exec(worker *w, int log_db_index, const resp_value *v,
     resp_write_simple_string(dst, "OK", 2);
 }
 
+/* Execute INFO __STATS__ on this worker with a stack session that sees all
+ * of the worker's logical dbs (the sessionless task path only covers the
+ * caller's selected db). */
+static void mt_info_exec(worker *w, resp_buf *out)
+{
+    static const char req[] = MT_INFO_STATS_REQ;
+    session sess;
+    resp_value v;
+    arena ar;
+    session_init(&sess, server_db_at(w->srv, 0));
+    sess.sel_ctx = w->srv;
+    sess.sel_fn = server_select_db;
+    sess.sel_ndbs = server_ndbs(w->srv);
+    arena_init(&ar, 256);
+    if (resp_parse(req, sizeof(req) - 1, &v, &ar) ==
+        (ptrdiff_t)(sizeof(req) - 1))
+        session_execute_at(&sess, v.items, v.count, out, pal_wall_ms());
+    else
+        resp_write_error(out, "ERR Protocol error", 18);
+    arena_destroy(&ar);
+    session_release(&sess);
+}
+
 /* Aggregate commands (DBSIZE sum, FLUSHDB broadcast): run the home part
  * inline, fan sub-tasks out to every other worker and finish when all
  * parts arrived. Runs on the home worker thread. */
@@ -870,6 +974,13 @@ static int mt_route_aggregate(worker *home, void *conn,
     seq = st->seq_next++;
 
     agg = (mt_agg *)calloc(1, sizeof(*agg));
+    if (agg != NULL && cmd == CMD_INFO) {
+        agg->stats = (info_stats *)calloc(1, sizeof(*agg->stats));
+        if (agg->stats == NULL) {
+            free(agg);
+            agg = NULL;
+        }
+    }
     if (agg == NULL) {
         /* OOM: degrade to the home-worker answer. */
         resp_buf_init(&local);
@@ -889,7 +1000,9 @@ static int mt_route_aggregate(worker *home, void *conn,
 
     /* home part */
     resp_buf_init(&local);
-    if (cmd == CMD_SWAPDB) {
+    if (cmd == CMD_INFO) {
+        mt_info_exec(home, &local);
+    } else if (cmd == CMD_SWAPDB) {
         resp_value v;
         arena ar;
         arena_init(&ar, 1024);
@@ -911,7 +1024,11 @@ static int mt_route_aggregate(worker *home, void *conn,
         mt_cmd_blob *blob;
         if (i == home->id)
             continue;
-        blob = mt_blob_one(raw, rawlen);
+        if (cmd == CMD_INFO)
+            blob = mt_blob_one(MT_INFO_STATS_REQ,
+                               sizeof(MT_INFO_STATS_REQ) - 1);
+        else
+            blob = mt_blob_one(raw, rawlen);
         if (blob != NULL)
             t = mt_task_new(conn, home, seq, 1, 1, blob);
         if (t != NULL) {
@@ -1614,7 +1731,7 @@ static int mt_route(void *ctx, void *conn, session *sess,
     }
 
     if (cmd == CMD_DBSIZE || cmd == CMD_FLUSHDB || cmd == CMD_SAVE ||
-        cmd == CMD_LASTSAVE || cmd == CMD_SWAPDB) {
+        cmd == CMD_LASTSAVE || cmd == CMD_SWAPDB || cmd == CMD_INFO) {
         mt_batch_flush(home, conn, st);
         return mt_route_aggregate(home, conn, argv, argc, raw, rawlen, cmd,
                                   sess->db_index);
@@ -1846,6 +1963,16 @@ static void mt_exec_task(worker *w, mt_task *t)
                 mt_swapdb_exec(w, t->db_index, &v, &t->reply);
                 continue;
             }
+            /* INFO __STATS__ (aggregation fan-out): machine-format snapshot
+             * over all of this worker's logical dbs */
+            if (v.count == 2 && v.items[0].str != NULL &&
+                v.items[0].len == 4 &&
+                mt_ci_equal(v.items[0].str, v.items[0].len, "info") &&
+                v.items[1].str != NULL && v.items[1].len == 9 &&
+                mt_ci_equal(v.items[1].str, v.items[1].len, "__stats__")) {
+                mt_info_exec(w, &t->reply);
+                continue;
+            }
             dirty_before = d->dirty;
             command_execute_at(d, v.items, v.count, &t->reply,
                                pal_wall_ms());
@@ -1927,8 +2054,10 @@ static void mt_drain_completions(worker *w)
                 if (agg->pending == 0) {
                     if (st != NULL)
                         mt_agg_finish(w->srv, conn, st, agg);
-                    else
+                    else {
+                        free(agg->stats);
                         free(agg);
+                    }
                 }
                 if (st != NULL)
                     mt_pending_dec(w, conn, st);

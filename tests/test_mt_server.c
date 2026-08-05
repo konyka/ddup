@@ -6,6 +6,7 @@
 #include "test.h"
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "core/hashslot.h"
@@ -66,6 +67,48 @@ static void pick_key_for_worker(int wanted, int nworkers, char *out,
             wanted)
             return;
     }
+}
+
+/* Send req and read one full reply (bulk-string aware: reads until the
+ * declared payload plus trailing CRLF arrived). Returns bytes in buf,
+ * NUL-terminated (buf must have room for cap+1... caller keeps cap <= buf). */
+static size_t request_full(pal_socket_t c, const char *req, char *buf,
+                           size_t cap)
+{
+    size_t rlen = strlen(req);
+    size_t sent = 0, got = 0;
+    uint64_t deadline = pal_now_ms() + 5000;
+
+    while (sent < rlen && pal_now_ms() < deadline) {
+        ptrdiff_t n = pal_send(c, req + sent, rlen - sent);
+        if (n > 0)
+            sent += (size_t)n;
+        else
+            pal_sleep_ms(1);
+    }
+    DD_CHECK_EQ_INT((long long)rlen, (long long)sent);
+
+    while (pal_now_ms() < deadline) {
+        ptrdiff_t n = pal_recv(c, buf + got, cap - 1 - got);
+        if (n > 0) {
+            got += (size_t)n;
+            buf[got] = '\0';
+            if (got >= 3 && buf[0] == '$') {
+                const char *eol = strstr(buf, "\r\n");
+                if (eol != NULL) {
+                    long blen = strtol(buf + 1, NULL, 10);
+                    size_t hdr = (size_t)(eol - buf) + 2;
+                    if (blen >= 0 && got >= hdr + (size_t)blen + 2)
+                        break;
+                }
+            } else if (got >= 2 && memcmp(buf + got - 2, "\r\n", 2) == 0) {
+                break;
+            }
+        } else {
+            pal_sleep_ms(1);
+        }
+    }
+    return got;
 }
 
 static void test_two_workers_shared_keyspace(void)
@@ -331,6 +374,51 @@ static void test_smove_same_worker(void)
     snprintf(req, sizeof(req), "*3\r\n$9\r\nSISMEMBER\r\n$%zu\r\n%s\r\n$1\r\nm\r\n",
              strlen(sb), sb);
     roundtrip(a, req, ":1\r\n");
+
+    pal_close(a);
+    mt_server_stop(ms);
+    mt_server_destroy(ms);
+    pal_socket_cleanup();
+}
+
+/* INFO aggregates across workers: keyspace/memory/commandstats are summed
+ * over the whole shared keyspace, not just the connection's home worker. */
+static void test_info_aggregation(void)
+{
+    mt_server *ms;
+    pal_socket_t a;
+    char k0[32], k1[32];
+    char req[192];
+    char buf[8192];
+    size_t got;
+
+    DD_CHECK_EQ_INT(0, pal_socket_init());
+    pick_key_for_worker(0, 2, k0, sizeof(k0));
+    pick_key_for_worker(1, 2, k1, sizeof(k1));
+
+    ms = mt_server_create("127.0.0.1", 0, 2);
+    DD_CHECK(ms != NULL);
+    DD_CHECK_EQ_INT(0, mt_server_start(ms));
+    a = connect_client(mt_server_port(ms));
+
+    /* one key on each worker (both written through conn a) */
+    snprintf(req, sizeof(req), "*3\r\n$3\r\nSET\r\n$%zu\r\n%s\r\n$1\r\nx\r\n",
+             strlen(k0), k0);
+    roundtrip(a, req, "+OK\r\n");
+    snprintf(req, sizeof(req), "*3\r\n$3\r\nSET\r\n$%zu\r\n%s\r\n$1\r\ny\r\n",
+             strlen(k1), k1);
+    roundtrip(a, req, "+OK\r\n");
+
+    got = request_full(a, "*1\r\n$4\r\nINFO\r\n", buf, sizeof(buf));
+    DD_CHECK(got > 0);
+    buf[got] = '\0';
+    /* dbsize/keyspace sum both workers' shards of db0 */
+    DD_CHECK(strstr(buf, "dbsize:2\r\n") != NULL);
+    DD_CHECK(strstr(buf, "db0:keys=2,expires=0") != NULL);
+    /* commandstats sum the per-worker counters (1 SET each) */
+    DD_CHECK(strstr(buf, "cmdstat_set:calls=2,") != NULL);
+    /* memory accounting is non-zero and aggregated */
+    DD_CHECK(strstr(buf, "used_memory:0\r\n") == NULL);
 
     pal_close(a);
     mt_server_stop(ms);
@@ -1070,6 +1158,7 @@ int main(void)
     DD_RUN(test_multikey_crossslot_rejected);
     DD_RUN(test_smove_same_worker);
     DD_RUN(test_aggregate_dbsize_and_flushdb);
+    DD_RUN(test_info_aggregation);
     DD_RUN(test_set_algebra_same_slot_routing);
     DD_RUN(test_multi_exec_routed);
     DD_RUN(test_multi_exec_crossslot_aborts);

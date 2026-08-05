@@ -56,6 +56,32 @@ typedef struct db {
 void db_init(db *d);
 void db_destroy(db *d);
 
+/* ------------------------------------------------------------------ */
+/* INFO statistics (shared by the single-thread path and mt aggregation) */
+/* ------------------------------------------------------------------ */
+
+#define INFO_STATS_MAX_DBS 16
+
+/* Numeric snapshot behind INFO. mt mode transports one snapshot per worker
+ * in a machine format (INFO __STATS__) and sums them into this struct. */
+typedef struct info_stats {
+    uint64_t used_memory;
+    uint64_t expired_keys;
+    uint64_t evicted_keys;
+    uint64_t dbsize; /* current db only (Redis DBSIZE semantics) */
+    int ndbs;        /* logical dbs covered by db_keys/db_expires */
+    uint64_t db_keys[INFO_STATS_MAX_DBS];
+    uint64_t db_expires[INFO_STATS_MAX_DBS];
+    uint64_t cmd_calls[128];  /* indexed by CMD_* id */
+    uint64_t cmd_usecs[128];
+} info_stats;
+
+/* Render an INFO bulk reply from a stats snapshot. Per-process scalars
+ * (maxmemory, policy, cluster flag) come from home; repl may be NULL. */
+struct repl_info;
+void command_info_render(const db *home, const struct repl_info *repl,
+                         const info_stats *st, resp_buf *out);
+
 /* Empty the db (data + expiries), keeping configuration and stats. */
 void db_flush(db *d);
 

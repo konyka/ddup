@@ -919,6 +919,16 @@ db *server_db_at(server *s, int idx)
     return srv_select_db(s, idx);
 }
 
+db *server_select_db(void *ctx, int idx)
+{
+    return srv_select_db(ctx, idx);
+}
+
+int server_ndbs(const server *s)
+{
+    return s->ndbs;
+}
+
 /* shared AOF writer with the multi-db SELECT prefix rule */
 static void srv_aof_log(server *srv, int db_index, const resp_value *argv,
                         size_t argc)

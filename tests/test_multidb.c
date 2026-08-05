@@ -310,6 +310,48 @@ static void test_commandstats_in_info(void)
     set_free(ds);
 }
 
+/* INFO __STATS__ (internal, mt aggregation transport): machine-readable
+ * per-worker snapshot - one "k:v" line per metric, db/cmd lines carry their
+ * index/id so the home worker can sum parts without name lookups. */
+static void test_info_machine_format(void)
+{
+    dbset *ds = set_new(4);
+    session *s = set_session(ds);
+    resp_buf out;
+    resp_buf_init(&out);
+
+    exec_sess(s, T0, &out, 3, "SET", "k", "v");
+    EXPECT(out, "+OK\r\n");
+    exec_sess(s, T0, &out, 2, "SELECT", "1");
+    exec_sess(s, T0, &out, 3, "SET", "x", "y");
+    EXPECT(out, "+OK\r\n");
+    exec_sess(s, T0, &out, 2, "SELECT", "0");
+
+    exec_sess(s, T0, &out, 2, "INFO", "__STATS__");
+    {
+        resp_buf_reserve(&out, 1);
+        out.data[out.len] = '\0';
+        DD_CHECK(out.data[0] == '$');
+        DD_CHECK(strstr(out.data, "\r\nused_memory:") != NULL);
+        DD_CHECK(strstr(out.data, "\r\nexpired_keys:") != NULL);
+        DD_CHECK(strstr(out.data, "\r\nevicted_keys:") != NULL);
+        DD_CHECK(strstr(out.data, "\r\ndbsize:1\r\n") != NULL);
+        DD_CHECK(strstr(out.data, "\r\nndbs:4\r\n") != NULL);
+        /* db:<idx>:<keys>:<expires> for every non-empty db */
+        DD_CHECK(strstr(out.data, "\r\ndb:0:1:0\r\n") != NULL);
+        DD_CHECK(strstr(out.data, "\r\ndb:1:1:0\r\n") != NULL);
+        /* c:<cmd_id>:<calls>:<usec> lines for called commands */
+        DD_CHECK(strstr(out.data, "\r\nc:") != NULL);
+        /* no human sections in the machine format */
+        DD_CHECK(strstr(out.data, "# Memory") == NULL);
+        DD_CHECK(strstr(out.data, "cmdstat_") == NULL);
+    }
+
+    session_free(s);
+    resp_buf_free(&out);
+    set_free(ds);
+}
+
 int main(void)
 {
     DD_RUN(test_select_isolation);
@@ -319,5 +361,6 @@ int main(void)
     DD_RUN(test_info_keyspace_sections);
     DD_RUN(test_expiry_isolated_per_db);
     DD_RUN(test_commandstats_in_info);
+    DD_RUN(test_info_machine_format);
     return DD_TEST_SUMMARY();
 }

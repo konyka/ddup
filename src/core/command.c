@@ -869,6 +869,169 @@ static void human_bytes(uint64_t b, char *buf, size_t cap)
 }
 
 /* ------------------------------------------------------------------ */
+/* INFO                                                                 */
+/* ------------------------------------------------------------------ */
+
+/* Collect the numeric INFO snapshot for a session: per-process scalars and
+ * commandstats are summed across every logical db when a selection hook is
+ * installed. */
+static void info_fill(const session *s, info_stats *st)
+{
+    db *d = s->d;
+    uint16_t id;
+    memset(st, 0, sizeof(*st));
+    st->dbsize = rh_size(&d->table);
+    if (s->sel_fn != NULL) {
+        int i;
+        st->ndbs = s->sel_ndbs < INFO_STATS_MAX_DBS ? s->sel_ndbs
+                                                    : INFO_STATS_MAX_DBS;
+        for (i = 0; i < st->ndbs; i++) {
+            db *di = s->sel_fn(s->sel_ctx, i);
+            st->used_memory += di->used_memory;
+            st->expired_keys += di->expired_keys;
+            st->evicted_keys += di->evicted_keys;
+            st->db_keys[i] = rh_size(&di->table);
+            st->db_expires[i] = rh_size(&di->expires);
+            for (id = 1; id <= CMD_MAX; id++) {
+                st->cmd_calls[id] += di->cmd_calls[id];
+                st->cmd_usecs[id] += di->cmd_usecs[id];
+            }
+        }
+    } else {
+        st->ndbs = 1;
+        st->used_memory = d->used_memory;
+        st->expired_keys = d->expired_keys;
+        st->evicted_keys = d->evicted_keys;
+        st->db_keys[0] = rh_size(&d->table);
+        st->db_expires[0] = rh_size(&d->expires);
+        for (id = 1; id <= CMD_MAX; id++) {
+            st->cmd_calls[id] = d->cmd_calls[id];
+            st->cmd_usecs[id] = d->cmd_usecs[id];
+        }
+    }
+}
+
+/* Machine-readable snapshot (INFO __STATS__, internal): the mt aggregation
+ * transport. One "k:v" line per scalar, "db:<i>:<keys>:<expires>" per
+ * non-empty db and "c:<id>:<calls>:<usec>" per called command, so the home
+ * worker can sum parts without name lookups. */
+static void info_format_stats(const info_stats *st, resp_buf *out)
+{
+    char buf[8192];
+    int n2;
+    int i;
+    uint16_t id;
+    n2 = snprintf(buf, sizeof(buf),
+                  "used_memory:%llu\r\n"
+                  "expired_keys:%llu\r\n"
+                  "evicted_keys:%llu\r\n"
+                  "dbsize:%llu\r\n"
+                  "ndbs:%d\r\n",
+                  (unsigned long long)st->used_memory,
+                  (unsigned long long)st->expired_keys,
+                  (unsigned long long)st->evicted_keys,
+                  (unsigned long long)st->dbsize, st->ndbs);
+    for (i = 0; i < st->ndbs; i++) {
+        if (st->db_keys[i] > 0)
+            n2 += snprintf(buf + n2, sizeof(buf) - (size_t)n2,
+                           "db:%d:%llu:%llu\r\n", i,
+                           (unsigned long long)st->db_keys[i],
+                           (unsigned long long)st->db_expires[i]);
+    }
+    for (id = 1; id <= CMD_MAX; id++) {
+        if (st->cmd_calls[id] > 0)
+            n2 += snprintf(buf + n2, sizeof(buf) - (size_t)n2,
+                           "c:%u:%llu:%llu\r\n", (unsigned)id,
+                           (unsigned long long)st->cmd_calls[id],
+                           (unsigned long long)st->cmd_usecs[id]);
+    }
+    resp_write_bulk(out, buf, (size_t)n2);
+}
+
+void command_info_render(const db *home, const repl_info *repl,
+                         const info_stats *st, resp_buf *out)
+{
+    char human[32];
+    char buf[16384];
+    int n2;
+    int i;
+    uint16_t id;
+    int any = 0;
+    human_bytes(st->used_memory, human, sizeof(human));
+    n2 = snprintf(buf, sizeof(buf),
+                  "# Memory\r\n"
+                  "used_memory:%llu\r\n"
+                  "used_memory_human:%s\r\n"
+                  "maxmemory:%llu\r\n"
+                  "maxmemory_policy:%s\r\n"
+                  "# Stats\r\n"
+                  "expired_keys:%llu\r\n"
+                  "evicted_keys:%llu\r\n"
+                  "# Keyspace\r\n"
+                  "dbsize:%llu\r\n",
+                  (unsigned long long)st->used_memory, human,
+                  (unsigned long long)home->maxmemory,
+                  policy_name(home->maxmemory_policy),
+                  (unsigned long long)st->expired_keys,
+                  (unsigned long long)st->evicted_keys,
+                  (unsigned long long)st->dbsize);
+    /* Redis-style per-db keyspace sections for non-empty dbs */
+    for (i = 0; i < st->ndbs; i++) {
+        if (st->db_keys[i] > 0)
+            n2 += snprintf(buf + n2, sizeof(buf) - (size_t)n2,
+                           "db%d:keys=%llu,expires=%llu,avg_ttl=0\r\n", i,
+                           (unsigned long long)st->db_keys[i],
+                           (unsigned long long)st->db_expires[i]);
+    }
+    n2 += snprintf(buf + n2, sizeof(buf) - (size_t)n2,
+                   "# Cluster\r\n"
+                   "cluster_enabled:%d\r\n",
+                   home->cluster_enabled);
+    /* Redis-style per-command statistics */
+    for (id = 1; id <= CMD_MAX; id++) {
+        if (st->cmd_calls[id] > 0) {
+            const cmd_entry *e = cmd_table_entry(id);
+            if (!any) {
+                n2 += snprintf(buf + n2, sizeof(buf) - (size_t)n2,
+                               "# Commandstats\r\n");
+                any = 1;
+            }
+            n2 += snprintf(buf + n2, sizeof(buf) - (size_t)n2,
+                           "cmdstat_%s:calls=%llu,usec=%llu,"
+                           "usec_per_call=%.2f\r\n",
+                           e->name,
+                           (unsigned long long)st->cmd_calls[id],
+                           (unsigned long long)st->cmd_usecs[id],
+                           (double)st->cmd_usecs[id] /
+                               (double)st->cmd_calls[id]);
+        }
+    }
+    if (repl != NULL) {
+        n2 += snprintf(buf + n2, sizeof(buf) - (size_t)n2,
+                       "# Replication\r\n"
+                       "role:%s\r\n"
+                       "connected_slaves:%llu\r\n"
+                       "master_replid:%s\r\n"
+                       "master_repl_offset:%llu\r\n",
+                       repl->role == SESSION_ROLE_REPLICA ? "slave"
+                                                          : "master",
+                       (unsigned long long)repl->connected_slaves,
+                       repl->role == SESSION_ROLE_REPLICA
+                           ? repl->master_replid
+                           : repl->replid,
+                       (unsigned long long)repl->offset);
+        if (repl->role == SESSION_ROLE_REPLICA)
+            n2 += snprintf(buf + n2, sizeof(buf) - (size_t)n2,
+                           "master_host:%s\r\n"
+                           "master_port:%u\r\n"
+                           "master_link_status:%s\r\n",
+                           repl->master_host, (unsigned)repl->master_port,
+                           repl->link_up ? "up" : "down");
+    }
+    resp_write_bulk(out, buf, (size_t)n2);
+}
+
+/* ------------------------------------------------------------------ */
 /* expiration commands                                                */
 /* ------------------------------------------------------------------ */
 
@@ -2001,116 +2164,28 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
     }
 
     if (cmd_id == CMD_INFO) {
-        if (argc != 1) {
+        int machine = 0;
+        if (argc == 2) {
+            const char *sec;
+            size_t seclen;
+            if (!arg_str(&argv[1], &sec, &seclen) ||
+                !ci_equal(sec, seclen, "__STATS__")) {
+                static const char E[] = "ERR unsupported INFO section";
+                resp_write_error(out, E, sizeof(E) - 1);
+                return;
+            }
+            machine = 1;
+        } else if (argc != 1) {
             wrong_args(out, "info");
             return;
         }
         {
-            char human[32];
-            char buf[16384];
-            int n2;
-            uint64_t used_total = d->used_memory;
-            uint64_t expired_total = d->expired_keys;
-            uint64_t evicted_total = d->evicted_keys;
-            if (s->sel_fn != NULL) {
-                /* INFO aggregates every logical db (current db's values are
-                 * re-added below, so skip index 0's replacement by summing
-                 * from scratch) */
-                int i;
-                used_total = 0;
-                expired_total = 0;
-                evicted_total = 0;
-                for (i = 0; i < s->sel_ndbs; i++) {
-                    db *di = s->sel_fn(s->sel_ctx, i);
-                    used_total += di->used_memory;
-                    expired_total += di->expired_keys;
-                    evicted_total += di->evicted_keys;
-                }
-            }
-            human_bytes(used_total, human, sizeof(human));
-            n2 = snprintf(buf, sizeof(buf),
-                          "# Memory\r\n"
-                          "used_memory:%llu\r\n"
-                          "used_memory_human:%s\r\n"
-                          "maxmemory:%llu\r\n"
-                          "maxmemory_policy:%s\r\n"
-                          "# Stats\r\n"
-                          "expired_keys:%llu\r\n"
-                          "evicted_keys:%llu\r\n"
-                          "# Keyspace\r\n"
-                          "dbsize:%llu\r\n",
-                          (unsigned long long)used_total, human,
-                          (unsigned long long)d->maxmemory,
-                          policy_name(d->maxmemory_policy),
-                          (unsigned long long)expired_total,
-                          (unsigned long long)evicted_total,
-                          (unsigned long long)rh_size(&d->table));
-            /* Redis-style per-db keyspace sections for non-empty dbs */
-            if (s->sel_fn != NULL) {
-                int i;
-                for (i = 0; i < s->sel_ndbs; i++) {
-                    db *di = s->sel_fn(s->sel_ctx, i);
-                    size_t keys = rh_size(&di->table);
-                    size_t expires = rh_size(&di->expires);
-                    if (keys > 0)
-                        n2 += snprintf(buf + n2, sizeof(buf) - (size_t)n2,
-                                       "db%d:keys=%zu,expires=%zu,"
-                                       "avg_ttl=0\r\n",
-                                       i, keys, expires);
-                }
-            }
-            n2 += snprintf(buf + n2, sizeof(buf) - (size_t)n2,
-                           "# Cluster\r\n"
-                           "cluster_enabled:%d\r\n",
-                           d->cluster_enabled);
-            /* Redis-style per-command statistics (this db) */
-            {
-                uint16_t id;
-                int any = 0;
-                for (id = 1; id <= CMD_MAX; id++)
-                    if (d->cmd_calls[id] > 0) {
-                        const cmd_entry *e = cmd_table_entry(id);
-                        if (!any) {
-                            n2 += snprintf(buf + n2,
-                                           sizeof(buf) - (size_t)n2,
-                                           "# Commandstats\r\n");
-                            any = 1;
-                        }
-                        n2 += snprintf(buf + n2, sizeof(buf) - (size_t)n2,
-                                       "cmdstat_%s:calls=%llu,usec=%llu,"
-                                       "usec_per_call=%.2f\r\n",
-                                       e->name,
-                                       (unsigned long long)d->cmd_calls[id],
-                                       (unsigned long long)d->cmd_usecs[id],
-                                       (double)d->cmd_usecs[id] /
-                                           (double)d->cmd_calls[id]);
-                    }
-            }
-            if (s->repl != NULL) {
-                const repl_info *ri = s->repl;
-                n2 += snprintf(buf + n2, sizeof(buf) - (size_t)n2,
-                               "# Replication\r\n"
-                               "role:%s\r\n"
-                               "connected_slaves:%llu\r\n"
-                               "master_replid:%s\r\n"
-                               "master_repl_offset:%llu\r\n",
-                               ri->role == SESSION_ROLE_REPLICA ? "slave"
-                                                                : "master",
-                               (unsigned long long)ri->connected_slaves,
-                               ri->role == SESSION_ROLE_REPLICA
-                                   ? ri->master_replid
-                                   : ri->replid,
-                               (unsigned long long)ri->offset);
-                if (ri->role == SESSION_ROLE_REPLICA)
-                    n2 += snprintf(buf + n2, sizeof(buf) - (size_t)n2,
-                                   "master_host:%s\r\n"
-                                   "master_port:%u\r\n"
-                                   "master_link_status:%s\r\n",
-                                   ri->master_host,
-                                   (unsigned)ri->master_port,
-                                   ri->link_up ? "up" : "down");
-            }
-            resp_write_bulk(out, buf, (size_t)n2);
+            info_stats st;
+            info_fill(s, &st);
+            if (machine)
+                info_format_stats(&st, out);
+            else
+                command_info_render(d, s->repl, &st, out);
         }
         return;
     }

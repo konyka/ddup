@@ -142,6 +142,13 @@ db *server_db(server *s);
 /* Logical db by index (0 = db0, otherwise extra_dbs[idx-1]). */
 db *server_db_at(server *s, int idx);
 
+/* Selection-hook adapter matching session.sel_fn (stack sessions over a
+ * server, e.g. the mt INFO __STATS__ path). */
+db *server_select_db(void *ctx, int idx);
+
+/* Total logical databases (default 16). */
+int server_ndbs(const server *s);
+
 /* Append a mutating command to the worker's AOF with the multi-db SELECT
  * prefix rule (no-op when AOF is off; used by the mt routed-task path). */
 void server_aof_log_cmd(server *s, int db_index, const resp_value *argv,
