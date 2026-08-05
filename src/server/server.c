@@ -81,10 +81,9 @@ struct conn {
     struct server *srv;
     int is_replica;     /* downstream replica (we are the master) */
     int is_master_link; /* our outbound link to the master (we are replica) */
-    /* mt_server routing state (owned by the routing layer) */
-    int mt_pending;  /* routed tasks in flight */
-    int mt_zombie;   /* closed with routed tasks pending */
-    void *mt_state;  /* routing-layer per-conn state (seq + reorder buf) */
+    /* mt_server routing state (owned by the routing layer: seq, reorder
+     * buffer, pending count and closing flag all live there) */
+    void *mt_state;
     /* master-link receive state ($<len> snapshot frame, then RESP stream) */
     int link_state;
     size_t link_hdrlen;
@@ -160,6 +159,7 @@ struct server {
     server_route_fn route_fn;
     server_route_flush_fn route_flush_fn;
     void (*mt_state_free)(void *ctx, void *st);
+    server_mt_close_fn mt_close_fn;
     void *route_ctx;
 };
 
@@ -992,6 +992,11 @@ void server_set_route(server *s, server_route_fn fn,
     s->route_ctx = ctx;
 }
 
+void server_set_mt_close(server *s, server_mt_close_fn fn)
+{
+    s->mt_close_fn = fn;
+}
+
 void *server_conn_mt_state(void *conn_ptr)
 {
     return ((conn *)conn_ptr)->mt_state;
@@ -1002,32 +1007,10 @@ void server_conn_set_mt_state(void *conn_ptr, void *st)
     ((conn *)conn_ptr)->mt_state = st;
 }
 
-void server_conn_mt_inc(void *conn_ptr)
+void server_conn_free_now(server *s, void *conn_ptr)
 {
-    ((conn *)conn_ptr)->mt_pending++;
-}
-
-void server_conn_mt_dec(server *s, void *conn_ptr)
-{
-    conn *c = (conn *)conn_ptr;
-    if (c->mt_pending > 0)
-        c->mt_pending--;
-    if (c->mt_zombie && c->mt_pending == 0) {
-        /* remove from the zombie list, then free for real */
-        size_t i;
-        for (i = 0; i < s->nzombies; i++)
-            if (s->zombies[i] == c) {
-                s->zombies[i] = s->zombies[s->nzombies - 1];
-                s->nzombies--;
-                break;
-            }
-        conn_free(c);
-    }
-}
-
-int server_conn_mt_is_zombie(void *conn_ptr)
-{
-    return ((conn *)conn_ptr)->mt_zombie;
+    (void)s;
+    conn_free((conn *)conn_ptr);
 }
 
 void server_conn_out_append(server *s, void *conn_ptr, const char *data,
@@ -1128,12 +1111,11 @@ static void conn_close(server *s, size_t idx)
         return;
     }
     pal_loop_del(s->loop, c->fd);
-    if (c->mt_pending > 0) {
-        /* routed tasks still in flight: keep the conn (and its session /
-         * mt_state) alive until the last completion drains it. */
+    if (s->mt_close_fn != NULL && s->mt_close_fn(s->route_ctx, c) != 0) {
+        /* the routing layer keeps the conn (zombie) until its pending work
+         * drains; the fd is closed now, the conn is freed later */
         pal_close(c->fd);
-        c->mt_zombie = 1;
-        zombie_push(s, c);
+        c->fd = PAL_SOCKET_INVALID;
         return;
     }
     conn_free(c);

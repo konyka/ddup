@@ -15,6 +15,7 @@
  */
 #include "server/mt_server.h"
 
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -95,6 +96,13 @@ struct worker {
     mt_spsc *completions;
     arena exec_arena;     /* re-parse scratch for routed commands */
     uint64_t tasks_executed; /* routed tasks executed (test/observability) */
+    /* Guards mt_conn_state.pending/closing of every conn homed on this
+     * worker (increments can come from other workers' delivery paths). */
+    pal_mutex pending_mu;
+    /* Conns closed with pending work: freed when it drains (or at destroy). */
+    void **zombies;
+    size_t nzombies;
+    size_t zombie_cap;
     volatile int running;
 };
 
@@ -141,6 +149,11 @@ typedef struct mt_conn_state {
     mt_watch_entry *watches;
     size_t nwatch;
     size_t watch_cap;
+    /* Lifetime: guarded by the home worker's pending_mu. closing is set
+     * under the mutex before any free path, so producers can safely test
+     * it; pending counts tasks/deliveries in flight for this conn. */
+    int pending;
+    int closing;
 } mt_conn_state;
 
 static void mt_blobs_free(mt_cmd_blob *blobs, size_t n)
@@ -300,6 +313,64 @@ static void mt_watch_apply(mt_conn_state *st, mt_task *t, arena *ar)
     }
 }
 
+/* ------------------------------------------------------------------ */
+/* conn lifetime under cross-thread producers                           */
+/* ------------------------------------------------------------------ */
+
+static void mt_pending_inc(worker *home, mt_conn_state *st)
+{
+    pal_mutex_lock(&home->pending_mu);
+    st->pending++;
+    pal_mutex_unlock(&home->pending_mu);
+}
+
+/* Decrement; frees the conn when it was closing and nothing is left. */
+static void mt_pending_dec(worker *home, void *conn, mt_conn_state *st)
+{
+    int free_now = 0;
+    pal_mutex_lock(&home->pending_mu);
+    if (st->pending > 0)
+        st->pending--;
+    if (st->closing && st->pending == 0)
+        free_now = 1;
+    pal_mutex_unlock(&home->pending_mu);
+    if (free_now)
+        server_conn_free_now(home->srv, conn);
+}
+
+static void mt_zombie_push(worker *home, void *conn)
+{
+    if (home->nzombies == home->zombie_cap) {
+        size_t ncap = home->zombie_cap == 0 ? 8 : home->zombie_cap * 2;
+        void **nz = (void **)realloc(home->zombies, ncap * sizeof(*nz));
+        if (nz == NULL) {
+            fprintf(stderr, "ddup: out of memory\n");
+            exit(1);
+        }
+        home->zombies = nz;
+        home->zombie_cap = ncap;
+    }
+    home->zombies[home->nzombies++] = conn;
+}
+
+/* server_mt_close_fn: runs on the home thread inside conn_close. */
+static int mt_conn_close(void *ctx, void *conn)
+{
+    worker *home = (worker *)ctx;
+    mt_conn_state *st = (mt_conn_state *)server_conn_mt_state(conn);
+    int held = 0;
+    if (st == NULL)
+        return 0;
+    pal_mutex_lock(&home->pending_mu);
+    st->closing = 1;
+    if (st->pending > 0) {
+        mt_zombie_push(home, conn);
+        held = 1;
+    }
+    pal_mutex_unlock(&home->pending_mu);
+    return held;
+}
+
 /* Append every consecutive ready reply to conn->out (or drop them when the
  * conn is a zombie: the client is gone, only resource cleanup matters). */
 static void mt_drain_ready(server *srv, arena *ar, void *conn,
@@ -357,7 +428,7 @@ static void mt_agg_finish(server *srv, void *conn, mt_conn_state *st,
         else
             resp_write_simple_string(&fin->reply, "OK", 2);
         mt_reorder_insert(st, fin);
-        if (server_conn_mt_is_zombie(conn)) {
+        if (st->closing) {
             mt_drain_ready(srv, &agg->home->exec_arena, conn, st, 0);
         } else {
             mt_drain_ready(srv, &agg->home->exec_arena, conn, st, 1);
@@ -630,7 +701,7 @@ static int mt_route_aggregate(worker *home, void *conn,
             t = mt_task_new(conn, home, seq, 1, 1, blob);
         if (t != NULL) {
             t->agg = agg;
-            server_conn_mt_inc(conn);
+            mt_pending_inc(home, st);
             mt_push_task(&home->ms->workers[i].inbox[home->id], t,
                          &home->ms->workers[i].wakeup);
         } else {
@@ -656,7 +727,7 @@ static void mt_batch_flush(worker *home, void *conn, mt_conn_state *st)
     if (t == NULL) {
         mt_blobs_free(st->batch, st->batch_n);
     } else {
-        server_conn_mt_inc(conn);
+        mt_pending_inc(home, st);
         mt_push_task(&home->ms->workers[target].inbox[home->id], t,
                      &home->ms->workers[target].wakeup);
     }
@@ -860,7 +931,7 @@ static int mt_txn_watch(worker *home, void *conn, mt_conn_state *st,
             return 1;
         }
         t->kind = MT_TASK_WATCH;
-        server_conn_mt_inc(conn);
+        mt_pending_inc(home, st);
         mt_push_task(&home->ms->workers[target].inbox[home->id], t,
                      &home->ms->workers[target].wakeup);
         return 1;
@@ -964,7 +1035,7 @@ static int mt_txn_exec(worker *home, void *conn, mt_conn_state *st,
         mt_drain_ready(home->srv, &home->exec_arena, conn, st, 1);
         return 1;
     }
-    server_conn_mt_inc(conn);
+    mt_pending_inc(home, st);
     mt_push_task(&home->ms->workers[target].inbox[home->id], t,
                  &home->ms->workers[target].wakeup);
     return 1;
@@ -1243,21 +1314,22 @@ static void worker_on_wakeup(void *ctx)
                     else
                         free(agg);
                 }
-                server_conn_mt_dec(w->srv, conn);
+                if (st != NULL)
+                    mt_pending_dec(w, conn, st);
                 continue;
             }
             if (st != NULL) {
                 mt_reorder_insert(st, t);
-                if (server_conn_mt_is_zombie(conn)) {
+                if (st->closing) {
                     mt_drain_ready(w->srv, &w->exec_arena, conn, st, 0);
                 } else {
                     mt_drain_ready(w->srv, &w->exec_arena, conn, st, 1);
                     (void)server_conn_flush(w->srv, conn);
                 }
+                mt_pending_dec(w, conn, st);
             } else {
                 mt_task_free(t);
             }
-            server_conn_mt_dec(w->srv, conn);
         }
     }
 }
@@ -1346,6 +1418,7 @@ mt_server *mt_server_create(const char *host, uint16_t port, int nworkers)
             (mt_spsc *)calloc((size_t)nworkers, sizeof(mt_spsc));
         if (w->srv == NULL || w->inbox == NULL || w->completions == NULL ||
             mt_spsc_init(&w->accepts, 256) != 0 ||
+            pal_mutex_init(&w->pending_mu) != 0 ||
             pal_wakeup_create(&w->wakeup) != 0) {
             ms->nworkers = i; /* destroy only initialized workers */
             mt_server_destroy(ms);
@@ -1369,6 +1442,7 @@ mt_server *mt_server_create(const char *host, uint16_t port, int nworkers)
         }
         server_set_route(w->srv, mt_route, mt_route_flush_cb,
                          mt_state_free_cb, w);
+        server_set_mt_close(w->srv, mt_conn_close);
     }
     return ms;
 }
@@ -1446,10 +1520,16 @@ void mt_server_destroy(mt_server *ms)
         }
         {
             void *p;
+            size_t zi;
             while ((p = mt_spsc_pop(&w->accepts)) != NULL)
                 pal_close((pal_socket_t)(uintptr_t)p);
             mt_spsc_destroy(&w->accepts);
+            /* conns that were still draining at shutdown */
+            for (zi = 0; zi < w->nzombies; zi++)
+                server_conn_free_now(w->srv, w->zombies[zi]);
+            free(w->zombies);
         }
+        pal_mutex_destroy(&w->pending_mu);
         pal_wakeup_destroy(&w->wakeup);
         arena_destroy(&w->exec_arena);
         server_destroy(w->srv);

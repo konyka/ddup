@@ -101,14 +101,16 @@ typedef int (*server_route_fn)(void *ctx, void *conn, session *sess,
 /* Called once after each conn_process_input parse loop so the router can
  * flush batched commands. */
 typedef void (*server_route_flush_fn)(void *ctx, void *conn);
+/* Called by conn_close before freeing: return non-zero when the routing
+ * layer keeps the conn (zombie until its pending work drains). */
+typedef int (*server_mt_close_fn)(void *ctx, void *conn);
 void server_set_route(server *s, server_route_fn fn,
                       server_route_flush_fn flush_fn,
                       void (*mt_state_free)(void *ctx, void *st), void *ctx);
+void server_set_mt_close(server *s, server_mt_close_fn fn);
 void *server_conn_mt_state(void *conn);
 void server_conn_set_mt_state(void *conn, void *st);
-void server_conn_mt_inc(void *conn);
-void server_conn_mt_dec(server *s, void *conn);
-int server_conn_mt_is_zombie(void *conn);
+void server_conn_free_now(server *s, void *conn);
 void server_conn_out_append(server *s, void *conn, const char *data,
                             size_t len);
 int server_conn_flush(server *s, void *conn);
