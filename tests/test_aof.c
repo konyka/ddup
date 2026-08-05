@@ -10,8 +10,10 @@
 
 #define TMP_AOF "test_aof_tmp.aof"
 
-static void test_log(void *ctx, const resp_value *argv, size_t argc)
+static void test_log(void *ctx, int db_index, const resp_value *argv,
+                     size_t argc)
 {
+    (void)db_index;
     aof_log_cmd((aof *)ctx, argv, argc);
 }
 
@@ -206,11 +208,84 @@ static void test_aof_flushdb_logged(void)
     remove(TMP_AOF);
 }
 
+/* multi-db replay: embedded SELECT switches the target db via the
+ * session selection hook */
+typedef struct dbset {
+    db dbs[4];
+} dbset;
+
+static db *mds_select(void *ctx, int idx)
+{
+    return &((dbset *)ctx)->dbs[idx];
+}
+
+static void test_aof_multidb_replay(void)
+{
+    aof *a;
+    resp_buf out;
+    resp_value sel[2], cmd3[3];
+    dbset ds;
+    session *r;
+    int i;
+
+    resp_buf_init(&out);
+    a = aof_open(TMP_AOF);
+    DD_CHECK(a != NULL);
+
+    memset(sel, 0, sizeof(sel));
+    sel[0].type = RESP_BULK_STRING;
+    sel[0].str = "SELECT";
+    sel[0].len = 6;
+    sel[1].type = RESP_BULK_STRING;
+    sel[1].str = "1";
+    sel[1].len = 1;
+    aof_log_cmd(a, sel, 2);
+
+    memset(cmd3, 0, sizeof(cmd3));
+    cmd3[0].type = RESP_BULK_STRING;
+    cmd3[0].str = "SET";
+    cmd3[0].len = 3;
+    cmd3[1].type = RESP_BULK_STRING;
+    cmd3[1].str = "k";
+    cmd3[1].len = 1;
+    cmd3[2].type = RESP_BULK_STRING;
+    cmd3[2].str = "v1";
+    cmd3[2].len = 2;
+    aof_log_cmd(a, cmd3, 3);
+    aof_flush(a);
+    aof_close(a);
+
+    for (i = 0; i < 4; i++)
+        db_init(&ds.dbs[i]);
+    r = session_create(&ds.dbs[0]);
+    r->sel_ctx = &ds;
+    r->sel_fn = mds_select;
+    r->sel_ndbs = 4;
+
+    DD_CHECK_EQ_INT(0, aof_replay_session(r, TMP_AOF));
+
+    exec_sess(r, T0, &out, 2, "SELECT", "1");
+    EXPECT(out, "+OK\r\n");
+    exec_sess(r, T0, &out, 2, "GET", "k");
+    EXPECT(out, "$2\r\nv1\r\n");
+    exec_sess(r, T0, &out, 2, "SELECT", "0");
+    EXPECT(out, "+OK\r\n");
+    exec_sess(r, T0, &out, 2, "GET", "k");
+    EXPECT(out, "$-1\r\n");
+
+    session_free(r);
+    for (i = 0; i < 4; i++)
+        db_destroy(&ds.dbs[i]);
+    resp_buf_free(&out);
+    remove(TMP_AOF);
+}
+
 int main(void)
 {
     DD_RUN(test_aof_serialization);
     DD_RUN(test_aof_replay);
     DD_RUN(test_aof_corrupt_tail);
     DD_RUN(test_aof_flushdb_logged);
+    DD_RUN(test_aof_multidb_replay);
     return DD_TEST_SUMMARY();
 }

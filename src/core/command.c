@@ -4345,7 +4345,8 @@ static void exec_transaction(session *s, resp_buf *out, uint64_t now_ms)
         /* AOF: log each applied command individually (no MULTI wrapper) */
         if (s->d->dirty != dirty_before && s->aof_log != NULL)
             for (i = 0; i < s->queue_len; i++)
-                s->aof_log(s->aof_ctx, s->queue[i].argv, s->queue[i].argc);
+                s->aof_log(s->aof_ctx, s->db_index, s->queue[i].argv,
+                           s->queue[i].argc);
     }
     /* queued writes may have crossed maxmemory */
     if (s->d->maxmemory_policy == DB_POLICY_ALLKEYS_LRU)
@@ -4488,7 +4489,7 @@ void session_execute_at(session *s, const resp_value *argv, size_t argc,
     command_dispatch(s, argv, argc, out, now_ms);
     /* AOF: log the original command if it mutated the db */
     if (s->d->dirty != dirty_before && s->aof_log != NULL)
-        s->aof_log(s->aof_ctx, argv, argc);
+        s->aof_log(s->aof_ctx, s->db_index, argv, argc);
     /* allkeys-lru eviction runs after write commands (and CONFIG SET) */
     if (s->d->maxmemory_policy == DB_POLICY_ALLKEYS_LRU)
         db_evict_if_needed(s->d);

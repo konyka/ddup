@@ -131,6 +131,7 @@ struct server {
     int ndbs;         /* total logical databases (default 16) */
     rh_table channels; /* pub/sub: channel -> chan_node list head (8-byte ptr) */
     aof *aof;          /* NULL when appendonly=no */
+    int aof_db_index;  /* last db index written to the AOF (SELECT prefix) */
     const char *requirepass; /* AUTH password (not owned); NULL/"" = off */
     int shutdown_flag;
     int save_sec;               /* automatic snapshot interval, 0 = off */
@@ -308,12 +309,30 @@ static void srv_deliver(void *owner, const char *ch, size_t chlen,
 /* Propagation sink for every successfully-applied mutating command:
  * serialize once, then fan out to AOF (if any), the replication backlog
  * and all downstream replica conns (flushed at end of run_once). */
-static void srv_propagate(void *ctx, const resp_value *argv, size_t argc)
+static void srv_propagate(void *ctx, int db_index, const resp_value *argv,
+                          size_t argc)
 {
     server *srv = (server *)ctx;
     size_t i;
-    if (srv->aof != NULL)
+    if (srv->aof != NULL) {
+        /* multi-db AOF: keep the replay session on the right db (same
+         * rule as Redis: SELECT is written only on db change) */
+        if (db_index != srv->aof_db_index) {
+            resp_value sel[2];
+            char nbuf[16];
+            int nl = snprintf(nbuf, sizeof(nbuf), "%d", db_index);
+            memset(sel, 0, sizeof(sel));
+            sel[0].type = RESP_BULK_STRING;
+            sel[0].str = "SELECT";
+            sel[0].len = 6;
+            sel[1].type = RESP_BULK_STRING;
+            sel[1].str = nbuf;
+            sel[1].len = (size_t)nl;
+            aof_log_cmd(srv->aof, sel, 2);
+            srv->aof_db_index = db_index;
+        }
         aof_log_cmd(srv->aof, argv, argc);
+    }
 
     srv->prop_buf.len = 0;
     resp_write_array_header(&srv->prop_buf, argc);
@@ -943,8 +962,18 @@ uint16_t server_tls_port(const server *s)
 
 int server_enable_aof(server *s, const char *path)
 {
-    if (pal_file_exists(path))
-        aof_replay(&s->db, path);
+    if (pal_file_exists(path)) {
+        /* replay through a session with the selection hook so embedded
+         * SELECT commands land on the right db */
+        session *rs = session_create(&s->db);
+        if (rs != NULL) {
+            rs->sel_ctx = s;
+            rs->sel_fn = srv_select_db;
+            rs->sel_ndbs = s->ndbs;
+            (void)aof_replay_session(rs, path);
+            session_free(rs);
+        }
+    }
     s->aof = aof_open(path);
     return s->aof != NULL ? 0 : -1;
 }

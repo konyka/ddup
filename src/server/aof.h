@@ -13,6 +13,7 @@
 #include <stddef.h>
 
 #include "core/command.h"
+#include "core/session.h"
 #include "pal/pal_file.h"
 #include "resp/resp.h"
 #include "resp/resp_writer.h"
@@ -38,5 +39,9 @@ void aof_close(aof *a);
  * Returns 0 on success (including a tolerated truncated tail), -1 if the
  * file cannot be read. */
 int aof_replay(db *d, const char *path);
+
+/* Replay the file through a full session (multi-db AOFs: embedded SELECT
+ * commands switch the target db via the session's selection hook). */
+int aof_replay_session(session *s, const char *path);
 
 #endif /* DDUP_AOF_H */

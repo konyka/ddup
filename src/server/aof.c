@@ -55,7 +55,7 @@ void aof_close(aof *a)
     free(a);
 }
 
-int aof_replay(db *d, const char *path)
+static int aof_replay_impl(session *s, db *d, const char *path)
 {
     pal_file *f = pal_file_open_read(path);
     char *buf = NULL;
@@ -102,7 +102,10 @@ int aof_replay(db *d, const char *path)
             break; /* truncated tail (0) or corrupt bytes (-1): stop here */
         if (v.type == RESP_ARRAY && !v.is_null && v.count > 0) {
             out.len = 0;
-            command_execute(d, v.items, v.count, &out);
+            if (s != NULL)
+                session_execute(s, v.items, v.count, &out);
+            else
+                command_execute(d, v.items, v.count, &out);
         }
         arena_reset(&ar);
         off += (size_t)used;
@@ -111,4 +114,14 @@ int aof_replay(db *d, const char *path)
     arena_destroy(&ar);
     free(buf);
     return rc;
+}
+
+int aof_replay(db *d, const char *path)
+{
+    return aof_replay_impl(NULL, d, path);
+}
+
+int aof_replay_session(session *s, const char *path)
+{
+    return aof_replay_impl(s, NULL, path);
 }
