@@ -190,9 +190,9 @@ static void test_blocked_commands_in_mt_mode(void)
     DD_CHECK_EQ_INT(0, mt_server_start(ms));
     a = connect_client(mt_server_port(ms));
 
-    roundtrip(a, "*1\r\n$5\r\nMULTI\r\n",
-              "-ERR command not supported in mt mode\r\n");
     roundtrip(a, "*2\r\n$9\r\nSUBSCRIBE\r\n$2\r\nch\r\n",
+              "-ERR command not supported in mt mode\r\n");
+    roundtrip(a, "*1\r\n$8\r\nSHUTDOWN\r\n",
               "-ERR command not supported in mt mode\r\n");
     /* The session still works for normal commands afterwards. */
     roundtrip(a, "*1\r\n$4\r\nPING\r\n", "+PONG\r\n");
@@ -461,6 +461,191 @@ static void test_set_algebra_same_slot_routing(void)
     pal_socket_cleanup();
 }
 
+static void test_multi_exec_routed(void)
+{
+    mt_server *ms;
+    pal_socket_t a;
+    char k1[32];
+    char req[256];
+
+    DD_CHECK_EQ_INT(0, pal_socket_init());
+    pick_key_for_worker(1, 2, k1, sizeof(k1));
+
+    ms = mt_server_create("127.0.0.1", 0, 2);
+    DD_CHECK(ms != NULL);
+    DD_CHECK_EQ_INT(0, mt_server_start(ms));
+    a = connect_client(mt_server_port(ms)); /* -> worker 0 */
+
+    roundtrip(a, "*1\r\n$5\r\nMULTI\r\n", "+OK\r\n");
+    snprintf(req, sizeof(req), "*3\r\n$3\r\nSET\r\n$%zu\r\n%s\r\n$2\r\nv1\r\n",
+             strlen(k1), k1);
+    roundtrip(a, req, "+QUEUED\r\n");
+    snprintf(req, sizeof(req), "*2\r\n$3\r\nGET\r\n$%zu\r\n%s\r\n",
+             strlen(k1), k1);
+    roundtrip(a, req, "+QUEUED\r\n");
+    roundtrip(a, "*1\r\n$4\r\nEXEC\r\n", "*2\r\n+OK\r\n$2\r\nv1\r\n");
+
+    /* the transaction really executed on worker 1 */
+    snprintf(req, sizeof(req), "*2\r\n$3\r\nGET\r\n$%zu\r\n%s\r\n",
+             strlen(k1), k1);
+    roundtrip(a, req, "$2\r\nv1\r\n");
+
+    pal_close(a);
+    mt_server_stop(ms);
+    mt_server_destroy(ms);
+    pal_socket_cleanup();
+}
+
+static void test_multi_exec_crossslot_aborts(void)
+{
+    mt_server *ms;
+    pal_socket_t a;
+    char k0[32], k1[32];
+    char req[256];
+
+    DD_CHECK_EQ_INT(0, pal_socket_init());
+    pick_key_for_worker(0, 2, k0, sizeof(k0));
+    pick_key_for_worker(1, 2, k1, sizeof(k1));
+
+    ms = mt_server_create("127.0.0.1", 0, 2);
+    DD_CHECK(ms != NULL);
+    DD_CHECK_EQ_INT(0, mt_server_start(ms));
+    a = connect_client(mt_server_port(ms));
+
+    roundtrip(a, "*1\r\n$5\r\nMULTI\r\n", "+OK\r\n");
+    snprintf(req, sizeof(req), "*3\r\n$3\r\nSET\r\n$%zu\r\n%s\r\n$1\r\nx\r\n",
+             strlen(k0), k0);
+    roundtrip(a, req, "+QUEUED\r\n");
+    snprintf(req, sizeof(req), "*3\r\n$3\r\nSET\r\n$%zu\r\n%s\r\n$1\r\ny\r\n",
+             strlen(k1), k1);
+    roundtrip(a, req, "+QUEUED\r\n");
+    roundtrip(a, "*1\r\n$4\r\nEXEC\r\n",
+              "-EXECABORT Transaction discarded because of: keys hash to "
+              "different slots\r\n");
+
+    /* nothing was applied */
+    snprintf(req, sizeof(req), "*2\r\n$3\r\nGET\r\n$%zu\r\n%s\r\n",
+             strlen(k0), k0);
+    roundtrip(a, req, "$-1\r\n");
+    snprintf(req, sizeof(req), "*2\r\n$3\r\nGET\r\n$%zu\r\n%s\r\n",
+             strlen(k1), k1);
+    roundtrip(a, req, "$-1\r\n");
+
+    pal_close(a);
+    mt_server_stop(ms);
+    mt_server_destroy(ms);
+    pal_socket_cleanup();
+}
+
+static void test_discard(void)
+{
+    mt_server *ms;
+    pal_socket_t a;
+    char k0[32];
+    char req[192];
+
+    DD_CHECK_EQ_INT(0, pal_socket_init());
+    pick_key_for_worker(0, 2, k0, sizeof(k0));
+
+    ms = mt_server_create("127.0.0.1", 0, 2);
+    DD_CHECK(ms != NULL);
+    DD_CHECK_EQ_INT(0, mt_server_start(ms));
+    a = connect_client(mt_server_port(ms));
+
+    roundtrip(a, "*1\r\n$5\r\nMULTI\r\n", "+OK\r\n");
+    snprintf(req, sizeof(req), "*3\r\n$3\r\nSET\r\n$%zu\r\n%s\r\n$1\r\nx\r\n",
+             strlen(k0), k0);
+    roundtrip(a, req, "+QUEUED\r\n");
+    roundtrip(a, "*1\r\n$7\r\nDISCARD\r\n", "+OK\r\n");
+    snprintf(req, sizeof(req), "*2\r\n$3\r\nGET\r\n$%zu\r\n%s\r\n",
+             strlen(k0), k0);
+    roundtrip(a, req, "$-1\r\n");
+
+    pal_close(a);
+    mt_server_stop(ms);
+    mt_server_destroy(ms);
+    pal_socket_cleanup();
+}
+
+static void test_watch_aborts_exec_on_change(void)
+{
+    mt_server *ms;
+    pal_socket_t a, b;
+    char k0[32];
+    char req[192];
+
+    DD_CHECK_EQ_INT(0, pal_socket_init());
+    pick_key_for_worker(0, 2, k0, sizeof(k0));
+
+    ms = mt_server_create("127.0.0.1", 0, 2);
+    DD_CHECK(ms != NULL);
+    DD_CHECK_EQ_INT(0, mt_server_start(ms));
+    a = connect_client(mt_server_port(ms)); /* -> worker 0 */
+    b = connect_client(mt_server_port(ms)); /* -> worker 1 */
+
+    /* a watches k0 (local on worker 0) */
+    snprintf(req, sizeof(req), "*2\r\n$5\r\nWATCH\r\n$%zu\r\n%s\r\n",
+             strlen(k0), k0);
+    roundtrip(a, req, "+OK\r\n");
+
+    /* b changes k0 (routed to worker 0) */
+    snprintf(req, sizeof(req), "*3\r\n$3\r\nSET\r\n$%zu\r\n%s\r\n$2\r\nv2\r\n",
+             strlen(k0), k0);
+    roundtrip(b, req, "+OK\r\n");
+
+    /* a's EXEC must abort with a null array */
+    roundtrip(a, "*1\r\n$5\r\nMULTI\r\n", "+OK\r\n");
+    snprintf(req, sizeof(req), "*2\r\n$3\r\nGET\r\n$%zu\r\n%s\r\n",
+             strlen(k0), k0);
+    roundtrip(a, req, "+QUEUED\r\n");
+    roundtrip(a, "*1\r\n$4\r\nEXEC\r\n", "*-1\r\n");
+
+    pal_close(a);
+    pal_close(b);
+    mt_server_stop(ms);
+    mt_server_destroy(ms);
+    pal_socket_cleanup();
+}
+
+static void test_watch_routed_and_unwatch(void)
+{
+    mt_server *ms;
+    pal_socket_t a, b;
+    char k1[32];
+    char req[192];
+
+    DD_CHECK_EQ_INT(0, pal_socket_init());
+    pick_key_for_worker(1, 2, k1, sizeof(k1));
+
+    ms = mt_server_create("127.0.0.1", 0, 2);
+    DD_CHECK(ms != NULL);
+    DD_CHECK_EQ_INT(0, mt_server_start(ms));
+    a = connect_client(mt_server_port(ms)); /* -> worker 0 */
+    b = connect_client(mt_server_port(ms)); /* -> worker 1 */
+
+    /* a watches a worker-1 key: the WATCH itself is routed */
+    snprintf(req, sizeof(req), "*2\r\n$5\r\nWATCH\r\n$%zu\r\n%s\r\n",
+             strlen(k1), k1);
+    roundtrip(a, req, "+OK\r\n");
+
+    /* UNWATCH clears it: a later change must not abort EXEC */
+    roundtrip(a, "*1\r\n$7\r\nUNWATCH\r\n", "+OK\r\n");
+    snprintf(req, sizeof(req), "*3\r\n$3\r\nSET\r\n$%zu\r\n%s\r\n$2\r\nv2\r\n",
+             strlen(k1), k1);
+    roundtrip(b, req, "+OK\r\n");
+    roundtrip(a, "*1\r\n$5\r\nMULTI\r\n", "+OK\r\n");
+    snprintf(req, sizeof(req), "*2\r\n$3\r\nGET\r\n$%zu\r\n%s\r\n",
+             strlen(k1), k1);
+    roundtrip(a, req, "+QUEUED\r\n");
+    roundtrip(a, "*1\r\n$4\r\nEXEC\r\n", "*1\r\n$2\r\nv2\r\n");
+
+    pal_close(a);
+    pal_close(b);
+    mt_server_stop(ms);
+    mt_server_destroy(ms);
+    pal_socket_cleanup();
+}
+
 static void test_same_target_pipeline_merges_into_one_task(void)
 {
     mt_server *ms;
@@ -532,6 +717,11 @@ int main(void)
     DD_RUN(test_smove_same_worker);
     DD_RUN(test_aggregate_dbsize_and_flushdb);
     DD_RUN(test_set_algebra_same_slot_routing);
+    DD_RUN(test_multi_exec_routed);
+    DD_RUN(test_multi_exec_crossslot_aborts);
+    DD_RUN(test_discard);
+    DD_RUN(test_watch_aborts_exec_on_change);
+    DD_RUN(test_watch_routed_and_unwatch);
     DD_RUN(test_same_target_pipeline_merges_into_one_task);
     DD_RUN(test_many_connections_across_workers);
     return DD_TEST_SUMMARY();
