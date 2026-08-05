@@ -6,33 +6,61 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "core/buf_pool.h"
+
 void resp_buf_init(resp_buf *b)
 {
     b->data = NULL;
     b->len = 0;
     b->cap = 0;
+    b->pool = NULL;
+    b->pool_size = 0;
 }
 
 void resp_buf_free(resp_buf *b)
 {
-    free(b->data);
+    if (b->pool != NULL && b->data != NULL) {
+        buf_pool_put(b->pool, b->data, b->pool_size);
+    } else {
+        free(b->data);
+    }
     b->data = NULL;
     b->len = b->cap = 0;
+    b->pool = NULL;
+    b->pool_size = 0;
 }
 
 void resp_buf_reserve(resp_buf *b, size_t n)
 {
+    size_t cap;
     if (b->len + n <= b->cap)
         return;
-    size_t cap = b->cap ? b->cap : 256;
+    cap = b->cap ? b->cap : 256;
     while (cap < b->len + n)
         cap *= 2;
-    b->data = realloc(b->data, cap);
-    if (!b->data) {
-        fprintf(stderr, "ddup: out of memory\n");
-        exit(1);
+    if (b->pool != NULL) {
+        size_t actual;
+        char *p = (char *)buf_pool_get(b->pool, cap, &actual);
+        if (p == NULL) {
+            fprintf(stderr, "ddup: out of memory\n");
+            exit(1);
+        }
+        if (b->data != NULL) {
+            memcpy(p, b->data, b->len);
+            buf_pool_put(b->pool, b->data, b->pool_size);
+        }
+        b->data = p;
+        b->cap = actual;
+        b->pool_size = actual;
+    } else {
+        char *p = (char *)realloc(b->data, cap);
+        if (p == NULL) {
+            fprintf(stderr, "ddup: out of memory\n");
+            exit(1);
+        }
+        b->data = p;
+        b->cap = cap;
     }
-    b->cap = cap;
 }
 
 static void buf_append(resp_buf *b, const char *s, size_t n)

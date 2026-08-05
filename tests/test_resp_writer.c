@@ -6,6 +6,7 @@
 #include <string.h>
 
 #include "core/arena.h"
+#include "core/buf_pool.h"
 #include "resp/resp_parser.h"
 #include "resp/resp_writer.h"
 
@@ -183,11 +184,65 @@ static void test_roundtrip_nested_command(void)
     arena_destroy(&a);
 }
 
+static void test_resp_buf_pool_reuse(void)
+{
+    buf_pool pool;
+    resp_buf a, b;
+    char *first;
+    size_t first_cap;
+
+    DD_CHECK(buf_pool_init(&pool) == 0);
+
+    resp_buf_init(&a);
+    a.pool = &pool;
+    resp_write_simple_string(&a, "OK", 2);
+    first = a.data;
+    first_cap = a.cap;
+    DD_CHECK(first != NULL);
+    DD_CHECK(first_cap >= 4 * 1024);
+    resp_buf_free(&a);
+
+    resp_buf_init(&b);
+    b.pool = &pool;
+    resp_buf_reserve(&b, 1);
+    DD_CHECK(b.data == first);
+    DD_CHECK(b.cap == first_cap);
+    resp_buf_free(&b);
+
+    buf_pool_destroy(&pool);
+}
+
+static void test_resp_buf_pool_growth(void)
+{
+    buf_pool pool;
+    resp_buf b;
+    char *first;
+
+    DD_CHECK(buf_pool_init(&pool) == 0);
+
+    resp_buf_init(&b);
+    b.pool = &pool;
+    resp_buf_reserve(&b, 1024);
+    first = b.data;
+    DD_CHECK(first != NULL);
+    DD_CHECK(b.cap >= 1024);
+
+    /* Force a jump to the next pool tier; the old buffer is returned. */
+    resp_buf_reserve(&b, 100 * 1024);
+    DD_CHECK(b.data != first);
+    DD_CHECK(b.cap >= 100 * 1024);
+
+    resp_buf_free(&b);
+    buf_pool_destroy(&pool);
+}
+
 int main(void)
 {
     DD_RUN(test_scalars);
     DD_RUN(test_resp3_scalars);
     DD_RUN(test_roundtrip_random);
     DD_RUN(test_roundtrip_nested_command);
+    DD_RUN(test_resp_buf_pool_reuse);
+    DD_RUN(test_resp_buf_pool_growth);
     return DD_TEST_SUMMARY();
 }

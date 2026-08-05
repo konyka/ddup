@@ -6,10 +6,16 @@
 
 #include "resp/resp.h"
 
+/* Forward declaration: when pool is set, memory is borrowed from a
+ * core/buf_pool instead of malloc/realloc. */
+typedef struct buf_pool buf_pool;
+
 typedef struct resp_buf {
     char *data;
     size_t len;
     size_t cap;
+    buf_pool *pool;
+    size_t pool_size; /* actual allocation size when pool != NULL */
 } resp_buf;
 
 void resp_buf_init(resp_buf *b);
