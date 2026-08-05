@@ -926,14 +926,16 @@ static int cmd_keys_accum(const resp_value *argv, size_t argc, int *have,
     const char *name;
     size_t nlen;
     size_t i;
+    uint16_t cmd_id;
     if (argc == 0 || !arg_str(&argv[0], &name, &nlen))
         return 1;
     if (argc < 2)
         return 1;
-    if (ci_equal(name, nlen, "MGET") || ci_equal(name, nlen, "DEL") ||
-        ci_equal(name, nlen, "UNLINK") || ci_equal(name, nlen, "EXISTS") ||
-        ci_equal(name, nlen, "SINTER") || ci_equal(name, nlen, "SUNION") ||
-        ci_equal(name, nlen, "SDIFF") || ci_equal(name, nlen, "WATCH")) {
+    cmd_id = cmd_resolve(name, nlen);
+    if (cmd_id == CMD_MGET || cmd_id == CMD_DEL ||
+        cmd_id == CMD_UNLINK || cmd_id == CMD_EXISTS ||
+        cmd_id == CMD_SINTER || cmd_id == CMD_SUNION ||
+        cmd_id == CMD_SDIFF || cmd_id == CMD_WATCH) {
         for (i = 1; i < argc; i++) {
             const char *k;
             size_t kl;
@@ -943,7 +945,7 @@ static int cmd_keys_accum(const resp_value *argv, size_t argc, int *have,
         }
         return 1;
     }
-    if (ci_equal(name, nlen, "MSET")) {
+    if (cmd_id == CMD_MSET) {
         for (i = 1; i + 1 < argc; i += 2) {
             const char *k;
             size_t kl;
@@ -953,7 +955,7 @@ static int cmd_keys_accum(const resp_value *argv, size_t argc, int *have,
         }
         return 1;
     }
-    if (ci_equal(name, nlen, "SMOVE")) {
+    if (cmd_id == CMD_SMOVE) {
         for (i = 1; i < argc && i < 3; i++) {
             const char *k;
             size_t kl;
@@ -1056,20 +1058,21 @@ static int db_key_served(db *d, const char *key, size_t klen, resp_buf *out,
     }
 }
 
-static int cluster_keyless(const char *name, size_t nlen)
+static int cluster_keyless_id(uint16_t cmd_id)
 {
-    static const char *const KL[] = {
-        "ping",    "echo",      "config",  "info",     "save",
-        "lastsave","shutdown",  "sync",    "replicaof","subscribe",
-        "unsubscribe", "publish","quit",   "multi",    "exec",
-        "discard", "unwatch",   "dbsize",  "flushdb",  "cluster",
-        "persist", "migrate",   "asking",
-    };
-    size_t i;
-    for (i = 0; i < sizeof(KL) / sizeof(KL[0]); i++)
-        if (ci_equal(name, nlen, KL[i]))
-            return 1;
-    return 0;
+    switch (cmd_id) {
+    case CMD_PING:       case CMD_ECHO:       case CMD_CONFIG:
+    case CMD_INFO:       case CMD_SAVE:       case CMD_LASTSAVE:
+    case CMD_SHUTDOWN:   case CMD_SYNC:       case CMD_REPLICAOF:
+    case CMD_SUBSCRIBE:  case CMD_UNSUBSCRIBE:case CMD_PUBLISH:
+    case CMD_QUIT:       case CMD_MULTI:      case CMD_EXEC:
+    case CMD_DISCARD:    case CMD_UNWATCH:    case CMD_DBSIZE:
+    case CMD_FLUSHDB:    case CMD_CLUSTER:    case CMD_PERSIST:
+    case CMD_MIGRATE:    case CMD_ASKING:
+        return 1;
+    default:
+        return 0;
+    }
 }
 
 /* -MOVED/-CLUSTERDOWN/-ASK check for one command (cluster mode only):
@@ -1085,6 +1088,7 @@ static int cluster_check_ownership(session *s, const resp_value *argv,
     size_t nlen;
     size_t i;
     int asking;
+    uint16_t cmd_id;
     if (!d->cluster_enabled)
         return 1;
     asking = s->asking;
@@ -1093,12 +1097,13 @@ static int cluster_check_ownership(session *s, const resp_value *argv,
         return 1;
     if (argc < 2)
         return 1;
-    if (cluster_keyless(name, nlen))
+    cmd_id = cmd_resolve(name, nlen);
+    if (cluster_keyless_id(cmd_id))
         return 1;
-    if (ci_equal(name, nlen, "MGET") || ci_equal(name, nlen, "DEL") ||
-        ci_equal(name, nlen, "UNLINK") || ci_equal(name, nlen, "EXISTS") ||
-        ci_equal(name, nlen, "SINTER") || ci_equal(name, nlen, "SUNION") ||
-        ci_equal(name, nlen, "SDIFF") || ci_equal(name, nlen, "WATCH")) {
+    if (cmd_id == CMD_MGET || cmd_id == CMD_DEL ||
+        cmd_id == CMD_UNLINK || cmd_id == CMD_EXISTS ||
+        cmd_id == CMD_SINTER || cmd_id == CMD_SUNION ||
+        cmd_id == CMD_SDIFF || cmd_id == CMD_WATCH) {
         for (i = 1; i < argc; i++) {
             const char *k;
             size_t kl;
@@ -1108,7 +1113,7 @@ static int cluster_check_ownership(session *s, const resp_value *argv,
         }
         return 1;
     }
-    if (ci_equal(name, nlen, "MSET")) {
+    if (cmd_id == CMD_MSET) {
         for (i = 1; i + 1 < argc; i += 2) {
             const char *k;
             size_t kl;
@@ -1118,7 +1123,7 @@ static int cluster_check_ownership(session *s, const resp_value *argv,
         }
         return 1;
     }
-    if (ci_equal(name, nlen, "SMOVE")) {
+    if (cmd_id == CMD_SMOVE) {
         for (i = 1; i < argc && i < 3; i++) {
             const char *k;
             size_t kl;
@@ -1157,6 +1162,7 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
         resp_write_error(out, "ERR invalid command name", 23);
         return;
     }
+    const uint16_t cmd_id = cmd_resolve(name, nlen);
 
     /* replicas are read-only for client writes (replication link bypasses) */
     if (s->role != NULL && *s->role == SESSION_ROLE_REPLICA &&
@@ -1171,7 +1177,7 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
     if (!cluster_check_ownership(s, argv, argc, out, now_ms))
         return;
 
-    if (ci_equal(name, nlen, "PING")) {
+    if (cmd_id == CMD_PING) {
         if (argc == 1) {
             resp_write_simple_string(out, "PONG", 4);
         } else if (argc == 2) {
@@ -1186,7 +1192,7 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
         return;
     }
 
-    if (ci_equal(name, nlen, "ECHO")) {
+    if (cmd_id == CMD_ECHO) {
         if (argc != 2) {
             wrong_args(out, "echo");
             return;
@@ -1199,7 +1205,7 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
         return;
     }
 
-    if (ci_equal(name, nlen, "GET")) {
+    if (cmd_id == CMD_GET) {
         if (argc != 2) {
             wrong_args(out, "get");
             return;
@@ -1222,7 +1228,7 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
         return;
     }
 
-    if (ci_equal(name, nlen, "SET")) {
+    if (cmd_id == CMD_SET) {
         if (argc < 3) {
             wrong_args(out, "set");
             return;
@@ -1292,7 +1298,7 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
         return;
     }
 
-    if (ci_equal(name, nlen, "ASKING")) {
+    if (cmd_id == CMD_ASKING) {
         if (argc != 1) {
             wrong_args(out, "asking");
             return;
@@ -1303,7 +1309,7 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
         return;
     }
 
-    if (ci_equal(name, nlen, "DUMP")) {
+    if (cmd_id == CMD_DUMP) {
         if (argc != 2) {
             wrong_args(out, "dump");
             return;
@@ -1325,7 +1331,7 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
         return;
     }
 
-    if (ci_equal(name, nlen, "RESTORE")) {
+    if (cmd_id == CMD_RESTORE) {
         if (argc != 4 && argc != 5) {
             wrong_args(out, "restore");
             return;
@@ -1377,7 +1383,7 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
         return;
     }
 
-    if (ci_equal(name, nlen, "MIGRATE")) {
+    if (cmd_id == CMD_MIGRATE) {
         if (argc < 6) {
             wrong_args(out, "migrate");
             return;
@@ -1467,7 +1473,7 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
         return;
     }
 
-    if (ci_equal(name, nlen, "DEL") || ci_equal(name, nlen, "UNLINK")) {
+    if (cmd_id == CMD_DEL || cmd_id == CMD_UNLINK) {
         if (argc < 2) {
             wrong_args(out, "del");
             return;
@@ -1487,7 +1493,7 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
         return;
     }
 
-    if (ci_equal(name, nlen, "EXISTS")) {
+    if (cmd_id == CMD_EXISTS) {
         if (argc < 2) {
             wrong_args(out, "exists");
             return;
@@ -1508,16 +1514,16 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
         return;
     }
 
-    if (ci_equal(name, nlen, "INCR") || ci_equal(name, nlen, "DECR")) {
+    if (cmd_id == CMD_INCR || cmd_id == CMD_DECR) {
         if (argc != 2) {
-            wrong_args(out, ci_equal(name, nlen, "INCR") ? "incr" : "decr");
+            wrong_args(out, cmd_id == CMD_INCR ? "incr" : "decr");
             return;
         }
         const char *k;
         size_t kl;
         if (!arg_str(&argv[1], &k, &kl))
             goto bad_type;
-        long long delta = ci_equal(name, nlen, "INCR") ? 1 : -1;
+        long long delta = cmd_id == CMD_INCR ? 1 : -1;
         long long cur = 0;
         const char *v;
         size_t vl;
@@ -1546,7 +1552,7 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
         return;
     }
 
-    if (ci_equal(name, nlen, "APPEND")) {
+    if (cmd_id == CMD_APPEND) {
         if (argc != 3) {
             wrong_args(out, "append");
             return;
@@ -1580,7 +1586,7 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
         return;
     }
 
-    if (ci_equal(name, nlen, "STRLEN")) {
+    if (cmd_id == CMD_STRLEN) {
         if (argc != 2) {
             wrong_args(out, "strlen");
             return;
@@ -1605,7 +1611,7 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
         return;
     }
 
-    if (ci_equal(name, nlen, "MGET")) {
+    if (cmd_id == CMD_MGET) {
         if (argc < 2) {
             wrong_args(out, "mget");
             return;
@@ -1646,7 +1652,7 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
         return;
     }
 
-    if (ci_equal(name, nlen, "MSET")) {
+    if (cmd_id == CMD_MSET) {
         if (argc < 3 || argc % 2 == 0) {
             wrong_args(out, "mset");
             return;
@@ -1666,30 +1672,30 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
         return;
     }
 
-    if (ci_equal(name, nlen, "EXPIRE") || ci_equal(name, nlen, "PEXPIRE") ||
-        ci_equal(name, nlen, "EXPIREAT") || ci_equal(name, nlen, "PEXPIREAT")) {
+    if (cmd_id == CMD_EXPIRE || cmd_id == CMD_PEXPIRE ||
+        cmd_id == CMD_EXPIREAT || cmd_id == CMD_PEXPIREAT) {
         if (argc != 3) {
             wrong_args(out, "expire");
             return;
         }
-        int seconds = ci_equal(name, nlen, "EXPIRE") ||
-                      ci_equal(name, nlen, "EXPIREAT");
-        int absolute = ci_equal(name, nlen, "EXPIREAT") ||
-                       ci_equal(name, nlen, "PEXPIREAT");
+        int seconds = cmd_id == CMD_EXPIRE ||
+                      cmd_id == CMD_EXPIREAT;
+        int absolute = cmd_id == CMD_EXPIREAT ||
+                       cmd_id == CMD_PEXPIREAT;
         cmd_expire(d, argv, out, now_ms, seconds ? 1000 : 1, absolute, "expire");
         return;
     }
 
-    if (ci_equal(name, nlen, "TTL") || ci_equal(name, nlen, "PTTL")) {
+    if (cmd_id == CMD_TTL || cmd_id == CMD_PTTL) {
         if (argc != 2) {
             wrong_args(out, "ttl");
             return;
         }
-        cmd_ttl(d, argv, out, now_ms, ci_equal(name, nlen, "PTTL"));
+        cmd_ttl(d, argv, out, now_ms, cmd_id == CMD_PTTL);
         return;
     }
 
-    if (ci_equal(name, nlen, "PERSIST")) {
+    if (cmd_id == CMD_PERSIST) {
         if (argc != 2) {
             wrong_args(out, "persist");
             return;
@@ -1713,7 +1719,7 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
         return;
     }
 
-    if (ci_equal(name, nlen, "DBSIZE")) {
+    if (cmd_id == CMD_DBSIZE) {
         if (argc != 1) {
             wrong_args(out, "dbsize");
             return;
@@ -1723,7 +1729,7 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
         return;
     }
 
-    if (ci_equal(name, nlen, "FLUSHDB")) {
+    if (cmd_id == CMD_FLUSHDB) {
         if (argc != 1) {
             wrong_args(out, "flushdb");
             return;
@@ -1742,7 +1748,7 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
         return;
     }
 
-    if (ci_equal(name, nlen, "CONFIG")) {
+    if (cmd_id == CMD_CONFIG) {
         if (argc < 3) {
             wrong_args(out, "config");
             return;
@@ -1831,7 +1837,7 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
         return;
     }
 
-    if (ci_equal(name, nlen, "INFO")) {
+    if (cmd_id == CMD_INFO) {
         if (argc != 1) {
             wrong_args(out, "info");
             return;
@@ -1888,8 +1894,8 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
 
     /* ---------------- hash commands ---------------- */
 
-    if (ci_equal(name, nlen, "HSET") || ci_equal(name, nlen, "HMSET")) {
-        int mset = ci_equal(name, nlen, "HMSET");
+    if (cmd_id == CMD_HSET || cmd_id == CMD_HMSET) {
+        int mset = cmd_id == CMD_HMSET;
         if (argc < 4 || argc % 2 != 0) {
             wrong_args(out, mset ? "hmset" : "hset");
             return;
@@ -1920,7 +1926,7 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
         return;
     }
 
-    if (ci_equal(name, nlen, "HGET")) {
+    if (cmd_id == CMD_HGET) {
         if (argc != 3) {
             wrong_args(out, "hget");
             return;
@@ -1942,7 +1948,7 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
         return;
     }
 
-    if (ci_equal(name, nlen, "HDEL")) {
+    if (cmd_id == CMD_HDEL) {
         if (argc < 3) {
             wrong_args(out, "hdel");
             return;
@@ -1975,7 +1981,7 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
         return;
     }
 
-    if (ci_equal(name, nlen, "HEXISTS")) {
+    if (cmd_id == CMD_HEXISTS) {
         if (argc != 3) {
             wrong_args(out, "hexists");
             return;
@@ -1995,7 +2001,7 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
         return;
     }
 
-    if (ci_equal(name, nlen, "HLEN")) {
+    if (cmd_id == CMD_HLEN) {
         if (argc != 2) {
             wrong_args(out, "hlen");
             return;
@@ -2012,11 +2018,11 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
         return;
     }
 
-    if (ci_equal(name, nlen, "HGETALL") || ci_equal(name, nlen, "HKEYS") ||
-        ci_equal(name, nlen, "HVALS")) {
+    if (cmd_id == CMD_HGETALL || cmd_id == CMD_HKEYS ||
+        cmd_id == CMD_HVALS) {
         if (argc != 2) {
-            wrong_args(out, ci_equal(name, nlen, "HGETALL") ? "hgetall"
-                           : ci_equal(name, nlen, "HKEYS")  ? "hkeys"
+            wrong_args(out, cmd_id == CMD_HGETALL ? "hgetall"
+                           : cmd_id == CMD_HKEYS  ? "hkeys"
                                                             : "hvals");
             return;
         }
@@ -2034,16 +2040,16 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
         }
         hdump_ctx ctx;
         ctx.out = out;
-        ctx.keys = !ci_equal(name, nlen, "HVALS");
-        ctx.vals = !ci_equal(name, nlen, "HKEYS");
-        resp_write_array_header(out, ci_equal(name, nlen, "HGETALL")
+        ctx.keys = cmd_id != CMD_HVALS;
+        ctx.vals = cmd_id != CMD_HKEYS;
+        resp_write_array_header(out, cmd_id == CMD_HGETALL
                                         ? rh_size(&h->fields) * 2
                                         : rh_size(&h->fields));
         rh_each(&h->fields, hdump_cb, &ctx);
         return;
     }
 
-    if (ci_equal(name, nlen, "HMGET")) {
+    if (cmd_id == CMD_HMGET) {
         if (argc < 3) {
             wrong_args(out, "hmget");
             return;
@@ -2070,7 +2076,7 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
         return;
     }
 
-    if (ci_equal(name, nlen, "HINCRBY")) {
+    if (cmd_id == CMD_HINCRBY) {
         if (argc != 4) {
             wrong_args(out, "hincrby");
             return;
@@ -2115,7 +2121,7 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
         return;
     }
 
-    if (ci_equal(name, nlen, "HSETNX")) {
+    if (cmd_id == CMD_HSETNX) {
         if (argc != 4) {
             wrong_args(out, "hsetnx");
             return;
@@ -2149,11 +2155,11 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
 
     /* ---------------- list commands ---------------- */
 
-    if (ci_equal(name, nlen, "LPUSH") || ci_equal(name, nlen, "RPUSH") ||
-        ci_equal(name, nlen, "LPUSHX") || ci_equal(name, nlen, "RPUSHX")) {
-        int left = ci_equal(name, nlen, "LPUSH") || ci_equal(name, nlen, "LPUSHX");
+    if (cmd_id == CMD_LPUSH || cmd_id == CMD_RPUSH ||
+        cmd_id == CMD_LPUSHX || cmd_id == CMD_RPUSHX) {
+        int left = cmd_id == CMD_LPUSH || cmd_id == CMD_LPUSHX;
         int only_if_exists =
-            ci_equal(name, nlen, "LPUSHX") || ci_equal(name, nlen, "RPUSHX");
+            cmd_id == CMD_LPUSHX || cmd_id == CMD_RPUSHX;
         if (argc < 3) {
             wrong_args(out, left ? (only_if_exists ? "lpushx" : "lpush")
                                  : (only_if_exists ? "rpushx" : "rpush"));
@@ -2188,8 +2194,8 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
         return;
     }
 
-    if (ci_equal(name, nlen, "LPOP") || ci_equal(name, nlen, "RPOP")) {
-        int left = ci_equal(name, nlen, "LPOP");
+    if (cmd_id == CMD_LPOP || cmd_id == CMD_RPOP) {
+        int left = cmd_id == CMD_LPOP;
         if (argc != 2) {
             wrong_args(out, left ? "lpop" : "rpop");
             return;
@@ -2223,7 +2229,7 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
         return;
     }
 
-    if (ci_equal(name, nlen, "LLEN")) {
+    if (cmd_id == CMD_LLEN) {
         if (argc != 2) {
             wrong_args(out, "llen");
             return;
@@ -2240,7 +2246,7 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
         return;
     }
 
-    if (ci_equal(name, nlen, "LRANGE")) {
+    if (cmd_id == CMD_LRANGE) {
         if (argc != 4) {
             wrong_args(out, "lrange");
             return;
@@ -2287,7 +2293,7 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
         return;
     }
 
-    if (ci_equal(name, nlen, "LINDEX")) {
+    if (cmd_id == CMD_LINDEX) {
         if (argc != 3) {
             wrong_args(out, "lindex");
             return;
@@ -2322,7 +2328,7 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
         return;
     }
 
-    if (ci_equal(name, nlen, "LSET")) {
+    if (cmd_id == CMD_LSET) {
         if (argc != 4) {
             wrong_args(out, "lset");
             return;
@@ -2370,7 +2376,7 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
 
     /* ---------------- set commands ---------------- */
 
-    if (ci_equal(name, nlen, "SADD")) {
+    if (cmd_id == CMD_SADD) {
         if (argc < 3) {
             wrong_args(out, "sadd");
             return;
@@ -2398,7 +2404,7 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
         return;
     }
 
-    if (ci_equal(name, nlen, "SREM")) {
+    if (cmd_id == CMD_SREM) {
         if (argc < 3) {
             wrong_args(out, "srem");
             return;
@@ -2431,7 +2437,7 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
         return;
     }
 
-    if (ci_equal(name, nlen, "SISMEMBER")) {
+    if (cmd_id == CMD_SISMEMBER) {
         if (argc != 3) {
             wrong_args(out, "sismember");
             return;
@@ -2448,7 +2454,7 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
         return;
     }
 
-    if (ci_equal(name, nlen, "SMISMEMBER")) {
+    if (cmd_id == CMD_SMISMEMBER) {
         if (argc < 3) {
             wrong_args(out, "smismember");
             return;
@@ -2472,7 +2478,7 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
         return;
     }
 
-    if (ci_equal(name, nlen, "SCARD")) {
+    if (cmd_id == CMD_SCARD) {
         if (argc != 2) {
             wrong_args(out, "scard");
             return;
@@ -2490,7 +2496,7 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
         return;
     }
 
-    if (ci_equal(name, nlen, "SMEMBERS")) {
+    if (cmd_id == CMD_SMEMBERS) {
         if (argc != 2) {
             wrong_args(out, "smembers");
             return;
@@ -2518,8 +2524,8 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
         return;
     }
 
-    if (ci_equal(name, nlen, "SPOP") || ci_equal(name, nlen, "SRANDMEMBER")) {
-        int pop = ci_equal(name, nlen, "SPOP");
+    if (cmd_id == CMD_SPOP || cmd_id == CMD_SRANDMEMBER) {
+        int pop = cmd_id == CMD_SPOP;
         if (argc != 2 && argc != 3) {
             wrong_args(out, pop ? "spop" : "srandmember");
             return;
@@ -2618,7 +2624,7 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
         return;
     }
 
-    if (ci_equal(name, nlen, "SMOVE")) {
+    if (cmd_id == CMD_SMOVE) {
         if (argc != 4) {
             wrong_args(out, "smove");
             return;
@@ -2665,10 +2671,10 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
         return;
     }
 
-    if (ci_equal(name, nlen, "SINTER") || ci_equal(name, nlen, "SUNION") ||
-        ci_equal(name, nlen, "SDIFF")) {
-        int inter = ci_equal(name, nlen, "SINTER");
-        int sunion = ci_equal(name, nlen, "SUNION");
+    if (cmd_id == CMD_SINTER || cmd_id == CMD_SUNION ||
+        cmd_id == CMD_SDIFF) {
+        int inter = cmd_id == CMD_SINTER;
+        int sunion = cmd_id == CMD_SUNION;
         if (argc < 2) {
             wrong_args(out, inter ? "sinter" : sunion ? "sunion" : "sdiff");
             return;
@@ -2726,7 +2732,7 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
 
     /* ---------------- zset commands ---------------- */
 
-    if (ci_equal(name, nlen, "ZADD")) {
+    if (cmd_id == CMD_ZADD) {
         if (argc < 4 || argc % 2 != 0) {
             wrong_args(out, "zadd");
             return;
@@ -2776,7 +2782,7 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
         return;
     }
 
-    if (ci_equal(name, nlen, "ZSCORE")) {
+    if (cmd_id == CMD_ZSCORE) {
         if (argc != 3) {
             wrong_args(out, "zscore");
             return;
@@ -2800,7 +2806,7 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
         return;
     }
 
-    if (ci_equal(name, nlen, "ZCARD")) {
+    if (cmd_id == CMD_ZCARD) {
         if (argc != 2) {
             wrong_args(out, "zcard");
             return;
@@ -2817,7 +2823,7 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
         return;
     }
 
-    if (ci_equal(name, nlen, "ZINCRBY")) {
+    if (cmd_id == CMD_ZINCRBY) {
         if (argc != 4) {
             wrong_args(out, "zincrby");
             return;
@@ -2856,7 +2862,7 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
         return;
     }
 
-    if (ci_equal(name, nlen, "ZREM")) {
+    if (cmd_id == CMD_ZREM) {
         if (argc < 3) {
             wrong_args(out, "zrem");
             return;
@@ -2889,8 +2895,8 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
         return;
     }
 
-    if (ci_equal(name, nlen, "ZRANGE") || ci_equal(name, nlen, "ZREVRANGE")) {
-        int rev = ci_equal(name, nlen, "ZREVRANGE");
+    if (cmd_id == CMD_ZRANGE || cmd_id == CMD_ZREVRANGE) {
+        int rev = cmd_id == CMD_ZREVRANGE;
         if (argc != 4 && argc != 5) {
             wrong_args(out, rev ? "zrevrange" : "zrange");
             return;
@@ -2972,8 +2978,8 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
         return;
     }
 
-    if (ci_equal(name, nlen, "ZRANK") || ci_equal(name, nlen, "ZREVRANK")) {
-        int rev = ci_equal(name, nlen, "ZREVRANK");
+    if (cmd_id == CMD_ZRANK || cmd_id == CMD_ZREVRANK) {
+        int rev = cmd_id == CMD_ZREVRANK;
         if (argc != 3) {
             wrong_args(out, rev ? "zrevrank" : "zrank");
             return;
@@ -3003,7 +3009,7 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
         return;
     }
 
-    if (ci_equal(name, nlen, "ZCOUNT")) {
+    if (cmd_id == CMD_ZCOUNT) {
         if (argc != 4) {
             wrong_args(out, "zcount");
             return;
@@ -3030,7 +3036,7 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
         return;
     }
 
-    if (ci_equal(name, nlen, "ZRANGEBYSCORE")) {
+    if (cmd_id == CMD_ZRANGEBYSCORE) {
         if (argc < 4) {
             wrong_args(out, "zrangebyscore");
             return;
@@ -3120,7 +3126,7 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
         return;
     }
 
-    if (ci_equal(name, nlen, "ZREMRANGEBYSCORE")) {
+    if (cmd_id == CMD_ZREMRANGEBYSCORE) {
         if (argc != 4) {
             wrong_args(out, "zremrangebyscore");
             return;
@@ -3182,7 +3188,7 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
         return;
     }
 
-    if (ci_equal(name, nlen, "SUBSCRIBE")) {
+    if (cmd_id == CMD_SUBSCRIBE) {
         size_t i;
         if (argc < 2) {
             wrong_args(out, "subscribe");
@@ -3205,7 +3211,7 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
         return;
     }
 
-    if (ci_equal(name, nlen, "UNSUBSCRIBE")) {
+    if (cmd_id == CMD_UNSUBSCRIBE) {
         if (argc > 1) {
             size_t i;
             for (i = 1; i < argc; i++) {
@@ -3246,7 +3252,7 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
         return;
     }
 
-    if (ci_equal(name, nlen, "PUBLISH")) {
+    if (cmd_id == CMD_PUBLISH) {
         if (argc != 3) {
             wrong_args(out, "publish");
             return;
@@ -3261,7 +3267,7 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
         return;
     }
 
-    if (ci_equal(name, nlen, "QUIT")) {
+    if (cmd_id == CMD_QUIT) {
         if (argc != 1) {
             wrong_args(out, "quit");
             return;
@@ -3272,7 +3278,7 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
         return;
     }
 
-    if (ci_equal(name, nlen, "SAVE")) {
+    if (cmd_id == CMD_SAVE) {
         if (argc != 1) {
             wrong_args(out, "save");
             return;
@@ -3292,7 +3298,7 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
         return;
     }
 
-    if (ci_equal(name, nlen, "LASTSAVE")) {
+    if (cmd_id == CMD_LASTSAVE) {
         if (argc != 1) {
             wrong_args(out, "lastsave");
             return;
@@ -3301,7 +3307,7 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
         return;
     }
 
-    if (ci_equal(name, nlen, "SHUTDOWN")) {
+    if (cmd_id == CMD_SHUTDOWN) {
         if (argc != 1) {
             wrong_args(out, "shutdown");
             return;
@@ -3316,7 +3322,7 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
         return;
     }
 
-    if (ci_equal(name, nlen, "SYNC")) {
+    if (cmd_id == CMD_SYNC) {
         if (argc != 1) {
             wrong_args(out, "sync");
             return;
@@ -3332,7 +3338,7 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
         return;
     }
 
-    if (ci_equal(name, nlen, "REPLICAOF")) {
+    if (cmd_id == CMD_REPLICAOF) {
         if (argc != 3) {
             wrong_args(out, "replicaof");
             return;
@@ -3375,7 +3381,7 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
         return;
     }
 
-    if (ci_equal(name, nlen, "UNWATCH")) {
+    if (cmd_id == CMD_UNWATCH) {
         if (argc != 1) {
             wrong_args(out, "unwatch");
             return;
@@ -3387,7 +3393,7 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
 
     /* ---------------- cluster commands (single-node mode) ------------- */
 
-    if (ci_equal(name, nlen, "CLUSTER")) {
+    if (cmd_id == CMD_CLUSTER) {
         if (!d->cluster_enabled) {
             static const char E[] =
                 "ERR This instance has cluster support disabled";
@@ -3980,11 +3986,11 @@ static const cmd_entry CMD_TABLE[] = {
     {"unwatch", CMD_UNWATCH, 1, 1, 0, 0},
     {"subscribe", CMD_SUBSCRIBE, 2, -1, 0, 0},
     {"unsubscribe", CMD_UNSUBSCRIBE, 1, -1, 0, 0},
-    {"publish", CMD_PUBLISH, 3, 3, 0, CMD_WRITE},
+    {"publish", CMD_PUBLISH, 3, 3, 0, 0},
     {"quit", CMD_QUIT, 1, 1, 0, 0},
     {"sync", CMD_SYNC, 1, 1, 0, 0},
-    {"replicaof", CMD_REPLICAOF, 3, 3, 0, CMD_WRITE},
-    {"save", CMD_SAVE, 1, 1, 0, CMD_WRITE},
+    {"replicaof", CMD_REPLICAOF, 3, 3, 0, 0},
+    {"save", CMD_SAVE, 1, 1, 0, 0},
     {"lastsave", CMD_LASTSAVE, 1, 1, 0, 0},
     {"shutdown", CMD_SHUTDOWN, 1, 1, 0, 0},
     {"cluster", CMD_CLUSTER, 2, -1, 0, 0},
@@ -4183,18 +4189,21 @@ void session_execute_at(session *s, const resp_value *argv, size_t argc,
 {
     const char *name = NULL;
     size_t nlen = 0;
+    uint16_t cmd_id = CMD_ID_UNKNOWN;
     uint64_t dirty_before = s->d->dirty;
     if (argc > 0)
         (void)arg_str(&argv[0], &name, &nlen);
+    if (name != NULL)
+        cmd_id = cmd_resolve(name, nlen);
 
     /* subscribed mode: only a small command set is allowed */
     if (s->nsub > 0 && name != NULL &&
-        !ci_equal(name, nlen, "SUBSCRIBE") &&
-        !ci_equal(name, nlen, "UNSUBSCRIBE") &&
+        cmd_id != CMD_SUBSCRIBE &&
+        cmd_id != CMD_UNSUBSCRIBE &&
         !ci_equal(name, nlen, "PSUBSCRIBE") &&
         !ci_equal(name, nlen, "PUNSUBSCRIBE") &&
-        !ci_equal(name, nlen, "PING") && !ci_equal(name, nlen, "QUIT") &&
-        !ci_equal(name, nlen, "SHUTDOWN")) {
+        cmd_id != CMD_PING && cmd_id != CMD_QUIT &&
+        cmd_id != CMD_SHUTDOWN) {
         char lc[32];
         char msg[192];
         size_t i;
@@ -4214,7 +4223,7 @@ void session_execute_at(session *s, const resp_value *argv, size_t argc,
     }
 
     /* transaction control commands are never queued */
-    if (name != NULL && ci_equal(name, nlen, "MULTI")) {
+    if (name != NULL && cmd_id == CMD_MULTI) {
         if (argc != 1) {
             wrong_args(out, "multi");
             return;
@@ -4229,7 +4238,7 @@ void session_execute_at(session *s, const resp_value *argv, size_t argc,
         resp_write_simple_string(out, "OK", 2);
         return;
     }
-    if (name != NULL && ci_equal(name, nlen, "EXEC")) {
+    if (name != NULL && cmd_id == CMD_EXEC) {
         if (argc != 1) {
             wrong_args(out, "exec");
             return;
@@ -4242,7 +4251,7 @@ void session_execute_at(session *s, const resp_value *argv, size_t argc,
         exec_transaction(s, out, now_ms);
         return;
     }
-    if (name != NULL && ci_equal(name, nlen, "DISCARD")) {
+    if (name != NULL && cmd_id == CMD_DISCARD) {
         if (argc != 1) {
             wrong_args(out, "discard");
             return;
@@ -4259,7 +4268,7 @@ void session_execute_at(session *s, const resp_value *argv, size_t argc,
         resp_write_simple_string(out, "OK", 2);
         return;
     }
-    if (name != NULL && ci_equal(name, nlen, "WATCH")) {
+    if (name != NULL && cmd_id == CMD_WATCH) {
         size_t i;
         if (argc < 2) {
             wrong_args(out, "watch");
