@@ -1740,15 +1740,22 @@ static void mt_exec_task(worker *w, mt_task *t)
     mt_push_task(w, &t->home->completions[w->id], t, &t->home->wakeup);
 }
 
+/* Max items popped per ring per drain call: unbounded drains can livelock
+ * when other workers keep producing (the loop never returns to socket IO).
+ * Leftovers are handled on the next wakeup (see mt_rings_nonempty). */
+#define MT_DRAIN_MAX 512
+
 static void mt_drain_inbox(worker *w)
 {
     int pi;
     for (pi = 0; pi < w->ms->nworkers; pi++) {
-        for (;;) {
+        int n = 0;
+        while (n < MT_DRAIN_MAX) {
             mt_task *t = (mt_task *)mt_spsc_pop(&w->inbox[pi]);
             if (t == NULL)
                 break;
             mt_exec_task(w, t);
+            n++;
         }
     }
 }
@@ -1757,12 +1764,14 @@ static void mt_drain_completions(worker *w)
 {
     int pi;
     for (pi = 0; pi < w->ms->nworkers; pi++) {
-        for (;;) {
+        int n = 0;
+        while (n < MT_DRAIN_MAX) {
             mt_task *t = (mt_task *)mt_spsc_pop(&w->completions[pi]);
             void *conn;
             mt_conn_state *st;
             if (t == NULL)
                 break;
+            n++;
             conn = t->conn;
             st = (mt_conn_state *)server_conn_mt_state(conn);
             if (t->kind == MT_TASK_SUB) {
@@ -1856,6 +1865,21 @@ static void worker_on_wakeup(void *ctx)
 
     /* 3. deliver completed replies (home side) */
     mt_drain_completions(w);
+
+    /* bounded drains: anything left behind gets an immediate re-kick so the
+     * loop comes straight back instead of sleeping on leftover work */
+    if (mt_spsc_nonempty(&w->accepts)) {
+        (void)pal_wakeup_kick(&w->wakeup);
+        return;
+    }
+    for (pi = 0; pi < w->ms->nworkers; pi++) {
+        if (mt_spsc_nonempty(&w->migrate[pi]) ||
+            mt_spsc_nonempty(&w->inbox[pi]) ||
+            mt_spsc_nonempty(&w->completions[pi])) {
+            (void)pal_wakeup_kick(&w->wakeup);
+            return;
+        }
+    }
 }
 
 static void *worker_main(void *arg)

@@ -122,4 +122,20 @@ static inline void *mt_spsc_pop(mt_spsc *q)
 #endif
 }
 
+/* Non-empty peek (either side; consumer-consistent). */
+static inline int mt_spsc_nonempty(mt_spsc *q)
+{
+#if DDUP_HAS_C_ATOMICS
+    size_t head = atomic_load_explicit(&q->head, memory_order_acquire);
+    size_t tail = atomic_load_explicit(&q->tail, memory_order_acquire);
+    return head != tail;
+#else
+    int ne;
+    pal_mutex_lock(&q->mu);
+    ne = q->head != q->tail;
+    pal_mutex_unlock(&q->mu);
+    return ne;
+#endif
+}
+
 #endif /* DDUP_MT_SPSC_H */
