@@ -293,26 +293,41 @@ DBSIZE 为 O(1)，可能计入尚未回收的过期 key。
   写）。优雅退出（SIGINT/SIGTERM/SHUTDOWN）：AOF 必定 flush；配置了
   save 间隔且 AOF 关闭时额外写一次最终快照。
 
-## 复制（Phase 7.1）
+## 复制（Phase 7.1 + Phase 12 PSYNC）
 
 - **传播流**：分发层对每个成功应用的写命令（含 EXEC 内逐条）按原始
   argv 重序列化为 RESP 数组，经 server 复用缓冲 fan-out 到三类 sink：
   AOF、复制 backlog（环形缓冲，默认 1MB，`repl-backlog-size` 可调）、
   下游 replica 连接的 out 缓冲（run_once 末尾统一 flush）。
-- **全量同步**：replica 发 SYNC；master 用 `snapshot_serialize` 把内存快照
-  按 `$<len>\r\n<bytes>` 帧发回（二进制帧，非 RESP），随后把该连接标记
-  为 replica 并持续推流。落后超过 4MB 未读的 replica 连接被丢弃
-  （须重新 SYNC）。
-- **复制侧**：REPLICAOF host port 建立 master link（同一事件循环内的
-  特殊 conn），先按帧读快照（flush db 后 snapshot_load_mem 全量加载），
-  随后切到 RESP 命令流模式逐条应用（回包丢弃）。link 断开每 500ms
-  重连并**全量重同步**——无 PSYNC/部分重同步（记录为后续工作，backlog
-  正是为此预留）。REPLICAOF NO ONE 断链并提升为 master。
+- **复制标识（Phase 12）**：每个实例启动时生成 40-hex `master_replid`
+  （`cluster_gen_id`）；INFO replication 暴露 `master_replid` 与
+  `master_repl_offset`（backlog 绝对 offset）。
+- **PSYNC 握手**：replica 的 master link 一律发 `PSYNC <replid> <offset>`
+  （首次为 `PSYNC ? -1`）。master 判定：replid 匹配且 offset 落在
+  `[backlog.offset - backlog.len, backlog.offset]` 内 → 回复
+  `+CONTINUE <replid>` 并仅把 backlog 尾部字节流追加给该连接（**部分
+  重同步，无快照、无 db 清空**）；否则回复
+  `+FULLRESYNC <replid> <offset>` + `$<len>\r\n<snapshot>` 帧（全量）。
+  SYNC 旧路径保留兼容。
+- **副本侧状态机**：记录上游 replid + 已应用 offset（`repl.master_offset`，
+  传播流逐条推进）；link 断开每 500ms 以缓存的 replid/offset 重连尝试
+  部分重同步；`REPLICAOF NO ONE` 与“同 master 重连”保留缓存，指向不同
+  master 才清空。+CONTINUE 跳过 `db_flush`（本地多余数据得以保留，
+  与 Redis 行为一致——记录在案：Redis 部分重同步同样不清库）。
+- **链式复制（A→B→C）**：B 的 master link 会话应用命令时走同一
+  `srv_propagate`，天然 fan-out 到 B 自己的 backlog 与下游 replicas，
+  故 B 可直接作为 C 的 master（C 对 B 做 PSYNC，使用 B 的 replid/offset）。
+- **快照帧接收修复（Phase 12 附带）**：>64 KiB 快照帧的接收改为“头部
+  即时消费 + 帧体从 rbuf 前缘持续取”，修复了旧实现在跨 chunk 时的
+  size_t 下溢崩溃（大快照全量同步此前不可用）。
+- **简化（记录在案）**：无 REPLCONF ACK/心跳（断线靠读超时与写失败）、
+  无 WAIT；backlog 环形覆盖后的旧 offset 一律回退全量（同 Redis）；
+  落后超过 16MB 未读的 replica 连接被丢弃（须重新 SYNC/PSYNC）。
 - **只读副本**：replica 角色下客户端写命令一律 `-READONLY ...`（静态
   写命令表判定），master link 的复制会话豁免。replica 的 AOF 照常记录
   传播来的命令（同 Redis appendonly 行为）。
-- INFO 增加 # Replication 段：role、connected_slaves、master_repl_offset、
-  master_host/port/link_status。
+- INFO 增加 # Replication 段：role、connected_slaves、master_replid、
+  master_repl_offset、master_host/port/link_status。
 
 ## TLS（Phase 7.2）
 

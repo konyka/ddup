@@ -50,6 +50,14 @@
 | 2026-08-05 | Phase 11 mt 首版（io-threads=4） | 服务器 SET/GET | 同上 | 47k / 47k req/s | - | worker 增多路由比例上升，开销随之增大 |
 | 2026-08-05 | Phase 11 mt 优化后（io-threads=2） | 服务器 SET/GET | 同上 | 110k / 111k req/s | - | 任务合并 + 无锁 SPSC + 免深拷贝 + 连接-键亲和累计 |
 | 2026-08-05 | Phase 11 mt 优化后（io-threads=4） | 服务器 SET/GET | 同上 | 58–60k / 57–62k req/s | - | 3 次运行稳定（修复跨 worker 死锁/活锁后） |
+| 2026-08-05 | Phase 12 PSYNC | 副本断线追平（50k 键 ×32B，新 replid 全量） | Windows 11, clang 22.1.6, -O3+LTO, loopback | 0.07s | - | 含 ~2.3MB 快照传输 + 清库重载 |
+| 2026-08-05 | Phase 12 PSYNC | 副本断线追平（同上，backlog 部分重同步） | 同上 | 0.03s（~2.1x） | - | 仅 backlog 尾部 100 条命令，无快照/清库；收益随数据集与写入量放大 |
+
+Phase 12 说明：PSYNC 的收益不在 loopback 小数据集（绝对值几十毫秒），
+而在大数据集 + 高写入场景——全量重同步成本 = 快照序列化 + 全量传输 +
+清库重载（O(db 大小)），部分重同步 = backlog 尾部字节（O(离线期间写入
+量)）。测试同时发现并修复了 >64KiB 快照帧接收的 size_t 下溢崩溃
+（大快照全量同步此前不可用）。
 
 ## Phase 11 mt 性能分析（如实记录）
 
