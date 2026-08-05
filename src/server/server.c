@@ -709,6 +709,7 @@ server *server_create_ex(const char *host, uint16_t port, int backend)
     s->prop_buf.pool = &s->pool;
     memset(&s->repl, 0, sizeof(s->repl));
     s->repl.role = SESSION_ROLE_MASTER;
+    cluster_gen_id(s->repl.replid);
     if (s->backend != SERVER_BACKEND_IOCP &&
         pal_loop_add(s->loop, s->listen_fd, 1, 0, NULL) != 0) {
         server_destroy(s);

@@ -1873,10 +1873,14 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
                                "# Replication\r\n"
                                "role:%s\r\n"
                                "connected_slaves:%llu\r\n"
+                               "master_replid:%s\r\n"
                                "master_repl_offset:%llu\r\n",
                                ri->role == SESSION_ROLE_REPLICA ? "slave"
                                                                 : "master",
                                (unsigned long long)ri->connected_slaves,
+                               ri->role == SESSION_ROLE_REPLICA
+                                   ? ri->master_replid
+                                   : ri->replid,
                                (unsigned long long)ri->offset);
                 if (ri->role == SESSION_ROLE_REPLICA)
                     n2 += snprintf(buf + n2, sizeof(buf) - (size_t)n2,

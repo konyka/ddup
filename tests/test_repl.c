@@ -195,6 +195,23 @@ static void test_sync_master(void)
     DD_CHECK(strstr(buf, "role:master\r\n") != NULL);
     DD_CHECK(strstr(buf, "connected_slaves:1\r\n") != NULL);
     DD_CHECK(strstr(buf, "master_repl_offset:") != NULL);
+    /* Phase 12: every server has a 40-hex replication id */
+    {
+        const char *p = strstr(buf, "master_replid:");
+        int i;
+        int hex = 0;
+        DD_CHECK(p != NULL);
+        if (p != NULL) {
+            p += strlen("master_replid:");
+            for (i = 0; i < 40; i++) {
+                char ch = p[i];
+                if ((ch >= '0' && ch <= '9') || (ch >= 'a' && ch <= 'f'))
+                    hex++;
+            }
+            DD_CHECK_EQ_INT(40, hex);
+            DD_CHECK(p[40] == '\r' && p[41] == '\n');
+        }
+    }
 
     pal_close(b);
     pal_close(a);

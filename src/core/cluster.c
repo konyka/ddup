@@ -10,7 +10,7 @@
 
 #include "pal/pal_time.h"
 
-static void gen_node_id(char out[41])
+void cluster_gen_id(char out[41])
 {
     static const char hex[] = "0123456789abcdef";
     uint64_t x = pal_now_us() ^ 0x9E3779B97F4A7C15ULL;
@@ -48,7 +48,7 @@ int cluster_node_id_load_or_create(const char *path, char out_id[41])
         return 0;
     }
 
-    gen_node_id(out_id);
+    cluster_gen_id(out_id);
     {
         pal_file *f = pal_file_open_write(path);
         char line[128];

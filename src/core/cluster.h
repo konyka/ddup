@@ -43,6 +43,8 @@ struct db; /* command.h */
  * (out_id is NUL-terminated, 40 chars), -1 on unreadable/malformed file or
  * write failure. */
 int cluster_node_id_load_or_create(const char *path, char out_id[41]);
+/* Generate a random 40-hex id (node ids, replication ids). */
+void cluster_gen_id(char out[41]);
 
 /* node table */
 void cluster_nodes_init(struct db *d);

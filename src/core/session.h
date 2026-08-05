@@ -42,7 +42,9 @@ typedef struct repl_info {
     uint16_t master_port;
     int link_up; /* replica side: master link status */
     size_t connected_slaves;
-    uint64_t offset; /* master side: bytes propagated so far */
+    uint64_t offset;    /* master side: bytes propagated so far */
+    char replid[41];    /* own replication id (40-hex, generated at boot) */
+    char master_replid[41]; /* replica side: the master's replid */
 } repl_info;
 
 typedef struct session {
