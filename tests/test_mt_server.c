@@ -190,9 +190,9 @@ static void test_blocked_commands_in_mt_mode(void)
     DD_CHECK_EQ_INT(0, mt_server_start(ms));
     a = connect_client(mt_server_port(ms));
 
-    roundtrip(a, "*2\r\n$9\r\nSUBSCRIBE\r\n$2\r\nch\r\n",
-              "-ERR command not supported in mt mode\r\n");
     roundtrip(a, "*1\r\n$8\r\nSHUTDOWN\r\n",
+              "-ERR command not supported in mt mode\r\n");
+    roundtrip(a, "*1\r\n$4\r\nSYNC\r\n",
               "-ERR command not supported in mt mode\r\n");
     /* The session still works for normal commands afterwards. */
     roundtrip(a, "*1\r\n$4\r\nPING\r\n", "+PONG\r\n");
@@ -646,6 +646,109 @@ static void test_watch_routed_and_unwatch(void)
     pal_socket_cleanup();
 }
 
+/* Read exactly len bytes from c with a deadline (for async pushes). */
+static size_t recv_deadline(pal_socket_t c, char *buf, size_t len,
+                            uint64_t ms)
+{
+    size_t got = 0;
+    uint64_t deadline = pal_now_ms() + ms;
+    while (got < len && pal_now_ms() < deadline) {
+        ptrdiff_t n = pal_recv(c, buf + got, len - got);
+        if (n > 0)
+            got += (size_t)n;
+        else
+            pal_sleep_ms(1);
+    }
+    return got;
+}
+
+static void test_pubsub_cross_worker(void)
+{
+    mt_server *ms;
+    pal_socket_t a, b;
+    char buf[64];
+    const char *push = "*3\r\n$7\r\nmessage\r\n$2\r\nch\r\n$5\r\nhello\r\n";
+
+    DD_CHECK_EQ_INT(0, pal_socket_init());
+    ms = mt_server_create("127.0.0.1", 0, 2);
+    DD_CHECK(ms != NULL);
+    DD_CHECK_EQ_INT(0, mt_server_start(ms));
+    a = connect_client(mt_server_port(ms)); /* -> worker 0 */
+    b = connect_client(mt_server_port(ms)); /* -> worker 1 */
+
+    roundtrip(a, "*2\r\n$9\r\nSUBSCRIBE\r\n$2\r\nch\r\n",
+              "*3\r\n$9\r\nsubscribe\r\n$2\r\nch\r\n:1\r\n");
+    roundtrip(b, "*3\r\n$7\r\nPUBLISH\r\n$2\r\nch\r\n$5\r\nhello\r\n",
+              ":1\r\n");
+
+    /* the push arrives on a without a sending anything */
+    DD_CHECK_EQ_INT((long long)strlen(push),
+                    (long long)recv_deadline(a, buf, strlen(push), 3000));
+    DD_CHECK_MEM(push, strlen(push), buf, strlen(push));
+
+    pal_close(a);
+    pal_close(b);
+    mt_server_stop(ms);
+    mt_server_destroy(ms);
+    pal_socket_cleanup();
+}
+
+static void test_unsubscribe_stops_delivery(void)
+{
+    mt_server *ms;
+    pal_socket_t a, b;
+    char buf[64];
+
+    DD_CHECK_EQ_INT(0, pal_socket_init());
+    ms = mt_server_create("127.0.0.1", 0, 2);
+    DD_CHECK(ms != NULL);
+    DD_CHECK_EQ_INT(0, mt_server_start(ms));
+    a = connect_client(mt_server_port(ms));
+    b = connect_client(mt_server_port(ms));
+
+    roundtrip(a, "*2\r\n$9\r\nSUBSCRIBE\r\n$2\r\nch\r\n",
+              "*3\r\n$9\r\nsubscribe\r\n$2\r\nch\r\n:1\r\n");
+    roundtrip(a, "*2\r\n$11\r\nUNSUBSCRIBE\r\n$2\r\nch\r\n",
+              "*3\r\n$11\r\nunsubscribe\r\n$2\r\nch\r\n:0\r\n");
+    roundtrip(b, "*3\r\n$7\r\nPUBLISH\r\n$2\r\nch\r\n$5\r\nhello\r\n",
+              ":0\r\n");
+
+    /* nothing should arrive on a */
+    DD_CHECK_EQ_INT(0, (long long)recv_deadline(a, buf, sizeof(buf), 300));
+
+    pal_close(a);
+    pal_close(b);
+    mt_server_stop(ms);
+    mt_server_destroy(ms);
+    pal_socket_cleanup();
+}
+
+static void test_pubsub_conn_close_unsubscribes(void)
+{
+    mt_server *ms;
+    pal_socket_t a, b;
+
+    DD_CHECK_EQ_INT(0, pal_socket_init());
+    ms = mt_server_create("127.0.0.1", 0, 2);
+    DD_CHECK(ms != NULL);
+    DD_CHECK_EQ_INT(0, mt_server_start(ms));
+    a = connect_client(mt_server_port(ms));
+    b = connect_client(mt_server_port(ms));
+
+    roundtrip(a, "*2\r\n$9\r\nSUBSCRIBE\r\n$2\r\nch\r\n",
+              "*3\r\n$9\r\nsubscribe\r\n$2\r\nch\r\n:1\r\n");
+    pal_close(a);
+    /* give the close/unregister a moment to propagate */
+    pal_sleep_ms(200);
+    roundtrip(b, "*3\r\n$7\r\nPUBLISH\r\n$2\r\nch\r\n$5\r\nhello\r\n",
+              ":0\r\n");
+
+    pal_close(b);
+    mt_server_stop(ms);
+    mt_server_destroy(ms);
+    pal_socket_cleanup();
+}
+
 static void test_same_target_pipeline_merges_into_one_task(void)
 {
     mt_server *ms;
@@ -712,6 +815,9 @@ int main(void)
     DD_RUN(test_routed_cross_worker_commands);
     DD_RUN(test_pipeline_mixed_targets_keeps_order);
     DD_RUN(test_blocked_commands_in_mt_mode);
+    DD_RUN(test_pubsub_cross_worker);
+    DD_RUN(test_unsubscribe_stops_delivery);
+    DD_RUN(test_pubsub_conn_close_unsubscribes);
     DD_RUN(test_multikey_same_worker);
     DD_RUN(test_multikey_crossslot_rejected);
     DD_RUN(test_smove_same_worker);

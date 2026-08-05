@@ -57,11 +57,33 @@ typedef struct mt_watch_entry {
     uint64_t epoch;
 } mt_watch_entry;
 
+/* One subscribed channel on a connection (home-side bookkeeping). */
+typedef struct mt_conn_sub {
+    struct mt_conn_sub *next;
+    char *ch;
+    size_t chlen;
+    int owner; /* worker id owning the channel */
+} mt_conn_sub;
+
+/* Channel-registry entry on the owner worker (owner thread only). */
+typedef struct mt_sub_entry {
+    struct mt_sub_entry *next;
+    char *ch;
+    size_t chlen;
+    int home_id; /* subscriber's home worker id */
+    void *conn;  /* subscriber conn (compared by value only, never followed
+                    except on the subscriber's home worker) */
+} mt_sub_entry;
+
 /* Task kinds. */
 #define MT_TASK_CMD 0    /* ordinary routed command batch */
 #define MT_TASK_WATCH 1  /* WATCH: reply +OK, versions ride back out-of-band */
 #define MT_TASK_EXEC 2   /* EXEC bundle: watch check + sequential replay */
 #define MT_TASK_UNWATCH 3 /* fire-and-forget watch_refs release (key blob) */
+#define MT_TASK_SUB 4    /* pub/sub register (round trip, empty reply) */
+#define MT_TASK_UNSUB 5  /* pub/sub unregister (fire-and-forget) */
+#define MT_TASK_PUBLISH 6 /* PUBLISH: fan-out + receiver count reply */
+#define MT_TASK_PUSH 7   /* pub/sub delivery to a subscriber's home */
 
 typedef struct mt_task {
     struct mt_task *next; /* reorder-buffer link (queue nodes wrap tasks) */
@@ -103,6 +125,8 @@ struct worker {
     void **zombies;
     size_t nzombies;
     size_t zombie_cap;
+    /* pub/sub channel registry (channels owned by this worker) */
+    mt_sub_entry *subs;
     volatile int running;
 };
 
@@ -154,6 +178,10 @@ typedef struct mt_conn_state {
      * it; pending counts tasks/deliveries in flight for this conn. */
     int pending;
     int closing;
+    /* pub/sub: channels this conn is subscribed to (home thread; the
+     * authoritative registry lives on each channel's owner worker) */
+    mt_conn_sub *subs;
+    size_t nsub;
 } mt_conn_state;
 
 static void mt_blobs_free(mt_cmd_blob *blobs, size_t n)
@@ -235,6 +263,7 @@ static int mt_watch_add(mt_conn_state *st, const char *key, size_t klen,
 }
 
 static void mt_push_task(mt_spsc *q, mt_task *t, pal_wakeup *wake);
+static mt_cmd_blob *mt_blob_one(const char *raw, size_t len);
 
 /* Fire-and-forget watch_refs release on the owning worker. */
 static mt_task *mt_unwatch_task(const char *key, size_t klen)
@@ -338,6 +367,83 @@ static void mt_pending_dec(worker *home, void *conn, mt_conn_state *st)
         server_conn_free_now(home->srv, conn);
 }
 
+/* Producer from another worker: only count the delivery when the conn is
+ * still open (closing is always set under this mutex before any free). */
+static int mt_pending_inc_if_open(worker *home, mt_conn_state *st)
+{
+    int ok;
+    pal_mutex_lock(&home->pending_mu);
+    ok = !st->closing;
+    if (ok)
+        st->pending++;
+    pal_mutex_unlock(&home->pending_mu);
+    return ok;
+}
+
+/* ------------------------------------------------------------------ */
+/* pub/sub: home-side subscription bookkeeping                          */
+/* ------------------------------------------------------------------ */
+
+static mt_conn_sub *mt_conn_sub_find(mt_conn_state *st, const char *ch,
+                                     size_t chlen)
+{
+    mt_conn_sub *s;
+    for (s = st->subs; s != NULL; s = s->next)
+        if (s->chlen == chlen && memcmp(s->ch, ch, chlen) == 0)
+            return s;
+    return NULL;
+}
+
+static int mt_conn_sub_add(mt_conn_state *st, const char *ch, size_t chlen,
+                           int owner)
+{
+    mt_conn_sub *s = (mt_conn_sub *)calloc(1, sizeof(*s));
+    if (s == NULL)
+        return -1;
+    s->ch = (char *)malloc(chlen);
+    if (s->ch == NULL) {
+        free(s);
+        return -1;
+    }
+    memcpy(s->ch, ch, chlen);
+    s->chlen = chlen;
+    s->owner = owner;
+    s->next = st->subs;
+    st->subs = s;
+    st->nsub++;
+    return 0;
+}
+
+static int mt_conn_sub_remove(mt_conn_state *st, const char *ch,
+                              size_t chlen)
+{
+    mt_conn_sub **pp = &st->subs;
+    while (*pp != NULL) {
+        mt_conn_sub *s = *pp;
+        if (s->chlen == chlen && memcmp(s->ch, ch, chlen) == 0) {
+            *pp = s->next;
+            free(s->ch);
+            free(s);
+            if (st->nsub > 0)
+                st->nsub--;
+            return 1;
+        }
+        pp = &(*pp)->next;
+    }
+    return 0;
+}
+
+static void mt_conn_subs_free(mt_conn_state *st)
+{
+    while (st->subs != NULL) {
+        mt_conn_sub *s = st->subs;
+        st->subs = s->next;
+        free(s->ch);
+        free(s);
+    }
+    st->nsub = 0;
+}
+
 static void mt_zombie_push(worker *home, void *conn)
 {
     if (home->nzombies == home->zombie_cap) {
@@ -359,6 +465,7 @@ static int mt_conn_close(void *ctx, void *conn)
     worker *home = (worker *)ctx;
     mt_conn_state *st = (mt_conn_state *)server_conn_mt_state(conn);
     int held = 0;
+    mt_conn_sub *s;
     if (st == NULL)
         return 0;
     pal_mutex_lock(&home->pending_mu);
@@ -368,6 +475,20 @@ static int mt_conn_close(void *ctx, void *conn)
         held = 1;
     }
     pal_mutex_unlock(&home->pending_mu);
+    /* fan out unregistration for every subscribed channel (pointer-compare
+     * tasks; safe once the conn is gone) */
+    for (s = st->subs; s != NULL; s = s->next) {
+        mt_task *t = mt_task_new(conn, home, 0, 1, 1,
+                                 mt_blob_one(s->ch, s->chlen));
+        if (t == NULL || t->cmds == NULL) {
+            if (t != NULL)
+                mt_task_free(t);
+            continue;
+        }
+        t->kind = MT_TASK_UNSUB;
+        mt_push_task(&home->ms->workers[s->owner].inbox[home->id], t,
+                     &home->ms->workers[s->owner].wakeup);
+    }
     return held;
 }
 
@@ -404,6 +525,8 @@ static void mt_state_free_cb(void *ctx, void *ptr)
     /* drop transaction state */
     mt_blobs_free(st->mq, st->mq_n);
     mt_watches_clear((worker *)ctx, st);
+    /* drop pub/sub bookkeeping (registry cleanup was fanned out at close) */
+    mt_conn_subs_free(st);
     free(st);
 }
 
@@ -450,9 +573,6 @@ static void mt_agg_finish(server *srv, void *conn, mt_conn_state *st,
 static int mt_is_blocked(uint16_t cmd)
 {
     switch (cmd) {
-    case CMD_SUBSCRIBE:
-    case CMD_UNSUBSCRIBE:
-    case CMD_PUBLISH:
     case CMD_SHUTDOWN:
     case CMD_SYNC:
     case CMD_REPLICAOF:
@@ -1102,6 +1222,219 @@ static int mt_route_txn(worker *home, void *conn, mt_conn_state *st,
     return 1;
 }
 
+/* ------------------------------------------------------------------ */
+/* pub/sub routing (channel owner = hash_slot(channel) % nworkers)      */
+/* ------------------------------------------------------------------ */
+
+static void mt_write_sub_reply(resp_buf *b, const char *verb, size_t vlen,
+                               const char *ch, size_t chlen, size_t nsub)
+{
+    resp_write_array_header(b, 3);
+    resp_write_bulk(b, verb, vlen);
+    if (ch != NULL)
+        resp_write_bulk(b, ch, chlen);
+    else
+        resp_write_bulk(b, NULL, 0); /* $-1 (UNSUBSCRIBE with no channels) */
+    resp_write_integer(b, (long long)nsub);
+}
+
+/* Send a register task for (conn, channel) to the channel owner. */
+static void mt_pubsub_register(worker *home, void *conn, mt_conn_state *st,
+                               const char *ch, size_t chlen, int owner)
+{
+    mt_task *t = mt_task_new(conn, home, 0, 1, 1, mt_blob_one(ch, chlen));
+    if (t == NULL || t->cmds == NULL) {
+        if (t != NULL)
+            mt_task_free(t);
+        return;
+    }
+    t->kind = MT_TASK_SUB;
+    mt_pending_inc(home, st);
+    mt_push_task(&home->ms->workers[owner].inbox[home->id], t,
+                 &home->ms->workers[owner].wakeup);
+}
+
+/* Fire-and-forget unregister for (conn, channel) on the owner. */
+static void mt_pubsub_unregister(worker *home, void *conn, const char *ch,
+                                 size_t chlen, int owner)
+{
+    mt_task *t = mt_task_new(conn, home, 0, 1, 1, mt_blob_one(ch, chlen));
+    if (t == NULL || t->cmds == NULL) {
+        if (t != NULL)
+            mt_task_free(t);
+        return;
+    }
+    t->kind = MT_TASK_UNSUB;
+    mt_push_task(&home->ms->workers[owner].inbox[home->id], t,
+                 &home->ms->workers[owner].wakeup);
+}
+
+static int mt_route_subscribe(worker *home, void *conn, mt_conn_state *st,
+                              const resp_value *argv, size_t argc,
+                              uint64_t seq, resp_buf *out)
+{
+    static const char verb[] = "subscribe";
+    resp_buf reply;
+    size_t i;
+    if (argc < 2) {
+        static const char arity[] =
+            "-ERR wrong number of arguments for 'subscribe' command\r\n";
+        mt_reply_local(home, conn, st, seq, arity, sizeof(arity) - 1, out);
+        return 1;
+    }
+    resp_buf_init(&reply);
+    for (i = 1; i < argc; i++) {
+        int owner;
+        if (argv[i].str == NULL)
+            continue;
+        owner = (int)(hash_slot(argv[i].str, argv[i].len) %
+                      (uint32_t)home->ms->nworkers);
+        if (mt_conn_sub_find(st, argv[i].str, argv[i].len) == NULL) {
+            if (mt_conn_sub_add(st, argv[i].str, argv[i].len, owner) == 0)
+                mt_pubsub_register(home, conn, st, argv[i].str,
+                                   argv[i].len, owner);
+        }
+        mt_write_sub_reply(&reply, verb, sizeof(verb) - 1, argv[i].str,
+                           argv[i].len, st->nsub);
+    }
+    mt_reply_local(home, conn, st, seq, reply.data, reply.len, out);
+    resp_buf_free(&reply);
+    return 1;
+}
+
+static int mt_route_unsubscribe(worker *home, void *conn, mt_conn_state *st,
+                                const resp_value *argv, size_t argc,
+                                uint64_t seq, resp_buf *out)
+{
+    static const char verb[] = "unsubscribe";
+    resp_buf reply;
+    resp_buf_init(&reply);
+    if (argc >= 2) {
+        size_t i;
+        for (i = 1; i < argc; i++) {
+            if (argv[i].str == NULL)
+                continue;
+            if (mt_conn_sub_remove(st, argv[i].str, argv[i].len)) {
+                int owner = (int)(hash_slot(argv[i].str, argv[i].len) %
+                                  (uint32_t)home->ms->nworkers);
+                mt_pubsub_unregister(home, conn, argv[i].str, argv[i].len,
+                                     owner);
+            }
+            mt_write_sub_reply(&reply, verb, sizeof(verb) - 1, argv[i].str,
+                               argv[i].len, st->nsub);
+        }
+    } else {
+        /* unsubscribe everything */
+        if (st->subs == NULL) {
+            mt_write_sub_reply(&reply, verb, sizeof(verb) - 1, NULL, 0, 0);
+        } else {
+            while (st->subs != NULL) {
+                mt_conn_sub *s = st->subs;
+                mt_pubsub_unregister(home, conn, s->ch, s->chlen, s->owner);
+                mt_write_sub_reply(&reply, verb, sizeof(verb) - 1, s->ch,
+                                   s->chlen, st->nsub - 1);
+                st->subs = s->next;
+                if (st->nsub > 0)
+                    st->nsub--;
+                free(s->ch);
+                free(s);
+            }
+        }
+    }
+    mt_reply_local(home, conn, st, seq, reply.data, reply.len, out);
+    resp_buf_free(&reply);
+    return 1;
+}
+
+/* Execute PUBLISH on the channel owner: fan the message out to every
+ * subscriber's home worker and reply with the receiver count. */
+static void mt_publish_execute(worker *owner_w, mt_task *t)
+{
+    resp_value v;
+    ptrdiff_t used;
+    mt_sub_entry *e;
+    long receivers = 0;
+
+    arena_reset(&owner_w->exec_arena);
+    used = resp_parse(t->cmds[0].raw, t->cmds[0].len, &v,
+                      &owner_w->exec_arena);
+    if (used != (ptrdiff_t)t->cmds[0].len || v.type != RESP_ARRAY ||
+        v.count < 3 || v.items[1].str == NULL) {
+        resp_write_error(&t->reply, "ERR Protocol error", 18);
+        return;
+    }
+    for (e = owner_w->subs; e != NULL; e = e->next) {
+        worker *sh;
+        mt_conn_state *sst;
+        mt_task *d;
+        if (e->chlen != v.items[1].len ||
+            memcmp(e->ch, v.items[1].str, e->chlen) != 0)
+            continue;
+        sh = &owner_w->ms->workers[e->home_id];
+        sst = (mt_conn_state *)server_conn_mt_state(e->conn);
+        if (sst == NULL || !mt_pending_inc_if_open(sh, sst))
+            continue;
+        /* payload: the full "message" push frame, plus the channel blob so
+         * the home side can re-check the subscription at delivery time */
+        d = mt_task_new(e->conn, sh, 0, 1, 1,
+                        mt_blob_one(e->ch, e->chlen));
+        if (d == NULL || d->cmds == NULL) {
+            if (d != NULL)
+                mt_task_free(d);
+            mt_pending_dec(sh, e->conn, sst);
+            continue;
+        }
+        d->kind = MT_TASK_PUSH;
+        resp_write_array_header(&d->reply, 3);
+        resp_write_bulk(&d->reply, "message", 7);
+        resp_write_bulk(&d->reply, v.items[1].str, v.items[1].len);
+        resp_write_bulk(&d->reply,
+                        v.items[2].str == NULL ? "" : v.items[2].str,
+                        v.items[2].len);
+        mt_push_task(&sh->completions[owner_w->id], d, &sh->wakeup);
+        receivers++;
+    }
+    resp_write_integer(&t->reply, receivers);
+}
+
+static int mt_route_publish(worker *home, void *conn, mt_conn_state *st,
+                            const resp_value *argv, size_t argc,
+                            const char *raw, size_t rawlen, uint64_t seq,
+                            resp_buf *out)
+{
+    static const char arity[] =
+        "-ERR wrong number of arguments for 'publish' command\r\n";
+    static const char err_oom[] = "-ERR out of memory\r\n";
+    int owner;
+    mt_task *t;
+
+    if (argc < 3 || argv[1].str == NULL) {
+        mt_reply_local(home, conn, st, seq, arity, sizeof(arity) - 1, out);
+        return 1;
+    }
+    owner = (int)(hash_slot(argv[1].str, argv[1].len) %
+                  (uint32_t)home->ms->nworkers);
+    t = mt_task_new(conn, home, seq, 1, 1, mt_blob_one(raw, rawlen));
+    if (t == NULL || t->cmds == NULL) {
+        if (t != NULL)
+            mt_task_free(t);
+        mt_reply_local(home, conn, st, seq, err_oom, sizeof(err_oom) - 1,
+                       out);
+        return 1;
+    }
+    t->kind = MT_TASK_PUBLISH;
+    if (owner == home->id) {
+        mt_publish_execute(home, t);
+        mt_reorder_insert(st, t);
+        mt_drain_ready(home->srv, &home->exec_arena, conn, st, 1);
+        return 1;
+    }
+    mt_pending_inc(home, st);
+    mt_push_task(&home->ms->workers[owner].inbox[home->id], t,
+                 &home->ms->workers[owner].wakeup);
+    return 1;
+}
+
 /* Router installed on every worker's server. Runs on the home worker thread
  * inside conn_process_input. Returns non-zero when the command was handled
  * (locally, blocked, or forwarded). */
@@ -1136,6 +1469,21 @@ static int mt_route(void *ctx, void *conn, session *sess,
         mt_batch_flush(home, conn, st);
         return mt_route_txn(home, conn, st, argv, argc, raw, rawlen, cmd,
                             out);
+    }
+
+    if (cmd == CMD_SUBSCRIBE || cmd == CMD_UNSUBSCRIBE ||
+        cmd == CMD_PUBLISH) {
+        uint64_t seq;
+        mt_batch_flush(home, conn, st);
+        seq = st->seq_next++;
+        if (cmd == CMD_SUBSCRIBE)
+            return mt_route_subscribe(home, conn, st, argv, argc, seq,
+                                      out);
+        if (cmd == CMD_UNSUBSCRIBE)
+            return mt_route_unsubscribe(home, conn, st, argv, argc, seq,
+                                        out);
+        return mt_route_publish(home, conn, st, argv, argc, raw, rawlen,
+                                seq, out);
     }
 
     if (cmd == CMD_DBSIZE || cmd == CMD_FLUSHDB) {
@@ -1239,7 +1587,46 @@ static void worker_on_wakeup(void *ctx)
                 mt_task_free(t);
                 continue;
             }
-            if (t->kind == MT_TASK_WATCH) {
+            if (t->kind == MT_TASK_UNSUB) {
+                /* remove (conn, channel) from this worker's registry */
+                mt_sub_entry **pp = &w->subs;
+                while (*pp != NULL) {
+                    mt_sub_entry *e = *pp;
+                    if (e->conn == t->conn &&
+                        e->chlen == t->cmds[0].len &&
+                        memcmp(e->ch, t->cmds[0].raw, e->chlen) == 0) {
+                        *pp = e->next;
+                        free(e->ch);
+                        free(e);
+                        break;
+                    }
+                    pp = &(*pp)->next;
+                }
+                mt_task_free(t);
+                continue;
+            }
+            if (t->kind == MT_TASK_SUB) {
+                /* register (conn, channel) and report back (round trip so
+                 * the subscriber conn stays alive until registered) */
+                mt_sub_entry *e =
+                    (mt_sub_entry *)calloc(1, sizeof(*e));
+                if (e != NULL) {
+                    e->ch = (char *)malloc(t->cmds[0].len);
+                    if (e->ch != NULL) {
+                        memcpy(e->ch, t->cmds[0].raw, t->cmds[0].len);
+                        e->chlen = t->cmds[0].len;
+                        e->home_id = t->home->id;
+                        e->conn = t->conn;
+                        e->next = w->subs;
+                        w->subs = e;
+                    } else {
+                        free(e);
+                    }
+                }
+                /* falls through to the completion push (empty reply) */
+            } else if (t->kind == MT_TASK_PUBLISH) {
+                mt_publish_execute(w, t);
+            } else if (t->kind == MT_TASK_WATCH) {
                 /* read versions for every watched key; they ride back
                  * out-of-band with the +OK reply */
                 resp_value v;
@@ -1302,6 +1689,31 @@ static void worker_on_wakeup(void *ctx)
                 break;
             conn = t->conn;
             st = (mt_conn_state *)server_conn_mt_state(conn);
+            if (t->kind == MT_TASK_SUB) {
+                /* registration round trip finished: just release the ref */
+                mt_task_free(t);
+                if (st != NULL)
+                    mt_pending_dec(w, conn, st);
+                continue;
+            }
+            if (t->kind == MT_TASK_PUSH) {
+                /* pub/sub delivery: re-check the subscription (UNSUBSCRIBE
+                 * may have raced with the fan-out) and append directly,
+                 * outside the command sequence (pushes are async) */
+                if (st != NULL) {
+                    int deliver = !st->closing && t->ncmds == 1 &&
+                                  mt_conn_sub_find(st, t->cmds[0].raw,
+                                                   t->cmds[0].len) != NULL;
+                    if (deliver) {
+                        server_conn_out_append(w->srv, conn, t->reply.data,
+                                               t->reply.len);
+                        (void)server_conn_flush(w->srv, conn);
+                    }
+                    mt_pending_dec(w, conn, st);
+                }
+                mt_task_free(t);
+                continue;
+            }
             if (t->agg != NULL) {
                 /* broadcast part: accumulate and finish when complete */
                 mt_agg *agg = t->agg;
