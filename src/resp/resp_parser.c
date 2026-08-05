@@ -11,22 +11,10 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "pal/pal_simd.h"
+
 #define RESP_MAX_DEPTH 512
 #define RESP_MAX_ARRAY_LEN (1024LL * 1024LL * 1024LL) /* protocol sanity cap */
-
-static const char *find_crlf(const char *p, const char *end)
-{
-    /* memchr for '\r', then verify '\n' follows. */
-    while (p < end) {
-        const char *cr = memchr(p, '\r', (size_t)(end - p));
-        if (!cr || cr + 1 >= end)
-            return NULL;
-        if (cr[1] == '\n')
-            return cr;
-        p = cr + 1;
-    }
-    return NULL;
-}
 
 /* Parse a signed decimal integer in [p, end). Strict: optional '-', at least
  * one digit, digits only, no overflow. Returns 0 on success. */
@@ -85,7 +73,7 @@ static int parse_at(const char *start, const char *end, const char **pos,
     case ',':
     case '(': {
         /* Line-based types: <type><payload>\r\n */
-        const char *crlf = find_crlf(p, end);
+        const char *crlf = ddup_find_crlf(p, end);
         if (!crlf)
             return 0;
         switch (type) {
@@ -155,7 +143,7 @@ static int parse_at(const char *start, const char *end, const char **pos,
     case '!':
     case '=': {
         /* Blob types: <type><len>\r\n<payload>\r\n ; $-1 = null bulk */
-        const char *crlf = find_crlf(p, end);
+        const char *crlf = ddup_find_crlf(p, end);
         if (!crlf)
             return 0;
         long long blen;
@@ -190,7 +178,7 @@ static int parse_at(const char *start, const char *end, const char **pos,
     case '>': {
         /* Aggregate types: <type><count>\r\n<children> ; *-1 = null array.
          * For maps the count is a pair count; items holds 2*count values. */
-        const char *crlf = find_crlf(p, end);
+        const char *crlf = ddup_find_crlf(p, end);
         if (!crlf)
             return 0;
         long long count;
