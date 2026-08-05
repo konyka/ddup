@@ -85,6 +85,7 @@ typedef struct mt_sub_entry {
 #define MT_TASK_UNSUB 5  /* pub/sub unregister (fire-and-forget) */
 #define MT_TASK_PUBLISH 6 /* PUBLISH: fan-out + receiver count reply */
 #define MT_TASK_PUSH 7   /* pub/sub delivery to a subscriber's home */
+#define MT_TASK_MIGRATE 8 /* connection migration to another worker */
 
 typedef struct mt_task {
     struct mt_task *next; /* reorder-buffer link (queue nodes wrap tasks) */
@@ -117,6 +118,7 @@ struct worker {
     mt_spsc accepts;
     mt_spsc *inbox;
     mt_spsc *completions;
+    mt_spsc *migrate;     /* MT_TASK_MIGRATE conns from other workers */
     arena exec_arena;     /* re-parse scratch for routed commands */
     uint64_t tasks_executed; /* routed tasks executed (test/observability) */
     /* Guards mt_conn_state.pending/closing of every conn homed on this
@@ -188,6 +190,9 @@ typedef struct mt_conn_state {
      * authoritative registry lives on each channel's owner worker) */
     mt_conn_sub *subs;
     size_t nsub;
+    /* connection-key affinity: set once the conn has been migrated to the
+     * worker owning its (first) keys; further commands stay put */
+    int migrated;
 } mt_conn_state;
 
 static void mt_blobs_free(mt_cmd_blob *blobs, size_t n)
@@ -1524,6 +1529,34 @@ static int mt_route(void *ctx, void *conn, session *sess,
      * target into one task (flushed on target change / local command /
      * end of the parse loop). */
     if (target >= 0 && target != home->id) {
+        /* connection-key affinity: a clean connection migrates once to the
+         * worker owning its keys (the current command stays unconsumed in
+         * the receive buffer and is re-processed by the new home) */
+        if (!st->migrated && st->pending == 0 && st->reorder == NULL &&
+            st->batch_n == 0 && !st->in_multi && st->nwatch == 0 &&
+            st->subs == NULL && !st->closing) {
+            st->seq_next--; /* nothing was answered yet */
+            st->migrated = 1;
+            if (server_conn_detach(home->srv, conn) == 0) {
+                mt_task *t = mt_task_new(conn, &home->ms->workers[target],
+                                         0, 1, 0, NULL);
+                if (t != NULL) {
+                    t->kind = MT_TASK_MIGRATE;
+                    mt_push_task(
+                        &home->ms->workers[target].migrate[home->id], t,
+                        &home->ms->workers[target].wakeup);
+                    return 2;
+                }
+                /* task allocation failed: roll back the detach */
+                (void)server_conn_rehome(home->srv, conn);
+                if (server_conn_adopt(home->srv, conn) != 0) {
+                    server_conn_free_now(home->srv, conn);
+                    return 2;
+                }
+            }
+            st->migrated = 0;
+            st->seq_next++;
+        }
         if (st->batch_target >= 0 && st->batch_target != target)
             mt_batch_flush(home, conn, st);
         if (st->batch_target < 0) {
@@ -1592,6 +1625,19 @@ static void worker_on_wakeup(void *ctx)
             break;
         fd = (pal_socket_t)(uintptr_t)p;
         (void)server_adopt_fd(w->srv, fd);
+    }
+
+    /* 1b. adopt connections migrated from other workers (key affinity) */
+    for (pi = 0; pi < w->ms->nworkers; pi++) {
+        for (;;) {
+            mt_task *t = (mt_task *)mt_spsc_pop(&w->migrate[pi]);
+            if (t == NULL)
+                break;
+            server_conn_rehome(w->srv, t->conn);
+            if (server_conn_adopt(w->srv, t->conn) != 0)
+                server_conn_free_now(w->srv, t->conn);
+            mt_task_free(t);
+        }
     }
 
     /* 2. execute commands routed to this worker (merged tasks are re-parsed
@@ -1858,8 +1904,9 @@ mt_server *mt_server_create(const char *host, uint16_t port, int nworkers)
         w->inbox = (mt_spsc *)calloc((size_t)nworkers, sizeof(mt_spsc));
         w->completions =
             (mt_spsc *)calloc((size_t)nworkers, sizeof(mt_spsc));
+        w->migrate = (mt_spsc *)calloc((size_t)nworkers, sizeof(mt_spsc));
         if (w->srv == NULL || w->inbox == NULL || w->completions == NULL ||
-            mt_spsc_init(&w->accepts, 256) != 0 ||
+            w->migrate == NULL || mt_spsc_init(&w->accepts, 256) != 0 ||
             pal_mutex_init(&w->pending_mu) != 0 ||
             pal_wakeup_create(&w->wakeup) != 0) {
             ms->nworkers = i; /* destroy only initialized workers */
@@ -1868,7 +1915,8 @@ mt_server *mt_server_create(const char *host, uint16_t port, int nworkers)
         }
         for (j = 0; j < nworkers; j++) {
             if (mt_spsc_init(&w->inbox[j], 1024) != 0 ||
-                mt_spsc_init(&w->completions[j], 1024) != 0) {
+                mt_spsc_init(&w->completions[j], 1024) != 0 ||
+                mt_spsc_init(&w->migrate[j], 64) != 0) {
                 ms->nworkers = i + 1;
                 mt_server_destroy(ms);
                 return NULL;
@@ -1987,9 +2035,13 @@ void mt_server_destroy(mt_server *ms)
                 while ((p = mt_spsc_pop(&w->completions[j])) != NULL)
                     mt_task_free(p);
                 mt_spsc_destroy(&w->completions[j]);
+                while ((p = mt_spsc_pop(&w->migrate[j])) != NULL)
+                    mt_task_free(p);
+                mt_spsc_destroy(&w->migrate[j]);
             }
             free(w->inbox);
             free(w->completions);
+            free(w->migrate);
         }
         {
             void *p;

@@ -111,6 +111,13 @@ void server_set_mt_close(server *s, server_mt_close_fn fn);
 void *server_conn_mt_state(void *conn);
 void server_conn_set_mt_state(void *conn, void *st);
 void server_conn_free_now(server *s, void *conn);
+/* Connection migration (mt connection-key affinity): detach removes the
+ * conn from this server's loop and connection table; rehome rewires the
+ * session hook contexts to the new server; adopt registers the conn on
+ * the new server and immediately processes any buffered input. */
+int server_conn_detach(server *s, void *conn);
+void server_conn_rehome(server *s, void *conn);
+int server_conn_adopt(server *s, void *conn);
 void server_conn_out_append(server *s, void *conn, const char *data,
                             size_t len);
 int server_conn_flush(server *s, void *conn);

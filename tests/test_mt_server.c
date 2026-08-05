@@ -882,22 +882,84 @@ static void test_snapshot_mt(void)
     pal_socket_cleanup();
 }
 
-static void test_same_target_pipeline_merges_into_one_task(void)
+static void test_connection_migration_to_key_owner(void)
 {
     mt_server *ms;
-    pal_socket_t a;
-    char ka[32], kb[32];
-    char req[512];
+    pal_socket_t a, b;
+    char k0[32], k1[32];
+    char req[192];
     uint64_t before, after;
 
     DD_CHECK_EQ_INT(0, pal_socket_init());
-    /* two keys that both live on worker 1 */
-    pick_two_keys_for_worker(1, 2, ka, sizeof(ka), kb, sizeof(kb));
+    pick_key_for_worker(0, 2, k0, sizeof(k0));
+    pick_key_for_worker(1, 2, k1, sizeof(k1));
 
     ms = mt_server_create("127.0.0.1", 0, 2);
     DD_CHECK(ms != NULL);
     DD_CHECK_EQ_INT(0, mt_server_start(ms));
     a = connect_client(mt_server_port(ms)); /* -> worker 0 */
+    b = connect_client(mt_server_port(ms)); /* -> worker 1 */
+
+    /* The first keyed command migrates the connection to the key's owner,
+     * so it executes locally there: no routed task at all. */
+    before = mt_server_tasks_executed(ms);
+    snprintf(req, sizeof(req), "*3\r\n$3\r\nSET\r\n$%zu\r\n%s\r\n$1\r\nx\r\n",
+             strlen(k1), k1);
+    roundtrip(a, req, "+OK\r\n");
+    snprintf(req, sizeof(req), "*3\r\n$3\r\nSET\r\n$%zu\r\n%s\r\n$1\r\ny\r\n",
+             strlen(k1), k1);
+    roundtrip(a, req, "+OK\r\n");
+    snprintf(req, sizeof(req), "*2\r\n$3\r\nGET\r\n$%zu\r\n%s\r\n",
+             strlen(k1), k1);
+    roundtrip(a, req, "$1\r\ny\r\n");
+    after = mt_server_tasks_executed(ms);
+    DD_CHECK_EQ_INT((long long)before, (long long)after);
+
+    /* keyless commands still work after migration */
+    roundtrip(a, "*1\r\n$4\r\nPING\r\n", "+PONG\r\n");
+
+    /* keys owned by the other worker are routed as before */
+    before = mt_server_tasks_executed(ms);
+    snprintf(req, sizeof(req), "*2\r\n$3\r\nGET\r\n$%zu\r\n%s\r\n",
+             strlen(k0), k0);
+    roundtrip(a, req, "$-1\r\n");
+    after = mt_server_tasks_executed(ms);
+    DD_CHECK_EQ_INT((long long)(before + 1), (long long)after);
+
+    /* and the data is visible from other connections */
+    snprintf(req, sizeof(req), "*2\r\n$3\r\nGET\r\n$%zu\r\n%s\r\n",
+             strlen(k1), k1);
+    roundtrip(b, req, "$1\r\ny\r\n");
+
+    pal_close(a);
+    pal_close(b);
+    mt_server_stop(ms);
+    mt_server_destroy(ms);
+    pal_socket_cleanup();
+}
+
+static void test_same_target_pipeline_merges_into_one_task(void)
+{
+    mt_server *ms;
+    pal_socket_t a;
+    char ka[32], kc[32], kd[32];
+    char req[512];
+    uint64_t before, after;
+
+    DD_CHECK_EQ_INT(0, pal_socket_init());
+    pick_key_for_worker(1, 2, ka, sizeof(ka));        /* migration trigger */
+    pick_two_keys_for_worker(0, 2, kc, sizeof(kc), kd, sizeof(kd));
+
+    ms = mt_server_create("127.0.0.1", 0, 2);
+    DD_CHECK(ms != NULL);
+    DD_CHECK_EQ_INT(0, mt_server_start(ms));
+    a = connect_client(mt_server_port(ms)); /* -> worker 0 */
+
+    /* migrate the connection to worker 1 first (affinity is once per
+     * connection), so worker-0 keys below are routed from worker 1 */
+    snprintf(req, sizeof(req), "*3\r\n$3\r\nSET\r\n$%zu\r\n%s\r\n$1\r\nz\r\n",
+             strlen(ka), ka);
+    roundtrip(a, req, "+OK\r\n");
 
     before = mt_server_tasks_executed(ms);
 
@@ -908,8 +970,8 @@ static void test_same_target_pipeline_merges_into_one_task(void)
              "*3\r\n$3\r\nSET\r\n$%zu\r\n%s\r\n$1\r\ny\r\n"
              "*2\r\n$3\r\nGET\r\n$%zu\r\n%s\r\n"
              "*2\r\n$3\r\nGET\r\n$%zu\r\n%s\r\n",
-             strlen(ka), ka, strlen(kb), kb, strlen(ka), ka, strlen(kb),
-             kb);
+             strlen(kc), kc, strlen(kd), kd, strlen(kc), kc, strlen(kd),
+             kd);
     roundtrip(a, req, "+OK\r\n+OK\r\n$1\r\nx\r\n$1\r\ny\r\n");
 
     after = mt_server_tasks_executed(ms);
@@ -963,6 +1025,7 @@ int main(void)
     DD_RUN(test_watch_routed_and_unwatch);
     DD_RUN(test_aof_persistence_mt);
     DD_RUN(test_snapshot_mt);
+    DD_RUN(test_connection_migration_to_key_owner);
     DD_RUN(test_same_target_pipeline_merges_into_one_task);
     DD_RUN(test_many_connections_across_workers);
     return DD_TEST_SUMMARY();

@@ -165,6 +165,7 @@ struct server {
 
 static void conn_close(server *s, size_t idx);
 static int conn_flush(server *s, conn *c);
+static int conn_process_input(server *s, conn *c);
 static conn *conn_create(server *srv, pal_socket_t fd);
 static void repl_link_close(server *srv);
 static int repl_link_connect(server *srv);
@@ -1019,6 +1020,71 @@ void server_conn_free_now(server *s, void *conn_ptr)
     conn_free((conn *)conn_ptr);
 }
 
+int server_conn_detach(server *s, void *conn_ptr)
+{
+    conn *c = (conn *)conn_ptr;
+    size_t i;
+    for (i = 0; i < s->nconns; i++)
+        if (s->conns[i] == c)
+            break;
+    if (i == s->nconns)
+        return -1;
+    s->conns[i] = s->conns[s->nconns - 1];
+    s->nconns--;
+    (void)pal_loop_del(s->loop, c->fd);
+    return 0;
+}
+
+void server_conn_rehome(server *s, void *conn_ptr)
+{
+    conn *c = (conn *)conn_ptr;
+    c->srv = s;
+    c->sess->d = &s->db; /* the session executes against the new keyspace */
+    c->sess->ps_ctx = s;
+    c->sess->shutdown_ctx = s;
+    c->sess->sync_ctx = s;
+    c->sess->replicaof_ctx = s;
+    c->sess->cluster_ctx = s;
+    c->sess->aof_ctx = s;
+    c->sess->repl = &s->repl;
+    c->sess->role = &s->role;
+}
+
+int server_conn_adopt(server *s, void *conn_ptr)
+{
+    conn *c = (conn *)conn_ptr;
+    if (s->nconns == s->cap) {
+        size_t ncap = s->cap == 0 ? 16 : s->cap * 2;
+        conn **nc = (conn **)realloc(s->conns, ncap * sizeof(*nc));
+        if (nc == NULL)
+            return -1;
+        s->conns = nc;
+        s->cap = ncap;
+    }
+    s->conns[s->nconns++] = c;
+    if (pal_loop_add(s->loop, c->fd, 1, c->want_write, c) != 0) {
+        s->nconns--; /* c was appended at the tail */
+        return -1;
+    }
+    /* bytes already in the receive buffer (including the command that
+     * triggered the migration) are processed right away */
+    if (c->rlen > 0) {
+        int pr = conn_process_input(s, c);
+        if (pr < 0) {
+            size_t idx;
+            for (idx = 0; idx < s->nconns; idx++)
+                if (s->conns[idx] == c)
+                    break;
+            if (idx < s->nconns)
+                conn_close(s, idx);
+            return -1;
+        }
+        if (c->out.len > 0)
+            (void)conn_flush(s, c);
+    }
+    return 0;
+}
+
 void server_conn_out_append(server *s, void *conn_ptr, const char *data,
                             size_t len)
 {
@@ -1435,7 +1501,9 @@ static void cluster_nodes_save(server *s)
 }
 
 /* Parse and execute all complete commands in the conn recv buffer and
- * compact consumed bytes. Returns 0 ok, -1 protocol error (caller closes). */
+ * compact consumed bytes. Returns 0 ok, -1 protocol error (caller closes),
+ * 2 when the connection was migrated to another worker by the route hook
+ * (caller must not touch it again). */
 static int conn_process_input(server *s, conn *c)
 {
     size_t off = 0;
@@ -1448,12 +1516,16 @@ static int conn_process_input(server *s, conn *c)
             break; /* incomplete command */
         if (used < 0 || v.type != RESP_ARRAY || v.is_null)
             return -1;
-        if (s->route_fn != NULL &&
-            s->route_fn(s->route_ctx, c, c->sess, v.items, v.count,
-                        c->rbuf + off, (size_t)used, &c->out) != 0) {
-            arena_reset(&c->arena);
-            off += (size_t)used;
-            continue; /* routed / handled by the mt layer */
+        if (s->route_fn != NULL) {
+            int rr = s->route_fn(s->route_ctx, c, c->sess, v.items, v.count,
+                                 c->rbuf + off, (size_t)used, &c->out);
+            if (rr == 2)
+                return 2; /* migrated: the current command is unconsumed */
+            if (rr != 0) {
+                arena_reset(&c->arena);
+                off += (size_t)used;
+                continue; /* routed / handled by the mt layer */
+            }
         }
         session_execute(c->sess, v.items, v.count, &c->out);
         arena_reset(&c->arena);
@@ -1792,11 +1864,17 @@ int server_run_once(server *s, int timeout_ms)
             c->rlen += (size_t)n;
 
             /* parse -> execute -> advance, then compact consumed bytes */
-            if (conn_process_input(s, c) != 0) {
-                static const char proto_err[] = "-ERR Protocol error\r\n";
-                (void)conn_write(c, proto_err, sizeof(proto_err) - 1);
-                conn_close(s, idx);
-                continue;
+            {
+                int pr = conn_process_input(s, c);
+                if (pr < 0) {
+                    static const char proto_err[] =
+                        "-ERR Protocol error\r\n";
+                    (void)conn_write(c, proto_err, sizeof(proto_err) - 1);
+                    conn_close(s, idx);
+                    continue;
+                }
+                if (pr == 2)
+                    continue; /* migrated to another worker */
             }
             if (c->out.len > 0 && conn_flush(s, c) != 0) {
                 conn_close(s, idx);
