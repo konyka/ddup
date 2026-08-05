@@ -46,6 +46,26 @@
 | 2026-08-05 | Phase 10 SIMD RESP 解析 + socket 调优 | cmd_resolve / buf_pool 64 KiB | 同上 | 82.5M / ~3.45G ops/s | - | 与 Phase 9 持平 |
 | 2026-08-05 | Phase 10 SIMD RESP 解析 + socket 调优 | 服务器 SET/GET（run_bench，默认 IOCP） | 同上，loopback，-n 100000 -c 50 -P 16 | 313k / 392k req/s | - | TCP_NODELAY + backlog 511；IOCP 基线范围内 |
 | 2026-08-05 | Phase 10 SIMD RESP 解析 + socket 调优 | 服务器 SET/GET（--io select） | 同上 | 331k / 376k req/s | - | 同上 |
+| 2026-08-05 | Phase 11 mt（io-threads=2） | 服务器 SET/GET（ddup-bench -n 100000 -c 50 -P 16） | Windows 11, clang 22.1.6, -O3+LTO, loopback | 101k / 89k req/s | - | 跨 worker 路由每命令一次深拷贝 + 两次队列/唤醒；空队列才 kick 后（优化前 66k/54k） |
+| 2026-08-05 | Phase 11 mt（io-threads=4） | 服务器 SET/GET | 同上 | 47k / 47k req/s | - | worker 增多路由比例上升，开销随之增大 |
+
+## Phase 11 mt 性能分析（如实记录）
+
+mt 第一版在 loopback ping-pong 型基准上**显著慢于单线程**（2 worker 约为
+select 单线程的 1/3）。原因：每个跨 worker 命令都要深拷贝 argv、两次
+互斥队列投递、最多两次 wakeup 写字节，加上跨核缓存迁移；而单线程路径
+每命令 CPU 成本仅 ~0.3µs。Garnet 的 thread-per-core 优势场景（海量并发
+连接 + 小批量）当前基准无法体现（ddup-bench 为 50 并发顺序流水）。
+
+已验证的优化方向（后续阶段）：
+
+1. **连接-键亲和**：按客户端首 key 把连接固定到拥有该 key 的 worker，
+   同构负载下大部分命令免跨线程（对随机 key 负载无效，记录在案）。
+2. **任务合并**：conn_process_input 内把同目标的连续流水命令合并为一个
+   任务，摊薄拷贝与唤醒成本（预计收益最大）。
+3. **无锁 SPSC 队列**替换互斥队列；wakeup 合并已有（空队列才 kick）。
+4. 避免深拷贝：路由任务直接接管接收缓冲切片的所有权（需要缓冲所有权
+   转移协议）。
 
 Phase 10 调查记录：`conn_flush` 的输出缓冲为单块连续内存，pub/sub 与复制
 fan-out 按连接独立冲刷；当前模型下 `writev`/跨连接批量聚合无法减少系统

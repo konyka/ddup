@@ -95,6 +95,50 @@
   不能减少系统调用次数，未落地。该优化点保留给 thread-per-core 阶段的
   per-worker 输出合并。
 
+## Thread-per-core（Phase 11，mt_server）
+
+对齐 Garnet 的 shared-nothing 设计：`ddup-server --io-threads N`（N>1）
+启用 `src/server/mt_server.{h,c}`；默认 N=1 保持原单线程路径。
+
+- **线程模型**：1 个 acceptor 线程持有唯一公网 listener（非阻塞 +
+  pal_loop），accept 后按 round-robin 把 fd 投入目标 worker 的 accept
+  队列；N 个 worker 线程各运行一个独立的 readiness 事件循环（复用
+  `server`，经 `server_close_listener`/`server_adopt_fd` 接入），每个
+  worker 拥有自己的 db 与 buf_pool，单 worker 内命令路径零锁。
+- **跨线程基础设施**（PAL）：`pal_thread`（Win32 `_beginthreadex` +
+  CRITICAL_SECTION + CONDITION_VARIABLE / POSIX pthread）、`pal_wakeup`
+  （POSIX socketpair / Windows loopback TCP 对的 self-pipe）。worker 的
+  wakeup fd 注册进自己的事件循环（`server_set_wakeup`），回调里统一
+  drain accept/inbox/completion 三个队列。队列为互斥保护的单链表；
+  **仅在队列由空变非空时 kick**，避免每命令一次 wakeup 写。
+- **key 路由**：命令经 `server_set_route` 安装的钩子拦截
+  （conn_process_input 内）。worker = `hash_slot(key) % nworkers`（复用
+  集群 crc16/hashtag）。单 key 命令（字符串/过期/hash/list/set/zset 全部
+  单 key 操作）路由到属主 worker；多 key 命令（MGET/MSET/DEL/UNLINK/
+  EXISTS/SMOVE）所有 key 必须同属一个 worker，否则 `-CROSSSLOT`（与集群
+  语义一致）。无 key 命令就地执行；DBSIZE/FLUSHDB 为广播聚合（home 就地
+  一份 + 扇出其余 worker，DBSIZE 求和），INFO 暂为 home worker 本地
+  （记录在案）。
+- **任务与顺序**：跨 worker 命令深拷贝 argv（复用 MULTI 队列拷贝模式）
+  打包为 mt_task，目标 worker 用 `command_execute_at` 无 session 执行
+  （无 MULTI/WATCH/pubsub/AOF 参与），回复经 home worker 的 completion
+  队列返回。每个 conn 维护 seq 序号 + reorder 缓冲：本地命令在有未决
+  路由回复时也算好答案暂存，完成回复按 seq 顺序追加到 conn->out，
+  保证流水线回复顺序与请求一致。
+- **生命周期**：conn 记录 mt_pending（在飞路由任务数）；连接关闭时有
+  未决任务则成为 zombie（摘出事件循环、关 fd，保留 conn/session/
+  mt_state），最后一个 completion 回收时真正释放（复用 IOCP zombie
+  清单，server_destroy 兜底）。
+- **限制（记录在案）**：mt 模式下 MULTI/EXEC/DISCARD/WATCH/UNWATCH、
+  SUBSCRIBE/UNSUBSCRIBE/PUBLISH、SHUTDOWN/SYNC/REPLICAOF/SAVE/LASTSAVE/
+  CLUSTER/MIGRATE/ASKING 返回 `-ERR command not supported in mt mode`；
+  SINTER/SUNION/SDIFF 暂走 home worker 本地路径（后续按 key 集合校验
+  同 worker 后路由）；AOF/快照/复制/集群/TLS 与 io-threads>1 互斥
+  （config_validate 报错）。IOCP 后端不参与 mt（readiness only）。
+- **性能现状**：见 docs/performance.md Phase 11——首版在 loopback
+  ping-pong 基准上慢于单线程（路由开销主导），优化方向已记录（任务
+  合并、无锁队列、免拷贝、连接-键亲和）。
+
 ## 过期设计（Phase 4）
 
 - **存储**：`db.expires` 为第二张 rh_table，key → 8 字节绝对过期时刻

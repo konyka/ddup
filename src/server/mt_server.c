@@ -66,21 +66,26 @@ static void mt_queue_destroy(mt_queue *q, void (*free_fn)(void *))
     pal_mutex_destroy(&q->mu);
 }
 
+/* Push ptr. Returns 1 when the queue was empty (caller should kick the
+ * consumer), 0 when it was non-empty (consumer is already awake or will
+ * see the item when draining), -1 on allocation failure. */
 static int mt_queue_push(mt_queue *q, void *ptr)
 {
     qnode *n = (qnode *)malloc(sizeof(*n));
+    int was_empty;
     if (n == NULL)
         return -1;
     n->ptr = ptr;
     n->next = NULL;
     pal_mutex_lock(&q->mu);
+    was_empty = q->head == NULL;
     if (q->tail != NULL)
         q->tail->next = n;
     else
         q->head = n;
     q->tail = n;
     pal_mutex_unlock(&q->mu);
-    return 0;
+    return was_empty ? 1 : 0;
 }
 
 static void *mt_queue_pop(mt_queue *q)
@@ -527,7 +532,8 @@ static int mt_route_aggregate(worker *home, void *conn,
         t = mt_task_new(conn, home, seq, argv, argc);
         if (t != NULL)
             t->agg = agg;
-        if (t == NULL || mt_queue_push(&home->ms->workers[i].inbox, t) != 0) {
+        if (t == NULL ||
+            mt_queue_push(&home->ms->workers[i].inbox, t) < 0) {
             if (t != NULL)
                 mt_task_free(t);
             agg->pending--;
@@ -583,14 +589,19 @@ static int mt_route(void *ctx, void *conn, session *sess,
             return 1;
         }
         server_conn_mt_inc(conn);
-        if (mt_queue_push(&home->ms->workers[target].inbox, t) != 0) {
-            server_conn_mt_dec(home->srv, conn);
-            mt_task_free(t);
-            resp_write_error(out, "ERR out of memory", 17);
-            st->seq_write++;
-            return 1;
+        {
+            int pr = mt_queue_push(&home->ms->workers[target].inbox, t);
+            if (pr < 0) {
+                server_conn_mt_dec(home->srv, conn);
+                mt_task_free(t);
+                resp_write_error(out, "ERR out of memory", 17);
+                st->seq_write++;
+                return 1;
+            }
+            if (pr == 1)
+                (void)pal_wakeup_kick(
+                    &home->ms->workers[target].wakeup);
         }
-        (void)pal_wakeup_kick(&home->ms->workers[target].wakeup);
         return 1;
     }
 
@@ -651,10 +662,14 @@ static void worker_on_wakeup(void *ctx)
             break;
         command_execute_at(server_db(w->srv), t->argv, t->argc, &t->reply,
                            pal_wall_ms());
-        if (mt_queue_push(&t->home->completions, t) == 0)
-            (void)pal_wakeup_kick(&t->home->wakeup);
-        else
-            mt_task_free(t); /* OOM: drop the reply (conn times out) */
+        {
+            int pr = mt_queue_push(&t->home->completions, t);
+            if (pr < 0) {
+                mt_task_free(t); /* OOM: drop the reply (conn times out) */
+            } else if (pr == 1) {
+                (void)pal_wakeup_kick(&t->home->wakeup);
+            }
+        }
     }
 
     /* 3. deliver completed replies (home side) */
@@ -729,12 +744,16 @@ static void *acceptor_main(void *arg)
                     break;
                 w = &ms->workers[rr % ms->nworkers];
                 rr++;
-                if (mt_queue_push(&w->accepts,
-                                  (void *)(uintptr_t)fd) != 0) {
-                    pal_close(fd);
-                    continue;
+                {
+                    int pr = mt_queue_push(&w->accepts,
+                                           (void *)(uintptr_t)fd);
+                    if (pr < 0) {
+                        pal_close(fd);
+                        continue;
+                    }
+                    if (pr == 1)
+                        (void)pal_wakeup_kick(&w->wakeup);
                 }
-                (void)pal_wakeup_kick(&w->wakeup);
             }
         }
     }

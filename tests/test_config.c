@@ -28,6 +28,32 @@ static void test_defaults(void)
     DD_CHECK_STR("appendonly.aof", cfg.appendfilename);
     DD_CHECK_STR("dump.ddr", cfg.dbfilename);
     DD_CHECK_EQ_INT(0, cfg.save_sec);
+    DD_CHECK_EQ_INT(1, cfg.io_threads);
+}
+
+static void test_io_threads(void)
+{
+    ddup_config cfg;
+    char err[256];
+
+    config_init(&cfg);
+    DD_CHECK_EQ_INT(0, config_apply(&cfg, "io-threads", "4"));
+    DD_CHECK_EQ_INT(4, cfg.io_threads);
+    DD_CHECK_EQ_INT(-1, config_apply(&cfg, "io-threads", "0"));
+    DD_CHECK_EQ_INT(-1, config_apply(&cfg, "io-threads", "abc"));
+
+    /* mt mode conflicts with not-yet-supported subsystems */
+    config_init(&cfg);
+    DD_CHECK_EQ_INT(0, config_apply(&cfg, "io-threads", "2"));
+    DD_CHECK_EQ_INT(0, config_validate(&cfg, err, sizeof(err)));
+    DD_CHECK_EQ_INT(0, config_apply(&cfg, "appendonly", "yes"));
+    DD_CHECK_EQ_INT(-1, config_validate(&cfg, err, sizeof(err)));
+    DD_CHECK(strstr(err, "io-threads") != NULL);
+
+    config_init(&cfg);
+    DD_CHECK_EQ_INT(0, config_apply(&cfg, "io-threads", "2"));
+    DD_CHECK_EQ_INT(0, config_apply(&cfg, "cluster-enabled", "yes"));
+    DD_CHECK_EQ_INT(-1, config_validate(&cfg, err, sizeof(err)));
 }
 
 static void test_file_parse(void)
@@ -136,6 +162,7 @@ int main(void)
     DD_RUN(test_file_parse);
     DD_RUN(test_file_errors);
     DD_RUN(test_inline_overrides);
+    DD_RUN(test_io_threads);
     DD_RUN(test_validate_tls);
     return DD_TEST_SUMMARY();
 }

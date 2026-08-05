@@ -10,6 +10,8 @@
 #include "pal/pal_iocp.h"
 #include "pal/pal_platform.h"
 #include "pal/pal_socket.h"
+#include "pal/pal_time.h"
+#include "server/mt_server.h"
 #include "server/server.h"
 
 static volatile sig_atomic_t g_stop = 0;
@@ -65,6 +67,45 @@ int main(int argc, char **argv)
     if (pal_socket_init() != 0) {
         fprintf(stderr, "failed to initialize sockets\n");
         return 1;
+    }
+
+    /* thread-per-core path: io-threads > 1 runs the mt worker pool.
+     * Persistence/TLS/cluster/replication are rejected by config_validate
+     * in this mode (documented limitation). */
+    if (cfg.io_threads > 1) {
+        mt_server *ms;
+        char verr[256];
+        if (config_validate(&cfg, verr, sizeof(verr)) != 0) {
+            fprintf(stderr, "config error: %s\n", verr);
+            pal_socket_cleanup();
+            return 1;
+        }
+        ms = mt_server_create(cfg.bind, cfg.port, cfg.io_threads);
+        if (ms == NULL) {
+            fprintf(stderr, "failed to listen on %s:%u\n", cfg.bind,
+                    (unsigned)cfg.port);
+            pal_socket_cleanup();
+            return 1;
+        }
+        if (mt_server_start(ms) != 0) {
+            fprintf(stderr, "failed to start %d io threads\n",
+                    cfg.io_threads);
+            mt_server_destroy(ms);
+            pal_socket_cleanup();
+            return 1;
+        }
+        signal(SIGINT, on_signal);
+        signal(SIGTERM, on_signal);
+        printf("io backend: mt (%d workers)\n", cfg.io_threads);
+        printf("listening on port %u\n", (unsigned)mt_server_port(ms));
+        fflush(stdout);
+        while (!g_stop)
+            pal_sleep_ms(50);
+        printf("shutting down\n");
+        mt_server_stop(ms);
+        mt_server_destroy(ms);
+        pal_socket_cleanup();
+        return 0;
     }
 
     s = NULL;

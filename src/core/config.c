@@ -24,6 +24,7 @@ void config_init(ddup_config *cfg)
     cfg->tls_cert_file[0] = '\0';
     cfg->tls_key_file[0] = '\0';
     cfg->io[0] = '\0';
+    cfg->io_threads = 1;
     cfg->cluster_enabled = 0;
     strcpy(cfg->cluster_config_file, "nodes.conf");
 }
@@ -161,6 +162,14 @@ int config_apply(ddup_config *cfg, const char *key, const char *value)
             return -1;
         return copy_str(cfg->io, sizeof(cfg->io), value);
     }
+    if (key_eq(key, "io-threads")) {
+        char *end;
+        long n = strtol(value, &end, 10);
+        if (end == value || *end != '\0' || n < 1 || n > 256)
+            return -1;
+        cfg->io_threads = (int)n;
+        return 0;
+    }
     if (key_eq(key, "cluster-enabled"))
         return parse_bool(value, &cfg->cluster_enabled);
     if (key_eq(key, "cluster-config-file"))
@@ -183,6 +192,14 @@ static int file_readable(const char *path)
 
 int config_validate(const ddup_config *cfg, char *err, size_t errcap)
 {
+    if (cfg->io_threads > 1 &&
+        (cfg->appendonly || cfg->save_sec > 0 || cfg->tls_port > 0 ||
+         cfg->cluster_enabled || cfg->replicaof_port > 0)) {
+        snprintf(err, errcap,
+                 "io-threads > 1 does not support persistence (AOF/save), "
+                 "TLS, cluster or replication yet");
+        return -1;
+    }
     if (cfg->tls_port == 0)
         return 0;
     if (!file_readable(cfg->tls_cert_file)) {

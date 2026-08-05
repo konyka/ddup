@@ -25,6 +25,7 @@ typedef struct ddup_config {
     char tls_cert_file[512];
     char tls_key_file[512];
     char io[16]; /* "" = auto (iocp on Windows, select elsewhere) */
+    int io_threads;                /* 1 = single-threaded (default); >1 = mt worker pool */
     int cluster_enabled;           /* default 0 */
     char cluster_config_file[256]; /* default "nodes.conf" */
 } ddup_config;
