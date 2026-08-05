@@ -163,6 +163,7 @@ struct mt_server {
     pal_socket_t tls_listen_fd; /* PAL_SOCKET_INVALID when TLS is off */
     uint16_t tls_port;
     int nworkers;
+    int worker_backend; /* SERVER_BACKEND_* the workers run on */
     worker *workers;
     pal_thread acceptor;
     volatile int running;
@@ -299,8 +300,9 @@ static int mt_watch_add(mt_conn_state *st, const char *key, size_t klen,
     return 0;
 }
 
+static void mt_kick(worker *w);
 static void mt_push_task(worker *self, mt_spsc *q, mt_task *t,
-                         pal_wakeup *wake);
+                         worker *target);
 static mt_cmd_blob *mt_blob_one(const char *raw, size_t len);
 
 /* Fire-and-forget watch_refs release on the owning worker. */
@@ -341,7 +343,7 @@ static void mt_watch_release_one(worker *home, const mt_watch_entry *e)
         mt_task *t = mt_unwatch_task(e->key, e->klen);
         if (t != NULL)
             mt_push_task(home, &home->ms->workers[owner].inbox[home->id], t,
-                         &home->ms->workers[owner].wakeup);
+                         &home->ms->workers[owner]);
     }
 }
 
@@ -526,7 +528,7 @@ static int mt_conn_close(void *ctx, void *conn)
         }
         t->kind = MT_TASK_UNSUB;
         mt_push_task(home, &home->ms->workers[s->owner].inbox[home->id], t,
-                     &home->ms->workers[s->owner].wakeup);
+                     &home->ms->workers[s->owner]);
     }
     return held;
 }
@@ -1039,7 +1041,7 @@ static int mt_route_aggregate(worker *home, void *conn,
             t->db_index = db_index;
             mt_pending_inc(home, st);
             mt_push_task(home, &home->ms->workers[i].inbox[home->id], t,
-                         &home->ms->workers[i].wakeup);
+                         &home->ms->workers[i]);
         } else {
             if (blob != NULL)
                 mt_blobs_free(blob, 1);
@@ -1066,7 +1068,7 @@ static void mt_batch_flush(worker *home, void *conn, mt_conn_state *st)
         t->db_index = st->batch_db;
         mt_pending_inc(home, st);
         mt_push_task(home, &home->ms->workers[target].inbox[home->id], t,
-                     &home->ms->workers[target].wakeup);
+                     &home->ms->workers[target]);
     }
     st->batch = NULL;
     st->batch_n = 0;
@@ -1279,7 +1281,7 @@ static int mt_txn_watch(worker *home, void *conn, mt_conn_state *st,
         t->db_index = db_index;
         mt_pending_inc(home, st);
         mt_push_task(home, &home->ms->workers[target].inbox[home->id], t,
-                     &home->ms->workers[target].wakeup);
+                     &home->ms->workers[target]);
         return 1;
     }
 }
@@ -1384,7 +1386,7 @@ static int mt_txn_exec(worker *home, void *conn, mt_conn_state *st,
     }
     mt_pending_inc(home, st);
     mt_push_task(home, &home->ms->workers[target].inbox[home->id], t,
-                 &home->ms->workers[target].wakeup);
+                 &home->ms->workers[target]);
     return 1;
 }
 
@@ -1479,7 +1481,7 @@ static void mt_pubsub_register(worker *home, void *conn, mt_conn_state *st,
     t->kind = MT_TASK_SUB;
     mt_pending_inc(home, st);
     mt_push_task(home, &home->ms->workers[owner].inbox[home->id], t,
-                 &home->ms->workers[owner].wakeup);
+                 &home->ms->workers[owner]);
 }
 
 /* Fire-and-forget unregister for (conn, channel) on the owner. */
@@ -1494,7 +1496,7 @@ static void mt_pubsub_unregister(worker *home, void *conn, const char *ch,
     }
     t->kind = MT_TASK_UNSUB;
     mt_push_task(home, &home->ms->workers[owner].inbox[home->id], t,
-                 &home->ms->workers[owner].wakeup);
+                 &home->ms->workers[owner]);
 }
 
 static int mt_route_subscribe(worker *home, void *conn, mt_conn_state *st,
@@ -1619,7 +1621,7 @@ static void mt_publish_execute(worker *owner_w, mt_task *t)
         resp_write_bulk(&d->reply,
                         v.items[2].str == NULL ? "" : v.items[2].str,
                         v.items[2].len);
-        mt_push_task(owner_w, &sh->completions[owner_w->id], d, &sh->wakeup);
+        mt_push_task(owner_w, &sh->completions[owner_w->id], d, sh);
         receivers++;
     }
     resp_write_integer(&t->reply, receivers);
@@ -1659,7 +1661,7 @@ static int mt_route_publish(worker *home, void *conn, mt_conn_state *st,
     }
     mt_pending_inc(home, st);
     mt_push_task(home, &home->ms->workers[owner].inbox[home->id], t,
-                 &home->ms->workers[owner].wakeup);
+                 &home->ms->workers[owner]);
     return 1;
 }
 
@@ -1752,8 +1754,12 @@ static int mt_route(void *ctx, void *conn, session *sess,
     if (target >= 0 && target != home->id) {
         /* connection-key affinity: a clean connection migrates once to the
          * worker owning its keys (the current command stays unconsumed in
-         * the receive buffer and is re-processed by the new home) */
-        if (!st->migrated && st->pending == 0 && st->reorder == NULL &&
+         * the receive buffer and is re-processed by the new home).
+         * Disabled on the IOCP backend: an overlapped recv is always in
+         * flight, so the conn cannot move between completion ports safely;
+         * plain task routing still applies. */
+        if (server_backend(home->srv) != SERVER_BACKEND_IOCP &&
+            !st->migrated && st->pending == 0 && st->reorder == NULL &&
             st->batch_n == 0 && !st->in_multi && st->nwatch == 0 &&
             st->subs == NULL && !st->closing) {
             st->seq_next--; /* nothing was answered yet */
@@ -1765,7 +1771,7 @@ static int mt_route(void *ctx, void *conn, session *sess,
                     t->kind = MT_TASK_MIGRATE;
                     mt_push_task(home,
                                  &home->ms->workers[target].migrate[home->id],
-                                 t, &home->ms->workers[target].wakeup);
+                                 t, &home->ms->workers[target]);
                     return 2;
                 }
                 /* task allocation failed: roll back the detach */
@@ -1843,12 +1849,23 @@ static void mt_drain_completions(worker *w);
 /* Drain every producer's inbox ring (execution side). */
 static void mt_drain_inbox(worker *w);
 
+/* Wake a worker whose queues may have just become non-empty: IOCP workers
+ * get a WAKEUP completion posted to their port, readiness workers a pipe
+ * kick. */
+static void mt_kick(worker *w)
+{
+    if (server_backend(w->srv) == SERVER_BACKEND_IOCP)
+        server_wakeup_kick(w->srv);
+    else
+        (void)pal_wakeup_kick(&w->wakeup);
+}
+
 /* Push a task with backpressure: while the downstream ring is full, drain
  * our own queues to relieve pressure (breaks circular waits between
  * workers); kick the consumer when it may be asleep. self may be NULL
  * (acceptor thread: plain sleep-retry). */
 static void mt_push_task(worker *self, mt_spsc *q, mt_task *t,
-                         pal_wakeup *wake)
+                         worker *target)
 {
     int pr = mt_spsc_push(q, t);
     while (pr < 0) {
@@ -1861,7 +1878,7 @@ static void mt_push_task(worker *self, mt_spsc *q, mt_task *t,
         pr = mt_spsc_push(q, t);
     }
     if (pr == 1)
-        (void)pal_wakeup_kick(wake);
+        mt_kick(target);
 }
 
 static void mt_exec_task(worker *w, mt_task *t)
@@ -1986,7 +2003,7 @@ static void mt_exec_task(worker *w, mt_task *t)
         }
     }
     w->tasks_executed++;
-    mt_push_task(w, &t->home->completions[w->id], t, &t->home->wakeup);
+    mt_push_task(w, &t->home->completions[w->id], t, t->home);
 }
 
 /* Max items popped per ring per drain call: unbounded drains can livelock
@@ -2128,14 +2145,14 @@ static void worker_on_wakeup(void *ctx)
     /* bounded drains: anything left behind gets an immediate re-kick so the
      * loop comes straight back instead of sleeping on leftover work */
     if (mt_spsc_nonempty(&w->accepts)) {
-        (void)pal_wakeup_kick(&w->wakeup);
+        mt_kick(w);
         return;
     }
     for (pi = 0; pi < w->ms->nworkers; pi++) {
         if (mt_spsc_nonempty(&w->migrate[pi]) ||
             mt_spsc_nonempty(&w->inbox[pi]) ||
             mt_spsc_nonempty(&w->completions[pi])) {
-            (void)pal_wakeup_kick(&w->wakeup);
+            mt_kick(w);
             return;
         }
     }
@@ -2198,7 +2215,7 @@ static void *acceptor_main(void *arg)
                         continue;
                     }
                     if (pr == 1)
-                        (void)pal_wakeup_kick(&w->wakeup);
+                        mt_kick(w);
                 }
             }
         }
@@ -2208,6 +2225,12 @@ static void *acceptor_main(void *arg)
 }
 
 mt_server *mt_server_create(const char *host, uint16_t port, int nworkers)
+{
+    return mt_server_create_ex(host, port, nworkers, SERVER_BACKEND_SELECT);
+}
+
+mt_server *mt_server_create_ex(const char *host, uint16_t port, int nworkers,
+                               int worker_backend)
 {
     mt_server *ms;
     int i;
@@ -2226,6 +2249,7 @@ mt_server *mt_server_create(const char *host, uint16_t port, int nworkers)
     ms->tls_listen_fd = PAL_SOCKET_INVALID;
     ms->tls_port = 0;
     ms->nworkers = nworkers;
+    ms->worker_backend = worker_backend;
     ms->workers = (worker *)calloc((size_t)nworkers, sizeof(worker));
     if (ms->workers == NULL) {
         pal_close(ms->listen_fd);
@@ -2237,7 +2261,7 @@ mt_server *mt_server_create(const char *host, uint16_t port, int nworkers)
         int j;
         w->id = i;
         w->ms = ms;
-        w->srv = server_create_ex("127.0.0.1", 0, SERVER_BACKEND_SELECT);
+        w->srv = server_create_ex("127.0.0.1", 0, worker_backend);
         w->inbox = (mt_spsc *)calloc((size_t)nworkers, sizeof(mt_spsc));
         w->completions =
             (mt_spsc *)calloc((size_t)nworkers, sizeof(mt_spsc));
@@ -2384,7 +2408,7 @@ void mt_server_stop(mt_server *ms)
     ms->running = 0;
     for (i = 0; i < ms->nworkers; i++) {
         ms->workers[i].running = 0;
-        (void)pal_wakeup_kick(&ms->workers[i].wakeup);
+        mt_kick(&ms->workers[i]);
     }
     (void)pal_thread_join(&ms->acceptor, NULL);
     for (i = 0; i < ms->nworkers; i++)

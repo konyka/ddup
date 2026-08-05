@@ -240,6 +240,18 @@ int pal_iocp_wait(pal_iocp *p, pal_iocp_event *evs, int max, int timeout_ms)
     return n;
 }
 
+int pal_iocp_post(pal_iocp *p, void *userdata)
+{
+    iocp_op *o = op_new(PAL_IOCP_WAKEUP, PAL_SOCKET_INVALID, userdata);
+    if (o == NULL)
+        return -1;
+    if (!PostQueuedCompletionStatus(p->port, 0, 0, &o->ov)) {
+        free(o);
+        return -1;
+    }
+    return 0;
+}
+
 void pal_iocp_close(pal_iocp *p, pal_socket_t fd)
 {
     (void)p;
@@ -306,6 +318,13 @@ int pal_iocp_wait(pal_iocp *p, pal_iocp_event *evs, int max, int timeout_ms)
     (void)evs;
     (void)max;
     (void)timeout_ms;
+    return -1;
+}
+
+int pal_iocp_post(pal_iocp *p, void *userdata)
+{
+    (void)p;
+    (void)userdata;
     return -1;
 }
 

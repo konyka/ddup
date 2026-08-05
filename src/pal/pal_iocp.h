@@ -25,7 +25,8 @@
 typedef enum pal_iocp_op {
     PAL_IOCP_ACCEPT = 1,
     PAL_IOCP_RECV = 2,
-    PAL_IOCP_SEND = 3
+    PAL_IOCP_SEND = 3,
+    PAL_IOCP_WAKEUP = 4 /* pal_iocp_post: no fd, bytes == 0 */
 } pal_iocp_op;
 
 typedef struct pal_iocp_event {
@@ -56,6 +57,10 @@ int pal_iocp_send(pal_iocp *p, pal_socket_t fd, const void *buf, size_t n,
 
 /* Pump completions; returns count (>=1), 0 on timeout, -1 on error. */
 int pal_iocp_wait(pal_iocp *p, pal_iocp_event *evs, int max, int timeout_ms);
+
+/* Post a WAKEUP completion (cross-thread kick; e.g. a worker's task queue
+ * became non-empty). 0 on success. */
+int pal_iocp_post(pal_iocp *p, void *userdata);
 
 /* Cancel outstanding ops and close the socket. */
 void pal_iocp_close(pal_iocp *p, pal_socket_t fd);

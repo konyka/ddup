@@ -167,6 +167,31 @@ static void test_concurrent_echo(void)
     pal_iocp_free(p);
 }
 
+/* pal_iocp_post wakes a waiter with a WAKEUP event carrying the userdata
+ * (mt worker task-queue kick on the IOCP backend). */
+static void test_wakeup_post(void)
+{
+    pal_iocp *p = pal_iocp_create();
+    pal_iocp_event ev;
+    static int tag;
+
+    DD_CHECK(p != NULL);
+    DD_CHECK_EQ_INT(0, pal_iocp_post(p, &tag));
+    DD_CHECK_EQ_INT(1, pal_iocp_wait(p, &ev, 1, 2000));
+    DD_CHECK(ev.op == PAL_IOCP_WAKEUP);
+    DD_CHECK(ev.userdata == &tag);
+
+    /* posts are not lost: two posts deliver two events */
+    DD_CHECK_EQ_INT(0, pal_iocp_post(p, NULL));
+    DD_CHECK_EQ_INT(0, pal_iocp_post(p, NULL));
+    DD_CHECK_EQ_INT(1, pal_iocp_wait(p, &ev, 1, 2000));
+    DD_CHECK(ev.op == PAL_IOCP_WAKEUP);
+    DD_CHECK_EQ_INT(1, pal_iocp_wait(p, &ev, 1, 2000));
+    DD_CHECK(ev.op == PAL_IOCP_WAKEUP);
+
+    pal_iocp_free(p);
+}
+
 static void test_close_cancels_outstanding(void)
 {
     pal_iocp *p = pal_iocp_create();
@@ -203,6 +228,7 @@ int main(void)
     DD_RUN(test_echo);
     DD_RUN(test_concurrent_echo);
     DD_RUN(test_close_cancels_outstanding);
+    DD_RUN(test_wakeup_post);
     pal_socket_cleanup();
     return DD_TEST_SUMMARY();
 }

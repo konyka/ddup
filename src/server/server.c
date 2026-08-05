@@ -66,6 +66,7 @@ struct conn {
     /* IOCP backend state */
     int pending_ops;     /* outstanding overlapped ops (recv+send) */
     int zombie;          /* closed with ops in flight: freed at 0 pending */
+    int zombie_mt_free;  /* zombie whose owner (mt layer) released it */
     int send_outstanding;
     size_t out_sent;     /* bytes of out already handed to the kernel */
     char *sbuf;          /* stable overlapped-send buffer */
@@ -180,6 +181,8 @@ static void srv_psync(void *ctx, session *sess, const char *replid,
 static void repl_link_close(server *srv);
 static int repl_link_connect(server *srv);
 static int server_run_once_iocp(server *s, int timeout_ms);
+static void kick_flush(server *s, conn *c);
+static void server_accept_iocp(server *s, pal_socket_t fd);
 static void bus_conn_free(server *s, bus_conn *bc);
 static void cluster_nodes_save(server *s);
 static int srv_cluster_meet(void *ctx, const char *ip, uint16_t port);
@@ -886,6 +889,11 @@ uint16_t server_port(const server *s)
     return s->port;
 }
 
+int server_backend(const server *s)
+{
+    return s->backend;
+}
+
 const buf_pool *server_buf_pool(const server *s)
 {
     return &s->pool;
@@ -1193,6 +1201,11 @@ void server_close_listener(server *s)
 int server_adopt_fd(server *s, pal_socket_t fd)
 {
     conn *c;
+    if (s->backend == SERVER_BACKEND_IOCP) {
+        /* completion model: register the conn and post the first recv */
+        server_accept_iocp(s, fd);
+        return 0;
+    }
     (void)pal_set_tcp_nodelay(fd, 1);
     if (pal_set_nonblocking(fd, 1) != 0) {
         pal_close(fd);
@@ -1266,14 +1279,25 @@ int server_adopt_fd_tls(server *s, pal_socket_t fd)
 int server_set_wakeup(server *s, pal_socket_t fd, void (*cb)(void *ctx),
                       void *ctx)
 {
-    if (s->backend == SERVER_BACKEND_IOCP)
-        return -1; /* mt_server currently uses the readiness backend only */
+    if (s->backend == SERVER_BACKEND_IOCP) {
+        /* no fd registration: kicks arrive as WAKEUP completions posted
+         * via server_wakeup_kick() */
+        s->wakeup_cb = cb;
+        s->wakeup_ctx = ctx;
+        return 0;
+    }
     if (pal_loop_add(s->loop, fd, 1, 0, NULL) != 0)
         return -1;
     s->wakeup_fd = fd;
     s->wakeup_cb = cb;
     s->wakeup_ctx = ctx;
     return 0;
+}
+
+void server_wakeup_kick(server *s)
+{
+    if (s->backend == SERVER_BACKEND_IOCP && s->iocp != NULL)
+        (void)pal_iocp_post(s->iocp, NULL);
 }
 
 void server_set_route(server *s, server_route_fn fn,
@@ -1303,8 +1327,27 @@ void server_conn_set_mt_state(void *conn_ptr, void *st)
 
 void server_conn_free_now(server *s, void *conn_ptr)
 {
-    (void)s;
-    conn_free((conn *)conn_ptr);
+    conn *c = (conn *)conn_ptr;
+    if (s->backend == SERVER_BACKEND_IOCP) {
+        if (c->pending_ops > 0) {
+            /* overlapped ops still in flight: the loop frees the conn
+             * when the last completion drains */
+            c->zombie_mt_free = 1;
+            return;
+        }
+        if (c->zombie) {
+            /* drained already; drop it from the zombie list before free */
+            size_t zi;
+            for (zi = 0; zi < s->nzombies; zi++)
+                if (s->zombies[zi] == c)
+                    break;
+            if (zi < s->nzombies) {
+                s->zombies[zi] = s->zombies[s->nzombies - 1];
+                s->nzombies--;
+            }
+        }
+    }
+    conn_free(c);
 }
 
 int server_conn_detach(server *s, void *conn_ptr)
@@ -1387,6 +1430,11 @@ void server_conn_out_append(server *s, void *conn_ptr, const char *data,
 
 int server_conn_flush(server *s, void *conn_ptr)
 {
+    if (s->backend == SERVER_BACKEND_IOCP) {
+        /* completion model: post an overlapped send if none is in flight */
+        kick_flush(s, (conn *)conn_ptr);
+        return 0;
+    }
     return conn_flush(s, (conn *)conn_ptr);
 }
 
@@ -1461,14 +1509,24 @@ static void conn_close(server *s, size_t idx)
     s->conns[idx] = s->conns[s->nconns - 1];
     s->nconns--;
     if (s->backend == SERVER_BACKEND_IOCP) {
-        /* outstanding ops complete later; free only when fully drained */
+        int mt_kept = 0;
+        /* the routing layer may keep the conn until its pending work
+         * drains; on IOCP the free additionally waits for outstanding
+         * overlapped ops to drain (whichever comes last frees) */
+        if (s->mt_close_fn != NULL)
+            mt_kept = s->mt_close_fn(s->route_ctx, c) != 0;
         if (c->pending_ops > 0) {
             pal_iocp_close(s->iocp, c->fd);
             c->zombie = 1;
+            c->zombie_mt_free = !mt_kept;
             zombie_push(s, c);
             return;
         }
         pal_close(c->fd);
+        if (mt_kept) {
+            c->fd = PAL_SOCKET_INVALID;
+            return; /* freed later via server_conn_free_now */
+        }
         conn_free(c);
         return;
     }
@@ -1908,9 +1966,21 @@ static int server_run_once_iocp(server *s, int timeout_ms)
         conn *c;
         size_t idx;
 
+        if (ev->op == PAL_IOCP_WAKEUP) {
+            /* mt task-queue kick: drain via the registered callback */
+            if (s->wakeup_cb != NULL)
+                s->wakeup_cb(s->wakeup_ctx);
+            continue;
+        }
+
         if (ev->op == PAL_IOCP_ACCEPT) {
-            server_accept_iocp(s, ev->fd);
-            (void)pal_iocp_accept_post(s->iocp, s->listen_fd, NULL);
+            if (s->listen_fd != PAL_SOCKET_INVALID) {
+                server_accept_iocp(s, ev->fd);
+                (void)pal_iocp_accept_post(s->iocp, s->listen_fd, NULL);
+            } else {
+                /* listener already closed (mt worker): drop the straggler */
+                pal_close(ev->fd);
+            }
             continue;
         }
 
@@ -1918,9 +1988,10 @@ static int server_run_once_iocp(server *s, int timeout_ms)
         if (c == NULL)
             continue;
         if (c->zombie) {
-            /* drained op from a closed conn: free when nothing is left */
+            /* drained op from a closed conn: free when nothing is left
+             * and the owner (mt routing layer) released it */
             c->pending_ops--;
-            if (c->pending_ops <= 0) {
+            if (c->pending_ops <= 0 && c->zombie_mt_free) {
                 for (idx = 0; idx < s->nzombies; idx++)
                     if (s->zombies[idx] == c)
                         break;

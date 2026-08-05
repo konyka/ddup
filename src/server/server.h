@@ -32,6 +32,9 @@ server *server_create_ex(const char *host, uint16_t port, int backend);
 /* Actual bound port. */
 uint16_t server_port(const server *s);
 
+/* SERVER_BACKEND_* this server runs on (after fallback resolution). */
+int server_backend(const server *s);
+
 /* Start a TLS listener alongside the plain one (port 0 = ephemeral).
  * Returns 0 on success; -1 when TLS is unavailable (stub build) or the
  * cert/key/listen setup failed. */
@@ -105,6 +108,9 @@ int server_adopt_fd(server *s, pal_socket_t fd);
 int server_adopt_fd_tls(server *s, pal_socket_t fd);
 int server_set_wakeup(server *s, pal_socket_t fd, void (*cb)(void *ctx),
                       void *ctx);
+/* Cross-thread kick for the IOCP backend: posts a WAKEUP completion that
+ * makes server_run_once invoke the wakeup callback. No-op otherwise. */
+void server_wakeup_kick(server *s);
 
 /* mt_server routing hooks (readiness backend only):
  * - server_set_route installs the per-command router. The router runs inside

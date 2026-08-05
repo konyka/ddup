@@ -16,6 +16,13 @@ typedef struct mt_server mt_server;
  * nworkers >= 1. Returns NULL on failure. */
 mt_server *mt_server_create(const char *host, uint16_t port, int nworkers);
 
+/* Same, with an explicit worker event-loop backend (SERVER_BACKEND_*;
+ * unavailable backends fall back to readiness per worker). Note: TLS
+ * requires readiness workers, and connection migration is disabled on the
+ * IOCP backend (task routing is unaffected). */
+mt_server *mt_server_create_ex(const char *host, uint16_t port, int nworkers,
+                               int worker_backend);
+
 /* Actual bound port. */
 uint16_t mt_server_port(const mt_server *ms);
 

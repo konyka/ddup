@@ -14,6 +14,7 @@
 #include "pal/pal_socket.h"
 #include "pal/pal_time.h"
 #include "server/mt_server.h"
+#include "server/server.h"
 
 static pal_socket_t connect_client(uint16_t port)
 {
@@ -1148,6 +1149,62 @@ static void test_mt_multidb_select_and_swapdb(void)
     pal_socket_cleanup();
 }
 
+/* mt workers on the IOCP backend (falls back to readiness where IOCP is
+ * unavailable): routed commands, aggregation and pipelines all work;
+ * connection migration is disabled on this backend (routing via tasks). */
+static void test_iocp_workers_basic(void)
+{
+    mt_server *ms;
+    pal_socket_t a, b;
+    char k0[32], k1[32];
+    char req[192];
+    char buf[8192];
+    size_t got;
+
+    DD_CHECK_EQ_INT(0, pal_socket_init());
+    pick_key_for_worker(0, 2, k0, sizeof(k0));
+    pick_key_for_worker(1, 2, k1, sizeof(k1));
+
+    ms = mt_server_create_ex("127.0.0.1", 0, 2, SERVER_BACKEND_IOCP);
+    DD_CHECK(ms != NULL);
+    DD_CHECK_EQ_INT(0, mt_server_start(ms));
+    a = connect_client(mt_server_port(ms));
+    b = connect_client(mt_server_port(ms));
+
+    roundtrip(a, "*1\r\n$4\r\nPING\r\n", "+PONG\r\n");
+    snprintf(req, sizeof(req), "*3\r\n$3\r\nSET\r\n$%zu\r\n%s\r\n$1\r\nx\r\n",
+             strlen(k0), k0);
+    roundtrip(a, req, "+OK\r\n");
+    snprintf(req, sizeof(req), "*3\r\n$3\r\nSET\r\n$%zu\r\n%s\r\n$1\r\ny\r\n",
+             strlen(k1), k1);
+    roundtrip(a, req, "+OK\r\n");
+
+    /* cross-worker reads from the other connection */
+    snprintf(req, sizeof(req), "*2\r\n$3\r\nGET\r\n$%zu\r\n%s\r\n",
+             strlen(k0), k0);
+    roundtrip(b, req, "$1\r\nx\r\n");
+    snprintf(req, sizeof(req), "*2\r\n$3\r\nGET\r\n$%zu\r\n%s\r\n",
+             strlen(k1), k1);
+    roundtrip(b, req, "$1\r\ny\r\n");
+
+    /* pipelined commands keep order on the IOCP backend too */
+    roundtrip(a, "*1\r\n$4\r\nPING\r\n*1\r\n$4\r\nPING\r\n*1\r\n$4\r\nPING\r\n",
+              "+PONG\r\n+PONG\r\n+PONG\r\n");
+
+    /* aggregates (DBSIZE sum, INFO merge) work unchanged */
+    roundtrip(a, "*1\r\n$6\r\nDBSIZE\r\n", ":2\r\n");
+    got = request_full(a, "*1\r\n$4\r\nINFO\r\n", buf, sizeof(buf));
+    DD_CHECK(got > 0);
+    buf[got] = '\0';
+    DD_CHECK(strstr(buf, "dbsize:2\r\n") != NULL);
+
+    pal_close(a);
+    pal_close(b);
+    mt_server_stop(ms);
+    mt_server_destroy(ms);
+    pal_socket_cleanup();
+}
+
 static void test_many_connections_across_workers(void)
 {
     mt_server *ms;
@@ -1196,5 +1253,6 @@ int main(void)
     DD_RUN(test_mt_multidb_select_and_swapdb);
     DD_RUN(test_same_target_pipeline_merges_into_one_task);
     DD_RUN(test_many_connections_across_workers);
+    DD_RUN(test_iocp_workers_basic);
     return DD_TEST_SUMMARY();
 }

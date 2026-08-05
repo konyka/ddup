@@ -75,12 +75,27 @@ int main(int argc, char **argv)
     if (cfg.io_threads > 1) {
         mt_server *ms;
         char verr[256];
+        int mt_backend = SERVER_BACKEND_SELECT;
+        /* worker backend: IOCP on Windows, io_uring when asked, readiness
+         * otherwise; TLS needs the readiness backend */
+        if (cfg.tls_port == 0) {
+            if (strcmp(cfg.io, "iouring") == 0) {
+                mt_backend = SERVER_BACKEND_IOURING;
+            } else {
+                pal_iocp *probe = pal_iocp_create();
+                if (probe != NULL) {
+                    pal_iocp_free(probe);
+                    mt_backend = SERVER_BACKEND_IOCP;
+                }
+            }
+        }
         if (config_validate(&cfg, verr, sizeof(verr)) != 0) {
             fprintf(stderr, "config error: %s\n", verr);
             pal_socket_cleanup();
             return 1;
         }
-        ms = mt_server_create(cfg.bind, cfg.port, cfg.io_threads);
+        ms = mt_server_create_ex(cfg.bind, cfg.port, cfg.io_threads,
+                                 mt_backend);
         if (ms == NULL) {
             fprintf(stderr, "failed to listen on %s:%u\n", cfg.bind,
                     (unsigned)cfg.port);
