@@ -53,6 +53,45 @@ static void test_thread_local_basic(void)
     DD_CHECK_EQ_INT(2, tls_counter);
 }
 
+static void test_typeof(void)
+{
+#if DDUP_HAS_C_TYPEOF
+    int x = 42;
+    ddup_typeof(x) y = x;
+    DD_CHECK_EQ_INT(42, y);
+#endif
+}
+
+static void test_constexpr(void)
+{
+    ddup_constexpr int n = 4;
+    char arr[n];
+    arr[0] = 'a';
+    arr[1] = '\0';
+    DD_CHECK(arr[0] == 'a');
+}
+
+static void test_checked_arithmetic(void)
+{
+    int r;
+
+    DD_CHECK(!ddup_add_overflow(10, 20, &r));
+    DD_CHECK_EQ_INT(30, r);
+
+    DD_CHECK(ddup_add_overflow(INT_MAX, 1, &r));
+    DD_CHECK(ddup_add_overflow(INT_MIN, -1, &r));
+
+    DD_CHECK(!ddup_sub_overflow(20, 10, &r));
+    DD_CHECK_EQ_INT(10, r);
+    DD_CHECK(ddup_sub_overflow(INT_MIN, 1, &r));
+    DD_CHECK(ddup_sub_overflow(INT_MAX, -1, &r));
+
+    DD_CHECK(!ddup_mul_overflow(6, 7, &r));
+    DD_CHECK_EQ_INT(42, r);
+    DD_CHECK(ddup_mul_overflow(INT_MAX, 2, &r));
+    DD_CHECK(ddup_mul_overflow(INT_MIN, 2, &r));
+}
+
 int main(void)
 {
     DD_RUN(test_capability_macros_are_boolean);
@@ -60,5 +99,8 @@ int main(void)
     DD_RUN(test_alignas_works);
     DD_RUN(test_noreturn_compiles);
     DD_RUN(test_thread_local_basic);
+    DD_RUN(test_typeof);
+    DD_RUN(test_constexpr);
+    DD_RUN(test_checked_arithmetic);
     return DD_TEST_SUMMARY();
 }

@@ -60,4 +60,75 @@
 #  define ddup_thread_local /* thread-local storage not supported */
 #endif
 
+/* -------------------------------------------------------------------------- */
+/* Typeof                                                                       */
+/* -------------------------------------------------------------------------- */
+#if DDUP_HAS_C_TYPEOF
+#  define ddup_typeof(expr) typeof(expr)
+#elif defined(__GNUC__) || defined(__clang__)
+#  define ddup_typeof(expr) __typeof__(expr)
+#else
+/* No typeof available. Callers that need it should gate with DDUP_HAS_C_TYPEOF. */
+#  define ddup_typeof(expr) int
+#endif
+
+/* -------------------------------------------------------------------------- */
+/* Constexpr (C23) / const fallback                                             */
+/* -------------------------------------------------------------------------- */
+#if DDUP_HAS_C_CONSTEXPR
+#  define ddup_constexpr constexpr
+#else
+#  define ddup_constexpr const
+#endif
+
+/* -------------------------------------------------------------------------- */
+/* Checked integer arithmetic                                                   */
+/* -------------------------------------------------------------------------- */
+#include <limits.h>
+#include <stdbool.h>
+
+#if DDUP_HAS_C_STDCKDINT
+#  include <stdckdint.h>
+#  define ddup_add_overflow(a, b, r) ckd_add(r, a, b)
+#  define ddup_sub_overflow(a, b, r) ckd_sub(r, a, b)
+#  define ddup_mul_overflow(a, b, r) ckd_mul(r, a, b)
+#elif defined(__has_builtin)
+#  if __has_builtin(__builtin_add_overflow)
+#    define ddup_add_overflow(a, b, r) __builtin_add_overflow(a, b, r)
+#    define ddup_sub_overflow(a, b, r) __builtin_sub_overflow(a, b, r)
+#    define ddup_mul_overflow(a, b, r) __builtin_mul_overflow(a, b, r)
+#  endif
+#elif defined(__GNUC__)
+#  define ddup_add_overflow(a, b, r) __builtin_add_overflow(a, b, r)
+#  define ddup_sub_overflow(a, b, r) __builtin_sub_overflow(a, b, r)
+#  define ddup_mul_overflow(a, b, r) __builtin_mul_overflow(a, b, r)
+#endif
+
+#ifndef ddup_add_overflow
+static inline bool ddup_add_overflow_int(int a, int b, int *r)
+{
+    long long v = (long long)a + (long long)b;
+    if (v < INT_MIN || v > INT_MAX) return true;
+    *r = (int)v;
+    return false;
+}
+static inline bool ddup_sub_overflow_int(int a, int b, int *r)
+{
+    long long v = (long long)a - (long long)b;
+    if (v < INT_MIN || v > INT_MAX) return true;
+    *r = (int)v;
+    return false;
+}
+static inline bool ddup_mul_overflow_int(int a, int b, int *r)
+{
+    long long v = (long long)a * (long long)b;
+    if (v < INT_MIN || v > INT_MAX) return true;
+    *r = (int)v;
+    return false;
+}
+#  define ddup_add_overflow(a, b, r) ddup_add_overflow_int((a), (b), (r))
+#  define ddup_sub_overflow(a, b, r) ddup_sub_overflow_int((a), (b), (r))
+#  define ddup_mul_overflow(a, b, r) ddup_mul_overflow_int((a), (b), (r))
+#endif
+
 #endif /* DDUP_PAL_CSTD_H */
