@@ -93,6 +93,30 @@ static double bench_buf_pool(long n)
                      : (double)n;
 }
 
+/* Parse-only phase: isolate parser cost from command dispatch/storage. */
+static double run_parse_phase(arena *ar, const char *buf, size_t len)
+{
+    size_t off = 0;
+    long long n = 0;
+    uint64_t t0 = pal_now_us();
+    while (off < len) {
+        resp_value v;
+        ptrdiff_t used = resp_parse(buf + off, len - off, &v, ar);
+        if (used <= 0) {
+            fprintf(stderr, "parse error at %zu\n", off);
+            exit(1);
+        }
+        arena_reset(ar);
+        off += (size_t)used;
+        n++;
+    }
+    {
+        uint64_t t1 = pal_now_us();
+        double secs = (double)(t1 - t0) / 1000000.0;
+        return secs > 0.0 ? (double)n / secs : (double)n;
+    }
+}
+
 /* Run every command in the buffer through parse+dispatch; return ops/sec. */
 static double run_phase(session *s, arena *ar, resp_buf *out,
                         const char *buf, size_t len)
@@ -154,6 +178,10 @@ int main(int argc, char **argv)
     printf("SET (cold, includes inserts): %12.0f ops/s\n", set_ops);
     printf("GET (warm):                   %12.0f ops/s\n", get_ops);
     printf("GET (warm, run 2):            %12.0f ops/s\n", get2_ops);
+    printf("parse-only SET:               %12.0f ops/s\n",
+           run_parse_phase(&ar, sets.data, sets.len));
+    printf("parse-only GET:               %12.0f ops/s\n",
+           run_parse_phase(&ar, gets.data, gets.len));
     printf("cmd_resolve (mixed):          %12.0f ops/s\n",
            bench_cmd_resolve(n));
     printf("buf_pool get/put (64 KiB):    %12.0f ops/s\n",
