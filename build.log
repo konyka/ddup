@@ -4,9 +4,30 @@
 -- Check for working C compiler: /usr/bin/cc - skipped
 -- Detecting C compile features
 -- Detecting C compile features - done
--- ddup: C standard set to C23 (compiler: GNU 13.3.0)
+-- Performing Test _DDUP_HAS_C_ATOMICS
+-- Performing Test _DDUP_HAS_C_ATOMICS - Success
+-- Looking for threads.h
+-- Looking for threads.h - found
+-- Performing Test _DDUP_HAS_C_ALIGNAS
+-- Performing Test _DDUP_HAS_C_ALIGNAS - Success
+-- Performing Test _DDUP_HAS_C_STATIC_ASSERT
+-- Performing Test _DDUP_HAS_C_STATIC_ASSERT - Success
+-- Performing Test _DDUP_HAS_C_NORETURN
+-- Performing Test _DDUP_HAS_C_NORETURN - Success
+-- Performing Test _DDUP_HAS_C_THREAD_LOCAL
+-- Performing Test _DDUP_HAS_C_THREAD_LOCAL - Success
+-- Performing Test _DDUP_HAS_C_TYPEOF
+-- Performing Test _DDUP_HAS_C_TYPEOF - Success
+-- Performing Test _DDUP_HAS_C_CONSTEXPR
+-- Performing Test _DDUP_HAS_C_CONSTEXPR - Success
+-- Performing Test _DDUP_HAS_C_STDCKDINT
+-- Performing Test _DDUP_HAS_C_STDCKDINT - Failed
+-- Performing Test _DDUP_HAS_C_BITINT
+-- Performing Test _DDUP_HAS_C_BITINT - Failed
+-- ddup: C standard auto-detected as C23 (compiler: GNU 13.3.0)
+-- ddup: C capabilities ATOMICS=1 THREADS=1 ALIGNAS=1 STATIC_ASSERT=1 NORETURN=1 THREAD_LOCAL=1 TYPEOF=1 CONSTEXPR=1 STDCKDINT=0 BITINT=0
 -- ddup: TLS enabled (OpenSSL 3.0.13)
--- Configuring done (5.9s)
+-- Configuring done (7.9s)
 -- Generating done (0.1s)
 -- Build files have been written to: /home/runner/work/ddup/ddup/build
 [  1%] Building C object CMakeFiles/ddup_core.dir/src/pal/pal_time.c.o
@@ -20,15 +41,15 @@
 [  9%] Building C object CMakeFiles/ddup_core.dir/src/core/command.c.o
 [ 10%] Building C object CMakeFiles/ddup_core.dir/src/ds/obj.c.o
 [ 11%] Building C object CMakeFiles/ddup_core.dir/src/ds/skiplist.c.o
-[ 12%] Building C object CMakeFiles/ddup_core.dir/src/core/session.c.o
-[ 13%] Building C object CMakeFiles/ddup_core.dir/src/core/config.c.o
-[ 14%] Building C object CMakeFiles/ddup_core.dir/src/core/snapshot.c.o
-[ 15%] Building C object CMakeFiles/ddup_core.dir/src/core/crc64.c.o
-[ 16%] Building C object CMakeFiles/ddup_core.dir/src/core/migrate.c.o
-[ 17%] Building C object CMakeFiles/ddup_core.dir/src/core/hashslot.c.o
-[ 18%] Building C object CMakeFiles/ddup_core.dir/src/core/cluster.c.o
-[ 19%] Building C object CMakeFiles/ddup_core.dir/src/resp/resp_parser.c.o
-[ 20%] Building C object CMakeFiles/ddup_core.dir/src/resp/resp_writer.c.o
+[ 11%] Building C object CMakeFiles/ddup_core.dir/src/core/session.c.o
+[ 12%] Building C object CMakeFiles/ddup_core.dir/src/core/config.c.o
+[ 13%] Building C object CMakeFiles/ddup_core.dir/src/core/snapshot.c.o
+[ 14%] Building C object CMakeFiles/ddup_core.dir/src/core/crc64.c.o
+[ 15%] Building C object CMakeFiles/ddup_core.dir/src/core/migrate.c.o
+[ 16%] Building C object CMakeFiles/ddup_core.dir/src/core/hashslot.c.o
+[ 17%] Building C object CMakeFiles/ddup_core.dir/src/core/cluster.c.o
+[ 18%] Building C object CMakeFiles/ddup_core.dir/src/resp/resp_parser.c.o
+[ 19%] Building C object CMakeFiles/ddup_core.dir/src/resp/resp_writer.c.o
 [ 20%] Building C object CMakeFiles/ddup_core.dir/src/server/server.c.o
 [ 21%] Building C object CMakeFiles/ddup_core.dir/src/server/aof.c.o
 [ 22%] Building C object CMakeFiles/ddup_core.dir/src/server/repl.c.o
@@ -46,168 +67,11 @@
 [ 29%] Building C object CMakeFiles/test_pal.dir/tests/test_pal.c.o
 [ 30%] Linking C executable test_pal
 [ 30%] Built target test_pal
-[ 31%] Building C object CMakeFiles/test_socket.dir/tests/test_socket.c.o
-[ 32%] Linking C executable test_socket
-[ 32%] Built target test_socket
-[ 33%] Building C object CMakeFiles/test_event.dir/tests/test_event.c.o
-[ 34%] Linking C executable test_event
-[ 34%] Built target test_event
-[ 35%] Building C object CMakeFiles/test_server.dir/tests/test_server.c.o
-[ 36%] Linking C executable test_server
-[ 36%] Built target test_server
-[ 37%] Building C object CMakeFiles/test_arena.dir/tests/test_arena.c.o
-[ 38%] Linking C executable test_arena
-[ 38%] Built target test_arena
-[ 39%] Building C object CMakeFiles/test_resp_parser.dir/tests/test_resp_parser.c.o
-[ 40%] Linking C executable test_resp_parser
-[ 40%] Built target test_resp_parser
-[ 41%] Building C object CMakeFiles/test_resp_writer.dir/tests/test_resp_writer.c.o
-[ 42%] Linking C executable test_resp_writer
-[ 42%] Built target test_resp_writer
-[ 43%] Building C object CMakeFiles/test_resp3.dir/tests/test_resp3.c.o
-[ 44%] Linking C executable test_resp3
-[ 44%] Built target test_resp3
-[ 45%] Building C object CMakeFiles/test_rhtable.dir/tests/test_rhtable.c.o
-[ 46%] Linking C executable test_rhtable
-[ 46%] Built target test_rhtable
-[ 46%] Building C object CMakeFiles/test_command.dir/tests/test_command.c.o
-[ 47%] Linking C executable test_command
-[ 47%] Built target test_command
-[ 48%] Building C object CMakeFiles/test_expire.dir/tests/test_expire.c.o
-[ 49%] Linking C executable test_expire
-[ 49%] Built target test_expire
-[ 50%] Building C object CMakeFiles/test_eviction.dir/tests/test_eviction.c.o
-[ 51%] Linking C executable test_eviction
-[ 51%] Built target test_eviction
-[ 52%] Building C object CMakeFiles/test_hash.dir/tests/test_hash.c.o
-[ 53%] Linking C executable test_hash
-[ 53%] Built target test_hash
-[ 54%] Building C object CMakeFiles/test_list.dir/tests/test_list.c.o
-[ 55%] Linking C executable test_list
-[ 55%] Built target test_list
-[ 56%] Building C object CMakeFiles/test_skiplist.dir/tests/test_skiplist.c.o
-[ 57%] Linking C executable test_skiplist
-[ 57%] Built target test_skiplist
-[ 58%] Building C object CMakeFiles/test_set.dir/tests/test_set.c.o
-[ 59%] Linking C executable test_set
-[ 59%] Built target test_set
-[ 60%] Building C object CMakeFiles/test_zset.dir/tests/test_zset.c.o
-[ 61%] Linking C executable test_zset
-[ 61%] Built target test_zset
-[ 62%] Building C object CMakeFiles/test_session.dir/tests/test_session.c.o
-[ 63%] Linking C executable test_session
-[ 63%] Built target test_session
-[ 64%] Building C object CMakeFiles/test_multi.dir/tests/test_multi.c.o
-[ 65%] Linking C executable test_multi
-[ 65%] Built target test_multi
-[ 66%] Building C object CMakeFiles/test_pubsub.dir/tests/test_pubsub.c.o
-[ 67%] Linking C executable test_pubsub
-[ 67%] Built target test_pubsub
-[ 68%] Building C object CMakeFiles/test_config.dir/tests/test_config.c.o
-[ 69%] Linking C executable test_config
-[ 69%] Built target test_config
-[ 70%] Building C object CMakeFiles/test_aof.dir/tests/test_aof.c.o
-[ 71%] Linking C executable test_aof
-[ 71%] Built target test_aof
-[ 72%] Building C object CMakeFiles/test_snapshot.dir/tests/test_snapshot.c.o
-[ 73%] Linking C executable test_snapshot
-[ 73%] Built target test_snapshot
-[ 73%] Building C object CMakeFiles/test_repl.dir/tests/test_repl.c.o
-[ 74%] Linking C executable test_repl
-[ 74%] Built target test_repl
-[ 75%] Building C object CMakeFiles/test_hashslot.dir/tests/test_hashslot.c.o
-[ 76%] Linking C executable test_hashslot
-[ 76%] Built target test_hashslot
-[ 77%] Building C object CMakeFiles/test_cluster_id.dir/tests/test_cluster_id.c.o
-[ 78%] Linking C executable test_cluster_id
-[ 78%] Built target test_cluster_id
-[ 79%] Building C object CMakeFiles/test_cluster_cmds.dir/tests/test_cluster_cmds.c.o
-[ 80%] Linking C executable test_cluster_cmds
-In function ‘snprintf’,
-    inlined from ‘cluster_session’ at /home/runner/work/ddup/ddup/tests/test_cluster_cmds.c:43:5:
-/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin_memcpy’ writing 10 bytes into a region of size 0 overflows the destination [-Wstringop-overflow=]
-   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
-      |          ^
-In function ‘cluster_session’:
-lto1: note: destination object is likely at address zero
-[ 80%] Built target test_cluster_cmds
-[ 81%] Building C object CMakeFiles/test_cluster_nodes.dir/tests/test_cluster_nodes.c.o
-[ 82%] Linking C executable test_cluster_nodes
-[ 82%] Built target test_cluster_nodes
-[ 83%] Building C object CMakeFiles/test_cluster_bus.dir/tests/test_cluster_bus.c.o
-[ 84%] Linking C executable test_cluster_bus
-[ 84%] Built target test_cluster_bus
-[ 85%] Building C object CMakeFiles/test_cluster_slots.dir/tests/test_cluster_slots.c.o
-[ 86%] Linking C executable test_cluster_slots
-[ 86%] Built target test_cluster_slots
-[ 87%] Building C object CMakeFiles/test_dump.dir/tests/test_dump.c.o
-[ 88%] Linking C executable test_dump
-[ 88%] Built target test_dump
-[ 89%] Building C object CMakeFiles/test_migrate.dir/tests/test_migrate.c.o
-[ 90%] Linking C executable test_migrate
-[ 90%] Built target test_migrate
-[ 91%] Building C object CMakeFiles/test_cluster_migrate.dir/tests/test_cluster_migrate.c.o
-[ 92%] Linking C executable test_cluster_migrate
-[ 92%] Built target test_cluster_migrate
-[ 93%] Building C object CMakeFiles/test_cluster_replica.dir/tests/test_cluster_replica.c.o
-[ 94%] Linking C executable test_cluster_replica
-[ 94%] Built target test_cluster_replica
-[ 95%] Building C object CMakeFiles/test_cluster_epoch.dir/tests/test_cluster_epoch.c.o
-[ 96%] Linking C executable test_cluster_epoch
-[ 96%] Built target test_cluster_epoch
-[ 97%] Building C object CMakeFiles/test_cluster_failover.dir/tests/test_cluster_failover.c.o
-[ 98%] Linking C executable test_cluster_failover
-[ 98%] Built target test_cluster_failover
-[ 99%] Building C object CMakeFiles/test_tls.dir/tests/test_tls.c.o
-[100%] Linking C executable test_tls
-[100%] Built target test_tls
-Reading package lists...
-Building dependency tree...
-Reading state information...
-The following additional packages will be installed:
-  libjemalloc2 liblzf1
-Suggested packages:
-  ruby-redis
-The following NEW packages will be installed:
-  libjemalloc2 liblzf1 redis-server redis-tools
-0 upgraded, 4 newly installed, 0 to remove and 83 not upgraded.
-Need to get 1482 kB of archives.
-After this operation, 7568 kB of additional disk space will be used.
-Get:1 file:/etc/apt/apt-mirrors.txt Mirrorlist [144 B]
-Get:2 http://azure.archive.ubuntu.com/ubuntu noble/universe amd64 libjemalloc2 amd64 5.3.0-2build1 [256 kB]
-Get:3 http://azure.archive.ubuntu.com/ubuntu noble/universe amd64 liblzf1 amd64 3.6-4 [7624 B]
-Get:4 http://azure.archive.ubuntu.com/ubuntu noble-updates/universe amd64 redis-tools amd64 5:7.0.15-1ubuntu0.24.04.4 [1166 kB]
-Get:5 http://azure.archive.ubuntu.com/ubuntu noble-updates/universe amd64 redis-server amd64 5:7.0.15-1ubuntu0.24.04.4 [51.7 kB]
-Fetched 1482 kB in 0s (11.3 MB/s)
-Selecting previously unselected package libjemalloc2:amd64.
-(Reading database ... (Reading database ... 5%(Reading database ... 10%(Reading database ... 15%(Reading database ... 20%(Reading database ... 25%(Reading database ... 30%(Reading database ... 35%(Reading database ... 40%(Reading database ... 45%(Reading database ... 50%(Reading database ... 55%(Reading database ... 60%(Reading database ... 65%(Reading database ... 70%(Reading database ... 75%(Reading database ... 80%(Reading database ... 85%(Reading database ... 90%(Reading database ... 95%(Reading database ... 100%(Reading database ... 202954 files and directories currently installed.)
-Preparing to unpack .../libjemalloc2_5.3.0-2build1_amd64.deb ...
-Unpacking libjemalloc2:amd64 (5.3.0-2build1) ...
-Selecting previously unselected package liblzf1:amd64.
-Preparing to unpack .../liblzf1_3.6-4_amd64.deb ...
-Unpacking liblzf1:amd64 (3.6-4) ...
-Selecting previously unselected package redis-tools.
-Preparing to unpack .../redis-tools_5%3a7.0.15-1ubuntu0.24.04.4_amd64.deb ...
-Unpacking redis-tools (5:7.0.15-1ubuntu0.24.04.4) ...
-Selecting previously unselected package redis-server.
-Preparing to unpack .../redis-server_5%3a7.0.15-1ubuntu0.24.04.4_amd64.deb ...
-Unpacking redis-server (5:7.0.15-1ubuntu0.24.04.4) ...
-Setting up libjemalloc2:amd64 (5.3.0-2build1) ...
-Setting up liblzf1:amd64 (3.6-4) ...
-Setting up redis-tools (5:7.0.15-1ubuntu0.24.04.4) ...
-Setting up redis-server (5:7.0.15-1ubuntu0.24.04.4) ...
-Created symlink /etc/systemd/system/redis.service → /usr/lib/systemd/system/redis-server.service.
-Created symlink /etc/systemd/system/multi-user.target.wants/redis-server.service → /usr/lib/systemd/system/redis-server.service.
-Processing triggers for man-db (2.12.0-4build2) ...
-Not building database; man-db/auto-update is not 'true'.
-Processing triggers for libc-bin (2.39-0ubuntu8.7) ...
-
-Running kernel seems to be up-to-date.
-
-No services need to be restarted.
-
-No containers need to be restarted.
-
-No user sessions are running outdated binaries.
-
-No VM guests are running outdated hypervisor (qemu) binaries on this host.
+[ 31%] Building C object CMakeFiles/test_cstd.dir/tests/test_cstd.c.o
+/home/runner/work/ddup/ddup/tests/test_cstd.c:3:10: fatal error: pal/pal_cstd.h: No such file or directory
+    3 | #include "pal/pal_cstd.h"
+      |          ^~~~~~~~~~~~~~~~
+compilation terminated.
+gmake[2]: *** [CMakeFiles/test_cstd.dir/build.make:79: CMakeFiles/test_cstd.dir/tests/test_cstd.c.o] Error 1
+gmake[1]: *** [CMakeFiles/Makefile2:371: CMakeFiles/test_cstd.dir/all] Error 2
+gmake: *** [Makefile:101: all] Error 2
