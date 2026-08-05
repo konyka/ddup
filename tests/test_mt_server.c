@@ -380,6 +380,87 @@ static void test_aggregate_dbsize_and_flushdb(void)
     pal_socket_cleanup();
 }
 
+static void test_set_algebra_same_slot_routing(void)
+{
+    mt_server *ms;
+    pal_socket_t a, b;
+    char ka[32], kb[32], k0[32], k1[32];
+    char req[384];
+
+    DD_CHECK_EQ_INT(0, pal_socket_init());
+    pick_two_keys_for_worker(0, 2, ka, sizeof(ka), kb, sizeof(kb));
+    pick_key_for_worker(0, 2, k0, sizeof(k0));
+    pick_key_for_worker(1, 2, k1, sizeof(k1));
+
+    ms = mt_server_create("127.0.0.1", 0, 2);
+    DD_CHECK(ms != NULL);
+    DD_CHECK_EQ_INT(0, mt_server_start(ms));
+    a = connect_client(mt_server_port(ms)); /* -> worker 0 */
+    b = connect_client(mt_server_port(ms)); /* -> worker 1 */
+
+    /* build two sets on worker 0 */
+    snprintf(req, sizeof(req), "*4\r\n$4\r\nSADD\r\n$%zu\r\n%s\r\n$1\r\nx\r\n$1\r\ny\r\n",
+             strlen(ka), ka);
+    roundtrip(a, req, ":2\r\n");
+    snprintf(req, sizeof(req), "*4\r\n$4\r\nSADD\r\n$%zu\r\n%s\r\n$1\r\ny\r\n$1\r\nz\r\n",
+             strlen(kb), kb);
+    roundtrip(a, req, ":2\r\n");
+
+    /* SINTER from b: both keys on worker 0, routed as one unit */
+    snprintf(req, sizeof(req), "*3\r\n$6\r\nSINTER\r\n$%zu\r\n%s\r\n$%zu\r\n%s\r\n",
+             strlen(ka), ka, strlen(kb), kb);
+    roundtrip(b, req, "*1\r\n$1\r\ny\r\n");
+
+    /* SUNION from b (member order is hash-table order: check the set
+     * contents rather than an exact byte sequence) */
+    {
+        char got[128];
+        size_t g = 0;
+        uint64_t deadline;
+        snprintf(req, sizeof(req), "*3\r\n$6\r\nSUNION\r\n$%zu\r\n%s\r\n$%zu\r\n%s\r\n",
+                 strlen(ka), ka, strlen(kb), kb);
+        {
+            size_t sent = 0, rl = strlen(req);
+            while (sent < rl) {
+                ptrdiff_t n = pal_send(b, req + sent, rl - sent);
+                if (n > 0)
+                    sent += (size_t)n;
+            }
+        }
+        deadline = pal_now_ms() + 5000;
+        while (g < 25 && pal_now_ms() < deadline) {
+            ptrdiff_t n = pal_recv(b, got + g, sizeof(got) - g);
+            if (n > 0)
+                g += (size_t)n;
+            else
+                pal_sleep_ms(1);
+        }
+        DD_CHECK(g >= 4);
+        DD_CHECK_MEM("*3\r\n", 4, got, 4);
+        DD_CHECK(g == 25);
+        got[g] = '\0';
+        DD_CHECK(strstr(got, "$1\r\nx\r\n") != NULL);
+        DD_CHECK(strstr(got, "$1\r\ny\r\n") != NULL);
+        DD_CHECK(strstr(got, "$1\r\nz\r\n") != NULL);
+    }
+
+    /* SDIFF from b */
+    snprintf(req, sizeof(req), "*3\r\n$5\r\nSDIFF\r\n$%zu\r\n%s\r\n$%zu\r\n%s\r\n",
+             strlen(ka), ka, strlen(kb), kb);
+    roundtrip(b, req, "*1\r\n$1\r\nx\r\n");
+
+    /* cross-worker SINTER is rejected */
+    snprintf(req, sizeof(req), "*3\r\n$6\r\nSINTER\r\n$%zu\r\n%s\r\n$%zu\r\n%s\r\n",
+             strlen(k0), k0, strlen(k1), k1);
+    roundtrip(a, req, "-CROSSSLOT Keys in request don't hash to the same slot\r\n");
+
+    pal_close(a);
+    pal_close(b);
+    mt_server_stop(ms);
+    mt_server_destroy(ms);
+    pal_socket_cleanup();
+}
+
 static void test_same_target_pipeline_merges_into_one_task(void)
 {
     mt_server *ms;
@@ -450,6 +531,7 @@ int main(void)
     DD_RUN(test_multikey_crossslot_rejected);
     DD_RUN(test_smove_same_worker);
     DD_RUN(test_aggregate_dbsize_and_flushdb);
+    DD_RUN(test_set_algebra_same_slot_routing);
     DD_RUN(test_same_target_pipeline_merges_into_one_task);
     DD_RUN(test_many_connections_across_workers);
     return DD_TEST_SUMMARY();
