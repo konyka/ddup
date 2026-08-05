@@ -747,30 +747,26 @@ static void repl_link_service(server *srv, conn *c)
             return;
         }
         c->link_got = 0;
-        c->link_hdrlen = pos + 1;
+        /* consume the header; snapshot bytes are then taken from the front
+         * of rbuf as they arrive (works for frames bigger than the chunk) */
+        memmove(c->rbuf, c->rbuf + pos + 1, c->rlen - pos - 1);
+        c->rlen -= pos + 1;
         c->link_state = LINK_SNAPSHOT;
     }
     if (c->link_state == LINK_SNAPSHOT) {
-        size_t avail = c->rlen - c->link_hdrlen - c->link_got;
         size_t want = c->link_need - c->link_got;
-        size_t take = avail < want ? avail : want;
-        memcpy(c->link_snap + c->link_got,
-               c->rbuf + c->link_hdrlen + c->link_got, take);
+        size_t take = c->rlen < want ? c->rlen : want;
+        memcpy(c->link_snap + c->link_got, c->rbuf, take);
         c->link_got += take;
-        if (c->link_got < c->link_need) {
-            c->rlen = 0; /* snapshot may exceed the recv chunk; restart fill */
-            return;
-        }
+        memmove(c->rbuf, c->rbuf + take, c->rlen - take);
+        c->rlen -= take;
+        if (c->link_got < c->link_need)
+            return; /* wait for the rest of the snapshot */
         db_flush(&srv->db);
         (void)snapshot_load_mem(&srv->db, c->link_snap, c->link_need,
                                 pal_wall_ms());
         free(c->link_snap);
         c->link_snap = NULL;
-        {
-            size_t used = c->link_hdrlen + c->link_need;
-            memmove(c->rbuf, c->rbuf + used, c->rlen - used);
-            c->rlen -= used;
-        }
         c->link_state = LINK_STREAMING;
         srv->repl.link_up = 1;
     }

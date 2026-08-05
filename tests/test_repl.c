@@ -1,4 +1,5 @@
 /* test_repl.c - replication backlog ring buffer (sub-step 1). */
+#include <stdlib.h>
 #include <string.h>
 
 #include "server/repl.h"
@@ -50,6 +51,7 @@ static void test_psync_fullresync(void);
 static void test_psync_continue_partial(void);
 static void test_psync_stale_offset_fullresync(void);
 static void test_chained_replication(void);
+static void test_replica_large_snapshot(void);
 static void test_replica_full_cycle(void);
 static void test_replica_reconnect_resync(void);
 
@@ -62,6 +64,7 @@ int main(void)
     DD_RUN(test_psync_continue_partial);
     DD_RUN(test_psync_stale_offset_fullresync);
     DD_RUN(test_chained_replication);
+    DD_RUN(test_replica_large_snapshot);
     DD_RUN(test_replica_full_cycle);
     DD_RUN(test_replica_reconnect_resync);
     return DD_TEST_SUMMARY();
@@ -391,13 +394,20 @@ static int wait_sync_get(server *x, server *y, uint16_t port, const char *key,
             pal_close(t);
             continue;
         }
-        while (got < elen && iter < 10000) {
-            ptrdiff_t n;
-            iter++;
-            pump2(x, y);
-            n = pal_recv(t, buf + got, bufcap - got);
-            if (n > 0)
-                got += (size_t)n;
+        {
+            int idle = 0;
+            while (got < elen && iter < 10000 && idle < 100) {
+                ptrdiff_t n;
+                iter++;
+                pump2(x, y);
+                n = pal_recv(t, buf + got, bufcap - got);
+                if (n > 0) {
+                    got += (size_t)n;
+                    idle = 0;
+                } else {
+                    idle++;
+                }
+            }
         }
         pal_close(t);
         if (got == elen && memcmp(buf, expected, elen) == 0)
@@ -427,15 +437,22 @@ static int wait_sync_get3(server *x, server *y, server *z, uint16_t port,
             pal_close(t);
             continue;
         }
-        while (got < elen && iter < 10000) {
-            ptrdiff_t n;
-            iter++;
-            server_run_once(x, 5);
-            server_run_once(y, 5);
-            server_run_once(z, 5);
-            n = pal_recv(t, buf + got, bufcap - got);
-            if (n > 0)
-                got += (size_t)n;
+        {
+            int idle = 0;
+            while (got < elen && iter < 10000 && idle < 100) {
+                ptrdiff_t n;
+                iter++;
+                server_run_once(x, 5);
+                server_run_once(y, 5);
+                server_run_once(z, 5);
+                n = pal_recv(t, buf + got, bufcap - got);
+                if (n > 0) {
+                    got += (size_t)n;
+                    idle = 0;
+                } else {
+                    idle++;
+                }
+            }
         }
         pal_close(t);
         if (got == elen && memcmp(buf, expected, elen) == 0)
@@ -596,6 +613,88 @@ static void test_chained_replication(void)
     server_destroy(c);
     server_destroy(b);
     server_destroy(a);
+    pal_socket_cleanup();
+}
+
+/* ------------------------------------------------------------------ */
+/* full resync with a snapshot larger than the 64 KiB receive chunk    */
+/* ------------------------------------------------------------------ */
+
+static void test_replica_large_snapshot(void)
+{
+    server *m, *r;
+    pal_socket_t mc, rc;
+    char buf[8192];
+    char port_str[16];
+    char req[256];
+    int synced;
+    int i;
+
+    DD_CHECK_EQ_INT(0, pal_socket_init());
+    m = server_create("127.0.0.1", 0);
+    r = server_create("127.0.0.1", 0);
+    DD_CHECK(m != NULL && r != NULL);
+    mc = nb_client(server_port(m));
+    rc = nb_client(server_port(r));
+
+    /* ~3000 keys x ~45 bytes > 64 KiB snapshot (pipelined seeding) */
+    {
+        char *big = (char *)malloc((size_t)3000 * 80);
+        size_t blen = 0, bsent = 0, bgot = 0;
+        int iter = 0;
+        DD_CHECK(big != NULL);
+        for (i = 0; i < 3000; i++) {
+            char kbuf[8];
+            int w;
+            snprintf(kbuf, sizeof(kbuf), "k:%d", i);
+            w = snprintf(big + blen, 80,
+                         "*3\r\n$3\r\nSET\r\n$%zu\r\n%s\r\n$32\r\n"
+                         "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\r\n",
+                         strlen(kbuf), kbuf);
+            DD_CHECK(w > 0);
+            blen += (size_t)w;
+        }
+        while ((bsent < blen || bgot < (size_t)3000 * 5) && iter < 200000) {
+            ptrdiff_t n;
+            iter++;
+            pump2(m, r);
+            if (bsent < blen) {
+                n = pal_send(mc, big + bsent, blen - bsent);
+                if (n > 0)
+                    bsent += (size_t)n;
+            }
+            if (bgot < (size_t)3000 * 5) {
+                n = pal_recv(mc, buf, sizeof(buf));
+                if (n > 0)
+                    bgot += (size_t)n;
+            }
+        }
+        DD_CHECK_EQ_INT((long long)blen, (long long)bsent);
+        DD_CHECK_EQ_INT((long long)(3000 * 5), (long long)bgot);
+        free(big);
+    }
+
+    snprintf(port_str, sizeof(port_str), "%u", (unsigned)server_port(m));
+    {
+        const char *p1 = "*3\r\n$9\r\nREPLICAOF\r\n$9\r\n127.0.0.1\r\n$";
+        snprintf(req, sizeof(req), "%s%zu\r\n%s\r\n", p1, strlen(port_str),
+                 port_str);
+        rt2(m, r, rc, req, "+OK\r\n", buf, sizeof(buf));
+    }
+
+    synced = wait_sync_get(m, r, server_port(r), "k:2999",
+                           "$32\r\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\r\n",
+                           buf, sizeof(buf));
+    DD_CHECK_EQ_INT(1, synced);
+    synced = wait_sync_get(m, r, server_port(r), "k:0",
+                           "$32\r\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\r\n",
+                           buf, sizeof(buf));
+    DD_CHECK_EQ_INT(1, synced);
+
+    pal_close(rc);
+    pal_close(mc);
+    server_destroy(r);
+    server_destroy(m);
     pal_socket_cleanup();
 }
 
