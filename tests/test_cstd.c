@@ -1,6 +1,8 @@
 /* test_cstd.c - tests for the C-standard capability wrapper layer. */
 #include "test.h"
+
 #include "pal/pal_cstd.h"
+#include <stdlib.h>
 
 static void test_capability_macros_are_boolean(void)
 {
@@ -16,8 +18,47 @@ static void test_capability_macros_are_boolean(void)
     DD_CHECK(DDUP_HAS_C_BITINT == 0 || DDUP_HAS_C_BITINT == 1);
 }
 
+static void test_static_assert_compiles(void)
+{
+    ddup_static_assert(1 == 1, "trivially true");
+    ddup_static_assert(sizeof(int) == 4, "int size assumption");
+}
+
+ddup_alignas(64) static char aligned_buf[128];
+
+static void test_alignas_works(void)
+{
+    DD_CHECK(((uintptr_t)(void *)aligned_buf & 63) == 0);
+}
+
+DDUP_NORETURN static void test_noreturn_fn(void)
+{
+    abort(); /* noreturn; never actually invoked by tests */
+}
+
+static void test_noreturn_compiles(void)
+{
+    /* Reference the function so the attribute is materialized; do not call it. */
+    (void)test_noreturn_fn;
+}
+
+static ddup_thread_local int tls_counter = 0;
+
+static void test_thread_local_basic(void)
+{
+    tls_counter = 0;
+    tls_counter++;
+    DD_CHECK_EQ_INT(1, tls_counter);
+    tls_counter++;
+    DD_CHECK_EQ_INT(2, tls_counter);
+}
+
 int main(void)
 {
     DD_RUN(test_capability_macros_are_boolean);
+    DD_RUN(test_static_assert_compiles);
+    DD_RUN(test_alignas_works);
+    DD_RUN(test_noreturn_compiles);
+    DD_RUN(test_thread_local_basic);
     return DD_TEST_SUMMARY();
 }
