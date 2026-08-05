@@ -2029,6 +2029,13 @@ void mt_server_set_requirepass(mt_server *ms, const char *pw)
         server_set_requirepass(ms->workers[i].srv, pw);
 }
 
+void mt_server_set_maxmemory(mt_server *ms, uint64_t bytes, int policy)
+{
+    int i;
+    for (i = 0; i < ms->nworkers; i++)
+        server_set_maxmemory(ms->workers[i].srv, bytes, policy);
+}
+
 uint64_t mt_server_tasks_executed(const mt_server *ms)
 {
     uint64_t total = 0;

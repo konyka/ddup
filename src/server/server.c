@@ -984,6 +984,16 @@ void server_set_requirepass(server *s, const char *pw)
     s->requirepass = pw;
 }
 
+void server_set_maxmemory(server *s, uint64_t bytes, int policy)
+{
+    int i;
+    for (i = 0; i < s->ndbs; i++) {
+        db *d = srv_select_db(s, i);
+        d->maxmemory = bytes;
+        d->maxmemory_policy = policy;
+    }
+}
+
 void server_set_snapshot_path(server *s, const char *path)
 {
     s->db.snapshot_path = path;
@@ -1915,12 +1925,15 @@ int server_run_once(server *s, int timeout_ms)
     int nev;
     int i;
 
-    /* active expiration: at most one cycle per 100 ms of monotonic time */
+    /* active expiration: at most one cycle per 100 ms of monotonic time;
+     * every logical db gets a pass (empty expires tables exit in O(1)) */
     {
         uint64_t now = pal_now_ms();
         if (now - s->last_active_expire >= 100) {
+            int i;
             s->last_active_expire = now;
-            db_active_expire(&s->db, pal_wall_ms(), 20);
+            for (i = 0; i < s->ndbs; i++)
+                db_active_expire(srv_select_db(s, i), pal_wall_ms(), 20);
         }
     }
 

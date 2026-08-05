@@ -45,6 +45,9 @@ int server_enable_aof(server *s, const char *path);
  * owned; pass NULL/"" to disable. New connections start unauthenticated. */
 void server_set_requirepass(server *s, const char *pw);
 
+/* Apply the memory limit and eviction policy to every logical db. */
+void server_set_maxmemory(server *s, uint64_t bytes, int policy);
+
 /* Point SAVE at path (not owned) and, if the file exists, load it into the
  * db. load returns 0 on success, -1 on corrupt/missing file. */
 void server_set_snapshot_path(server *s, const char *path);

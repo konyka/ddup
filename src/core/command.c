@@ -1935,21 +1935,36 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
                     resp_write_error(out, E, sizeof(E) - 1);
                     return;
                 }
-                d->maxmemory = (uint64_t)mv;
+                /* Redis semantics: global limit, applied to every db */
+                if (s->sel_fn != NULL) {
+                    int i;
+                    for (i = 0; i < s->sel_ndbs; i++)
+                        s->sel_fn(s->sel_ctx, i)->maxmemory = (uint64_t)mv;
+                } else {
+                    d->maxmemory = (uint64_t)mv;
+                }
                 resp_write_simple_string(out, "OK", 2);
                 return;
             }
             if (ci_equal(p, pl, "maxmemory-policy")) {
+                int pol;
                 if (ci_equal(v, vl2, "allkeys-lru")) {
-                    d->maxmemory_policy = DB_POLICY_ALLKEYS_LRU;
+                    pol = DB_POLICY_ALLKEYS_LRU;
                 } else if (ci_equal(v, vl2, "noeviction")) {
-                    d->maxmemory_policy = DB_POLICY_NOEVICTION;
+                    pol = DB_POLICY_NOEVICTION;
                 } else {
                     static const char E[] =
                         "ERR invalid argument for CONFIG SET "
                         "'maxmemory-policy'";
                     resp_write_error(out, E, sizeof(E) - 1);
                     return;
+                }
+                if (s->sel_fn != NULL) {
+                    int i;
+                    for (i = 0; i < s->sel_ndbs; i++)
+                        s->sel_fn(s->sel_ctx, i)->maxmemory_policy = pol;
+                } else {
+                    d->maxmemory_policy = pol;
                 }
                 resp_write_simple_string(out, "OK", 2);
                 return;
@@ -1974,9 +1989,27 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
         }
         {
             char human[32];
-            char buf[768];
+            char buf[2048];
             int n2;
-            human_bytes(d->used_memory, human, sizeof(human));
+            uint64_t used_total = d->used_memory;
+            uint64_t expired_total = d->expired_keys;
+            uint64_t evicted_total = d->evicted_keys;
+            if (s->sel_fn != NULL) {
+                /* INFO aggregates every logical db (current db's values are
+                 * re-added below, so skip index 0's replacement by summing
+                 * from scratch) */
+                int i;
+                used_total = 0;
+                expired_total = 0;
+                evicted_total = 0;
+                for (i = 0; i < s->sel_ndbs; i++) {
+                    db *di = s->sel_fn(s->sel_ctx, i);
+                    used_total += di->used_memory;
+                    expired_total += di->expired_keys;
+                    evicted_total += di->evicted_keys;
+                }
+            }
+            human_bytes(used_total, human, sizeof(human));
             n2 = snprintf(buf, sizeof(buf),
                           "# Memory\r\n"
                           "used_memory:%llu\r\n"
@@ -1987,16 +2020,31 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
                           "expired_keys:%llu\r\n"
                           "evicted_keys:%llu\r\n"
                           "# Keyspace\r\n"
-                          "dbsize:%llu\r\n"
-                          "# Cluster\r\n"
-                          "cluster_enabled:%d\r\n",
-                          (unsigned long long)d->used_memory, human,
+                          "dbsize:%llu\r\n",
+                          (unsigned long long)used_total, human,
                           (unsigned long long)d->maxmemory,
                           policy_name(d->maxmemory_policy),
-                          (unsigned long long)d->expired_keys,
-                          (unsigned long long)d->evicted_keys,
-                          (unsigned long long)rh_size(&d->table),
-                          d->cluster_enabled);
+                          (unsigned long long)expired_total,
+                          (unsigned long long)evicted_total,
+                          (unsigned long long)rh_size(&d->table));
+            /* Redis-style per-db keyspace sections for non-empty dbs */
+            if (s->sel_fn != NULL) {
+                int i;
+                for (i = 0; i < s->sel_ndbs; i++) {
+                    db *di = s->sel_fn(s->sel_ctx, i);
+                    size_t keys = rh_size(&di->table);
+                    size_t expires = rh_size(&di->expires);
+                    if (keys > 0)
+                        n2 += snprintf(buf + n2, sizeof(buf) - (size_t)n2,
+                                       "db%d:keys=%zu,expires=%zu,"
+                                       "avg_ttl=0\r\n",
+                                       i, keys, expires);
+                }
+            }
+            n2 += snprintf(buf + n2, sizeof(buf) - (size_t)n2,
+                           "# Cluster\r\n"
+                           "cluster_enabled:%d\r\n",
+                           d->cluster_enabled);
             if (s->repl != NULL) {
                 const repl_info *ri = s->repl;
                 n2 += snprintf(buf + n2, sizeof(buf) - (size_t)n2,

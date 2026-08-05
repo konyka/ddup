@@ -37,6 +37,9 @@ int mt_server_start(mt_server *ms);
 /* Require AUTH before commands on every worker (Redis requirepass). */
 void mt_server_set_requirepass(mt_server *ms, const char *pw);
 
+/* Apply the memory limit and eviction policy on every worker. */
+void mt_server_set_maxmemory(mt_server *ms, uint64_t bytes, int policy);
+
 /* Stop all threads (joins them). Safe to call once before destroy. */
 void mt_server_stop(mt_server *ms);
 

@@ -209,11 +209,72 @@ static void test_swapdb_invalidates_watch(void)
     set_free(ds);
 }
 
+static void test_info_keyspace_sections(void)
+{
+    dbset *ds = set_new(4);
+    session *s = set_session(ds);
+    resp_buf out;
+    resp_buf_init(&out);
+
+    exec_sess(s, T0, &out, 3, "SET", "a", "1");
+    EXPECT(out, "+OK\r\n");
+    exec_sess(s, T0, &out, 2, "SELECT", "1");
+    exec_sess(s, T0, &out, 3, "SET", "b", "2");
+    EXPECT(out, "+OK\r\n");
+    exec_sess(s, T0, &out, 3, "EXPIRE", "b", "100");
+    EXPECT(out, ":1\r\n");
+
+    exec_sess(s, T0, &out, 1, "INFO");
+    {
+        resp_buf_reserve(&out, 1);
+        out.data[out.len] = '\0';
+        DD_CHECK(strstr(out.data, "dbsize:1\r\n") != NULL);
+        DD_CHECK(strstr(out.data, "db0:keys=1,expires=0,avg_ttl=0\r\n") !=
+                 NULL);
+        DD_CHECK(strstr(out.data, "db1:keys=1,expires=1,avg_ttl=0\r\n") !=
+                 NULL);
+        DD_CHECK(strstr(out.data, "db2:keys=") == NULL);
+    }
+
+    session_free(s);
+    resp_buf_free(&out);
+    set_free(ds);
+}
+
+static void test_expiry_isolated_per_db(void)
+{
+    dbset *ds = set_new(4);
+    session *s = set_session(ds);
+    resp_buf out;
+    resp_buf_init(&out);
+
+    exec_sess(s, T0, &out, 3, "SET", "k", "v0");
+    EXPECT(out, "+OK\r\n");
+    exec_sess(s, T0, &out, 2, "SELECT", "1");
+    exec_sess(s, T0, &out, 3, "SET", "k", "v1");
+    EXPECT(out, "+OK\r\n");
+    exec_sess(s, T0, &out, 3, "EXPIRE", "k", "100");
+    EXPECT(out, ":1\r\n");
+
+    /* db1's k expires; db0's k is unaffected */
+    exec_sess(s, T0 + 100 * 1000 + 1, &out, 2, "GET", "k");
+    EXPECT(out, "$-1\r\n");
+    exec_sess(s, T0 + 100 * 1000 + 1, &out, 2, "SELECT", "0");
+    exec_sess(s, T0 + 100 * 1000 + 1, &out, 2, "GET", "k");
+    EXPECT(out, "$2\r\nv0\r\n");
+
+    session_free(s);
+    resp_buf_free(&out);
+    set_free(ds);
+}
+
 int main(void)
 {
     DD_RUN(test_select_isolation);
     DD_RUN(test_select_out_of_range);
     DD_RUN(test_swapdb);
     DD_RUN(test_swapdb_invalidates_watch);
+    DD_RUN(test_info_keyspace_sections);
+    DD_RUN(test_expiry_isolated_per_db);
     return DD_TEST_SUMMARY();
 }

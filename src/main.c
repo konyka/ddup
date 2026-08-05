@@ -90,6 +90,7 @@ int main(int argc, char **argv)
         /* per-worker persistence (worker-<id>-<file> under dir) */
         if (cfg.requirepass[0] != '\0')
             mt_server_set_requirepass(ms, cfg.requirepass);
+        mt_server_set_maxmemory(ms, cfg.maxmemory, cfg.maxmemory_policy);
         if (cfg.appendonly) {
             if (mt_server_enable_aof(ms, cfg.dir,
                                      cfg.appendfilename) != 0) {
@@ -161,6 +162,7 @@ int main(int argc, char **argv)
     }
     if (cfg.requirepass[0] != '\0')
         server_set_requirepass(s, cfg.requirepass);
+    server_set_maxmemory(s, cfg.maxmemory, cfg.maxmemory_policy);
 
     {
         char verr[256];
