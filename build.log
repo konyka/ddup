@@ -13,8 +13,8 @@ MSBuild version 18.8.2+ce25c0108 for .NET Framework
   arena.c
   rhtable.c
   command.c
-  buf_pool.c
 D:\a\ddup\ddup\src\core\command.c(1184,25): warning C4457: declaration of 's' hides function parameter [D:\a\ddup\ddup\build\ddup_core.vcxproj]
+  buf_pool.c
       D:\a\ddup\ddup\src\core\command.c(1151,39):
       see declaration of 's'
   
@@ -83,6 +83,7 @@ D:\a\ddup\ddup\src\core\command.c(2695,26): warning C4457: declaration of 's' hi
   resp_parser.c
   resp_writer.c
   server.c
+  mt_server.c
   aof.c
   repl.c
   ddup_core.vcxproj -> D:\a\ddup\ddup\build\Release\ddup_core.lib
@@ -859,6 +860,47 @@ D:\a\ddup\ddup\src\core\command.c(3158): warning C4703: potentially uninitialize
   All 350 functions were compiled because no usable IPDB/IOBJ from previous compilation was found.
   Finished generating code
   test_migrate.vcxproj -> D:\a\ddup\ddup\build\Release\test_migrate.exe
+  Building Custom Rule D:/a/ddup/ddup/CMakeLists.txt
+  test_mt_server.c
+  Generating code
+  Previous IPDB not found, fall back to full compilation.
+D:\a\ddup\ddup\src\core\command.c(1969): warning C4701: potentially uninitialized local variable 'h' used [D:\a\ddup\ddup\build\test_mt_server.vcxproj]
+D:\a\ddup\ddup\src\core\command.c(1969): warning C4703: potentially uninitialized local pointer variable 'h' used [D:\a\ddup\ddup\build\test_mt_server.vcxproj]
+D:\a\ddup\ddup\src\core\command.c(2048): warning C4701: potentially uninitialized local variable 'h' used [D:\a\ddup\ddup\build\test_mt_server.vcxproj]
+D:\a\ddup\ddup\src\core\command.c(2048): warning C4703: potentially uninitialized local pointer variable 'h' used [D:\a\ddup\ddup\build\test_mt_server.vcxproj]
+D:\a\ddup\ddup\src\core\command.c(2183): warning C4701: potentially uninitialized local variable 'l' used [D:\a\ddup\ddup\build\test_mt_server.vcxproj]
+D:\a\ddup\ddup\src\core\command.c(2183): warning C4703: potentially uninitialized local pointer variable 'l' used [D:\a\ddup\ddup\build\test_mt_server.vcxproj]
+D:\a\ddup\ddup\src\core\command.c(2218): warning C4701: potentially uninitialized local variable 'l' used [D:\a\ddup\ddup\build\test_mt_server.vcxproj]
+D:\a\ddup\ddup\src\core\command.c(2218): warning C4703: potentially uninitialized local pointer variable 'l' used [D:\a\ddup\ddup\build\test_mt_server.vcxproj]
+D:\a\ddup\ddup\src\core\command.c(2273): warning C4701: potentially uninitialized local variable 'l' used [D:\a\ddup\ddup\build\test_mt_server.vcxproj]
+D:\a\ddup\ddup\src\core\command.c(2273): warning C4703: potentially uninitialized local pointer variable 'l' used [D:\a\ddup\ddup\build\test_mt_server.vcxproj]
+D:\a\ddup\ddup\src\core\command.c(2319): warning C4701: potentially uninitialized local variable 'l' used [D:\a\ddup\ddup\build\test_mt_server.vcxproj]
+D:\a\ddup\ddup\src\core\command.c(2319): warning C4703: potentially uninitialized local pointer variable 'l' used [D:\a\ddup\ddup\build\test_mt_server.vcxproj]
+D:\a\ddup\ddup\src\core\command.c(2358): warning C4701: potentially uninitialized local variable 'l' used [D:\a\ddup\ddup\build\test_mt_server.vcxproj]
+D:\a\ddup\ddup\src\core\command.c(2358): warning C4703: potentially uninitialized local pointer variable 'l' used [D:\a\ddup\ddup\build\test_mt_server.vcxproj]
+D:\a\ddup\ddup\src\core\command.c(2425): warning C4701: potentially uninitialized local variable 's' used [D:\a\ddup\ddup\build\test_mt_server.vcxproj]
+D:\a\ddup\ddup\src\core\command.c(2425): warning C4703: potentially uninitialized local pointer variable 's' used [D:\a\ddup\ddup\build\test_mt_server.vcxproj]
+D:\a\ddup\ddup\src\core\command.c(2521): warning C4701: potentially uninitialized local variable 's' used [D:\a\ddup\ddup\build\test_mt_server.vcxproj]
+D:\a\ddup\ddup\src\core\command.c(2521): warning C4703: potentially uninitialized local pointer variable 's' used [D:\a\ddup\ddup\build\test_mt_server.vcxproj]
+D:\a\ddup\ddup\src\core\command.c(2562): warning C4701: potentially uninitialized local variable 's' used [D:\a\ddup\ddup\build\test_mt_server.vcxproj]
+D:\a\ddup\ddup\src\core\command.c(2562): warning C4703: potentially uninitialized local pointer variable 's' used [D:\a\ddup\ddup\build\test_mt_server.vcxproj]
+D:\a\ddup\ddup\src\core\command.c(2641): warning C4701: potentially uninitialized local variable 'src' used [D:\a\ddup\ddup\build\test_mt_server.vcxproj]
+D:\a\ddup\ddup\src\core\command.c(2641): warning C4703: potentially uninitialized local pointer variable 'src' used [D:\a\ddup\ddup\build\test_mt_server.vcxproj]
+D:\a\ddup\ddup\src\core\command.c(2666): warning C4701: potentially uninitialized local variable 'dst' used [D:\a\ddup\ddup\build\test_mt_server.vcxproj]
+D:\a\ddup\ddup\src\core\command.c(2666): warning C4703: potentially uninitialized local pointer variable 'dst' used [D:\a\ddup\ddup\build\test_mt_server.vcxproj]
+D:\a\ddup\ddup\src\core\command.c(2883): warning C4701: potentially uninitialized local variable 'z' used [D:\a\ddup\ddup\build\test_mt_server.vcxproj]
+D:\a\ddup\ddup\src\core\command.c(2883): warning C4703: potentially uninitialized local pointer variable 'z' used [D:\a\ddup\ddup\build\test_mt_server.vcxproj]
+D:\a\ddup\ddup\src\core\command.c(2935): warning C4701: potentially uninitialized local variable 'z' used [D:\a\ddup\ddup\build\test_mt_server.vcxproj]
+D:\a\ddup\ddup\src\core\command.c(2935): warning C4703: potentially uninitialized local pointer variable 'z' used [D:\a\ddup\ddup\build\test_mt_server.vcxproj]
+D:\a\ddup\ddup\src\core\command.c(2996): warning C4701: potentially uninitialized local variable 'z' used [D:\a\ddup\ddup\build\test_mt_server.vcxproj]
+D:\a\ddup\ddup\src\core\command.c(2996): warning C4703: potentially uninitialized local pointer variable 'z' used [D:\a\ddup\ddup\build\test_mt_server.vcxproj]
+D:\a\ddup\ddup\src\core\command.c(3098): warning C4701: potentially uninitialized local variable 'z' used [D:\a\ddup\ddup\build\test_mt_server.vcxproj]
+D:\a\ddup\ddup\src\core\command.c(3098): warning C4703: potentially uninitialized local pointer variable 'z' used [D:\a\ddup\ddup\build\test_mt_server.vcxproj]
+D:\a\ddup\ddup\src\core\command.c(3158): warning C4701: potentially uninitialized local variable 'z' used [D:\a\ddup\ddup\build\test_mt_server.vcxproj]
+D:\a\ddup\ddup\src\core\command.c(3158): warning C4703: potentially uninitialized local pointer variable 'z' used [D:\a\ddup\ddup\build\test_mt_server.vcxproj]
+  All 364 functions were compiled because no usable IPDB/IOBJ from previous compilation was found.
+  Finished generating code
+  test_mt_server.vcxproj -> D:\a\ddup\ddup\build\Release\test_mt_server.exe
   Building Custom Rule D:/a/ddup/ddup/CMakeLists.txt
   test_multi.c
   Generating code
