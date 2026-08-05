@@ -46,6 +46,7 @@ static void test_backlog_wrap(void)
 }
 
 static void test_sync_master(void);
+static void test_psync_fullresync(void);
 static void test_replica_full_cycle(void);
 static void test_replica_reconnect_resync(void);
 
@@ -54,6 +55,7 @@ int main(void)
     DD_RUN(test_backlog_basic);
     DD_RUN(test_backlog_wrap);
     DD_RUN(test_sync_master);
+    DD_RUN(test_psync_fullresync);
     DD_RUN(test_replica_full_cycle);
     DD_RUN(test_replica_reconnect_resync);
     return DD_TEST_SUMMARY();
@@ -212,6 +214,103 @@ static void test_sync_master(void)
             DD_CHECK(p[40] == '\r' && p[41] == '\n');
         }
     }
+
+    pal_close(b);
+    pal_close(a);
+    server_destroy(m);
+    pal_socket_cleanup();
+    resp_buf_free(&out);
+}
+
+/* ------------------------------------------------------------------ */
+/* PSYNC: unknown replid / stale offset falls back to +FULLRESYNC      */
+/* ------------------------------------------------------------------ */
+
+static void test_psync_fullresync(void)
+{
+    server *m;
+    pal_socket_t a, b;
+    resp_buf out;
+    char buf[8192];
+    size_t got;
+
+    DD_CHECK_EQ_INT(0, pal_socket_init());
+    m = server_create("127.0.0.1", 0);
+    DD_CHECK(m != NULL);
+    resp_buf_init(&out);
+
+    a = pal_tcp_connect("127.0.0.1", server_port(m));
+    DD_CHECK(a != PAL_SOCKET_INVALID);
+    DD_CHECK_EQ_INT(0, pal_set_nonblocking(a, 1));
+    DD_CHECK_EQ_INT(27, pal_send(a, "*3\r\n$3\r\nSET\r\n$1\r\nk\r\n$1\r\nv\r\n", 27));
+    got = pump_recv(m, a, buf, 0, 5);
+    DD_CHECK(got >= 5);
+
+    /* PSYNC with an unknown replid must fall back to FULLRESYNC */
+    b = pal_tcp_connect("127.0.0.1", server_port(m));
+    DD_CHECK(b != PAL_SOCKET_INVALID);
+    DD_CHECK_EQ_INT(0, pal_set_nonblocking(b, 1));
+    DD_CHECK_EQ_INT(32,
+                    pal_send(b, "*3\r\n$5\r\nPSYNC\r\n$3\r\n???\r\n$2\r\n-1\r\n",
+                             32));
+
+    /* expect +FULLRESYNC <40hex> <offset>\r\n then the $<len> frame */
+    got = pump_recv(m, b, buf, 0, 64);
+    DD_CHECK(got >= 56);
+    DD_CHECK_MEM("+FULLRESYNC ", 12, buf, 12);
+    {
+        int i;
+        int hex = 0;
+        size_t pos;
+        size_t snaplen = 0;
+        size_t hdrlen;
+        for (i = 0; i < 40; i++) {
+            char ch = buf[12 + i];
+            if ((ch >= '0' && ch <= '9') || (ch >= 'a' && ch <= 'f'))
+                hex++;
+        }
+        DD_CHECK_EQ_INT(40, hex);
+        pos = 12 + 40;
+        DD_CHECK(buf[pos] == ' ');
+        pos++;
+        /* offset digits then \r\n then $<len>\r\n frame */
+        while (pos < got && buf[pos] >= '0' && buf[pos] <= '9')
+            pos++;
+        DD_CHECK(buf[pos] == '\r' && buf[pos + 1] == '\n');
+        pos += 2;
+        DD_CHECK(pos < got && buf[pos] == '$');
+        hdrlen = pos;
+        while (hdrlen < got && buf[hdrlen] != '\n')
+            hdrlen++;
+        DD_CHECK(hdrlen < got);
+        for (size_t i = pos + 1; i < hdrlen && buf[i] >= '0' && buf[i] <= '9';
+             i++)
+            snaplen = snaplen * 10 + (size_t)(buf[i] - '0');
+        hdrlen++;
+        got = pump_recv(m, b, buf, got, hdrlen + snaplen);
+        DD_CHECK_EQ_INT((long long)(hdrlen + snaplen), (long long)got);
+        {
+            db d2;
+            session *r;
+            db_init(&d2);
+            DD_CHECK_EQ_INT(0,
+                            snapshot_load_mem(&d2, buf + hdrlen, snaplen,
+                                              1000000));
+            r = session_create(&d2);
+            sess_cmd(r, &out, 2, "GET", "k");
+            EXPECT(out, "$1\r\nv\r\n");
+            session_free(r);
+            db_destroy(&d2);
+        }
+    }
+
+    /* subsequent writes stream to the psync'd replica conn */
+    DD_CHECK_EQ_INT(29, pal_send(a, "*3\r\n$3\r\nSET\r\n$2\r\nk2\r\n$2\r\nv2\r\n", 29));
+    got = pump_recv(m, a, buf, 0, 5);
+    DD_CHECK(got >= 5);
+    got = pump_recv(m, b, buf, 0, 29);
+    DD_CHECK_EQ_INT(29, (long long)got);
+    DD_CHECK_MEM("*3\r\n$3\r\nSET\r\n$2\r\nk2\r\n$2\r\nv2\r\n", 29, buf, 29);
 
     pal_close(b);
     pal_close(a);

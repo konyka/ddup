@@ -95,6 +95,10 @@ typedef struct session {
     int repl_link;          /* this session is the inbound master link */
     void (*sync_hook)(void *ctx, struct session *s);
     void *sync_ctx;
+    /* PSYNC: partial-or-full resync handshake (server-owned). */
+    void (*psync_hook)(void *ctx, struct session *s, const char *replid,
+                       size_t replid_len, long long offset);
+    void *psync_ctx;
     int (*replicaof_hook)(void *ctx, const char *host, uint16_t port);
     void *replicaof_ctx;
 } session;

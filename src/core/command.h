@@ -180,6 +180,7 @@ enum {
     CMD_PUBLISH,
     CMD_QUIT,
     CMD_SYNC,
+    CMD_PSYNC,
     CMD_REPLICAOF,
     CMD_SAVE,
     CMD_LASTSAVE,

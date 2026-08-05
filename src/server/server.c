@@ -167,6 +167,8 @@ static void conn_close(server *s, size_t idx);
 static int conn_flush(server *s, conn *c);
 static int conn_process_input(server *s, conn *c);
 static conn *conn_create(server *srv, pal_socket_t fd);
+static void srv_psync(void *ctx, session *sess, const char *replid,
+                      size_t replid_len, long long offset);
 static void repl_link_close(server *srv);
 static int repl_link_connect(server *srv);
 static int server_run_once_iocp(server *s, int timeout_ms);
@@ -397,6 +399,28 @@ static void srv_sync(void *ctx, session *sess)
     }
 }
 
+/* PSYNC: partial resync when the caller's replid matches and the offset is
+ * still inside the backlog, otherwise full resync. This step implements the
+ * FULLRESYNC path; +CONTINUE arrives with the next step. */
+static void srv_psync(void *ctx, session *sess, const char *replid,
+                      size_t replid_len, long long offset)
+{
+    server *srv = (server *)ctx;
+    conn *c = (conn *)sess->owner;
+    char hdr[96];
+    int hl;
+    (void)replid;
+    (void)replid_len;
+    (void)offset;
+
+    hl = snprintf(hdr, sizeof(hdr), "+FULLRESYNC %s %llu\r\n",
+                  srv->repl.replid, (unsigned long long)srv->repl.offset);
+    resp_buf_reserve(&c->out, (size_t)hl);
+    memcpy(c->out.data + c->out.len, hdr, (size_t)hl);
+    c->out.len += (size_t)hl;
+    srv_sync(ctx, sess);
+}
+
 static conn *conn_create(server *srv, pal_socket_t fd)
 {
     conn *c = (conn *)calloc(1, sizeof(*c));
@@ -437,6 +461,8 @@ static conn *conn_create(server *srv, pal_socket_t fd)
     c->sess->role = &srv->role;
     c->sess->sync_ctx = srv;
     c->sess->sync_hook = srv_sync;
+    c->sess->psync_ctx = srv;
+    c->sess->psync_hook = srv_psync;
     c->sess->replicaof_ctx = srv;
     c->sess->replicaof_hook = srv_replicaof;
     c->sess->cluster_ctx = srv;

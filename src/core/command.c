@@ -1064,6 +1064,7 @@ static int cluster_keyless_id(uint16_t cmd_id)
     case CMD_PING:       case CMD_ECHO:       case CMD_CONFIG:
     case CMD_INFO:       case CMD_SAVE:       case CMD_LASTSAVE:
     case CMD_SHUTDOWN:   case CMD_SYNC:       case CMD_REPLICAOF:
+    case CMD_PSYNC:
     case CMD_SUBSCRIBE:  case CMD_UNSUBSCRIBE:case CMD_PUBLISH:
     case CMD_QUIT:       case CMD_MULTI:      case CMD_EXEC:
     case CMD_DISCARD:    case CMD_UNWATCH:    case CMD_DBSIZE:
@@ -3342,6 +3343,41 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
         return;
     }
 
+    if (cmd_id == CMD_PSYNC) {
+        if (argc != 3) {
+            wrong_args(out, "psync");
+            return;
+        }
+        const char *rid, *offv;
+        size_t rl, ol;
+        long long poff;
+        if (!arg_str(&argv[1], &rid, &rl) || !arg_str(&argv[2], &offv, &ol))
+            goto bad_type;
+        {
+            char tmp[32];
+            char *endp;
+            if (ol >= sizeof(tmp))
+                goto bad_type;
+            memcpy(tmp, offv, ol);
+            tmp[ol] = '\0';
+            poff = strtoll(tmp, &endp, 10);
+            if (endp != tmp + ol) {
+                resp_write_error(out,
+                                 "ERR value is not an integer or out of "
+                                 "range",
+                                 43);
+                return;
+            }
+        }
+        if (s->psync_hook == NULL) {
+            resp_write_error(out, "ERR psync not supported in this context",
+                             42);
+            return;
+        }
+        s->psync_hook(s->psync_ctx, s, rid, rl, poff);
+        return;
+    }
+
     if (cmd_id == CMD_REPLICAOF) {
         if (argc != 3) {
             wrong_args(out, "replicaof");
@@ -3993,6 +4029,7 @@ static const cmd_entry CMD_TABLE[] = {
     {"publish", CMD_PUBLISH, 3, 3, 0, 0},
     {"quit", CMD_QUIT, 1, 1, 0, 0},
     {"sync", CMD_SYNC, 1, 1, 0, 0},
+    {"psync", CMD_PSYNC, 3, 3, 0, 0},
     {"replicaof", CMD_REPLICAOF, 3, 3, 0, 0},
     {"save", CMD_SAVE, 1, 1, 0, 0},
     {"lastsave", CMD_LASTSAVE, 1, 1, 0, 0},
