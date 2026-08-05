@@ -31,6 +31,17 @@ static void test_defaults(void)
     DD_CHECK_EQ_INT(1, cfg.io_threads);
 }
 
+static void test_requirepass(void)
+{
+    ddup_config cfg;
+    config_init(&cfg);
+    DD_CHECK(cfg.requirepass[0] == '\0');
+    DD_CHECK_EQ_INT(0, config_apply(&cfg, "requirepass", "s3cret"));
+    DD_CHECK_STR("s3cret", cfg.requirepass);
+    DD_CHECK_EQ_INT(0, config_apply(&cfg, "REQUIREPASS", "other"));
+    DD_CHECK_STR("other", cfg.requirepass);
+}
+
 static void test_io_threads(void)
 {
     ddup_config cfg;
@@ -167,6 +178,7 @@ int main(void)
     DD_RUN(test_file_parse);
     DD_RUN(test_file_errors);
     DD_RUN(test_inline_overrides);
+    DD_RUN(test_requirepass);
     DD_RUN(test_io_threads);
     DD_RUN(test_validate_tls);
     return DD_TEST_SUMMARY();

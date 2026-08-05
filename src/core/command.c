@@ -1064,7 +1064,7 @@ static int cluster_keyless_id(uint16_t cmd_id)
     case CMD_PING:       case CMD_ECHO:       case CMD_CONFIG:
     case CMD_INFO:       case CMD_SAVE:       case CMD_LASTSAVE:
     case CMD_SHUTDOWN:   case CMD_SYNC:       case CMD_REPLICAOF:
-    case CMD_PSYNC:
+    case CMD_PSYNC:      case CMD_AUTH:
     case CMD_SUBSCRIBE:  case CMD_UNSUBSCRIBE:case CMD_PUBLISH:
     case CMD_QUIT:       case CMD_MULTI:      case CMD_EXEC:
     case CMD_DISCARD:    case CMD_UNWATCH:    case CMD_DBSIZE:
@@ -1189,6 +1189,48 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
             resp_write_bulk(out, s, l);
         } else {
             wrong_args(out, "ping");
+        }
+        return;
+    }
+
+    if (cmd_id == CMD_AUTH) {
+        const char *pw = NULL;
+        size_t pwl = 0;
+        const char *rp = s->requirepass;
+        if (rp == NULL || rp[0] == '\0') {
+            static const char E[] =
+                "ERR Client sent AUTH, but no password is set";
+            resp_write_error(out, E, sizeof(E) - 1);
+            return;
+        }
+        if (argc == 2) {
+            if (!arg_str(&argv[1], &pw, &pwl))
+                goto bad_type;
+        } else if (argc == 3) {
+            const char *user;
+            size_t ul;
+            if (!arg_str(&argv[1], &user, &ul) ||
+                !arg_str(&argv[2], &pw, &pwl))
+                goto bad_type;
+            if (ul != 7 || memcmp(user, "default", 7) != 0) {
+                static const char E[] =
+                    "WRONGPASS invalid username-password pair or user is "
+                    "disabled.";
+                resp_write_error(out, E, sizeof(E) - 1);
+                return;
+            }
+        } else {
+            wrong_args(out, "auth");
+            return;
+        }
+        if (pwl == strlen(rp) && memcmp(pw, rp, pwl) == 0) {
+            s->authed = 1;
+            resp_write_simple_string(out, "OK", 2);
+        } else {
+            static const char E[] =
+                "WRONGPASS invalid username-password pair or user is "
+                "disabled.";
+            resp_write_error(out, E, sizeof(E) - 1);
         }
         return;
     }
@@ -4027,6 +4069,7 @@ static const cmd_entry CMD_TABLE[] = {
     {"subscribe", CMD_SUBSCRIBE, 2, -1, 0, 0},
     {"unsubscribe", CMD_UNSUBSCRIBE, 1, -1, 0, 0},
     {"publish", CMD_PUBLISH, 3, 3, 0, 0},
+    {"auth", CMD_AUTH, 2, 3, 0, 0},
     {"quit", CMD_QUIT, 1, 1, 0, 0},
     {"sync", CMD_SYNC, 1, 1, 0, 0},
     {"psync", CMD_PSYNC, 3, 3, 0, 0},
@@ -4236,6 +4279,14 @@ void session_execute_at(session *s, const resp_value *argv, size_t argc,
         (void)arg_str(&argv[0], &name, &nlen);
     if (name != NULL)
         cmd_id = cmd_resolve(name, nlen);
+
+    /* AUTH gate: unauthenticated sessions may only run AUTH and QUIT */
+    if (!s->authed && name != NULL && cmd_id != CMD_AUTH &&
+        cmd_id != CMD_QUIT) {
+        static const char E[] = "NOAUTH Authentication required.";
+        resp_write_error(out, E, sizeof(E) - 1);
+        return;
+    }
 
     /* subscribed mode: only a small command set is allowed */
     if (s->nsub > 0 && name != NULL &&

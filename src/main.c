@@ -88,6 +88,8 @@ int main(int argc, char **argv)
             return 1;
         }
         /* per-worker persistence (worker-<id>-<file> under dir) */
+        if (cfg.requirepass[0] != '\0')
+            mt_server_set_requirepass(ms, cfg.requirepass);
         if (cfg.appendonly) {
             if (mt_server_enable_aof(ms, cfg.dir,
                                      cfg.appendfilename) != 0) {
@@ -157,6 +159,8 @@ int main(int argc, char **argv)
         pal_socket_cleanup();
         return 1;
     }
+    if (cfg.requirepass[0] != '\0')
+        server_set_requirepass(s, cfg.requirepass);
 
     {
         char verr[256];

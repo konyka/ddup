@@ -59,8 +59,99 @@ static void test_session_basic(void)
     db_destroy(&d);
 }
 
+static void test_auth_flow(void)
+{
+    db d;
+    session *s;
+    resp_buf out;
+    db_init(&d);
+    resp_buf_init(&out);
+
+    s = session_create(&d);
+    s->requirepass = "s3cret";
+    s->authed = 0;
+
+    /* everything but AUTH/QUIT is rejected while unauthenticated */
+    exec_sess(s, T0, &out, 2, "GET", "k");
+    EXPECT(out, "-NOAUTH Authentication required.\r\n");
+    exec_sess(s, T0, &out, 1, "PING");
+    EXPECT(out, "-NOAUTH Authentication required.\r\n");
+    exec_sess(s, T0, &out, 3, "SET", "k", "v");
+    EXPECT(out, "-NOAUTH Authentication required.\r\n");
+
+    /* wrong password */
+    exec_sess(s, T0, &out, 2, "AUTH", "nope");
+    EXPECT(out,
+           "-WRONGPASS invalid username-password pair or user is "
+           "disabled.\r\n");
+
+    /* correct password unlocks the session */
+    exec_sess(s, T0, &out, 2, "AUTH", "s3cret");
+    EXPECT(out, "+OK\r\n");
+    exec_sess(s, T0, &out, 3, "SET", "k", "v");
+    EXPECT(out, "+OK\r\n");
+    exec_sess(s, T0, &out, 2, "GET", "k");
+    EXPECT(out, "$1\r\nv\r\n");
+
+    session_free(s);
+    resp_buf_free(&out);
+    db_destroy(&d);
+}
+
+static void test_auth_username_form(void)
+{
+    db d;
+    session *s;
+    resp_buf out;
+    db_init(&d);
+    resp_buf_init(&out);
+
+    s = session_create(&d);
+    s->requirepass = "pw";
+    s->authed = 0;
+
+    /* AUTH <user> <pass> with the default user works */
+    exec_sess(s, T0, &out, 3, "AUTH", "default", "pw");
+    EXPECT(out, "+OK\r\n");
+
+    /* a non-default user is rejected */
+    s->authed = 0;
+    exec_sess(s, T0, &out, 3, "AUTH", "admin", "pw");
+    EXPECT(out,
+           "-WRONGPASS invalid username-password pair or user is "
+           "disabled.\r\n");
+
+    session_free(s);
+    resp_buf_free(&out);
+    db_destroy(&d);
+}
+
+static void test_auth_without_password_configured(void)
+{
+    db d;
+    session *s;
+    resp_buf out;
+    db_init(&d);
+    resp_buf_init(&out);
+
+    s = session_create(&d);
+    DD_CHECK(s->authed == 1); /* no password: sessions start authenticated */
+
+    exec_sess(s, T0, &out, 2, "AUTH", "x");
+    EXPECT(out, "-ERR Client sent AUTH, but no password is set\r\n");
+    exec_sess(s, T0, &out, 1, "PING");
+    EXPECT(out, "+PONG\r\n");
+
+    session_free(s);
+    resp_buf_free(&out);
+    db_destroy(&d);
+}
+
 int main(void)
 {
     DD_RUN(test_session_basic);
+    DD_RUN(test_auth_flow);
+    DD_RUN(test_auth_username_form);
+    DD_RUN(test_auth_without_password_configured);
     return DD_TEST_SUMMARY();
 }

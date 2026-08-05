@@ -51,6 +51,10 @@ typedef struct repl_info {
 
 typedef struct session {
     db *d;
+    /* AUTH state: authed defaults to 1 (no password configured); the
+     * server sets it to 0 and provides requirepass when auth is enabled. */
+    int authed;
+    const char *requirepass; /* not owned; NULL/"" = auth disabled */
     /* MULTI state */
     int in_multi;
     int multi_error;

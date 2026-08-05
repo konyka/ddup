@@ -129,6 +129,7 @@ struct server {
     db db;
     rh_table channels; /* pub/sub: channel -> chan_node list head (8-byte ptr) */
     aof *aof;          /* NULL when appendonly=no */
+    const char *requirepass; /* AUTH password (not owned); NULL/"" = off */
     int shutdown_flag;
     int save_sec;               /* automatic snapshot interval, 0 = off */
     uint64_t last_save_check;   /* pal_now_ms of the last interval check */
@@ -499,6 +500,11 @@ static conn *conn_create(server *srv, pal_socket_t fd)
     c->sess->sync_hook = srv_sync;
     c->sess->psync_ctx = srv;
     c->sess->psync_hook = srv_psync;
+    c->sess->requirepass = srv->requirepass;
+    c->sess->authed = (srv->requirepass == NULL ||
+                       srv->requirepass[0] == '\0')
+                          ? 1
+                          : 0;
     c->sess->replicaof_ctx = srv;
     c->sess->replicaof_hook = srv_replicaof;
     c->sess->cluster_ctx = srv;
@@ -916,6 +922,11 @@ int server_enable_aof(server *s, const char *path)
         aof_replay(&s->db, path);
     s->aof = aof_open(path);
     return s->aof != NULL ? 0 : -1;
+}
+
+void server_set_requirepass(server *s, const char *pw)
+{
+    s->requirepass = pw;
 }
 
 void server_set_snapshot_path(server *s, const char *path)

@@ -170,6 +170,8 @@ int config_apply(ddup_config *cfg, const char *key, const char *value)
         cfg->io_threads = (int)n;
         return 0;
     }
+    if (key_eq(key, "requirepass"))
+        return copy_str(cfg->requirepass, sizeof(cfg->requirepass), value);
     if (key_eq(key, "cluster-enabled"))
         return parse_bool(value, &cfg->cluster_enabled);
     if (key_eq(key, "cluster-config-file"))

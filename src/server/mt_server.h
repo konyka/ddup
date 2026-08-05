@@ -34,6 +34,9 @@ int mt_server_enable_snapshots(mt_server *ms, const char *dir,
 /* Spawn the acceptor and worker threads. Returns 0 on success. */
 int mt_server_start(mt_server *ms);
 
+/* Require AUTH before commands on every worker (Redis requirepass). */
+void mt_server_set_requirepass(mt_server *ms, const char *pw);
+
 /* Stop all threads (joins them). Safe to call once before destroy. */
 void mt_server_stop(mt_server *ms);
 

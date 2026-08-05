@@ -249,6 +249,35 @@ static void test_pubsub_over_socket(void)
     server_destroy(s);
 }
 
+static void test_auth_over_socket(void)
+{
+    server *s = make_server();
+    pal_socket_t c;
+    DD_CHECK(s != NULL);
+    server_set_requirepass(s, "pw");
+    c = connect_client(s);
+
+    roundtrip(s, c, "*2\r\n$3\r\nGET\r\n$1\r\nk\r\n",
+              "-NOAUTH Authentication required.\r\n");
+    roundtrip(s, c, "*2\r\n$4\r\nAUTH\r\n$3\r\nbad\r\n",
+              "-WRONGPASS invalid username-password pair or user is "
+              "disabled.\r\n");
+    roundtrip(s, c, "*2\r\n$4\r\nAUTH\r\n$2\r\npw\r\n", "+OK\r\n");
+    roundtrip(s, c, "*3\r\n$3\r\nSET\r\n$1\r\nk\r\n$1\r\nv\r\n", "+OK\r\n");
+    roundtrip(s, c, "*2\r\n$3\r\nGET\r\n$1\r\nk\r\n", "$1\r\nv\r\n");
+
+    /* a fresh connection must authenticate again */
+    {
+        pal_socket_t c2 = connect_client(s);
+        roundtrip(s, c2, "*2\r\n$3\r\nGET\r\n$1\r\nk\r\n",
+                  "-NOAUTH Authentication required.\r\n");
+        pal_close(c2);
+    }
+
+    pal_close(c);
+    server_destroy(s);
+}
+
 static void test_shutdown_command(void)
 {
     server *s = make_server();
@@ -484,6 +513,7 @@ static void run_all_tests(void)
     DD_RUN(test_many_connections);
     DD_RUN(test_protocol_error_closes_conn);
     DD_RUN(test_pubsub_over_socket);
+    DD_RUN(test_auth_over_socket);
     DD_RUN(test_shutdown_command);
     DD_RUN(test_connection_buf_pool);
     DD_RUN(test_pipeline_2000);

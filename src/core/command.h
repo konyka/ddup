@@ -185,8 +185,11 @@ enum {
     CMD_SAVE,
     CMD_LASTSAVE,
     CMD_SHUTDOWN,
-    CMD_CLUSTER
+    CMD_CLUSTER,
+    CMD_AUTH
 };
+
+#define CMD_MAX CMD_AUTH
 
 /* Resolve a command name to its stable ID; case-insensitive. */
 uint16_t cmd_resolve(const char *name, size_t len);

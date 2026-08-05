@@ -679,6 +679,7 @@ static int mt_is_keyless(uint16_t cmd)
     switch (cmd) {
     case CMD_PING:
     case CMD_ECHO:
+    case CMD_AUTH:
     case CMD_CONFIG:
     case CMD_INFO:
     case CMD_DBSIZE:
@@ -1474,6 +1475,25 @@ static int mt_route(void *ctx, void *conn, session *sess,
     cmd = cmd_resolve(argv[0].str, argv[0].len);
 
     st = (mt_conn_state *)server_conn_mt_state(conn);
+
+    /* AUTH gate: unauthenticated conns may only run AUTH and QUIT; routed
+     * tasks are trusted once the home session is authenticated */
+    if (!sess->authed && cmd != CMD_AUTH && cmd != CMD_QUIT) {
+        static const char noauth[] = "-NOAUTH Authentication required.\r\n";
+        uint64_t seq;
+        if (st == NULL) {
+            st = (mt_conn_state *)calloc(1, sizeof(*st));
+            if (st == NULL)
+                return 0;
+            st->batch_target = -1;
+            server_conn_set_mt_state(conn, st);
+        }
+        mt_batch_flush(home, conn, st);
+        seq = st->seq_next++;
+        mt_reply_local(home, conn, st, seq, noauth, sizeof(noauth) - 1,
+                       out);
+        return 1;
+    }
     if (st == NULL) {
         st = (mt_conn_state *)calloc(1, sizeof(*st));
         if (st == NULL)
@@ -2000,6 +2020,13 @@ mt_server *mt_server_create(const char *host, uint16_t port, int nworkers)
 uint16_t mt_server_port(const mt_server *ms)
 {
     return ms->port;
+}
+
+void mt_server_set_requirepass(mt_server *ms, const char *pw)
+{
+    int i;
+    for (i = 0; i < ms->nworkers; i++)
+        server_set_requirepass(ms->workers[i].srv, pw);
 }
 
 uint64_t mt_server_tasks_executed(const mt_server *ms)

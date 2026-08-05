@@ -41,6 +41,10 @@ uint16_t server_tls_port(const server *s);
  * mutating command. Returns 0 on success. */
 int server_enable_aof(server *s, const char *path);
 
+/* Require AUTH before commands (Redis requirepass). The pointer is not
+ * owned; pass NULL/"" to disable. New connections start unauthenticated. */
+void server_set_requirepass(server *s, const char *pw);
+
 /* Point SAVE at path (not owned) and, if the file exists, load it into the
  * db. load returns 0 on success, -1 on corrupt/missing file. */
 void server_set_snapshot_path(server *s, const char *path);
