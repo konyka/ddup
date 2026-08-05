@@ -97,8 +97,12 @@ int server_set_wakeup(server *s, pal_socket_t fd, void (*cb)(void *ctx),
  *   and flush. */
 typedef int (*server_route_fn)(void *ctx, void *conn, session *sess,
                                const resp_value *argv, size_t argc,
-                               resp_buf *out);
+                               const char *raw, size_t rawlen, resp_buf *out);
+/* Called once after each conn_process_input parse loop so the router can
+ * flush batched commands. */
+typedef void (*server_route_flush_fn)(void *ctx, void *conn);
 void server_set_route(server *s, server_route_fn fn,
+                      server_route_flush_fn flush_fn,
                       void (*mt_state_free)(void *ctx, void *st), void *ctx);
 void *server_conn_mt_state(void *conn);
 void server_conn_set_mt_state(void *conn, void *st);

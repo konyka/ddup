@@ -19,6 +19,9 @@ mt_server *mt_server_create(const char *host, uint16_t port, int nworkers);
 /* Actual bound port. */
 uint16_t mt_server_port(const mt_server *ms);
 
+/* Total routed tasks executed across all workers (test/observability). */
+uint64_t mt_server_tasks_executed(const mt_server *ms);
+
 /* Spawn the acceptor and worker threads. Returns 0 on success. */
 int mt_server_start(mt_server *ms);
 

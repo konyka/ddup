@@ -158,6 +158,7 @@ struct server {
     void *wakeup_ctx;
     /* mt_server routing hooks */
     server_route_fn route_fn;
+    server_route_flush_fn route_flush_fn;
     void (*mt_state_free)(void *ctx, void *st);
     void *route_ctx;
 };
@@ -982,9 +983,11 @@ int server_set_wakeup(server *s, pal_socket_t fd, void (*cb)(void *ctx),
 }
 
 void server_set_route(server *s, server_route_fn fn,
+                      server_route_flush_fn flush_fn,
                       void (*mt_state_free)(void *ctx, void *st), void *ctx)
 {
     s->route_fn = fn;
+    s->route_flush_fn = flush_fn;
     s->mt_state_free = mt_state_free;
     s->route_ctx = ctx;
 }
@@ -1459,7 +1462,7 @@ static int conn_process_input(server *s, conn *c)
             return -1;
         if (s->route_fn != NULL &&
             s->route_fn(s->route_ctx, c, c->sess, v.items, v.count,
-                        &c->out) != 0) {
+                        c->rbuf + off, (size_t)used, &c->out) != 0) {
             arena_reset(&c->arena);
             off += (size_t)used;
             continue; /* routed / handled by the mt layer */
@@ -1468,6 +1471,8 @@ static int conn_process_input(server *s, conn *c)
         arena_reset(&c->arena);
         off += (size_t)used;
     }
+    if (s->route_flush_fn != NULL)
+        s->route_flush_fn(s->route_ctx, c);
     if (off > 0) {
         memmove(c->rbuf, c->rbuf + off, c->rlen - off);
         c->rlen -= off;

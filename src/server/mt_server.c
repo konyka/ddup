@@ -18,6 +18,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "core/arena.h"
 #include "core/command.h"
 #include "core/hashslot.h"
 #include "core/session.h"
@@ -26,6 +27,7 @@
 #include "pal/pal_thread.h"
 #include "pal/pal_time.h"
 #include "pal/pal_wakeup.h"
+#include "resp/resp_parser.h"
 #include "resp/resp_writer.h"
 #include "server/server.h"
 
@@ -115,13 +117,20 @@ typedef struct worker worker;
 
 typedef struct mt_agg mt_agg;
 
+/* One raw RESP command byte copy (routed tasks re-parse on the target
+ * worker instead of deep-copying every argv element). */
+typedef struct mt_cmd_blob {
+    char *raw;
+    size_t len;
+} mt_cmd_blob;
+
 typedef struct mt_task {
     struct mt_task *next; /* reorder-buffer link (queue nodes wrap tasks) */
     void *conn;           /* home connection (opaque, home-thread only) */
     worker *home;         /* connection's home worker */
-    uint64_t seq;         /* per-conn pipeline sequence number */
-    resp_value *argv;     /* deep-copied command (routed tasks only) */
-    size_t argc;
+    uint64_t seq;         /* per-conn pipeline sequence base */
+    uint32_t span;        /* commands covered (merged batch size, >= 1) */
+    mt_cmd_blob *cmds;    /* span raw command copies (routed tasks only) */
     resp_buf reply;       /* filled by the executing worker */
     mt_agg *agg;          /* broadcast group this task is a part of (or NULL) */
 } mt_task;
@@ -144,35 +153,28 @@ typedef struct mt_conn_state {
     uint64_t seq_next;  /* next sequence number to assign */
     uint64_t seq_write; /* next sequence number to append to conn->out */
     mt_task *reorder;   /* ready replies waiting, sorted by seq */
+    /* Open merge batch: consecutive routed commands for the same target
+     * worker are merged into one task (flushed on target change, on a
+     * local/blocked command, or at the end of the parse loop). */
+    int batch_target;   /* -1 = no open batch */
+    uint64_t batch_seq; /* base seq of the open batch */
+    mt_cmd_blob *batch;
+    size_t batch_n;
+    size_t batch_cap;
 } mt_conn_state;
 
-static resp_value *mt_copy_argv(const resp_value *argv, size_t argc)
+static void mt_blobs_free(mt_cmd_blob *blobs, size_t n)
 {
-    resp_value *copy = (resp_value *)calloc(argc, sizeof(resp_value));
     size_t i;
-    if (copy == NULL)
-        return NULL;
-    for (i = 0; i < argc; i++) {
-        copy[i] = argv[i];
-        copy[i].items = NULL;
-        if (argv[i].str != NULL && argv[i].len > 0) {
-            char *s = (char *)malloc(argv[i].len);
-            if (s == NULL) {
-                size_t j;
-                for (j = 0; j < i; j++)
-                    free((void *)copy[j].str);
-                free(copy);
-                return NULL;
-            }
-            memcpy(s, argv[i].str, argv[i].len);
-            copy[i].str = s;
-        }
-    }
-    return copy;
+    if (blobs == NULL)
+        return;
+    for (i = 0; i < n; i++)
+        free(blobs[i].raw);
+    free(blobs);
 }
 
 static mt_task *mt_task_new(void *conn, worker *home, uint64_t seq,
-                            const resp_value *argv, size_t argc)
+                            uint32_t span, mt_cmd_blob *cmds)
 {
     mt_task *t = (mt_task *)calloc(1, sizeof(*t));
     if (t == NULL)
@@ -180,29 +182,18 @@ static mt_task *mt_task_new(void *conn, worker *home, uint64_t seq,
     t->conn = conn;
     t->home = home;
     t->seq = seq;
+    t->span = span == 0 ? 1 : span;
+    t->cmds = cmds; /* ownership transferred */
     resp_buf_init(&t->reply);
-    if (argv != NULL) {
-        t->argv = mt_copy_argv(argv, argc);
-        if (t->argv == NULL) {
-            free(t);
-            return NULL;
-        }
-        t->argc = argc;
-    }
     return t;
 }
 
 static void mt_task_free(void *ptr)
 {
     mt_task *t = (mt_task *)ptr;
-    size_t i;
     if (t == NULL)
         return;
-    if (t->argv != NULL) {
-        for (i = 0; i < t->argc; i++)
-            free((void *)t->argv[i].str);
-        free(t->argv);
-    }
+    mt_blobs_free(t->cmds, t->span);
     resp_buf_free(&t->reply);
     free(t);
 }
@@ -227,7 +218,7 @@ static void mt_drain_ready(server *srv, void *conn, mt_conn_state *st,
         st->reorder = t->next;
         if (append)
             server_conn_out_append(srv, conn, t->reply.data, t->reply.len);
-        st->seq_write++;
+        st->seq_write += t->span;
         mt_task_free(t);
     }
 }
@@ -243,6 +234,8 @@ static void mt_state_free_cb(void *ctx, void *ptr)
         st->reorder = t->next;
         mt_task_free(t);
     }
+    /* drop an unflushed merge batch (conn closed mid-pipeline) */
+    mt_blobs_free(st->batch, st->batch_n);
     free(st);
 }
 
@@ -260,7 +253,7 @@ static void mt_agg_accumulate(mt_agg *agg, const resp_buf *part)
 static void mt_agg_finish(server *srv, void *conn, mt_conn_state *st,
                           mt_agg *agg)
 {
-    mt_task *fin = mt_task_new(conn, agg->home, agg->seq, NULL, 0);
+    mt_task *fin = mt_task_new(conn, agg->home, agg->seq, 1, NULL);
     if (fin != NULL) {
         if (agg->cmd == CMD_DBSIZE)
             resp_write_integer(&fin->reply, agg->sum);
@@ -467,6 +460,8 @@ struct worker {
     mt_queue accepts;     /* pal_socket_t values as void* */
     mt_queue inbox;       /* mt_task*: commands to execute on this worker */
     mt_queue completions; /* mt_task*: executed replies to deliver home */
+    arena exec_arena;     /* re-parse scratch for routed commands */
+    uint64_t tasks_executed; /* routed tasks executed (test/observability) */
     volatile int running;
 };
 
@@ -479,12 +474,28 @@ struct mt_server {
     volatile int running;
 };
 
+/* Make a single raw command blob for a one-command routed task. */
+static mt_cmd_blob *mt_blob_one(const char *raw, size_t len)
+{
+    mt_cmd_blob *b = (mt_cmd_blob *)malloc(sizeof(*b));
+    if (b == NULL)
+        return NULL;
+    b->raw = (char *)malloc(len);
+    if (b->raw == NULL) {
+        free(b);
+        return NULL;
+    }
+    memcpy(b->raw, raw, len);
+    b->len = len;
+    return b;
+}
+
 /* Aggregate commands (DBSIZE sum, FLUSHDB broadcast): run the home part
  * inline, fan sub-tasks out to every other worker and finish when all
  * parts arrived. Runs on the home worker thread. */
 static int mt_route_aggregate(worker *home, void *conn,
                               const resp_value *argv, size_t argc,
-                              uint16_t cmd)
+                              const char *raw, size_t rawlen, uint16_t cmd)
 {
     mt_conn_state *st = (mt_conn_state *)server_conn_mt_state(conn);
     mt_agg *agg;
@@ -496,6 +507,7 @@ static int mt_route_aggregate(worker *home, void *conn,
         st = (mt_conn_state *)calloc(1, sizeof(*st));
         if (st == NULL)
             return 0;
+        st->batch_target = -1;
         server_conn_set_mt_state(conn, st);
     }
     seq = st->seq_next++;
@@ -526,16 +538,21 @@ static int mt_route_aggregate(worker *home, void *conn,
 
     /* fan out */
     for (i = 0; i < home->ms->nworkers; i++) {
-        mt_task *t;
+        mt_task *t = NULL;
+        mt_cmd_blob *blob;
         if (i == home->id)
             continue;
-        t = mt_task_new(conn, home, seq, argv, argc);
+        blob = mt_blob_one(raw, rawlen);
+        if (blob != NULL)
+            t = mt_task_new(conn, home, seq, 1, blob);
         if (t != NULL)
             t->agg = agg;
         if (t == NULL ||
             mt_queue_push(&home->ms->workers[i].inbox, t) < 0) {
             if (t != NULL)
                 mt_task_free(t);
+            else if (blob != NULL)
+                mt_blobs_free(blob, 1);
             agg->pending--;
             continue;
         }
@@ -547,11 +564,71 @@ static int mt_route_aggregate(worker *home, void *conn,
     return 1;
 }
 
+/* Flush the open merge batch (if any) as one routed task. */
+static void mt_batch_flush(worker *home, void *conn, mt_conn_state *st)
+{
+    int target = st->batch_target;
+    mt_task *t;
+    int pr;
+    if (st->batch_n == 0)
+        return;
+    t = mt_task_new(conn, home, st->batch_seq, (uint32_t)st->batch_n,
+                    st->batch);
+    if (t == NULL) {
+        mt_blobs_free(st->batch, st->batch_n);
+    } else {
+        server_conn_mt_inc(conn);
+        pr = mt_queue_push(&home->ms->workers[target].inbox, t);
+        if (pr < 0) {
+            server_conn_mt_dec(home->srv, conn);
+            mt_task_free(t);
+        } else if (pr == 1) {
+            (void)pal_wakeup_kick(&home->ms->workers[target].wakeup);
+        }
+    }
+    st->batch = NULL;
+    st->batch_n = 0;
+    st->batch_cap = 0;
+    st->batch_target = -1;
+}
+
+static int mt_batch_append(mt_conn_state *st, const char *raw, size_t rawlen)
+{
+    mt_cmd_blob *b;
+    if (st->batch_n == st->batch_cap) {
+        size_t ncap = st->batch_cap == 0 ? 8 : st->batch_cap * 2;
+        mt_cmd_blob *nb =
+            (mt_cmd_blob *)realloc(st->batch, ncap * sizeof(*nb));
+        if (nb == NULL)
+            return -1;
+        st->batch = nb;
+        st->batch_cap = ncap;
+    }
+    b = &st->batch[st->batch_n];
+    b->raw = (char *)malloc(rawlen);
+    if (b->raw == NULL)
+        return -1;
+    memcpy(b->raw, raw, rawlen);
+    b->len = rawlen;
+    st->batch_n++;
+    return 0;
+}
+
+/* server.c calls this after each conn_process_input parse loop. */
+static void mt_route_flush_cb(void *ctx, void *conn)
+{
+    worker *home = (worker *)ctx;
+    mt_conn_state *st = (mt_conn_state *)server_conn_mt_state(conn);
+    if (st != NULL)
+        mt_batch_flush(home, conn, st);
+}
+
 /* Router installed on every worker's server. Runs on the home worker thread
  * inside conn_process_input. Returns non-zero when the command was handled
  * (locally, blocked, or forwarded). */
 static int mt_route(void *ctx, void *conn, session *sess,
-                    const resp_value *argv, size_t argc, resp_buf *out)
+                    const resp_value *argv, size_t argc, const char *raw,
+                    size_t rawlen, resp_buf *out)
 {
     static const char blocked_msg[] = "ERR command not supported in mt mode";
     static const char crossslot_msg[] =
@@ -565,45 +642,49 @@ static int mt_route(void *ctx, void *conn, session *sess,
     if (argc == 0 || argv[0].str == NULL)
         return 0;
     cmd = cmd_resolve(argv[0].str, argv[0].len);
-    if (cmd == CMD_DBSIZE || cmd == CMD_FLUSHDB)
-        return mt_route_aggregate(home, conn, argv, argc, cmd);
-    target = mt_classify(home->ms->nworkers, cmd, argv, argc);
-    if (target == MT_PASS)
-        return 0; /* legacy inline path (SINTER/SUNION/SDIFF for now) */
 
     st = (mt_conn_state *)server_conn_mt_state(conn);
     if (st == NULL) {
         st = (mt_conn_state *)calloc(1, sizeof(*st));
         if (st == NULL)
             return 0;
+        st->batch_target = -1;
         server_conn_set_mt_state(conn, st);
     }
+
+    if (cmd == CMD_DBSIZE || cmd == CMD_FLUSHDB) {
+        mt_batch_flush(home, conn, st);
+        return mt_route_aggregate(home, conn, argv, argc, raw, rawlen, cmd);
+    }
+
+    target = mt_classify(home->ms->nworkers, cmd, argv, argc);
+    if (target == MT_PASS)
+        return 0; /* legacy inline path (SINTER/SUNION/SDIFF for now) */
+
     seq = st->seq_next++;
 
-    /* Forward to the owning worker. */
+    /* Forward to the owning worker: merge consecutive commands for the same
+     * target into one task (flushed on target change / local command /
+     * end of the parse loop). */
     if (target >= 0 && target != home->id) {
-        mt_task *t = mt_task_new(conn, home, seq, argv, argc);
-        if (t == NULL) {
+        if (st->batch_target >= 0 && st->batch_target != target)
+            mt_batch_flush(home, conn, st);
+        if (st->batch_target < 0) {
+            st->batch_target = target;
+            st->batch_seq = seq;
+        }
+        if (mt_batch_append(st, raw, rawlen) != 0) {
+            mt_batch_flush(home, conn, st); /* keep the earlier commands */
             resp_write_error(out, "ERR out of memory", 17);
             st->seq_write++;
             return 1;
         }
-        server_conn_mt_inc(conn);
-        {
-            int pr = mt_queue_push(&home->ms->workers[target].inbox, t);
-            if (pr < 0) {
-                server_conn_mt_dec(home->srv, conn);
-                mt_task_free(t);
-                resp_write_error(out, "ERR out of memory", 17);
-                st->seq_write++;
-                return 1;
-            }
-            if (pr == 1)
-                (void)pal_wakeup_kick(
-                    &home->ms->workers[target].wakeup);
-        }
         return 1;
     }
+
+    /* Local / blocked / crossslot: any open batch must go out first to keep
+     * pipeline order (its seqs precede this command's). */
+    mt_batch_flush(home, conn, st);
 
     /* Local fast path: nothing outstanding, reply straight into conn->out. */
     if (seq == st->seq_write) {
@@ -620,7 +701,7 @@ static int mt_route(void *ctx, void *conn, session *sess,
     /* Replies for earlier routed commands are still in flight: compute the
      * reply now and hold it in the reorder buffer to preserve order. */
     {
-        mt_task *t = mt_task_new(conn, home, seq, NULL, 0);
+        mt_task *t = mt_task_new(conn, home, seq, 1, NULL);
         if (t == NULL) {
             resp_write_error(out, "ERR out of memory", 17);
             st->seq_write++;
@@ -655,13 +736,28 @@ static void worker_on_wakeup(void *ctx)
         (void)server_adopt_fd(w->srv, fd);
     }
 
-    /* 2. execute commands routed to this worker */
+    /* 2. execute commands routed to this worker (merged tasks are re-parsed
+     * per command into the worker's own arena: no argv deep copies) */
     for (;;) {
         mt_task *t = (mt_task *)mt_queue_pop(&w->inbox);
+        uint32_t ci;
         if (t == NULL)
             break;
-        command_execute_at(server_db(w->srv), t->argv, t->argc, &t->reply,
-                           pal_wall_ms());
+        for (ci = 0; ci < t->span; ci++) {
+            resp_value v;
+            ptrdiff_t used;
+            arena_reset(&w->exec_arena);
+            used = resp_parse(t->cmds[ci].raw, t->cmds[ci].len, &v,
+                              &w->exec_arena);
+            if (used != (ptrdiff_t)t->cmds[ci].len ||
+                v.type != RESP_ARRAY || v.is_null) {
+                resp_write_error(&t->reply, "ERR Protocol error", 18);
+                continue;
+            }
+            command_execute_at(server_db(w->srv), v.items, v.count,
+                               &t->reply, pal_wall_ms());
+        }
+        w->tasks_executed++;
         {
             int pr = mt_queue_push(&t->home->completions, t);
             if (pr < 0) {
@@ -797,6 +893,7 @@ mt_server *mt_server_create(const char *host, uint16_t port, int nworkers)
             mt_server_destroy(ms);
             return NULL;
         }
+        arena_init(&w->exec_arena, 4096);
         server_close_listener(w->srv);
         if (server_set_wakeup(w->srv, w->wakeup.wait_fd, worker_on_wakeup,
                               w) != 0) {
@@ -804,7 +901,8 @@ mt_server *mt_server_create(const char *host, uint16_t port, int nworkers)
             mt_server_destroy(ms);
             return NULL;
         }
-        server_set_route(w->srv, mt_route, mt_state_free_cb, w);
+        server_set_route(w->srv, mt_route, mt_route_flush_cb,
+                         mt_state_free_cb, w);
     }
     return ms;
 }
@@ -812,6 +910,15 @@ mt_server *mt_server_create(const char *host, uint16_t port, int nworkers)
 uint16_t mt_server_port(const mt_server *ms)
 {
     return ms->port;
+}
+
+uint64_t mt_server_tasks_executed(const mt_server *ms)
+{
+    uint64_t total = 0;
+    int i;
+    for (i = 0; i < ms->nworkers; i++)
+        total += ms->workers[i].tasks_executed;
+    return total;
 }
 
 int mt_server_start(mt_server *ms)
@@ -860,6 +967,7 @@ void mt_server_destroy(mt_server *ms)
             mt_queue_destroy(&w->inbox, mt_task_free);
             mt_queue_destroy(&w->completions, mt_task_free);
             pal_wakeup_destroy(&w->wakeup);
+            arena_destroy(&w->exec_arena);
             server_destroy(w->srv);
         }
     }

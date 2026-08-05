@@ -46,6 +46,10 @@ static void roundtrip(pal_socket_t c, const char *req, const char *expected)
         else
             pal_sleep_ms(1);
     }
+    if (got != elen || memcmp(expected, buf, elen) != 0) {
+        fprintf(stderr, "roundtrip mismatch:\n  req      : %.*s\n  expected : %.*s\n  got(%zu) : %.*s\n",
+                (int)rlen, req, (int)elen, expected, got, (int)got, buf);
+    }
     DD_CHECK_EQ_INT((long long)elen, (long long)got);
     DD_CHECK_MEM(expected, elen, buf, got);
 }
@@ -376,6 +380,45 @@ static void test_aggregate_dbsize_and_flushdb(void)
     pal_socket_cleanup();
 }
 
+static void test_same_target_pipeline_merges_into_one_task(void)
+{
+    mt_server *ms;
+    pal_socket_t a;
+    char ka[32], kb[32];
+    char req[512];
+    uint64_t before, after;
+
+    DD_CHECK_EQ_INT(0, pal_socket_init());
+    /* two keys that both live on worker 1 */
+    pick_two_keys_for_worker(1, 2, ka, sizeof(ka), kb, sizeof(kb));
+
+    ms = mt_server_create("127.0.0.1", 0, 2);
+    DD_CHECK(ms != NULL);
+    DD_CHECK_EQ_INT(0, mt_server_start(ms));
+    a = connect_client(mt_server_port(ms)); /* -> worker 0 */
+
+    before = mt_server_tasks_executed(ms);
+
+    /* four same-target routed commands in one pipeline must merge into a
+     * single cross-worker task (replies still arrive individually). */
+    snprintf(req, sizeof(req),
+             "*3\r\n$3\r\nSET\r\n$%zu\r\n%s\r\n$1\r\nx\r\n"
+             "*3\r\n$3\r\nSET\r\n$%zu\r\n%s\r\n$1\r\ny\r\n"
+             "*2\r\n$3\r\nGET\r\n$%zu\r\n%s\r\n"
+             "*2\r\n$3\r\nGET\r\n$%zu\r\n%s\r\n",
+             strlen(ka), ka, strlen(kb), kb, strlen(ka), ka, strlen(kb),
+             kb);
+    roundtrip(a, req, "+OK\r\n+OK\r\n$1\r\nx\r\n$1\r\ny\r\n");
+
+    after = mt_server_tasks_executed(ms);
+    DD_CHECK_EQ_INT((long long)(before + 1), (long long)after);
+
+    pal_close(a);
+    mt_server_stop(ms);
+    mt_server_destroy(ms);
+    pal_socket_cleanup();
+}
+
 static void test_many_connections_across_workers(void)
 {
     mt_server *ms;
@@ -407,6 +450,7 @@ int main(void)
     DD_RUN(test_multikey_crossslot_rejected);
     DD_RUN(test_smove_same_worker);
     DD_RUN(test_aggregate_dbsize_and_flushdb);
+    DD_RUN(test_same_target_pipeline_merges_into_one_task);
     DD_RUN(test_many_connections_across_workers);
     return DD_TEST_SUMMARY();
 }
