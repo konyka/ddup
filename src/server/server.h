@@ -137,9 +137,13 @@ size_t server_pool_allocs(const server *s);
 /* The worker's keyspace (mt_server routed-task execution). */
 db *server_db(server *s);
 
-/* Append a mutating command to the worker's AOF (no-op when AOF is off;
- * used by the mt routed-task execution path). */
-void server_aof_log_cmd(server *s, const resp_value *argv, size_t argc);
+/* Logical db by index (0 = db0, otherwise extra_dbs[idx-1]). */
+db *server_db_at(server *s, int idx);
+
+/* Append a mutating command to the worker's AOF with the multi-db SELECT
+ * prefix rule (no-op when AOF is off; used by the mt routed-task path). */
+void server_aof_log_cmd(server *s, int db_index, const resp_value *argv,
+                        size_t argc);
 
 void server_destroy(server *s);
 

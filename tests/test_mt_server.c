@@ -983,6 +983,59 @@ static void test_same_target_pipeline_merges_into_one_task(void)
     pal_socket_cleanup();
 }
 
+static void test_mt_multidb_select_and_swapdb(void)
+{
+    mt_server *ms;
+    pal_socket_t a;
+    char k1[32];
+    char req[192];
+
+    DD_CHECK_EQ_INT(0, pal_socket_init());
+    pick_key_for_worker(1, 2, k1, sizeof(k1));
+
+    ms = mt_server_create("127.0.0.1", 0, 2);
+    DD_CHECK(ms != NULL);
+    DD_CHECK_EQ_INT(0, mt_server_start(ms));
+    a = connect_client(mt_server_port(ms)); /* -> worker 0 */
+
+    /* db 3: a routed write and a routed read on the same worker */
+    roundtrip(a, "*2\r\n$6\r\nSELECT\r\n$1\r\n3\r\n", "+OK\r\n");
+    snprintf(req, sizeof(req), "*3\r\n$3\r\nSET\r\n$%zu\r\n%s\r\n$2\r\nv1\r\n",
+             strlen(k1), k1);
+    roundtrip(a, req, "+OK\r\n");
+    snprintf(req, sizeof(req), "*2\r\n$3\r\nGET\r\n$%zu\r\n%s\r\n",
+             strlen(k1), k1);
+    roundtrip(a, req, "$2\r\nv1\r\n");
+    roundtrip(a, "*1\r\n$6\r\nDBSIZE\r\n", ":1\r\n");
+
+    /* db 0 is unaffected */
+    roundtrip(a, "*2\r\n$6\r\nSELECT\r\n$1\r\n0\r\n", "+OK\r\n");
+    snprintf(req, sizeof(req), "*2\r\n$3\r\nGET\r\n$%zu\r\n%s\r\n",
+             strlen(k1), k1);
+    roundtrip(a, req, "$-1\r\n");
+    roundtrip(a, "*1\r\n$6\r\nDBSIZE\r\n", ":0\r\n");
+
+    /* SWAPDB 3 0 broadcasts: db0 now holds the key, db3 is empty */
+    roundtrip(a, "*3\r\n$6\r\nSWAPDB\r\n$1\r\n3\r\n$1\r\n0\r\n", "+OK\r\n");
+    snprintf(req, sizeof(req), "*2\r\n$3\r\nGET\r\n$%zu\r\n%s\r\n",
+             strlen(k1), k1);
+    roundtrip(a, req, "$2\r\nv1\r\n");
+    roundtrip(a, "*2\r\n$6\r\nSELECT\r\n$1\r\n3\r\n", "+OK\r\n");
+    roundtrip(a, "*1\r\n$6\r\nDBSIZE\r\n", ":0\r\n");
+
+    /* FLUSHDB flushes only the selected db (db 3 here) */
+    roundtrip(a, "*1\r\n$7\r\nFLUSHDB\r\n", "+OK\r\n");
+    roundtrip(a, "*2\r\n$6\r\nSELECT\r\n$1\r\n0\r\n", "+OK\r\n");
+    snprintf(req, sizeof(req), "*2\r\n$3\r\nGET\r\n$%zu\r\n%s\r\n",
+             strlen(k1), k1);
+    roundtrip(a, req, "$2\r\nv1\r\n");
+
+    pal_close(a);
+    mt_server_stop(ms);
+    mt_server_destroy(ms);
+    pal_socket_cleanup();
+}
+
 static void test_many_connections_across_workers(void)
 {
     mt_server *ms;
@@ -1026,6 +1079,7 @@ int main(void)
     DD_RUN(test_aof_persistence_mt);
     DD_RUN(test_snapshot_mt);
     DD_RUN(test_connection_migration_to_key_owner);
+    DD_RUN(test_mt_multidb_select_and_swapdb);
     DD_RUN(test_same_target_pipeline_merges_into_one_task);
     DD_RUN(test_many_connections_across_workers);
     return DD_TEST_SUMMARY();

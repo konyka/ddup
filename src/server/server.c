@@ -173,6 +173,8 @@ static int conn_flush(server *s, conn *c);
 static int conn_process_input(server *s, conn *c);
 static conn *conn_create(server *srv, pal_socket_t fd);
 static db *srv_select_db(void *ctx, int idx);
+static void srv_aof_log(server *srv, int db_index, const resp_value *argv,
+                        size_t argc);
 static void srv_psync(void *ctx, session *sess, const char *replid,
                       size_t replid_len, long long offset);
 static void repl_link_close(server *srv);
@@ -314,25 +316,8 @@ static void srv_propagate(void *ctx, int db_index, const resp_value *argv,
 {
     server *srv = (server *)ctx;
     size_t i;
-    if (srv->aof != NULL) {
-        /* multi-db AOF: keep the replay session on the right db (same
-         * rule as Redis: SELECT is written only on db change) */
-        if (db_index != srv->aof_db_index) {
-            resp_value sel[2];
-            char nbuf[16];
-            int nl = snprintf(nbuf, sizeof(nbuf), "%d", db_index);
-            memset(sel, 0, sizeof(sel));
-            sel[0].type = RESP_BULK_STRING;
-            sel[0].str = "SELECT";
-            sel[0].len = 6;
-            sel[1].type = RESP_BULK_STRING;
-            sel[1].str = nbuf;
-            sel[1].len = (size_t)nl;
-            aof_log_cmd(srv->aof, sel, 2);
-            srv->aof_db_index = db_index;
-        }
-        aof_log_cmd(srv->aof, argv, argc);
-    }
+    if (srv->aof != NULL)
+        srv_aof_log(srv, db_index, argv, argc);
 
     srv->prop_buf.len = 0;
     resp_write_array_header(&srv->prop_buf, argc);
@@ -923,10 +908,37 @@ static db *srv_select_db(void *ctx, int idx)
     return &srv->extra_dbs[idx - 1];
 }
 
-void server_aof_log_cmd(server *s, const resp_value *argv, size_t argc)
+db *server_db_at(server *s, int idx)
+{
+    return srv_select_db(s, idx);
+}
+
+/* shared AOF writer with the multi-db SELECT prefix rule */
+static void srv_aof_log(server *srv, int db_index, const resp_value *argv,
+                        size_t argc)
+{
+    if (db_index != srv->aof_db_index) {
+        resp_value sel[2];
+        char nbuf[16];
+        int nl = snprintf(nbuf, sizeof(nbuf), "%d", db_index);
+        memset(sel, 0, sizeof(sel));
+        sel[0].type = RESP_BULK_STRING;
+        sel[0].str = "SELECT";
+        sel[0].len = 6;
+        sel[1].type = RESP_BULK_STRING;
+        sel[1].str = nbuf;
+        sel[1].len = (size_t)nl;
+        aof_log_cmd(srv->aof, sel, 2);
+        srv->aof_db_index = db_index;
+    }
+    aof_log_cmd(srv->aof, argv, argc);
+}
+
+void server_aof_log_cmd(server *s, int db_index, const resp_value *argv,
+                        size_t argc)
 {
     if (s->aof != NULL)
-        aof_log_cmd(s->aof, argv, argc);
+        srv_aof_log(s, db_index, argv, argc);
 }
 
 /* Start a TLS listener alongside the plain one (port 0 = ephemeral).
@@ -1248,7 +1260,10 @@ void server_conn_rehome(server *s, void *conn_ptr)
 {
     conn *c = (conn *)conn_ptr;
     c->srv = s;
-    c->sess->d = &s->db; /* the session executes against the new keyspace */
+    /* rewire the session to the new worker's server, preserving the
+     * selected database (SELECT state travels with the connection) */
+    c->sess->d = srv_select_db(s, c->sess->db_index);
+    c->sess->sel_ctx = s;
     c->sess->ps_ctx = s;
     c->sess->shutdown_ctx = s;
     c->sess->sync_ctx = s;

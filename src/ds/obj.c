@@ -415,8 +415,12 @@ int obj_zset_rem(obj_zset *z, const char *m, size_t mlen)
     double score;
     if (!obj_zset_score(z, m, mlen, &score))
         return 0;
-    zsl_delete(z->sl, score, m, mlen);
+    /* delete from the dict BEFORE zsl_delete: when m points into the
+     * skiplist node (ZREMRANGEBYSCORE's collected views), freeing the node
+     * first would leave rh_del hashing dangling memory (zcard/exists kept
+     * stale entries). */
     rh_del(&z->dict, m, mlen);
+    zsl_delete(z->sl, score, m, mlen);
     z->dict_mem -= field_bytes(mlen, 8);
     return 1;
 }

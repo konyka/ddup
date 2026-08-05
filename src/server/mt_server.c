@@ -34,6 +34,23 @@
 #include "server/mt_spsc.h"
 #include "server/server.h"
 
+/* case-insensitive compare of n bytes against a NUL-terminated literal */
+static int mt_ci_equal(const char *a, size_t n, const char *b)
+{
+    size_t i;
+    for (i = 0; i < n; i++) {
+        char ca = a[i];
+        char cb = b[i];
+        if (ca >= 'A' && ca <= 'Z')
+            ca = (char)(ca + ('a' - 'A'));
+        if (cb >= 'A' && cb <= 'Z')
+            cb = (char)(cb + ('a' - 'A'));
+        if (ca != cb || cb == '\0')
+            return 0;
+    }
+    return b[n] == '\0';
+}
+
 /* ------------------------------------------------------------------ */
 /* routed tasks                                                        */
 /* ------------------------------------------------------------------ */
@@ -56,6 +73,7 @@ typedef struct mt_watch_entry {
     size_t klen;
     uint64_t version;
     uint64_t epoch;
+    int db_index; /* the db the key was watched in (SELECT-aware) */
 } mt_watch_entry;
 
 /* One subscribed channel on a connection (home-side bookkeeping). */
@@ -98,6 +116,7 @@ typedef struct mt_task {
     resp_buf reply;       /* filled by the executing worker */
     mt_agg *agg;          /* broadcast group this task is a part of (or NULL) */
     int kind;             /* MT_TASK_* */
+    int db_index;         /* logical db the task executes against (SELECT) */
     /* WATCH result: 2 slots per key (version, epoch), filled on the owner */
     uint64_t *watch_out;
     size_t nwatch_out;
@@ -158,6 +177,7 @@ struct mt_agg {
     int pending;    /* parts still awaited */
     long long sum;  /* DBSIZE sum / LASTSAVE max */
     int err;        /* any part replied with an error */
+    int db_index;   /* logical db for DBSIZE/FLUSHDB (SELECT-aware) */
 };
 
 /* Per-conn routing state (stored via server_conn_set_mt_state). */
@@ -170,6 +190,7 @@ typedef struct mt_conn_state {
      * local/blocked command, or at the end of the parse loop). */
     int batch_target;   /* -1 = no open batch */
     uint64_t batch_seq; /* base seq of the open batch */
+    int batch_db;       /* db_index of the open batch's commands */
     mt_cmd_blob *batch;
     size_t batch_n;
     size_t batch_cap;
@@ -249,7 +270,7 @@ static void mt_reorder_insert(mt_conn_state *st, mt_task *t)
 }
 
 static int mt_watch_add(mt_conn_state *st, const char *key, size_t klen,
-                        uint64_t version, uint64_t epoch)
+                        uint64_t version, uint64_t epoch, int db_index)
 {
     mt_watch_entry *e;
     if (st->nwatch == st->watch_cap) {
@@ -269,6 +290,7 @@ static int mt_watch_add(mt_conn_state *st, const char *key, size_t klen,
     e->klen = klen;
     e->version = version;
     e->epoch = epoch;
+    e->db_index = db_index;
     st->nwatch++;
     return 0;
 }
@@ -349,7 +371,8 @@ static void mt_watch_apply(mt_conn_state *st, mt_task *t, arena *ar)
             continue;
         if (mt_watch_add(st, v.items[i].str, v.items[i].len,
                          t->watch_out[2 * (i - 1)],
-                         t->watch_out[2 * (i - 1) + 1]) != 0)
+                         t->watch_out[2 * (i - 1) + 1],
+                         t->db_index) != 0)
             break;
     }
 }
@@ -680,6 +703,7 @@ static int mt_is_keyless(uint16_t cmd)
     case CMD_PING:
     case CMD_ECHO:
     case CMD_AUTH:
+    case CMD_SELECT:
     case CMD_CONFIG:
     case CMD_INFO:
     case CMD_DBSIZE:
@@ -776,12 +800,59 @@ static mt_cmd_blob *mt_blob_one(const char *raw, size_t len)
 }
 
 
+/* Execute SWAPDB on one worker: swap the two logical dbs directly (the
+ * sessionless path used by the aggregate home part and drain-2). */
+static void mt_swapdb_exec(worker *w, int log_db_index, const resp_value *v,
+                           resp_buf *dst)
+{
+    char ta[16], tb[16];
+    char *ea, *eb;
+    long long ai, bi;
+    if (v->count != 3 || v->items[1].str == NULL ||
+        v->items[2].str == NULL) {
+        resp_write_error(dst, "ERR wrong number of arguments for 'swapdb' "
+                              "command",
+                         48);
+        return;
+    }
+    if (v->items[1].len >= sizeof(ta) || v->items[2].len >= sizeof(tb)) {
+        resp_write_error(dst, "ERR value is not an integer or out of range",
+                         43);
+        return;
+    }
+    memcpy(ta, v->items[1].str, v->items[1].len);
+    ta[v->items[1].len] = '\0';
+    memcpy(tb, v->items[2].str, v->items[2].len);
+    tb[v->items[2].len] = '\0';
+    ai = strtoll(ta, &ea, 10);
+    bi = strtoll(tb, &eb, 10);
+    if (*ea != '\0' || *eb != '\0' || ai < 0 || bi < 0 || ai >= 16 ||
+        bi >= 16) {
+        static const char E[] = "ERR DB index is out of range";
+        resp_write_error(dst, E, sizeof(E) - 1);
+        return;
+    }
+    if (ai != bi) {
+        db *da = server_db_at(w->srv, (int)ai);
+        db *dbb = server_db_at(w->srv, (int)bi);
+        db tmp = *da;
+        *da = *dbb;
+        *dbb = tmp;
+        da->flush_epoch++;
+        dbb->flush_epoch++;
+        da->dirty++;
+        server_aof_log_cmd(w->srv, log_db_index, v->items, v->count);
+    }
+    resp_write_simple_string(dst, "OK", 2);
+}
+
 /* Aggregate commands (DBSIZE sum, FLUSHDB broadcast): run the home part
  * inline, fan sub-tasks out to every other worker and finish when all
  * parts arrived. Runs on the home worker thread. */
 static int mt_route_aggregate(worker *home, void *conn,
                               const resp_value *argv, size_t argc,
-                              const char *raw, size_t rawlen, uint16_t cmd)
+                              const char *raw, size_t rawlen, uint16_t cmd,
+                              int db_index)
 {
     mt_conn_state *st = (mt_conn_state *)server_conn_mt_state(conn);
     mt_agg *agg;
@@ -802,8 +873,8 @@ static int mt_route_aggregate(worker *home, void *conn,
     if (agg == NULL) {
         /* OOM: degrade to the home-worker answer. */
         resp_buf_init(&local);
-        command_execute_at(server_db(home->srv), argv, argc, &local,
-                           pal_wall_ms());
+        command_execute_at(server_db_at(home->srv, db_index), argv, argc,
+                           &local, pal_wall_ms());
         server_conn_out_append(home->srv, conn, local.data, local.len);
         resp_buf_free(&local);
         st->seq_write++;
@@ -814,11 +885,23 @@ static int mt_route_aggregate(worker *home, void *conn,
     agg->seq = seq;
     agg->cmd = cmd;
     agg->pending = home->ms->nworkers - 1;
+    agg->db_index = db_index;
 
     /* home part */
     resp_buf_init(&local);
-    command_execute_at(server_db(home->srv), argv, argc, &local,
-                       pal_wall_ms());
+    if (cmd == CMD_SWAPDB) {
+        resp_value v;
+        arena ar;
+        arena_init(&ar, 1024);
+        if (resp_parse(raw, rawlen, &v, &ar) == (ptrdiff_t)rawlen)
+            mt_swapdb_exec(home, db_index, &v, &local);
+        else
+            resp_write_error(&local, "ERR Protocol error", 18);
+        arena_destroy(&ar);
+    } else {
+        command_execute_at(server_db_at(home->srv, db_index), argv, argc,
+                           &local, pal_wall_ms());
+    }
     mt_agg_accumulate(agg, &local);
     resp_buf_free(&local);
 
@@ -833,6 +916,7 @@ static int mt_route_aggregate(worker *home, void *conn,
             t = mt_task_new(conn, home, seq, 1, 1, blob);
         if (t != NULL) {
             t->agg = agg;
+            t->db_index = db_index;
             mt_pending_inc(home, st);
             mt_push_task(home, &home->ms->workers[i].inbox[home->id], t,
                          &home->ms->workers[i].wakeup);
@@ -859,6 +943,7 @@ static void mt_batch_flush(worker *home, void *conn, mt_conn_state *st)
     if (t == NULL) {
         mt_blobs_free(st->batch, st->batch_n);
     } else {
+        t->db_index = st->batch_db;
         mt_pending_inc(home, st);
         mt_push_task(home, &home->ms->workers[target].inbox[home->id], t,
                      &home->ms->workers[target].wakeup);
@@ -971,21 +1056,21 @@ static void mt_mq_clear(mt_conn_state *st)
  * worker); applied commands are logged to the worker's own AOF. */
 static void mt_exec_on_db(server *srv, mt_task *t, arena *ar)
 {
-    db *d = server_db(srv);
+    db *d = server_db_at(srv, t->db_index);
     size_t i;
     int aborted = 0;
     for (i = 0; i < t->nexec_watches; i++) {
         mt_watch_entry *e = &t->exec_watches[i];
-        if (db_key_version(d, e->key, e->klen) != e->version ||
-            d->flush_epoch != e->epoch) {
+        db *wd = server_db_at(srv, e->db_index);
+        if (db_key_version(wd, e->key, e->klen) != e->version ||
+            wd->flush_epoch != e->epoch)
             aborted = 1;
+        /* release the reference on the entry's own db */
+        if (wd->watch_refs > 0)
+            wd->watch_refs--;
+        if (aborted)
             break;
-        }
     }
-    if (d->watch_refs >= t->nexec_watches)
-        d->watch_refs -= t->nexec_watches;
-    else
-        d->watch_refs = 0;
     if (aborted) {
         static const char nullarr[] = "*-1\r\n";
         resp_buf_reserve(&t->reply, sizeof(nullarr) - 1);
@@ -1008,13 +1093,14 @@ static void mt_exec_on_db(server *srv, mt_task *t, arena *ar)
         command_execute_at(d, v.items, v.count, &t->reply, pal_wall_ms());
         /* EXEC logs the applied commands individually (no MULTI wrapper) */
         if (d->dirty != dirty_before)
-            server_aof_log_cmd(srv, v.items, v.count);
+            server_aof_log_cmd(srv, t->db_index, v.items, v.count);
     }
 }
 
 static int mt_txn_watch(worker *home, void *conn, mt_conn_state *st,
                         uint64_t seq, const resp_value *argv, size_t argc,
-                        const char *raw, size_t rawlen, resp_buf *out)
+                        const char *raw, size_t rawlen, int db_index,
+                        resp_buf *out)
 {
     static const char ok[] = "+OK\r\n";
     static const char err_in_multi[] =
@@ -1044,14 +1130,14 @@ static int mt_txn_watch(worker *home, void *conn, mt_conn_state *st,
     }
     if (target == home->id || target == MT_LOCAL) {
         /* versions are read on the home worker right now */
-        db *d = server_db(home->srv);
+        db *d = server_db_at(home->srv, db_index);
         size_t i;
         for (i = 1; i < argc; i++) {
             if (argv[i].str == NULL)
                 continue;
             if (mt_watch_add(st, argv[i].str, argv[i].len,
                              db_key_version(d, argv[i].str, argv[i].len),
-                             d->flush_epoch) != 0)
+                             d->flush_epoch, db_index) != 0)
                 break;
             d->watch_refs++; /* writes to this key now bump its version */
         }
@@ -1070,6 +1156,7 @@ static int mt_txn_watch(worker *home, void *conn, mt_conn_state *st,
             return 1;
         }
         t->kind = MT_TASK_WATCH;
+        t->db_index = db_index;
         mt_pending_inc(home, st);
         mt_push_task(home, &home->ms->workers[target].inbox[home->id], t,
                      &home->ms->workers[target].wakeup);
@@ -1078,7 +1165,7 @@ static int mt_txn_watch(worker *home, void *conn, mt_conn_state *st,
 }
 
 static int mt_txn_exec(worker *home, void *conn, mt_conn_state *st,
-                       uint64_t seq, resp_buf *out)
+                       uint64_t seq, int db_index, resp_buf *out)
 {
     static const char empty[] = "*0\r\n";
     static const char err_execabort[] =
@@ -1158,6 +1245,7 @@ static int mt_txn_exec(worker *home, void *conn, mt_conn_state *st,
         return 1;
     }
     t->kind = MT_TASK_EXEC;
+    t->db_index = db_index;
     t->exec_watches = st->watches;
     t->nexec_watches = st->nwatch;
     st->mq = NULL;
@@ -1182,7 +1270,8 @@ static int mt_txn_exec(worker *home, void *conn, mt_conn_state *st,
 
 static int mt_route_txn(worker *home, void *conn, mt_conn_state *st,
                         const resp_value *argv, size_t argc, const char *raw,
-                        size_t rawlen, uint16_t cmd, resp_buf *out)
+                        size_t rawlen, uint16_t cmd, int db_index,
+                        resp_buf *out)
 {
     static const char queued[] = "+QUEUED\r\n";
     static const char ok[] = "+OK\r\n";
@@ -1219,14 +1308,14 @@ static int mt_route_txn(worker *home, void *conn, mt_conn_state *st,
         return 1;
     case CMD_WATCH:
         return mt_txn_watch(home, conn, st, seq, argv, argc, raw, rawlen,
-                            out);
+                            db_index, out);
     case CMD_EXEC:
         if (!st->in_multi) {
             mt_reply_local(home, conn, st, seq, err_no_exec,
                            sizeof(err_no_exec) - 1, out);
             return 1;
         }
-        return mt_txn_exec(home, conn, st, seq, out);
+        return mt_txn_exec(home, conn, st, seq, db_index, out);
     default:
         break;
     }
@@ -1506,7 +1595,7 @@ static int mt_route(void *ctx, void *conn, session *sess,
         cmd == CMD_WATCH || cmd == CMD_UNWATCH || st->in_multi) {
         mt_batch_flush(home, conn, st);
         return mt_route_txn(home, conn, st, argv, argc, raw, rawlen, cmd,
-                            out);
+                            sess->db_index, out);
     }
 
     if (cmd == CMD_SUBSCRIBE || cmd == CMD_UNSUBSCRIBE ||
@@ -1525,9 +1614,10 @@ static int mt_route(void *ctx, void *conn, session *sess,
     }
 
     if (cmd == CMD_DBSIZE || cmd == CMD_FLUSHDB || cmd == CMD_SAVE ||
-        cmd == CMD_LASTSAVE) {
+        cmd == CMD_LASTSAVE || cmd == CMD_SWAPDB) {
         mt_batch_flush(home, conn, st);
-        return mt_route_aggregate(home, conn, argv, argc, raw, rawlen, cmd);
+        return mt_route_aggregate(home, conn, argv, argc, raw, rawlen, cmd,
+                                  sess->db_index);
     }
 
     target = mt_classify(home->ms->nworkers, cmd, argv, argc);
@@ -1573,6 +1663,7 @@ static int mt_route(void *ctx, void *conn, session *sess,
         if (st->batch_target < 0) {
             st->batch_target = target;
             st->batch_seq = seq;
+            st->batch_db = sess->db_index;
         }
         if (mt_batch_append(st, raw, rawlen) != 0) {
             mt_batch_flush(home, conn, st); /* keep the earlier commands */
@@ -1658,7 +1749,7 @@ static void mt_exec_task(worker *w, mt_task *t)
     uint32_t ci;
     if (t->kind == MT_TASK_UNWATCH) {
         /* fire-and-forget watch_refs release (key bytes in cmds) */
-        db *d = server_db(w->srv);
+        db *d = server_db_at(w->srv, t->db_index);
         if (d->watch_refs > 0)
             d->watch_refs--;
         mt_task_free(t);
@@ -1708,7 +1799,7 @@ static void mt_exec_task(worker *w, mt_task *t)
         resp_value v;
         ptrdiff_t used;
         size_t i;
-        db *d = server_db(w->srv);
+        db *d = server_db_at(w->srv, t->db_index);
         arena_reset(&w->exec_arena);
         used = resp_parse(t->cmds[0].raw, t->cmds[0].len, &v,
                           &w->exec_arena);
@@ -1737,7 +1828,7 @@ static void mt_exec_task(worker *w, mt_task *t)
             resp_value v;
             ptrdiff_t used;
             uint64_t dirty_before;
-            db *d = server_db(w->srv);
+            db *d = server_db_at(w->srv, t->db_index);
             arena_reset(&w->exec_arena);
             used = resp_parse(t->cmds[ci].raw, t->cmds[ci].len, &v,
                               &w->exec_arena);
@@ -1747,13 +1838,21 @@ static void mt_exec_task(worker *w, mt_task *t)
                                  18);
                 continue;
             }
+            /* SWAPDB executes on every worker (broadcast): swap this
+             * worker's two logical dbs directly (sessionless path) */
+            if (v.count == 3 && v.items[0].str != NULL &&
+                v.items[0].len == 6 &&
+                mt_ci_equal(v.items[0].str, v.items[0].len, "swapdb")) {
+                mt_swapdb_exec(w, t->db_index, &v, &t->reply);
+                continue;
+            }
             dirty_before = d->dirty;
             command_execute_at(d, v.items, v.count, &t->reply,
                                pal_wall_ms());
             /* sessionless path: log applied mutations to the
              * worker's own AOF */
             if (d->dirty != dirty_before)
-                server_aof_log_cmd(w->srv, v.items, v.count);
+                server_aof_log_cmd(w->srv, t->db_index, v.items, v.count);
         }
     }
     w->tasks_executed++;
