@@ -9,11 +9,12 @@ MSBuild version 18.8.2+ce25c0108 for .NET Framework
   pal_tls.c
   pal_iocp.c
   pal_thread.c
+  pal_wakeup.c
   arena.c
   rhtable.c
   command.c
-D:\a\ddup\ddup\src\core\command.c(1184,25): warning C4457: declaration of 's' hides function parameter [D:\a\ddup\ddup\build\ddup_core.vcxproj]
   buf_pool.c
+D:\a\ddup\ddup\src\core\command.c(1184,25): warning C4457: declaration of 's' hides function parameter [D:\a\ddup\ddup\build\ddup_core.vcxproj]
       D:\a\ddup\ddup\src\core\command.c(1151,39):
       see declaration of 's'
   
@@ -77,8 +78,8 @@ D:\a\ddup\ddup\src\core\command.c(2695,26): warning C4457: declaration of 's' hi
   crc64.c
   migrate.c
   hashslot.c
-  cluster.c
   Compiling...
+  cluster.c
   resp_parser.c
   resp_writer.c
   server.c
@@ -913,6 +914,13 @@ D:\a\ddup\ddup\src\core\command.c(3158): warning C4703: potentially uninitialize
   All 20 functions were compiled because no usable IPDB/IOBJ from previous compilation was found.
   Finished generating code
   test_pal_thread.vcxproj -> D:\a\ddup\ddup\build\Release\test_pal_thread.exe
+  Building Custom Rule D:/a/ddup/ddup/CMakeLists.txt
+  test_pal_wakeup.c
+  Generating code
+  Previous IPDB not found, fall back to full compilation.
+  All 29 functions were compiled because no usable IPDB/IOBJ from previous compilation was found.
+  Finished generating code
+  test_pal_wakeup.vcxproj -> D:\a\ddup\ddup\build\Release\test_pal_wakeup.exe
   Building Custom Rule D:/a/ddup/ddup/CMakeLists.txt
   test_pubsub.c
   Generating code
