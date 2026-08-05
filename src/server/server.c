@@ -19,6 +19,7 @@
 #include <string.h>
 
 #include "core/arena.h"
+#include "core/buf_pool.h"
 #include "core/command.h"
 #include "core/session.h"
 #include "core/snapshot.h"
@@ -69,9 +70,10 @@ struct conn {
     size_t out_sent;     /* bytes of out already handed to the kernel */
     char *sbuf;          /* stable overlapped-send buffer */
     size_t scap;
-    char *rbuf;  /* receive buffer, malloc'd, compacted after parsing */
+    char *rbuf;  /* receive buffer, pool or malloc'd, compacted after parsing */
     size_t rlen; /* valid bytes in rbuf */
     size_t rcap; /* allocated size of rbuf */
+    size_t rbuf_pool_size; /* actual allocation size when borrowed from pool */
     resp_buf out;
     arena arena;
     session *sess; /* per-connection command context (MULTI/WATCH/pubsub) */
@@ -130,6 +132,7 @@ struct server {
     /* replication */
     int role;             /* SESSION_ROLE_* */
     repl_backlog backlog; /* propagated command stream (master side) */
+    buf_pool pool;        /* per-server buffer pool for conn rbuf/out */
     resp_buf prop_buf;    /* reusable propagation serialization buffer */
     repl_info repl;       /* INFO replication snapshot */
     conn *master_link;    /* outbound link to the master (replica side) */
@@ -387,11 +390,22 @@ static conn *conn_create(server *srv, pal_socket_t fd)
     c->fd = fd;
     c->srv = srv;
     c->sess = session_create(&srv->db);
-    c->rcap = SERVER_RECV_CHUNK;
-    c->rbuf = (char *)malloc(c->rcap);
+    c->rbuf = (char *)buf_pool_get(&srv->pool, SERVER_RECV_CHUNK,
+                                   &c->rbuf_pool_size);
+    if (c->rbuf != NULL) {
+        c->rcap = c->rbuf_pool_size;
+    } else {
+        /* Pool exhausted: fall back to malloc. */
+        c->rcap = SERVER_RECV_CHUNK;
+        c->rbuf = (char *)malloc(c->rcap);
+        c->rbuf_pool_size = 0;
+    }
     if (c->rbuf == NULL || c->sess == NULL) {
         session_free(c->sess);
-        free(c->rbuf);
+        if (c->rbuf_pool_size > 0)
+            buf_pool_put(&srv->pool, c->rbuf, c->rbuf_pool_size);
+        else
+            free(c->rbuf);
         free(c);
         return NULL;
     }
@@ -418,6 +432,7 @@ static conn *conn_create(server *srv, pal_socket_t fd)
     c->sess->aof_ctx = srv;
     c->sess->aof_log = srv_propagate;
     resp_buf_init(&c->out);
+    c->out.pool = &srv->pool;
     arena_init(&c->arena, 4096);
     return c;
 }
@@ -437,10 +452,36 @@ static void conn_free(conn *c)
     session_free(c->sess);
     free(c->link_snap);
     free(c->sbuf);
-    free(c->rbuf);
+    if (c->rbuf_pool_size > 0)
+        buf_pool_put(&c->srv->pool, c->rbuf, c->rbuf_pool_size);
+    else
+        free(c->rbuf);
     resp_buf_free(&c->out);
     arena_destroy(&c->arena);
     free(c);
+}
+
+/* Grow the connection receive buffer, preserving already-read bytes.
+ * Returns 0 on success, -1 on allocation failure. */
+static int conn_rbuf_grow(conn *c)
+{
+    size_t need = c->rcap * 2;
+    size_t actual;
+    char *nb;
+
+    nb = (char *)buf_pool_get(&c->srv->pool, need, &actual);
+    if (nb == NULL)
+        return -1;
+    if (c->rlen > 0)
+        memcpy(nb, c->rbuf, c->rlen);
+    if (c->rbuf_pool_size > 0)
+        buf_pool_put(&c->srv->pool, c->rbuf, c->rbuf_pool_size);
+    else
+        free(c->rbuf);
+    c->rbuf = nb;
+    c->rcap = actual;
+    c->rbuf_pool_size = actual;
+    return 0;
 }
 
 /* conn IO: TLS when attached, plain socket otherwise */
@@ -523,14 +564,10 @@ static void repl_link_service(server *srv, conn *c)
     ptrdiff_t n;
 
     if (c->rcap - c->rlen < SERVER_RECV_CHUNK) {
-        size_t ncap = c->rcap * 2;
-        char *nb = (char *)realloc(c->rbuf, ncap);
-        if (nb == NULL) {
+        if (conn_rbuf_grow(c) != 0) {
             repl_link_close(srv);
             return;
         }
-        c->rbuf = nb;
-        c->rcap = ncap;
     }
     n = conn_read(c, c->rbuf + c->rlen, c->rcap - c->rlen);
     if (n == 0 || (n < 0 && n != -2 && !pal_would_block(pal_socket_error()))) {
@@ -647,8 +684,10 @@ server *server_create_ex(const char *host, uint16_t port, int backend)
         snprintf(s->db.cluster_ip, sizeof(s->db.cluster_ip), "%s", host);
     s->db.cluster_port = s->port;
     s->role = SESSION_ROLE_MASTER;
+    buf_pool_init(&s->pool);
     repl_backlog_init(&s->backlog, 1024 * 1024);
     resp_buf_init(&s->prop_buf);
+    s->prop_buf.pool = &s->pool;
     memset(&s->repl, 0, sizeof(s->repl));
     s->repl.role = SESSION_ROLE_MASTER;
     if (s->backend != SERVER_BACKEND_IOCP &&
@@ -667,6 +706,21 @@ server *server_create(const char *host, uint16_t port)
 uint16_t server_port(const server *s)
 {
     return s->port;
+}
+
+const buf_pool *server_buf_pool(const server *s)
+{
+    return &s->pool;
+}
+
+size_t server_pool_hits(const server *s)
+{
+    return s->pool.hits;
+}
+
+size_t server_pool_allocs(const server *s)
+{
+    return s->pool.allocs;
 }
 
 /* Start a TLS listener alongside the plain one (port 0 = ephemeral).
@@ -843,6 +897,7 @@ void server_destroy(server *s)
     repl_backlog_free(&s->backlog);
     resp_buf_free(&s->prop_buf);
     db_destroy(&s->db);
+    buf_pool_destroy(&s->pool);
     free(s);
 }
 
@@ -1388,14 +1443,10 @@ static int server_run_once_iocp(server *s, int timeout_ms)
             kick_flush(s, c);
             /* re-post the next recv (grow the buffer when nearly full) */
             if (c->rcap - c->rlen < SERVER_RECV_CHUNK) {
-                size_t ncap = c->rcap * 2;
-                char *nb = (char *)realloc(c->rbuf, ncap);
-                if (nb == NULL) {
+                if (conn_rbuf_grow(c) != 0) {
                     conn_close(s, idx);
                     continue;
                 }
-                c->rbuf = nb;
-                c->rcap = ncap;
             }
             c->pending_ops++;
             if (pal_iocp_recv(s->iocp, c->fd, c->rbuf + c->rlen,
@@ -1569,14 +1620,10 @@ int server_run_once(server *s, int timeout_ms)
 
             /* grow the receive buffer if a full chunk is pending */
             if (c->rcap - c->rlen < SERVER_RECV_CHUNK) {
-                size_t ncap = c->rcap * 2;
-                char *nb = (char *)realloc(c->rbuf, ncap);
-                if (nb == NULL) {
+                if (conn_rbuf_grow(c) != 0) {
                     conn_close(s, idx);
                     continue;
                 }
-                c->rbuf = nb;
-                c->rcap = ncap;
             }
 
             n = conn_read(c, c->rbuf + c->rlen, c->rcap - c->rlen);

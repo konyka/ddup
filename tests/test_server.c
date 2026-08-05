@@ -6,6 +6,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "core/buf_pool.h"
 #include "pal/pal_iocp.h"
 #include "pal/pal_socket.h"
 #include "server/server.h"
@@ -268,6 +269,26 @@ static void test_shutdown_command(void)
     server_destroy(s);
 }
 
+static void test_connection_buf_pool(void)
+{
+    server *s = make_server();
+    const buf_pool *pool;
+    pal_socket_t c;
+    DD_CHECK(s != NULL);
+    pool = server_buf_pool(s);
+    DD_CHECK(pool != NULL);
+    DD_CHECK(pool->sizes[2] == 64 * 1024);
+
+    c = connect_client(s);
+    roundtrip(s, c, "*1\r\n$4\r\nPING\r\n", "+PONG\r\n");
+    pal_close(c);
+    /* Let the server observe the close and return connection buffers. */
+    server_run_once(s, 5);
+    DD_CHECK(pool->hits > 0 || pool->allocs > 0);
+
+    server_destroy(s);
+}
+
 /* send everything, pumping the server between partial sends */
 static void send_all(server *s, pal_socket_t c, const char *buf, size_t len)
 {
@@ -464,6 +485,7 @@ static void run_all_tests(void)
     DD_RUN(test_protocol_error_closes_conn);
     DD_RUN(test_pubsub_over_socket);
     DD_RUN(test_shutdown_command);
+    DD_RUN(test_connection_buf_pool);
     DD_RUN(test_pipeline_2000);
     DD_RUN(test_slow_client_no_stall);
     DD_RUN(test_partial_reads);

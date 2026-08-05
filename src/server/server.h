@@ -11,6 +11,7 @@
 #include <stdint.h>
 
 typedef struct server server;
+typedef struct buf_pool buf_pool;
 
 /* Backend selection (server_create_ex). */
 #define SERVER_BACKEND_SELECT 0 /* readiness loop (epoll/kqueue/select) */
@@ -70,6 +71,11 @@ void server_set_backlog_size(server *s, size_t bytes);
  * accept new connections and service ready ones. Returns the number of
  * readiness events handled (0 = timeout). */
 int server_run_once(server *s, int timeout_ms);
+
+/* Buffer-pool introspection (used by integration tests). */
+const buf_pool *server_buf_pool(const server *s);
+size_t server_pool_hits(const server *s);
+size_t server_pool_allocs(const server *s);
 
 void server_destroy(server *s);
 
