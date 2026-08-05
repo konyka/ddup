@@ -381,6 +381,30 @@ static void test_smove_same_worker(void)
     pal_socket_cleanup();
 }
 
+/* mt_server_enable_tls with unusable cert/key fails cleanly: the plain
+ * listener keeps working and destroy is unaffected. (A full TLS handshake
+ * roundtrip lives in test_tls.c, built only when OpenSSL is available.) */
+static void test_tls_enable_failure_is_clean(void)
+{
+    mt_server *ms;
+    pal_socket_t a;
+
+    DD_CHECK_EQ_INT(0, pal_socket_init());
+    ms = mt_server_create("127.0.0.1", 0, 2);
+    DD_CHECK(ms != NULL);
+    DD_CHECK_EQ_INT(-1, mt_server_enable_tls(ms, "127.0.0.1", 0,
+                                             "no-such-cert.pem",
+                                             "no-such-key.pem"));
+    DD_CHECK_EQ_INT(0, mt_server_tls_port(ms));
+    DD_CHECK_EQ_INT(0, mt_server_start(ms));
+    a = connect_client(mt_server_port(ms));
+    roundtrip(a, "*1\r\n$4\r\nPING\r\n", "+PONG\r\n");
+    pal_close(a);
+    mt_server_stop(ms);
+    mt_server_destroy(ms);
+    pal_socket_cleanup();
+}
+
 /* INFO aggregates across workers: keyspace/memory/commandstats are summed
  * over the whole shared keyspace, not just the connection's home worker. */
 static void test_info_aggregation(void)
@@ -1159,6 +1183,7 @@ int main(void)
     DD_RUN(test_smove_same_worker);
     DD_RUN(test_aggregate_dbsize_and_flushdb);
     DD_RUN(test_info_aggregation);
+    DD_RUN(test_tls_enable_failure_is_clean);
     DD_RUN(test_set_algebra_same_slot_routing);
     DD_RUN(test_multi_exec_routed);
     DD_RUN(test_multi_exec_crossslot_aborts);

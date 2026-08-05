@@ -963,10 +963,7 @@ void server_aof_log_cmd(server *s, int db_index, const resp_value *argv,
 int server_enable_tls(server *s, const char *host, uint16_t port,
                       const char *cert_file, const char *key_file)
 {
-    if (s->backend == SERVER_BACKEND_IOCP)
-        return -1; /* TLS needs the readiness backend (documented) */
-    s->tls_ctx = pal_tls_ctx_new(cert_file, key_file);
-    if (s->tls_ctx == NULL)
+    if (server_tls_ctx_init(s, cert_file, key_file) != 0)
         return -1;
     s->tls_listen_fd = pal_tcp_listen(host, port, 511, &s->tls_port);
     if (s->tls_listen_fd == PAL_SOCKET_INVALID) {
@@ -982,6 +979,17 @@ int server_enable_tls(server *s, const char *host, uint16_t port,
         return -1;
     }
     return 0;
+}
+
+int server_tls_ctx_init(server *s, const char *cert_file,
+                        const char *key_file)
+{
+    if (s->backend == SERVER_BACKEND_IOCP)
+        return -1; /* TLS needs the readiness backend (documented) */
+    if (s->tls_ctx != NULL)
+        return -1; /* one context per server */
+    s->tls_ctx = pal_tls_ctx_new(cert_file, key_file);
+    return s->tls_ctx != NULL ? 0 : -1;
 }
 
 uint16_t server_tls_port(const server *s)
@@ -1207,6 +1215,48 @@ int server_adopt_fd(server *s, pal_socket_t fd)
     }
     s->conns[s->nconns++] = c;
     if (pal_loop_add(s->loop, fd, 1, 0, c) != 0) {
+        conn_close(s, s->nconns - 1);
+        return -1;
+    }
+    return 0;
+}
+
+int server_adopt_fd_tls(server *s, pal_socket_t fd)
+{
+    conn *c;
+    pal_tls *tls;
+    if (s->tls_ctx == NULL)
+        return -1;
+    (void)pal_set_tcp_nodelay(fd, 1);
+    if (pal_set_nonblocking(fd, 1) != 0) {
+        pal_close(fd);
+        return -1;
+    }
+    tls = pal_tls_new(s->tls_ctx, fd);
+    if (tls == NULL) {
+        pal_close(fd);
+        return -1;
+    }
+    c = conn_create(s, fd);
+    if (c == NULL) {
+        pal_tls_free(tls);
+        pal_close(fd);
+        return -1;
+    }
+    c->tls = tls;
+    c->tls_handshaking = 1;
+    if (s->nconns == s->cap) {
+        size_t ncap = s->cap == 0 ? 16 : s->cap * 2;
+        conn **nc = (conn **)realloc(s->conns, ncap * sizeof(*nc));
+        if (nc == NULL) {
+            conn_free(c);
+            return -1;
+        }
+        s->conns = nc;
+        s->cap = ncap;
+    }
+    s->conns[s->nconns++] = c;
+    if (pal_loop_add(s->loop, fd, 1, 1, c) != 0) {
         conn_close(s, s->nconns - 1);
         return -1;
     }

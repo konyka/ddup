@@ -39,6 +39,12 @@ int server_enable_tls(server *s, const char *host, uint16_t port,
                       const char *cert_file, const char *key_file);
 uint16_t server_tls_port(const server *s);
 
+/* TLS context only, no listener (mt workers: the acceptor owns the TLS
+ * listener; each worker wraps adopted fds with its own context). Returns 0
+ * on success; -1 when TLS is unavailable or the cert/key failed to load. */
+int server_tls_ctx_init(server *s, const char *cert_file,
+                        const char *key_file);
+
 /* Enable AOF persistence: replay the file if it exists, then append every
  * mutating command. Returns 0 on success. */
 int server_enable_aof(server *s, const char *path);
@@ -93,6 +99,10 @@ int server_run_once(server *s, int timeout_ms);
  *   callback runs inside server_run_once. */
 void server_close_listener(server *s);
 int server_adopt_fd(server *s, pal_socket_t fd);
+/* Adopt an already-accepted fd as a TLS connection (context must be
+ * initialized via server_tls_ctx_init/server_enable_tls): wraps the fd and
+ * starts the non-blocking handshake in the event loop. */
+int server_adopt_fd_tls(server *s, pal_socket_t fd);
 int server_set_wakeup(server *s, pal_socket_t fd, void (*cb)(void *ctx),
                       void *ctx);
 

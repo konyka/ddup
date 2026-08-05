@@ -53,8 +53,8 @@ static void test_io_threads(void)
     DD_CHECK_EQ_INT(-1, config_apply(&cfg, "io-threads", "0"));
     DD_CHECK_EQ_INT(-1, config_apply(&cfg, "io-threads", "abc"));
 
-    /* persistence is supported in mt mode (per-worker files); cluster,
-     * TLS and replication still conflict */
+    /* persistence is supported in mt mode (per-worker files); cluster and
+     * replication still conflict */
     config_init(&cfg);
     DD_CHECK_EQ_INT(0, config_apply(&cfg, "io-threads", "2"));
     DD_CHECK_EQ_INT(0, config_apply(&cfg, "appendonly", "yes"));
@@ -64,6 +64,17 @@ static void test_io_threads(void)
     DD_CHECK_EQ_INT(0, config_apply(&cfg, "io-threads", "2"));
     DD_CHECK_EQ_INT(0, config_apply(&cfg, "save", "60"));
     DD_CHECK_EQ_INT(0, config_validate(&cfg, err, sizeof(err)));
+
+    /* TLS is supported in mt mode (per-worker contexts, acceptor-owned
+     * TLS listener) */
+    config_init(&cfg);
+    DD_CHECK_EQ_INT(0, config_apply(&cfg, "io-threads", "2"));
+    DD_CHECK_EQ_INT(0, config_apply(&cfg, "tls-port", "6381"));
+    DD_CHECK_EQ_INT(0, config_apply(&cfg, "tls-cert-file", TMP_CONF));
+    DD_CHECK_EQ_INT(0, config_apply(&cfg, "tls-key-file", TMP_CONF));
+    write_file(TMP_CONF, "# x\n");
+    DD_CHECK_EQ_INT(0, config_validate(&cfg, err, sizeof(err)));
+    remove(TMP_CONF);
 
     config_init(&cfg);
     DD_CHECK_EQ_INT(0, config_apply(&cfg, "io-threads", "2"));

@@ -31,6 +31,15 @@ int mt_server_enable_aof(mt_server *ms, const char *dir,
 int mt_server_enable_snapshots(mt_server *ms, const char *dir,
                                const char *dbfilename, int save_sec);
 
+/* TLS alongside the plain listener: the acceptor owns a second (TLS)
+ * listener and tags accepted fds; each worker wraps them with its own TLS
+ * context and drives the non-blocking handshake in its event loop.
+ * Call before mt_server_start (port 0 = ephemeral). Returns 0 on success;
+ * -1 when TLS is unavailable (stub build) or cert/key/listen failed. */
+int mt_server_enable_tls(mt_server *ms, const char *host, uint16_t port,
+                         const char *cert_file, const char *key_file);
+uint16_t mt_server_tls_port(const mt_server *ms);
+
 /* Spawn the acceptor and worker threads. Returns 0 on success. */
 int mt_server_start(mt_server *ms);
 

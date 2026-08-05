@@ -70,8 +70,8 @@ int main(int argc, char **argv)
     }
 
     /* thread-per-core path: io-threads > 1 runs the mt worker pool.
-     * Persistence/TLS/cluster/replication are rejected by config_validate
-     * in this mode (documented limitation). */
+     * Cluster/replication are rejected by config_validate in this mode
+     * (documented limitation). */
     if (cfg.io_threads > 1) {
         mt_server *ms;
         char verr[256];
@@ -86,6 +86,19 @@ int main(int argc, char **argv)
                     (unsigned)cfg.port);
             pal_socket_cleanup();
             return 1;
+        }
+        if (cfg.tls_port > 0) {
+            if (mt_server_enable_tls(ms, cfg.bind, cfg.tls_port,
+                                     cfg.tls_cert_file,
+                                     cfg.tls_key_file) != 0) {
+                fprintf(stderr, "failed to enable TLS on port %u\n",
+                        (unsigned)cfg.tls_port);
+                mt_server_destroy(ms);
+                pal_socket_cleanup();
+                return 1;
+            }
+            printf("TLS listening on port %u\n",
+                   (unsigned)mt_server_tls_port(ms));
         }
         /* per-worker persistence (worker-<id>-<file> under dir) */
         if (cfg.requirepass[0] != '\0')

@@ -135,6 +135,7 @@ struct worker {
      * h; completions[t] carries executed replies from executing worker t;
      * accepts carries fds from the acceptor thread. */
     mt_spsc accepts;
+    mt_spsc accepts_tls; /* accepted fds from the TLS listener */
     mt_spsc *inbox;
     mt_spsc *completions;
     mt_spsc *migrate;     /* MT_TASK_MIGRATE conns from other workers */
@@ -159,6 +160,8 @@ struct worker {
 struct mt_server {
     pal_socket_t listen_fd;
     uint16_t port;
+    pal_socket_t tls_listen_fd; /* PAL_SOCKET_INVALID when TLS is off */
+    uint16_t tls_port;
     int nworkers;
     worker *workers;
     pal_thread acceptor;
@@ -2094,6 +2097,14 @@ static void worker_on_wakeup(void *ctx)
         fd = (pal_socket_t)(uintptr_t)p;
         (void)server_adopt_fd(w->srv, fd);
     }
+    for (;;) {
+        void *p = mt_spsc_pop(&w->accepts_tls);
+        pal_socket_t fd;
+        if (p == NULL)
+            break;
+        fd = (pal_socket_t)(uintptr_t)p;
+        (void)server_adopt_fd_tls(w->srv, fd);
+    }
 
     /* 1b. adopt connections migrated from other workers (key affinity) */
     for (pi = 0; pi < w->ms->nworkers; pi++) {
@@ -2149,23 +2160,39 @@ static void *acceptor_main(void *arg)
         pal_loop_free(l);
         return NULL;
     }
+    if (ms->tls_listen_fd != PAL_SOCKET_INVALID &&
+        pal_loop_add(l, ms->tls_listen_fd, 1, 0, NULL) != 0) {
+        pal_loop_free(l);
+        return NULL;
+    }
     while (ms->running) {
         pal_event evs[8];
         int n = pal_loop_wait(l, evs, 8, 50);
         int i;
         for (i = 0; i < n; i++) {
-            if (evs[i].fd != ms->listen_fd || !evs[i].readable)
+            int is_tls;
+            if (!evs[i].readable)
                 continue;
+            if (evs[i].fd == ms->listen_fd) {
+                is_tls = 0;
+            } else if (ms->tls_listen_fd != PAL_SOCKET_INVALID &&
+                       evs[i].fd == ms->tls_listen_fd) {
+                is_tls = 1;
+            } else {
+                continue;
+            }
             for (;;) {
-                pal_socket_t fd = pal_accept(ms->listen_fd);
+                pal_socket_t fd = pal_accept(evs[i].fd);
                 worker *w;
                 if (fd == PAL_SOCKET_INVALID)
                     break;
                 w = &ms->workers[rr % ms->nworkers];
                 rr++;
                 {
-                    int pr = mt_spsc_push(&w->accepts,
-                                          (void *)(uintptr_t)fd);
+                    mt_spsc *ring =
+                        is_tls ? &w->accepts_tls : &w->accepts;
+                    int pr =
+                        mt_spsc_push(ring, (void *)(uintptr_t)fd);
                     if (pr < 0) {
                         pal_close(fd);
                         continue;
@@ -2196,6 +2223,8 @@ mt_server *mt_server_create(const char *host, uint16_t port, int nworkers)
         return NULL;
     }
     (void)pal_set_nonblocking(ms->listen_fd, 1);
+    ms->tls_listen_fd = PAL_SOCKET_INVALID;
+    ms->tls_port = 0;
     ms->nworkers = nworkers;
     ms->workers = (worker *)calloc((size_t)nworkers, sizeof(worker));
     if (ms->workers == NULL) {
@@ -2215,6 +2244,7 @@ mt_server *mt_server_create(const char *host, uint16_t port, int nworkers)
         w->migrate = (mt_spsc *)calloc((size_t)nworkers, sizeof(mt_spsc));
         if (w->srv == NULL || w->inbox == NULL || w->completions == NULL ||
             w->migrate == NULL || mt_spsc_init(&w->accepts, 256) != 0 ||
+            mt_spsc_init(&w->accepts_tls, 256) != 0 ||
             pal_mutex_init(&w->pending_mu) != 0 ||
             pal_wakeup_create(&w->wakeup) != 0) {
             ms->nworkers = i; /* destroy only initialized workers */
@@ -2304,6 +2334,30 @@ int mt_server_enable_snapshots(mt_server *ms, const char *dir,
     return 0;
 }
 
+int mt_server_enable_tls(mt_server *ms, const char *host, uint16_t port,
+                         const char *cert_file, const char *key_file)
+{
+    int i;
+    if (ms->running || ms->tls_listen_fd != PAL_SOCKET_INVALID)
+        return -1;
+    /* one context per worker (shared-nothing; no cross-thread SSL_CTX use) */
+    for (i = 0; i < ms->nworkers; i++) {
+        if (server_tls_ctx_init(ms->workers[i].srv, cert_file, key_file) !=
+            0)
+            return -1;
+    }
+    ms->tls_listen_fd = pal_tcp_listen(host, port, 511, &ms->tls_port);
+    if (ms->tls_listen_fd == PAL_SOCKET_INVALID)
+        return -1;
+    (void)pal_set_nonblocking(ms->tls_listen_fd, 1);
+    return 0;
+}
+
+uint16_t mt_server_tls_port(const mt_server *ms)
+{
+    return ms->tls_port;
+}
+
 int mt_server_start(mt_server *ms)
 {
     int i;
@@ -2343,6 +2397,8 @@ void mt_server_destroy(mt_server *ms)
     if (ms == NULL)
         return;
     pal_close(ms->listen_fd);
+    if (ms->tls_listen_fd != PAL_SOCKET_INVALID)
+        pal_close(ms->tls_listen_fd);
     for (i = 0; i < ms->nworkers; i++) {
         worker *w = &ms->workers[i];
         if (w->srv == NULL)
@@ -2371,6 +2427,9 @@ void mt_server_destroy(mt_server *ms)
             while ((p = mt_spsc_pop(&w->accepts)) != NULL)
                 pal_close((pal_socket_t)(uintptr_t)p);
             mt_spsc_destroy(&w->accepts);
+            while ((p = mt_spsc_pop(&w->accepts_tls)) != NULL)
+                pal_close((pal_socket_t)(uintptr_t)p);
+            mt_spsc_destroy(&w->accepts_tls);
             /* conns that were still draining at shutdown */
             for (zi = 0; zi < w->nzombies; zi++)
                 server_conn_free_now(w->srv, w->zombies[zi]);

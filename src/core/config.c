@@ -196,10 +196,9 @@ static int file_readable(const char *path)
 int config_validate(const ddup_config *cfg, char *err, size_t errcap)
 {
     if (cfg->io_threads > 1 &&
-        (cfg->tls_port > 0 || cfg->cluster_enabled ||
-         cfg->replicaof_port > 0)) {
+        (cfg->cluster_enabled || cfg->replicaof_port > 0)) {
         snprintf(err, errcap,
-                 "io-threads > 1 does not support TLS, cluster or "
+                 "io-threads > 1 does not support cluster or "
                  "replication yet");
         return -1;
     }
