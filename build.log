@@ -572,7 +572,9 @@ D:\a\ddup\ddup\src\core\command.c(3166): warning C4703: potentially uninitialize
   test_config.vcxproj -> D:\a\ddup\ddup\build\Release\test_config.exe
   Building Custom Rule D:/a/ddup/ddup/CMakeLists.txt
   test_cstd.c
-D:\a\ddup\ddup\tests\test_cstd.c(3,1): error C1083: Cannot open include file: 'pal/pal_cstd.h': No such file or directory [D:\a\ddup\ddup\build\test_cstd.vcxproj]
+D:\a\ddup\ddup\tests\test_cstd.c(68,14): error C2057: expected constant expression [D:\a\ddup\ddup\build\test_cstd.vcxproj]
+D:\a\ddup\ddup\tests\test_cstd.c(68,14): error C2466: cannot allocate an array of constant size 0 [D:\a\ddup\ddup\build\test_cstd.vcxproj]
+D:\a\ddup\ddup\tests\test_cstd.c(68,10): error C2133: 'arr': unknown size [D:\a\ddup\ddup\build\test_cstd.vcxproj]
   Building Custom Rule D:/a/ddup/ddup/CMakeLists.txt
   test_dump.c
   Generating code
