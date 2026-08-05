@@ -47,6 +47,10 @@ typedef struct db {
     const char *snapshot_path; /* SAVE target (not owned; may be NULL) */
     uint64_t last_save;    /* unix seconds of the last successful SAVE */
     uint32_t rng_state;    /* sampling PRNG (xorshift32, always nonzero) */
+    /* commandstats: per-command-id call count and cumulative microseconds
+     * (indexed by CMD_* id, room to spare) */
+    uint64_t cmd_calls[128];
+    uint64_t cmd_usecs[128];
 } db;
 
 void db_init(db *d);

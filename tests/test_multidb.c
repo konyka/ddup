@@ -268,6 +268,48 @@ static void test_expiry_isolated_per_db(void)
     set_free(ds);
 }
 
+static void test_commandstats_in_info(void)
+{
+    dbset *ds = set_new(4);
+    session *s = set_session(ds);
+    resp_buf out;
+    resp_buf_init(&out);
+
+    exec_sess(s, T0, &out, 1, "PING");
+    EXPECT(out, "+PONG\r\n");
+    exec_sess(s, T0, &out, 3, "SET", "k", "v");
+    EXPECT(out, "+OK\r\n");
+    exec_sess(s, T0, &out, 3, "SET", "k", "v2");
+    EXPECT(out, "+OK\r\n");
+    exec_sess(s, T0, &out, 2, "GET", "k");
+    EXPECT(out, "$2\r\nv2\r\n");
+
+    exec_sess(s, T0, &out, 1, "INFO");
+    {
+        resp_buf_reserve(&out, 1);
+        out.data[out.len] = '\0';
+        DD_CHECK(strstr(out.data, "# Commandstats\r\n") != NULL);
+        DD_CHECK(strstr(out.data, "cmdstat_set:calls=2,") != NULL);
+        DD_CHECK(strstr(out.data, "cmdstat_get:calls=1,") != NULL);
+        DD_CHECK(strstr(out.data, "cmdstat_ping:calls=1,") != NULL);
+        DD_CHECK(strstr(out.data, "usec_per_call=") != NULL);
+    }
+
+    /* FLUSHDB resets the counters */
+    exec_sess(s, T0, &out, 1, "FLUSHDB");
+    EXPECT(out, "+OK\r\n");
+    exec_sess(s, T0, &out, 1, "INFO");
+    {
+        resp_buf_reserve(&out, 1);
+        out.data[out.len] = '\0';
+        DD_CHECK(strstr(out.data, "cmdstat_set:calls=2,") == NULL);
+    }
+
+    session_free(s);
+    resp_buf_free(&out);
+    set_free(ds);
+}
+
 int main(void)
 {
     DD_RUN(test_select_isolation);
@@ -276,5 +318,6 @@ int main(void)
     DD_RUN(test_swapdb_invalidates_watch);
     DD_RUN(test_info_keyspace_sections);
     DD_RUN(test_expiry_isolated_per_db);
+    DD_RUN(test_commandstats_in_info);
     return DD_TEST_SUMMARY();
 }

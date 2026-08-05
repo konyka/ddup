@@ -25,6 +25,20 @@
 static void free_obj_cb(const char *key, size_t klen, const char *val,
                         size_t vlen, void *ctx);
 
+/* Unified command metadata (defined with CMD_TABLE at the bottom; this
+ * early declaration makes the table usable file-wide, e.g. in INFO). */
+typedef struct cmd_entry {
+    const char *name;
+    uint16_t    id;
+    int         min_argc;
+    int         max_argc;   /* -1 = unbounded */
+    int         parity;     /* 0 any, 1 odd, 2 even */
+    uint8_t     flags;
+} cmd_entry;
+
+/* table row for a command id (defined next to CMD_TABLE at the bottom) */
+static const cmd_entry *cmd_table_entry(uint16_t id);
+
 void db_init(db *d)
 {
     rh_init(&d->table);
@@ -70,6 +84,8 @@ void db_flush(db *d)
     rh_init(&d->table);
     rh_init(&d->expires);
     d->used_memory = 0;
+    memset(d->cmd_calls, 0, sizeof(d->cmd_calls));
+    memset(d->cmd_usecs, 0, sizeof(d->cmd_usecs));
 }
 
 /* ------------------------------------------------------------------ */
@@ -1872,6 +1888,8 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
         rh_init(&d->expires);
         rh_init(&d->keyvers);
         d->used_memory = 0;
+        memset(d->cmd_calls, 0, sizeof(d->cmd_calls));
+        memset(d->cmd_usecs, 0, sizeof(d->cmd_usecs));
         d->flush_epoch++; /* invalidates all WATCHes */
         d->dirty++;
         resp_write_simple_string(out, "OK", 2);
@@ -1989,7 +2007,7 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
         }
         {
             char human[32];
-            char buf[2048];
+            char buf[16384];
             int n2;
             uint64_t used_total = d->used_memory;
             uint64_t expired_total = d->expired_keys;
@@ -2045,6 +2063,29 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
                            "# Cluster\r\n"
                            "cluster_enabled:%d\r\n",
                            d->cluster_enabled);
+            /* Redis-style per-command statistics (this db) */
+            {
+                uint16_t id;
+                int any = 0;
+                for (id = 1; id <= CMD_MAX; id++)
+                    if (d->cmd_calls[id] > 0) {
+                        const cmd_entry *e = cmd_table_entry(id);
+                        if (!any) {
+                            n2 += snprintf(buf + n2,
+                                           sizeof(buf) - (size_t)n2,
+                                           "# Commandstats\r\n");
+                            any = 1;
+                        }
+                        n2 += snprintf(buf + n2, sizeof(buf) - (size_t)n2,
+                                       "cmdstat_%s:calls=%llu,usec=%llu,"
+                                       "usec_per_call=%.2f\r\n",
+                                       e->name,
+                                       (unsigned long long)d->cmd_calls[id],
+                                       (unsigned long long)d->cmd_usecs[id],
+                                       (double)d->cmd_usecs[id] /
+                                           (double)d->cmd_calls[id]);
+                    }
+            }
             if (s->repl != NULL) {
                 const repl_info *ri = s->repl;
                 n2 += snprintf(buf + n2, sizeof(buf) - (size_t)n2,
@@ -4124,17 +4165,6 @@ bad_type:
 /* Command table flags. */
 #define CMD_WRITE 0x01
 
-/* Unified command metadata. IDs are assigned in this table order and must
- * remain stable (used for AOF/replication/serialization). */
-typedef struct cmd_entry {
-    const char *name;
-    uint16_t    id;
-    int         min_argc;
-    int         max_argc;   /* -1 = unbounded */
-    int         parity;     /* 0 any, 1 odd, 2 even */
-    uint8_t     flags;
-} cmd_entry;
-
 static const cmd_entry CMD_TABLE[] = {
     {"ping", CMD_PING, 1, 2, 0, 0},
     {"echo", CMD_ECHO, 2, 2, 0, 0},
@@ -4230,6 +4260,14 @@ static const cmd_entry CMD_TABLE[] = {
     {"select", CMD_SELECT, 2, 2, 0, 0},
     {"swapdb", CMD_SWAPDB, 3, 3, 0, CMD_WRITE},
 };
+
+static const cmd_entry *cmd_table_entry(uint16_t id)
+{
+    static const cmd_entry unknown = {"unknown", CMD_ID_UNKNOWN, 0, 0, 0, 0};
+    if (id == 0 || id > (uint16_t)(sizeof(CMD_TABLE) / sizeof(CMD_TABLE[0])))
+        return &unknown;
+    return &CMD_TABLE[id - 1];
+}
 
 /* ------------------------------------------------------------------ */
 /* Command name -> stable ID hash table                               */
@@ -4401,9 +4439,27 @@ static void exec_transaction(session *s, resp_buf *out, uint64_t now_ms)
     {
         uint64_t dirty_before = s->d->dirty;
         resp_write_array_header(out, s->queue_len);
-        for (i = 0; i < s->queue_len; i++)
+        for (i = 0; i < s->queue_len; i++) {
+#ifdef DDUP_NO_CMDSTATS
             command_dispatch(s, s->queue[i].argv, s->queue[i].argc, out,
                              now_ms);
+#else
+            uint64_t t0 = pal_now_us();
+            const char *qn = NULL;
+            size_t qnl = 0;
+            uint16_t qid;
+            command_dispatch(s, s->queue[i].argv, s->queue[i].argc, out,
+                             now_ms);
+            /* commandstats: each EXEC-replayed command counts individually */
+            if (s->queue[i].argc > 0)
+                (void)arg_str(&s->queue[i].argv[0], &qn, &qnl);
+            qid = qn != NULL ? cmd_resolve(qn, qnl) : CMD_ID_UNKNOWN;
+            if (qid != CMD_ID_UNKNOWN && qid < 128) {
+                s->d->cmd_calls[qid]++;
+                s->d->cmd_usecs[qid] += pal_now_us() - t0;
+            }
+#endif
+        }
         /* AOF: log each applied command individually (no MULTI wrapper) */
         if (s->d->dirty != dirty_before && s->aof_log != NULL)
             for (i = 0; i < s->queue_len; i++)
@@ -4548,7 +4604,20 @@ void session_execute_at(session *s, const resp_value *argv, size_t argc,
         return;
     }
 
-    command_dispatch(s, argv, argc, out, now_ms);
+    {
+#ifdef DDUP_NO_CMDSTATS
+        command_dispatch(s, argv, argc, out, now_ms);
+#else
+        uint64_t t0 = pal_now_us();
+        command_dispatch(s, argv, argc, out, now_ms);
+        /* commandstats: count every dispatched command (queueing/blocked
+         * paths above do not reach here) */
+        if (cmd_id != CMD_ID_UNKNOWN && cmd_id < 128) {
+            s->d->cmd_calls[cmd_id]++;
+            s->d->cmd_usecs[cmd_id] += pal_now_us() - t0;
+        }
+#endif
+    }
     /* AOF: log the original command if it mutated the db */
     if (s->d->dirty != dirty_before && s->aof_log != NULL)
         s->aof_log(s->aof_ctx, s->db_index, argv, argc);

@@ -192,7 +192,7 @@ static void test_config_and_info(void)
 {
     db d;
     resp_buf out;
-    char nul[2048];
+    char nul[16384];
     db_init(&d);
     resp_buf_init(&out);
 
