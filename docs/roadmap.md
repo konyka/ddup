@@ -60,8 +60,29 @@
     bundle + watch_refs 跨 worker 记账）、pub/sub 按频道 hash 路由、
     per-worker AOF/快照（路由 mutation 记录到执行 worker 的 AOF）、
     SINTER/SUNION/SDIFF 同槽路由
-  - [ ] mt 后续：INFO 跨 worker 聚合、TLS 支持（worker 内嵌握手）、
-    IOCP worker 后端、复制/集群在 per-worker 模型下的适配
+  - [x] mt 生产化（Phase 15）：INFO 跨 worker 聚合（内部 INFO __STATS__
+    机器格式快照 + home 端归并渲染）、TLS 支持（acceptor 持 TLS listener，
+    每 worker 独立 TLS ctx + worker 内嵌握手）、IOCP worker 后端
+    （pal_iocp_post 唤醒；IOCP 后端禁用连接迁移）
+  - [ ] mt 后续（范围化排除，记录在案）：复制/集群在 per-worker 模型下
+    的适配——worker 各自为战与全库复制/集群总线的语义冲突大、收益低，
+    集群/复制请用单线程模式
+
+- [x] **Phase 13 — 安全与多数据库**
+  AUTH（requirepass + NOAUTH 门）、16 逻辑库（SELECT/SWAPDB、session
+  选择钩子、快照 DDUP0002 多库格式、AOF SELECT 前缀、INFO dbN 段、
+  全库主动过期与全局 maxmemory）、commandstats（每命令 calls/usec，
+  INFO # Commandstats，实测开销 <1%，DDUP_NO_CMDSTATS 可关）
+- [x] **Phase 14 — io_uring 后端（Linux）**
+  `pal_loop_create_iouring()` 直接 syscall 探测（内核 ≥5.10），oneshot
+  poll + 按最近兴趣集 re-arm，控制完成（POLL_REMOVE/UPDATE 的 res==0
+  回执）与事件完成区分；`--io iouring` / `SERVER_BACKEND_IOURING`；
+  非 Linux 为 stub；test_event/test_server 双后端跑（Linux CI 覆盖）
+- [x] **Phase 16 — 集群运维工具**
+  `ddup-reshard`（redis-cli 风格：--from/--to/--slot/--count/--timeout；
+  SETSLOT MIGRATING/IMPORTING → 批量 GETKEYSINSLOT+MIGRATE REPLACE KEYS
+  → 双端 SETSLOT NODE）；编排逻辑在 tools/reshard_client.[ch]，
+  tests/test_reshard.c 双节点线程集成覆盖
 
 - [ ] **Phase 7+ — 长期**
   集群模式、TLS、io_uring 优化落地、SIMD 解析优化、与 Garnet/Redis 基准对比
@@ -90,5 +111,10 @@
   - [x] PSYNC 部分重同步（master_replid + +CONTINUE/+FULLRESYNC 握手、
     复制积压区断点续传、陈旧 offset/replid 不匹配回退全量）、链式复制
     A→B→C、>64KiB 快照帧接收修复（Phase 12）
-  - [ ] 集群运维工具：reshard 工具（redis-cli 风格）、真正的 Redis 总线
-    协议兼容
+  - [x] 集群运维工具：reshard 工具（redis-cli 风格，Phase 16）
+  - [ ] 范围化排除（记录在案，不实施）：
+    - 真正的 Redis 总线协议逐字节兼容：自有 RCM2 协议已满足 ddup 集群
+      互联；兼容 Redis 总线只为混入异构集群，投入产出不合理
+    - Lua 脚本（EVAL）：需要嵌入解释器，与 C99 极简依赖原则冲突
+    - 分层存储（热/冷数据落盘）：超出"内存缓存存储"定位
+    - mt 模式的复制/集群适配：见 Phase 15 说明

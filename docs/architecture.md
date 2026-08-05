@@ -116,9 +116,8 @@
   集群 crc16/hashtag）。单 key 命令（字符串/过期/hash/list/set/zset 全部
   单 key 操作）路由到属主 worker；多 key 命令（MGET/MSET/DEL/UNLINK/
   EXISTS/SMOVE）所有 key 必须同属一个 worker，否则 `-CROSSSLOT`（与集群
-  语义一致）。无 key 命令就地执行；DBSIZE/FLUSHDB 为广播聚合（home 就地
-  一份 + 扇出其余 worker，DBSIZE 求和），INFO 暂为 home worker 本地
-  （记录在案）。
+  语义一致）。无 key 命令就地执行；DBSIZE/FLUSHDB/INFO 为广播聚合
+  （home 就地一份 + 扇出其余 worker）。
 - **任务与顺序**：跨 worker 命令以**原始 RESP 字节拷贝**打包为 mt_task
   （目标 worker 就地重新解析，避免逐元素深拷贝）；同一 parse pass 内
   目标相同的连续命令**合并为一个任务**（span>1）。回复经 home worker
@@ -148,16 +147,98 @@
 - **持久化**：每 worker 独立 `<dir>/worker-<id>-<file>`；路由任务的
   mutation 经 dirty 计数记录到执行 worker 的 AOF；SAVE/LASTSAVE 广播
   聚合（LASTSAVE 取 max）；启动时按 worker 重放/加载。
-- **聚合命令**：DBSIZE（求和）、FLUSHDB、SAVE、LASTSAVE（max）广播到
-  全部 worker 归并；INFO 暂为 home worker 本地（记录在案）。
+- **聚合命令**：DBSIZE（求和）、FLUSHDB、SAVE、LASTSAVE（max）、
+  SWAPDB、INFO 广播到全部 worker 归并。INFO 走**结构化归并**：每个
+  worker 执行内部变体 `INFO __STATS__`（机器格式：标量 `k:v` 行 +
+  `db:<i>:<keys>:<expires>` + `c:<id>:<calls>:<usec>`，覆盖该 worker
+  全部逻辑库），home 端把各部分累加进 `info_stats`（used_memory/
+  expired/evicted/dbsize 求和、按库与按命令 id 合并），再由共享的
+  `command_info_render()` 渲染为单份人类可读 INFO（maxmemory/策略/
+  cluster 标志取 home worker 值）。
 - **限制（记录在案）**：mt 模式下 SHUTDOWN/SYNC/REPLICAOF/CLUSTER/
   MIGRATE/ASKING 返回 `-ERR command not supported in mt mode`；
-  TLS/集群/复制与 io-threads>1 互斥（config_validate 报错）；
-  IOCP 后端不参与 mt（readiness only）。
+  集群/复制与 io-threads>1 互斥（config_validate 报错）；INFO 不含
+  # Replication 段（mt 不支持复制）。
 - **并发可靠性**：跨 worker 队列满时，生产者背压重试会**自排空本
   worker 的 inbox/completion 队列**以打破环形等待；drain 按环限批
   （512 条/次）并在有剩余时自 kick，避免持续生产下的 drain 活锁。
 - **性能现状**：见 docs/performance.md Phase 11。
+
+## AUTH 与多数据库（Phase 13）
+
+- **AUTH**：`requirepass` 配置（server_set_requirepass / mt 每 worker）。
+  session 默认 authed=1；配置了密码的 server 在 accept 时置 0，分发入口
+  对未认证连接只放行 AUTH/QUIT（`-NOAUTH Authentication required.`），
+  mt 路由层前置同样的门（未认证命令不路由）。
+- **多数据库（16 库）**：session 增加 `db_index + sel_fn/sel_ctx/sel_ndbs`
+  选择钩子（server 提供 `srv_select_db`，栈 session 无钩子即单库）。
+  SELECT 校验范围并切换 `session.d`；SWAPDB 原子交换两个逻辑库（含
+  keyvers/flush_epoch，使 WATCH 正确失效）。server 持有
+  `extra_dbs[15]`（db0 内嵌）。AOF 对非当前库的命令前补 `SELECT <n>`
+  前缀（重放经 aof_replay_session 恢复原路由）；快照升级为 `DDUP0002`
+  多库格式（兼容加载 DDUP0001）。INFO 输出 Redis 风格 `dbN:keys=...`
+  段；主动过期与 maxmemory 覆盖全部逻辑库；maxmemory 为全局限额
+  （逐库相同值，Redis 语义）。mt 下 db_index 随路由任务传递，SWAPDB
+  广播到全部 worker 执行。
+- **commandstats**：db 增加 `cmd_calls[128]/cmd_usecs[128]`（按命令 id），
+  分发入口用 `pal_now_us()` 计时累加；INFO # Commandstats 输出 Redis
+  风格 `cmdstat_<name>:calls=,usec=,usec_per_call=`。A/B 实测开销 <1%
+  （pal_now_us 单次 ~19.5ns）；`DDUP_NO_CMDSTATS` 编译开关可完全移除。
+
+## io_uring 后端（Phase 14，Linux）
+
+- **探测与接入**：`pal_loop_create_iouring()` 在 Linux 上以直接
+  syscall（无 liburing 依赖）建环并做 NOP 探测；不可用时返回 NULL，
+  server 回落 epoll。`--io iouring` / `SERVER_BACKEND_IOURING`，
+  非 Linux 为 stub。test_event/test_server 检测到 io_uring 时整套
+  跑第二遍（Linux CI 覆盖，内核 6.x）。
+- **模型**：io_uring 在此用作**异步就绪源**（不是全异步 IO）：注册表
+  ep_reg 记录每个 fd 的 want_read/want_write；oneshot poll 完成后按
+  最近兴趣集 re-arm；`sq_tail/cq_head` 用 `__atomic_*` acquire/release
+  同步。
+- **关键语义（记录在案）**：reap 只认 `res > 0`（POLL* 掩码）为事件；
+  `res == 0` 是 POLL_REMOVE/POLL_UPDATE 的**控制回执**，`res < 0` 为
+  错误。del = deactivate + POLL_REMOVE + dead 链（loop_free 统一释放）；
+  mod = remove + add。TIMEOUT sqe 的 `__kernel_timespec` 在 enter 同步
+  提交期内有效（栈上安全）。
+
+## mt 生产化（Phase 15）
+
+- **mt TLS（15.2）**：acceptor 持有第二个（TLS）listener，accept 后按
+  round-robin 把 fd 投入 worker 的 `accepts_tls` 队列；每个 worker 经
+  `server_tls_ctx_init()` 装载**自己的** TLS ctx（shared-nothing，无跨
+  线程 SSL_CTX 使用），`server_adopt_fd_tls()` 包装 fd 并在 worker 自己
+  的 readiness 循环内驱动非阻塞握手（与单线程同一状态机）。
+  config_validate 解除 mt+TLS 互斥（集群/复制仍互斥）。IOCP 后端不
+  支持 TLS（回落 readiness workers）。
+- **IOCP worker 后端（15.3，Windows）**：`mt_server_create_ex(...,
+  SERVER_BACKEND_IOCP)`；main 在 Windows 默认用 IOCP workers（TLS 开启
+  时回落 readiness，`--io iouring` 在 Linux 选 io_uring workers）。
+  - 唤醒：`pal_iocp_post()` 投递 PAL_IOCP_WAKEUP 完成事件；
+    `server_set_wakeup` 在 IOCP 下只存回调，worker 的任务队列 kick 经
+    `server_wakeup_kick()` 转为完成事件投递（mt_kick 抽象两种后端）。
+  - adopt/flush：`server_adopt_fd` 在 IOCP 下建 conn 并 post 首个
+    WSARecv；`server_conn_flush` 走 kick_flush（重叠发送）。
+  - 生命周期合并：conn_close 组合 mt zombie（路由层 pending 未清）与
+    IOCP zombie（重叠操作未清）——两者都归零才真正释放
+    （`zombie_mt_free` 标记 + `server_conn_free_now` 延迟）。
+  - **连接迁移在 IOCP 后端禁用**（记录在案）：任何时刻都有在飞的重叠
+    recv，连接无法安全跨完成端口移动；任务路由不受影响（亲和优化
+    仅 readiness workers 享有）。
+
+## 集群运维工具（Phase 16）
+
+- **ddup-reshard**（tools/）：redis-cli `--cluster reshard` 风格：
+  `--from host:port --to host:port --slot N [--count K] [--timeout ms]`。
+  流程：双端 CLUSTER MYID → 源 SETSLOT MIGRATING TO / 目标 SETSLOT
+  IMPORTING FROM → 循环 GETKEYSINSLOT（每批 K 键）+ MIGRATE ... REPLACE
+  KEYS（批量）→ 双端 SETSLOT NODE 收尾。失败时槽可能停留在
+  MIGRATING/IMPORTING 态（与 redis-cli 一致，记录在案）。
+- **结构**：阻塞式 RESP 客户端与编排逻辑在 `tools/reshard_client.[ch]`
+  （复用 ddup_core 的 RESP parser/writer；零拷贝注意点：回复串指向连接
+  缓冲，构造下一条请求时先行拷贝）；`tools/ddup-reshard.c` 仅参数
+  解析。`tests/test_reshard.c` 用两个后台线程跑的集群节点做端到端
+  集成（批量迁移、-MOVED、源槽清空）。
 
 ## 过期设计（Phase 4）
 
@@ -198,7 +279,8 @@ SINTER SUNION SDIFF ｜
 ZADD ZSCORE ZCARD ZINCRBY ZREM ZRANGE ZREVRANGE ZRANK ZREVRANK ZCOUNT
 ZRANGEBYSCORE ZREMRANGEBYSCORE ｜
 MULTI EXEC DISCARD WATCH UNWATCH ｜ SUBSCRIBE UNSUBSCRIBE PUBLISH QUIT ｜
-SAVE LASTSAVE SHUTDOWN ｜ SYNC REPLICAOF ｜ DUMP RESTORE MIGRATE ASKING
+AUTH SELECT SWAPDB ｜ SAVE LASTSAVE SHUTDOWN ｜ SYNC REPLICAOF ｜
+DUMP RESTORE MIGRATE ASKING ｜ INFO（内部变体 INFO __STATS__ 供 mt 聚合）
 
 注：TTL 返回值四舍五入（(rem+500)/1000，同 Redis）；PTTL 精确到 ms。
 INCR/APPEND 在本实现中清除 TTL（与 Redis 保留 TTL 不同，有意简化）。
@@ -511,4 +593,6 @@ src/server/  连接与服务器主循环（Phase 3）、aof（Phase 6）：单�
              慢客户端不再阻塞主循环（详见 architecture 网络层说明）
 tests/       单元测试（test.h 自研框架）+ 集成测试
 bench/       压测客户端 ddup-bench（Phase 3，非 ctest 目标）
+tools/       ddup-reshard 集群迁槽工具 + reshard_client（阻塞 RESP 客户端
+             与迁槽编排，Phase 16）
 ```

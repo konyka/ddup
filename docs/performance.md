@@ -52,12 +52,33 @@
 | 2026-08-05 | Phase 11 mt 优化后（io-threads=4） | 服务器 SET/GET | 同上 | 58–60k / 57–62k req/s | - | 3 次运行稳定（修复跨 worker 死锁/活锁后） |
 | 2026-08-05 | Phase 12 PSYNC | 副本断线追平（50k 键 ×32B，新 replid 全量） | Windows 11, clang 22.1.6, -O3+LTO, loopback | 0.07s | - | 含 ~2.3MB 快照传输 + 清库重载 |
 | 2026-08-05 | Phase 12 PSYNC | 副本断线追平（同上，backlog 部分重同步） | 同上 | 0.03s（~2.1x） | - | 仅 backlog 尾部 100 条命令，无快照/清库；收益随数据集与写入量放大 |
+| 2026-08-05 | Phase 13 commandstats | 计时开销 A/B（bench_core，启用 vs DDUP_NO_CMDSTATS） | Windows 11, clang 22.1.6, -O3+LTO | 差异 <1%（噪声内） | - | 每命令 2× pal_now_us（实测单次 ~19.5ns）+ 两次数组累加 |
+| 2026-08-05 | Phase 13 commandstats | pal_now_us 微基准 | 同上 | ~19.5 ns/call | - | QueryPerformanceCounter 封装 |
 
 Phase 12 说明：PSYNC 的收益不在 loopback 小数据集（绝对值几十毫秒），
 而在大数据集 + 高写入场景——全量重同步成本 = 快照序列化 + 全量传输 +
 清库重载（O(db 大小)），部分重同步 = backlog 尾部字节（O(离线期间写入
 量)）。测试同时发现并修复了 >64KiB 快照帧接收的 size_t 下溢崩溃
 （大快照全量同步此前不可用）。
+
+## Phase 13–16 说明（如实记录）
+
+- **测量环境波动**：本阶段（2026-08-05 晚些时候）整机基准数字较上午
+  整体下降约 3x（同一二进制、同一脚本），判定为环境热节流/干扰而非
+  代码回退；本阶段只做 A/B 对比（同条件同时段），不与上午的绝对值
+  直接比较。
+- **Phase 14 io_uring**：设计要点是区分控制完成与事件完成（oneshot
+  poll 的 re-arm 只在 res>0 时视为就绪事件；POLL_REMOVE/UPDATE 的
+  res==0 回执直接丢弃）。Linux CI（kernel 6.x）双后端跑全量
+  test_event/test_server；本地 Windows 仅验证 stub 回落路径。
+- **Phase 15 mt INFO 聚合**：聚合成本 = 每 worker 一次 INFO __STATS__
+  快照（O(库数×命令数) 累加）+ 一次跨 worker 广播往返；INFO 为低频
+  管理命令，对热路径零影响（commandstats 计数本身 <1%）。
+- **Phase 15 IOCP workers**：mt worker 在 Windows 默认改用 IOCP；
+  每 worker 一次 `pal_iocp_post` 替代 self-pipe 写字节作为任务队列
+  唤醒。连接迁移（key 亲和优化）在 IOCP 后端禁用——随机 key 负载
+  不受影响（本就按任务路由），hashtag 亲和负载在 Windows mt 下仍走
+  跨线程路由，记录在案。
 
 ## Phase 11 mt 性能分析（如实记录）
 
