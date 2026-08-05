@@ -1138,23 +1138,9 @@ static int cluster_check_ownership(session *s, const resp_value *argv,
     }
 }
 
-static const char *const WRITE_COMMANDS[] = {
-    "set",    "del",     "unlink",  "incr",       "decr",    "append",
-    "mset",   "expire",  "pexpire", "expireat",   "pexpireat", "persist",
-    "flushdb","hset",    "hmset",   "hdel",       "hincrby", "hsetnx",
-    "lpush",  "rpush",   "lpushx",  "rpushx",     "lpop",    "rpop",
-    "lset",   "sadd",    "srem",    "spop",       "smove",
-    "zadd",   "zincrby", "zrem",    "zremrangebyscore", "restore",
-    "migrate",
-};
-
 static int is_write_command(const char *name, size_t nlen)
 {
-    size_t i;
-    for (i = 0; i < sizeof(WRITE_COMMANDS) / sizeof(WRITE_COMMANDS[0]); i++)
-        if (ci_equal(name, nlen, WRITE_COMMANDS[i]))
-            return 1;
-    return 0;
+    return cmd_is_write(cmd_resolve(name, nlen));
 }
 
 static void command_dispatch(session *s, const resp_value *argv, size_t argc,
@@ -3898,65 +3884,202 @@ bad_type:
 /* MULTI queue-time validation                                        */
 /* ------------------------------------------------------------------ */
 
-/* min/max argc (-1 = unbounded); parity: 0 any, 1 odd, 2 even.
- * Names are lowercase for the wrong-args message (Redis style). */
-typedef struct cmd_arity {
-    const char *name;
-    int min_argc;
-    int max_argc;
-    int parity;
-} cmd_arity;
+/* Command table flags. */
+#define CMD_WRITE 0x01
 
-static const cmd_arity CMD_ARITY[] = {
-    {"ping", 1, 2, 0},          {"echo", 2, 2, 0},
-    {"get", 2, 2, 0},           {"set", 3, -1, 0},
-    {"dump", 2, 2, 0},          {"restore", 4, 5, 0},
-    {"migrate", 6, -1, 0},      {"asking", 1, 1, 0},
-    {"del", 2, -1, 0},          {"unlink", 2, -1, 0},
-    {"exists", 2, -1, 0},       {"incr", 2, 2, 0},
-    {"decr", 2, 2, 0},          {"append", 3, 3, 0},
-    {"strlen", 2, 2, 0},        {"mget", 2, -1, 0},
-    {"mset", 3, -1, 1},         {"expire", 3, 3, 0},
-    {"pexpire", 3, 3, 0},       {"expireat", 3, 3, 0},
-    {"pexpireat", 3, 3, 0},     {"ttl", 2, 2, 0},
-    {"pttl", 2, 2, 0},          {"persist", 2, 2, 0},
-    {"dbsize", 1, 1, 0},        {"flushdb", 1, 1, 0},
-    {"config", 2, -1, 0},       {"info", 1, 1, 0},
-    {"hset", 4, -1, 2},         {"hmset", 4, -1, 2},
-    {"hget", 3, 3, 0},          {"hdel", 2, -1, 0},
-    {"hexists", 3, 3, 0},       {"hlen", 2, 2, 0},
-    {"hgetall", 2, 2, 0},       {"hkeys", 2, 2, 0},
-    {"hvals", 2, 2, 0},         {"hmget", 3, -1, 0},
-    {"hincrby", 4, 4, 0},       {"hsetnx", 4, 4, 0},
-    {"lpush", 3, -1, 0},        {"rpush", 3, -1, 0},
-    {"lpushx", 3, -1, 0},       {"rpushx", 3, -1, 0},
-    {"lpop", 2, 2, 0},          {"rpop", 2, 2, 0},
-    {"llen", 2, 2, 0},          {"lrange", 4, 4, 0},
-    {"lindex", 3, 3, 0},        {"lset", 4, 4, 0},
-    {"sadd", 3, -1, 0},         {"srem", 3, -1, 0},
-    {"sismember", 3, 3, 0},     {"smismember", 3, -1, 0},
-    {"scard", 2, 2, 0},         {"smembers", 2, 2, 0},
-    {"spop", 2, 3, 0},          {"srandmember", 2, 3, 0},
-    {"smove", 4, 4, 0},         {"sinter", 2, -1, 0},
-    {"sunion", 2, -1, 0},       {"sdiff", 2, -1, 0},
-    {"zadd", 4, -1, 2},         {"zscore", 3, 3, 0},
-    {"zcard", 2, 2, 0},         {"zincrby", 4, 4, 0},
-    {"zrem", 3, -1, 0},         {"zrange", 4, 5, 0},
-    {"zrevrange", 4, 5, 0},     {"zrank", 3, 3, 0},
-    {"zrevrank", 3, 3, 0},      {"zcount", 4, 4, 0},
-    {"zrangebyscore", 4, -1, 0},{"zremrangebyscore", 4, 4, 0},
-    {"multi", 1, 1, 0},         {"exec", 1, 1, 0},
-    {"discard", 1, 1, 0},       {"watch", 2, -1, 0},
-    {"unwatch", 1, 1, 0},       {"subscribe", 2, -1, 0},
-    {"unsubscribe", 1, -1, 0},  {"publish", 3, 3, 0},
-    {"quit", 1, 1, 0},
-    {"sync", 1, 1, 0},
-    {"replicaof", 3, 3, 0},
-    {"save", 1, 1, 0},
-    {"lastsave", 1, 1, 0},
-    {"shutdown", 1, 1, 0},
-    {"cluster", 2, -1, 0},
+/* Unified command metadata. IDs are assigned in this table order and must
+ * remain stable (used for AOF/replication/serialization). */
+typedef struct cmd_entry {
+    const char *name;
+    uint16_t    id;
+    int         min_argc;
+    int         max_argc;   /* -1 = unbounded */
+    int         parity;     /* 0 any, 1 odd, 2 even */
+    uint8_t     flags;
+} cmd_entry;
+
+static const cmd_entry CMD_TABLE[] = {
+    {"ping", CMD_PING, 1, 2, 0, 0},
+    {"echo", CMD_ECHO, 2, 2, 0, 0},
+    {"get", CMD_GET, 2, 2, 0, 0},
+    {"set", CMD_SET, 3, -1, 0, CMD_WRITE},
+    {"dump", CMD_DUMP, 2, 2, 0, 0},
+    {"restore", CMD_RESTORE, 4, 5, 0, CMD_WRITE},
+    {"migrate", CMD_MIGRATE, 6, -1, 0, CMD_WRITE},
+    {"asking", CMD_ASKING, 1, 1, 0, 0},
+    {"del", CMD_DEL, 2, -1, 0, CMD_WRITE},
+    {"unlink", CMD_UNLINK, 2, -1, 0, CMD_WRITE},
+    {"exists", CMD_EXISTS, 2, -1, 0, 0},
+    {"incr", CMD_INCR, 2, 2, 0, CMD_WRITE},
+    {"decr", CMD_DECR, 2, 2, 0, CMD_WRITE},
+    {"append", CMD_APPEND, 3, 3, 0, CMD_WRITE},
+    {"strlen", CMD_STRLEN, 2, 2, 0, 0},
+    {"mget", CMD_MGET, 2, -1, 0, 0},
+    {"mset", CMD_MSET, 3, -1, 1, CMD_WRITE},
+    {"expire", CMD_EXPIRE, 3, 3, 0, CMD_WRITE},
+    {"pexpire", CMD_PEXPIRE, 3, 3, 0, CMD_WRITE},
+    {"expireat", CMD_EXPIREAT, 3, 3, 0, CMD_WRITE},
+    {"pexpireat", CMD_PEXPIREAT, 3, 3, 0, CMD_WRITE},
+    {"ttl", CMD_TTL, 2, 2, 0, 0},
+    {"pttl", CMD_PTTL, 2, 2, 0, 0},
+    {"persist", CMD_PERSIST, 2, 2, 0, CMD_WRITE},
+    {"dbsize", CMD_DBSIZE, 1, 1, 0, 0},
+    {"flushdb", CMD_FLUSHDB, 1, 1, 0, CMD_WRITE},
+    {"config", CMD_CONFIG, 2, -1, 0, 0},
+    {"info", CMD_INFO, 1, 1, 0, 0},
+    {"hset", CMD_HSET, 4, -1, 2, CMD_WRITE},
+    {"hmset", CMD_HMSET, 4, -1, 2, CMD_WRITE},
+    {"hget", CMD_HGET, 3, 3, 0, 0},
+    {"hdel", CMD_HDEL, 2, -1, 0, CMD_WRITE},
+    {"hexists", CMD_HEXISTS, 3, 3, 0, 0},
+    {"hlen", CMD_HLEN, 2, 2, 0, 0},
+    {"hgetall", CMD_HGETALL, 2, 2, 0, 0},
+    {"hkeys", CMD_HKEYS, 2, 2, 0, 0},
+    {"hvals", CMD_HVALS, 2, 2, 0, 0},
+    {"hmget", CMD_HMGET, 3, -1, 0, 0},
+    {"hincrby", CMD_HINCRBY, 4, 4, 0, CMD_WRITE},
+    {"hsetnx", CMD_HSETNX, 4, 4, 0, CMD_WRITE},
+    {"lpush", CMD_LPUSH, 3, -1, 0, CMD_WRITE},
+    {"rpush", CMD_RPUSH, 3, -1, 0, CMD_WRITE},
+    {"lpushx", CMD_LPUSHX, 3, -1, 0, CMD_WRITE},
+    {"rpushx", CMD_RPUSHX, 3, -1, 0, CMD_WRITE},
+    {"lpop", CMD_LPOP, 2, 2, 0, CMD_WRITE},
+    {"rpop", CMD_RPOP, 2, 2, 0, CMD_WRITE},
+    {"llen", CMD_LLEN, 2, 2, 0, 0},
+    {"lrange", CMD_LRANGE, 4, 4, 0, 0},
+    {"lindex", CMD_LINDEX, 3, 3, 0, 0},
+    {"lset", CMD_LSET, 4, 4, 0, CMD_WRITE},
+    {"sadd", CMD_SADD, 3, -1, 0, CMD_WRITE},
+    {"srem", CMD_SREM, 3, -1, 0, CMD_WRITE},
+    {"sismember", CMD_SISMEMBER, 3, 3, 0, 0},
+    {"smismember", CMD_SMISMEMBER, 3, -1, 0, 0},
+    {"scard", CMD_SCARD, 2, 2, 0, 0},
+    {"smembers", CMD_SMEMBERS, 2, 2, 0, 0},
+    {"spop", CMD_SPOP, 2, 3, 0, CMD_WRITE},
+    {"srandmember", CMD_SRANDMEMBER, 2, 3, 0, 0},
+    {"smove", CMD_SMOVE, 4, 4, 0, CMD_WRITE},
+    {"sinter", CMD_SINTER, 2, -1, 0, 0},
+    {"sunion", CMD_SUNION, 2, -1, 0, 0},
+    {"sdiff", CMD_SDIFF, 2, -1, 0, 0},
+    {"zadd", CMD_ZADD, 4, -1, 2, CMD_WRITE},
+    {"zscore", CMD_ZSCORE, 3, 3, 0, 0},
+    {"zcard", CMD_ZCARD, 2, 2, 0, 0},
+    {"zincrby", CMD_ZINCRBY, 4, 4, 0, CMD_WRITE},
+    {"zrem", CMD_ZREM, 3, -1, 0, CMD_WRITE},
+    {"zrange", CMD_ZRANGE, 4, 5, 0, 0},
+    {"zrevrange", CMD_ZREVRANGE, 4, 5, 0, 0},
+    {"zrank", CMD_ZRANK, 3, 3, 0, 0},
+    {"zrevrank", CMD_ZREVRANK, 3, 3, 0, 0},
+    {"zcount", CMD_ZCOUNT, 4, 4, 0, 0},
+    {"zrangebyscore", CMD_ZRANGEBYSCORE, 4, -1, 0, 0},
+    {"zremrangebyscore", CMD_ZREMRANGEBYSCORE, 4, 4, 0, CMD_WRITE},
+    {"multi", CMD_MULTI, 1, 1, 0, 0},
+    {"exec", CMD_EXEC, 1, 1, 0, 0},
+    {"discard", CMD_DISCARD, 1, 1, 0, 0},
+    {"watch", CMD_WATCH, 2, -1, 0, 0},
+    {"unwatch", CMD_UNWATCH, 1, 1, 0, 0},
+    {"subscribe", CMD_SUBSCRIBE, 2, -1, 0, 0},
+    {"unsubscribe", CMD_UNSUBSCRIBE, 1, -1, 0, 0},
+    {"publish", CMD_PUBLISH, 3, 3, 0, CMD_WRITE},
+    {"quit", CMD_QUIT, 1, 1, 0, 0},
+    {"sync", CMD_SYNC, 1, 1, 0, 0},
+    {"replicaof", CMD_REPLICAOF, 3, 3, 0, CMD_WRITE},
+    {"save", CMD_SAVE, 1, 1, 0, CMD_WRITE},
+    {"lastsave", CMD_LASTSAVE, 1, 1, 0, 0},
+    {"shutdown", CMD_SHUTDOWN, 1, 1, 0, 0},
+    {"cluster", CMD_CLUSTER, 2, -1, 0, 0},
 };
+
+/* ------------------------------------------------------------------ */
+/* Command name -> stable ID hash table                               */
+/* ------------------------------------------------------------------ */
+
+#define CMD_HASH_SIZE 256
+
+typedef struct cmd_hash_slot {
+    const char *name;
+    uint8_t nlen;
+    uint16_t id;
+} cmd_hash_slot;
+
+static cmd_hash_slot cmd_hash[CMD_HASH_SIZE];
+static int cmd_hash_inited = 0;
+
+static uint32_t cmd_hash_fn(const char *s, size_t len)
+{
+    uint32_t h = 2166136261u;
+    size_t i;
+    for (i = 0; i < len; i++) {
+        unsigned char c = (unsigned char)s[i];
+        if (c >= 'A' && c <= 'Z') c += ('a' - 'A');
+        h ^= c;
+        h *= 16777619u;
+    }
+    return h;
+}
+
+static void cmd_hash_init(void)
+{
+    size_t i;
+    if (cmd_hash_inited) return;
+    memset(cmd_hash, 0, sizeof(cmd_hash));
+    for (i = 0; i < sizeof(CMD_TABLE) / sizeof(CMD_TABLE[0]); i++) {
+        const cmd_entry *e = &CMD_TABLE[i];
+        uint32_t h = cmd_hash_fn(e->name, strlen(e->name));
+        size_t idx = h & (CMD_HASH_SIZE - 1);
+        while (cmd_hash[idx].id != 0)
+            idx = (idx + 1) & (CMD_HASH_SIZE - 1);
+        cmd_hash[idx].name = e->name;
+        cmd_hash[idx].nlen = (uint8_t)strlen(e->name);
+        cmd_hash[idx].id = e->id;
+    }
+    cmd_hash_inited = 1;
+}
+
+uint16_t cmd_resolve(const char *name, size_t len)
+{
+    uint32_t h;
+    size_t idx;
+    if (!cmd_hash_inited) cmd_hash_init();
+    if (len == 0 || len > 255) return CMD_ID_UNKNOWN;
+    h = cmd_hash_fn(name, len);
+    idx = h & (CMD_HASH_SIZE - 1);
+    while (cmd_hash[idx].id != 0) {
+        if (cmd_hash[idx].nlen == (uint8_t)len &&
+            ci_equal(name, len, cmd_hash[idx].name))
+            return cmd_hash[idx].id;
+        idx = (idx + 1) & (CMD_HASH_SIZE - 1);
+    }
+    return CMD_ID_UNKNOWN;
+}
+
+int cmd_is_write(uint16_t cmd_id)
+{
+    if (cmd_id == 0 || cmd_id > (uint16_t)(sizeof(CMD_TABLE) / sizeof(CMD_TABLE[0])))
+        return 0;
+    return (CMD_TABLE[cmd_id - 1].flags & CMD_WRITE) != 0;
+}
+
+int cmd_min_argc(uint16_t cmd_id)
+{
+    if (cmd_id == 0 || cmd_id > (uint16_t)(sizeof(CMD_TABLE) / sizeof(CMD_TABLE[0])))
+        return -1;
+    return CMD_TABLE[cmd_id - 1].min_argc;
+}
+
+int cmd_max_argc(uint16_t cmd_id)
+{
+    if (cmd_id == 0 || cmd_id > (uint16_t)(sizeof(CMD_TABLE) / sizeof(CMD_TABLE[0])))
+        return -1;
+    return CMD_TABLE[cmd_id - 1].max_argc;
+}
+
+int cmd_parity(uint16_t cmd_id)
+{
+    if (cmd_id == 0 || cmd_id > (uint16_t)(sizeof(CMD_TABLE) / sizeof(CMD_TABLE[0])))
+        return 0;
+    return CMD_TABLE[cmd_id - 1].parity;
+}
 
 /* Queue-time check: unknown command or bad arity writes the error reply,
  * flags multi_error and returns -1; 0 = queueable. */
@@ -3965,34 +4088,34 @@ static int queue_validate(session *s, const resp_value *argv, size_t argc,
 {
     const char *name;
     size_t nlen;
-    size_t i;
+    uint16_t cmd_id;
+    const cmd_entry *ce;
     if (!arg_str(&argv[0], &name, &nlen)) {
         s->multi_error = 1;
         resp_write_error(out, "ERR invalid command name", 23);
         return -1;
     }
-    for (i = 0; i < sizeof(CMD_ARITY) / sizeof(CMD_ARITY[0]); i++) {
-        const cmd_arity *ca = &CMD_ARITY[i];
-        if (!ci_equal(name, nlen, ca->name))
-            continue;
-        if ((int)argc < ca->min_argc ||
-            (ca->max_argc >= 0 && (int)argc > ca->max_argc) ||
-            (ca->parity == 1 && argc % 2 == 0) ||
-            (ca->parity == 2 && argc % 2 == 1)) {
-            s->multi_error = 1;
-            wrong_args(out, ca->name);
-            return -1;
+    cmd_id = cmd_resolve(name, nlen);
+    if (cmd_id == CMD_ID_UNKNOWN) {
+        s->multi_error = 1;
+        {
+            char msg[128];
+            int n = snprintf(msg, sizeof(msg), "ERR unknown command '%.*s'",
+                             (int)nlen, name);
+            resp_write_error(out, msg, (size_t)n);
         }
-        return 0;
+        return -1;
     }
-    s->multi_error = 1;
-    {
-        char msg[128];
-        int n = snprintf(msg, sizeof(msg), "ERR unknown command '%.*s'",
-                         (int)nlen, name);
-        resp_write_error(out, msg, (size_t)n);
+    ce = &CMD_TABLE[cmd_id - 1];
+    if ((int)argc < ce->min_argc ||
+        (ce->max_argc >= 0 && (int)argc > ce->max_argc) ||
+        (ce->parity == 1 && argc % 2 == 0) ||
+        (ce->parity == 2 && argc % 2 == 1)) {
+        s->multi_error = 1;
+        wrong_args(out, ce->name);
+        return -1;
     }
-    return -1;
+    return 0;
 }
 
 /* EXEC: replay the queue (or abort / null-array on dirty watch). */

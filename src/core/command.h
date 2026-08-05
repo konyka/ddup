@@ -89,4 +89,111 @@ size_t db_active_expire(db *d, uint64_t now_ms, int max_samples);
 void command_execute(db *d, const resp_value *argv, size_t argc,
                      resp_buf *out);
 
+/* ------------------------------------------------------------------ */
+/* Command ID table                                                   */
+/* ------------------------------------------------------------------ */
+
+#define CMD_ID_UNKNOWN 0
+
+enum {
+    CMD_PING = 1,
+    CMD_ECHO,
+    CMD_GET,
+    CMD_SET,
+    CMD_DUMP,
+    CMD_RESTORE,
+    CMD_MIGRATE,
+    CMD_ASKING,
+    CMD_DEL,
+    CMD_UNLINK,
+    CMD_EXISTS,
+    CMD_INCR,
+    CMD_DECR,
+    CMD_APPEND,
+    CMD_STRLEN,
+    CMD_MGET,
+    CMD_MSET,
+    CMD_EXPIRE,
+    CMD_PEXPIRE,
+    CMD_EXPIREAT,
+    CMD_PEXPIREAT,
+    CMD_TTL,
+    CMD_PTTL,
+    CMD_PERSIST,
+    CMD_DBSIZE,
+    CMD_FLUSHDB,
+    CMD_CONFIG,
+    CMD_INFO,
+    CMD_HSET,
+    CMD_HMSET,
+    CMD_HGET,
+    CMD_HDEL,
+    CMD_HEXISTS,
+    CMD_HLEN,
+    CMD_HGETALL,
+    CMD_HKEYS,
+    CMD_HVALS,
+    CMD_HMGET,
+    CMD_HINCRBY,
+    CMD_HSETNX,
+    CMD_LPUSH,
+    CMD_RPUSH,
+    CMD_LPUSHX,
+    CMD_RPUSHX,
+    CMD_LPOP,
+    CMD_RPOP,
+    CMD_LLEN,
+    CMD_LRANGE,
+    CMD_LINDEX,
+    CMD_LSET,
+    CMD_SADD,
+    CMD_SREM,
+    CMD_SISMEMBER,
+    CMD_SMISMEMBER,
+    CMD_SCARD,
+    CMD_SMEMBERS,
+    CMD_SPOP,
+    CMD_SRANDMEMBER,
+    CMD_SMOVE,
+    CMD_SINTER,
+    CMD_SUNION,
+    CMD_SDIFF,
+    CMD_ZADD,
+    CMD_ZSCORE,
+    CMD_ZCARD,
+    CMD_ZINCRBY,
+    CMD_ZREM,
+    CMD_ZRANGE,
+    CMD_ZREVRANGE,
+    CMD_ZRANK,
+    CMD_ZREVRANK,
+    CMD_ZCOUNT,
+    CMD_ZRANGEBYSCORE,
+    CMD_ZREMRANGEBYSCORE,
+    CMD_MULTI,
+    CMD_EXEC,
+    CMD_DISCARD,
+    CMD_WATCH,
+    CMD_UNWATCH,
+    CMD_SUBSCRIBE,
+    CMD_UNSUBSCRIBE,
+    CMD_PUBLISH,
+    CMD_QUIT,
+    CMD_SYNC,
+    CMD_REPLICAOF,
+    CMD_SAVE,
+    CMD_LASTSAVE,
+    CMD_SHUTDOWN,
+    CMD_CLUSTER
+};
+
+/* Resolve a command name to its stable ID; case-insensitive. */
+uint16_t cmd_resolve(const char *name, size_t len);
+
+/* Helpers that index the command table by ID (O(1)). */
+int cmd_is_write(uint16_t cmd_id);
+int cmd_min_argc(uint16_t cmd_id);
+int cmd_max_argc(uint16_t cmd_id);
+int cmd_parity(uint16_t cmd_id);
+
 #endif /* DDUP_COMMAND_H */
