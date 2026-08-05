@@ -108,6 +108,8 @@ static void *mt_queue_pop(mt_queue *q)
 
 typedef struct worker worker;
 
+typedef struct mt_agg mt_agg;
+
 typedef struct mt_task {
     struct mt_task *next; /* reorder-buffer link (queue nodes wrap tasks) */
     void *conn;           /* home connection (opaque, home-thread only) */
@@ -116,7 +118,21 @@ typedef struct mt_task {
     resp_value *argv;     /* deep-copied command (routed tasks only) */
     size_t argc;
     resp_buf reply;       /* filled by the executing worker */
+    mt_agg *agg;          /* broadcast group this task is a part of (or NULL) */
 } mt_task;
+
+/* Broadcast group for aggregate commands (DBSIZE/FLUSHDB): the home worker
+ * fans one sub-task out to every other worker, accumulates the parts and
+ * produces the final reply once all parts arrived. Only ever touched on the
+ * home worker thread. */
+struct mt_agg {
+    void *conn;
+    worker *home;
+    uint64_t seq;
+    uint16_t cmd;
+    int pending;   /* parts still awaited */
+    long long sum; /* DBSIZE accumulation */
+};
 
 /* Per-conn routing state (stored via server_conn_set_mt_state). */
 typedef struct mt_conn_state {
@@ -223,6 +239,37 @@ static void mt_state_free_cb(void *ctx, void *ptr)
         mt_task_free(t);
     }
     free(st);
+}
+
+/* Accumulate one part of a broadcast reply (home thread only). */
+static void mt_agg_accumulate(mt_agg *agg, const resp_buf *part)
+{
+    if (agg->cmd == CMD_DBSIZE && part->data != NULL && part->len > 2 &&
+        part->data[0] == ':')
+        agg->sum += strtoll(part->data + 1, NULL, 10);
+    /* FLUSHDB parts are "+OK"; nothing to accumulate. */
+}
+
+/* All parts arrived: build the aggregated reply and queue it in pipeline
+ * order (home thread only). */
+static void mt_agg_finish(server *srv, void *conn, mt_conn_state *st,
+                          mt_agg *agg)
+{
+    mt_task *fin = mt_task_new(conn, agg->home, agg->seq, NULL, 0);
+    if (fin != NULL) {
+        if (agg->cmd == CMD_DBSIZE)
+            resp_write_integer(&fin->reply, agg->sum);
+        else
+            resp_write_simple_string(&fin->reply, "OK", 2);
+        mt_reorder_insert(st, fin);
+        if (server_conn_mt_is_zombie(conn)) {
+            mt_drain_ready(srv, conn, st, 0);
+        } else {
+            mt_drain_ready(srv, conn, st, 1);
+            (void)server_conn_flush(srv, conn);
+        }
+    }
+    free(agg);
 }
 
 /* ------------------------------------------------------------------ */
@@ -427,6 +474,73 @@ struct mt_server {
     volatile int running;
 };
 
+/* Aggregate commands (DBSIZE sum, FLUSHDB broadcast): run the home part
+ * inline, fan sub-tasks out to every other worker and finish when all
+ * parts arrived. Runs on the home worker thread. */
+static int mt_route_aggregate(worker *home, void *conn,
+                              const resp_value *argv, size_t argc,
+                              uint16_t cmd)
+{
+    mt_conn_state *st = (mt_conn_state *)server_conn_mt_state(conn);
+    mt_agg *agg;
+    resp_buf local;
+    uint64_t seq;
+    int i;
+
+    if (st == NULL) {
+        st = (mt_conn_state *)calloc(1, sizeof(*st));
+        if (st == NULL)
+            return 0;
+        server_conn_set_mt_state(conn, st);
+    }
+    seq = st->seq_next++;
+
+    agg = (mt_agg *)calloc(1, sizeof(*agg));
+    if (agg == NULL) {
+        /* OOM: degrade to the home-worker answer. */
+        resp_buf_init(&local);
+        command_execute_at(server_db(home->srv), argv, argc, &local,
+                           pal_wall_ms());
+        server_conn_out_append(home->srv, conn, local.data, local.len);
+        resp_buf_free(&local);
+        st->seq_write++;
+        return 1;
+    }
+    agg->conn = conn;
+    agg->home = home;
+    agg->seq = seq;
+    agg->cmd = cmd;
+    agg->pending = home->ms->nworkers - 1;
+
+    /* home part */
+    resp_buf_init(&local);
+    command_execute_at(server_db(home->srv), argv, argc, &local,
+                       pal_wall_ms());
+    mt_agg_accumulate(agg, &local);
+    resp_buf_free(&local);
+
+    /* fan out */
+    for (i = 0; i < home->ms->nworkers; i++) {
+        mt_task *t;
+        if (i == home->id)
+            continue;
+        t = mt_task_new(conn, home, seq, argv, argc);
+        if (t != NULL)
+            t->agg = agg;
+        if (t == NULL || mt_queue_push(&home->ms->workers[i].inbox, t) != 0) {
+            if (t != NULL)
+                mt_task_free(t);
+            agg->pending--;
+            continue;
+        }
+        server_conn_mt_inc(conn);
+        (void)pal_wakeup_kick(&home->ms->workers[i].wakeup);
+    }
+    if (agg->pending == 0)
+        mt_agg_finish(home->srv, conn, st, agg);
+    return 1;
+}
+
 /* Router installed on every worker's server. Runs on the home worker thread
  * inside conn_process_input. Returns non-zero when the command was handled
  * (locally, blocked, or forwarded). */
@@ -445,6 +559,8 @@ static int mt_route(void *ctx, void *conn, session *sess,
     if (argc == 0 || argv[0].str == NULL)
         return 0;
     cmd = cmd_resolve(argv[0].str, argv[0].len);
+    if (cmd == CMD_DBSIZE || cmd == CMD_FLUSHDB)
+        return mt_route_aggregate(home, conn, argv, argc, cmd);
     target = mt_classify(home->ms->nworkers, cmd, argv, argc);
     if (target == MT_PASS)
         return 0; /* legacy inline path (SINTER/SUNION/SDIFF for now) */
@@ -550,6 +666,21 @@ static void worker_on_wakeup(void *ctx)
             break;
         conn = t->conn;
         st = (mt_conn_state *)server_conn_mt_state(conn);
+        if (t->agg != NULL) {
+            /* broadcast part: accumulate and finish when complete */
+            mt_agg *agg = t->agg;
+            mt_agg_accumulate(agg, &t->reply);
+            mt_task_free(t);
+            agg->pending--;
+            if (agg->pending == 0) {
+                if (st != NULL)
+                    mt_agg_finish(w->srv, conn, st, agg);
+                else
+                    free(agg);
+            }
+            server_conn_mt_dec(w->srv, conn);
+            continue;
+        }
         if (st != NULL) {
             mt_reorder_insert(st, t);
             if (server_conn_mt_is_zombie(conn)) {

@@ -333,6 +333,49 @@ static void test_smove_same_worker(void)
     pal_socket_cleanup();
 }
 
+static void test_aggregate_dbsize_and_flushdb(void)
+{
+    mt_server *ms;
+    pal_socket_t a, b;
+    char k0[32], k1[32];
+    char req[192];
+
+    DD_CHECK_EQ_INT(0, pal_socket_init());
+    pick_key_for_worker(0, 2, k0, sizeof(k0));
+    pick_key_for_worker(1, 2, k1, sizeof(k1));
+
+    ms = mt_server_create("127.0.0.1", 0, 2);
+    DD_CHECK(ms != NULL);
+    DD_CHECK_EQ_INT(0, mt_server_start(ms));
+    a = connect_client(mt_server_port(ms)); /* -> worker 0 */
+    b = connect_client(mt_server_port(ms)); /* -> worker 1 */
+
+    /* one key on each worker */
+    snprintf(req, sizeof(req), "*3\r\n$3\r\nSET\r\n$%zu\r\n%s\r\n$1\r\nx\r\n",
+             strlen(k0), k0);
+    roundtrip(a, req, "+OK\r\n");
+    snprintf(req, sizeof(req), "*3\r\n$3\r\nSET\r\n$%zu\r\n%s\r\n$1\r\ny\r\n",
+             strlen(k1), k1);
+    roundtrip(b, req, "+OK\r\n");
+
+    /* DBSIZE aggregates across workers, regardless of the connection's home. */
+    roundtrip(a, "*1\r\n$6\r\nDBSIZE\r\n", ":2\r\n");
+    roundtrip(b, "*1\r\n$6\r\nDBSIZE\r\n", ":2\r\n");
+
+    /* FLUSHDB broadcasts to every worker. */
+    roundtrip(b, "*1\r\n$7\r\nFLUSHDB\r\n", "+OK\r\n");
+    roundtrip(a, "*1\r\n$6\r\nDBSIZE\r\n", ":0\r\n");
+    snprintf(req, sizeof(req), "*2\r\n$3\r\nGET\r\n$%zu\r\n%s\r\n", strlen(k0),
+             k0);
+    roundtrip(b, req, "$-1\r\n");
+
+    pal_close(a);
+    pal_close(b);
+    mt_server_stop(ms);
+    mt_server_destroy(ms);
+    pal_socket_cleanup();
+}
+
 static void test_many_connections_across_workers(void)
 {
     mt_server *ms;
@@ -363,6 +406,7 @@ int main(void)
     DD_RUN(test_multikey_same_worker);
     DD_RUN(test_multikey_crossslot_rejected);
     DD_RUN(test_smove_same_worker);
+    DD_RUN(test_aggregate_dbsize_and_flushdb);
     DD_RUN(test_many_connections_across_workers);
     return DD_TEST_SUMMARY();
 }
