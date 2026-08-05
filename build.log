@@ -11,7 +11,7 @@ MSBuild version 18.8.2+ce25c0108 for .NET Framework
   arena.c
   rhtable.c
   command.c
-  obj.c
+  buf_pool.c
 D:\a\ddup\ddup\src\core\command.c(1184,25): warning C4457: declaration of 's' hides function parameter [D:\a\ddup\ddup\build\ddup_core.vcxproj]
       D:\a\ddup\ddup\src\core\command.c(1151,39):
       see declaration of 's'
@@ -68,6 +68,7 @@ D:\a\ddup\ddup\src\core\command.c(2695,26): warning C4457: declaration of 's' hi
       D:\a\ddup\ddup\src\core\command.c(1151,39):
       see declaration of 's'
   
+  obj.c
   skiplist.c
   session.c
   config.c
@@ -77,8 +78,8 @@ D:\a\ddup\ddup\src\core\command.c(2695,26): warning C4457: declaration of 's' hi
   hashslot.c
   cluster.c
   resp_parser.c
-  resp_writer.c
   Compiling...
+  resp_writer.c
   server.c
   aof.c
   repl.c
@@ -221,6 +222,13 @@ D:\a\ddup\ddup\tests\test_arena.c(20,5): warning C4310: cast truncates constant 
   All 16 functions were compiled because no usable IPDB/IOBJ from previous compilation was found.
   Finished generating code
   test_arena.vcxproj -> D:\a\ddup\ddup\build\Release\test_arena.exe
+  Building Custom Rule D:/a/ddup/ddup/CMakeLists.txt
+  test_buf_pool.c
+  Generating code
+  Previous IPDB not found, fall back to full compilation.
+  All 13 functions were compiled because no usable IPDB/IOBJ from previous compilation was found.
+  Finished generating code
+  test_buf_pool.vcxproj -> D:\a\ddup\ddup\build\Release\test_buf_pool.exe
   Building Custom Rule D:/a/ddup/ddup/CMakeLists.txt
   test_cluster_bus.c
   Generating code
