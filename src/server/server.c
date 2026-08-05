@@ -148,6 +148,10 @@ struct server {
     size_t cap;
     uint16_t port;
     uint64_t last_active_expire; /* pal_now_ms of the last active cycle */
+    /* mt_server wakeup fd (readiness backend only) */
+    pal_socket_t wakeup_fd;
+    void (*wakeup_cb)(void *ctx);
+    void *wakeup_ctx;
 };
 
 static void conn_close(server *s, size_t idx);
@@ -663,6 +667,7 @@ server *server_create_ex(const char *host, uint16_t port, int backend)
     s->listen_fd = PAL_SOCKET_INVALID;
     s->tls_listen_fd = PAL_SOCKET_INVALID;
     s->bus_listen_fd = PAL_SOCKET_INVALID;
+    s->wakeup_fd = PAL_SOCKET_INVALID;
     s->node_timeout_ms = 15000;
     s->backend = backend;
     s->loop = pal_loop_create();
@@ -905,6 +910,60 @@ void server_destroy(server *s)
 /* ------------------------------------------------------------------ */
 /* connection lifecycle                                               */
 /* ------------------------------------------------------------------ */
+
+void server_close_listener(server *s)
+{
+    if (s->listen_fd == PAL_SOCKET_INVALID)
+        return;
+    if (s->loop != NULL && s->backend != SERVER_BACKEND_IOCP)
+        (void)pal_loop_del(s->loop, s->listen_fd);
+    pal_close(s->listen_fd);
+    s->listen_fd = PAL_SOCKET_INVALID;
+}
+
+int server_adopt_fd(server *s, pal_socket_t fd)
+{
+    conn *c;
+    (void)pal_set_tcp_nodelay(fd, 1);
+    if (pal_set_nonblocking(fd, 1) != 0) {
+        pal_close(fd);
+        return -1;
+    }
+    c = conn_create(s, fd);
+    if (c == NULL) {
+        pal_close(fd);
+        return -1;
+    }
+    if (s->nconns == s->cap) {
+        size_t ncap = s->cap == 0 ? 16 : s->cap * 2;
+        conn **nc = (conn **)realloc(s->conns, ncap * sizeof(*nc));
+        if (nc == NULL) {
+            conn_free(c);
+            return -1;
+        }
+        s->conns = nc;
+        s->cap = ncap;
+    }
+    s->conns[s->nconns++] = c;
+    if (pal_loop_add(s->loop, fd, 1, 0, c) != 0) {
+        conn_close(s, s->nconns - 1);
+        return -1;
+    }
+    return 0;
+}
+
+int server_set_wakeup(server *s, pal_socket_t fd, void (*cb)(void *ctx),
+                      void *ctx)
+{
+    if (s->backend == SERVER_BACKEND_IOCP)
+        return -1; /* mt_server currently uses the readiness backend only */
+    if (pal_loop_add(s->loop, fd, 1, 0, NULL) != 0)
+        return -1;
+    s->wakeup_fd = fd;
+    s->wakeup_cb = cb;
+    s->wakeup_ctx = ctx;
+    return 0;
+}
 
 static void server_accept(server *s, pal_socket_t lfd, int use_tls)
 {
@@ -1551,6 +1610,12 @@ int server_run_once(server *s, int timeout_ms)
         return nev;
 
     for (i = 0; i < nev; i++) {
+        if (s->wakeup_fd != PAL_SOCKET_INVALID &&
+            evs[i].fd == s->wakeup_fd) {
+            if (s->wakeup_cb != NULL)
+                s->wakeup_cb(s->wakeup_ctx);
+            continue;
+        }
         if (evs[i].fd == s->listen_fd) {
             server_accept(s, s->listen_fd, 0);
             continue;

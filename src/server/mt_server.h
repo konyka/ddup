@@ -1,0 +1,30 @@
+/* mt_server.h - thread-per-core server (shared-nothing worker pool).
+ *
+ * One acceptor thread owns the public listener and hands accepted fds to
+ * worker threads round-robin. Each worker runs an independent readiness
+ * event loop with its own db and buffer pool. Cross-worker key routing is
+ * layered on top of this skeleton (later milestone).
+ */
+#ifndef DDUP_MT_SERVER_H
+#define DDUP_MT_SERVER_H
+
+#include <stdint.h>
+
+typedef struct mt_server mt_server;
+
+/* Create the listener and worker pool (does not start any thread).
+ * nworkers >= 1. Returns NULL on failure. */
+mt_server *mt_server_create(const char *host, uint16_t port, int nworkers);
+
+/* Actual bound port. */
+uint16_t mt_server_port(const mt_server *ms);
+
+/* Spawn the acceptor and worker threads. Returns 0 on success. */
+int mt_server_start(mt_server *ms);
+
+/* Stop all threads (joins them). Safe to call once before destroy. */
+void mt_server_stop(mt_server *ms);
+
+void mt_server_destroy(mt_server *ms);
+
+#endif /* DDUP_MT_SERVER_H */

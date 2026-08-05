@@ -10,6 +10,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "pal/pal_socket.h"
+
 typedef struct server server;
 typedef struct buf_pool buf_pool;
 
@@ -71,6 +73,18 @@ void server_set_backlog_size(server *s, size_t bytes);
  * accept new connections and service ready ones. Returns the number of
  * readiness events handled (0 = timeout). */
 int server_run_once(server *s, int timeout_ms);
+
+/* mt_server support (readiness backend only):
+ * - server_close_listener detaches and closes the public listener so the
+ *   server only services adopted connections.
+ * - server_adopt_fd registers an already-connected fd (non-blocking is set
+ *   here; TCP_NODELAY is applied) as a new connection.
+ * - server_set_wakeup registers an extra fd in the loop; when readable the
+ *   callback runs inside server_run_once. */
+void server_close_listener(server *s);
+int server_adopt_fd(server *s, pal_socket_t fd);
+int server_set_wakeup(server *s, pal_socket_t fd, void (*cb)(void *ctx),
+                      void *ctx);
 
 /* Buffer-pool introspection (used by integration tests). */
 const buf_pool *server_buf_pool(const server *s);
