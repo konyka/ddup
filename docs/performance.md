@@ -41,6 +41,16 @@
 | 2026-08-05 | Phase 9 命令 ID 表 + 缓冲池 | buf_pool get/put（64 KiB） | 同上 | ~3.92G ops/s | - | 热缓存下单线程借/还，零系统调用路径 |
 | 2026-08-05 | Phase 9 命令 ID 表 + 缓冲池（强制 C99） | bench_core SET / GET | 同上，-DDDUP_C_STD_FORCE=99 | 3.62M / 5.82M / 5.50M ops/s | - | 与 C23 同量级，在测量噪声范围内 |
 | 2026-08-05 | Phase 9 命令 ID 表 + 缓冲池（强制 C99） | cmd_resolve / buf_pool 64 KiB | 同上 | 81.3M / ~3.92G ops/s | - | 同上 |
+| 2026-08-05 | Phase 10 SIMD RESP 解析 + socket 调优 | bench_core SET / GET（20 万命令） | Windows 11, clang 22.1.6, -O3+LTO | 3.35M / 5.98M / 6.05M ops/s | - | 含 SIMD find_crlf；与 Phase 9 同量级 |
+| 2026-08-05 | Phase 10 SIMD RESP 解析 + socket 调优 | bench_core parse-only SET / GET | 同上 | 30.7M / 42.4M ops/s | - | 仅解析，不含 dispatch/storage；解析器余量充足 |
+| 2026-08-05 | Phase 10 SIMD RESP 解析 + socket 调优 | cmd_resolve / buf_pool 64 KiB | 同上 | 82.5M / ~3.45G ops/s | - | 与 Phase 9 持平 |
+| 2026-08-05 | Phase 10 SIMD RESP 解析 + socket 调优 | 服务器 SET/GET（run_bench，默认 IOCP） | 同上，loopback，-n 100000 -c 50 -P 16 | 313k / 392k req/s | - | TCP_NODELAY + backlog 511；IOCP 基线范围内 |
+| 2026-08-05 | Phase 10 SIMD RESP 解析 + socket 调优 | 服务器 SET/GET（--io select） | 同上 | 331k / 376k req/s | - | 同上 |
+
+Phase 10 调查记录：`conn_flush` 的输出缓冲为单块连续内存，pub/sub 与复制
+fan-out 按连接独立冲刷；当前模型下 `writev`/跨连接批量聚合无法减少系统
+调用次数，因此未落地。批量发送的真正收益点在 thread-per-core 阶段的
+per-worker 输出合并，记录在案。
 
 ## 对比压测 (CI, Phase 7.6)
 

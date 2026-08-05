@@ -41,6 +41,12 @@
   等元数据 O(1) 查表；分层固定大小缓冲池 `buf_pool`（4K/16K/64K/256K）
   接入 `resp_buf` 与连接 recv/out 缓冲，替代热路径 malloc/realloc。
   微基准：cmd_resolve ~83M ops/s、buf_pool get/put ~3.9G ops/s。
+- [x] **Phase 10 — SIMD 解析与 socket 调优**
+  `pal_simd.h` 提供 SSE2/NEON 加速的 `ddup_find_crlf`（标量回退），
+  `resp_parser` 统一走该助手；bench_core 增加 parse-only 微基准
+  （SET ~31M / GET ~42M ops/s）。socket 默认开启 TCP_NODELAY，监听
+  backlog 提升至 511。批量发送/writev 调查结论：当前单线程模型下无
+  系统调用收益，保留给 thread-per-core 阶段。
 
 - [ ] **Phase 7+ — 长期**
   集群模式、TLS、io_uring 优化落地、SIMD 解析优化、与 Garnet/Redis 基准对比

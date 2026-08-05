@@ -78,6 +78,23 @@
   cmd_resolve 约 83M ops/s。缓冲池目前与 server 生命周期绑定，未跨 server
   共享；后续 thread-per-core 阶段每个 IO 线程可保留独立池。
 
+## SIMD 解析与 socket 调优（Phase 10）
+
+- **SIMD CRLF 扫描**：`src/pal/pal_simd.h` 提供 `ddup_find_crlf()`，在
+  x86_64 SSE2 与 ARM64 NEON 下用 16 字节向量比较加速 `\r` 扫描，无 SIMD
+  时回退到原 `memchr` 循环。`resp_parser.c` 统一经该助手查找 CRLF，语义
+  与标量参考实现完全一致（测试覆盖 basic/CR-not-LF/edge/random）。
+- **解析微基准**：`bench_core` 增加 parse-only 阶段，隔离解析器成本：
+  SET ~31M ops/s、GET ~42M ops/s，说明解析器不是当前瓶颈。
+- **socket 调优**：`pal_set_tcp_nodelay()` 封装 TCP_NODELAY；服务器在
+  readiness/IOCP accept、复制 master link、集群 bus connect 上默认禁用
+  Nagle，降低小回复 loopback 延迟。监听 backlog 从 128 提升到 511（与
+  Redis 默认一致）。
+- **批量发送调查**：`conn_flush` 的输出为单块连续缓冲，pub/sub 与复制
+  fan-out 按连接独立冲刷；在当前单线程模型下 `writev` 或跨连接批量聚合
+  不能减少系统调用次数，未落地。该优化点保留给 thread-per-core 阶段的
+  per-worker 输出合并。
+
 ## 过期设计（Phase 4）
 
 - **存储**：`db.expires` 为第二张 rh_table，key → 8 字节绝对过期时刻
