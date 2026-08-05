@@ -46,26 +46,46 @@
 | 2026-08-05 | Phase 10 SIMD RESP 解析 + socket 调优 | cmd_resolve / buf_pool 64 KiB | 同上 | 82.5M / ~3.45G ops/s | - | 与 Phase 9 持平 |
 | 2026-08-05 | Phase 10 SIMD RESP 解析 + socket 调优 | 服务器 SET/GET（run_bench，默认 IOCP） | 同上，loopback，-n 100000 -c 50 -P 16 | 313k / 392k req/s | - | TCP_NODELAY + backlog 511；IOCP 基线范围内 |
 | 2026-08-05 | Phase 10 SIMD RESP 解析 + socket 调优 | 服务器 SET/GET（--io select） | 同上 | 331k / 376k req/s | - | 同上 |
-| 2026-08-05 | Phase 11 mt（io-threads=2） | 服务器 SET/GET（ddup-bench -n 100000 -c 50 -P 16） | Windows 11, clang 22.1.6, -O3+LTO, loopback | 101k / 89k req/s | - | 跨 worker 路由每命令一次深拷贝 + 两次队列/唤醒；空队列才 kick 后（优化前 66k/54k） |
-| 2026-08-05 | Phase 11 mt（io-threads=4） | 服务器 SET/GET | 同上 | 47k / 47k req/s | - | worker 增多路由比例上升，开销随之增大 |
+| 2026-08-05 | Phase 11 mt 首版（io-threads=2） | 服务器 SET/GET（ddup-bench -n 100000 -c 50 -P 16） | Windows 11, clang 22.1.6, -O3+LTO, loopback | 101k / 89k req/s | - | 互斥队列 + 逐元素深拷贝；空队列才 kick 后（优化前 66k/54k） |
+| 2026-08-05 | Phase 11 mt 首版（io-threads=4） | 服务器 SET/GET | 同上 | 47k / 47k req/s | - | worker 增多路由比例上升，开销随之增大 |
+| 2026-08-05 | Phase 11 mt 优化后（io-threads=2） | 服务器 SET/GET | 同上 | 110k / 111k req/s | - | 任务合并 + 无锁 SPSC + 免深拷贝 + 连接-键亲和累计 |
+| 2026-08-05 | Phase 11 mt 优化后（io-threads=4） | 服务器 SET/GET | 同上 | 58–60k / 57–62k req/s | - | 3 次运行稳定（修复跨 worker 死锁/活锁后） |
 
 ## Phase 11 mt 性能分析（如实记录）
 
-mt 第一版在 loopback ping-pong 型基准上**显著慢于单线程**（2 worker 约为
+mt 首版在 loopback ping-pong 型基准上**显著慢于单线程**（2 worker 约为
 select 单线程的 1/3）。原因：每个跨 worker 命令都要深拷贝 argv、两次
 互斥队列投递、最多两次 wakeup 写字节，加上跨核缓存迁移；而单线程路径
 每命令 CPU 成本仅 ~0.3µs。Garnet 的 thread-per-core 优势场景（海量并发
 连接 + 小批量）当前基准无法体现（ddup-bench 为 50 并发顺序流水）。
 
-已验证的优化方向（后续阶段）：
+已落地的优化（本阶段全部完成）：
 
-1. **连接-键亲和**：按客户端首 key 把连接固定到拥有该 key 的 worker，
-   同构负载下大部分命令免跨线程（对随机 key 负载无效，记录在案）。
-2. **任务合并**：conn_process_input 内把同目标的连续流水命令合并为一个
-   任务，摊薄拷贝与唤醒成本（预计收益最大）。
-3. **无锁 SPSC 队列**替换互斥队列；wakeup 合并已有（空队列才 kick）。
-4. 避免深拷贝：路由任务直接接管接收缓冲切片的所有权（需要缓冲所有权
-   转移协议）。
+1. **任务合并**：同一 parse pass 内目标相同的连续流水命令合并为一个
+   任务（实测 4 命令流水线 = 1 个跨线程任务）。
+2. **无锁 SPSC 队列**：按生产者拆分的环形队列，C11 acquire/release；
+   强制 C99 构建降级互斥环。kick 仅在队列空→非空。
+3. **路由免深拷贝**：任务携带原始 RESP 字节，目标 worker 就地重新解析，
+   消除逐元素 malloc。
+4. **连接-键亲和**：干净连接一次性迁移到 key 属主 worker；hashtag /
+   按用户前缀负载可零跨线程（随机 key 负载仍按 ~1/N 就地）。
+
+累计效果（io-threads=2，loopback）：101k/89k → 110k/111k req/s。仍低于
+单线程（~330k/~380k），差距来自每次跨线程往返的 wakeup + 缓存迁移；
+随机 key 负载下约 3/4（4 worker）或 1/2（2 worker）命令需要跨线程，
+因此 4 worker 反而更慢——共享无架构的收益场景是 CPU 成为瓶颈且连接
+具备 key 局部性（hashtag/前缀亲和时跨线程趋零）。
+
+压测中暴露并修复的并发缺陷（如实记录）：
+
+1. `batch_target` 未初始化（calloc 0 被误认为指向 worker 0 的开放批次），
+   导致每连接首个路由命令错投 worker 0。
+2. 连接迁移时 `session->d` 未更新到新 worker 的 db，迁移后读到旧
+   keyspace。
+3. 队列满时的跨 worker 环形等待死锁（A 等 B 的环、B 等 A 的环）——
+   mt_push_task 改为背压时自排空本 worker 队列。
+4. 无界 drain 在持续生产下活锁（worker 永不回到 socket IO）——drain
+   按环限批（512/次）并在有剩余时自 kick。
 
 Phase 10 调查记录：`conn_flush` 的输出缓冲为单块连续内存，pub/sub 与复制
 fan-out 按连接独立冲刷；当前模型下 `writev`/跨连接批量聚合无法减少系统

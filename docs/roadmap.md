@@ -49,15 +49,19 @@
   系统调用收益，保留给 thread-per-core 阶段。
 - [x] **Phase 11 — Thread-per-core（mt_server，shared-nothing key 分区）**
   PAL 线程/条件变量/self-pipe 唤醒；acceptor 线程 + N 个独立 worker
-  （各自事件循环/db/buf_pool）；单 key 命令按 crc16 槽路由（深拷贝任务 +
-  完成队列 + per-conn seq/reorder 保序）；多 key 同 worker 校验
-  （-CROSSSLOT）；DBSIZE/FLUSHDB 广播聚合；`--io-threads N` 配置。
-  如实记录：首版 loopback 基准慢于单线程，优化方向（任务合并/无锁队列/
-  免拷贝/连接-键亲和）列入后续。
-  - [ ] mt 优化：同目标连续命令合并为一个任务、无锁 SPSC 队列、
-    路由免深拷贝、连接-键亲和
-  - [ ] mt 功能补齐：EXEC 逐条路由、WATCH 版本跨 worker、pub/sub 按频道
-    hash 路由、per-worker AOF/快照、SINTER/SUNION/SDIFF 同槽路由
+  （各自事件循环/db/buf_pool）；单 key 命令按 crc16 槽路由（原始字节
+  任务 + 完成队列 + per-conn seq/reorder 保序）；多 key 与集合运算同
+  worker 校验（-CROSSSLOT）；DBSIZE/FLUSHDB/SAVE/LASTSAVE 广播聚合；
+  `--io-threads N` 配置。
+  - [x] mt 优化：同目标连续命令合并为一个任务、无锁 SPSC 队列（C11
+    atomics，C99 降级互斥）、路由免逐元素深拷贝（raw bytes + 目标端
+    重新解析）、连接-键亲和（一次性连接迁移）
+  - [x] mt 功能补齐：mt 层 MULTI/EXEC/DISCARD/WATCH/UNWATCH（同 worker
+    bundle + watch_refs 跨 worker 记账）、pub/sub 按频道 hash 路由、
+    per-worker AOF/快照（路由 mutation 记录到执行 worker 的 AOF）、
+    SINTER/SUNION/SDIFF 同槽路由
+  - [ ] mt 后续：INFO 跨 worker 聚合、TLS 支持（worker 内嵌握手）、
+    IOCP worker 后端、复制/集群在 per-worker 模型下的适配
 
 - [ ] **Phase 7+ — 长期**
   集群模式、TLS、io_uring 优化落地、SIMD 解析优化、与 Garnet/Redis 基准对比

@@ -119,25 +119,45 @@
   语义一致）。无 key 命令就地执行；DBSIZE/FLUSHDB 为广播聚合（home 就地
   一份 + 扇出其余 worker，DBSIZE 求和），INFO 暂为 home worker 本地
   （记录在案）。
-- **任务与顺序**：跨 worker 命令深拷贝 argv（复用 MULTI 队列拷贝模式）
-  打包为 mt_task，目标 worker 用 `command_execute_at` 无 session 执行
-  （无 MULTI/WATCH/pubsub/AOF 参与），回复经 home worker 的 completion
-  队列返回。每个 conn 维护 seq 序号 + reorder 缓冲：本地命令在有未决
-  路由回复时也算好答案暂存，完成回复按 seq 顺序追加到 conn->out，
-  保证流水线回复顺序与请求一致。
-- **生命周期**：conn 记录 mt_pending（在飞路由任务数）；连接关闭时有
-  未决任务则成为 zombie（摘出事件循环、关 fd，保留 conn/session/
-  mt_state），最后一个 completion 回收时真正释放（复用 IOCP zombie
-  清单，server_destroy 兜底）。
-- **限制（记录在案）**：mt 模式下 MULTI/EXEC/DISCARD/WATCH/UNWATCH、
-  SUBSCRIBE/UNSUBSCRIBE/PUBLISH、SHUTDOWN/SYNC/REPLICAOF/SAVE/LASTSAVE/
-  CLUSTER/MIGRATE/ASKING 返回 `-ERR command not supported in mt mode`；
-  SINTER/SUNION/SDIFF 暂走 home worker 本地路径（后续按 key 集合校验
-  同 worker 后路由）；AOF/快照/复制/集群/TLS 与 io-threads>1 互斥
-  （config_validate 报错）。IOCP 后端不参与 mt（readiness only）。
-- **性能现状**：见 docs/performance.md Phase 11——首版在 loopback
-  ping-pong 基准上慢于单线程（路由开销主导），优化方向已记录（任务
-  合并、无锁队列、免拷贝、连接-键亲和）。
+- **任务与顺序**：跨 worker 命令以**原始 RESP 字节拷贝**打包为 mt_task
+  （目标 worker 就地重新解析，避免逐元素深拷贝）；同一 parse pass 内
+  目标相同的连续命令**合并为一个任务**（span>1）。回复经 home worker
+  的 completion 队列返回；每个 conn 维护 seq 序号 + reorder 缓冲，本地
+  命令在有未决路由回复时也算好答案暂存，完成回复按 seq 追加到
+  conn->out，保证流水线回复顺序与请求一致。队列全部为**按生产者拆分
+  的无锁 SPSC 环**（C11 acquire/release 原子操作；强制 C99 构建降级为
+  互斥环），仅在队列由空变非空时 kick wakeup。
+- **生命周期**：conn 的 pending/closing 由 home worker 的 `pending_mu`
+  保护（跨线程投递可安全 test-and-increment）；连接关闭时有未决工作
+  则成为 zombie（摘出事件循环、关 fd，保留 conn/session/mt_state），
+  最后一项工作回收时由 mt 层释放（per-worker zombie 清单兜底）。
+- **事务（mt 层实现）**：MULTI/EXEC/DISCARD/WATCH/UNWATCH 由路由层接管
+  （session 不进入 MULTI）。EXEC 要求所有排队命令与 WATCH key 同属一个
+  worker（否则 -EXECABORT），打包为单个 bundle 在属主 worker 上重新
+  校验 watch 版本并顺序重放。db.watch_refs 在 key 属主 worker 上增减，
+  UNWATCH/DISCARD/连接关闭经 fire-and-forget 任务跨 worker 释放。
+- **pub/sub**：频道按 hash_slot(channel) 归属 worker；SUBSCRIBE/
+  UNSUBSCRIBE 由 home worker 即时确认并向属主注册/注销；PUBLISH 路由到
+  频道属主，属主把预构造的 message 推帧扇出到各订阅者 home worker。
+  投递经 pending 计数保护，且在投递时按 home 订阅表复核（与
+  UNSUBSCRIBE 的竞态）。
+- **连接-键亲和**：干净的连接（无未决任务/批次/事务/watch/订阅）在
+  首个带 key 命令时**一次性迁移**到 key 属主 worker（fd/session/db
+  指针/钩子上下文整体 rehome），之后该连接的命令全部就地执行。具有
+  客户端 key 局部性的负载（hashtag、按用户前缀）零跨线程流量。
+- **持久化**：每 worker 独立 `<dir>/worker-<id>-<file>`；路由任务的
+  mutation 经 dirty 计数记录到执行 worker 的 AOF；SAVE/LASTSAVE 广播
+  聚合（LASTSAVE 取 max）；启动时按 worker 重放/加载。
+- **聚合命令**：DBSIZE（求和）、FLUSHDB、SAVE、LASTSAVE（max）广播到
+  全部 worker 归并；INFO 暂为 home worker 本地（记录在案）。
+- **限制（记录在案）**：mt 模式下 SHUTDOWN/SYNC/REPLICAOF/CLUSTER/
+  MIGRATE/ASKING 返回 `-ERR command not supported in mt mode`；
+  TLS/集群/复制与 io-threads>1 互斥（config_validate 报错）；
+  IOCP 后端不参与 mt（readiness only）。
+- **并发可靠性**：跨 worker 队列满时，生产者背压重试会**自排空本
+  worker 的 inbox/completion 队列**以打破环形等待；drain 按环限批
+  （512 条/次）并在有剩余时自 kick，避免持续生产下的 drain 活锁。
+- **性能现状**：见 docs/performance.md Phase 11。
 
 ## 过期设计（Phase 4）
 
