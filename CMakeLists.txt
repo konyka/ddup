@@ -20,6 +20,7 @@ add_library(ddup_core STATIC
     src/pal/pal_file.c
     src/pal/pal_tls.c
     src/pal/pal_iocp.c
+    src/pal/pal_thread.c
     src/core/arena.c
     src/core/rhtable.c
     src/core/command.c
@@ -49,6 +50,9 @@ target_compile_definitions(ddup_core PUBLIC
 
 if(WIN32)
     target_link_libraries(ddup_core PUBLIC ws2_32)
+else()
+    find_package(Threads REQUIRED)
+    target_link_libraries(ddup_core PUBLIC Threads::Threads)
 endif()
 
 # ---------------------------------------------------------------------------
@@ -112,6 +116,7 @@ function(ddup_add_test name source)
 endfunction()
 
 ddup_add_test(test_pal tests/test_pal.c)
+ddup_add_test(test_pal_thread tests/test_pal_thread.c)
 ddup_add_test(test_cstd tests/test_cstd.c)
 ddup_add_test(test_cmdid tests/test_cmdid.c)
 ddup_add_test(test_buf_pool tests/test_buf_pool.c)
@@ -167,7 +172,7 @@ if(DDUP_HAS_TLS)
     endif()
 endif()
 
-set(DDUP_CHECK_DEPS test_pal test_cstd test_cmdid test_buf_pool test_socket test_event test_server test_arena test_resp_parser test_resp_writer test_resp3 test_rhtable test_command test_expire test_eviction test_hash test_list test_skiplist test_set test_zset test_session test_multi test_pubsub test_config test_aof test_snapshot test_repl test_hashslot test_cluster_id test_cluster_cmds test_cluster_nodes test_cluster_bus test_cluster_slots test_dump test_migrate test_cluster_migrate test_cluster_replica test_cluster_epoch test_cluster_failover)
+set(DDUP_CHECK_DEPS test_pal test_pal_thread test_cstd test_cmdid test_buf_pool test_socket test_event test_server test_arena test_resp_parser test_resp_writer test_resp3 test_rhtable test_command test_expire test_eviction test_hash test_list test_skiplist test_set test_zset test_session test_multi test_pubsub test_config test_aof test_snapshot test_repl test_hashslot test_cluster_id test_cluster_cmds test_cluster_nodes test_cluster_bus test_cluster_slots test_dump test_migrate test_cluster_migrate test_cluster_replica test_cluster_epoch test_cluster_failover)
 if(DDUP_HAS_TLS AND NOT WIN32)
     list(APPEND DDUP_CHECK_DEPS test_tls)
 endif()
