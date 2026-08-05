@@ -70,10 +70,35 @@ static void test_listen_failure(void)
              PAL_SOCKET_INVALID);
 }
 
+static void test_tcp_nodelay(void)
+{
+    uint16_t port = 0;
+    pal_socket_t listener;
+    pal_socket_t client;
+    pal_socket_t server;
+
+    DD_CHECK_EQ_INT(0, pal_socket_init());
+    listener = pal_tcp_listen("127.0.0.1", 0, 16, &port);
+    DD_CHECK(listener != PAL_SOCKET_INVALID);
+    client = pal_tcp_connect("127.0.0.1", port);
+    DD_CHECK(client != PAL_SOCKET_INVALID);
+    server = pal_accept(listener);
+    DD_CHECK(server != PAL_SOCKET_INVALID);
+
+    DD_CHECK_EQ_INT(0, pal_set_tcp_nodelay(server, 1));
+    DD_CHECK_EQ_INT(0, pal_set_tcp_nodelay(client, 0));
+
+    pal_close(server);
+    pal_close(client);
+    pal_close(listener);
+    pal_socket_cleanup();
+}
+
 int main(void)
 {
     DD_RUN(test_init_cleanup);
     DD_RUN(test_listen_connect_echo);
     DD_RUN(test_listen_failure);
+    DD_RUN(test_tcp_nodelay);
     return DD_TEST_SUMMARY();
 }

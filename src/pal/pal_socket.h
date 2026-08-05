@@ -44,6 +44,9 @@ pal_socket_t pal_accept(pal_socket_t listen_fd);
 /* on != 0: non-blocking; on == 0: blocking. Returns 0 on success. */
 int pal_set_nonblocking(pal_socket_t fd, int on);
 
+/* Disable/enable Nagle's algorithm (TCP_NODELAY). Returns 0 on success. */
+int pal_set_tcp_nodelay(pal_socket_t fd, int on);
+
 /* > 0 bytes read, 0 orderly close, -1 error (check pal_would_block). */
 ptrdiff_t pal_recv(pal_socket_t fd, void *buf, size_t n);
 /* > 0 bytes written, -1 error (check pal_would_block). */

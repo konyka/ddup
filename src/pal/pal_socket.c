@@ -100,6 +100,22 @@ int pal_set_nonblocking(pal_socket_t fd, int on)
 #endif
 }
 
+int pal_set_tcp_nodelay(pal_socket_t fd, int on)
+{
+    int v = on ? 1 : 0;
+#if DDUP_OS_WINDOWS
+    return setsockopt((SOCKET)fd, IPPROTO_TCP, TCP_NODELAY,
+                      (const char *)&v, (pal_socklen_t)sizeof(v)) == 0
+               ? 0
+               : -1;
+#else
+    return setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &v,
+                      (pal_socklen_t)sizeof(v)) == 0
+               ? 0
+               : -1;
+#endif
+}
+
 /* Set the usual ddup socket options on a listener. */
 static void pal_listen_opts(pal_socket_t fd)
 {

@@ -513,6 +513,7 @@ static int repl_link_connect(server *srv)
     fd = pal_tcp_connect(srv->repl.master_host, srv->repl.master_port);
     if (fd == PAL_SOCKET_INVALID)
         return -1;
+    (void)pal_set_tcp_nodelay(fd, 1);
     c = conn_create(srv, fd);
     if (c == NULL) {
         pal_close(fd);
@@ -673,7 +674,7 @@ server *server_create_ex(const char *host, uint16_t port, int backend)
     if (s->backend == SERVER_BACKEND_IOCP)
         s->listen_fd = pal_iocp_listen(s->iocp, host, port, &s->port, NULL);
     else
-        s->listen_fd = pal_tcp_listen(host, port, 128, &s->port);
+        s->listen_fd = pal_tcp_listen(host, port, 511, &s->port);
     if (s->loop == NULL || s->listen_fd == PAL_SOCKET_INVALID) {
         server_destroy(s);
         return NULL;
@@ -734,7 +735,7 @@ int server_enable_tls(server *s, const char *host, uint16_t port,
     s->tls_ctx = pal_tls_ctx_new(cert_file, key_file);
     if (s->tls_ctx == NULL)
         return -1;
-    s->tls_listen_fd = pal_tcp_listen(host, port, 128, &s->tls_port);
+    s->tls_listen_fd = pal_tcp_listen(host, port, 511, &s->tls_port);
     if (s->tls_listen_fd == PAL_SOCKET_INVALID) {
         pal_tls_ctx_free(s->tls_ctx);
         s->tls_ctx = NULL;
@@ -831,7 +832,7 @@ void server_enable_cluster(server *s, const char *node_id)
         return; /* unsupported backend, or already listening */
     s->bus_listen_fd = pal_tcp_listen("0.0.0.0",
                                       (uint16_t)(s->db.cluster_port + 10000),
-                                      128, NULL);
+                                      511, NULL);
     if (s->bus_listen_fd != PAL_SOCKET_INVALID)
         (void)pal_loop_add(s->loop, s->bus_listen_fd, 1, 0, NULL);
 }
@@ -914,6 +915,7 @@ static void server_accept(server *s, pal_socket_t lfd, int use_tls)
     pal_tls *tls = NULL;
     if (fd == PAL_SOCKET_INVALID)
         return;
+    (void)pal_set_tcp_nodelay(fd, 1);
     if (use_tls) {
         /* non-blocking accept handshake: completes in the event loop */
         if (pal_set_nonblocking(fd, 1) != 0) {
@@ -1135,6 +1137,7 @@ static bus_conn *bus_connect(server *s, const char *ip, uint16_t bus_port)
     bus_conn *bc;
     if (fd == PAL_SOCKET_INVALID)
         return NULL;
+    (void)pal_set_tcp_nodelay(fd, 1);
     if (pal_set_nonblocking(fd, 1) != 0) {
         pal_close(fd);
         return NULL;
@@ -1361,7 +1364,9 @@ static void kick_flush(server *s, conn *c)
 /* Accept a connection on the IOCP backend and post its first recv. */
 static void server_accept_iocp(server *s, pal_socket_t fd)
 {
-    conn *c = conn_create(s, fd);
+    conn *c;
+    (void)pal_set_tcp_nodelay(fd, 1);
+    c = conn_create(s, fd);
     if (c == NULL) {
         pal_close(fd);
         return;
