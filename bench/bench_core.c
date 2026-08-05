@@ -11,6 +11,8 @@
 #include <string.h>
 
 #include "core/arena.h"
+#include "core/buf_pool.h"
+#include "core/command.h"
 #include "core/session.h"
 #include "pal/pal_time.h"
 #include "resp/resp_parser.h"
@@ -41,6 +43,54 @@ static void build_cmd(resp_buf *b, const char *c1, const char *c2,
         memcpy(b->data + b->len, tmp, strlen(tmp));
         b->len += strlen(tmp);
     }
+}
+
+/* Benchmark cmd_resolve() over a mixed command name workload. */
+static double bench_cmd_resolve(long n)
+{
+    static const char *names[] = {"GET",   "SET",    "PING",   "HGET",
+                                  "HSET",  "LPUSH",  "ZADD",   "CLUSTER",
+                                  "FOOCMD"};
+    const int nnames = (int)(sizeof(names) / sizeof(names[0]));
+    size_t lens[9];
+    int i;
+    volatile uint16_t sink = 0;
+    uint64_t t0, t1;
+    long k;
+
+    for (i = 0; i < nnames; i++)
+        lens[i] = strlen(names[i]);
+
+    t0 = pal_now_us();
+    for (k = 0; k < n; k++) {
+        int idx = (int)(k % nnames);
+        sink += cmd_resolve(names[idx], lens[idx]);
+    }
+    t1 = pal_now_us();
+    (void)sink;
+    return (t1 > t0) ? (double)n / ((double)(t1 - t0) / 1000000.0)
+                     : (double)n;
+}
+
+/* Benchmark buf_pool get/put for the 64 KiB tier. */
+static double bench_buf_pool(long n)
+{
+    buf_pool pool;
+    size_t sz;
+    void *p;
+    long k;
+    uint64_t t0, t1;
+
+    buf_pool_init(&pool);
+    t0 = pal_now_us();
+    for (k = 0; k < n; k++) {
+        p = buf_pool_get(&pool, 64 * 1024, &sz);
+        buf_pool_put(&pool, p, sz);
+    }
+    t1 = pal_now_us();
+    buf_pool_destroy(&pool);
+    return (t1 > t0) ? (double)n / ((double)(t1 - t0) / 1000000.0)
+                     : (double)n;
 }
 
 /* Run every command in the buffer through parse+dispatch; return ops/sec. */
@@ -104,6 +154,10 @@ int main(int argc, char **argv)
     printf("SET (cold, includes inserts): %12.0f ops/s\n", set_ops);
     printf("GET (warm):                   %12.0f ops/s\n", get_ops);
     printf("GET (warm, run 2):            %12.0f ops/s\n", get2_ops);
+    printf("cmd_resolve (mixed):          %12.0f ops/s\n",
+           bench_cmd_resolve(n));
+    printf("buf_pool get/put (64 KiB):    %12.0f ops/s\n",
+           bench_buf_pool(n));
 
     session_free(s);
     db_destroy(&d);

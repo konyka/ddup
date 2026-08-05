@@ -36,6 +36,11 @@
   细粒度 C 标准能力探测（atomics/threads/typeof/constexpr/stdckdint 等）、
   `src/pal/pal_cstd.h` 统一封装与 C99 降级路径、`test_cstd` 覆盖、
   支持 `DDUP_C_STD_FORCE` 本地验证。
+- [x] **Phase 9 — 命令 ID 表 + 缓冲池**
+  统一 `cmd_entry` 命令表 + 开放寻址哈希解析 `cmd_resolve`、写命令/arity
+  等元数据 O(1) 查表；分层固定大小缓冲池 `buf_pool`（4K/16K/64K/256K）
+  接入 `resp_buf` 与连接 recv/out 缓冲，替代热路径 malloc/realloc。
+  微基准：cmd_resolve ~83M ops/s、buf_pool get/put ~3.9G ops/s。
 
 - [ ] **Phase 7+ — 长期**
   集群模式、TLS、io_uring 优化落地、SIMD 解析优化、与 Garnet/Redis 基准对比

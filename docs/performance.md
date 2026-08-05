@@ -35,6 +35,12 @@
 | 2026-08-03 | Phase 7.4 非阻塞写出 | bench_core SET / GET | 同上 | 5.01M / 8.89M ops/s | - | 同上 |
 | 2026-08-03 | Phase 7.5 IOCP | 服务器 SET/GET c50 P16（iocp） | 同上 | 324k / 382k req/s | - | select: 389k / 442k（iocp 慢 ~15%） |
 | 2026-08-03 | Phase 7.5 IOCP | 服务器 SET/GET c200 P16（iocp） | 同上 | 315k / 348k req/s | - | select: 303k / 375k（基本持平） |
+| 2026-08-05 | Phase 9 命令 ID 表 + 缓冲池 | bench_core SET（进程内，20 万命令） | Windows 11, clang 22.1.6, -O3+LTO | 3.62M ops/s | - | 含命令 ID 表与缓冲池底座，默认 C23 |
+| 2026-08-05 | Phase 9 命令 ID 表 + 缓冲池 | bench_core GET（进程内，20 万命令） | 同上 | 5.73M / 6.28M ops/s | - | 同上；run 2 为缓存热后 |
+| 2026-08-05 | Phase 9 命令 ID 表 + 缓冲池 | cmd_resolve（mixed 9 命令名） | 同上 | 83.4M ops/s | - | bench_core 微基准，case-insensitive 哈希解析 |
+| 2026-08-05 | Phase 9 命令 ID 表 + 缓冲池 | buf_pool get/put（64 KiB） | 同上 | ~3.92G ops/s | - | 热缓存下单线程借/还，零系统调用路径 |
+| 2026-08-05 | Phase 9 命令 ID 表 + 缓冲池（强制 C99） | bench_core SET / GET | 同上，-DDDUP_C_STD_FORCE=99 | 3.62M / 5.82M / 5.50M ops/s | - | 与 C23 同量级，在测量噪声范围内 |
+| 2026-08-05 | Phase 9 命令 ID 表 + 缓冲池（强制 C99） | cmd_resolve / buf_pool 64 KiB | 同上 | 81.3M / ~3.92G ops/s | - | 同上 |
 
 ## 对比压测 (CI, Phase 7.6)
 

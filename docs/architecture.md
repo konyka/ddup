@@ -55,6 +55,29 @@
 
 上层代码统一包含 `src/pal/pal_cstd.h`，使用 `ddup_*` 前缀宏（如 `ddup_static_assert`、`ddup_alignas`、`ddup_atomic_*`、`ddup_add_overflow`），不再直接依赖具体 C 标准。`pal_platform.h` 中遗留的 `DDUP_HAS_C_ATOMICS` 探测仅在 CMake 未定义时生效，避免与构建期探测冲突。
 
+## 命令 ID 表与缓冲池（Phase 9）
+
+- **命令 ID 表**：`src/core/command.c` 维护一张统一的 `cmd_entry` 表，所有
+  命令名经 `cmd_resolve(name, len)` 解析为稳定 16-bit ID（case-insensitive，
+  开放寻址哈希）。命令分发由原先的字串比较链改为 `cmd_id` 整数比较；
+  写命令判定、最小/最大参数个数、参数奇偶校验等元数据均通过 ID 直接索引，
+  O(1)。未知命令快速返回 `CMD_ID_UNKNOWN`。
+- **缓冲池**：`src/core/buf_pool.{h,c}` 提供单线程、无锁分层固定大小缓冲池：
+  4 KiB / 16 KiB / 64 KiB / 256 KiB 四档。`buf_pool_get(size, &actual)` 返回
+  不小于请求大小的缓冲（命中空闲链则复用，否则 malloc），`buf_pool_put`
+  按实际尺寸归还给对应空闲链；超过最大档位的请求直接 malloc/free。
+- **接入点**：
+  - `resp_buf` 新增 `pool` 指针；设置后 `resp_buf_reserve` 从池中取缓冲、
+    扩容量时拷贝并归还旧缓冲，`resp_buf_free` 归还而非释放。
+  - `server` 拥有 `buf_pool pool`；`conn_create` 从池中借 64 KiB 接收缓冲，
+    并把 `c->out.pool` 指向服务器池；`conn_rbuf_grow()` 统一处理接收缓冲
+    扩容（`server_run_once`、`server_run_once_iocp`、`repl_link_service`）。
+  - 连接关闭时 `conn_free` 把接收缓冲与 out 缓冲归还池中，避免热路径
+    malloc/free。
+- **收益与限制**：单线程借/还为零系统调用，64 KiB 档位微基准约 3.9G ops/s；
+  cmd_resolve 约 83M ops/s。缓冲池目前与 server 生命周期绑定，未跨 server
+  共享；后续 thread-per-core 阶段每个 IO 线程可保留独立池。
+
 ## 过期设计（Phase 4）
 
 - **存储**：`db.expires` 为第二张 rh_table，key → 8 字节绝对过期时刻
