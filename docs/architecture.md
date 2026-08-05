@@ -36,6 +36,25 @@
 6. **C 标准自适应**：构建期探测 C23→C17→C11→C99，取最高可用标准；
    原子操作优先 C11 `<stdatomic.h>`，缺失时降级平台原生 API。
 
+### C 标准能力矩阵（Phase 8）
+
+`cmake/DetectCStandard.cmake` 在构建期探测编译器支持的最高 C 标准，并导出细粒度能力宏：
+
+| 能力 | 宏 | 启用标准 | C99 降级 |
+|---|---|---|---|
+| 原子操作 | `DDUP_HAS_C_ATOMICS` | C11 | 单线程语义占位（多线程场景后续加锁或 intrinsics） |
+| 线程头 | `DDUP_HAS_C_THREADS` | C11 | 平台原生线程（PAL 封装） |
+| 对齐 | `DDUP_HAS_C_ALIGNAS` | C11 | `__attribute__((aligned))` / `__declspec(align)` |
+| 静态断言 | `DDUP_HAS_C_STATIC_ASSERT` | C11 | 数组大小技巧 |
+| noreturn | `DDUP_HAS_C_NORETURN` | C11 | 编译器属性 |
+| thread_local | `DDUP_HAS_C_THREAD_LOCAL` | C11 | `__thread` / `__declspec(thread)` |
+| typeof | `DDUP_HAS_C_TYPEOF` | C23 | 不可用（调用方需门控） |
+| constexpr | `DDUP_HAS_C_CONSTEXPR` | C23 | `const` |
+| 溢出算术 | `DDUP_HAS_C_STDCKDINT` | C23 | `__builtin_*_overflow` / `long long` 分支检测 |
+| _BitInt | `DDUP_HAS_C_BITINT` | C23 | 不可用 |
+
+上层代码统一包含 `src/pal/pal_cstd.h`，使用 `ddup_*` 前缀宏（如 `ddup_static_assert`、`ddup_alignas`、`ddup_atomic_*`、`ddup_add_overflow`），不再直接依赖具体 C 标准。`pal_platform.h` 中遗留的 `DDUP_HAS_C_ATOMICS` 探测仅在 CMake 未定义时生效，避免与构建期探测冲突。
+
 ## 过期设计（Phase 4）
 
 - **存储**：`db.expires` 为第二张 rh_table，key → 8 字节绝对过期时刻
