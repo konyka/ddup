@@ -1,62 +1,63 @@
-/* mt_server.c - thread-per-core server skeleton; see mt_server.h.
+/* mt_server.c - thread-per-core server; see mt_server.h.
  *
  * Acceptor thread: owns the public (non-blocking) listener, accepts pending
  * connections and pushes each fd onto one worker's accept queue, kicking the
  * worker's wakeup pipe. Worker threads run an ordinary server event loop;
- * the wakeup callback drains the accept queue and adopts the fds.
+ * the wakeup callback drains accepts, the routed-task inbox and the
+ * completion queue.
+ *
+ * Key routing (single-key commands): the connection's home worker computes
+ * hash_slot(key) % nworkers. Commands owned by another worker are deep-copied
+ * into an mt_task and executed on the target worker with command_execute_at
+ * (stateless path: no MULTI/WATCH/pubsub/AOF involvement). Replies return
+ * through the home worker's completion queue and are appended to conn->out
+ * in original pipeline order via a per-conn sequence/reorder buffer.
  */
 #include "server/mt_server.h"
 
 #include <stdlib.h>
+#include <string.h>
 
+#include "core/command.h"
+#include "core/hashslot.h"
+#include "core/session.h"
 #include "pal/pal_event.h"
 #include "pal/pal_socket.h"
 #include "pal/pal_thread.h"
+#include "pal/pal_time.h"
 #include "pal/pal_wakeup.h"
+#include "resp/resp_writer.h"
 #include "server/server.h"
 
-typedef struct fd_node {
-    struct fd_node *next;
-    pal_socket_t fd;
-} fd_node;
+/* ------------------------------------------------------------------ */
+/* generic mutex-protected pointer queue                               */
+/* ------------------------------------------------------------------ */
 
-typedef struct fd_queue {
+typedef struct qnode {
+    struct qnode *next;
+    void *ptr;
+} qnode;
+
+typedef struct mt_queue {
     pal_mutex mu;
-    fd_node *head;
-    fd_node *tail;
-} fd_queue;
+    qnode *head;
+    qnode *tail;
+} mt_queue;
 
-typedef struct worker {
-    int id;
-    server *srv;
-    pal_thread thread;
-    pal_wakeup wakeup;
-    fd_queue accepts;
-    volatile int running;
-} worker;
-
-struct mt_server {
-    pal_socket_t listen_fd;
-    uint16_t port;
-    int nworkers;
-    worker *workers;
-    pal_thread acceptor;
-    volatile int running;
-};
-
-static int fd_queue_init(fd_queue *q)
+static int mt_queue_init(mt_queue *q)
 {
     q->head = NULL;
     q->tail = NULL;
     return pal_mutex_init(&q->mu);
 }
 
-static void fd_queue_destroy(fd_queue *q)
+static void mt_queue_destroy(mt_queue *q, void (*free_fn)(void *))
 {
-    fd_node *n = q->head;
+    qnode *n = q->head;
     while (n != NULL) {
-        fd_node *next = n->next;
-        pal_close(n->fd);
+        qnode *next = n->next;
+        if (free_fn != NULL)
+            free_fn(n->ptr);
         free(n);
         n = next;
     }
@@ -65,12 +66,12 @@ static void fd_queue_destroy(fd_queue *q)
     pal_mutex_destroy(&q->mu);
 }
 
-static int fd_queue_push(fd_queue *q, pal_socket_t fd)
+static int mt_queue_push(mt_queue *q, void *ptr)
 {
-    fd_node *n = (fd_node *)malloc(sizeof(*n));
+    qnode *n = (qnode *)malloc(sizeof(*n));
     if (n == NULL)
         return -1;
-    n->fd = fd;
+    n->ptr = ptr;
     n->next = NULL;
     pal_mutex_lock(&q->mu);
     if (q->tail != NULL)
@@ -82,34 +83,434 @@ static int fd_queue_push(fd_queue *q, pal_socket_t fd)
     return 0;
 }
 
-static pal_socket_t fd_queue_pop(fd_queue *q)
+static void *mt_queue_pop(mt_queue *q)
 {
-    fd_node *n;
-    pal_socket_t fd;
+    qnode *n;
+    void *ptr;
     pal_mutex_lock(&q->mu);
     n = q->head;
     if (n == NULL) {
         pal_mutex_unlock(&q->mu);
-        return PAL_SOCKET_INVALID;
+        return NULL;
     }
     q->head = n->next;
     if (q->head == NULL)
         q->tail = NULL;
     pal_mutex_unlock(&q->mu);
-    fd = n->fd;
+    ptr = n->ptr;
     free(n);
-    return fd;
+    return ptr;
+}
+
+/* ------------------------------------------------------------------ */
+/* routed tasks                                                        */
+/* ------------------------------------------------------------------ */
+
+typedef struct worker worker;
+
+typedef struct mt_task {
+    struct mt_task *next; /* reorder-buffer link (queue nodes wrap tasks) */
+    void *conn;           /* home connection (opaque, home-thread only) */
+    worker *home;         /* connection's home worker */
+    uint64_t seq;         /* per-conn pipeline sequence number */
+    resp_value *argv;     /* deep-copied command (routed tasks only) */
+    size_t argc;
+    resp_buf reply;       /* filled by the executing worker */
+} mt_task;
+
+/* Per-conn routing state (stored via server_conn_set_mt_state). */
+typedef struct mt_conn_state {
+    uint64_t seq_next;  /* next sequence number to assign */
+    uint64_t seq_write; /* next sequence number to append to conn->out */
+    mt_task *reorder;   /* ready replies waiting, sorted by seq */
+} mt_conn_state;
+
+static resp_value *mt_copy_argv(const resp_value *argv, size_t argc)
+{
+    resp_value *copy = (resp_value *)calloc(argc, sizeof(resp_value));
+    size_t i;
+    if (copy == NULL)
+        return NULL;
+    for (i = 0; i < argc; i++) {
+        copy[i] = argv[i];
+        copy[i].items = NULL;
+        if (argv[i].str != NULL && argv[i].len > 0) {
+            char *s = (char *)malloc(argv[i].len);
+            if (s == NULL) {
+                size_t j;
+                for (j = 0; j < i; j++)
+                    free((void *)copy[j].str);
+                free(copy);
+                return NULL;
+            }
+            memcpy(s, argv[i].str, argv[i].len);
+            copy[i].str = s;
+        }
+    }
+    return copy;
+}
+
+static mt_task *mt_task_new(void *conn, worker *home, uint64_t seq,
+                            const resp_value *argv, size_t argc)
+{
+    mt_task *t = (mt_task *)calloc(1, sizeof(*t));
+    if (t == NULL)
+        return NULL;
+    t->conn = conn;
+    t->home = home;
+    t->seq = seq;
+    resp_buf_init(&t->reply);
+    if (argv != NULL) {
+        t->argv = mt_copy_argv(argv, argc);
+        if (t->argv == NULL) {
+            free(t);
+            return NULL;
+        }
+        t->argc = argc;
+    }
+    return t;
+}
+
+static void mt_task_free(void *ptr)
+{
+    mt_task *t = (mt_task *)ptr;
+    size_t i;
+    if (t == NULL)
+        return;
+    if (t->argv != NULL) {
+        for (i = 0; i < t->argc; i++)
+            free((void *)t->argv[i].str);
+        free(t->argv);
+    }
+    resp_buf_free(&t->reply);
+    free(t);
+}
+
+/* Insert a ready reply into the per-conn reorder buffer (sorted by seq). */
+static void mt_reorder_insert(mt_conn_state *st, mt_task *t)
+{
+    mt_task **pp = &st->reorder;
+    while (*pp != NULL && (*pp)->seq < t->seq)
+        pp = &(*pp)->next;
+    t->next = *pp;
+    *pp = t;
+}
+
+/* Append every consecutive ready reply to conn->out (or drop them when the
+ * conn is a zombie: the client is gone, only resource cleanup matters). */
+static void mt_drain_ready(server *srv, void *conn, mt_conn_state *st,
+                           int append)
+{
+    while (st->reorder != NULL && st->reorder->seq == st->seq_write) {
+        mt_task *t = st->reorder;
+        st->reorder = t->next;
+        if (append)
+            server_conn_out_append(srv, conn, t->reply.data, t->reply.len);
+        st->seq_write++;
+        mt_task_free(t);
+    }
+}
+
+static void mt_state_free_cb(void *ctx, void *ptr)
+{
+    mt_conn_state *st = (mt_conn_state *)ptr;
+    (void)ctx;
+    if (st == NULL)
+        return;
+    while (st->reorder != NULL) {
+        mt_task *t = st->reorder;
+        st->reorder = t->next;
+        mt_task_free(t);
+    }
+    free(st);
+}
+
+/* ------------------------------------------------------------------ */
+/* command classification                                              */
+/* ------------------------------------------------------------------ */
+
+#define MT_PASS (-3)    /* not classified: legacy inline path */
+#define MT_BLOCKED (-2) /* reply -ERR (not supported in mt mode yet) */
+#define MT_LOCAL (-1)   /* keyless: execute on the home worker */
+
+static int mt_is_blocked(uint16_t cmd)
+{
+    switch (cmd) {
+    case CMD_MULTI:
+    case CMD_EXEC:
+    case CMD_DISCARD:
+    case CMD_WATCH:
+    case CMD_UNWATCH:
+    case CMD_SUBSCRIBE:
+    case CMD_UNSUBSCRIBE:
+    case CMD_PUBLISH:
+    case CMD_SHUTDOWN:
+    case CMD_SYNC:
+    case CMD_REPLICAOF:
+    case CMD_SAVE:
+    case CMD_LASTSAVE:
+    case CMD_CLUSTER:
+    case CMD_MIGRATE:
+    case CMD_ASKING:
+        return 1;
+    default:
+        return 0;
+    }
+}
+
+static int mt_is_single_key(uint16_t cmd)
+{
+    switch (cmd) {
+    case CMD_GET:
+    case CMD_SET:
+    case CMD_DUMP:
+    case CMD_RESTORE:
+    case CMD_INCR:
+    case CMD_DECR:
+    case CMD_APPEND:
+    case CMD_STRLEN:
+    case CMD_EXPIRE:
+    case CMD_PEXPIRE:
+    case CMD_EXPIREAT:
+    case CMD_PEXPIREAT:
+    case CMD_TTL:
+    case CMD_PTTL:
+    case CMD_PERSIST:
+    case CMD_HSET:
+    case CMD_HMSET:
+    case CMD_HGET:
+    case CMD_HDEL:
+    case CMD_HEXISTS:
+    case CMD_HLEN:
+    case CMD_HGETALL:
+    case CMD_HKEYS:
+    case CMD_HVALS:
+    case CMD_HMGET:
+    case CMD_HINCRBY:
+    case CMD_HSETNX:
+    case CMD_LPUSH:
+    case CMD_RPUSH:
+    case CMD_LPUSHX:
+    case CMD_RPUSHX:
+    case CMD_LPOP:
+    case CMD_RPOP:
+    case CMD_LLEN:
+    case CMD_LRANGE:
+    case CMD_LINDEX:
+    case CMD_LSET:
+    case CMD_SADD:
+    case CMD_SREM:
+    case CMD_SISMEMBER:
+    case CMD_SMISMEMBER:
+    case CMD_SCARD:
+    case CMD_SMEMBERS:
+    case CMD_SPOP:
+    case CMD_SRANDMEMBER:
+    case CMD_ZADD:
+    case CMD_ZSCORE:
+    case CMD_ZCARD:
+    case CMD_ZINCRBY:
+    case CMD_ZREM:
+    case CMD_ZRANGE:
+    case CMD_ZREVRANGE:
+    case CMD_ZRANK:
+    case CMD_ZREVRANK:
+    case CMD_ZCOUNT:
+    case CMD_ZRANGEBYSCORE:
+    case CMD_ZREMRANGEBYSCORE:
+        return 1;
+    default:
+        return 0;
+    }
+}
+
+static int mt_is_keyless(uint16_t cmd)
+{
+    switch (cmd) {
+    case CMD_PING:
+    case CMD_ECHO:
+    case CMD_CONFIG:
+    case CMD_INFO:
+    case CMD_DBSIZE:
+    case CMD_FLUSHDB:
+    case CMD_QUIT:
+        return 1;
+    default:
+        return 0;
+    }
+}
+
+/* Decide where a command runs. Returns a worker id, MT_LOCAL, MT_BLOCKED or
+ * MT_PASS. */
+static int mt_classify(int nworkers, uint16_t cmd, const resp_value *argv,
+                       size_t argc)
+{
+    if (mt_is_blocked(cmd))
+        return MT_BLOCKED;
+    if (mt_is_single_key(cmd)) {
+        if (argc < 2 || argv[1].str == NULL)
+            return MT_LOCAL; /* arity error: let the local session report it */
+        return (int)(hash_slot(argv[1].str, argv[1].len) %
+                     (uint32_t)nworkers);
+    }
+    if (mt_is_keyless(cmd))
+        return MT_LOCAL;
+    return MT_PASS; /* multi-key commands arrive in the next milestone */
+}
+
+/* ------------------------------------------------------------------ */
+/* worker / acceptor                                                   */
+/* ------------------------------------------------------------------ */
+
+struct worker {
+    int id;
+    mt_server *ms;
+    server *srv;
+    pal_thread thread;
+    pal_wakeup wakeup;
+    mt_queue accepts;     /* pal_socket_t values as void* */
+    mt_queue inbox;       /* mt_task*: commands to execute on this worker */
+    mt_queue completions; /* mt_task*: executed replies to deliver home */
+    volatile int running;
+};
+
+struct mt_server {
+    pal_socket_t listen_fd;
+    uint16_t port;
+    int nworkers;
+    worker *workers;
+    pal_thread acceptor;
+    volatile int running;
+};
+
+/* Router installed on every worker's server. Runs on the home worker thread
+ * inside conn_process_input. Returns non-zero when the command was handled
+ * (locally, blocked, or forwarded). */
+static int mt_route(void *ctx, void *conn, session *sess,
+                    const resp_value *argv, size_t argc, resp_buf *out)
+{
+    static const char blocked_msg[] = "ERR command not supported in mt mode";
+    worker *home = (worker *)ctx;
+    mt_conn_state *st;
+    uint16_t cmd;
+    int target;
+    uint64_t seq;
+
+    if (argc == 0 || argv[0].str == NULL)
+        return 0;
+    cmd = cmd_resolve(argv[0].str, argv[0].len);
+    target = mt_classify(home->ms->nworkers, cmd, argv, argc);
+    if (target == MT_PASS)
+        return 0; /* legacy inline path (multi-key: next milestone) */
+
+    st = (mt_conn_state *)server_conn_mt_state(conn);
+    if (st == NULL) {
+        st = (mt_conn_state *)calloc(1, sizeof(*st));
+        if (st == NULL)
+            return 0;
+        server_conn_set_mt_state(conn, st);
+    }
+    seq = st->seq_next++;
+
+    /* Forward to the owning worker. */
+    if (target >= 0 && target != home->id) {
+        mt_task *t = mt_task_new(conn, home, seq, argv, argc);
+        if (t == NULL) {
+            resp_write_error(out, "ERR out of memory", 17);
+            st->seq_write++;
+            return 1;
+        }
+        server_conn_mt_inc(conn);
+        if (mt_queue_push(&home->ms->workers[target].inbox, t) != 0) {
+            server_conn_mt_dec(home->srv, conn);
+            mt_task_free(t);
+            resp_write_error(out, "ERR out of memory", 17);
+            st->seq_write++;
+            return 1;
+        }
+        (void)pal_wakeup_kick(&home->ms->workers[target].wakeup);
+        return 1;
+    }
+
+    /* Local fast path: nothing outstanding, reply straight into conn->out. */
+    if (seq == st->seq_write) {
+        if (target == MT_BLOCKED)
+            resp_write_error(out, blocked_msg, sizeof(blocked_msg) - 1);
+        else
+            session_execute(sess, argv, argc, out);
+        st->seq_write++;
+        return 1;
+    }
+
+    /* Replies for earlier routed commands are still in flight: compute the
+     * reply now and hold it in the reorder buffer to preserve order. */
+    {
+        mt_task *t = mt_task_new(conn, home, seq, NULL, 0);
+        if (t == NULL) {
+            resp_write_error(out, "ERR out of memory", 17);
+            st->seq_write++;
+            return 1;
+        }
+        if (target == MT_BLOCKED)
+            resp_write_error(&t->reply, blocked_msg,
+                             sizeof(blocked_msg) - 1);
+        else
+            session_execute(sess, argv, argc, &t->reply);
+        mt_reorder_insert(st, t);
+        mt_drain_ready(home->srv, conn, st, 1);
+        return 1;
+    }
 }
 
 static void worker_on_wakeup(void *ctx)
 {
     worker *w = (worker *)ctx;
     (void)pal_wakeup_drain(&w->wakeup);
+
+    /* 1. adopt accepted fds */
     for (;;) {
-        pal_socket_t fd = fd_queue_pop(&w->accepts);
-        if (fd == PAL_SOCKET_INVALID)
+        void *p = mt_queue_pop(&w->accepts);
+        pal_socket_t fd;
+        if (p == NULL)
             break;
+        fd = (pal_socket_t)(uintptr_t)p;
         (void)server_adopt_fd(w->srv, fd);
+    }
+
+    /* 2. execute commands routed to this worker */
+    for (;;) {
+        mt_task *t = (mt_task *)mt_queue_pop(&w->inbox);
+        if (t == NULL)
+            break;
+        command_execute_at(server_db(w->srv), t->argv, t->argc, &t->reply,
+                           pal_wall_ms());
+        if (mt_queue_push(&t->home->completions, t) == 0)
+            (void)pal_wakeup_kick(&t->home->wakeup);
+        else
+            mt_task_free(t); /* OOM: drop the reply (conn times out) */
+    }
+
+    /* 3. deliver completed replies (home side) */
+    for (;;) {
+        mt_task *t = (mt_task *)mt_queue_pop(&w->completions);
+        void *conn;
+        mt_conn_state *st;
+        if (t == NULL)
+            break;
+        conn = t->conn;
+        st = (mt_conn_state *)server_conn_mt_state(conn);
+        if (st != NULL) {
+            mt_reorder_insert(st, t);
+            if (server_conn_mt_is_zombie(conn)) {
+                mt_drain_ready(w->srv, conn, st, 0);
+            } else {
+                mt_drain_ready(w->srv, conn, st, 1);
+                (void)server_conn_flush(w->srv, conn);
+            }
+        } else {
+            mt_task_free(t);
+        }
+        server_conn_mt_dec(w->srv, conn);
     }
 }
 
@@ -146,7 +547,8 @@ static void *acceptor_main(void *arg)
                     break;
                 w = &ms->workers[rr % ms->nworkers];
                 rr++;
-                if (fd_queue_push(&w->accepts, fd) != 0) {
+                if (mt_queue_push(&w->accepts,
+                                  (void *)(uintptr_t)fd) != 0) {
                     pal_close(fd);
                     continue;
                 }
@@ -184,21 +586,24 @@ mt_server *mt_server_create(const char *host, uint16_t port, int nworkers)
     for (i = 0; i < nworkers; i++) {
         worker *w = &ms->workers[i];
         w->id = i;
+        w->ms = ms;
         w->srv = server_create_ex("127.0.0.1", 0, SERVER_BACKEND_SELECT);
-        if (w->srv == NULL ||
-            fd_queue_init(&w->accepts) != 0 ||
+        if (w->srv == NULL || mt_queue_init(&w->accepts) != 0 ||
+            mt_queue_init(&w->inbox) != 0 ||
+            mt_queue_init(&w->completions) != 0 ||
             pal_wakeup_create(&w->wakeup) != 0) {
             ms->nworkers = i; /* destroy only initialized workers */
             mt_server_destroy(ms);
             return NULL;
         }
         server_close_listener(w->srv);
-        if (server_set_wakeup(w->srv, w->wakeup.wait_fd,
-                              worker_on_wakeup, w) != 0) {
+        if (server_set_wakeup(w->srv, w->wakeup.wait_fd, worker_on_wakeup,
+                              w) != 0) {
             ms->nworkers = i + 1;
             mt_server_destroy(ms);
             return NULL;
         }
+        server_set_route(w->srv, mt_route, mt_state_free_cb, w);
     }
     return ms;
 }
@@ -250,7 +655,9 @@ void mt_server_destroy(mt_server *ms)
     for (i = 0; i < ms->nworkers; i++) {
         worker *w = &ms->workers[i];
         if (w->srv != NULL) {
-            fd_queue_destroy(&w->accepts);
+            mt_queue_destroy(&w->accepts, NULL);
+            mt_queue_destroy(&w->inbox, mt_task_free);
+            mt_queue_destroy(&w->completions, mt_task_free);
             pal_wakeup_destroy(&w->wakeup);
             server_destroy(w->srv);
         }

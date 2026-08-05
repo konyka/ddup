@@ -10,6 +10,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "core/session.h"
 #include "pal/pal_socket.h"
 
 typedef struct server server;
@@ -86,10 +87,35 @@ int server_adopt_fd(server *s, pal_socket_t fd);
 int server_set_wakeup(server *s, pal_socket_t fd, void (*cb)(void *ctx),
                       void *ctx);
 
+/* mt_server routing hooks (readiness backend only):
+ * - server_set_route installs the per-command router. The router runs inside
+ *   conn_process_input before session_execute; returning non-zero means the
+ *   command was fully handled (locally or forwarded).
+ * - The conn_* helpers let the routing layer work with connections without
+ *   seeing the conn struct: opaque mt_state storage, routed-task pending
+ *   counting (zombie close while tasks are in flight), ordered reply append
+ *   and flush. */
+typedef int (*server_route_fn)(void *ctx, void *conn, session *sess,
+                               const resp_value *argv, size_t argc,
+                               resp_buf *out);
+void server_set_route(server *s, server_route_fn fn,
+                      void (*mt_state_free)(void *ctx, void *st), void *ctx);
+void *server_conn_mt_state(void *conn);
+void server_conn_set_mt_state(void *conn, void *st);
+void server_conn_mt_inc(void *conn);
+void server_conn_mt_dec(server *s, void *conn);
+int server_conn_mt_is_zombie(void *conn);
+void server_conn_out_append(server *s, void *conn, const char *data,
+                            size_t len);
+int server_conn_flush(server *s, void *conn);
+
 /* Buffer-pool introspection (used by integration tests). */
 const buf_pool *server_buf_pool(const server *s);
 size_t server_pool_hits(const server *s);
 size_t server_pool_allocs(const server *s);
+
+/* The worker's keyspace (mt_server routed-task execution). */
+db *server_db(server *s);
 
 void server_destroy(server *s);
 

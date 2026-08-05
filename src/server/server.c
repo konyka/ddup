@@ -81,6 +81,10 @@ struct conn {
     struct server *srv;
     int is_replica;     /* downstream replica (we are the master) */
     int is_master_link; /* our outbound link to the master (we are replica) */
+    /* mt_server routing state (owned by the routing layer) */
+    int mt_pending;  /* routed tasks in flight */
+    int mt_zombie;   /* closed with routed tasks pending */
+    void *mt_state;  /* routing-layer per-conn state (seq + reorder buf) */
     /* master-link receive state ($<len> snapshot frame, then RESP stream) */
     int link_state;
     size_t link_hdrlen;
@@ -152,9 +156,14 @@ struct server {
     pal_socket_t wakeup_fd;
     void (*wakeup_cb)(void *ctx);
     void *wakeup_ctx;
+    /* mt_server routing hooks */
+    server_route_fn route_fn;
+    void (*mt_state_free)(void *ctx, void *st);
+    void *route_ctx;
 };
 
 static void conn_close(server *s, size_t idx);
+static int conn_flush(server *s, conn *c);
 static conn *conn_create(server *srv, pal_socket_t fd);
 static void repl_link_close(server *srv);
 static int repl_link_connect(server *srv);
@@ -453,6 +462,8 @@ static void conn_free(conn *c)
         pal_tls_free(c->tls);
     }
     pal_close(c->fd);
+    if (c->srv->mt_state_free != NULL && c->mt_state != NULL)
+        c->srv->mt_state_free(c->srv->route_ctx, c->mt_state);
     session_free(c->sess);
     free(c->link_snap);
     free(c->sbuf);
@@ -729,6 +740,11 @@ size_t server_pool_allocs(const server *s)
     return s->pool.allocs;
 }
 
+db *server_db(server *s)
+{
+    return &s->db;
+}
+
 /* Start a TLS listener alongside the plain one (port 0 = ephemeral).
  * Returns 0 on success; -1 when TLS is unavailable (stub build) or the
  * cert/key/listen setup failed. */
@@ -965,6 +981,67 @@ int server_set_wakeup(server *s, pal_socket_t fd, void (*cb)(void *ctx),
     return 0;
 }
 
+void server_set_route(server *s, server_route_fn fn,
+                      void (*mt_state_free)(void *ctx, void *st), void *ctx)
+{
+    s->route_fn = fn;
+    s->mt_state_free = mt_state_free;
+    s->route_ctx = ctx;
+}
+
+void *server_conn_mt_state(void *conn_ptr)
+{
+    return ((conn *)conn_ptr)->mt_state;
+}
+
+void server_conn_set_mt_state(void *conn_ptr, void *st)
+{
+    ((conn *)conn_ptr)->mt_state = st;
+}
+
+void server_conn_mt_inc(void *conn_ptr)
+{
+    ((conn *)conn_ptr)->mt_pending++;
+}
+
+void server_conn_mt_dec(server *s, void *conn_ptr)
+{
+    conn *c = (conn *)conn_ptr;
+    if (c->mt_pending > 0)
+        c->mt_pending--;
+    if (c->mt_zombie && c->mt_pending == 0) {
+        /* remove from the zombie list, then free for real */
+        size_t i;
+        for (i = 0; i < s->nzombies; i++)
+            if (s->zombies[i] == c) {
+                s->zombies[i] = s->zombies[s->nzombies - 1];
+                s->nzombies--;
+                break;
+            }
+        conn_free(c);
+    }
+}
+
+int server_conn_mt_is_zombie(void *conn_ptr)
+{
+    return ((conn *)conn_ptr)->mt_zombie;
+}
+
+void server_conn_out_append(server *s, void *conn_ptr, const char *data,
+                            size_t len)
+{
+    conn *c = (conn *)conn_ptr;
+    (void)s;
+    resp_buf_reserve(&c->out, len);
+    memcpy(c->out.data + c->out.len, data, len);
+    c->out.len += len;
+}
+
+int server_conn_flush(server *s, void *conn_ptr)
+{
+    return conn_flush(s, (conn *)conn_ptr);
+}
+
 static void server_accept(server *s, pal_socket_t lfd, int use_tls)
 {
     /* The listener socket is blocking, but a readiness event guarantees at
@@ -1048,6 +1125,14 @@ static void conn_close(server *s, size_t idx)
         return;
     }
     pal_loop_del(s->loop, c->fd);
+    if (c->mt_pending > 0) {
+        /* routed tasks still in flight: keep the conn (and its session /
+         * mt_state) alive until the last completion drains it. */
+        pal_close(c->fd);
+        c->mt_zombie = 1;
+        zombie_push(s, c);
+        return;
+    }
     conn_free(c);
 }
 
@@ -1372,6 +1457,13 @@ static int conn_process_input(server *s, conn *c)
             break; /* incomplete command */
         if (used < 0 || v.type != RESP_ARRAY || v.is_null)
             return -1;
+        if (s->route_fn != NULL &&
+            s->route_fn(s->route_ctx, c, c->sess, v.items, v.count,
+                        &c->out) != 0) {
+            arena_reset(&c->arena);
+            off += (size_t)used;
+            continue; /* routed / handled by the mt layer */
+        }
         session_execute(c->sess, v.items, v.count, &c->out);
         arena_reset(&c->arena);
         off += (size_t)used;
