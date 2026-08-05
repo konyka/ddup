@@ -229,9 +229,10 @@ static void mt_state_free_cb(void *ctx, void *ptr)
 /* command classification                                              */
 /* ------------------------------------------------------------------ */
 
-#define MT_PASS (-3)    /* not classified: legacy inline path */
-#define MT_BLOCKED (-2) /* reply -ERR (not supported in mt mode yet) */
-#define MT_LOCAL (-1)   /* keyless: execute on the home worker */
+#define MT_PASS (-3)      /* not classified: legacy inline path */
+#define MT_BLOCKED (-2)   /* reply -ERR (not supported in mt mode yet) */
+#define MT_LOCAL (-1)     /* keyless: execute on the home worker */
+#define MT_CROSSSLOT (-4) /* multi-key command spans workers */
 
 static int mt_is_blocked(uint16_t cmd)
 {
@@ -340,6 +341,38 @@ static int mt_is_keyless(uint16_t cmd)
     }
 }
 
+/* Multi-key commands: every key must map to the same worker (same rule as
+ * cluster CROSSSLOT). Key positions by command:
+ *   MGET/DEL/UNLINK/EXISTS -> argv[1..]
+ *   MSET                   -> argv[1], argv[3], ... (key/value pairs)
+ *   SMOVE                  -> argv[1], argv[2] (source, destination) */
+static int mt_multikey_target(int nworkers, uint16_t cmd,
+                              const resp_value *argv, size_t argc)
+{
+    size_t i;
+    int target = -2; /* unset */
+
+    if (argc < 2)
+        return MT_LOCAL; /* arity error: let the session report it */
+
+    for (i = 1; i < argc; i++) {
+        int w;
+        if (cmd == CMD_MSET && (i % 2) == 0)
+            continue; /* value position */
+        if (cmd == CMD_SMOVE && i > 2)
+            break; /* only source and destination are keys */
+        if (argv[i].str == NULL)
+            return MT_LOCAL;
+        w = (int)(hash_slot(argv[i].str, argv[i].len) %
+                  (uint32_t)nworkers);
+        if (target == -2)
+            target = w;
+        else if (target != w)
+            return MT_CROSSSLOT;
+    }
+    return target == -2 ? MT_LOCAL : target;
+}
+
 /* Decide where a command runs. Returns a worker id, MT_LOCAL, MT_BLOCKED or
  * MT_PASS. */
 static int mt_classify(int nworkers, uint16_t cmd, const resp_value *argv,
@@ -353,9 +386,20 @@ static int mt_classify(int nworkers, uint16_t cmd, const resp_value *argv,
         return (int)(hash_slot(argv[1].str, argv[1].len) %
                      (uint32_t)nworkers);
     }
+    switch (cmd) {
+    case CMD_MGET:
+    case CMD_MSET:
+    case CMD_DEL:
+    case CMD_UNLINK:
+    case CMD_EXISTS:
+    case CMD_SMOVE:
+        return mt_multikey_target(nworkers, cmd, argv, argc);
+    default:
+        break;
+    }
     if (mt_is_keyless(cmd))
         return MT_LOCAL;
-    return MT_PASS; /* multi-key commands arrive in the next milestone */
+    return MT_PASS; /* SINTER/SUNION/SDIFF stay on the legacy path for now */
 }
 
 /* ------------------------------------------------------------------ */
@@ -390,6 +434,8 @@ static int mt_route(void *ctx, void *conn, session *sess,
                     const resp_value *argv, size_t argc, resp_buf *out)
 {
     static const char blocked_msg[] = "ERR command not supported in mt mode";
+    static const char crossslot_msg[] =
+        "CROSSSLOT Keys in request don't hash to the same slot";
     worker *home = (worker *)ctx;
     mt_conn_state *st;
     uint16_t cmd;
@@ -401,7 +447,7 @@ static int mt_route(void *ctx, void *conn, session *sess,
     cmd = cmd_resolve(argv[0].str, argv[0].len);
     target = mt_classify(home->ms->nworkers, cmd, argv, argc);
     if (target == MT_PASS)
-        return 0; /* legacy inline path (multi-key: next milestone) */
+        return 0; /* legacy inline path (SINTER/SUNION/SDIFF for now) */
 
     st = (mt_conn_state *)server_conn_mt_state(conn);
     if (st == NULL) {
@@ -436,6 +482,8 @@ static int mt_route(void *ctx, void *conn, session *sess,
     if (seq == st->seq_write) {
         if (target == MT_BLOCKED)
             resp_write_error(out, blocked_msg, sizeof(blocked_msg) - 1);
+        else if (target == MT_CROSSSLOT)
+            resp_write_error(out, crossslot_msg, sizeof(crossslot_msg) - 1);
         else
             session_execute(sess, argv, argc, out);
         st->seq_write++;
@@ -454,6 +502,9 @@ static int mt_route(void *ctx, void *conn, session *sess,
         if (target == MT_BLOCKED)
             resp_write_error(&t->reply, blocked_msg,
                              sizeof(blocked_msg) - 1);
+        else if (target == MT_CROSSSLOT)
+            resp_write_error(&t->reply, crossslot_msg,
+                             sizeof(crossslot_msg) - 1);
         else
             session_execute(sess, argv, argc, &t->reply);
         mt_reorder_insert(st, t);

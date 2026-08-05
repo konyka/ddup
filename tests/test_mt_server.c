@@ -199,6 +199,140 @@ static void test_blocked_commands_in_mt_mode(void)
     pal_socket_cleanup();
 }
 
+/* Find two distinct keys that both map to the given worker. */
+static void pick_two_keys_for_worker(int wanted, int nworkers, char *out1,
+                                     size_t cap1, char *out2, size_t cap2)
+{
+    int i;
+    int found = 0;
+    for (i = 0; found < 2; i++) {
+        char tmp[32];
+        snprintf(tmp, sizeof(tmp), "mk:%d", i);
+        if ((int)(hash_slot(tmp, strlen(tmp)) % (uint32_t)nworkers) !=
+            wanted)
+            continue;
+        if (found == 0)
+            snprintf(out1, cap1, "%s", tmp);
+        else
+            snprintf(out2, cap2, "%s", tmp);
+        found++;
+    }
+}
+
+static void test_multikey_same_worker(void)
+{
+    mt_server *ms;
+    pal_socket_t a, b;
+    char ka[32], kb[32];
+    char req[256];
+
+    DD_CHECK_EQ_INT(0, pal_socket_init());
+    pick_two_keys_for_worker(0, 2, ka, sizeof(ka), kb, sizeof(kb));
+
+    ms = mt_server_create("127.0.0.1", 0, 2);
+    DD_CHECK(ms != NULL);
+    DD_CHECK_EQ_INT(0, mt_server_start(ms));
+    a = connect_client(mt_server_port(ms)); /* -> worker 0 */
+    b = connect_client(mt_server_port(ms)); /* -> worker 1 */
+
+    /* MSET with both keys on worker 0: local on a. */
+    snprintf(req, sizeof(req),
+             "*5\r\n$4\r\nMSET\r\n$%zu\r\n%s\r\n$2\r\nv1\r\n$%zu\r\n%s\r\n$2\r\nv2\r\n",
+             strlen(ka), ka, strlen(kb), kb);
+    roundtrip(a, req, "+OK\r\n");
+
+    /* MGET from b: routed to worker 0 as one unit. */
+    snprintf(req, sizeof(req), "*3\r\n$4\r\nMGET\r\n$%zu\r\n%s\r\n$%zu\r\n%s\r\n",
+             strlen(ka), ka, strlen(kb), kb);
+    roundtrip(b, req, "*2\r\n$2\r\nv1\r\n$2\r\nv2\r\n");
+
+    /* DEL both keys from b (routed); EXISTS from a afterwards. */
+    snprintf(req, sizeof(req), "*3\r\n$3\r\nDEL\r\n$%zu\r\n%s\r\n$%zu\r\n%s\r\n",
+             strlen(ka), ka, strlen(kb), kb);
+    roundtrip(b, req, ":2\r\n");
+    snprintf(req, sizeof(req), "*3\r\n$6\r\nEXISTS\r\n$%zu\r\n%s\r\n$%zu\r\n%s\r\n",
+             strlen(ka), ka, strlen(kb), kb);
+    roundtrip(a, req, ":0\r\n");
+
+    pal_close(a);
+    pal_close(b);
+    mt_server_stop(ms);
+    mt_server_destroy(ms);
+    pal_socket_cleanup();
+}
+
+static void test_multikey_crossslot_rejected(void)
+{
+    mt_server *ms;
+    pal_socket_t a;
+    char k0[32], k1[32];
+    char req[256];
+    const char *crossslot =
+        "-CROSSSLOT Keys in request don't hash to the same slot\r\n";
+
+    DD_CHECK_EQ_INT(0, pal_socket_init());
+    pick_key_for_worker(0, 2, k0, sizeof(k0));
+    pick_key_for_worker(1, 2, k1, sizeof(k1));
+
+    ms = mt_server_create("127.0.0.1", 0, 2);
+    DD_CHECK(ms != NULL);
+    DD_CHECK_EQ_INT(0, mt_server_start(ms));
+    a = connect_client(mt_server_port(ms));
+
+    snprintf(req, sizeof(req), "*3\r\n$4\r\nMGET\r\n$%zu\r\n%s\r\n$%zu\r\n%s\r\n",
+             strlen(k0), k0, strlen(k1), k1);
+    roundtrip(a, req, crossslot);
+
+    snprintf(req, sizeof(req),
+             "*5\r\n$4\r\nMSET\r\n$%zu\r\n%s\r\n$1\r\nx\r\n$%zu\r\n%s\r\n$1\r\ny\r\n",
+             strlen(k0), k0, strlen(k1), k1);
+    roundtrip(a, req, crossslot);
+
+    snprintf(req, sizeof(req), "*3\r\n$3\r\nDEL\r\n$%zu\r\n%s\r\n$%zu\r\n%s\r\n",
+             strlen(k0), k0, strlen(k1), k1);
+    roundtrip(a, req, crossslot);
+
+    snprintf(req, sizeof(req), "*4\r\n$5\r\nSMOVE\r\n$%zu\r\n%s\r\n$%zu\r\n%s\r\n$1\r\nm\r\n",
+             strlen(k0), k0, strlen(k1), k1);
+    roundtrip(a, req, crossslot);
+
+    pal_close(a);
+    mt_server_stop(ms);
+    mt_server_destroy(ms);
+    pal_socket_cleanup();
+}
+
+static void test_smove_same_worker(void)
+{
+    mt_server *ms;
+    pal_socket_t a;
+    char sa[32], sb[32];
+    char req[256];
+
+    DD_CHECK_EQ_INT(0, pal_socket_init());
+    pick_two_keys_for_worker(1, 2, sa, sizeof(sa), sb, sizeof(sb));
+
+    ms = mt_server_create("127.0.0.1", 0, 2);
+    DD_CHECK(ms != NULL);
+    DD_CHECK_EQ_INT(0, mt_server_start(ms));
+    a = connect_client(mt_server_port(ms)); /* -> worker 0 */
+
+    snprintf(req, sizeof(req), "*3\r\n$4\r\nSADD\r\n$%zu\r\n%s\r\n$1\r\nm\r\n",
+             strlen(sa), sa);
+    roundtrip(a, req, ":1\r\n");
+    snprintf(req, sizeof(req), "*4\r\n$5\r\nSMOVE\r\n$%zu\r\n%s\r\n$%zu\r\n%s\r\n$1\r\nm\r\n",
+             strlen(sa), sa, strlen(sb), sb);
+    roundtrip(a, req, ":1\r\n");
+    snprintf(req, sizeof(req), "*3\r\n$9\r\nSISMEMBER\r\n$%zu\r\n%s\r\n$1\r\nm\r\n",
+             strlen(sb), sb);
+    roundtrip(a, req, ":1\r\n");
+
+    pal_close(a);
+    mt_server_stop(ms);
+    mt_server_destroy(ms);
+    pal_socket_cleanup();
+}
+
 static void test_many_connections_across_workers(void)
 {
     mt_server *ms;
@@ -226,6 +360,9 @@ int main(void)
     DD_RUN(test_routed_cross_worker_commands);
     DD_RUN(test_pipeline_mixed_targets_keeps_order);
     DD_RUN(test_blocked_commands_in_mt_mode);
+    DD_RUN(test_multikey_same_worker);
+    DD_RUN(test_multikey_crossslot_rejected);
+    DD_RUN(test_smove_same_worker);
     DD_RUN(test_many_connections_across_workers);
     return DD_TEST_SUMMARY();
 }
