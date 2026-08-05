@@ -28,29 +28,30 @@
 -- Performing Test CMAKE_HAVE_LIBC_PTHREAD - Success
 -- Found Threads: TRUE
 -- ddup: TLS enabled (OpenSSL 3.0.13)
--- Configuring done (10.6s)
+-- Configuring done (8.8s)
 -- Generating done (0.1s)
 -- Build files have been written to: /home/runner/work/ddup/ddup/build
-[  1%] Building C object CMakeFiles/ddup_core.dir/src/pal/pal_time.c.o
-[  2%] Building C object CMakeFiles/ddup_core.dir/src/pal/pal_socket.c.o
+[  0%] Building C object CMakeFiles/ddup_core.dir/src/pal/pal_time.c.o
+[  1%] Building C object CMakeFiles/ddup_core.dir/src/pal/pal_socket.c.o
 [  2%] Building C object CMakeFiles/ddup_core.dir/src/pal/pal_event.c.o
 [  3%] Building C object CMakeFiles/ddup_core.dir/src/pal/pal_file.c.o
 [  4%] Building C object CMakeFiles/ddup_core.dir/src/pal/pal_tls.c.o
 [  5%] Building C object CMakeFiles/ddup_core.dir/src/pal/pal_iocp.c.o
 [  6%] Building C object CMakeFiles/ddup_core.dir/src/pal/pal_thread.c.o
+[  6%] Building C object CMakeFiles/ddup_core.dir/src/pal/pal_wakeup.c.o
 [  7%] Building C object CMakeFiles/ddup_core.dir/src/core/arena.c.o
 [  8%] Building C object CMakeFiles/ddup_core.dir/src/core/rhtable.c.o
 [  9%] Building C object CMakeFiles/ddup_core.dir/src/core/command.c.o
-[  9%] Building C object CMakeFiles/ddup_core.dir/src/core/buf_pool.c.o
-[ 10%] Building C object CMakeFiles/ddup_core.dir/src/ds/obj.c.o
-[ 11%] Building C object CMakeFiles/ddup_core.dir/src/ds/skiplist.c.o
+[ 10%] Building C object CMakeFiles/ddup_core.dir/src/core/buf_pool.c.o
+[ 11%] Building C object CMakeFiles/ddup_core.dir/src/ds/obj.c.o
+[ 12%] Building C object CMakeFiles/ddup_core.dir/src/ds/skiplist.c.o
 [ 12%] Building C object CMakeFiles/ddup_core.dir/src/core/session.c.o
 [ 13%] Building C object CMakeFiles/ddup_core.dir/src/core/config.c.o
 [ 14%] Building C object CMakeFiles/ddup_core.dir/src/core/snapshot.c.o
 [ 15%] Building C object CMakeFiles/ddup_core.dir/src/core/crc64.c.o
 [ 16%] Building C object CMakeFiles/ddup_core.dir/src/core/migrate.c.o
-[ 16%] Building C object CMakeFiles/ddup_core.dir/src/core/hashslot.c.o
-[ 17%] Building C object CMakeFiles/ddup_core.dir/src/core/cluster.c.o
+[ 17%] Building C object CMakeFiles/ddup_core.dir/src/core/hashslot.c.o
+[ 18%] Building C object CMakeFiles/ddup_core.dir/src/core/cluster.c.o
 [ 18%] Building C object CMakeFiles/ddup_core.dir/src/resp/resp_parser.c.o
 [ 19%] Building C object CMakeFiles/ddup_core.dir/src/resp/resp_writer.c.o
 [ 20%] Building C object CMakeFiles/ddup_core.dir/src/server/server.c.o
@@ -73,92 +74,95 @@
 [ 31%] Building C object CMakeFiles/test_pal_thread.dir/tests/test_pal_thread.c.o
 [ 32%] Linking C executable test_pal_thread
 [ 32%] Built target test_pal_thread
-[ 33%] Building C object CMakeFiles/test_cstd.dir/tests/test_cstd.c.o
-[ 34%] Linking C executable test_cstd
-[ 34%] Built target test_cstd
-[ 35%] Building C object CMakeFiles/test_cmdid.dir/tests/test_cmdid.c.o
-[ 35%] Linking C executable test_cmdid
-[ 35%] Built target test_cmdid
-[ 36%] Building C object CMakeFiles/test_buf_pool.dir/tests/test_buf_pool.c.o
-[ 37%] Linking C executable test_buf_pool
-[ 37%] Built target test_buf_pool
-[ 38%] Building C object CMakeFiles/test_socket.dir/tests/test_socket.c.o
-[ 39%] Linking C executable test_socket
-[ 39%] Built target test_socket
-[ 40%] Building C object CMakeFiles/test_event.dir/tests/test_event.c.o
-[ 41%] Linking C executable test_event
-[ 41%] Built target test_event
-[ 42%] Building C object CMakeFiles/test_server.dir/tests/test_server.c.o
-[ 43%] Linking C executable test_server
-[ 43%] Built target test_server
-[ 44%] Building C object CMakeFiles/test_arena.dir/tests/test_arena.c.o
-[ 45%] Linking C executable test_arena
-[ 45%] Built target test_arena
-[ 46%] Building C object CMakeFiles/test_resp_parser.dir/tests/test_resp_parser.c.o
-[ 47%] Linking C executable test_resp_parser
-[ 47%] Built target test_resp_parser
-[ 48%] Building C object CMakeFiles/test_resp_writer.dir/tests/test_resp_writer.c.o
-[ 49%] Linking C executable test_resp_writer
-[ 49%] Built target test_resp_writer
-[ 50%] Building C object CMakeFiles/test_resp3.dir/tests/test_resp3.c.o
-[ 51%] Linking C executable test_resp3
-[ 51%] Built target test_resp3
-[ 52%] Building C object CMakeFiles/test_rhtable.dir/tests/test_rhtable.c.o
-[ 52%] Linking C executable test_rhtable
-[ 52%] Built target test_rhtable
-[ 53%] Building C object CMakeFiles/test_command.dir/tests/test_command.c.o
-[ 54%] Linking C executable test_command
-[ 54%] Built target test_command
-[ 55%] Building C object CMakeFiles/test_expire.dir/tests/test_expire.c.o
-[ 56%] Linking C executable test_expire
-[ 56%] Built target test_expire
-[ 57%] Building C object CMakeFiles/test_eviction.dir/tests/test_eviction.c.o
-[ 58%] Linking C executable test_eviction
-[ 58%] Built target test_eviction
-[ 59%] Building C object CMakeFiles/test_hash.dir/tests/test_hash.c.o
-[ 59%] Linking C executable test_hash
-[ 59%] Built target test_hash
-[ 60%] Building C object CMakeFiles/test_list.dir/tests/test_list.c.o
-[ 61%] Linking C executable test_list
-[ 61%] Built target test_list
-[ 62%] Building C object CMakeFiles/test_skiplist.dir/tests/test_skiplist.c.o
-[ 62%] Linking C executable test_skiplist
-[ 62%] Built target test_skiplist
-[ 63%] Building C object CMakeFiles/test_set.dir/tests/test_set.c.o
-[ 64%] Linking C executable test_set
-[ 64%] Built target test_set
-[ 65%] Building C object CMakeFiles/test_zset.dir/tests/test_zset.c.o
-[ 66%] Linking C executable test_zset
-[ 66%] Built target test_zset
-[ 67%] Building C object CMakeFiles/test_session.dir/tests/test_session.c.o
-[ 68%] Linking C executable test_session
-[ 68%] Built target test_session
-[ 69%] Building C object CMakeFiles/test_multi.dir/tests/test_multi.c.o
-[ 69%] Linking C executable test_multi
-[ 69%] Built target test_multi
-[ 70%] Building C object CMakeFiles/test_pubsub.dir/tests/test_pubsub.c.o
-[ 71%] Linking C executable test_pubsub
-[ 71%] Built target test_pubsub
-[ 72%] Building C object CMakeFiles/test_config.dir/tests/test_config.c.o
-[ 73%] Linking C executable test_config
-[ 73%] Built target test_config
-[ 73%] Building C object CMakeFiles/test_aof.dir/tests/test_aof.c.o
-[ 74%] Linking C executable test_aof
-[ 74%] Built target test_aof
-[ 75%] Building C object CMakeFiles/test_snapshot.dir/tests/test_snapshot.c.o
+[ 33%] Building C object CMakeFiles/test_pal_wakeup.dir/tests/test_pal_wakeup.c.o
+[ 34%] Linking C executable test_pal_wakeup
+[ 34%] Built target test_pal_wakeup
+[ 35%] Building C object CMakeFiles/test_cstd.dir/tests/test_cstd.c.o
+[ 36%] Linking C executable test_cstd
+[ 36%] Built target test_cstd
+[ 37%] Building C object CMakeFiles/test_cmdid.dir/tests/test_cmdid.c.o
+[ 38%] Linking C executable test_cmdid
+[ 38%] Built target test_cmdid
+[ 39%] Building C object CMakeFiles/test_buf_pool.dir/tests/test_buf_pool.c.o
+[ 40%] Linking C executable test_buf_pool
+[ 40%] Built target test_buf_pool
+[ 41%] Building C object CMakeFiles/test_socket.dir/tests/test_socket.c.o
+[ 42%] Linking C executable test_socket
+[ 42%] Built target test_socket
+[ 43%] Building C object CMakeFiles/test_event.dir/tests/test_event.c.o
+[ 43%] Linking C executable test_event
+[ 43%] Built target test_event
+[ 44%] Building C object CMakeFiles/test_server.dir/tests/test_server.c.o
+[ 45%] Linking C executable test_server
+[ 45%] Built target test_server
+[ 46%] Building C object CMakeFiles/test_arena.dir/tests/test_arena.c.o
+[ 47%] Linking C executable test_arena
+[ 47%] Built target test_arena
+[ 48%] Building C object CMakeFiles/test_resp_parser.dir/tests/test_resp_parser.c.o
+[ 48%] Linking C executable test_resp_parser
+[ 48%] Built target test_resp_parser
+[ 49%] Building C object CMakeFiles/test_resp_writer.dir/tests/test_resp_writer.c.o
+[ 50%] Linking C executable test_resp_writer
+[ 50%] Built target test_resp_writer
+[ 51%] Building C object CMakeFiles/test_resp3.dir/tests/test_resp3.c.o
+[ 52%] Linking C executable test_resp3
+[ 52%] Built target test_resp3
+[ 53%] Building C object CMakeFiles/test_rhtable.dir/tests/test_rhtable.c.o
+[ 54%] Linking C executable test_rhtable
+[ 54%] Built target test_rhtable
+[ 55%] Building C object CMakeFiles/test_command.dir/tests/test_command.c.o
+[ 56%] Linking C executable test_command
+[ 56%] Built target test_command
+[ 57%] Building C object CMakeFiles/test_expire.dir/tests/test_expire.c.o
+[ 58%] Linking C executable test_expire
+[ 58%] Built target test_expire
+[ 59%] Building C object CMakeFiles/test_eviction.dir/tests/test_eviction.c.o
+[ 60%] Linking C executable test_eviction
+[ 60%] Built target test_eviction
+[ 61%] Building C object CMakeFiles/test_hash.dir/tests/test_hash.c.o
+[ 62%] Linking C executable test_hash
+[ 62%] Built target test_hash
+[ 63%] Building C object CMakeFiles/test_list.dir/tests/test_list.c.o
+[ 64%] Linking C executable test_list
+[ 64%] Built target test_list
+[ 65%] Building C object CMakeFiles/test_skiplist.dir/tests/test_skiplist.c.o
+[ 66%] Linking C executable test_skiplist
+[ 66%] Built target test_skiplist
+[ 67%] Building C object CMakeFiles/test_set.dir/tests/test_set.c.o
+[ 68%] Linking C executable test_set
+[ 68%] Built target test_set
+[ 69%] Building C object CMakeFiles/test_zset.dir/tests/test_zset.c.o
+[ 70%] Linking C executable test_zset
+[ 70%] Built target test_zset
+[ 70%] Building C object CMakeFiles/test_session.dir/tests/test_session.c.o
+[ 71%] Linking C executable test_session
+[ 71%] Built target test_session
+[ 72%] Building C object CMakeFiles/test_multi.dir/tests/test_multi.c.o
+[ 72%] Linking C executable test_multi
+[ 72%] Built target test_multi
+[ 72%] Building C object CMakeFiles/test_pubsub.dir/tests/test_pubsub.c.o
+[ 73%] Linking C executable test_pubsub
+[ 73%] Built target test_pubsub
+[ 73%] Building C object CMakeFiles/test_config.dir/tests/test_config.c.o
+[ 74%] Linking C executable test_config
+[ 74%] Built target test_config
+[ 75%] Building C object CMakeFiles/test_aof.dir/tests/test_aof.c.o
+[ 75%] Linking C executable test_aof
+[ 75%] Built target test_aof
+[ 76%] Building C object CMakeFiles/test_snapshot.dir/tests/test_snapshot.c.o
 [ 76%] Linking C executable test_snapshot
 [ 76%] Built target test_snapshot
 [ 77%] Building C object CMakeFiles/test_repl.dir/tests/test_repl.c.o
-[ 77%] Linking C executable test_repl
-[ 77%] Built target test_repl
+[ 78%] Linking C executable test_repl
+[ 78%] Built target test_repl
 [ 78%] Building C object CMakeFiles/test_hashslot.dir/tests/test_hashslot.c.o
 [ 79%] Linking C executable test_hashslot
 [ 79%] Built target test_hashslot
 [ 80%] Building C object CMakeFiles/test_cluster_id.dir/tests/test_cluster_id.c.o
-[ 81%] Linking C executable test_cluster_id
-[ 81%] Built target test_cluster_id
-[ 81%] Building C object CMakeFiles/test_cluster_cmds.dir/tests/test_cluster_cmds.c.o
-[ 82%] Linking C executable test_cluster_cmds
+[ 80%] Linking C executable test_cluster_id
+[ 80%] Built target test_cluster_id
+[ 80%] Building C object CMakeFiles/test_cluster_cmds.dir/tests/test_cluster_cmds.c.o
+[ 81%] Linking C executable test_cluster_cmds
 In function ‘snprintf’,
     inlined from ‘cluster_session’ at /home/runner/work/ddup/ddup/tests/test_cluster_cmds.c:43:5:
 /usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin_memcpy’ writing 10 bytes into a region of size 0 overflows the destination [-Wstringop-overflow=]
@@ -166,22 +170,22 @@ In function ‘snprintf’,
       |          ^
 In function ‘cluster_session’:
 lto1: note: destination object is likely at address zero
-[ 82%] Built target test_cluster_cmds
-[ 83%] Building C object CMakeFiles/test_cluster_nodes.dir/tests/test_cluster_nodes.c.o
-[ 84%] Linking C executable test_cluster_nodes
-[ 84%] Built target test_cluster_nodes
-[ 85%] Building C object CMakeFiles/test_cluster_bus.dir/tests/test_cluster_bus.c.o
-[ 86%] Linking C executable test_cluster_bus
-[ 86%] Built target test_cluster_bus
-[ 87%] Building C object CMakeFiles/test_cluster_slots.dir/tests/test_cluster_slots.c.o
-[ 88%] Linking C executable test_cluster_slots
-[ 88%] Built target test_cluster_slots
-[ 89%] Building C object CMakeFiles/test_dump.dir/tests/test_dump.c.o
-[ 89%] Linking C executable test_dump
-[ 89%] Built target test_dump
-[ 90%] Building C object CMakeFiles/test_migrate.dir/tests/test_migrate.c.o
-[ 91%] Linking C executable test_migrate
-[ 91%] Built target test_migrate
+[ 81%] Built target test_cluster_cmds
+[ 82%] Building C object CMakeFiles/test_cluster_nodes.dir/tests/test_cluster_nodes.c.o
+[ 83%] Linking C executable test_cluster_nodes
+[ 83%] Built target test_cluster_nodes
+[ 84%] Building C object CMakeFiles/test_cluster_bus.dir/tests/test_cluster_bus.c.o
+[ 85%] Linking C executable test_cluster_bus
+[ 85%] Built target test_cluster_bus
+[ 85%] Building C object CMakeFiles/test_cluster_slots.dir/tests/test_cluster_slots.c.o
+[ 86%] Linking C executable test_cluster_slots
+[ 86%] Built target test_cluster_slots
+[ 87%] Building C object CMakeFiles/test_dump.dir/tests/test_dump.c.o
+[ 88%] Linking C executable test_dump
+[ 88%] Built target test_dump
+[ 89%] Building C object CMakeFiles/test_migrate.dir/tests/test_migrate.c.o
+[ 90%] Linking C executable test_migrate
+[ 90%] Built target test_migrate
 [ 91%] Building C object CMakeFiles/test_cluster_migrate.dir/tests/test_cluster_migrate.c.o
 [ 92%] Linking C executable test_cluster_migrate
 [ 92%] Built target test_cluster_migrate
@@ -214,7 +218,7 @@ Get:2 http://azure.archive.ubuntu.com/ubuntu noble/universe amd64 libjemalloc2 a
 Get:3 http://azure.archive.ubuntu.com/ubuntu noble/universe amd64 liblzf1 amd64 3.6-4 [7624 B]
 Get:4 http://azure.archive.ubuntu.com/ubuntu noble-updates/universe amd64 redis-tools amd64 5:7.0.15-1ubuntu0.24.04.4 [1166 kB]
 Get:5 http://azure.archive.ubuntu.com/ubuntu noble-updates/universe amd64 redis-server amd64 5:7.0.15-1ubuntu0.24.04.4 [51.7 kB]
-Fetched 1482 kB in 0s (18.7 MB/s)
+Fetched 1482 kB in 0s (25.3 MB/s)
 Selecting previously unselected package libjemalloc2:amd64.
 (Reading database ... (Reading database ... 5%(Reading database ... 10%(Reading database ... 15%(Reading database ... 20%(Reading database ... 25%(Reading database ... 30%(Reading database ... 35%(Reading database ... 40%(Reading database ... 45%(Reading database ... 50%(Reading database ... 55%(Reading database ... 60%(Reading database ... 65%(Reading database ... 70%(Reading database ... 75%(Reading database ... 80%(Reading database ... 85%(Reading database ... 90%(Reading database ... 95%(Reading database ... 100%(Reading database ... 202954 files and directories currently installed.)
 Preparing to unpack .../libjemalloc2_5.3.0-2build1_amd64.deb ...
