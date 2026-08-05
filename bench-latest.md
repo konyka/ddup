@@ -1,16 +1,16 @@
 # ddup vs Garnet vs Redis — loopback benchmark
 
-- date (UTC): 2026-08-05T07:19:47Z
+- date (UTC): 2026-08-05T07:19:55Z
 - runner: Linux runnervmvrwv9 6.17.0-1020-azure #20~24.04.1-Ubuntu SMP Fri Jun 19 20:09:14 UTC 2026 x86_64 x86_64 x86_64 GNU/Linux, CPUs: 4
-- ddup commit: f2d6289
+- ddup commit: 8d1acbe
 - garnet commit: bda83e9
 - Redis server v=7.0.15 sha=00000000:0 malloc=jemalloc-5.3.0 bits=64 build=e53ff17674aa6190
 - client: redis-benchmark -t set|get -n 200000 -c 50 -P 16, median of 3
 
 | server | SET req/s | GET req/s |
 |--------|-----------|-----------|
-| ddup   | 593471.81 | 704225.31 |
-| garnet | 357781.75 | 481927.72 |
-| redis  | 568181.81 | 738007.38 |
+| ddup   | 1020408.19 | 1020408.19 |
+| garnet | 735294.06 | 729927.06 |
+| redis  | 934579.44 | 934579.44 |
 
-internal consistency (ddup-bench on ddup): SET 259067.36 req/s, GET 311526.48 req/s
+internal consistency (ddup-bench on ddup): SET 400801.60 req/s, GET 467289.72 req/s
