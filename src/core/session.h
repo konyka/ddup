@@ -55,6 +55,12 @@ typedef struct session {
      * server sets it to 0 and provides requirepass when auth is enabled. */
     int authed;
     const char *requirepass; /* not owned; NULL/"" = auth disabled */
+    /* multi-db selection (SELECT/SWAPDB): stack sessions have no hook and
+     * only db 0 exists */
+    int db_index;
+    void *sel_ctx;
+    db *(*sel_fn)(void *ctx, int idx);
+    int sel_ndbs;
     /* MULTI state */
     int in_multi;
     int multi_error;

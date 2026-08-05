@@ -560,6 +560,7 @@ static void test_chained_replication(void)
     cc = nb_client(server_port(c));
 
     /* B replicates A */
+    fprintf(stderr, "[chain] created\n");
     snprintf(port_str, sizeof(port_str), "%u", (unsigned)server_port(a));
     {
         const char *p1 = "*3\r\n$9\r\nREPLICAOF\r\n$9\r\n127.0.0.1\r\n$";
@@ -567,6 +568,7 @@ static void test_chained_replication(void)
                  port_str);
         rt2(a, b, bc, req, "+OK\r\n", buf, sizeof(buf));
     }
+    fprintf(stderr, "[chain] b->a linked\n");
     /* C replicates B */
     snprintf(port_str, sizeof(port_str), "%u", (unsigned)server_port(b));
     {
@@ -575,10 +577,12 @@ static void test_chained_replication(void)
                  port_str);
         rt2(b, c, cc, req, "+OK\r\n", buf, sizeof(buf));
     }
+    fprintf(stderr, "[chain] c->b linked\n");
 
     /* write on A; it must reach C through B */
     rt2(a, b, ac, "*3\r\n$3\r\nSET\r\n$5\r\nchain\r\n$5\r\nworks\r\n",
         "+OK\r\n", buf, sizeof(buf));
+    fprintf(stderr, "[chain] set done\n");
     synced = wait_sync_get3(a, b, c, server_port(c), "chain",
                             "$5\r\nworks\r\n", buf, sizeof(buf));
     DD_CHECK_EQ_INT(1, synced);

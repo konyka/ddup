@@ -13,6 +13,7 @@ void session_init(session *s, db *d)
     memset(s, 0, sizeof(*s));
     s->d = d;
     s->authed = 1; /* no password configured: start authenticated */
+    s->sel_ndbs = 1; /* no selection hook: only db 0 */
 }
 
 void session_queue_clear(session *s)

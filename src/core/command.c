@@ -750,6 +750,36 @@ static int ci_equal(const char *a, size_t alen, const char *b)
 }
 
 /* Extract a string argument; returns 0 if the value is not string-typed. */
+/* Strict long-long parse of a string argument (optional '-', digits only). */
+static int cmd_parse_ll(const resp_value *v, long long *out)
+{
+    const char *p;
+    const char *end;
+    int neg = 0;
+    long long x = 0;
+    if (v->str == NULL)
+        return 0;
+    p = v->str;
+    end = v->str + v->len;
+    if (p == end)
+        return 0;
+    if (*p == '-') {
+        neg = 1;
+        p++;
+    }
+    if (p == end)
+        return 0;
+    for (; p < end; p++) {
+        if (*p < '0' || *p > '9')
+            return 0;
+        if (x > 1000000000LL)
+            return 0;
+        x = x * 10 + (*p - '0');
+    }
+    *out = neg ? -x : x;
+    return 1;
+}
+
 static int arg_str(const resp_value *v, const char **s, size_t *len)
 {
     if (v->type != RESP_BULK_STRING && v->type != RESP_SIMPLE_STRING)
@@ -1064,7 +1094,8 @@ static int cluster_keyless_id(uint16_t cmd_id)
     case CMD_PING:       case CMD_ECHO:       case CMD_CONFIG:
     case CMD_INFO:       case CMD_SAVE:       case CMD_LASTSAVE:
     case CMD_SHUTDOWN:   case CMD_SYNC:       case CMD_REPLICAOF:
-    case CMD_PSYNC:      case CMD_AUTH:
+    case CMD_PSYNC:      case CMD_AUTH:       case CMD_SELECT:
+    case CMD_SWAPDB:
     case CMD_SUBSCRIBE:  case CMD_UNSUBSCRIBE:case CMD_PUBLISH:
     case CMD_QUIT:       case CMD_MULTI:      case CMD_EXEC:
     case CMD_DISCARD:    case CMD_UNWATCH:    case CMD_DBSIZE:
@@ -1232,6 +1263,62 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
                 "disabled.";
             resp_write_error(out, E, sizeof(E) - 1);
         }
+        return;
+    }
+
+    if (cmd_id == CMD_SELECT) {
+        long long idx;
+        if (argc != 2) {
+            wrong_args(out, "select");
+            return;
+        }
+        if (!cmd_parse_ll(&argv[1], &idx)) {
+            resp_write_error(out,
+                             "ERR value is not an integer or out of range",
+                             43);
+            return;
+        }
+        if (idx < 0 || idx >= s->sel_ndbs || s->sel_fn == NULL) {
+            static const char E[] = "ERR DB index is out of range";
+            resp_write_error(out, E, sizeof(E) - 1);
+            return;
+        }
+        s->d = s->sel_fn(s->sel_ctx, (int)idx);
+        s->db_index = (int)idx;
+        resp_write_simple_string(out, "OK", 2);
+        return;
+    }
+
+    if (cmd_id == CMD_SWAPDB) {
+        long long a, b;
+        if (argc != 3) {
+            wrong_args(out, "swapdb");
+            return;
+        }
+        if (!cmd_parse_ll(&argv[1], &a) || !cmd_parse_ll(&argv[2], &b)) {
+            resp_write_error(out,
+                             "ERR value is not an integer or out of range",
+                             43);
+            return;
+        }
+        if (a < 0 || a >= s->sel_ndbs || b < 0 || b >= s->sel_ndbs ||
+            s->sel_fn == NULL) {
+            static const char E[] = "ERR DB index is out of range";
+            resp_write_error(out, E, sizeof(E) - 1);
+            return;
+        }
+        if (a != b) {
+            db *da = s->sel_fn(s->sel_ctx, (int)a);
+            db *dbb = s->sel_fn(s->sel_ctx, (int)b);
+            db tmp = *da;
+            *da = *dbb;
+            *dbb = tmp;
+            /* watches must trip: swapped contents invalidate versions */
+            da->flush_epoch++;
+            dbb->flush_epoch++;
+            s->d->dirty++; /* AOF/propagation: log SWAPDB itself */
+        }
+        resp_write_simple_string(out, "OK", 2);
         return;
     }
 
@@ -4069,7 +4156,6 @@ static const cmd_entry CMD_TABLE[] = {
     {"subscribe", CMD_SUBSCRIBE, 2, -1, 0, 0},
     {"unsubscribe", CMD_UNSUBSCRIBE, 1, -1, 0, 0},
     {"publish", CMD_PUBLISH, 3, 3, 0, 0},
-    {"auth", CMD_AUTH, 2, 3, 0, 0},
     {"quit", CMD_QUIT, 1, 1, 0, 0},
     {"sync", CMD_SYNC, 1, 1, 0, 0},
     {"psync", CMD_PSYNC, 3, 3, 0, 0},
@@ -4078,6 +4164,9 @@ static const cmd_entry CMD_TABLE[] = {
     {"lastsave", CMD_LASTSAVE, 1, 1, 0, 0},
     {"shutdown", CMD_SHUTDOWN, 1, 1, 0, 0},
     {"cluster", CMD_CLUSTER, 2, -1, 0, 0},
+    {"auth", CMD_AUTH, 2, 3, 0, 0},
+    {"select", CMD_SELECT, 2, 2, 0, 0},
+    {"swapdb", CMD_SWAPDB, 3, 3, 0, CMD_WRITE},
 };
 
 /* ------------------------------------------------------------------ */

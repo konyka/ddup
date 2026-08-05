@@ -126,7 +126,9 @@ struct server {
     uint64_t last_nodes_save;
     uint64_t node_timeout_ms;
     uint64_t failover_deadline_ms; /* wall ms; 0 = no pending failover */
-    db db;
+    db db;            /* db 0 (also holds the cluster state) */
+    db *extra_dbs;    /* dbs 1..ndbs-1 */
+    int ndbs;         /* total logical databases (default 16) */
     rh_table channels; /* pub/sub: channel -> chan_node list head (8-byte ptr) */
     aof *aof;          /* NULL when appendonly=no */
     const char *requirepass; /* AUTH password (not owned); NULL/"" = off */
@@ -169,6 +171,7 @@ static void conn_close(server *s, size_t idx);
 static int conn_flush(server *s, conn *c);
 static int conn_process_input(server *s, conn *c);
 static conn *conn_create(server *srv, pal_socket_t fd);
+static db *srv_select_db(void *ctx, int idx);
 static void srv_psync(void *ctx, session *sess, const char *replid,
                       size_t replid_len, long long offset);
 static void repl_link_close(server *srv);
@@ -505,6 +508,9 @@ static conn *conn_create(server *srv, pal_socket_t fd)
                        srv->requirepass[0] == '\0')
                           ? 1
                           : 0;
+    c->sess->sel_ctx = srv;
+    c->sess->sel_fn = srv_select_db;
+    c->sess->sel_ndbs = srv->ndbs;
     c->sess->replicaof_ctx = srv;
     c->sess->replicaof_hook = srv_replicaof;
     c->sess->cluster_ctx = srv;
@@ -828,6 +834,17 @@ server *server_create_ex(const char *host, uint16_t port, int backend)
         return NULL;
     }
     db_init(&s->db);
+    s->ndbs = 16;
+    s->extra_dbs = (db *)calloc((size_t)(s->ndbs - 1), sizeof(db));
+    if (s->extra_dbs == NULL) {
+        server_destroy(s);
+        return NULL;
+    }
+    {
+        int i;
+        for (i = 0; i < s->ndbs - 1; i++)
+            db_init(&s->extra_dbs[i]);
+    }
     rh_init(&s->channels);
     if (host != NULL)
         snprintf(s->db.cluster_ip, sizeof(s->db.cluster_ip), "%s", host);
@@ -876,6 +893,14 @@ size_t server_pool_allocs(const server *s)
 db *server_db(server *s)
 {
     return &s->db;
+}
+
+static db *srv_select_db(void *ctx, int idx)
+{
+    server *srv = (server *)ctx;
+    if (idx == 0)
+        return &srv->db;
+    return &srv->extra_dbs[idx - 1];
 }
 
 void server_aof_log_cmd(server *s, const resp_value *argv, size_t argc)
@@ -1063,6 +1088,12 @@ void server_destroy(server *s)
     repl_backlog_free(&s->backlog);
     resp_buf_free(&s->prop_buf);
     db_destroy(&s->db);
+    if (s->extra_dbs != NULL) {
+        int i;
+        for (i = 0; i < s->ndbs - 1; i++)
+            db_destroy(&s->extra_dbs[i]);
+        free(s->extra_dbs);
+    }
     buf_pool_destroy(&s->pool);
     free(s);
 }
