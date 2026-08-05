@@ -27,5 +27,10 @@ void repl_backlog_free(repl_backlog *b);
 void repl_backlog_append(repl_backlog *b, const char *data, size_t n);
 /* Copy the ring contents (oldest first) into out; returns bytes copied. */
 size_t repl_backlog_read(const repl_backlog *b, char *out, size_t max);
+/* Copy up to max bytes starting at absolute stream offset from_offset
+ * (must be >= offset-len). Returns bytes copied (0 when from_offset is at
+ * or past the current offset). */
+size_t repl_backlog_read_from(const repl_backlog *b, uint64_t from_offset,
+                              char *out, size_t max);
 
 #endif /* DDUP_REPL_H */

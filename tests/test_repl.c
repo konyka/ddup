@@ -47,6 +47,7 @@ static void test_backlog_wrap(void)
 
 static void test_sync_master(void);
 static void test_psync_fullresync(void);
+static void test_psync_continue_partial(void);
 static void test_replica_full_cycle(void);
 static void test_replica_reconnect_resync(void);
 
@@ -56,6 +57,7 @@ int main(void)
     DD_RUN(test_backlog_wrap);
     DD_RUN(test_sync_master);
     DD_RUN(test_psync_fullresync);
+    DD_RUN(test_psync_continue_partial);
     DD_RUN(test_replica_full_cycle);
     DD_RUN(test_replica_reconnect_resync);
     return DD_TEST_SUMMARY();
@@ -360,6 +362,42 @@ static pal_socket_t nb_client(uint16_t port)
     return c;
 }
 
+/* Poll GET key on a fresh throwaway connection per attempt (no reply drift
+ * on the caller's client). Returns 1 when the expected reply arrives. */
+static int wait_sync_get(server *x, server *y, uint16_t port, const char *key,
+                         const char *expected, char *buf, size_t bufcap)
+{
+    size_t elen = strlen(expected);
+    int i;
+    for (i = 0; i < 500; i++) {
+        pal_socket_t t = nb_client(port);
+        char req[96];
+        size_t got = 0;
+        int iter = 0;
+        int rl = snprintf(req, sizeof(req),
+                          "*2\r\n$3\r\nGET\r\n$%zu\r\n%s\r\n", strlen(key),
+                          key);
+        DD_CHECK(elen <= bufcap);
+        DD_CHECK(rl > 0 && (size_t)rl < sizeof(req));
+        if (pal_send(t, req, (size_t)rl) != rl) {
+            pal_close(t);
+            continue;
+        }
+        while (got < elen && iter < 10000) {
+            ptrdiff_t n;
+            iter++;
+            pump2(x, y);
+            n = pal_recv(t, buf + got, bufcap - got);
+            if (n > 0)
+                got += (size_t)n;
+        }
+        pal_close(t);
+        if (got == elen && memcmp(buf, expected, elen) == 0)
+            return 1;
+    }
+    return 0;
+}
+
 static void test_replica_full_cycle(void)
 {
     server *m, *r;
@@ -443,6 +481,75 @@ static void test_replica_full_cycle(void)
         sizeof(buf));
     rt2(m, r, rc, "*3\r\n$3\r\nSET\r\n$1\r\ny\r\n$1\r\n1\r\n", "+OK\r\n",
         buf, sizeof(buf));
+
+    pal_close(rc);
+    pal_close(mc);
+    server_destroy(r);
+    server_destroy(m);
+    pal_socket_cleanup();
+}
+
+/* ------------------------------------------------------------------ */
+/* PSYNC +CONTINUE: reconnect replays only the backlog tail            */
+/* ------------------------------------------------------------------ */
+
+static void test_psync_continue_partial(void)
+{
+    server *m, *r;
+    pal_socket_t mc, rc;
+    char buf[8192];
+    char port_str[16];
+    uint16_t mport;
+    int synced;
+
+    DD_CHECK_EQ_INT(0, pal_socket_init());
+    m = server_create("127.0.0.1", 0);
+    r = server_create("127.0.0.1", 0);
+    DD_CHECK(m != NULL && r != NULL);
+    mport = server_port(m);
+    mc = nb_client(mport);
+    rc = nb_client(server_port(r));
+
+    snprintf(port_str, sizeof(port_str), "%u", (unsigned)mport);
+    {
+        char req[128];
+        const char *p1 = "*3\r\n$9\r\nREPLICAOF\r\n$9\r\n127.0.0.1\r\n$";
+        snprintf(req, sizeof(req), "%s%zu\r\n%s\r\n", p1, strlen(port_str),
+                 port_str);
+        rt2(m, r, rc, req, "+OK\r\n", buf, sizeof(buf));
+    }
+    rt2(m, r, mc, "*3\r\n$3\r\nSET\r\n$2\r\nk1\r\n$2\r\nv1\r\n", "+OK\r\n",
+        buf, sizeof(buf));
+    synced = wait_sync_get(m, r, server_port(r), "k1", "$2\r\nv1\r\n", buf,
+                           sizeof(buf));
+    DD_CHECK_EQ_INT(1, synced);
+
+    /* detach, write a replica-local key, write more on the master */
+    rt2(m, r, rc, "*3\r\n$9\r\nREPLICAOF\r\n$2\r\nNO\r\n$3\r\nONE\r\n",
+        "+OK\r\n", buf, sizeof(buf));
+    rt2(m, r, rc, "*3\r\n$3\r\nSET\r\n$5\r\nlocal\r\n$4\r\nmine\r\n",
+        "+OK\r\n", buf, sizeof(buf));
+    rt2(m, r, mc, "*3\r\n$3\r\nSET\r\n$2\r\nk2\r\n$2\r\nv2\r\n", "+OK\r\n",
+        buf, sizeof(buf));
+
+    /* reconnect: PSYNC continues from the backlog (no full wipe) */
+    {
+        char req[128];
+        const char *p1 = "*3\r\n$9\r\nREPLICAOF\r\n$9\r\n127.0.0.1\r\n$";
+        snprintf(req, sizeof(req), "%s%zu\r\n%s\r\n", p1, strlen(port_str),
+                 port_str);
+        rt2(m, r, rc, req, "+OK\r\n", buf, sizeof(buf));
+    }
+    synced = wait_sync_get(m, r, server_port(r), "k2", "$2\r\nv2\r\n", buf,
+                           sizeof(buf));
+    DD_CHECK_EQ_INT(1, synced);
+
+    /* partial resync: the replica-local key survived (full resync would
+     * have wiped it); the earlier replicated key is intact */
+    rt2(m, r, rc, "*2\r\n$3\r\nGET\r\n$5\r\nlocal\r\n", "$4\r\nmine\r\n",
+        buf, sizeof(buf));
+    rt2(m, r, rc, "*2\r\n$3\r\nGET\r\n$2\r\nk1\r\n", "$2\r\nv1\r\n", buf,
+        sizeof(buf));
 
     pal_close(rc);
     pal_close(mc);

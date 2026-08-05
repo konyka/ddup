@@ -45,6 +45,8 @@ typedef struct repl_info {
     uint64_t offset;    /* master side: bytes propagated so far */
     char replid[41];    /* own replication id (40-hex, generated at boot) */
     char master_replid[41]; /* replica side: the master's replid */
+    uint64_t master_offset; /* replica side: applied offset in the
+                               master's stream (PSYNC resume point) */
 } repl_info;
 
 typedef struct session {

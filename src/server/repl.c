@@ -57,3 +57,30 @@ size_t repl_backlog_read(const repl_backlog *b, char *out, size_t max)
         memcpy(out + tail, b->buf, n - tail);
     return n;
 }
+
+size_t repl_backlog_read_from(const repl_backlog *b, uint64_t from_offset,
+                              char *out, size_t max)
+{
+    uint64_t base = b->offset - b->len;
+    size_t skip;
+    size_t avail;
+    size_t n;
+    size_t pos;
+    size_t tail;
+    if (from_offset <= base)
+        skip = 0;
+    else
+        skip = (size_t)(from_offset - base);
+    if (skip >= b->len)
+        return 0;
+    avail = b->len - skip;
+    n = avail < max ? avail : max;
+    pos = (b->start + skip) % b->cap;
+    tail = b->cap - pos;
+    if (tail > n)
+        tail = n;
+    memcpy(out, b->buf + pos, tail);
+    if (tail < n)
+        memcpy(out + tail, b->buf, n - tail);
+    return n;
+}

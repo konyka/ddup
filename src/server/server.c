@@ -96,6 +96,7 @@ struct conn {
 #define LINK_SYNC_SENT 0
 #define LINK_SNAPSHOT 1
 #define LINK_STREAMING 2
+#define LINK_SNAP_HDR 3 /* PSYNC FULLRESYNC: snapshot frame header next */
 
 /* cluster bus connection (cluster bus protocol v1, server side) */
 typedef struct bus_conn {
@@ -353,6 +354,12 @@ static int srv_replicaof(void *ctx, const char *host, uint16_t port)
         srv->repl.link_up = 0;
         return 0;
     }
+    /* pointing at a different master invalidates the PSYNC resume cache */
+    if (strcmp(srv->repl.master_host, host) != 0 ||
+        srv->repl.master_port != port) {
+        srv->repl.master_replid[0] = '\0';
+        srv->repl.master_offset = 0;
+    }
     snprintf(srv->repl.master_host, sizeof(srv->repl.master_host), "%s",
              host);
     srv->repl.master_port = port;
@@ -400,8 +407,8 @@ static void srv_sync(void *ctx, session *sess)
 }
 
 /* PSYNC: partial resync when the caller's replid matches and the offset is
- * still inside the backlog, otherwise full resync. This step implements the
- * FULLRESYNC path; +CONTINUE arrives with the next step. */
+ * still inside the backlog (+CONTINUE), otherwise full resync
+ * (+FULLRESYNC + snapshot frame). */
 static void srv_psync(void *ctx, session *sess, const char *replid,
                       size_t replid_len, long long offset)
 {
@@ -409,9 +416,38 @@ static void srv_psync(void *ctx, session *sess, const char *replid,
     conn *c = (conn *)sess->owner;
     char hdr[96];
     int hl;
-    (void)replid;
-    (void)replid_len;
-    (void)offset;
+
+    /* partial resync: same history and the resume point is still covered
+     * by the backlog ring */
+    if (replid_len == 40 && memcmp(replid, srv->repl.replid, 40) == 0 &&
+        offset >= 0 &&
+        (uint64_t)offset >= srv->backlog.offset - srv->backlog.len &&
+        (uint64_t)offset <= srv->backlog.offset) {
+        char chunk[64 * 1024];
+        uint64_t pos = (uint64_t)offset;
+        hl = snprintf(hdr, sizeof(hdr), "+CONTINUE %s\r\n", srv->repl.replid);
+        resp_buf_reserve(&c->out, (size_t)hl);
+        memcpy(c->out.data + c->out.len, hdr, (size_t)hl);
+        c->out.len += (size_t)hl;
+        while (pos < srv->backlog.offset) {
+            size_t want = (size_t)(srv->backlog.offset - pos);
+            size_t got;
+            if (want > sizeof(chunk))
+                want = sizeof(chunk);
+            got = repl_backlog_read_from(&srv->backlog, pos, chunk, want);
+            if (got == 0)
+                break;
+            resp_buf_reserve(&c->out, got);
+            memcpy(c->out.data + c->out.len, chunk, got);
+            c->out.len += got;
+            pos += got;
+        }
+        if (!c->is_replica) {
+            c->is_replica = 1;
+            srv->repl.connected_slaves++;
+        }
+        return;
+    }
 
     hl = snprintf(hdr, sizeof(hdr), "+FULLRESYNC %s %llu\r\n",
                   srv->repl.replid, (unsigned long long)srv->repl.offset);
@@ -550,7 +586,6 @@ static int repl_link_connect(server *srv)
 {
     pal_socket_t fd;
     conn *c;
-    static const char sync_cmd[] = "*1\r\n$4\r\nSYNC\r\n";
 
     srv->last_reconnect = pal_now_ms();
     fd = pal_tcp_connect(srv->repl.master_host, srv->repl.master_port);
@@ -580,9 +615,26 @@ static int repl_link_connect(server *srv)
         return -1;
     }
     srv->master_link = c;
-    resp_buf_reserve(&c->out, sizeof(sync_cmd) - 1);
-    memcpy(c->out.data, sync_cmd, sizeof(sync_cmd) - 1);
-    c->out.len = sizeof(sync_cmd) - 1;
+    {
+        /* PSYNC with the cached master id/offset when we have one (resume
+         * attempt), otherwise "? -1" (first sync: full resync) */
+        char psync[160];
+        int pl;
+        if (srv->repl.master_replid[0] != '\0') {
+            char offstr[24];
+            int ol = snprintf(offstr, sizeof(offstr), "%llu",
+                              (unsigned long long)srv->repl.master_offset);
+            pl = snprintf(psync, sizeof(psync),
+                          "*3\r\n$5\r\nPSYNC\r\n$40\r\n%s\r\n$%d\r\n%s\r\n",
+                          srv->repl.master_replid, ol, offstr);
+        } else {
+            pl = snprintf(psync, sizeof(psync),
+                          "*3\r\n$5\r\nPSYNC\r\n$1\r\n?\r\n$2\r\n-1\r\n");
+        }
+        resp_buf_reserve(&c->out, (size_t)pl);
+        memcpy(c->out.data, psync, (size_t)pl);
+        c->out.len = (size_t)pl;
+    }
     c->link_state = LINK_SYNC_SENT;
     return 0;
 }
@@ -623,6 +675,55 @@ static void repl_link_service(server *srv, conn *c)
     c->rlen += (size_t)n;
 
     if (c->link_state == LINK_SYNC_SENT) {
+        size_t pos = 0;
+        while (pos < c->rlen && c->rbuf[pos] != '\n')
+            pos++;
+        if (pos == c->rlen) {
+            if (c->rlen > 128)
+                repl_link_close(srv); /* garbage instead of a frame */
+            return;                 /* wait for the rest of the header */
+        }
+        if (c->rbuf[0] == '+') {
+            /* PSYNC handshake line */
+            if (pos >= 12 && memcmp(c->rbuf, "+FULLRESYNC ", 12) == 0) {
+                uint64_t moff = 0;
+                size_t i;
+                if (pos < 12 + 40 + 2) {
+                    repl_link_close(srv);
+                    return;
+                }
+                memcpy(srv->repl.master_replid, c->rbuf + 12, 40);
+                srv->repl.master_replid[40] = '\0';
+                for (i = 12 + 40 + 1;
+                     i < pos && c->rbuf[i] >= '0' && c->rbuf[i] <= '9'; i++)
+                    moff = moff * 10 + (unsigned)(c->rbuf[i] - '0');
+                srv->repl.master_offset = moff;
+                memmove(c->rbuf, c->rbuf + pos + 1, c->rlen - pos - 1);
+                c->rlen -= pos + 1;
+                c->link_state = LINK_SNAP_HDR;
+            } else if (pos >= 10 && memcmp(c->rbuf, "+CONTINUE ", 10) == 0) {
+                if (pos < 10 + 40) {
+                    repl_link_close(srv);
+                    return;
+                }
+                memcpy(srv->repl.master_replid, c->rbuf + 10, 40);
+                srv->repl.master_replid[40] = '\0';
+                memmove(c->rbuf, c->rbuf + pos + 1, c->rlen - pos - 1);
+                c->rlen -= pos + 1;
+                c->link_state = LINK_STREAMING;
+                srv->repl.link_up = 1;
+            } else {
+                repl_link_close(srv);
+                return;
+            }
+        } else if (c->rbuf[0] == '$') {
+            c->link_state = LINK_SNAP_HDR; /* legacy SYNC path */
+        } else {
+            repl_link_close(srv);
+            return;
+        }
+    }
+    if (c->link_state == LINK_SNAP_HDR) {
         size_t pos = 0;
         size_t i;
         uint64_t slen = 0;
@@ -690,6 +791,7 @@ static void repl_link_service(server *srv, conn *c)
             c->out.len = 0;
             arena_reset(&c->arena);
             off += (size_t)used;
+            srv->repl.master_offset += (uint64_t)used; /* PSYNC resume */
         }
         if (off > 0) {
             memmove(c->rbuf, c->rbuf + off, c->rlen - off);
