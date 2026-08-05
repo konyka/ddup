@@ -131,4 +131,34 @@ static inline bool ddup_mul_overflow_int(int a, int b, int *r)
 #  define ddup_mul_overflow(a, b, r) ddup_mul_overflow_int((a), (b), (r))
 #endif
 
+/* -------------------------------------------------------------------------- */
+/* Atomic operations                                                            */
+/* -------------------------------------------------------------------------- */
+#if DDUP_HAS_C_ATOMICS
+#  include <stdatomic.h>
+typedef atomic_int ddup_atomic_int;
+#  define ddup_memory_order_relaxed memory_order_relaxed
+#  define ddup_memory_order_acquire memory_order_acquire
+#  define ddup_memory_order_release memory_order_release
+#  define ddup_memory_order_seq_cst memory_order_seq_cst
+#  define ddup_atomic_init(p, v) atomic_init(p, v)
+#  define ddup_atomic_load(p, mo) atomic_load_explicit(p, mo)
+#  define ddup_atomic_store(p, v, mo) atomic_store_explicit(p, v, mo)
+#  define ddup_atomic_fetch_add(p, v, mo) atomic_fetch_add_explicit(p, v, mo)
+#  define ddup_atomic_fetch_sub(p, v, mo) atomic_fetch_sub_explicit(p, v, mo)
+#else
+typedef int ddup_atomic_int;
+#  define ddup_memory_order_relaxed 0
+#  define ddup_memory_order_acquire 1
+#  define ddup_memory_order_release 2
+#  define ddup_memory_order_seq_cst 3
+/* C99 fallback: single-thread semantics. A future multi-threaded backend
+ * will need to add locking here or use compiler intrinsics. */
+#  define ddup_atomic_init(p, v) (*(p) = (v))
+#  define ddup_atomic_load(p, mo) (*(p))
+#  define ddup_atomic_store(p, v, mo) (*(p) = (v))
+#  define ddup_atomic_fetch_add(p, v, mo) ((*(p) += (v)) - (v))
+#  define ddup_atomic_fetch_sub(p, v, mo) ((*(p) -= (v)) + (v))
+#endif
+
 #endif /* DDUP_PAL_CSTD_H */

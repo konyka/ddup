@@ -92,6 +92,25 @@ static void test_checked_arithmetic(void)
     DD_CHECK(ddup_mul_overflow(INT_MIN, 2, &r));
 }
 
+static ddup_atomic_int atomic_counter;
+
+static void test_atomic_basic(void)
+{
+    ddup_atomic_init(&atomic_counter, 10);
+    DD_CHECK_EQ_INT(10, ddup_atomic_load(&atomic_counter, ddup_memory_order_relaxed));
+
+    ddup_atomic_store(&atomic_counter, 20, ddup_memory_order_relaxed);
+    DD_CHECK_EQ_INT(20, ddup_atomic_load(&atomic_counter, ddup_memory_order_relaxed));
+
+    int prev = ddup_atomic_fetch_add(&atomic_counter, 5, ddup_memory_order_relaxed);
+    DD_CHECK_EQ_INT(20, prev);
+    DD_CHECK_EQ_INT(25, ddup_atomic_load(&atomic_counter, ddup_memory_order_relaxed));
+
+    prev = ddup_atomic_fetch_sub(&atomic_counter, 7, ddup_memory_order_relaxed);
+    DD_CHECK_EQ_INT(25, prev);
+    DD_CHECK_EQ_INT(18, ddup_atomic_load(&atomic_counter, ddup_memory_order_relaxed));
+}
+
 int main(void)
 {
     DD_RUN(test_capability_macros_are_boolean);
@@ -102,5 +121,6 @@ int main(void)
     DD_RUN(test_typeof);
     DD_RUN(test_constexpr);
     DD_RUN(test_checked_arithmetic);
+    DD_RUN(test_atomic_basic);
     return DD_TEST_SUMMARY();
 }
