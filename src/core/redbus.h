@@ -1,8 +1,8 @@
 /* redbus.h - Redis cluster bus wire codec (clusterMsg), big-endian.
  *
  * Frame layout (Redis 7.0 static-assert offsets, verified against
- * redis/redis@7.0 src/cluster.h):
- *   sig[4] "RCMB" @0, u32 totlen BE @4, u16 ver @8, u16 port BE @10,
+ * redis/redis@7.0 src/cluster.h and src/cluster.c):
+ *   sig[4] "RCmb" @0, u32 totlen BE @4, u16 ver @8, u16 port BE @10,
  *   u16 type BE @12, u16 count BE @14, u64 currentEpoch BE @16,
  *   u64 configEpoch BE @24, u64 offset BE @32, sender[40] @40,
  *   myslots[2048] @80, slaveof[40] @2128, myip[46] @2168,

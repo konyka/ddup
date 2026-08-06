@@ -37,7 +37,7 @@ static void put64be(char *p, uint64_t v)
 static size_t build_fixture(char *f)
 {
     memset(f, 0, REDBUS_HDR_LEN + REDBUS_GOSSIP_LEN);
-    memcpy(f, "RCMB", 4);
+    memcpy(f, "RCmb", 4);
     put32be(f + 4, REDBUS_HDR_LEN + REDBUS_GOSSIP_LEN);
     put16be(f + 8, 1);           /* ver */
     put16be(f + 10, 7001);       /* port */
@@ -111,7 +111,7 @@ static void test_fixture_decode(void)
 
     /* a PONG reply was produced: Redis wire, type 1 */
     DD_CHECK(reply.len >= REDBUS_HDR_LEN);
-    DD_CHECK(memcmp(reply.data, "RCMB", 4) == 0);
+    DD_CHECK(memcmp(reply.data, "RCmb", 4) == 0);
     DD_CHECK_EQ_INT(1, (reply.data[12] << 8) | (uint8_t)reply.data[13]);
     {
         uint32_t tot = 0;
@@ -221,7 +221,7 @@ static void test_update_fail_and_tolerance(void)
 
     /* UPDATE: ID2 claims slots 100-101 with config epoch 9 */
     memset(frame, 0, sizeof(frame));
-    memcpy(frame, "RCMB", 4);
+    memcpy(frame, "RCmb", 4);
     put32be(frame + 4, REDBUS_HDR_LEN + 8 + 40 + 2048);
     put16be(frame + 12, REDBUS_TYPE_UPDATE);
     put64be(frame + REDBUS_HDR_LEN, 9);
@@ -239,7 +239,7 @@ static void test_update_fail_and_tolerance(void)
 
     /* FAIL: marks the node disconnected */
     memset(frame, 0, REDBUS_HDR_LEN + 40);
-    memcpy(frame, "RCMB", 4);
+    memcpy(frame, "RCmb", 4);
     put32be(frame + 4, REDBUS_HDR_LEN + 40);
     put16be(frame + 12, REDBUS_TYPE_FAIL);
     memcpy(frame + REDBUS_HDR_LEN, ID2, 40);

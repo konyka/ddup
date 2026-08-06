@@ -163,7 +163,7 @@ void redbus_build_frame(struct db *d, int type, resp_buf *out)
                              REDBUS_GOSSIP_MAX * REDBUS_GOSSIP_LEN + 16);
     p = out->data + out->len;
     memset(p, 0, REDBUS_HDR_LEN);
-    memcpy(p, "RCMB", 4);
+    memcpy(p, "RCmb", 4);
     /* totlen patched below */
     put16be(p + 8, 1); /* protocol version 1 */
     put16be(p + 10, sn->port);
@@ -241,7 +241,7 @@ int redbus_handle_frame(struct db *d, const char *frame, size_t len,
     char id[41], ip[47], slaveof[41];
     cluster_node *n;
 
-    if (len < REDBUS_HDR_LEN || memcmp(frame, "RCMB", 4) != 0)
+    if (len < REDBUS_HDR_LEN || memcmp(frame, "RCmb", 4) != 0)
         return -1;
     totlen = get32be(frame + 4);
     if (totlen != len || totlen < REDBUS_HDR_LEN)
