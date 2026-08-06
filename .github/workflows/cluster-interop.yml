@@ -24,7 +24,7 @@ jobs:
           cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
           cmake --build build
 
-      - name: Interop: 3 redis nodes + ddup join, converge, slot handoff
+      - name: "Interop: 3 redis nodes + ddup join, converge, slot handoff"
         shell: bash
         run: |
           set -x
