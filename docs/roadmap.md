@@ -84,7 +84,7 @@
   → 双端 SETSLOT NODE）；编排逻辑在 tools/reshard_client.[ch]，
   tests/test_reshard.c 双节点线程集成覆盖
 
-- [ ] **Phase 7+ — 长期**
+- [x] **Phase 7+ — 长期**（子项全部完成）
   集群模式、TLS、io_uring 优化落地、SIMD 解析优化、与 Garnet/Redis 基准对比
   - [x] 主从复制：全量同步（SYNC 快照帧 + 命令推流）、REPLICAOF/NO ONE、
     只读副本、断线全量重同步（无 PSYNC，backlog 预留）（Phase 7.1）

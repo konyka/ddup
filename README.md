@@ -13,11 +13,15 @@ redis c 的另一种实现 —— 参考微软 [Garnet](https://github.com/micro
   发布订阅；过期与 maxmemory 淘汰
 - 持久化：AOF（命令流追加 + 启动重放）与 RDB 风格二进制快照
   （原子写、定时自动保存）
-- 复制：master/replica 全量同步（SYNC + 命令推流）、只读副本、
-  断线自动重连重同步
-- TLS：可选 OpenSSL 支持（独立 tls-port，与明文端口并行）
-- 单节点集群模式：Redis cluster 兼容（16384 槽、CLUSTER 命令族、
-  CROSSSLOT 多键约束）
+- 复制：master/replica 全量同步 + PSYNC 部分重同步、只读副本、
+  断线自动重连重同步、链式复制
+- TLS：可选 OpenSSL 支持（独立 tls-port，与明文端口并行；四平台 CI 验证）
+- 多节点集群模式：Redis cluster 风格（16384 槽、gossip 节点发现、
+  ADDSLOTS/SETSLOT、-MOVED/-ASK 重定向、MIGRATE 在线迁移、
+  config epoch 冲突裁决、副本自动故障转移、ddup-reshard 运维工具）
+- 多数据库与安全：16 逻辑库（SELECT/SWAPDB）、requirepass/AUTH、
+  commandstats 统计
+- 多线程：thread-per-core mt 模式（--io-threads N，槽路由 shared-nothing）
 - 跨平台：Windows / Linux / macOS / FreeBSD（其他 POSIX 系统走通用路径）
 - TDD 开发：每个模块先写测试，全部测试通过后才提交
 
