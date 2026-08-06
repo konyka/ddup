@@ -112,6 +112,9 @@
     复制积压区断点续传、陈旧 offset/replid 不匹配回退全量）、链式复制
     A→B→C、>64KiB 快照帧接收修复（Phase 12）
   - [x] 集群运维工具：reshard 工具（redis-cli 风格，Phase 16）
+  - [x] ddup-bench 真并发引擎：-c 连接同时在线（单事件循环 + 非阻塞
+    socket + 每连接 -P 在飞）、min/p50/p99/max 延迟直方图、-r 随机键；
+    c50 P16 SET 310k→733k、GET 382k→858k+ req/s（Phase 17）
   - [ ] 范围化排除（记录在案，不实施）：
     - 真正的 Redis 总线协议逐字节兼容：自有 RCM2 协议已满足 ddup 集群
       互联；兼容 Redis 总线只为混入异构集群，投入产出不合理

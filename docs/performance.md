@@ -86,7 +86,8 @@ mt 首版在 loopback ping-pong 型基准上**显著慢于单线程**（2 worker
 select 单线程的 1/3）。原因：每个跨 worker 命令都要深拷贝 argv、两次
 互斥队列投递、最多两次 wakeup 写字节，加上跨核缓存迁移；而单线程路径
 每命令 CPU 成本仅 ~0.3µs。Garnet 的 thread-per-core 优势场景（海量并发
-连接 + 小批量）当前基准无法体现（ddup-bench 为 50 并发顺序流水）。
+连接 + 小批量）当时的基准无法体现（Phase 17 前 ddup-bench 为顺序流水，
+无法形成真实并发；现为真并发引擎）。
 
 已落地的优化（本阶段全部完成）：
 
@@ -136,8 +137,8 @@ ddup / Garnet / Redis 用同一 redis-benchmark（-t set|get -n 200000
 
 ddup 与 Redis 同量级：SET 略快 ~3%，GET 慢 ~16%（GET 路径的过期检查与
 LRU touch 成本）。内部一致性：ddup-bench 顺序客户端仅 ~311k/380k，
-说明 ddup-bench 客户端本身无法打满 50 并发下的服务器，后续应增强
-bench 客户端并发能力。
+说明 ddup-bench 客户端本身无法打满 50 并发下的服务器——已由
+Phase 17 的真并发引擎解决（见下文）。
 
 第二次实测（2026-08-04，Garnet 修复为 `-f net10.0` 后补齐三方对比；
 CI runner 波动较大，两次 ddup 数字差 ~40%，以趋势为准）：
@@ -155,9 +156,32 @@ Garnet（~2x / ~1.5x）。
 
 ping-pong 型流水负载下 IOCP 每个往返比 readiness 多一次完成等待
 （recv 完成 → 执行 → 发 send → send 完成），c50 慢约 15%；并发连接数
-升高后差距消失（c200 持平）。本 bench 客户端为顺序连接，未压出
-select 的 1024 fd 上限与 FD_SET 重建成本——IOCP 的真正优势场景
-（海量并发长连接）当前基准无法体现，如实记录。
+升高后差距消失（c200 持平）。Phase 17 之前 bench 客户端为顺序连接，
+未压出 select 的 1024 fd 上限与 FD_SET 重建成本——IOCP 的真正优势
+场景（海量并发长连接）仍未被基准覆盖，如实记录。
+
+## Phase 17 bench 真并发引擎（2026-08-04）
+
+ddup-bench 重写为真并发客户端：-c 个连接全部同时在线（非阻塞 socket +
+单事件循环），每连接维持 -P 在飞请求；新增 min/p50/p99/max 延迟统计
+（log2 微秒直方图）与 -r keyspace 随机化；严格应答核对（数量一致、
+SET 必须 +OK、停滞看门狗）。CLI 兼容（rps 行保持在最后一行供 CI 解析）。
+
+新旧引擎同机对比（Windows 11, clang 22.1.6, -O3+LTO, loopback,
+-n 200000，单线程 ddup-server）：
+
+| 场景 | 旧（顺序客户端） | 新（真并发） | 提升 |
+|------|------------------|--------------|------|
+| SET c50 P16 | 310k req/s | 733k req/s | 2.4x |
+| GET c50 P16 | 382k req/s | 858k–962k req/s | ~2.4x |
+
+新引擎完整协议（本机）：SET/GET × c50/c200 × P16：733k/962k（c50）、
+694k/826k（c200）；P1（无流水）：~80k–87k req/s（RTT 受限，符合预期）。
+-r 10000 随机键 GET c50 P16：971k req/s。结论修正：此前"服务器仅
+~310k"是客户端瓶颈；服务器在 50 真实并发下可达 ~730k–960k req/s，
+与 CI 上 redis-benchmark 对 ddup 的实测（~1.09M/1.01M）同量级。
+bench_core 同步复测无回退（SET 3.09M / GET 4.44–4.99M ops/s，本阶段
+无核心代码改动）。
 
 最终对比（Phase 7.3 baseline → 全部优化后，同机同旗标）：
 
