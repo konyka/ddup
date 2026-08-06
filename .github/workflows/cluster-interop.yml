@@ -89,13 +89,13 @@ jobs:
           done
           echo "assert ddup-known-nodes-4: $ok2"
 
-          # epochs synced by now; hand slots 0-99 to ddup authoritatively
-          # (redis SETSLOT NODE also sends an UPDATE to the new owner)
+          # epochs synced by now; ddup assigns slots 0-99 to itself
+          # (higher config epoch wins; the claim rides our PONGs to redis)
           sleep 3
           for slot in $(seq 0 99); do
-            redis-cli -p 7001 cluster setslot $slot node $DDUP_ID > /dev/null
+            redis-cli -p 7400 cluster setslot $slot node $DDUP_ID > /dev/null
           done
-          echo "slots handed to ddup"
+          echo "slots claimed by ddup"
 
           ok3=0
           for i in $(seq 1 60); do
