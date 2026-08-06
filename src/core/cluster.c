@@ -56,8 +56,7 @@ int cluster_node_id_load_or_create(const char *path, char out_id[41])
         if (f == NULL)
             return -1;
         len = snprintf(line, sizeof(line),
-                       "%s :0@0 myself,master - 0 0 1 connected 0-16383\n",
-                       out_id);
+                       "%s :0@0 myself,master - 0 0 1 connected\n", out_id);
         if (pal_file_write(f, line, (size_t)len) != len) {
             pal_file_close(f);
             return -1;

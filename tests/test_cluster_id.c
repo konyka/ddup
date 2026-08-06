@@ -56,7 +56,9 @@ static void test_id_generate_and_persist(void)
     DD_CHECK(fgets(line, sizeof(line), f) != NULL);
     fclose(f);
     DD_CHECK(strstr(line, "myself,master") != NULL);
-    DD_CHECK(strstr(line, "connected 0-16383") != NULL);
+    /* fresh-boot semantics (7.8b): the generated line claims no slots */
+    DD_CHECK(strstr(line, "connected") != NULL);
+    DD_CHECK(strstr(line, "0-16383") == NULL);
 
     /* simulated reboot: same id comes back */
     DD_CHECK_EQ_INT(0, cluster_node_id_load_or_create(TMP_NODES, id2));
