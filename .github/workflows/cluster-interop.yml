@@ -27,6 +27,7 @@ jobs:
       - name: "Interop: 3 redis nodes + ddup join, converge, slot handoff"
         shell: bash
         run: |
+          exec > >(tee /tmp/interop-run.log) 2>&1
           set -x
           R=/tmp/interop
           rm -rf $R && mkdir -p $R
@@ -129,7 +130,9 @@ jobs:
           fi
           cd cilog
           rm -f *.log *.txt
+          cp /tmp/interop-run.log . 2>/dev/null || true
           cp -r /tmp/interop logs 2>/dev/null || true
+          echo "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" > RUN.txt
           git config user.email ci@ddup.local
           git config user.name "ddup-ci"
           git add -A
