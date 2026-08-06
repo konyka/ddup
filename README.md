@@ -20,7 +20,8 @@ redis c 的另一种实现 —— 参考微软 [Garnet](https://github.com/micro
 - TLS：可选 OpenSSL 支持（独立 tls-port，与明文端口并行；四平台 CI 验证）
 - 多节点集群模式：Redis cluster 风格（16384 槽、gossip 节点发现、
   ADDSLOTS/SETSLOT、-MOVED/-ASK 重定向、MIGRATE 在线迁移、
-  config epoch 冲突裁决、副本自动故障转移、ddup-reshard 运维工具）
+  config epoch 冲突裁决、副本自动故障转移、ddup-reshard 运维工具、
+  真实 Redis 总线协议互操作 cluster-bus-protocol redis）
 - 多数据库与安全：16 逻辑库（SELECT/SWAPDB）、requirepass/AUTH、
   commandstats 统计
 - 多线程：thread-per-core mt 模式（--io-threads N，槽路由 shared-nothing）

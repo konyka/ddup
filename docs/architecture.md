@@ -586,6 +586,33 @@ DBSIZE 为 O(1)，可能计入尚未回收的过期 key。
   （replica migration）、无 PFAIL 主观失联状态；last_seen 只被直连
   帧刷新（第三方 gossip 不影响失联判定）。
 
+## Redis 总线协议兼容（Phase 20）
+
+- **redbus 编解码**（src/core/redbus.{h,c}）：真实 Redis clusterMsg
+  ——2256 字节头（偏移经 redis 7.0 static_assert 核实）、全部整数字段
+  **大端**、魔数 `"RCmb"`（小写 mb，勿写成 RCMB）、104 字节 gossip 条目
+  （无槽位图；slaveof 仅随发送者段传播）。PING/PONG/MEET 完整实现；
+  UPDATE 应用槽位 claim（指向 myself 时经 cluster_adopt_claims 收养）；
+  FAIL 标记 disconnected；其余类型容忍忽略。ddup↔redis 标志映射：
+  MASTER/SLAVE/HANDSHAKE/NOADDR 直译，DISCONNECTED↔FAIL（PFAIL 一并
+  映射，记录在案）。
+- **myip 自动发现**：redis 仅在配置 cluster-announce-ip 时填 myip，否则
+  全零，接收方须用连接对端地址（nodeIp2String 语义；pal_get_peer_ip
+  经 bus_conn 传入），空 myip 永不覆盖已知地址。
+- **双协议**：`cluster-bus-protocol ddup|redis`（默认 ddup，既有部署与
+  测试零影响）。总线监听与出站连接按协议切换编解码与 totlen 端序；
+  gossip 节奏、故障检测、failover、nodes.conf 持久化与编解码无关。
+- **首启 nodes.conf**：`cluster_node_id_load_or_create` 生成的首启行
+  不再预填 0-16383（与 7.8b fresh-boot 语义一致；旧持久化文件不受影响）
+  ——这是混入既有集群时"认领槽全部 busy + epoch 平局被抹"的根因。
+- **CI 互操作验证**（.github/workflows/cluster-interop.yml，ubuntu +
+  redis-server 7.0）：3 个真实 redis 节点 + ddup 第 4 节点 redis 模式，
+  双向收敛（redis CLUSTER NODES 见 ddup id、ddup known_nodes=4）、
+  ddup 认领 0-99 槽经 gossip 被 redis 接受、SET 落 ddup、redis 侧 GET
+  收到指向 ddup 的 MOVED。已验证可用：PING/PONG/MEET/UPDATE/FAIL、
+  epoch 冲突裁决、槽位移交。未覆盖（记录在案）：FAIL 投票法定人数、
+  AUTH 选举、PUBLISH 帧、混部集群副本 failover 全流程。
+
 ## Lua 脚本（Phase 19）
 
 - **嵌入**：vendored Lua 5.1.5（deps/lua，MIT，源码未改动，PATCHES.md

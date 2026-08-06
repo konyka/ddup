@@ -119,8 +119,9 @@
   - [x] Lua 脚本：vendored Lua 5.1.5、SHA1 脚本缓存、EVAL/EVALSHA/
     SCRIPT、redis.call/pcall、效果复制（AOF/复制流记录效果命令）、
     mt per-worker 执行（Phase 19）
+  - [x] Redis 总线协议兼容：clusterMsg 编解码（大端 2256B 头）、
+    cluster-bus-protocol ddup|redis 双协议、与真实 redis-server 混部
+    收敛 + 槽位移交 CI（Phase 20）
   - [ ] 范围化排除（记录在案，不实施）：
-    - 真正的 Redis 总线协议逐字节兼容：自有 RCM2 协议已满足 ddup 集群
-      互联；兼容 Redis 总线只为混入异构集群，投入产出不合理
     - 分层存储（热/冷数据落盘）：超出"内存缓存存储"定位
     - mt 模式的复制/集群适配：见 Phase 15 说明
