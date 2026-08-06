@@ -1,10 +1,10 @@
-Start testing: Aug 06 13:51 Coordinated Universal Time
+Start testing: Aug 06 14:40 Coordinated Universal Time
 ----------------------------------------------------------
 1/52 Testing: test_pal
 1/52 Test: test_pal
 Command: "D:/a/ddup/ddup/build/Release/test_pal.exe"
 Directory: D:/a/ddup/ddup/build
-"test_pal" start time: Aug 06 13:51 Coordinated Universal Time
+"test_pal" start time: Aug 06 14:40 Coordinated Universal Time
 Output:
 ----------------------------------------------------------
 test_exactly_one_os                      ok
@@ -19,10 +19,10 @@ test_ddup_find_crlf_random               ok
 ---
 1114 checks, 0 failure(s)
 <end of output>
-Test time =   0.02 sec
+Test time =   0.03 sec
 ----------------------------------------------------------
 Test Passed.
-"test_pal" end time: Aug 06 13:51 Coordinated Universal Time
+"test_pal" end time: Aug 06 14:40 Coordinated Universal Time
 "test_pal" time elapsed: 00:00:00
 ----------------------------------------------------------
 
@@ -30,7 +30,7 @@ Test Passed.
 2/52 Test: test_pal_thread
 Command: "D:/a/ddup/ddup/build/Release/test_pal_thread.exe"
 Directory: D:/a/ddup/ddup/build
-"test_pal_thread" start time: Aug 06 13:51 Coordinated Universal Time
+"test_pal_thread" start time: Aug 06 14:40 Coordinated Universal Time
 Output:
 ----------------------------------------------------------
 test_mutex_counter                       ok
@@ -38,10 +38,10 @@ test_cond_signal_and_return              ok
 ---
 15 checks, 0 failure(s)
 <end of output>
-Test time =   0.02 sec
+Test time =   0.03 sec
 ----------------------------------------------------------
 Test Passed.
-"test_pal_thread" end time: Aug 06 13:51 Coordinated Universal Time
+"test_pal_thread" end time: Aug 06 14:40 Coordinated Universal Time
 "test_pal_thread" time elapsed: 00:00:00
 ----------------------------------------------------------
 
@@ -49,7 +49,7 @@ Test Passed.
 3/52 Test: test_pal_wakeup
 Command: "D:/a/ddup/ddup/build/Release/test_pal_wakeup.exe"
 Directory: D:/a/ddup/ddup/build
-"test_pal_wakeup" start time: Aug 06 13:51 Coordinated Universal Time
+"test_pal_wakeup" start time: Aug 06 14:40 Coordinated Universal Time
 Output:
 ----------------------------------------------------------
 test_kick_makes_wait_fd_readable         ok
@@ -60,7 +60,7 @@ test_multiple_kicks_drain_together       ok
 Test time =   0.05 sec
 ----------------------------------------------------------
 Test Passed.
-"test_pal_wakeup" end time: Aug 06 13:51 Coordinated Universal Time
+"test_pal_wakeup" end time: Aug 06 14:40 Coordinated Universal Time
 "test_pal_wakeup" time elapsed: 00:00:00
 ----------------------------------------------------------
 
@@ -68,7 +68,7 @@ Test Passed.
 4/52 Test: test_spsc
 Command: "D:/a/ddup/ddup/build/Release/test_spsc.exe"
 Directory: D:/a/ddup/ddup/build
-"test_spsc" start time: Aug 06 13:51 Coordinated Universal Time
+"test_spsc" start time: Aug 06 14:40 Coordinated Universal Time
 Output:
 ----------------------------------------------------------
 test_fifo_order                          ok
@@ -80,7 +80,7 @@ test_two_thread_stress                   ok
 Test time =   0.04 sec
 ----------------------------------------------------------
 Test Passed.
-"test_spsc" end time: Aug 06 13:51 Coordinated Universal Time
+"test_spsc" end time: Aug 06 14:40 Coordinated Universal Time
 "test_spsc" time elapsed: 00:00:00
 ----------------------------------------------------------
 
@@ -88,14 +88,42 @@ Test Passed.
 5/52 Test: test_mt_server
 Command: "D:/a/ddup/ddup/build/Release/test_mt_server.exe"
 Directory: D:/a/ddup/ddup/build
-"test_mt_server" start time: Aug 06 13:51 Coordinated Universal Time
+"test_mt_server" start time: Aug 06 14:40 Coordinated Universal Time
 Output:
 ----------------------------------------------------------
+test_two_workers_shared_keyspace         ok
+test_routed_cross_worker_commands        ok
+test_pipeline_mixed_targets_keeps_order  ok
+test_blocked_commands_in_mt_mode         ok
+test_pubsub_cross_worker                 ok
+test_unsubscribe_stops_delivery          ok
+test_pubsub_conn_close_unsubscribes      ok
+test_multikey_same_worker                ok
+test_multikey_crossslot_rejected         ok
+test_smove_same_worker                   ok
+test_aggregate_dbsize_and_flushdb        ok
+test_info_aggregation                    ok
+test_tls_enable_failure_is_clean         ok
+test_set_algebra_same_slot_routing       ok
+test_multi_exec_routed                   ok
+test_multi_exec_crossslot_aborts         ok
+test_discard                             ok
+test_watch_aborts_exec_on_change         ok
+test_watch_routed_and_unwatch            ok
+test_aof_persistence_mt                  ok
+test_snapshot_mt                         ok
+test_connection_migration_to_key_owner   ok
+test_mt_multidb_select_and_swapdb        ok
+test_same_target_pipeline_merges_into_one_task ok
+test_many_connections_across_workers     ok
+test_iocp_workers_basic                  ok
+---
+739 checks, 0 failure(s)
 <end of output>
-Test time =  11.12 sec
+Test time =  11.25 sec
 ----------------------------------------------------------
-Test Failed.
-"test_mt_server" end time: Aug 06 13:51 Coordinated Universal Time
+Test Passed.
+"test_mt_server" end time: Aug 06 14:41 Coordinated Universal Time
 "test_mt_server" time elapsed: 00:00:11
 ----------------------------------------------------------
 
@@ -103,7 +131,7 @@ Test Failed.
 6/52 Test: test_cstd
 Command: "D:/a/ddup/ddup/build/Release/test_cstd.exe"
 Directory: D:/a/ddup/ddup/build
-"test_cstd" start time: Aug 06 13:51 Coordinated Universal Time
+"test_cstd" start time: Aug 06 14:41 Coordinated Universal Time
 Output:
 ----------------------------------------------------------
 test_capability_macros_are_boolean       ok
@@ -121,7 +149,7 @@ test_atomic_basic                        ok
 Test time =   0.01 sec
 ----------------------------------------------------------
 Test Passed.
-"test_cstd" end time: Aug 06 13:51 Coordinated Universal Time
+"test_cstd" end time: Aug 06 14:41 Coordinated Universal Time
 "test_cstd" time elapsed: 00:00:00
 ----------------------------------------------------------
 
@@ -129,7 +157,7 @@ Test Passed.
 7/52 Test: test_cmdid
 Command: "D:/a/ddup/ddup/build/Release/test_cmdid.exe"
 Directory: D:/a/ddup/ddup/build
-"test_cmdid" start time: Aug 06 13:51 Coordinated Universal Time
+"test_cmdid" start time: Aug 06 14:41 Coordinated Universal Time
 Output:
 ----------------------------------------------------------
 test_resolve_known_command               ok
@@ -142,7 +170,7 @@ test_arity_helpers                       ok
 Test time =   0.01 sec
 ----------------------------------------------------------
 Test Passed.
-"test_cmdid" end time: Aug 06 13:51 Coordinated Universal Time
+"test_cmdid" end time: Aug 06 14:41 Coordinated Universal Time
 "test_cmdid" time elapsed: 00:00:00
 ----------------------------------------------------------
 
@@ -150,7 +178,7 @@ Test Passed.
 8/52 Test: test_buf_pool
 Command: "D:/a/ddup/ddup/build/Release/test_buf_pool.exe"
 Directory: D:/a/ddup/ddup/build
-"test_buf_pool" start time: Aug 06 13:51 Coordinated Universal Time
+"test_buf_pool" start time: Aug 06 14:41 Coordinated Universal Time
 Output:
 ----------------------------------------------------------
 test_pool_basic                          ok
@@ -162,7 +190,7 @@ test_oversized_fallback                  ok
 Test time =   0.01 sec
 ----------------------------------------------------------
 Test Passed.
-"test_buf_pool" end time: Aug 06 13:51 Coordinated Universal Time
+"test_buf_pool" end time: Aug 06 14:41 Coordinated Universal Time
 "test_buf_pool" time elapsed: 00:00:00
 ----------------------------------------------------------
 
@@ -170,7 +198,7 @@ Test Passed.
 9/52 Test: test_socket
 Command: "D:/a/ddup/ddup/build/Release/test_socket.exe"
 Directory: D:/a/ddup/ddup/build
-"test_socket" start time: Aug 06 13:51 Coordinated Universal Time
+"test_socket" start time: Aug 06 14:41 Coordinated Universal Time
 Output:
 ----------------------------------------------------------
 test_init_cleanup                        ok
@@ -183,7 +211,7 @@ test_tcp_nodelay                         ok
 Test time =   0.02 sec
 ----------------------------------------------------------
 Test Passed.
-"test_socket" end time: Aug 06 13:51 Coordinated Universal Time
+"test_socket" end time: Aug 06 14:41 Coordinated Universal Time
 "test_socket" time elapsed: 00:00:00
 ----------------------------------------------------------
 
@@ -191,7 +219,7 @@ Test Passed.
 10/52 Test: test_event
 Command: "D:/a/ddup/ddup/build/Release/test_event.exe"
 Directory: D:/a/ddup/ddup/build
-"test_event" start time: Aug 06 13:51 Coordinated Universal Time
+"test_event" start time: Aug 06 14:41 Coordinated Universal Time
 Output:
 ----------------------------------------------------------
 test_create_free                         ok
@@ -204,7 +232,7 @@ test_del                                 ok
 Test time =   0.15 sec
 ----------------------------------------------------------
 Test Passed.
-"test_event" end time: Aug 06 13:51 Coordinated Universal Time
+"test_event" end time: Aug 06 14:41 Coordinated Universal Time
 "test_event" time elapsed: 00:00:00
 ----------------------------------------------------------
 
@@ -212,7 +240,7 @@ Test Passed.
 11/52 Test: test_server
 Command: "D:/a/ddup/ddup/build/Release/test_server.exe"
 Directory: D:/a/ddup/ddup/build
-"test_server" start time: Aug 06 13:51 Coordinated Universal Time
+"test_server" start time: Aug 06 14:41 Coordinated Universal Time
 Output:
 ----------------------------------------------------------
 === backend: readiness (select) ===
@@ -248,10 +276,10 @@ test_partial_reads                       ok
 ---
 983 checks, 0 failure(s)
 <end of output>
-Test time =   1.86 sec
+Test time =   1.82 sec
 ----------------------------------------------------------
 Test Passed.
-"test_server" end time: Aug 06 13:51 Coordinated Universal Time
+"test_server" end time: Aug 06 14:41 Coordinated Universal Time
 "test_server" time elapsed: 00:00:01
 ----------------------------------------------------------
 
@@ -259,7 +287,7 @@ Test Passed.
 12/52 Test: test_arena
 Command: "D:/a/ddup/ddup/build/Release/test_arena.exe"
 Directory: D:/a/ddup/ddup/build
-"test_arena" start time: Aug 06 13:51 Coordinated Universal Time
+"test_arena" start time: Aug 06 14:41 Coordinated Universal Time
 Output:
 ----------------------------------------------------------
 test_alloc_returns_aligned_distinct      ok
@@ -273,7 +301,7 @@ test_zero_size_alloc                     ok
 Test time =   0.01 sec
 ----------------------------------------------------------
 Test Passed.
-"test_arena" end time: Aug 06 13:51 Coordinated Universal Time
+"test_arena" end time: Aug 06 14:41 Coordinated Universal Time
 "test_arena" time elapsed: 00:00:00
 ----------------------------------------------------------
 
@@ -281,7 +309,7 @@ Test Passed.
 13/52 Test: test_resp_parser
 Command: "D:/a/ddup/ddup/build/Release/test_resp_parser.exe"
 Directory: D:/a/ddup/ddup/build
-"test_resp_parser" start time: Aug 06 13:51 Coordinated Universal Time
+"test_resp_parser" start time: Aug 06 14:41 Coordinated Universal Time
 Output:
 ----------------------------------------------------------
 test_simple_string                       ok
@@ -304,7 +332,7 @@ test_bulk_payload_with_binary            ok
 Test time =   0.01 sec
 ----------------------------------------------------------
 Test Passed.
-"test_resp_parser" end time: Aug 06 13:51 Coordinated Universal Time
+"test_resp_parser" end time: Aug 06 14:41 Coordinated Universal Time
 "test_resp_parser" time elapsed: 00:00:00
 ----------------------------------------------------------
 
@@ -312,7 +340,7 @@ Test Passed.
 14/52 Test: test_resp_writer
 Command: "D:/a/ddup/ddup/build/Release/test_resp_writer.exe"
 Directory: D:/a/ddup/ddup/build
-"test_resp_writer" start time: Aug 06 13:51 Coordinated Universal Time
+"test_resp_writer" start time: Aug 06 14:41 Coordinated Universal Time
 Output:
 ----------------------------------------------------------
 test_scalars                             ok
@@ -327,7 +355,7 @@ test_resp_buf_pool_growth                ok
 Test time =   0.01 sec
 ----------------------------------------------------------
 Test Passed.
-"test_resp_writer" end time: Aug 06 13:51 Coordinated Universal Time
+"test_resp_writer" end time: Aug 06 14:41 Coordinated Universal Time
 "test_resp_writer" time elapsed: 00:00:00
 ----------------------------------------------------------
 
@@ -335,7 +363,7 @@ Test Passed.
 15/52 Test: test_resp3
 Command: "D:/a/ddup/ddup/build/Release/test_resp3.exe"
 Directory: D:/a/ddup/ddup/build
-"test_resp3" start time: Aug 06 13:51 Coordinated Universal Time
+"test_resp3" start time: Aug 06 14:41 Coordinated Universal Time
 Output:
 ----------------------------------------------------------
 test_null                                ok
@@ -354,7 +382,7 @@ test_resp3_nested_in_array               ok
 Test time =   0.01 sec
 ----------------------------------------------------------
 Test Passed.
-"test_resp3" end time: Aug 06 13:51 Coordinated Universal Time
+"test_resp3" end time: Aug 06 14:41 Coordinated Universal Time
 "test_resp3" time elapsed: 00:00:00
 ----------------------------------------------------------
 
@@ -362,7 +390,7 @@ Test Passed.
 16/52 Test: test_rhtable
 Command: "D:/a/ddup/ddup/build/Release/test_rhtable.exe"
 Directory: D:/a/ddup/ddup/build
-"test_rhtable" start time: Aug 06 13:51 Coordinated Universal Time
+"test_rhtable" start time: Aug 06 14:41 Coordinated Universal Time
 Output:
 ----------------------------------------------------------
 test_set_get                             ok
@@ -372,7 +400,7 @@ test_binary_keys_values                  ok
 test_many_keys_growth                    ok
 test_delete_half_then_verify             ok
 test_randomized_vs_model                 ok
-bench: 1000000 SET in 0.376s (2659574 ops/s), 1000000 GET in 0.253s (3952569 ops/s)
+bench: 1000000 SET in 0.365s (2739726 ops/s), 1000000 GET in 0.261s (3831418 ops/s)
 bench_throughput                         ok
 ---
 374242 checks, 0 failure(s)
@@ -380,7 +408,7 @@ bench_throughput                         ok
 Test time =   0.84 sec
 ----------------------------------------------------------
 Test Passed.
-"test_rhtable" end time: Aug 06 13:51 Coordinated Universal Time
+"test_rhtable" end time: Aug 06 14:41 Coordinated Universal Time
 "test_rhtable" time elapsed: 00:00:00
 ----------------------------------------------------------
 
@@ -388,7 +416,7 @@ Test Passed.
 17/52 Test: test_command
 Command: "D:/a/ddup/ddup/build/Release/test_command.exe"
 Directory: D:/a/ddup/ddup/build
-"test_command" start time: Aug 06 13:51 Coordinated Universal Time
+"test_command" start time: Aug 06 14:41 Coordinated Universal Time
 Output:
 ----------------------------------------------------------
 test_ping_echo                           ok
@@ -405,7 +433,7 @@ test_empty_argv                          ok
 Test time =   0.02 sec
 ----------------------------------------------------------
 Test Passed.
-"test_command" end time: Aug 06 13:51 Coordinated Universal Time
+"test_command" end time: Aug 06 14:41 Coordinated Universal Time
 "test_command" time elapsed: 00:00:00
 ----------------------------------------------------------
 
@@ -413,7 +441,7 @@ Test Passed.
 18/52 Test: test_expire
 Command: "D:/a/ddup/ddup/build/Release/test_expire.exe"
 Directory: D:/a/ddup/ddup/build
-"test_expire" start time: Aug 06 13:51 Coordinated Universal Time
+"test_expire" start time: Aug 06 14:41 Coordinated Universal Time
 Output:
 ----------------------------------------------------------
 test_expire_and_ttl                      ok
@@ -425,10 +453,10 @@ test_dbsize_flushdb                      ok
 ---
 83 checks, 0 failure(s)
 <end of output>
-Test time =   0.01 sec
+Test time =   0.02 sec
 ----------------------------------------------------------
 Test Passed.
-"test_expire" end time: Aug 06 13:51 Coordinated Universal Time
+"test_expire" end time: Aug 06 14:41 Coordinated Universal Time
 "test_expire" time elapsed: 00:00:00
 ----------------------------------------------------------
 
@@ -436,7 +464,7 @@ Test Passed.
 19/52 Test: test_eviction
 Command: "D:/a/ddup/ddup/build/Release/test_eviction.exe"
 Directory: D:/a/ddup/ddup/build
-"test_eviction" start time: Aug 06 13:51 Coordinated Universal Time
+"test_eviction" start time: Aug 06 14:41 Coordinated Universal Time
 Output:
 ----------------------------------------------------------
 test_memory_accounting                   ok
@@ -449,7 +477,7 @@ test_config_and_info                     ok
 Test time =   0.01 sec
 ----------------------------------------------------------
 Test Passed.
-"test_eviction" end time: Aug 06 13:51 Coordinated Universal Time
+"test_eviction" end time: Aug 06 14:41 Coordinated Universal Time
 "test_eviction" time elapsed: 00:00:00
 ----------------------------------------------------------
 
@@ -457,7 +485,7 @@ Test Passed.
 20/52 Test: test_hash
 Command: "D:/a/ddup/ddup/build/Release/test_hash.exe"
 Directory: D:/a/ddup/ddup/build
-"test_hash" start time: Aug 06 13:51 Coordinated Universal Time
+"test_hash" start time: Aug 06 14:41 Coordinated Universal Time
 Output:
 ----------------------------------------------------------
 test_hset_hget                           ok
@@ -474,7 +502,7 @@ test_hash_ttl_and_memory                 ok
 Test time =   0.01 sec
 ----------------------------------------------------------
 Test Passed.
-"test_hash" end time: Aug 06 13:51 Coordinated Universal Time
+"test_hash" end time: Aug 06 14:41 Coordinated Universal Time
 "test_hash" time elapsed: 00:00:00
 ----------------------------------------------------------
 
@@ -482,7 +510,7 @@ Test Passed.
 21/52 Test: test_list
 Command: "D:/a/ddup/ddup/build/Release/test_list.exe"
 Directory: D:/a/ddup/ddup/build
-"test_list" start time: Aug 06 13:51 Coordinated Universal Time
+"test_list" start time: Aug 06 14:41 Coordinated Universal Time
 Output:
 ----------------------------------------------------------
 test_push_len_range                      ok
@@ -498,7 +526,7 @@ test_list_ttl_and_memory                 ok
 Test time =   0.01 sec
 ----------------------------------------------------------
 Test Passed.
-"test_list" end time: Aug 06 13:51 Coordinated Universal Time
+"test_list" end time: Aug 06 14:41 Coordinated Universal Time
 "test_list" time elapsed: 00:00:00
 ----------------------------------------------------------
 
@@ -506,7 +534,7 @@ Test Passed.
 22/52 Test: test_skiplist
 Command: "D:/a/ddup/ddup/build/Release/test_skiplist.exe"
 Directory: D:/a/ddup/ddup/build
-"test_skiplist" start time: Aug 06 13:51 Coordinated Universal Time
+"test_skiplist" start time: Aug 06 14:41 Coordinated Universal Time
 Output:
 ----------------------------------------------------------
 test_insert_order                        ok
@@ -520,7 +548,7 @@ test_differential                        ok
 Test time =   0.01 sec
 ----------------------------------------------------------
 Test Passed.
-"test_skiplist" end time: Aug 06 13:51 Coordinated Universal Time
+"test_skiplist" end time: Aug 06 14:41 Coordinated Universal Time
 "test_skiplist" time elapsed: 00:00:00
 ----------------------------------------------------------
 
@@ -528,7 +556,7 @@ Test Passed.
 23/52 Test: test_set
 Command: "D:/a/ddup/ddup/build/Release/test_set.exe"
 Directory: D:/a/ddup/ddup/build
-"test_set" start time: Aug 06 13:51 Coordinated Universal Time
+"test_set" start time: Aug 06 14:41 Coordinated Universal Time
 Output:
 ----------------------------------------------------------
 test_sadd_basics                         ok
@@ -545,7 +573,7 @@ test_set_ttl_and_memory                  ok
 Test time =   0.01 sec
 ----------------------------------------------------------
 Test Passed.
-"test_set" end time: Aug 06 13:51 Coordinated Universal Time
+"test_set" end time: Aug 06 14:41 Coordinated Universal Time
 "test_set" time elapsed: 00:00:00
 ----------------------------------------------------------
 
@@ -553,7 +581,7 @@ Test Passed.
 24/52 Test: test_zset
 Command: "D:/a/ddup/ddup/build/Release/test_zset.exe"
 Directory: D:/a/ddup/ddup/build
-"test_zset" start time: Aug 06 13:51 Coordinated Universal Time
+"test_zset" start time: Aug 06 14:41 Coordinated Universal Time
 Output:
 ----------------------------------------------------------
 test_zadd_zscore_zcard                   ok
@@ -566,10 +594,10 @@ test_zset_ttl_and_memory                 ok
 ---
 86 checks, 0 failure(s)
 <end of output>
-Test time =   0.01 sec
+Test time =   0.02 sec
 ----------------------------------------------------------
 Test Passed.
-"test_zset" end time: Aug 06 13:51 Coordinated Universal Time
+"test_zset" end time: Aug 06 14:41 Coordinated Universal Time
 "test_zset" time elapsed: 00:00:00
 ----------------------------------------------------------
 
@@ -577,7 +605,7 @@ Test Passed.
 25/52 Test: test_session
 Command: "D:/a/ddup/ddup/build/Release/test_session.exe"
 Directory: D:/a/ddup/ddup/build
-"test_session" start time: Aug 06 13:51 Coordinated Universal Time
+"test_session" start time: Aug 06 14:41 Coordinated Universal Time
 Output:
 ----------------------------------------------------------
 test_session_basic                       ok
@@ -587,10 +615,10 @@ test_auth_without_password_configured    ok
 ---
 18 checks, 0 failure(s)
 <end of output>
-Test time =   0.01 sec
+Test time =   0.02 sec
 ----------------------------------------------------------
 Test Passed.
-"test_session" end time: Aug 06 13:51 Coordinated Universal Time
+"test_session" end time: Aug 06 14:41 Coordinated Universal Time
 "test_session" time elapsed: 00:00:00
 ----------------------------------------------------------
 
@@ -598,7 +626,7 @@ Test Passed.
 26/52 Test: test_multidb
 Command: "D:/a/ddup/ddup/build/Release/test_multidb.exe"
 Directory: D:/a/ddup/ddup/build
-"test_multidb" start time: Aug 06 13:51 Coordinated Universal Time
+"test_multidb" start time: Aug 06 14:41 Coordinated Universal Time
 Output:
 ----------------------------------------------------------
 test_select_isolation                    ok
@@ -612,10 +640,10 @@ test_info_machine_format                 ok
 ---
 73 checks, 0 failure(s)
 <end of output>
-Test time =   0.01 sec
+Test time =   0.02 sec
 ----------------------------------------------------------
 Test Passed.
-"test_multidb" end time: Aug 06 13:51 Coordinated Universal Time
+"test_multidb" end time: Aug 06 14:41 Coordinated Universal Time
 "test_multidb" time elapsed: 00:00:00
 ----------------------------------------------------------
 
@@ -623,7 +651,7 @@ Test Passed.
 27/52 Test: test_multi
 Command: "D:/a/ddup/ddup/build/Release/test_multi.exe"
 Directory: D:/a/ddup/ddup/build
-"test_multi" start time: Aug 06 13:51 Coordinated Universal Time
+"test_multi" start time: Aug 06 14:41 Coordinated Universal Time
 Output:
 ----------------------------------------------------------
 test_multi_exec_basic                    ok
@@ -638,7 +666,7 @@ test_multi_with_objects                  ok
 Test time =   0.01 sec
 ----------------------------------------------------------
 Test Passed.
-"test_multi" end time: Aug 06 13:51 Coordinated Universal Time
+"test_multi" end time: Aug 06 14:41 Coordinated Universal Time
 "test_multi" time elapsed: 00:00:00
 ----------------------------------------------------------
 
@@ -646,7 +674,7 @@ Test Passed.
 28/52 Test: test_pubsub
 Command: "D:/a/ddup/ddup/build/Release/test_pubsub.exe"
 Directory: D:/a/ddup/ddup/build
-"test_pubsub" start time: Aug 06 13:51 Coordinated Universal Time
+"test_pubsub" start time: Aug 06 14:41 Coordinated Universal Time
 Output:
 ----------------------------------------------------------
 test_subscribe_publish                   ok
@@ -657,7 +685,7 @@ test_subscribed_mode_restriction         ok
 Test time =   0.01 sec
 ----------------------------------------------------------
 Test Passed.
-"test_pubsub" end time: Aug 06 13:51 Coordinated Universal Time
+"test_pubsub" end time: Aug 06 14:41 Coordinated Universal Time
 "test_pubsub" time elapsed: 00:00:00
 ----------------------------------------------------------
 
@@ -665,7 +693,7 @@ Test Passed.
 29/52 Test: test_config
 Command: "D:/a/ddup/ddup/build/Release/test_config.exe"
 Directory: D:/a/ddup/ddup/build
-"test_config" start time: Aug 06 13:51 Coordinated Universal Time
+"test_config" start time: Aug 06 14:41 Coordinated Universal Time
 Output:
 ----------------------------------------------------------
 ddup: cannot open config file 'no_such_file.conf'
@@ -686,7 +714,7 @@ test_validate_tls                        ok
 Test time =   0.01 sec
 ----------------------------------------------------------
 Test Passed.
-"test_config" end time: Aug 06 13:51 Coordinated Universal Time
+"test_config" end time: Aug 06 14:41 Coordinated Universal Time
 "test_config" time elapsed: 00:00:00
 ----------------------------------------------------------
 
@@ -694,7 +722,7 @@ Test Passed.
 30/52 Test: test_aof
 Command: "D:/a/ddup/ddup/build/Release/test_aof.exe"
 Directory: D:/a/ddup/ddup/build
-"test_aof" start time: Aug 06 13:51 Coordinated Universal Time
+"test_aof" start time: Aug 06 14:41 Coordinated Universal Time
 Output:
 ----------------------------------------------------------
 test_aof_serialization                   ok
@@ -708,7 +736,7 @@ test_aof_multidb_replay                  ok
 Test time =   0.01 sec
 ----------------------------------------------------------
 Test Passed.
-"test_aof" end time: Aug 06 13:51 Coordinated Universal Time
+"test_aof" end time: Aug 06 14:41 Coordinated Universal Time
 "test_aof" time elapsed: 00:00:00
 ----------------------------------------------------------
 
@@ -716,7 +744,7 @@ Test Passed.
 31/52 Test: test_snapshot
 Command: "D:/a/ddup/ddup/build/Release/test_snapshot.exe"
 Directory: D:/a/ddup/ddup/build
-"test_snapshot" start time: Aug 06 13:51 Coordinated Universal Time
+"test_snapshot" start time: Aug 06 14:41 Coordinated Universal Time
 Output:
 ----------------------------------------------------------
 test_roundtrip_all_types                 ok
@@ -728,10 +756,10 @@ test_multidb_v1_compat                   ok
 ---
 48 checks, 0 failure(s)
 <end of output>
-Test time =   0.01 sec
+Test time =   0.02 sec
 ----------------------------------------------------------
 Test Passed.
-"test_snapshot" end time: Aug 06 13:51 Coordinated Universal Time
+"test_snapshot" end time: Aug 06 14:41 Coordinated Universal Time
 "test_snapshot" time elapsed: 00:00:00
 ----------------------------------------------------------
 
@@ -739,7 +767,7 @@ Test Passed.
 32/52 Test: test_repl
 Command: "D:/a/ddup/ddup/build/Release/test_repl.exe"
 Directory: D:/a/ddup/ddup/build
-"test_repl" start time: Aug 06 13:51 Coordinated Universal Time
+"test_repl" start time: Aug 06 14:41 Coordinated Universal Time
 Output:
 ----------------------------------------------------------
 [chain] created
@@ -759,18 +787,18 @@ test_replica_reconnect_resync            ok
 ---
 3354 checks, 0 failure(s)
 <end of output>
-Test time =   4.00 sec
+Test time =   4.09 sec
 ----------------------------------------------------------
 Test Passed.
-"test_repl" end time: Aug 06 13:52 Coordinated Universal Time
-"test_repl" time elapsed: 00:00:03
+"test_repl" end time: Aug 06 14:41 Coordinated Universal Time
+"test_repl" time elapsed: 00:00:04
 ----------------------------------------------------------
 
 33/52 Testing: test_hashslot
 33/52 Test: test_hashslot
 Command: "D:/a/ddup/ddup/build/Release/test_hashslot.exe"
 Directory: D:/a/ddup/ddup/build
-"test_hashslot" start time: Aug 06 13:52 Coordinated Universal Time
+"test_hashslot" start time: Aug 06 14:41 Coordinated Universal Time
 Output:
 ----------------------------------------------------------
 test_crc16_vectors                       ok
@@ -782,7 +810,7 @@ test_slot_vectors                        ok
 Test time =   0.01 sec
 ----------------------------------------------------------
 Test Passed.
-"test_hashslot" end time: Aug 06 13:52 Coordinated Universal Time
+"test_hashslot" end time: Aug 06 14:41 Coordinated Universal Time
 "test_hashslot" time elapsed: 00:00:00
 ----------------------------------------------------------
 
@@ -790,7 +818,7 @@ Test Passed.
 34/52 Test: test_cluster_id
 Command: "D:/a/ddup/ddup/build/Release/test_cluster_id.exe"
 Directory: D:/a/ddup/ddup/build
-"test_cluster_id" start time: Aug 06 13:52 Coordinated Universal Time
+"test_cluster_id" start time: Aug 06 14:41 Coordinated Universal Time
 Output:
 ----------------------------------------------------------
 test_config_defaults                     ok
@@ -803,7 +831,7 @@ test_id_bad_file                         ok
 Test time =   0.01 sec
 ----------------------------------------------------------
 Test Passed.
-"test_cluster_id" end time: Aug 06 13:52 Coordinated Universal Time
+"test_cluster_id" end time: Aug 06 14:41 Coordinated Universal Time
 "test_cluster_id" time elapsed: 00:00:00
 ----------------------------------------------------------
 
@@ -811,7 +839,7 @@ Test Passed.
 35/52 Test: test_cluster_cmds
 Command: "D:/a/ddup/ddup/build/Release/test_cluster_cmds.exe"
 Directory: D:/a/ddup/ddup/build
-"test_cluster_cmds" start time: Aug 06 13:52 Coordinated Universal Time
+"test_cluster_cmds" start time: Aug 06 14:41 Coordinated Universal Time
 Output:
 ----------------------------------------------------------
 test_cluster_disabled                    ok
@@ -828,7 +856,7 @@ test_crossslot_disabled_allows           ok
 Test time =   0.01 sec
 ----------------------------------------------------------
 Test Passed.
-"test_cluster_cmds" end time: Aug 06 13:52 Coordinated Universal Time
+"test_cluster_cmds" end time: Aug 06 14:41 Coordinated Universal Time
 "test_cluster_cmds" time elapsed: 00:00:00
 ----------------------------------------------------------
 
@@ -836,7 +864,7 @@ Test Passed.
 36/52 Test: test_cluster_nodes
 Command: "D:/a/ddup/ddup/build/Release/test_cluster_nodes.exe"
 Directory: D:/a/ddup/ddup/build
-"test_cluster_nodes" start time: Aug 06 13:52 Coordinated Universal Time
+"test_cluster_nodes" start time: Aug 06 14:41 Coordinated Universal Time
 Output:
 ----------------------------------------------------------
 test_node_add_find                       ok
@@ -849,7 +877,7 @@ test_render_parse_roundtrip              ok
 Test time =   0.01 sec
 ----------------------------------------------------------
 Test Passed.
-"test_cluster_nodes" end time: Aug 06 13:52 Coordinated Universal Time
+"test_cluster_nodes" end time: Aug 06 14:41 Coordinated Universal Time
 "test_cluster_nodes" time elapsed: 00:00:00
 ----------------------------------------------------------
 
@@ -857,7 +885,7 @@ Test Passed.
 37/52 Test: test_cluster_bus
 Command: "D:/a/ddup/ddup/build/Release/test_cluster_bus.exe"
 Directory: D:/a/ddup/ddup/build
-"test_cluster_bus" start time: Aug 06 13:52 Coordinated Universal Time
+"test_cluster_bus" start time: Aug 06 14:41 Coordinated Universal Time
 Output:
 ----------------------------------------------------------
 test_frame_roundtrip                     ok
@@ -866,20 +894,20 @@ test_gossip_carry                        ok
 test_fail_detect                         ok
 test_moved_wire                          ok
 ---
-117 checks, 0 failure(s)
+115 checks, 0 failure(s)
 <end of output>
-Test time =  11.92 sec
+Test time =  10.81 sec
 ----------------------------------------------------------
 Test Passed.
-"test_cluster_bus" end time: Aug 06 13:52 Coordinated Universal Time
-"test_cluster_bus" time elapsed: 00:00:11
+"test_cluster_bus" end time: Aug 06 14:41 Coordinated Universal Time
+"test_cluster_bus" time elapsed: 00:00:10
 ----------------------------------------------------------
 
 38/52 Testing: test_cluster_slots
 38/52 Test: test_cluster_slots
 Command: "D:/a/ddup/ddup/build/Release/test_cluster_slots.exe"
 Directory: D:/a/ddup/ddup/build
-"test_cluster_slots" start time: Aug 06 13:52 Coordinated Universal Time
+"test_cluster_slots" start time: Aug 06 14:41 Coordinated Universal Time
 Output:
 ----------------------------------------------------------
 test_addslots                            ok
@@ -895,7 +923,7 @@ test_moved_disabled_unaffected           ok
 Test time =   0.01 sec
 ----------------------------------------------------------
 Test Passed.
-"test_cluster_slots" end time: Aug 06 13:52 Coordinated Universal Time
+"test_cluster_slots" end time: Aug 06 14:41 Coordinated Universal Time
 "test_cluster_slots" time elapsed: 00:00:00
 ----------------------------------------------------------
 
@@ -903,7 +931,7 @@ Test Passed.
 39/52 Test: test_dump
 Command: "D:/a/ddup/ddup/build/Release/test_dump.exe"
 Directory: D:/a/ddup/ddup/build
-"test_dump" start time: Aug 06 13:52 Coordinated Universal Time
+"test_dump" start time: Aug 06 14:41 Coordinated Universal Time
 Output:
 ----------------------------------------------------------
 test_crc64_vector                        ok
@@ -919,7 +947,7 @@ test_restore_ttl                         ok
 Test time =   0.01 sec
 ----------------------------------------------------------
 Test Passed.
-"test_dump" end time: Aug 06 13:52 Coordinated Universal Time
+"test_dump" end time: Aug 06 14:41 Coordinated Universal Time
 "test_dump" time elapsed: 00:00:00
 ----------------------------------------------------------
 
@@ -927,7 +955,7 @@ Test Passed.
 40/52 Test: test_migrate
 Command: "D:/a/ddup/ddup/build/Release/test_migrate.exe"
 Directory: D:/a/ddup/ddup/build
-"test_migrate" start time: Aug 06 13:52 Coordinated Universal Time
+"test_migrate" start time: Aug 06 14:41 Coordinated Universal Time
 Output:
 ----------------------------------------------------------
 test_migrate_string                      ok
@@ -941,10 +969,10 @@ test_migrate_keys_form                   ok
 ---
 126 checks, 0 failure(s)
 <end of output>
-Test time =   2.51 sec
+Test time =   2.52 sec
 ----------------------------------------------------------
 Test Passed.
-"test_migrate" end time: Aug 06 13:52 Coordinated Universal Time
+"test_migrate" end time: Aug 06 14:41 Coordinated Universal Time
 "test_migrate" time elapsed: 00:00:02
 ----------------------------------------------------------
 
@@ -952,7 +980,7 @@ Test Passed.
 41/52 Test: test_cluster_migrate
 Command: "D:/a/ddup/ddup/build/Release/test_cluster_migrate.exe"
 Directory: D:/a/ddup/ddup/build
-"test_cluster_migrate" start time: Aug 06 13:52 Coordinated Universal Time
+"test_cluster_migrate" start time: Aug 06 14:41 Coordinated Universal Time
 Output:
 ----------------------------------------------------------
 test_setslot_migrating                   ok
@@ -963,10 +991,10 @@ test_wire_full_flow                      ok
 ---
 80 checks, 0 failure(s)
 <end of output>
-Test time =   2.28 sec
+Test time =   2.29 sec
 ----------------------------------------------------------
 Test Passed.
-"test_cluster_migrate" end time: Aug 06 13:52 Coordinated Universal Time
+"test_cluster_migrate" end time: Aug 06 14:41 Coordinated Universal Time
 "test_cluster_migrate" time elapsed: 00:00:02
 ----------------------------------------------------------
 
@@ -974,7 +1002,7 @@ Test Passed.
 42/52 Test: test_cluster_replica
 Command: "D:/a/ddup/ddup/build/Release/test_cluster_replica.exe"
 Directory: D:/a/ddup/ddup/build
-"test_cluster_replica" start time: Aug 06 13:52 Coordinated Universal Time
+"test_cluster_replica" start time: Aug 06 14:41 Coordinated Universal Time
 Output:
 ----------------------------------------------------------
 test_replicate_command                   ok
@@ -987,7 +1015,7 @@ test_wire_role_gossip                    ok
 Test time =   1.99 sec
 ----------------------------------------------------------
 Test Passed.
-"test_cluster_replica" end time: Aug 06 13:52 Coordinated Universal Time
+"test_cluster_replica" end time: Aug 06 14:41 Coordinated Universal Time
 "test_cluster_replica" time elapsed: 00:00:01
 ----------------------------------------------------------
 
@@ -995,7 +1023,7 @@ Test Passed.
 43/52 Test: test_cluster_epoch
 Command: "D:/a/ddup/ddup/build/Release/test_cluster_epoch.exe"
 Directory: D:/a/ddup/ddup/build
-"test_cluster_epoch" start time: Aug 06 13:52 Coordinated Universal Time
+"test_cluster_epoch" start time: Aug 06 14:41 Coordinated Universal Time
 Output:
 ----------------------------------------------------------
 test_epoch_bump_admin                    ok
@@ -1010,7 +1038,7 @@ test_wire_equal_epoch_converges          ok
 Test time =   1.03 sec
 ----------------------------------------------------------
 Test Passed.
-"test_cluster_epoch" end time: Aug 06 13:52 Coordinated Universal Time
+"test_cluster_epoch" end time: Aug 06 14:41 Coordinated Universal Time
 "test_cluster_epoch" time elapsed: 00:00:01
 ----------------------------------------------------------
 
@@ -1018,7 +1046,7 @@ Test Passed.
 44/52 Test: test_cluster_failover
 Command: "D:/a/ddup/ddup/build/Release/test_cluster_failover.exe"
 Directory: D:/a/ddup/ddup/build
-"test_cluster_failover" start time: Aug 06 13:52 Coordinated Universal Time
+"test_cluster_failover" start time: Aug 06 14:41 Coordinated Universal Time
 Output:
 ----------------------------------------------------------
 test_promote_primitive                   ok
@@ -1026,12 +1054,12 @@ test_failover_command                    ok
 test_wire_auto_failover                  ok
 test_wire_manual_takeover                ok
 ---
-116 checks, 0 failure(s)
+115 checks, 0 failure(s)
 <end of output>
-Test time =   9.28 sec
+Test time =   9.42 sec
 ----------------------------------------------------------
 Test Passed.
-"test_cluster_failover" end time: Aug 06 13:52 Coordinated Universal Time
+"test_cluster_failover" end time: Aug 06 14:41 Coordinated Universal Time
 "test_cluster_failover" time elapsed: 00:00:09
 ----------------------------------------------------------
 
@@ -1039,7 +1067,7 @@ Test Passed.
 45/52 Test: test_reshard
 Command: "D:/a/ddup/ddup/build/Release/test_reshard.exe"
 Directory: D:/a/ddup/ddup/build
-"test_reshard" start time: Aug 06 13:52 Coordinated Universal Time
+"test_reshard" start time: Aug 06 14:41 Coordinated Universal Time
 Output:
 ----------------------------------------------------------
 test_reshard_full_flow                   ok
@@ -1049,7 +1077,7 @@ test_reshard_full_flow                   ok
 Test time =   0.08 sec
 ----------------------------------------------------------
 Test Passed.
-"test_reshard" end time: Aug 06 13:52 Coordinated Universal Time
+"test_reshard" end time: Aug 06 14:41 Coordinated Universal Time
 "test_reshard" time elapsed: 00:00:00
 ----------------------------------------------------------
 
@@ -1057,7 +1085,7 @@ Test Passed.
 46/52 Test: test_lua_smoke
 Command: "D:/a/ddup/ddup/build/Release/test_lua_smoke.exe"
 Directory: D:/a/ddup/ddup/build
-"test_lua_smoke" start time: Aug 06 13:52 Coordinated Universal Time
+"test_lua_smoke" start time: Aug 06 14:41 Coordinated Universal Time
 Output:
 ----------------------------------------------------------
 test_state_arithmetic                    ok
@@ -1068,7 +1096,7 @@ test_limited_libs                        ok
 Test time =   0.01 sec
 ----------------------------------------------------------
 Test Passed.
-"test_lua_smoke" end time: Aug 06 13:52 Coordinated Universal Time
+"test_lua_smoke" end time: Aug 06 14:41 Coordinated Universal Time
 "test_lua_smoke" time elapsed: 00:00:00
 ----------------------------------------------------------
 
@@ -1076,7 +1104,7 @@ Test Passed.
 47/52 Test: test_script
 Command: "D:/a/ddup/ddup/build/Release/test_script.exe"
 Directory: D:/a/ddup/ddup/build
-"test_script" start time: Aug 06 13:52 Coordinated Universal Time
+"test_script" start time: Aug 06 14:41 Coordinated Universal Time
 Output:
 ----------------------------------------------------------
 test_sha1_vectors                        ok
@@ -1086,10 +1114,10 @@ test_flush                               ok
 ---
 20 checks, 0 failure(s)
 <end of output>
-Test time =   0.02 sec
+Test time =   0.57 sec
 ----------------------------------------------------------
 Test Passed.
-"test_script" end time: Aug 06 13:52 Coordinated Universal Time
+"test_script" end time: Aug 06 14:41 Coordinated Universal Time
 "test_script" time elapsed: 00:00:00
 ----------------------------------------------------------
 
@@ -1097,7 +1125,7 @@ Test Passed.
 48/52 Test: test_eval
 Command: "D:/a/ddup/ddup/build/Release/test_eval.exe"
 Directory: D:/a/ddup/ddup/build
-"test_eval" start time: Aug 06 13:52 Coordinated Universal Time
+"test_eval" start time: Aug 06 14:41 Coordinated Universal Time
 Output:
 ----------------------------------------------------------
 test_return_matrix                       ok
@@ -1113,7 +1141,7 @@ test_mt_eval                             ok
 Test time =   0.08 sec
 ----------------------------------------------------------
 Test Passed.
-"test_eval" end time: Aug 06 13:52 Coordinated Universal Time
+"test_eval" end time: Aug 06 14:41 Coordinated Universal Time
 "test_eval" time elapsed: 00:00:00
 ----------------------------------------------------------
 
@@ -1121,7 +1149,7 @@ Test Passed.
 49/52 Test: test_redbus
 Command: "D:/a/ddup/ddup/build/Release/test_redbus.exe"
 Directory: D:/a/ddup/ddup/build
-"test_redbus" start time: Aug 06 13:52 Coordinated Universal Time
+"test_redbus" start time: Aug 06 14:41 Coordinated Universal Time
 Output:
 ----------------------------------------------------------
 test_fixture_decode                      ok
@@ -1133,7 +1161,7 @@ test_update_fail_and_tolerance           ok
 Test time =   0.01 sec
 ----------------------------------------------------------
 Test Passed.
-"test_redbus" end time: Aug 06 13:52 Coordinated Universal Time
+"test_redbus" end time: Aug 06 14:41 Coordinated Universal Time
 "test_redbus" time elapsed: 00:00:00
 ----------------------------------------------------------
 
@@ -1141,7 +1169,7 @@ Test Passed.
 50/52 Test: test_redbus_bus
 Command: "D:/a/ddup/ddup/build/Release/test_redbus_bus.exe"
 Directory: D:/a/ddup/ddup/build
-"test_redbus_bus" start time: Aug 06 13:52 Coordinated Universal Time
+"test_redbus_bus" start time: Aug 06 14:41 Coordinated Universal Time
 Output:
 ----------------------------------------------------------
 test_config_bus_protocol                 ok
@@ -1149,18 +1177,18 @@ test_wire_redbus_convergence             ok
 ---
 26 checks, 0 failure(s)
 <end of output>
-Test time =   1.97 sec
+Test time =   2.18 sec
 ----------------------------------------------------------
 Test Passed.
-"test_redbus_bus" end time: Aug 06 13:52 Coordinated Universal Time
-"test_redbus_bus" time elapsed: 00:00:01
+"test_redbus_bus" end time: Aug 06 14:41 Coordinated Universal Time
+"test_redbus_bus" time elapsed: 00:00:02
 ----------------------------------------------------------
 
 51/52 Testing: test_iocp
 51/52 Test: test_iocp
 Command: "D:/a/ddup/ddup/build/Release/test_iocp.exe"
 Directory: D:/a/ddup/ddup/build
-"test_iocp" start time: Aug 06 13:52 Coordinated Universal Time
+"test_iocp" start time: Aug 06 14:41 Coordinated Universal Time
 Output:
 ----------------------------------------------------------
 test_create_free                         ok
@@ -1172,10 +1200,10 @@ test_wakeup_post                         ok
 ---
 6481 checks, 0 failure(s)
 <end of output>
-Test time =   2.19 sec
+Test time =   2.20 sec
 ----------------------------------------------------------
 Test Passed.
-"test_iocp" end time: Aug 06 13:52 Coordinated Universal Time
+"test_iocp" end time: Aug 06 14:41 Coordinated Universal Time
 "test_iocp" time elapsed: 00:00:02
 ----------------------------------------------------------
 
@@ -1183,21 +1211,22 @@ Test Passed.
 52/52 Test: test_tls
 Command: "D:/a/ddup/ddup/build/Release/test_tls.exe"
 Directory: D:/a/ddup/ddup/build
-"test_tls" start time: Aug 06 13:52 Coordinated Universal Time
+"test_tls" start time: Aug 06 14:41 Coordinated Universal Time
 Output:
 ----------------------------------------------------------
 test_ctx_load                            ok
 test_ctx_bad_files                       ok
-test_tls_server_roundtrip                ok
+FAIL D:\a\ddup\ddup\tests\test_tls.c:64: iter <= 2000 && pal_now_ms() <= deadline
+test_tls_server_roundtrip                FAILED
 test_mt_tls_roundtrip                    ok
 ---
-74 checks, 0 failure(s)
+75 checks, 1 failure(s)
 <end of output>
-Test time =   1.34 sec
+Test time =  34.03 sec
 ----------------------------------------------------------
-Test Passed.
-"test_tls" end time: Aug 06 13:52 Coordinated Universal Time
-"test_tls" time elapsed: 00:00:01
+Test Failed.
+"test_tls" end time: Aug 06 14:42 Coordinated Universal Time
+"test_tls" time elapsed: 00:00:34
 ----------------------------------------------------------
 
-End testing: Aug 06 13:52 Coordinated Universal Time
+End testing: Aug 06 14:42 Coordinated Universal Time
