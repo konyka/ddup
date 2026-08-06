@@ -17,17 +17,24 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Install Redis
-        run: sudo apt-get update && sudo apt-get install -y redis-server redis-tools
+        run: |
+          exec > >(tee -a /tmp/interop-run.log) 2>&1
+          set -x
+          sudo apt-get update
+          apt-cache policy redis-server redis-tools
+          sudo apt-get install -y redis-server redis-tools
 
       - name: Build ddup
         run: |
+          exec > >(tee -a /tmp/interop-run.log) 2>&1
+          set -x
           cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
           cmake --build build
 
       - name: "Interop: 3 redis nodes + ddup join, converge, slot handoff"
         shell: bash
         run: |
-          exec > >(tee /tmp/interop-run.log) 2>&1
+          exec > >(tee -a /tmp/interop-run.log) 2>&1
           set -x
           R=/tmp/interop
           rm -rf $R && mkdir -p $R
