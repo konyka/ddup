@@ -68,6 +68,13 @@ jobs:
             redis-cli -p 7400 ping 2>/dev/null | grep -q PONG && break
             sleep 1
           done
+          # ddup claims slots 0-99 on its empty table before joining;
+          # epoch 2 beats the 7001 master's creation epoch 1 for them
+          for slot in $(seq 0 99); do
+            timeout 10 redis-cli -p 7400 cluster addslots $slot
+          done
+          echo "slots claimed by ddup pre-join"
+
           DDUP_ID=$(redis-cli -p 7400 cluster myid | tr -d '\r')
           echo "ddup node id: $DDUP_ID"
 
@@ -89,15 +96,7 @@ jobs:
           done
           echo "assert ddup-known-nodes-4: $ok2"
 
-          # epochs synced by now; ddup assigns slots 0-99 to itself
-          # (higher config epoch wins; the claim rides our PONGs to redis)
-          sleep 3
-          for slot in $(seq 0 99); do
-            timeout 10 redis-cli -p 7400 cluster setslot $slot node $DDUP_ID || { echo "SETSLOT $slot FAILED rc=$?"; break; }
-          done
-          echo "slots claimed by ddup"
-
-          # ddup must see itself owning the range first
+          # ddup must see itself owning the range
           ok3a=0
           for i in $(seq 1 60); do
             timeout 10 redis-cli -p 7400 cluster nodes | grep myself | grep -q "0-99" && { ok3a=1; break; }
