@@ -24,6 +24,9 @@ if(MSVC)
 else()
     target_compile_options(ddup_lua PRIVATE -w)
 endif()
+if(NOT WIN32)
+    target_link_libraries(ddup_lua PUBLIC m) # Lua's math lib needs -lm
+endif()
 
 # ---------------------------------------------------------------------------
 # Core library: everything except the server entry point.
