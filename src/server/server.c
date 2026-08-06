@@ -105,6 +105,7 @@ typedef struct bus_conn {
     struct bus_conn *next;
     pal_socket_t fd;
     int outbound;      /* we initiated it (MEET / gossip target) */
+    char peer_ip[64];  /* peer address for redbus myip auto-discovery */
     char *rbuf;
     size_t rlen;
     size_t rcap;
@@ -1689,6 +1690,7 @@ static void bus_accept(server *s)
         pal_close(fd);
         return;
     }
+    (void)pal_get_peer_ip(fd, bc->peer_ip, sizeof(bc->peer_ip));
     bus_conn_add(s, bc);
 }
 
@@ -1710,6 +1712,7 @@ static bus_conn *bus_connect(server *s, const char *ip, uint16_t bus_port)
         pal_close(fd);
         return NULL;
     }
+    snprintf(bc->peer_ip, sizeof(bc->peer_ip), "%s", ip);
     bus_conn_add(s, bc);
     return bc;
 }
@@ -1766,7 +1769,8 @@ static void bus_service(server *s, bus_conn *bc, int writable)
             break; /* incomplete frame */
         if (s->bus_protocol == SERVER_BUS_PROTOCOL_REDIS)
             rc = redbus_handle_frame(&s->db, bc->rbuf, totlen, &bc->out,
-                                     pal_wall_ms());
+                                     pal_wall_ms(),
+                                     bc->peer_ip[0] ? bc->peer_ip : NULL);
         else
             rc = cluster_bus_handle_frame(&s->db, bc->rbuf, totlen,
                                           &bc->out, pal_wall_ms());

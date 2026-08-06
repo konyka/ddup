@@ -20,6 +20,7 @@ typedef int pal_socklen_t;
 #  include <errno.h>
 #  include <fcntl.h>
 #  include <netdb.h>
+#  include <arpa/inet.h>
 #  include <netinet/in.h>
 #  include <netinet/tcp.h>
 #  include <sys/socket.h>
@@ -256,4 +257,24 @@ void pal_close(pal_socket_t fd)
 #else
     close(fd);
 #endif
+}
+
+int pal_get_peer_ip(pal_socket_t fd, char *out, size_t cap)
+{
+#if DDUP_OS_WINDOWS
+    struct sockaddr_in sa;
+    int salen = sizeof(sa);
+    const char *r;
+    if (getpeername((SOCKET)fd, (struct sockaddr *)&sa, &salen) != 0)
+        return -1;
+    r = inet_ntop(AF_INET, &sa.sin_addr, out, (int)cap);
+#else
+    struct sockaddr_in sa;
+    socklen_t salen = sizeof(sa);
+    const char *r;
+    if (getpeername(fd, (struct sockaddr *)&sa, &salen) != 0)
+        return -1;
+    r = inet_ntop(AF_INET, &sa.sin_addr, out, cap);
+#endif
+    return r != NULL ? 0 : -1;
 }

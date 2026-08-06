@@ -57,6 +57,10 @@ int pal_socket_error(void);
 /* Non-zero if err is a transient would-block error. */
 int pal_would_block(int err);
 
+/* Peer IPv4/IPv6 address of a connected socket as text (getpeername).
+ * Returns 0 on success, -1 on failure. */
+int pal_get_peer_ip(pal_socket_t fd, char *out, size_t cap);
+
 void pal_close(pal_socket_t fd);
 
 #endif /* DDUP_PAL_SOCKET_H */

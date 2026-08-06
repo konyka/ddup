@@ -50,10 +50,15 @@ void redbus_build_frame(struct db *d, int type, resp_buf *out);
 /* Parse one frame defensively: upsert the sender (slots via
  * cluster_merge_claims with configEpoch), merge gossip entries,
  * update last_seen; MEET additionally completes the handshake; FAIL
- * marks the named node disconnected; UPDATE applies a slot claim;
- * other types are tolerated (ignored). On PING or MEET a PONG frame is
- * appended to reply_out (empty on PONG). Returns 0, -1 on malformed. */
+ * marks the named node disconnected; UPDATE applies a slot claim
+ * (adopting it when it names myself); other types are tolerated
+ * (ignored). src_ip (may be NULL) is the connection's peer address,
+ * used when the frame's myip is empty (redis auto-discovery: myip is
+ * only filled when cluster-announce-ip is configured). On PING or
+ * MEET a PONG frame is appended to reply_out (empty on PONG).
+ * Returns 0, -1 on malformed. */
 int redbus_handle_frame(struct db *d, const char *frame, size_t len,
-                        resp_buf *reply_out, uint64_t now_ms);
+                        resp_buf *reply_out, uint64_t now_ms,
+                        const char *src_ip);
 
 #endif /* DDUP_REDBUS_H */

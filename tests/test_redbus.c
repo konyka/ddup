@@ -82,7 +82,7 @@ static void test_fixture_decode(void)
     resp_buf_init(&reply);
     flen = build_fixture(frame);
 
-    DD_CHECK_EQ_INT(0, redbus_handle_frame(&d, frame, flen, &reply, T0));
+    DD_CHECK_EQ_INT(0, redbus_handle_frame(&d, frame, flen, &reply, T0, NULL));
 
     /* sender node */
     n = cluster_node_find(&d, ID1);
@@ -122,12 +122,12 @@ static void test_fixture_decode(void)
     }
 
     /* malformed frames rejected */
-    DD_CHECK_EQ_INT(-1, redbus_handle_frame(&d, "garbage", 7, &reply, T0));
+    DD_CHECK_EQ_INT(-1, redbus_handle_frame(&d, "garbage", 7, &reply, T0, NULL));
     DD_CHECK_EQ_INT(-1,
                     redbus_handle_frame(&d, frame, REDBUS_HDR_LEN - 1,
-                                        &reply, T0));
+                                        &reply, T0, NULL));
     frame[4] = 0xFF; /* corrupt totlen */
-    DD_CHECK_EQ_INT(-1, redbus_handle_frame(&d, frame, flen, &reply, T0));
+    DD_CHECK_EQ_INT(-1, redbus_handle_frame(&d, frame, flen, &reply, T0, NULL));
 
     resp_buf_free(&reply);
     db_destroy(&d);
@@ -174,7 +174,7 @@ static void test_roundtrip(void)
     DD_CHECK(frame.len >= REDBUS_HDR_LEN);
     DD_CHECK_EQ_INT(0,
                     redbus_handle_frame(&d2, frame.data, frame.len, &reply,
-                                        T0));
+                                        T0, NULL));
 
     n = cluster_node_find(&d2, ID1);
     DD_CHECK(n != NULL);
@@ -199,7 +199,7 @@ static void test_roundtrip(void)
     /* reply is a PONG frame that parses back */
     DD_CHECK_EQ_INT(0,
                     redbus_handle_frame(&d1, reply.data, reply.len, &frame,
-                                        T0 + 1));
+                                        T0 + 1, NULL));
 
     resp_buf_free(&frame);
     resp_buf_free(&reply);
@@ -230,7 +230,7 @@ static void test_update_fail_and_tolerance(void)
     DD_CHECK_EQ_INT(0,
                     redbus_handle_frame(&d, frame,
                                         REDBUS_HDR_LEN + 8 + 40 + 2048,
-                                        &reply, T0));
+                                        &reply, T0, NULL));
     DD_CHECK_EQ_INT(1, cluster_slots_get(n->slots, 100));
     DD_CHECK_EQ_INT(1, cluster_slots_get(n->slots, 101));
     DD_CHECK_EQ_INT(0, cluster_slots_get(n->slots, 102));
@@ -245,7 +245,7 @@ static void test_update_fail_and_tolerance(void)
     memcpy(frame + REDBUS_HDR_LEN, ID2, 40);
     DD_CHECK_EQ_INT(0,
                     redbus_handle_frame(&d, frame, REDBUS_HDR_LEN + 40,
-                                        &reply, T0));
+                                        &reply, T0, NULL));
     DD_CHECK(n->flags & CLUSTER_NODE_DISCONNECTED);
 
     /* PUBLISH and unknown types are tolerated (ignored, no reply) */
@@ -253,11 +253,42 @@ static void test_update_fail_and_tolerance(void)
     reply.len = 0;
     DD_CHECK_EQ_INT(0,
                     redbus_handle_frame(&d, frame, REDBUS_HDR_LEN + 40,
-                                        &reply, T0));
+                                        &reply, T0, NULL));
     put16be(frame + 12, 10);
     DD_CHECK_EQ_INT(0,
                     redbus_handle_frame(&d, frame, REDBUS_HDR_LEN + 40,
-                                        &reply, T0));
+                                        &reply, T0, NULL));
+
+    resp_buf_free(&reply);
+    db_destroy(&d);
+}
+
+static void test_empty_myip_auto_discovery(void)
+{
+    db d;
+    resp_buf reply;
+    char frame[REDBUS_HDR_LEN + REDBUS_GOSSIP_LEN];
+    size_t flen;
+    cluster_node *n;
+
+    db_init(&d);
+    cluster_nodes_init(&d);
+    resp_buf_init(&reply);
+    flen = build_fixture(frame);
+    /* redis without cluster-announce-ip sends an empty myip */
+    memset(frame + 2168, 0, 46);
+
+    DD_CHECK_EQ_INT(0, redbus_handle_frame(&d, frame, flen, &reply, T0,
+                                           "10.9.8.7"));
+    n = cluster_node_find(&d, ID1);
+    DD_CHECK(n != NULL);
+    DD_CHECK_STR("10.9.8.7", n->ip); /* fell back to the peer address */
+
+    /* a later empty-myip frame must not blank the learned address */
+    reply.len = 0;
+    DD_CHECK_EQ_INT(0, redbus_handle_frame(&d, frame, flen, &reply, T0 + 1,
+                                           NULL));
+    DD_CHECK_STR("10.9.8.7", n->ip);
 
     resp_buf_free(&reply);
     db_destroy(&d);
@@ -292,7 +323,7 @@ static void test_update_to_self_adopts(void)
     DD_CHECK_EQ_INT(0,
                     redbus_handle_frame(&d, frame,
                                         REDBUS_HDR_LEN + 8 + 40 + 2048,
-                                        &reply, T0));
+                                        &reply, T0, NULL));
     DD_CHECK_EQ_INT(1, cluster_slots_get(me->slots, 5));
     DD_CHECK_EQ_INT(1, cluster_slots_get(me->slots, 6));
     DD_CHECK_EQ_INT(0, cluster_slots_get(other->slots, 5));
@@ -311,5 +342,6 @@ int main(void)
     DD_RUN(test_roundtrip);
     DD_RUN(test_update_fail_and_tolerance);
     DD_RUN(test_update_to_self_adopts);
+    DD_RUN(test_empty_myip_auto_discovery);
     return DD_TEST_SUMMARY();
 }

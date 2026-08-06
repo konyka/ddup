@@ -203,16 +203,20 @@ void redbus_build_frame(struct db *d, int type, resp_buf *out)
 /* ------------------------------------------------------------------ */
 
 /* apply a wire node record (sender or gossip) to the local table;
- * slots only present for the sender (gossip entries carry none) */
+ * slots only present for the sender (gossip entries carry none).
+ * An empty wire ip falls back to src_ip (redis auto-discovery); a
+ * known ip is never blanked by an empty one. */
 static cluster_node *apply_node(struct db *d, const char *id, const char *ip,
                                 uint16_t port, uint16_t cport, uint16_t wflags,
                                 const char *slaveof, uint64_t epoch,
-                                uint32_t extra_flags)
+                                uint32_t extra_flags, const char *src_ip)
 {
     cluster_node *n = cluster_node_add(d, id);
+    const char *use_ip = ip[0] != '\0' ? ip : src_ip;
     if (n == NULL)
         return NULL;
-    snprintf(n->ip, sizeof(n->ip), "%s", ip);
+    if (use_ip != NULL && use_ip[0] != '\0')
+        snprintf(n->ip, sizeof(n->ip), "%s", use_ip);
     n->port = port;
     n->bus_port = cport;
     n->flags = flags_from_wire(wflags) | extra_flags;
@@ -232,7 +236,8 @@ static cluster_node *apply_node(struct db *d, const char *id, const char *ip,
 }
 
 int redbus_handle_frame(struct db *d, const char *frame, size_t len,
-                        resp_buf *reply_out, uint64_t now_ms)
+                        resp_buf *reply_out, uint64_t now_ms,
+                        const char *src_ip)
 {
     const char *p;
     uint32_t totlen;
@@ -304,7 +309,8 @@ int redbus_handle_frame(struct db *d, const char *frame, size_t len,
     cport = get16be(frame + 2248);
     wflags = get16be(frame + 2250);
 
-    n = apply_node(d, id, ip, port, cport, wflags, slaveof, config_epoch, 0);
+    n = apply_node(d, id, ip, port, cport, wflags, slaveof, config_epoch, 0,
+                   src_ip);
     if (n == NULL)
         return -1;
     if (type == REDBUS_TYPE_MEET)
@@ -326,7 +332,7 @@ int redbus_handle_frame(struct db *d, const char *frame, size_t len,
         /* only add when unseen (third-party records never overwrite) */
         if (cluster_node_find(d, id) == NULL) {
             (void)apply_node(d, id, ip, get16be(p + 94), get16be(p + 96),
-                             gflags, NULL, 0, CLUSTER_NODE_HANDSHAKE);
+                             gflags, NULL, 0, CLUSTER_NODE_HANDSHAKE, src_ip);
         }
         p += REDBUS_GOSSIP_LEN;
     }
