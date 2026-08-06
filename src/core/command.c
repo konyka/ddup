@@ -3419,7 +3419,7 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
             if (!rev) {
                 n = zsl_at(z->sl, (size_t)start);
                 for (i = start; i <= stop && n != NULL;
-                     i++, n = n->forward[0]) {
+                     i++, n = n->level[0].forward) {
                     resp_write_bulk(out, n->member, n->mlen);
                     if (withscores) {
                         char num[40];
@@ -3567,7 +3567,7 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
                 if (c >= off)
                     emitted++;
                 c++;
-                n = n->forward[0];
+                n = n->level[0].forward;
             }
             if (cnt >= 0 && emitted > cnt)
                 emitted = cnt;
@@ -3586,7 +3586,7 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
                     }
                 }
                 c++;
-                n = n->forward[0];
+                n = n->level[0].forward;
             }
         }
         return;
@@ -3641,7 +3641,7 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
                     cap = ncap;
                 }
                 nodes[nn++] = n;
-                n = n->forward[0];
+                n = n->level[0].forward;
             }
             for (i = 0; i < nn; i++)
                 removed += obj_zset_rem(z, nodes[i]->member, nodes[i]->mlen);

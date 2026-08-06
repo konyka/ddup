@@ -29,14 +29,14 @@ static void test_insert_order(void)
 
     /* level-0 walk is sorted */
     {
-        zsl_node *n = z->header->forward[0];
+        zsl_node *n = z->header->level[0].forward;
         DD_CHECK(n != NULL && n->score == 1.0 && n->mlen == 1 &&
                  n->member[0] == 'a');
-        n = n->forward[0];
+        n = n->level[0].forward;
         DD_CHECK(n != NULL && n->score == 2.0 && n->member[0] == 'b');
-        n = n->forward[0];
+        n = n->level[0].forward;
         DD_CHECK(n != NULL && n->score == 3.0 && n->member[0] == 'c');
-        n = n->forward[0];
+        n = n->level[0].forward;
         DD_CHECK(n == NULL);
     }
     /* tail + backward chain */
@@ -54,14 +54,14 @@ static void test_duplicate_score_tiebreak(void)
     zsl_insert(z, 1.0, "a", 1);
     zsl_insert(z, 1.0, "ab", 2); /* "a" < "ab" (prefix rule) */
     {
-        zsl_node *n = z->header->forward[0];
+        zsl_node *n = z->header->level[0].forward;
         const char *want[4] = {"a", "ab", "b", "c"};
         int i;
         for (i = 0; i < 4; i++) {
             DD_CHECK(n != NULL);
             DD_CHECK(n->mlen == strlen(want[i]) &&
                      memcmp(n->member, want[i], n->mlen) == 0);
-            n = n->forward[0];
+            n = n->level[0].forward;
         }
         DD_CHECK(n == NULL);
     }
@@ -94,7 +94,7 @@ static void test_delete_and_rank(void)
     DD_CHECK_EQ_INT(0, zsl_rank(z, 1.0, "m1", 2));
     DD_CHECK_EQ_INT(-1, zsl_rank(z, 5.0, "m5", 2));
     DD_CHECK(z->tail->score == 8.0);
-    DD_CHECK(z->header->forward[0]->score == 1.0);
+    DD_CHECK(z->header->level[0].forward->score == 1.0);
 
     /* index walk */
     DD_CHECK(zsl_at(z, 0)->score == 1.0);
@@ -173,13 +173,13 @@ static void test_differential(void)
 
     /* full-order comparison */
     {
-        zsl_node *n = z->header->forward[0];
+        zsl_node *n = z->header->level[0].forward;
         for (i = 0; i < N; i++) {
             DD_CHECK(n != NULL);
             DD_CHECK(n->score == model[i].score);
             DD_CHECK(n->mlen == strlen(model[i].member) &&
                     memcmp(n->member, model[i].member, n->mlen) == 0);
-            n = n->forward[0];
+            n = n->level[0].forward;
         }
         DD_CHECK(n == NULL);
     }
@@ -189,6 +189,18 @@ static void test_differential(void)
         DD_CHECK_EQ_INT(i, zsl_rank(z, model[i].score, model[i].member,
                                     strlen(model[i].member)));
     }
+    /* index access: zsl_at(j) lands on model[j] */
+    for (j = 0; j < 100; j++) {
+        i = (int)(xrnd() % N);
+        {
+            zsl_node *n = zsl_at(z, (size_t)i);
+            DD_CHECK(n != NULL);
+            DD_CHECK(n->score == model[i].score);
+            DD_CHECK(n->mlen == strlen(model[i].member) &&
+                    memcmp(n->member, model[i].member, n->mlen) == 0);
+        }
+    }
+    DD_CHECK(zsl_at(z, N) == NULL);
     /* delete half (even model indexes after re-sort is fine: membership
      * is what matters), then re-compare */
     {
@@ -199,17 +211,32 @@ static void test_differential(void)
         for (i = 1; i < N; i += 2)
             model[remaining++] = model[i];
         {
-            zsl_node *n = z->header->forward[0];
+            zsl_node *n = z->header->level[0].forward;
             for (i = 0; i < remaining; i++) {
                 DD_CHECK(n != NULL);
                 DD_CHECK(n->score == model[i].score);
                 DD_CHECK(n->mlen == strlen(model[i].member) &&
                     memcmp(n->member, model[i].member, n->mlen) == 0);
-                n = n->forward[0];
+                n = n->level[0].forward;
             }
             DD_CHECK(n == NULL);
             DD_CHECK_EQ_INT(remaining, (long long)z->length);
         }
+        /* rank + index AFTER deletes (span bookkeeping differential) */
+        for (j = 0; j < 200; j++) {
+            i = (int)(xrnd() % (uint32_t)remaining);
+            DD_CHECK_EQ_INT(i, zsl_rank(z, model[i].score, model[i].member,
+                                        strlen(model[i].member)));
+            {
+                zsl_node *n = zsl_at(z, (size_t)i);
+                DD_CHECK(n != NULL);
+                DD_CHECK(n->score == model[i].score);
+                DD_CHECK(n->mlen == strlen(model[i].member) &&
+                        memcmp(n->member, model[i].member, n->mlen) == 0);
+            }
+        }
+        DD_CHECK_EQ_INT(-1, zsl_rank(z, -999.0, "zzzz", 4));
+        DD_CHECK(zsl_at(z, (size_t)remaining) == NULL);
     }
     free(model);
     zsl_free(z);

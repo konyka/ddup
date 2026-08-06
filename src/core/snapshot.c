@@ -127,7 +127,7 @@ static void write_value_payload(resp_buf *buf, int tag, const char *val,
         obj_zset *z = (obj_zset *)obj_unpack_ptr(val, vlen);
         zsl_node *n;
         buf_u32le(buf, (uint32_t)rh_size(&z->dict));
-        for (n = z->sl->header->forward[0]; n != NULL; n = n->forward[0]) {
+        for (n = z->sl->header->level[0].forward; n != NULL; n = n->level[0].forward) {
             buf_u32le(buf, n->mlen);
             buf_bytes(buf, n->member, n->mlen);
             buf_f64le(buf, n->score);

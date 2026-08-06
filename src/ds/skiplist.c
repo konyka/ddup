@@ -58,7 +58,8 @@ static zsl_node *zsl_node_new(int level, double score, const char *member,
                               size_t mlen)
 {
     zsl_node *n = (zsl_node *)zsl_xmalloc(sizeof(zsl_node) +
-                                          (size_t)level * sizeof(zsl_node *));
+                                          (size_t)level *
+                                              sizeof(struct zsl_level));
     n->score = score;
     n->backward = NULL;
     n->mlen = (uint32_t)mlen;
@@ -69,8 +70,8 @@ static zsl_node *zsl_node_new(int level, double score, const char *member,
 
 static uint64_t zsl_node_bytes(int level, size_t mlen)
 {
-    return (uint64_t)sizeof(zsl_node) + (uint64_t)level * sizeof(void *) +
-           16 + mlen + 16;
+    return (uint64_t)sizeof(zsl_node) +
+           (uint64_t)level * sizeof(struct zsl_level) + 16 + mlen + 16;
 }
 
 zskiplist *zsl_create(void)
@@ -78,8 +79,10 @@ zskiplist *zsl_create(void)
     zskiplist *z = (zskiplist *)zsl_xmalloc(sizeof(*z));
     int i;
     z->header = zsl_node_new(ZSL_MAX_LEVEL, 0.0, "", 0);
-    for (i = 0; i < ZSL_MAX_LEVEL; i++)
-        z->header->forward[i] = NULL;
+    for (i = 0; i < ZSL_MAX_LEVEL; i++) {
+        z->header->level[i].forward = NULL;
+        z->header->level[i].span = 0;
+    }
     z->tail = NULL;
     z->length = 0;
     z->level = 1;
@@ -93,9 +96,9 @@ void zsl_free(zskiplist *z)
     zsl_node *n;
     if (z == NULL)
         return;
-    n = z->header->forward[0];
+    n = z->header->level[0].forward;
     while (n != NULL) {
-        zsl_node *next = n->forward[0];
+        zsl_node *next = n->level[0].forward;
         free(n->member);
         free(n);
         n = next;
@@ -108,6 +111,7 @@ void zsl_free(zskiplist *z)
 void zsl_insert(zskiplist *z, double score, const char *member, size_t mlen)
 {
     zsl_node *update[ZSL_MAX_LEVEL];
+    uint32_t rank[ZSL_MAX_LEVEL];
     zsl_node *x;
     zsl_node *n;
     int level;
@@ -115,26 +119,39 @@ void zsl_insert(zskiplist *z, double score, const char *member, size_t mlen)
 
     x = z->header;
     for (i = z->level - 1; i >= 0; i--) {
-        while (x->forward[i] != NULL &&
-               zsl_cmp(x->forward[i]->score, x->forward[i]->member,
-                       x->forward[i]->mlen, score, member, mlen) < 0)
-            x = x->forward[i];
+        rank[i] = (i == z->level - 1) ? 0 : rank[i + 1];
+        while (x->level[i].forward != NULL &&
+               zsl_cmp(x->level[i].forward->score,
+                       x->level[i].forward->member,
+                       x->level[i].forward->mlen, score, member, mlen) < 0) {
+            rank[i] += x->level[i].span;
+            x = x->level[i].forward;
+        }
         update[i] = x;
     }
     level = zsl_random_level(z);
     if (level > z->level) {
-        for (i = z->level; i < level; i++)
+        for (i = z->level; i < level; i++) {
             update[i] = z->header;
+            update[i]->level[i].span = (uint32_t)z->length;
+            rank[i] = 0;
+        }
         z->level = level;
     }
     n = zsl_node_new(level, score, member, mlen);
     for (i = 0; i < level; i++) {
-        n->forward[i] = update[i]->forward[i];
-        update[i]->forward[i] = n;
+        n->level[i].forward = update[i]->level[i].forward;
+        update[i]->level[i].forward = n;
+        /* rank[0]-rank[i] = level-0 nodes between update[i] and n */
+        n->level[i].span =
+            update[i]->level[i].span - (rank[0] - rank[i]);
+        update[i]->level[i].span = (rank[0] - rank[i]) + 1;
     }
+    for (i = level; i < z->level; i++)
+        update[i]->level[i].span++;
     n->backward = (update[0] == z->header) ? NULL : update[0];
-    if (n->forward[0] != NULL)
-        n->forward[0]->backward = n;
+    if (n->level[0].forward != NULL)
+        n->level[0].forward->backward = n;
     else
         z->tail = n;
     z->length++;
@@ -150,27 +167,31 @@ int zsl_delete(zskiplist *z, double score, const char *member, size_t mlen)
 
     x = z->header;
     for (i = z->level - 1; i >= 0; i--) {
-        while (x->forward[i] != NULL &&
-               zsl_cmp(x->forward[i]->score, x->forward[i]->member,
-                       x->forward[i]->mlen, score, member, mlen) < 0)
-            x = x->forward[i];
+        while (x->level[i].forward != NULL &&
+               zsl_cmp(x->level[i].forward->score,
+                       x->level[i].forward->member,
+                       x->level[i].forward->mlen, score, member, mlen) < 0)
+            x = x->level[i].forward;
         update[i] = x;
     }
-    x = x->forward[0];
+    x = x->level[0].forward;
     if (x == NULL ||
         zsl_cmp(x->score, x->member, x->mlen, score, member, mlen) != 0)
         return 0;
     for (i = 0; i < z->level; i++) {
-        if (update[i]->forward[i] == x) {
-            update[i]->forward[i] = x->forward[i];
+        if (update[i]->level[i].forward == x) {
+            update[i]->level[i].span += x->level[i].span - 1;
+            update[i]->level[i].forward = x->level[i].forward;
             level = i + 1; /* highest level the node participated in */
+        } else {
+            update[i]->level[i].span -= 1;
         }
     }
-    if (x->forward[0] != NULL)
-        x->forward[0]->backward = x->backward;
+    if (x->level[0].forward != NULL)
+        x->level[0].forward->backward = x->backward;
     else
         z->tail = x->backward;
-    while (z->level > 1 && z->header->forward[z->level - 1] == NULL)
+    while (z->level > 1 && z->header->level[z->level - 1].forward == NULL)
         z->level--;
     z->length--;
     z->mem -= zsl_node_bytes(level, x->mlen);
@@ -181,29 +202,40 @@ int zsl_delete(zskiplist *z, double score, const char *member, size_t mlen)
 
 long zsl_rank(zskiplist *z, double score, const char *member, size_t mlen)
 {
-    zsl_node *n = z->header->forward[0];
-    long rank = 0;
-    while (n != NULL) {
-        int c = zsl_cmp(n->score, n->member, n->mlen, score, member, mlen);
-        if (c == 0)
-            return rank;
-        if (c > 0)
-            return -1;
-        rank++;
-        n = n->forward[0];
+    zsl_node *x = z->header;
+    uint64_t r = 0;
+    int i;
+    for (i = z->level - 1; i >= 0; i--) {
+        while (x->level[i].forward != NULL &&
+               zsl_cmp(x->level[i].forward->score,
+                       x->level[i].forward->member,
+                       x->level[i].forward->mlen, score, member, mlen) <= 0) {
+            r += x->level[i].span;
+            x = x->level[i].forward;
+        }
+        if (x != z->header &&
+            zsl_cmp(x->score, x->member, x->mlen, score, member, mlen) == 0)
+            return (long)(r - 1);
     }
     return -1;
 }
 
 zsl_node *zsl_at(zskiplist *z, size_t idx)
 {
-    zsl_node *n = z->header->forward[0];
-    size_t i = 0;
-    while (n != NULL && i < idx) {
-        n = n->forward[0];
-        i++;
+    zsl_node *x = z->header;
+    uint64_t traversed = 0;
+    int i;
+    /* zslGetElementByRank semantics are 1-based; idx is 0-based */
+    for (i = z->level - 1; i >= 0; i--) {
+        while (x->level[i].forward != NULL &&
+               traversed + x->level[i].span <= (uint64_t)idx + 1) {
+            traversed += x->level[i].span;
+            x = x->level[i].forward;
+        }
+        if (traversed == (uint64_t)idx + 1)
+            return x;
     }
-    return n;
+    return NULL;
 }
 
 static int zsl_gte_min(double score, const zrangespec *r)
@@ -223,10 +255,10 @@ zsl_node *zsl_first_in_range(zskiplist *z, const zrangespec *r)
     if (zsl_cmp(r->min, "", 0, r->max, "", 0) > 0)
         return NULL; /* min > max: empty */
     for (i = z->level - 1; i >= 0; i--)
-        while (x->forward[i] != NULL &&
-               !zsl_gte_min(x->forward[i]->score, r))
-            x = x->forward[i];
-    x = x->forward[0];
+        while (x->level[i].forward != NULL &&
+               !zsl_gte_min(x->level[i].forward->score, r))
+            x = x->level[i].forward;
+    x = x->level[0].forward;
     if (x == NULL || !zsl_lte_max(x->score, r))
         return NULL;
     return x;
@@ -239,8 +271,8 @@ zsl_node *zsl_last_in_range(zskiplist *z, const zrangespec *r)
     if (zsl_cmp(r->min, "", 0, r->max, "", 0) > 0)
         return NULL;
     for (i = z->level - 1; i >= 0; i--)
-        while (x->forward[i] != NULL && zsl_lte_max(x->forward[i]->score, r))
-            x = x->forward[i];
+        while (x->level[i].forward != NULL && zsl_lte_max(x->level[i].forward->score, r))
+            x = x->level[i].forward;
     if (x == z->header || !zsl_gte_min(x->score, r))
         return NULL;
     return x;
@@ -252,7 +284,7 @@ size_t zsl_count_in_range(zskiplist *z, const zrangespec *r)
     size_t count = 0;
     while (n != NULL && zsl_lte_max(n->score, r)) {
         count++;
-        n = n->forward[0];
+        n = n->level[0].forward;
     }
     return count;
 }
