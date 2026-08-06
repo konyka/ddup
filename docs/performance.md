@@ -160,6 +160,23 @@ ping-pong 型流水负载下 IOCP 每个往返比 readiness 多一次完成等�
 未压出 select 的 1024 fd 上限与 FD_SET 重建成本——IOCP 的真正优势
 场景（海量并发长连接）仍未被基准覆盖，如实记录。
 
+## Phase 21 优化汇总（2026-08-07）
+
+| 项目 | 基准 | 前 | 后 | 变化 |
+|------|------|-----|-----|------|
+| wyhash（rhtable） | bench_core SET（20 万命令×3） | 4.19M ops/s | 5.01M ops/s | +19.6% |
+| wyhash（rhtable） | bench_core GET warm（×3） | 6.68M ops/s | 7.59M ops/s | +13.5% |
+| skiplist span | zsl_rank ×10 万（10 万成员） | 53.9 s | 7 ms | ~7700x |
+| skiplist span | zsl_at ×10 万（10 万成员） | 51.4 s | 15 ms | ~3400x |
+| 有界读排干（server） | 交替 A/B c50 P16 GET（12 对中位） | 893k req/s | 895k req/s | 噪声内（负结果，保留） |
+
+- **flaky 稳定化**：集群 wire 测试全部改为墙钟 deadline 轮询（迭代计数
+  在事件密集时不足一轮 gossip）；本地 test_cluster_migrate/epoch ×20、
+  test_cluster_bus ×10 全绿。
+- wyhash 为 deps/  vendored final v4.3（public domain，128 位乘法平台
+  启用，FNV 回退保留）；span 算法与 Redis zsl 同构（1-based 内部语义），
+  差分覆盖含删后 rank/index 对照。
+
 ## Phase 21 GET 路径差距分析（2026-08-07，含负结果）
 
 - **CPU 侧**：bench_core 显示 GET 解析余量 50.9M ops/s、dispatch+存储

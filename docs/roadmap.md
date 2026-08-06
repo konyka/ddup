@@ -25,7 +25,7 @@
   - [x] Hash：HSET/HGET/HDEL/HEXISTS/HLEN/HGETALL/HKEYS/HVALS/HMSET/HMGET/HINCRBY/HSETNX（Phase 5.1）
   - [x] List：LPUSH/RPUSH/LPUSHX/RPUSHX/LPOP/RPOP/LLEN/LRANGE/LINDEX/LSET（Phase 5.1）
   - [x] Set：SADD/SREM/SISMEMBER/SMISMEMBER/SCARD/SMEMBERS/SPOP/SRANDMEMBER/SMOVE/SINTER/SUNION/SDIFF（Phase 5.2）
-  - [x] ZSet：skiplist（无 span）+ ZADD/ZSCORE/ZCARD/ZINCRBY/ZREM/ZRANGE/ZREVRANGE/ZRANK/ZREVRANK/ZCOUNT/ZRANGEBYSCORE/ZREMRANGEBYSCORE（Phase 5.2）
+  - [x] ZSet：skiplist + ZADD/ZSCORE/ZCARD/ZINCRBY/ZREM/ZRANGE/ZREVRANGE/ZRANK/ZREVRANK/ZCOUNT/ZRANGEBYSCORE/ZREMRANGEBYSCORE（Phase 5.2；span 见 Phase 21）
   - [x] 事务：session 上下文、MULTI/EXEC/DISCARD/WATCH/UNWATCH（key 版本表）（Phase 5.3）
   - [x] 发布订阅：SUBSCRIBE/UNSUBSCRIBE/PUBLISH（server 级频道注册表）（Phase 5.3）
 - [x] **Phase 6 — 持久化与配置**
@@ -122,6 +122,10 @@
   - [x] Redis 总线协议兼容：clusterMsg 编解码（大端 2256B 头）、
     cluster-bus-protocol ddup|redis 双协议、与真实 redis-server 混部
     收敛 + 槽位移交 CI（Phase 20）
+  - [x] 深度优化与测试稳定化：集群 wire 测试全面改墙钟轮询（抖动
+    根治）、wyhash 替换 FNV（rhtable：SET +19.6%/GET +13.5%）、
+    skiplist 逐层 span（rank/index ~3 个数量级）、GET 路径分析与
+    有界读排干（负结果如实记录）（Phase 21）
   - [ ] 范围化排除（记录在案，不实施）：
     - 分层存储（热/冷数据落盘）：超出"内存缓存存储"定位
     - mt 模式的复制/集群适配：见 Phase 15 说明

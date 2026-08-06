@@ -323,8 +323,9 @@ DBSIZE 为 O(1)，可能计入尚未回收的过期 key。
 - **ZSet**：Redis 风格 dict + skiplist。dict（rh_table）member -> 8 字节
   double，ZSCORE/ZINCRBY/ZREM 均 O(log N)；skiplist（src/ds/skiplist.c）
   维护 (score, member 字节序) 排序：分数升序，同分按 member 字典序
-  （与 Redis 一致）。跳表为**无 span 简化变体**：ZRANK/索引访问走
-  level-0 链 O(N)，span 优化列为后续工作。层数几何分布 p=1/4、上限 32，
+  （与 Redis 一致）。跳表带**逐层 span**（Redis zsl 同构，Phase 21）：
+  ZRANK/索引访问 O(log N)；插入/删除维护各层 span（微基准 100k 成员：
+  rank/at 查询 ~0.5ms → ~0.1µs 量级）。层数几何分布 p=1/4、上限 32，
   内部 xorshift32 随机源（确定性种子，测试可复现）。
 - **分数格式**：`%.17g`（inf/-inf 原样），解析用 strtod 全量消费，
   NaN 一律拒绝（`ERR value is not a valid float`）；inf + -inf 的结果
@@ -647,7 +648,7 @@ src/resp/    RESP 协议（Phase 1）
 src/core/    KV 存储、哈希表、过期、淘汰、命令分发、session、config、
              snapshot（Phase 2/4/5.3/6）
 src/ds/      对象类型：obj（tagged blob、Hash 嵌套表、List 双链表、Set、
-             ZSet dict+skiplist）、skiplist（无 span 跳表）（Phase 5.1/5.2）
+             ZSet dict+skiplist）、skiplist（span 跳表）（Phase 5.1/5.2/21）
 src/server/  连接与服务器主循环（Phase 3）、aof（Phase 6）：单线程事件循环、
              recv 缓冲按需增长、解析→执行→推进零拷贝流水线；连接全部
              非阻塞（Phase 7.4）：写出经 out 缓冲 + writable 事件驱动，
