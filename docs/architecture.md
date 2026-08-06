@@ -421,9 +421,17 @@ DBSIZE 为 O(1)，可能计入尚未回收的过期 key。
   `config_validate()` 要求 cert/key 文件可读。conn 增加 `pal_tls*`，
   server 的所有读写经 conn_read/conn_write 包装分发到 TLS 或明文。
 - **简化（记录在案）**：accept 上的握手为非阻塞式（事件循环内分步完成）；
-  复制 master link 暂不支持 TLS。Windows CI 上 test_tls 集成测试暂时禁用
-  （握手在 Windows  runner 上超时，调查中）；TLS 库与服务器集成代码在
-  Windows 正常编译，Linux/macOS/FreeBSD CI 覆盖完整 test_tls。
+  复制 master link 暂不支持 TLS。
+- **Windows 状态（Phase 18 已解决）**：此前 test_tls 在 Windows CI 被禁用，
+  根因是测试自身缺陷——plain 端口对照连接用阻塞 socket，首个 pal_recv
+  在服务器处理前永久阻塞（Windows 上稳定复现，POSIX 靠时序侥幸通过），
+  另有 PING 回复字节数断言笔误（6 应为 7）。修复后 test_tls 全平台
+  启用；所有轮询循环带 15s 墙钟上限，回归时快速报 FAIL 而非 CI 超时。
+  本地无 OpenSSL 开发包时的验证方法（记录在案）：取 Git for Windows
+  自带的 mingw OpenSSL 3.5.6 DLL，用源码包 + 仓库内 perl 桩模块跑
+  OpenSSL Configure + dofile.pl 生成头文件，llvm-objdump/dlltool 生成
+  COFF 导入库，再 `-DOPENSSL_*` 显式指向即可（build/openssl-dev，
+  不提交）。
 
 ## 非阻塞写出（Phase 7.4）
 

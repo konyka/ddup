@@ -88,7 +88,8 @@
   集群模式、TLS、io_uring 优化落地、SIMD 解析优化、与 Garnet/Redis 基准对比
   - [x] 主从复制：全量同步（SYNC 快照帧 + 命令推流）、REPLICAOF/NO ONE、
     只读副本、断线全量重同步（无 PSYNC，backlog 预留）（Phase 7.1）
-  - [x] TLS：可选 OpenSSL（独立 tls-port、阻塞握手、DDUP_HAS_TLS 门控）（Phase 7.2）
+  - [x] TLS：可选 OpenSSL（独立 tls-port、阻塞握手、DDUP_HAS_TLS 门控）（Phase 7.2）；
+    Windows test_tls 修复并全平台启用（Phase 18：测试阻塞 socket 根因）
   - [x] 剖析驱动优化：bench_core 进程内基准 + expires 空表早退、无 WATCH 免
     keyvers 写入、get+touch 单探测、传播 fan-out O(1)（CPU 侧 SET +71%/
     GET +24%，端到端 +8–11%）（Phase 7.3）
