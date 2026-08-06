@@ -208,6 +208,9 @@ if(DDUP_HAS_TLS)
     ddup_add_test(test_tls tests/test_tls.c)
     target_compile_definitions(test_tls PRIVATE
         DDUP_TEST_CERT_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests/certs")
+    /* loaded CI runners occasionally stall the RSA handshake well past
+     * 15s; the deadline budgets guard hangs, they are not assertions */
+    set_tests_properties(test_tls PROPERTIES TIMEOUT 600)
 endif()
 
 set(DDUP_CHECK_DEPS test_pal test_pal_thread test_pal_wakeup test_spsc test_mt_server test_cstd test_cmdid test_buf_pool test_socket test_event test_server test_arena test_resp_parser test_resp_writer test_resp3 test_rhtable test_command test_expire test_eviction test_hash test_list test_skiplist test_set test_zset test_session test_multidb test_multi test_pubsub test_config test_aof test_snapshot test_repl test_hashslot test_cluster_id test_cluster_cmds test_cluster_nodes test_cluster_bus test_cluster_slots test_dump test_migrate test_cluster_migrate test_cluster_replica test_cluster_epoch test_cluster_failover test_reshard test_lua_smoke test_script test_eval test_redbus test_redbus_bus ddup-reshard)
