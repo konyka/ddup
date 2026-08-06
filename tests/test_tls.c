@@ -40,8 +40,13 @@ static void tls_client_open(server *s, SSL_CTX *cctx, tls_client *c)
 {
     int rc;
     int iter = 0;
+    uint64_t deadline = pal_now_ms() + 15000;
     c->fd = pal_tcp_connect("127.0.0.1", server_tls_port(s));
     DD_CHECK(c->fd != PAL_SOCKET_INVALID);
+    if (c->fd == PAL_SOCKET_INVALID) {
+        c->ssl = NULL;
+        return;
+    }
     DD_CHECK_EQ_INT(0, pal_set_nonblocking(c->fd, 1));
     c->ssl = SSL_new(cctx);
     DD_CHECK(c->ssl != NULL);
@@ -53,10 +58,10 @@ static void tls_client_open(server *s, SSL_CTX *cctx, tls_client *c)
         rc = SSL_get_error(c->ssl, rc);
         DD_CHECK(rc == SSL_ERROR_WANT_READ || rc == SSL_ERROR_WANT_WRITE);
         server_run_once(s, 10);
-        if (++iter > 10000)
-            break; /* fail via the check above on the next iteration */
+        if (++iter > 2000 || pal_now_ms() > deadline)
+            break; /* fail via the check below */
     }
-    DD_CHECK(iter <= 10000);
+    DD_CHECK(iter <= 2000 && pal_now_ms() <= deadline);
 }
 
 static void tls_client_close(tls_client *c)
@@ -75,7 +80,10 @@ static void tls_rt(server *s, tls_client *c, const char *req,
     size_t got = 0;
     int iter = 0;
     int rc;
+    uint64_t deadline = pal_now_ms() + 15000;
     DD_CHECK(elen <= sizeof(buf));
+    if (c->ssl == NULL)
+        return;
     for (size_t off = 0; off < strlen(req);) {
         rc = SSL_write(c->ssl, req + off, (int)(strlen(req) - off));
         if (rc > 0) {
@@ -85,12 +93,13 @@ static void tls_rt(server *s, tls_client *c, const char *req,
         rc = SSL_get_error(c->ssl, rc);
         DD_CHECK(rc == SSL_ERROR_WANT_READ || rc == SSL_ERROR_WANT_WRITE);
         server_run_once(s, 10);
-        if (++iter > 10000)
+        if (++iter > 2000 || pal_now_ms() > deadline)
             break;
     }
-    DD_CHECK(iter <= 10000);
+    DD_CHECK(iter <= 2000 && pal_now_ms() <= deadline);
     iter = 0;
-    while (got < elen && iter < 10000) {
+    deadline = pal_now_ms() + 15000;
+    while (got < elen && iter < 2000 && pal_now_ms() <= deadline) {
         iter++;
         server_run_once(s, 10);
         rc = SSL_read(c->ssl, buf + got, (int)(sizeof(buf) - got));
@@ -117,10 +126,13 @@ static void test_tls_server_roundtrip(void)
 
     s = server_create("127.0.0.1", 0);
     DD_CHECK(s != NULL);
-    DD_CHECK_EQ_INT(0,
-                    server_enable_tls(s, "127.0.0.1", 0,
-                                      DDUP_TEST_CERT_DIR "/cert.pem",
-                                      DDUP_TEST_CERT_DIR "/key.pem"));
+    if (server_enable_tls(s, "127.0.0.1", 0, DDUP_TEST_CERT_DIR "/cert.pem",
+                          DDUP_TEST_CERT_DIR "/key.pem") != 0) {
+        DD_CHECK(0); /* enable failed: report, don't grind the loops */
+        server_destroy(s);
+        pal_socket_cleanup();
+        return;
+    }
     DD_CHECK(server_tls_port(s) != 0);
 
     cctx = SSL_CTX_new(TLS_client_method());
@@ -144,18 +156,20 @@ static void test_tls_server_roundtrip(void)
     /* plain port serves in parallel */
     plain = pal_tcp_connect("127.0.0.1", server_port(s));
     DD_CHECK(plain != PAL_SOCKET_INVALID);
+    DD_CHECK_EQ_INT(0, pal_set_nonblocking(plain, 1));
     DD_CHECK_EQ_INT(14, pal_send(plain, "*1\r\n$4\r\nPING\r\n", 14));
     {
         char pb[8];
         ptrdiff_t n = -1;
         int iter = 0;
-        while (n < 0 && iter < 10000) {
+        uint64_t deadline = pal_now_ms() + 15000;
+        while (n < 0 && iter < 2000 && pal_now_ms() <= deadline) {
             iter++;
             server_run_once(s, 10);
             n = pal_recv(plain, pb, sizeof(pb));
         }
-        DD_CHECK_EQ_INT(6, n);
-        DD_CHECK_MEM("+PONG\r\n", 6, pb, 6);
+        DD_CHECK_EQ_INT(7, n);
+        DD_CHECK_MEM("+PONG\r\n", 7, pb, 7);
     }
     pal_close(plain);
 
@@ -185,6 +199,7 @@ static void mt_ssl_rt(SSL *ssl, const char *req, const char *expected)
     size_t got = 0, off = 0;
     int iter = 0;
     int rc;
+    uint64_t deadline = pal_now_ms() + 15000;
     DD_CHECK(elen <= sizeof(buf));
     while (off < strlen(req)) {
         rc = SSL_write(ssl, req + off, (int)(strlen(req) - off));
@@ -195,12 +210,13 @@ static void mt_ssl_rt(SSL *ssl, const char *req, const char *expected)
         rc = SSL_get_error(ssl, rc);
         DD_CHECK(rc == SSL_ERROR_WANT_READ || rc == SSL_ERROR_WANT_WRITE);
         pal_sleep_ms(1);
-        if (++iter > 10000)
+        if (++iter > 5000 || pal_now_ms() > deadline)
             break;
     }
-    DD_CHECK(iter <= 10000);
+    DD_CHECK(iter <= 5000 && pal_now_ms() <= deadline);
     iter = 0;
-    while (got < elen && iter < 10000) {
+    deadline = pal_now_ms() + 15000;
+    while (got < elen && iter < 5000 && pal_now_ms() <= deadline) {
         iter++;
         rc = SSL_read(ssl, buf + got, (int)(sizeof(buf) - got));
         if (rc > 0)
@@ -228,9 +244,14 @@ static void test_mt_tls_roundtrip(void)
 
     ms = mt_server_create("127.0.0.1", 0, 2);
     DD_CHECK(ms != NULL);
-    DD_CHECK_EQ_INT(0, mt_server_enable_tls(ms, "127.0.0.1", 0,
-                                            DDUP_TEST_CERT_DIR "/cert.pem",
-                                            DDUP_TEST_CERT_DIR "/key.pem"));
+    if (mt_server_enable_tls(ms, "127.0.0.1", 0,
+                             DDUP_TEST_CERT_DIR "/cert.pem",
+                             DDUP_TEST_CERT_DIR "/key.pem") != 0) {
+        DD_CHECK(0); /* enable failed: report, don't grind the loops */
+        mt_server_destroy(ms);
+        pal_socket_cleanup();
+        return;
+    }
     DD_CHECK(mt_server_tls_port(ms) != 0);
     DD_CHECK_EQ_INT(0, mt_server_start(ms));
 
@@ -246,6 +267,7 @@ static void test_mt_tls_roundtrip(void)
     SSL_set_fd(ssl, (int)fd);
     {
         int iter = 0;
+        uint64_t deadline = pal_now_ms() + 15000;
         for (;;) {
             rc = SSL_connect(ssl);
             if (rc == 1)
@@ -254,10 +276,10 @@ static void test_mt_tls_roundtrip(void)
             DD_CHECK(rc == SSL_ERROR_WANT_READ ||
                      rc == SSL_ERROR_WANT_WRITE);
             pal_sleep_ms(1);
-            if (++iter > 10000)
+            if (++iter > 5000 || pal_now_ms() > deadline)
                 break;
         }
-        DD_CHECK(iter <= 10000);
+        DD_CHECK(iter <= 5000 && pal_now_ms() <= deadline);
     }
 
     /* PING + SET/GET over the TLS tunnel */
@@ -272,16 +294,17 @@ static void test_mt_tls_roundtrip(void)
         char pb[8];
         ptrdiff_t n = -1;
         int iter = 0;
+        uint64_t deadline = pal_now_ms() + 15000;
         DD_CHECK(plain != PAL_SOCKET_INVALID);
         DD_CHECK_EQ_INT(0, pal_set_nonblocking(plain, 1));
         DD_CHECK_EQ_INT(14, pal_send(plain, "*1\r\n$4\r\nPING\r\n", 14));
-        while (n < 0 && iter < 10000) {
+        while (n < 0 && iter < 5000 && pal_now_ms() <= deadline) {
             iter++;
             pal_sleep_ms(1);
             n = pal_recv(plain, pb, sizeof(pb));
         }
-        DD_CHECK_EQ_INT(6, n);
-        DD_CHECK_MEM("+PONG\r\n", 6, pb, 6);
+        DD_CHECK_EQ_INT(7, n);
+        DD_CHECK_MEM("+PONG\r\n", 7, pb, 7);
         pal_close(plain);
     }
 
@@ -296,6 +319,7 @@ static void test_mt_tls_roundtrip(void)
 
 int main(void)
 {
+    setvbuf(stdout, NULL, _IONBF, 0); /* progress visible under timeout */
     DD_RUN(test_ctx_load);
     DD_RUN(test_ctx_bad_files);
     DD_RUN(test_tls_server_roundtrip);
