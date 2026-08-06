@@ -208,8 +208,8 @@ if(DDUP_HAS_TLS)
     ddup_add_test(test_tls tests/test_tls.c)
     target_compile_definitions(test_tls PRIVATE
         DDUP_TEST_CERT_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests/certs")
-    /* loaded CI runners occasionally stall the RSA handshake well past
-     * 15s; the deadline budgets guard hangs, they are not assertions */
+    # loaded CI runners occasionally stall the RSA handshake well past
+    # 15s; the deadline budgets guard hangs, they are not assertions
     set_tests_properties(test_tls PROPERTIES TIMEOUT 600)
 endif()
 
