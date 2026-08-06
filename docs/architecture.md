@@ -280,7 +280,8 @@ ZADD ZSCORE ZCARD ZINCRBY ZREM ZRANGE ZREVRANGE ZRANK ZREVRANK ZCOUNT
 ZRANGEBYSCORE ZREMRANGEBYSCORE ｜
 MULTI EXEC DISCARD WATCH UNWATCH ｜ SUBSCRIBE UNSUBSCRIBE PUBLISH QUIT ｜
 AUTH SELECT SWAPDB ｜ SAVE LASTSAVE SHUTDOWN ｜ SYNC REPLICAOF ｜
-DUMP RESTORE MIGRATE ASKING ｜ INFO（内部变体 INFO __STATS__ 供 mt 聚合）
+DUMP RESTORE MIGRATE ASKING ｜ EVAL EVALSHA SCRIPT(LOAD/EXISTS/FLUSH) ｜
+INFO（内部变体 INFO __STATS__ 供 mt 聚合）
 
 注：TTL 返回值四舍五入（(rem+500)/1000，同 Redis）；PTTL 精确到 ms。
 INCR/APPEND 在本实现中清除 TTL（与 Redis 保留 TTL 不同，有意简化）。
@@ -585,6 +586,31 @@ DBSIZE 为 O(1)，可能计入尚未回收的过期 key。
   （replica migration）、无 PFAIL 主观失联状态；last_seen 只被直连
   帧刷新（第三方 gossip 不影响失联判定）。
 
+## Lua 脚本（Phase 19）
+
+- **嵌入**：vendored Lua 5.1.5（deps/lua，MIT，源码未改动，PATCHES.md
+  记录；独立 ddup_lua 静态库，第三方代码不挂项目警告旗标）。每个 db
+  惰性创建**一个共享 lua_State**（Redis 模型；线程间无共享，mt 下每个
+  worker 各持一份）。沙箱（记录在案的简化）：只开 base/string/table/
+  math 库——无 io/os/debug/package，脚本无法触达文件系统与进程。
+- **脚本缓存**：db 内 sha1（自研 FIPS 180-1 实现）小写 hex → Lua registry
+  引用；命中不重编译，SCRIPT FLUSH 全部 unref。
+- **桥**：`redis.call`/`redis.pcall` 把命令（字符串/数字参数）送回客户端
+  命令所用的同一 command_dispatch，单条 RESP 回复再转回 Lua 值；返回值
+  按 Redis 规则转换（number→:int、string→bulk、table 数组遇 nil 止、
+  true→:1、nil/false→null bulk、{ok=}→简单串、{err=}→错误）。
+  禁调名单（记录在案）：EVAL 族、SUBSCRIBE 族、SHUTDOWN。
+- **效果复制**（Redis 5+ 语义，记录在案）：redis.call 的写命令经既有
+  dirty 钩子**逐条**写入 AOF/backlog/副本流（记录 SET 而非 EVAL）；EVAL
+  argv 本身经 `session.aof_skip` 抑制（含 MULTI 队列逐项）。
+- **错误文本**：对齐 Redis 5/6（编译 `Error compiling script (new
+  function):`、`-NOSCRIPT`、运行时 `Error running script (call to
+  f_<sha>):`，含 `script:N:` 位置前缀）。
+- **mt 说明（记录在案）**：脚本在命令分发内执行，mt 下自然落在各
+  worker 的库上；路由按 argv[1] 决策（脚本串），不保证 KEYS[1] 属主
+  恰为本 worker——mt 下脚本应只操作单槽亲和或自包含的数据（测试覆盖
+  单 worker 内 SET+GET）。
+
 ## 目录结构
 
 ```
@@ -600,6 +626,7 @@ src/server/  连接与服务器主循环（Phase 3）、aof（Phase 6）：单�
              非阻塞（Phase 7.4）：写出经 out 缓冲 + writable 事件驱动，
              慢客户端不再阻塞主循环（详见 architecture 网络层说明）
 tests/       单元测试（test.h 自研框架）+ 集成测试
+deps/lua/    vendored Lua 5.1.5（MIT，未改动；PATCHES.md 记录）
 bench/       压测客户端 ddup-bench（Phase 3，非 ctest 目标）
 tools/       ddup-reshard 集群迁槽工具 + reshard_client（阻塞 RESP 客户端
              与迁槽编排，Phase 16）

@@ -116,9 +116,11 @@
   - [x] ddup-bench 真并发引擎：-c 连接同时在线（单事件循环 + 非阻塞
     socket + 每连接 -P 在飞）、min/p50/p99/max 延迟直方图、-r 随机键；
     c50 P16 SET 310k→733k、GET 382k→858k+ req/s（Phase 17）
+  - [x] Lua 脚本：vendored Lua 5.1.5、SHA1 脚本缓存、EVAL/EVALSHA/
+    SCRIPT、redis.call/pcall、效果复制（AOF/复制流记录效果命令）、
+    mt per-worker 执行（Phase 19）
   - [ ] 范围化排除（记录在案，不实施）：
     - 真正的 Redis 总线协议逐字节兼容：自有 RCM2 协议已满足 ddup 集群
       互联；兼容 Redis 总线只为混入异构集群，投入产出不合理
-    - Lua 脚本（EVAL）：需要嵌入解释器，与 C99 极简依赖原则冲突
     - 分层存储（热/冷数据落盘）：超出"内存缓存存储"定位
     - mt 模式的复制/集群适配：见 Phase 15 说明
