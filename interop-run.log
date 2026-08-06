@@ -1,7 +1,7 @@
 + sudo apt-get update
 Get:1 file:/etc/apt/apt-mirrors.txt Mirrorlist [144 B]
-Hit:2 http://azure.archive.ubuntu.com/ubuntu noble InRelease
 Get:6 https://packages.microsoft.com/repos/azure-cli noble InRelease [3564 B]
+Hit:2 http://azure.archive.ubuntu.com/ubuntu noble InRelease
 Get:7 https://packages.microsoft.com/ubuntu/24.04/prod noble InRelease [3600 B]
 Get:3 http://azure.archive.ubuntu.com/ubuntu noble-updates InRelease [126 kB]
 Get:4 http://azure.archive.ubuntu.com/ubuntu noble-backports InRelease [126 kB]
@@ -9,9 +9,9 @@ Get:5 http://azure.archive.ubuntu.com/ubuntu noble-security InRelease [126 kB]
 Get:8 https://dl.google.com/linux/chrome-stable/deb stable InRelease [2548 B]
 Get:9 https://packages.microsoft.com/repos/azure-cli noble/main amd64 Packages [2375 B]
 Get:10 https://packages.microsoft.com/ubuntu/24.04/prod noble/main amd64 Packages [306 kB]
-Get:11 https://packages.microsoft.com/ubuntu/24.04/prod noble/main arm64 Packages [266 kB]
-Get:12 https://packages.microsoft.com/ubuntu/24.04/prod noble/main all Packages [643 B]
-Get:13 https://packages.microsoft.com/ubuntu/24.04/prod noble/main armhf Packages [12.2 kB]
+Get:11 https://packages.microsoft.com/ubuntu/24.04/prod noble/main all Packages [643 B]
+Get:12 https://packages.microsoft.com/ubuntu/24.04/prod noble/main armhf Packages [12.2 kB]
+Get:13 https://packages.microsoft.com/ubuntu/24.04/prod noble/main arm64 Packages [266 kB]
 Get:14 http://azure.archive.ubuntu.com/ubuntu noble-updates/main amd64 Packages [1184 kB]
 Get:15 http://azure.archive.ubuntu.com/ubuntu noble-updates/main Translation-en [281 kB]
 Get:16 http://azure.archive.ubuntu.com/ubuntu noble-updates/main amd64 Components [180 kB]
@@ -37,7 +37,7 @@ Get:35 http://azure.archive.ubuntu.com/ubuntu noble-security/restricted Translat
 Get:36 http://azure.archive.ubuntu.com/ubuntu noble-security/multiverse amd64 Packages [40.3 kB]
 Get:37 http://azure.archive.ubuntu.com/ubuntu noble-security/multiverse Translation-en [10.6 kB]
 Get:38 https://dl.google.com/linux/chrome-stable/deb stable/main amd64 Packages [1411 B]
-Fetched 11.2 MB in 1s (7736 kB/s)
+Fetched 11.2 MB in 1s (8221 kB/s)
 Reading package lists...
 + apt-cache policy redis-server redis-tools
 redis-server:
@@ -76,7 +76,7 @@ Get:2 http://azure.archive.ubuntu.com/ubuntu noble/universe amd64 libjemalloc2 a
 Get:3 http://azure.archive.ubuntu.com/ubuntu noble/universe amd64 liblzf1 amd64 3.6-4 [7624 B]
 Get:4 http://azure.archive.ubuntu.com/ubuntu noble-updates/universe amd64 redis-tools amd64 5:7.0.15-1ubuntu0.24.04.4 [1166 kB]
 Get:5 http://azure.archive.ubuntu.com/ubuntu noble-updates/universe amd64 redis-server amd64 5:7.0.15-1ubuntu0.24.04.4 [51.7 kB]
-Fetched 1482 kB in 0s (4636 kB/s)
+Fetched 1482 kB in 0s (16.6 MB/s)
 Selecting previously unselected package libjemalloc2:amd64.
 (Reading database ... (Reading database ... 5%(Reading database ... 10%(Reading database ... 15%(Reading database ... 20%(Reading database ... 25%(Reading database ... 30%(Reading database ... 35%(Reading database ... 40%(Reading database ... 45%(Reading database ... 50%(Reading database ... 55%(Reading database ... 60%(Reading database ... 65%(Reading database ... 70%(Reading database ... 75%(Reading database ... 80%(Reading database ... 85%(Reading database ... 90%(Reading database ... 95%(Reading database ... 100%(Reading database ... 202954 files and directories currently installed.)
 Preparing to unpack .../libjemalloc2_5.3.0-2build1_amd64.deb ...
@@ -140,7 +140,7 @@ No VM guests are running outdated hypervisor (qemu) binaries on this host.
 -- Performing Test CMAKE_HAVE_LIBC_PTHREAD - Success
 -- Found Threads: TRUE
 -- ddup: TLS enabled (OpenSSL 3.0.13)
--- Configuring done (8.9s)
+-- Configuring done (10.0s)
 -- Generating done (0.1s)
 -- Build files have been written to: /home/runner/work/ddup/ddup/build
 + cmake --build build
@@ -419,5 +419,16 @@ lto1: note: destination object is likely at address zero
 + redis-cli -p 7003 ping
 + grep -q PONG
 + break
-+ redis-cli --cluster create 127.0.0.1:7001 127.0.0.1:7002 127.0.0.1:7003 --cluster-replicas 0 -y
-Unrecognized option or bad number of args for: '-y'
++ yes
++ redis-cli --cluster create 127.0.0.1:7001 127.0.0.1:7002 127.0.0.1:7003 --cluster-replicas 0
+>>> Performing hash slots allocation on 3 nodes...
+Master[0] -> Slots 0 - 5460
+Master[1] -> Slots 5461 - 10922
+Master[2] -> Slots 10923 - 16383
+M: aee78f7de31ec897b5ecc49d60dd69175ad1899f 127.0.0.1:7001
+   slots:[0-5460] (5461 slots) master
+M: f58ccedef194cb3597872f758afaa27f1820cfb3 127.0.0.1:7002
+   slots:[5461-10922] (5462 slots) master
+M: 4c8fc27dcecaab72ba0b4a46abc209e749002746 127.0.0.1:7003
+   slots:[10923-16383] (5461 slots) master
+Can I set the above configuration? (type 'yes' to accept): yes: standard output: Broken pipe
