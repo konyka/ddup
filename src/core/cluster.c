@@ -174,6 +174,27 @@ uint64_t cluster_next_epoch(struct db *d)
     return ++d->cluster_current_epoch;
 }
 
+void cluster_adopt_claims(struct db *d, cluster_node *claimant,
+                          const uint8_t *bm, uint64_t epoch)
+{
+    uint32_t s;
+    int i;
+    if (epoch > claimant->epoch)
+        claimant->epoch = epoch;
+    if (epoch > d->cluster_current_epoch)
+        d->cluster_current_epoch = epoch;
+    for (s = 0; s < 16384; s++) {
+        if (!cluster_slots_get(bm, s))
+            continue;
+        for (i = 0; i < d->nnodes; i++)
+            if (&d->nodes[i] != claimant)
+                cluster_slots_set(d->nodes[i].slots, s, 0);
+        cluster_slots_set(claimant->slots, s, 1);
+    }
+    d->slot_owner_dirty = 1;
+    d->cluster_changes++;
+}
+
 int cluster_failover_promote(struct db *d)
 {
     cluster_node *me = cluster_myself(d);

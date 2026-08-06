@@ -65,6 +65,11 @@ void cluster_slots_parse(uint8_t *bm, const char *s, size_t len);
 /* Next config epoch for a new slot claim (++db.cluster_current_epoch). */
 uint64_t cluster_next_epoch(struct db *d);
 
+/* Adopt a slot claim naming myself (Redis SETSLOT NODE / UPDATE-to-self):
+ * take every bit in bm, clearing it from all other nodes; raise epochs. */
+void cluster_adopt_claims(struct db *d, cluster_node *claimant,
+                          const uint8_t *bm, uint64_t epoch);
+
 /* Failover promotion: a slave becomes master, clears master_id, claims all
  * of its master's slots with a bumped config epoch. Returns 1 when the
  * promotion happened, 0 when myself is not a slave. */

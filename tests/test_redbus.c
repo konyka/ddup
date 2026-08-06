@@ -263,10 +263,53 @@ static void test_update_fail_and_tolerance(void)
     db_destroy(&d);
 }
 
+static void test_update_to_self_adopts(void)
+{
+    db d;
+    resp_buf reply;
+    char frame[REDBUS_HDR_LEN + 2048 + 48];
+    cluster_node *me, *other;
+
+    db_init(&d);
+    cluster_nodes_init(&d);
+    resp_buf_init(&reply);
+    me = mk_node(&d, ID1, "127.0.0.1", 7001,
+                 CLUSTER_NODE_MYSELF | CLUSTER_NODE_MASTER);
+    other = mk_node(&d, ID2, "10.0.0.2", 7002, CLUSTER_NODE_MASTER);
+    cluster_slots_set(other->slots, 5, 1);
+    cluster_slots_set(other->slots, 6, 1);
+    other->epoch = 3;
+    d.cluster_current_epoch = 3;
+
+    /* UPDATE naming myself: adopt the slots, strip the previous holder */
+    memset(frame, 0, sizeof(frame));
+    memcpy(frame, "RCmb", 4);
+    put32be(frame + 4, REDBUS_HDR_LEN + 8 + 40 + 2048);
+    put16be(frame + 12, REDBUS_TYPE_UPDATE);
+    put64be(frame + REDBUS_HDR_LEN, 8);
+    memcpy(frame + REDBUS_HDR_LEN + 8, ID1, 40);
+    frame[REDBUS_HDR_LEN + 48] = 0x60; /* slots 5,6 */
+    DD_CHECK_EQ_INT(0,
+                    redbus_handle_frame(&d, frame,
+                                        REDBUS_HDR_LEN + 8 + 40 + 2048,
+                                        &reply, T0));
+    DD_CHECK_EQ_INT(1, cluster_slots_get(me->slots, 5));
+    DD_CHECK_EQ_INT(1, cluster_slots_get(me->slots, 6));
+    DD_CHECK_EQ_INT(0, cluster_slots_get(other->slots, 5));
+    DD_CHECK_EQ_INT(0, cluster_slots_get(other->slots, 6));
+    DD_CHECK_EQ_INT(8, me->epoch);
+    DD_CHECK_EQ_INT(8, d.cluster_current_epoch);
+    DD_CHECK_EQ_INT(1, d.slot_owner_dirty);
+
+    resp_buf_free(&reply);
+    db_destroy(&d);
+}
+
 int main(void)
 {
     DD_RUN(test_fixture_decode);
     DD_RUN(test_roundtrip);
     DD_RUN(test_update_fail_and_tolerance);
+    DD_RUN(test_update_to_self_adopts);
     return DD_TEST_SUMMARY();
 }

@@ -263,8 +263,12 @@ int redbus_handle_frame(struct db *d, const char *frame, size_t len,
         id[40] = '\0';
         owner = cluster_node_find(d, id);
         if (owner != NULL) {
-            cluster_merge_claims(d, owner, (const uint8_t *)(u + 48),
-                                 uepoch);
+            if (owner->flags & CLUSTER_NODE_MYSELF)
+                cluster_adopt_claims(d, owner, (const uint8_t *)(u + 48),
+                                     uepoch);
+            else
+                cluster_merge_claims(d, owner, (const uint8_t *)(u + 48),
+                                     uepoch);
         }
         if (uepoch > d->cluster_current_epoch)
             d->cluster_current_epoch = uepoch;
