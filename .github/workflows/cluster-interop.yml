@@ -93,9 +93,17 @@ jobs:
           # (higher config epoch wins; the claim rides our PONGs to redis)
           sleep 3
           for slot in $(seq 0 99); do
-            redis-cli -p 7400 cluster setslot $slot node $DDUP_ID > /dev/null
-          done
+            redis-cli -p 7400 cluster setslot $slot node $DDUP_ID
+          done | sort | uniq -c
           echo "slots claimed by ddup"
+
+          # ddup must see itself owning the range first
+          ok3a=0
+          for i in $(seq 1 60); do
+            redis-cli -p 7400 cluster nodes | grep myself | grep -q "0-99" && { ok3a=1; break; }
+            sleep 1
+          done
+          echo "assert ddup-sees-itself-slots: $ok3a"
 
           ok3=0
           for i in $(seq 1 60); do
@@ -103,6 +111,7 @@ jobs:
             sleep 1
           done
           echo "assert redis-sees-ddup-slots: $ok3"
+          echo "assert ddup-sees-itself-slots: $ok3a"
 
           # a key in the claimed range: SET on ddup, MOVED from redis
           KEY=""
@@ -119,6 +128,7 @@ jobs:
 
           test "$ok1" = 1
           test "$ok2" = 1
+          test "$ok3a" = 1
           test "$ok3" = 1
           test "$VAL" = "interop-ok"
           echo "$MOVED" | grep -q "7400"
