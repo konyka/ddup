@@ -27,6 +27,7 @@ void config_init(ddup_config *cfg)
     cfg->io_threads = 1;
     cfg->cluster_enabled = 0;
     strcpy(cfg->cluster_config_file, "nodes.conf");
+    strcpy(cfg->cluster_bus_protocol, "ddup");
 }
 
 static int key_eq(const char *a, const char *b)
@@ -178,6 +179,12 @@ int config_apply(ddup_config *cfg, const char *key, const char *value)
     if (key_eq(key, "cluster-config-file"))
         return copy_str(cfg->cluster_config_file,
                         sizeof(cfg->cluster_config_file), value);
+    if (key_eq(key, "cluster-bus-protocol")) {
+        if (!key_eq(value, "ddup") && !key_eq(value, "redis"))
+            return -1;
+        return copy_str(cfg->cluster_bus_protocol,
+                        sizeof(cfg->cluster_bus_protocol), value);
+    }
     return -1;
 }
 

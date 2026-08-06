@@ -29,6 +29,7 @@ typedef struct ddup_config {
     char requirepass[128];         /* "" = auth disabled (Redis requirepass) */
     int cluster_enabled;           /* default 0 */
     char cluster_config_file[256]; /* default "nodes.conf" */
+    char cluster_bus_protocol[8];  /* "ddup" (default) or "redis" */
 } ddup_config;
 
 void config_init(ddup_config *cfg);

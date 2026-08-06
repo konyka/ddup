@@ -73,6 +73,11 @@ void server_load_nodes(server *s, const char *path);
 /* Node failure timeout in ms (default 15000; tests can shrink it). */
 void server_set_node_timeout(server *s, uint64_t ms);
 
+/* Cluster bus wire protocol: own RCM2 (default) or real Redis clusterMsg. */
+#define SERVER_BUS_PROTOCOL_DDUP 0
+#define SERVER_BUS_PROTOCOL_REDIS 1
+void server_set_bus_protocol(server *s, int proto);
+
 /* Automatic snapshot interval in seconds (0 = off). */
 void server_set_save_interval(server *s, int sec);
 /* Nonzero after a SHUTDOWN command was processed. */

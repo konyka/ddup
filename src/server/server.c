@@ -21,6 +21,7 @@
 #include "core/arena.h"
 #include "core/buf_pool.h"
 #include "core/command.h"
+#include "core/redbus.h"
 #include "core/session.h"
 #include "core/snapshot.h"
 #include "server/aof.h"
@@ -127,6 +128,7 @@ struct server {
     uint64_t last_nodes_save;
     uint64_t node_timeout_ms;
     uint64_t failover_deadline_ms; /* wall ms; 0 = no pending failover */
+    int bus_protocol;            /* SERVER_BUS_PROTOCOL_* (default DDUP) */
     db db;            /* db 0 (also holds the cluster state) */
     db *extra_dbs;    /* dbs 1..ndbs-1 */
     int ndbs;         /* total logical databases (default 16) */
@@ -1585,6 +1587,11 @@ void server_set_node_timeout(server *s, uint64_t ms)
     s->node_timeout_ms = ms;
 }
 
+void server_set_bus_protocol(server *s, int proto)
+{
+    s->bus_protocol = proto;
+}
+
 static bus_conn *bus_conn_new(pal_socket_t fd, int outbound)
 {
     bus_conn *bc = (bus_conn *)calloc(1, sizeof(*bc));
@@ -1656,7 +1663,14 @@ static int bus_flush(server *s, bus_conn *bc)
 
 static void bus_queue_frame(server *s, bus_conn *bc, int type)
 {
-    cluster_bus_build_frame(&s->db, type, &bc->out);
+    if (s->bus_protocol == SERVER_BUS_PROTOCOL_REDIS) {
+        /* RCM2 type constants (PING=1/PONG=2/MEET=3) -> redbus (0/1/2) */
+        static const int rmap[4] = {-1, REDBUS_TYPE_PING, REDBUS_TYPE_PONG,
+                                    REDBUS_TYPE_MEET};
+        redbus_build_frame(&s->db, rmap[type], &bc->out);
+    } else {
+        cluster_bus_build_frame(&s->db, type, &bc->out);
+    }
     bus_flush(s, bc);
 }
 
@@ -1730,20 +1744,33 @@ static void bus_service(server *s, bus_conn *bc, int writable)
         if ((size_t)n < bc->rcap - bc->rlen)
             break;
     }
-    /* parse complete frames */
+    /* parse complete frames (totlen endianness follows the protocol) */
     while (bc->rlen >= 10) {
-        uint32_t totlen = (uint32_t)(uint8_t)bc->rbuf[4] |
-                          ((uint32_t)(uint8_t)bc->rbuf[5] << 8) |
-                          ((uint32_t)(uint8_t)bc->rbuf[6] << 16) |
-                          ((uint32_t)(uint8_t)bc->rbuf[7] << 24);
+        uint32_t totlen;
+        int rc;
+        if (s->bus_protocol == SERVER_BUS_PROTOCOL_REDIS)
+            totlen = ((uint32_t)(uint8_t)bc->rbuf[4] << 24) |
+                     ((uint32_t)(uint8_t)bc->rbuf[5] << 16) |
+                     ((uint32_t)(uint8_t)bc->rbuf[6] << 8) |
+                     (uint32_t)(uint8_t)bc->rbuf[7];
+        else
+            totlen = (uint32_t)(uint8_t)bc->rbuf[4] |
+                     ((uint32_t)(uint8_t)bc->rbuf[5] << 8) |
+                     ((uint32_t)(uint8_t)bc->rbuf[6] << 16) |
+                     ((uint32_t)(uint8_t)bc->rbuf[7] << 24);
         if (totlen > CLUSTER_MSG_MAX || totlen < 10) {
             bus_conn_free(s, bc);
             return;
         }
         if (bc->rlen < totlen)
             break; /* incomplete frame */
-        if (cluster_bus_handle_frame(&s->db, bc->rbuf, totlen, &bc->out,
-                                     pal_wall_ms()) != 0) {
+        if (s->bus_protocol == SERVER_BUS_PROTOCOL_REDIS)
+            rc = redbus_handle_frame(&s->db, bc->rbuf, totlen, &bc->out,
+                                     pal_wall_ms());
+        else
+            rc = cluster_bus_handle_frame(&s->db, bc->rbuf, totlen,
+                                          &bc->out, pal_wall_ms());
+        if (rc != 0) {
             bus_conn_free(s, bc);
             return;
         }

@@ -266,6 +266,10 @@ int main(int argc, char **argv)
         server_load_nodes(s, cpath);
         server_enable_cluster(s, nid);
         server_set_nodes_path(s, cpath);
+        if (strcmp(cfg.cluster_bus_protocol, "redis") == 0) {
+            server_set_bus_protocol(s, SERVER_BUS_PROTOCOL_REDIS);
+            printf("cluster: bus protocol redis\n");
+        }
         printf("cluster: enabled, node %s\n", nid);
     }
     if (cfg.replicaof_port > 0) {
