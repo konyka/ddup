@@ -68,11 +68,17 @@ static void test_typeof(void)
 
 static void test_constexpr(void)
 {
+#if DDUP_HAS_C_CONSTEXPR
     ddup_constexpr int n = 4;
-    char arr[n];
+    char arr[n]; /* constexpr makes n a constant expression (C23) */
     arr[0] = 'a';
     arr[1] = '\0';
     DD_CHECK(arr[0] == 'a');
+#else
+    /* const fallback is not a constant expression in C (no VLA on MSVC) */
+    ddup_constexpr int n = 4;
+    DD_CHECK_EQ_INT(4, n);
+#endif
 }
 
 static void test_checked_arithmetic(void)
