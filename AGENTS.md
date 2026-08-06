@@ -30,6 +30,8 @@ ctest --test-dir build --output-on-failure   # 或 cmake --build build --target 
 7. **文档同步**：改架构更新 `docs/architecture.md`；完成阶段勾选 `docs/roadmap.md`；
    本文件约定变化时更新本文件。
 8. 测试一律通过 `ddup_add_test()` 注册进 CTest。
+9. **deps/ 第三方源码**：原样 vendor（任何补丁必须记录在对应 `deps/<name>/PATCHES.md`），
+   保留原始许可证；第三方目标不挂项目警告旗标，C 标准按其上游要求放宽。
 
 ## 目录
 

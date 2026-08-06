@@ -11,6 +11,21 @@ if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
 endif()
 
 # ---------------------------------------------------------------------------
+# Vendored Lua 5.1.5 (deps/lua, MIT; see deps/lua/PATCHES.md). Third-party
+# code: NO project warning flags, relaxed C standard.
+# ---------------------------------------------------------------------------
+file(GLOB DDUP_LUA_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/deps/lua/*.c")
+add_library(ddup_lua STATIC ${DDUP_LUA_SOURCES})
+target_include_directories(ddup_lua PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/deps/lua")
+target_compile_definitions(ddup_lua PRIVATE _CRT_SECURE_NO_WARNINGS)
+set_target_properties(ddup_lua PROPERTIES C_STANDARD 99)
+if(MSVC)
+    target_compile_options(ddup_lua PRIVATE /W0)
+else()
+    target_compile_options(ddup_lua PRIVATE -w)
+endif()
+
+# ---------------------------------------------------------------------------
 # Core library: everything except the server entry point.
 # ---------------------------------------------------------------------------
 add_library(ddup_core STATIC
@@ -44,6 +59,7 @@ add_library(ddup_core STATIC
 )
 target_include_directories(ddup_core PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/src")
 ddup_apply_options(ddup_core)
+target_link_libraries(ddup_core PUBLIC ddup_lua)
 target_compile_definitions(ddup_core PUBLIC
     DDUP_VERSION_MAJOR=${PROJECT_VERSION_MAJOR}
     DDUP_VERSION_MINOR=${PROJECT_VERSION_MINOR}
@@ -170,6 +186,7 @@ ddup_add_test(test_cluster_replica tests/test_cluster_replica.c)
 ddup_add_test(test_cluster_epoch tests/test_cluster_epoch.c)
 ddup_add_test(test_cluster_failover tests/test_cluster_failover.c)
 ddup_add_test(test_reshard tests/test_reshard.c)
+ddup_add_test(test_lua_smoke tests/test_lua_smoke.c)
 target_sources(test_reshard PRIVATE tools/reshard_client.c)
 target_include_directories(test_reshard PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/tools")
 
@@ -183,7 +200,7 @@ if(DDUP_HAS_TLS)
         DDUP_TEST_CERT_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests/certs")
 endif()
 
-set(DDUP_CHECK_DEPS test_pal test_pal_thread test_pal_wakeup test_spsc test_mt_server test_cstd test_cmdid test_buf_pool test_socket test_event test_server test_arena test_resp_parser test_resp_writer test_resp3 test_rhtable test_command test_expire test_eviction test_hash test_list test_skiplist test_set test_zset test_session test_multidb test_multi test_pubsub test_config test_aof test_snapshot test_repl test_hashslot test_cluster_id test_cluster_cmds test_cluster_nodes test_cluster_bus test_cluster_slots test_dump test_migrate test_cluster_migrate test_cluster_replica test_cluster_epoch test_cluster_failover test_reshard ddup-reshard)
+set(DDUP_CHECK_DEPS test_pal test_pal_thread test_pal_wakeup test_spsc test_mt_server test_cstd test_cmdid test_buf_pool test_socket test_event test_server test_arena test_resp_parser test_resp_writer test_resp3 test_rhtable test_command test_expire test_eviction test_hash test_list test_skiplist test_set test_zset test_session test_multidb test_multi test_pubsub test_config test_aof test_snapshot test_repl test_hashslot test_cluster_id test_cluster_cmds test_cluster_nodes test_cluster_bus test_cluster_slots test_dump test_migrate test_cluster_migrate test_cluster_replica test_cluster_epoch test_cluster_failover test_reshard test_lua_smoke ddup-reshard)
 if(DDUP_HAS_TLS)
     list(APPEND DDUP_CHECK_DEPS test_tls)
 endif()
