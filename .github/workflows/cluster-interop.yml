@@ -93,14 +93,14 @@ jobs:
           # (higher config epoch wins; the claim rides our PONGs to redis)
           sleep 3
           for slot in $(seq 0 99); do
-            redis-cli -p 7400 cluster setslot $slot node $DDUP_ID
-          done | sort | uniq -c
+            timeout 10 redis-cli -p 7400 cluster setslot $slot node $DDUP_ID || { echo "SETSLOT $slot FAILED rc=$?"; break; }
+          done
           echo "slots claimed by ddup"
 
           # ddup must see itself owning the range first
           ok3a=0
           for i in $(seq 1 60); do
-            redis-cli -p 7400 cluster nodes | grep myself | grep -q "0-99" && { ok3a=1; break; }
+            timeout 10 redis-cli -p 7400 cluster nodes | grep myself | grep -q "0-99" && { ok3a=1; break; }
             sleep 1
           done
           echo "assert ddup-sees-itself-slots: $ok3a"
@@ -116,14 +116,14 @@ jobs:
           # a key in the claimed range: SET on ddup, MOVED from redis
           KEY=""
           for i in $(seq 0 300); do
-            sl=$(redis-cli -p 7001 cluster keyslot key:$i | tr -d '\r')
+            sl=$(timeout 10 redis-cli -p 7001 cluster keyslot key:$i | tr -d '\r')
             [ "$sl" -lt 100 ] && { KEY="key:$i"; break; }
           done
           echo "using key '$KEY' (slot $sl)"
-          redis-cli -p 7400 set $KEY interop-ok
-          VAL=$(redis-cli -p 7400 get $KEY | tr -d '\r')
+          timeout 10 redis-cli -p 7400 set $KEY interop-ok
+          VAL=$(timeout 10 redis-cli -p 7400 get $KEY | tr -d '\r')
           echo "ddup get: $VAL"
-          MOVED=$(redis-cli -p 7001 get $KEY 2>&1 | tr -d '\r')
+          MOVED=$(timeout 10 redis-cli -p 7001 get $KEY 2>&1 | tr -d '\r')
           echo "redis get reply: $MOVED"
 
           test "$ok1" = 1
