@@ -1,0 +1,137 @@
+name: cluster-interop
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write # publish failure logs to ci-logs-interop
+
+jobs:
+  interop:
+    name: ddup <-> redis-server cluster bus interop
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Redis
+        run: sudo apt-get update && sudo apt-get install -y redis-server redis-tools
+
+      - name: Build ddup
+        run: |
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+          cmake --build build
+
+      - name: Interop: 3 redis nodes + ddup join, converge, slot handoff
+        shell: bash
+        run: |
+          set -x
+          R=/tmp/interop
+          rm -rf $R && mkdir -p $R
+
+          # three redis-server cluster nodes
+          for p in 7001 7002 7003; do
+            mkdir -p $R/rc$p
+            redis-server --port $p --cluster-enabled yes \
+              --cluster-config-file nodes.conf --dir $R/rc$p \
+              --daemonize yes --logfile $R/rc$p/log.txt
+          done
+          for p in 7001 7002 7003; do
+            for i in $(seq 1 30); do
+              redis-cli -p $p ping 2>/dev/null | grep -q PONG && break
+              sleep 1
+            done
+          done
+          redis-cli --cluster create 127.0.0.1:7001 127.0.0.1:7002 127.0.0.1:7003 \
+            --cluster-replicas 0 -y
+          for i in $(seq 1 30); do
+            redis-cli -p 7001 cluster info | grep -q "cluster_state:ok" && break
+            sleep 1
+          done
+
+          # ddup as the 4th node, speaking the real redis bus protocol
+          mkdir -p $R/ddup
+          ./build/ddup-server --port 7400 --cluster-enabled yes \
+            --cluster-bus-protocol redis --dir $R/ddup > $R/ddup/stdout.log 2>&1 &
+          echo $! > $R/ddup/pid
+          for i in $(seq 1 30); do
+            redis-cli -p 7400 ping 2>/dev/null | grep -q PONG && break
+            sleep 1
+          done
+          DDUP_ID=$(redis-cli -p 7400 cluster myid | tr -d '\r')
+          echo "ddup node id: $DDUP_ID"
+
+          # redis side introduces ddup
+          redis-cli -p 7001 cluster meet 127.0.0.1 7400
+
+          ok1=0
+          for i in $(seq 1 60); do
+            redis-cli -p 7001 cluster nodes | grep -q "$DDUP_ID" && { ok1=1; break; }
+            sleep 1
+          done
+          echo "assert redis-sees-ddup: $ok1"
+
+          ok2=0
+          for i in $(seq 1 60); do
+            n=$(redis-cli -p 7400 cluster info | grep cluster_known_nodes | grep -oE '[0-9]+')
+            [ "$n" = "4" ] && { ok2=1; break; }
+            sleep 1
+          done
+          echo "assert ddup-known-nodes-4: $ok2"
+
+          # epochs synced by now; ddup claims slots 0-99 (higher epoch wins)
+          sleep 3
+          redis-cli -p 7400 cluster addslots $(seq -s' ' 0 99)
+
+          ok3=0
+          for i in $(seq 1 60); do
+            redis-cli -p 7001 cluster nodes | grep "$DDUP_ID" | grep -q "0-99" && { ok3=1; break; }
+            sleep 1
+          done
+          echo "assert redis-sees-ddup-slots: $ok3"
+
+          # a key in the claimed range: SET on ddup, MOVED from redis
+          KEY=""
+          for k in a b c d e f g h i j aa ab ac ad ae af ag ah ai aj; do
+            sl=$(redis-cli -p 7001 cluster keyslot $k | tr -d '\r')
+            [ "$sl" -lt 100 ] && { KEY=$k; break; }
+          done
+          echo "using key '$KEY' (slot $sl)"
+          redis-cli -p 7400 set $KEY interop-ok
+          VAL=$(redis-cli -p 7400 get $KEY | tr -d '\r')
+          echo "ddup get: $VAL"
+          MOVED=$(redis-cli -p 7001 get $KEY 2>&1 | tr -d '\r')
+          echo "redis get reply: $MOVED"
+
+          test "$ok1" = 1
+          test "$ok2" = 1
+          test "$ok3" = 1
+          test "$VAL" = "interop-ok"
+          echo "$MOVED" | grep -q "7400"
+          echo "INTEROP PASS"
+
+      - name: Publish failure logs
+        if: failure()
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -x
+          REPO_URL="https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          cd "$RUNNER_TEMP"
+          rm -rf cilog
+          if ! git clone --quiet --branch ci-logs-interop --single-branch "$REPO_URL" cilog; then
+            git clone --quiet --no-checkout --depth 1 "$REPO_URL" cilog
+            git -C cilog checkout --orphan ci-logs-interop
+            git -C cilog rm -rf . 2>/dev/null || true
+          fi
+          cd cilog
+          rm -f *.log *.txt
+          cp -r /tmp/interop logs 2>/dev/null || true
+          git config user.email ci@ddup.local
+          git config user.name "ddup-ci"
+          git add -A
+          git commit -m "interop failure logs @ ${GITHUB_SHA:0:7}" || exit 0
+          git push -f origin ci-logs-interop
