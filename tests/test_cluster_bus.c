@@ -106,6 +106,7 @@ int main(void)
 #include <stdlib.h>
 
 #include "pal/pal_socket.h"
+#include "pal/pal_time.h"
 #include "server/server.h"
 
 #define IDA "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
@@ -209,7 +210,9 @@ static void test_meet_convergence(void)
     /* both sides learn each other (bounded polls) */
     {
         int ok = 0, i;
-        for (i = 0; i < 400 && !ok; i++) {
+        uint64_t dl;
+        for (i = 0, dl = pal_now_ms() + 15000;
+             pal_now_ms() < dl && !ok; i++) {
             pump2(a, b);
             if (i % 40 == 0) {
                 ask2(a, b, ca, "*2\r\n$7\r\nCLUSTER\r\n$5\r\nNODES\r\n", buf,
@@ -268,7 +271,9 @@ static void test_meet_convergence(void)
     /* CLUSTER INFO reflects 2 known nodes, state ok (slots gossiped over) */
     {
         int ok = 0, i;
-        for (i = 0; i < 400 && !ok; i++) {
+        uint64_t dl;
+        for (i = 0, dl = pal_now_ms() + 15000;
+             pal_now_ms() < dl && !ok; i++) {
             pump2(a, b);
             if (i % 40 == 0) {
                 ask2(a, b, cb, "*2\r\n$7\r\nCLUSTER\r\n$4\r\nINFO\r\n", req,
@@ -331,7 +336,9 @@ static void test_gossip_carry(void)
     /* A learns C via gossip carried by B */
     {
         int ok = 0, i;
-        for (i = 0; i < 600 && !ok; i++) {
+        uint64_t dl;
+        for (i = 0, dl = pal_now_ms() + 15000;
+             pal_now_ms() < dl && !ok; i++) {
             pump3(a, b, c);
             if (i % 50 == 0) {
                 ask3(a, b, c, ca, "*2\r\n$7\r\nCLUSTER\r\n$5\r\nNODES\r\n",
@@ -392,7 +399,9 @@ static void test_fail_detect(void)
     ca = cli(server_port(a));
     {
         int ok = 0, i;
-        for (i = 0; i < 400 && !ok; i++) {
+        uint64_t dl;
+        for (i = 0, dl = pal_now_ms() + 15000;
+             pal_now_ms() < dl && !ok; i++) {
             server_run_once(a, 5);
             if (i % 20 == 0) {
                 ask2(a, a, ca, "*2\r\n$7\r\nCLUSTER\r\n$4\r\nINFO\r\n", buf,
@@ -476,7 +485,9 @@ static void test_moved_wire(void)
     /* wait for gossip convergence of the assignments on both sides */
     {
         int ok = 0, i;
-        for (i = 0; i < 400 && !ok; i++) {
+        uint64_t dl;
+        for (i = 0, dl = pal_now_ms() + 15000;
+             pal_now_ms() < dl && !ok; i++) {
             pump2(a, b);
             if (i % 40 == 0) {
                 ask2(a, b, cb, "*2\r\n$7\r\nCLUSTER\r\n$4\r\nINFO\r\n", req,
@@ -508,7 +519,9 @@ static void test_moved_wire(void)
     DD_CHECK_STR("+OK\r\n", buf);
     {
         int ok = 0, i;
-        for (i = 0; i < 400 && !ok; i++) {
+        uint64_t dl;
+        for (i = 0, dl = pal_now_ms() + 15000;
+             pal_now_ms() < dl && !ok; i++) {
             pump2(a, b);
             if (i % 40 == 0) {
                 ask2(a, b, ca, "*3\r\n$3\r\nSET\r\n$3\r\nfoo\r\n$1\r\nx\r\n",
