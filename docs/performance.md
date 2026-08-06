@@ -160,6 +160,19 @@ ping-pong 型流水负载下 IOCP 每个往返比 readiness 多一次完成等�
 未压出 select 的 1024 fd 上限与 FD_SET 重建成本——IOCP 的真正优势
 场景（海量并发长连接）仍未被基准覆盖，如实记录。
 
+## Phase 21 GET 路径差距分析（2026-08-07，含负结果）
+
+- **CPU 侧**：bench_core 显示 GET 解析余量 50.9M ops/s、dispatch+存储
+  7.3M ops/s，相对 ~900k req/s 的线速 CPU 占比约 14%——差距不在
+  dispatch/存储/过期检查（GET/SET 共享同一条 db_get 单探测路径）。
+- **线侧**：回复聚合本就按事件整批 flush；新增**有界读排干**（每次就绪
+  最多 4 次 conn_read，把流水线输入并成单个 dispatch+flush 批次）。
+- **A/B 实测（本机交替 12 对 c50 P16 GET）**：旧版中位 893k req/s，
+  新版 895k req/s——**噪声内无差异**；c200 P16（4 对）同样持平
+  （~867k 两侧）。保留该改动（原则性合流、零回归），如实记录负结果：
+  CI 上 GET 对 Redis 的 ~16% 差距归因于 runner 波动与段聚合差异，
+  而非本机可复现的热点。
+
 ## Phase 17 bench 真并发引擎（2026-08-04）
 
 ddup-bench 重写为真并发客户端：-c 个连接全部同时在线（非阻塞 socket +

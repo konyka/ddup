@@ -2241,23 +2241,32 @@ int server_run_once(server *s, int timeout_ms)
             if (!evs[i].readable)
                 continue; /* writable-only event: nothing to read */
 
-            /* grow the receive buffer if a full chunk is pending */
-            if (c->rcap - c->rlen < SERVER_RECV_CHUNK) {
-                if (conn_rbuf_grow(c) != 0) {
+            /* drain the socket (bounded) so pipelined input coalesces into
+             * one dispatch+flush batch per readiness event */
+            {
+                int reads, dead = 0;
+                for (reads = 0; reads < 4 && !dead; reads++) {
+                    if (c->rcap - c->rlen < SERVER_RECV_CHUNK &&
+                        conn_rbuf_grow(c) != 0) {
+                        dead = 1;
+                        break;
+                    }
+                    n = conn_read(c, c->rbuf + c->rlen, c->rcap - c->rlen);
+                    if (n == 0 ||
+                        (n < 0 && n != -2 &&
+                         !pal_would_block(pal_socket_error()))) {
+                        dead = 1;
+                        break; /* orderly close or hard error */
+                    }
+                    if (n < 0)
+                        break; /* drained for now */
+                    c->rlen += (size_t)n;
+                }
+                if (dead) {
                     conn_close(s, idx);
                     continue;
                 }
             }
-
-            n = conn_read(c, c->rbuf + c->rlen, c->rcap - c->rlen);
-            if (n == 0 ||
-                (n < 0 && n != -2 && !pal_would_block(pal_socket_error()))) {
-                conn_close(s, idx); /* orderly close or hard error */
-                continue;
-            }
-            if (n < 0)
-                continue; /* would-block: nothing to do this round */
-            c->rlen += (size_t)n;
 
             /* parse -> execute -> advance, then compact consumed bytes */
             {
