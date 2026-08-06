@@ -335,6 +335,7 @@ static void test_gossip_entry_merge_gated_by_epoch(void)
 /* ------------------------------------------------------------------ */
 #include "core/hashslot.h"
 #include "pal/pal_socket.h"
+#include "pal/pal_time.h"
 #include "server/server.h"
 
 #define IDA "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
@@ -391,7 +392,7 @@ static void test_wire_equal_epoch_converges(void)
     server *a, *b;
     pal_socket_t ca, cb;
     char req[256], buf[2048], port[16], key[16];
-    int i, converged = 0;
+    int i = 0, converged = 0;
 
     DD_CHECK_EQ_INT(0, pal_socket_init());
     key_in_slot(100, key);
@@ -421,15 +422,19 @@ static void test_wire_equal_epoch_converges(void)
     ask2(a, b, ca, req, buf, sizeof(buf));
     DD_CHECK_STR("+OK\r\n", buf);
 
-    /* after convergence a redirects slot 100 to b (-MOVED) */
+    /* after convergence a redirects slot 100 to b (-MOVED); wall-clock
+     * bounded poll (iteration counts lie when the loop wakes instantly) */
     snprintf(req, sizeof(req), "*3\r\n$3\r\nSET\r\n$%zu\r\n%s\r\n$1\r\nv\r\n",
              strlen(key), key);
-    for (i = 0; i < 600 && !converged; i++) {
-        pump2(a, b);
-        if (i % 40 == 0) {
-            ask2(a, b, ca, req, buf, sizeof(buf));
-            if (strstr(buf, "-MOVED 100 ") != NULL)
-                converged = 1;
+    {
+        uint64_t dl = pal_now_ms() + 12000;
+        while (!converged && pal_now_ms() < dl) {
+            pump2(a, b);
+            if (i++ % 40 == 0) {
+                ask2(a, b, ca, req, buf, sizeof(buf));
+                if (strstr(buf, "-MOVED 100 ") != NULL)
+                    converged = 1;
+            }
         }
     }
     DD_CHECK_EQ_INT(1, converged);

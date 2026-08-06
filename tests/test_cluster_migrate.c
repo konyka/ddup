@@ -7,6 +7,7 @@
 
 #include "core/hashslot.h"
 #include "core/session.h"
+#include "pal/pal_time.h"
 #include "test.h"
 
 #define T0 1000000ULL
@@ -324,7 +325,7 @@ static void test_wire_full_flow(void)
     server *a, *b;
     pal_socket_t ca, cb;
     char req[512], buf[4096], portb[16], ask[128], mkey[16];
-    int i, learned = 0;
+    int i = 0, learned = 0;
 
     DD_CHECK_EQ_INT(0, pal_socket_init());
     key_in_slot(FOO_SLOT, mkey);
@@ -339,20 +340,24 @@ static void test_wire_full_flow(void)
     cb = cli(server_port(b));
     snprintf(portb, sizeof(portb), "%u", (unsigned)server_port(b));
 
-    /* meet + a takes foo's slot; wait until gossip reaches b */
+    /* meet + a takes foo's slot; wait until gossip reaches b (wall-clock
+     * bounded: iteration counts lie when the loop wakes instantly) */
     fmt_cmd(req, sizeof(req), 4, "CLUSTER", "MEET", "127.0.0.1", portb);
     ask2(a, b, ca, req, buf, sizeof(buf));
     EXPECTW(buf, "+OK\r\n");
     fmt_cmd(req, sizeof(req), 3, "CLUSTER", "ADDSLOTS", "12182");
     ask2(a, b, ca, req, buf, sizeof(buf));
     EXPECTW(buf, "+OK\r\n");
-    for (i = 0; i < 400 && !learned; i++) {
-        pump2(a, b);
-        if (i % 40 == 0) {
-            fmt_cmd(req, sizeof(req), 2, "CLUSTER", "NODES");
-            ask2(a, b, cb, req, buf, sizeof(buf));
-            if (strstr(buf, "12182") != NULL && strstr(buf, IDA) != NULL)
-                learned = 1;
+    {
+        uint64_t dl = pal_now_ms() + 12000;
+        while (!learned && pal_now_ms() < dl) {
+            pump2(a, b);
+            if (i++ % 40 == 0) {
+                fmt_cmd(req, sizeof(req), 2, "CLUSTER", "NODES");
+                ask2(a, b, cb, req, buf, sizeof(buf));
+                if (strstr(buf, "12182") != NULL && strstr(buf, IDA) != NULL)
+                    learned = 1;
+            }
         }
     }
     DD_CHECK_EQ_INT(1, learned);
@@ -418,9 +423,18 @@ static void test_wire_full_flow(void)
     fmt_cmd(req, sizeof(req), 2, "GET", "foo");
     ask2(a, b, cb, req, buf, sizeof(buf));
     EXPECTW(buf, "$5\r\nhello\r\n");
-    fmt_cmd(req, sizeof(req), 2, "GET", "foo");
-    ask2(a, b, ca, req, buf, sizeof(buf));
-    DD_CHECK(buf[0] == '-' && strstr(buf, "MOVED 12182") != NULL);
+    /* a redirects to the new owner (poll: propagation/load jitter) */
+    {
+        int moved = 0;
+        uint64_t dl = pal_now_ms() + 12000;
+        while (!moved && pal_now_ms() < dl) {
+            fmt_cmd(req, sizeof(req), 2, "GET", "foo");
+            ask2(a, b, ca, req, buf, sizeof(buf));
+            if (buf[0] == '-' && strstr(buf, "MOVED 12182") != NULL)
+                moved = 1;
+        }
+        DD_CHECK_EQ_INT(1, moved);
+    }
 
     pal_close(ca);
     pal_close(cb);
