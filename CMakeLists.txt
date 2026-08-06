@@ -63,7 +63,8 @@ add_library(ddup_core STATIC
     src/server/aof.c
     src/server/repl.c
 )
-target_include_directories(ddup_core PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/src")
+target_include_directories(ddup_core PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/src"
+    "${CMAKE_CURRENT_SOURCE_DIR}/deps/wyhash")
 ddup_apply_options(ddup_core)
 target_link_libraries(ddup_core PUBLIC ddup_lua)
 target_compile_definitions(ddup_core PUBLIC

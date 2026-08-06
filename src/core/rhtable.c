@@ -11,11 +11,19 @@
 #define RH_MIGRATE_BATCH 16 /* occupied buckets migrated per operation */
 
 /* ------------------------------------------------------------------ */
-/* hash: FNV-1a 64 + murmur3 fmix64 finalizer (good low-bit spread).  */
-/* wyhash/xxh3 is a documented future optimization (docs/roadmap).    */
+/* hash: wyhash (final v4, vendored in deps/wyhash) on platforms with  */
+/* a 128-bit multiply; FNV-1a 64 + fmix64 fallback elsewhere.          */
 /* ------------------------------------------------------------------ */
+#if defined(__SIZEOF_INT128__) || (defined(_MSC_VER) && defined(_M_X64))
+#define RH_HAS_WYHASH 1
+#include "wyhash.h"
+#endif
+
 static uint64_t rh_hash(const char *key, size_t len)
 {
+#ifdef RH_HAS_WYHASH
+    return wyhash(key, len, 0, _wyp);
+#else
     uint64_t h = 14695981039346656037ULL;
     for (size_t i = 0; i < len; i++) {
         h ^= (unsigned char)key[i];
@@ -27,6 +35,7 @@ static uint64_t rh_hash(const char *key, size_t len)
     h *= 0xc4ceb9fe1a85ec53ULL;
     h ^= h >> 33;
     return h;
+#endif
 }
 
 static rh_entry *rh_alloc_slots(size_t cap)
