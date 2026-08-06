@@ -40,8 +40,12 @@ typedef struct cmd_entry {
 /* table row for a command id (defined next to CMD_TABLE at the bottom) */
 static const cmd_entry *cmd_table_entry(uint16_t id);
 
+static void command_dispatch(session *s, const resp_value *argv, size_t argc,
+                             resp_buf *out, uint64_t now_ms);
+
 void db_init(db *d)
 {
+    script_set_command_fn(command_dispatch);
     rh_init(&d->table);
     rh_init(&d->expires);
     rh_init(&d->keyvers);
@@ -1178,6 +1182,26 @@ static int cmd_keys_accum(const resp_value *argv, size_t argc, int *have,
         }
         return 1;
     }
+    if (cmd_id == CMD_EVAL || cmd_id == CMD_EVALSHA) {
+        const char *nv;
+        size_t nvl;
+        long long nk = 0;
+        size_t end;
+        if (argc < 4 || !arg_str(&argv[2], &nv, &nvl) ||
+            !parse_i64(nv, nvl, &nk) || nk <= 0)
+            return 1;
+        end = 3 + (size_t)nk;
+        if (end > argc)
+            end = argc;
+        for (i = 3; i < end; i++) {
+            const char *k;
+            size_t kl;
+            if (arg_str(&argv[i], &k, &kl) &&
+                !slot_accum(k, kl, have, slot))
+                return 0;
+        }
+        return 1;
+    }
     /* everything else: single key at argv[1] */
     {
         const char *k;
@@ -1283,7 +1307,7 @@ static int cluster_keyless_id(uint16_t cmd_id)
     case CMD_QUIT:       case CMD_MULTI:      case CMD_EXEC:
     case CMD_DISCARD:    case CMD_UNWATCH:    case CMD_DBSIZE:
     case CMD_FLUSHDB:    case CMD_CLUSTER:    case CMD_PERSIST:
-    case CMD_MIGRATE:    case CMD_ASKING:
+    case CMD_MIGRATE:    case CMD_ASKING:    case CMD_SCRIPT:
         return 1;
     default:
         return 0;
@@ -1340,6 +1364,27 @@ static int cluster_check_ownership(session *s, const resp_value *argv,
     }
     if (cmd_id == CMD_SMOVE) {
         for (i = 1; i < argc && i < 3; i++) {
+            const char *k;
+            size_t kl;
+            if (arg_str(&argv[i], &k, &kl) &&
+                !db_key_served(d, k, kl, out, now_ms, asking))
+                return 0;
+        }
+        return 1;
+    }
+    if (cmd_id == CMD_EVAL || cmd_id == CMD_EVALSHA) {
+        /* keys are argv[3..3+numkeys); numkeys validated by the dispatch */
+        const char *nv;
+        size_t nvl;
+        long long nk = 0;
+        size_t end;
+        if (argc < 4 || !arg_str(&argv[2], &nv, &nvl) ||
+            !parse_i64(nv, nvl, &nk) || nk <= 0)
+            return 1;
+        end = 3 + (size_t)nk;
+        if (end > argc)
+            end = argc;
+        for (i = 3; i < end; i++) {
             const char *k;
             size_t kl;
             if (arg_str(&argv[i], &k, &kl) &&
@@ -1783,6 +1828,125 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
             return;
         }
         resp_write_simple_string(out, "OK", 2);
+        return;
+    }
+
+    if (cmd_id == CMD_EVAL || cmd_id == CMD_EVALSHA) {
+        int is_sha = cmd_id == CMD_EVALSHA;
+        long long numkeys;
+        const char *kv, *nv;
+        size_t kvl, nvl;
+        char sha[41];
+        if (argc < 3) {
+            wrong_args(out, is_sha ? "evalsha" : "eval");
+            return;
+        }
+        if (s->in_script) {
+            static const char E[] =
+                "ERR This Redis command is not allowed from scripts";
+            resp_write_error(out, E, sizeof(E) - 1);
+            return;
+        }
+        if (!arg_str(&argv[2], &nv, &nvl) || !parse_i64(nv, nvl, &numkeys)) {
+            resp_write_error(out, ERR_NOT_INT, sizeof(ERR_NOT_INT) - 1);
+            return;
+        }
+        if (numkeys > (long long)(argc - 3)) {
+            static const char E[] =
+                "ERR Number of keys can't be greater than number of args";
+            resp_write_error(out, E, sizeof(E) - 1);
+            return;
+        }
+        if (numkeys < 0) {
+            static const char E[] = "ERR Number of keys can't be negative";
+            resp_write_error(out, E, sizeof(E) - 1);
+            return;
+        }
+        if (!arg_str(&argv[1], &kv, &kvl))
+            goto bad_type;
+        if (is_sha) {
+            if (kvl != 40 || script_ref(d, kv) < 0) {
+                static const char E[] =
+                    "NOSCRIPT No matching script. Please use EVAL.";
+                resp_write_error(out, E, sizeof(E) - 1);
+                return;
+            }
+            memcpy(sha, kv, 40);
+            sha[40] = '\0';
+        } else {
+            char err[256];
+            if (script_load(d, kv, kvl, sha, err, sizeof(err)) != 0) {
+                char ebuf[384];
+                int n = snprintf(ebuf, sizeof(ebuf),
+                                 "ERR Error compiling script (new function): "
+                                 "%s",
+                                 err);
+                resp_write_error(out, ebuf, (size_t)n);
+                return;
+            }
+        }
+        /* effects replication: redis.call logs effect commands itself */
+        s->aof_skip = 1;
+        script_exec(s, sha, argv + 3, (size_t)numkeys,
+                    argc - 3 - (size_t)numkeys, out, now_ms);
+        return;
+    }
+
+    if (cmd_id == CMD_SCRIPT) {
+        const char *sub;
+        size_t sl;
+        if (s->in_script) {
+            static const char E[] =
+                "ERR This Redis command is not allowed from scripts";
+            resp_write_error(out, E, sizeof(E) - 1);
+            return;
+        }
+        if (argc < 2 || !arg_str(&argv[1], &sub, &sl))
+            goto bad_type;
+        if (ci_equal(sub, sl, "LOAD") && argc == 3) {
+            const char *src;
+            size_t srcl;
+            char sha[41], err[256];
+            if (!arg_str(&argv[2], &src, &srcl))
+                goto bad_type;
+            if (script_load(d, src, srcl, sha, err, sizeof(err)) != 0) {
+                char ebuf[384];
+                int n = snprintf(ebuf, sizeof(ebuf),
+                                 "ERR Error compiling script (new function): "
+                                 "%s",
+                                 err);
+                resp_write_error(out, ebuf, (size_t)n);
+                return;
+            }
+            resp_write_bulk(out, sha, 40);
+            return;
+        }
+        if (ci_equal(sub, sl, "EXISTS") && argc >= 3) {
+            size_t i;
+            resp_write_array_header(out, argc - 2);
+            for (i = 2; i < argc; i++) {
+                const char *k;
+                size_t kl;
+                if (!arg_str(&argv[i], &k, &kl))
+                    goto bad_type;
+                resp_write_integer(out,
+                                   kl == 40 && script_cached(d, k) ? 1 : 0);
+            }
+            return;
+        }
+        if (ci_equal(sub, sl, "FLUSH") && argc == 2) {
+            script_flush(d);
+            resp_write_simple_string(out, "OK", 2);
+            return;
+        }
+        {
+            char msg[96];
+            int n = snprintf(msg, sizeof(msg),
+                             "ERR Unknown SCRIPT subcommand or wrong number "
+                             "of arguments for '%.*s'",
+                             (int)sl, sub);
+            resp_write_error(out, msg, (size_t)n);
+        }
         return;
     }
 
@@ -4338,6 +4502,9 @@ static const cmd_entry CMD_TABLE[] = {
     {"auth", CMD_AUTH, 2, 3, 0, 0},
     {"select", CMD_SELECT, 2, 2, 0, 0},
     {"swapdb", CMD_SWAPDB, 3, 3, 0, CMD_WRITE},
+    {"eval", CMD_EVAL, 3, -1, 0, CMD_WRITE},
+    {"evalsha", CMD_EVALSHA, 3, -1, 0, CMD_WRITE},
+    {"script", CMD_SCRIPT, 2, -1, 0, 0},
 };
 
 static const cmd_entry *cmd_table_entry(uint16_t id)
@@ -4538,12 +4705,17 @@ static void exec_transaction(session *s, resp_buf *out, uint64_t now_ms)
                 s->d->cmd_usecs[qid] += pal_now_us() - t0;
             }
 #endif
+            /* EVAL flags itself: its effects are logged, not its argv */
+            s->queue[i].skip_log = s->aof_skip;
+            s->aof_skip = 0;
         }
-        /* AOF: log each applied command individually (no MULTI wrapper) */
+        /* AOF: log each applied command individually (no MULTI wrapper);
+         * EVAL entries log their effects instead */
         if (s->d->dirty != dirty_before && s->aof_log != NULL)
             for (i = 0; i < s->queue_len; i++)
-                s->aof_log(s->aof_ctx, s->db_index, s->queue[i].argv,
-                           s->queue[i].argc);
+                if (!s->queue[i].skip_log)
+                    s->aof_log(s->aof_ctx, s->db_index, s->queue[i].argv,
+                               s->queue[i].argc);
     }
     /* queued writes may have crossed maxmemory */
     if (s->d->maxmemory_policy == DB_POLICY_ALLKEYS_LRU)
@@ -4697,9 +4869,11 @@ void session_execute_at(session *s, const resp_value *argv, size_t argc,
         }
 #endif
     }
-    /* AOF: log the original command if it mutated the db */
-    if (s->d->dirty != dirty_before && s->aof_log != NULL)
+    /* AOF: log the original command if it mutated the db (script effects
+     * were already logged individually by redis.call) */
+    if (s->d->dirty != dirty_before && s->aof_log != NULL && !s->aof_skip)
         s->aof_log(s->aof_ctx, s->db_index, argv, argc);
+    s->aof_skip = 0;
     /* allkeys-lru eviction runs after write commands (and CONFIG SET) */
     if (s->d->maxmemory_policy == DB_POLICY_ALLKEYS_LRU)
         db_evict_if_needed(s->d);

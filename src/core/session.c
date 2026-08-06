@@ -93,6 +93,7 @@ void session_queue_push(session *s, const resp_value *argv, size_t argc)
     }
     qc = &s->queue[s->queue_len++];
     qc->argc = argc;
+    qc->skip_log = 0;
     qc->argv = (resp_value *)xmalloc(argc * sizeof(resp_value));
     for (i = 0; i < argc; i++) {
         char *copy = (char *)xmalloc(argv[i].len);

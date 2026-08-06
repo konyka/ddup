@@ -20,6 +20,7 @@
 typedef struct queued_cmd {
     resp_value *argv; /* argc items; every str/len is an owned copy */
     size_t argc;
+    int skip_log;   /* EVAL: AOF-logs effects instead of the queued argv */
 } queued_cmd;
 
 /* WATCH bookkeeping: key copy + key-version/db-epoch seen at WATCH time. */
@@ -103,6 +104,8 @@ typedef struct session {
      * or stop (ip == NULL) data replication of the given master. */
     int (*cluster_replicate)(void *ctx, const char *ip, uint16_t port);
     int asking; /* cluster: one-shot ASKING flag for the next command */
+    int in_script; /* >0 inside Lua execution (nested EVAL is rejected) */
+    int aof_skip;  /* script effects are AOF-logged individually, not EVAL */
     /* replication (server-owned; NULL for stack sessions) */
     const repl_info *repl;  /* INFO replication source */
     const int *role;        /* server role, for READONLY checks */

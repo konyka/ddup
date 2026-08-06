@@ -220,10 +220,13 @@ enum {
     CMD_CLUSTER,
     CMD_AUTH,
     CMD_SELECT,
-    CMD_SWAPDB
+    CMD_SWAPDB,
+    CMD_EVAL,
+    CMD_EVALSHA,
+    CMD_SCRIPT
 };
 
-#define CMD_MAX CMD_SWAPDB
+#define CMD_MAX CMD_SCRIPT
 
 /* Resolve a command name to its stable ID; case-insensitive. */
 uint16_t cmd_resolve(const char *name, size_t len);

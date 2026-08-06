@@ -35,4 +35,23 @@ void script_flush(db *d);
 /* db teardown: free the cache and the interpreter (db_destroy calls). */
 void script_cleanup(db *d);
 
+/* ------------------------------------------------------------------ */
+/* execution (EVAL family)                                            */
+/* ------------------------------------------------------------------ */
+
+struct session; /* session.h */
+
+/* Dispatch callback used by redis.call/redis.pcall: the same entry point
+ * client commands take. Registered once by the command layer (db_init). */
+typedef void (*script_command_fn)(struct session *s, const resp_value *argv,
+                                  size_t argc, resp_buf *out,
+                                  uint64_t now_ms);
+void script_set_command_fn(script_command_fn fn);
+
+/* Run a cached script: binds KEYS (argv[0..nkeys)) and ARGV (the rest),
+ * pcalls the chunk and converts the Lua return value to a RESP reply.
+ * sha1 may be either case. NOSCRIPT guard included (callers pre-check). */
+void script_exec(struct session *s, const char *sha1, const resp_value *argv,
+                 size_t nkeys, size_t nargs, resp_buf *out, uint64_t now_ms);
+
 #endif /* DDUP_SCRIPT_H */
