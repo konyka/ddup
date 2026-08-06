@@ -21,6 +21,7 @@
 #include "core/hashslot.h"
 #include "core/snapshot.h"
 #include "core/migrate.h"
+#include "core/script.h"
 
 static void free_obj_cb(const char *key, size_t klen, const char *val,
                         size_t vlen, void *ctx);
@@ -66,10 +67,13 @@ void db_init(db *d)
     d->snapshot_path = NULL;
     d->last_save = 0;
     d->rng_state = 0x9E3779B9u; /* nonzero xorshift seed */
+    rh_init(&d->scripts);
+    d->lua_state = NULL;
 }
 
 void db_destroy(db *d)
 {
+    script_cleanup(d);
     rh_each(&d->table, free_obj_cb, NULL);
     rh_destroy(&d->table);
     rh_destroy(&d->expires);
