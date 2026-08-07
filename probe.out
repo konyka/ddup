@@ -1,4 +1,4 @@
-+ MTPID=6478
++ MTPID=6600
 + sleep 2
 + ./build/ddup-server --port 7777 --io-threads 4
 ++ seq 1 12
@@ -7,7 +7,7 @@
 + tr '\r' '\n'
 + grep -i 'requests per second'
 + head -1
-SET: 716845.81 requests per second, p50=1.079 msec
+SET: 561797.75 requests per second, p50=1.295 msec
 + timeout 5 redis-cli -p 7777 PING
 + echo 'round 1 alive'
 round 1 alive
@@ -16,7 +16,7 @@ round 1 alive
 + tr '\r' '\n'
 + grep -i 'requests per second'
 + head -1
-SET: 740740.69 requests per second, p50=1.071 msec
+SET: 568181.81 requests per second, p50=1.287 msec
 + timeout 5 redis-cli -p 7777 PING
 + echo 'round 2 alive'
 round 2 alive
@@ -25,7 +25,7 @@ round 2 alive
 + tr '\r' '\n'
 + grep -i 'requests per second'
 + head -1
-SET: 735294.06 requests per second, p50=1.079 msec
+SET: 527704.50 requests per second, p50=1.319 msec
 + timeout 5 redis-cli -p 7777 PING
 + echo 'round 3 alive'
 round 3 alive
@@ -34,7 +34,7 @@ round 3 alive
 + tr '\r' '\n'
 + grep -i 'requests per second'
 + head -1
-SET: 754717.00 requests per second, p50=1.063 msec
+SET: 607902.75 requests per second, p50=1.279 msec
 + timeout 5 redis-cli -p 7777 PING
 + echo 'round 4 alive'
 round 4 alive
@@ -43,7 +43,7 @@ round 4 alive
 + tr '\r' '\n'
 + grep -i 'requests per second'
 + head -1
-SET: 727272.69 requests per second, p50=1.071 msec
+SET: 539083.56 requests per second, p50=1.295 msec
 + timeout 5 redis-cli -p 7777 PING
 + echo 'round 5 alive'
 round 5 alive
@@ -52,7 +52,7 @@ round 5 alive
 + tr '\r' '\n'
 + grep -i 'requests per second'
 + head -1
-SET: 796812.81 requests per second, p50=0.999 msec
+SET: 579710.12 requests per second, p50=1.287 msec
 + timeout 5 redis-cli -p 7777 PING
 + echo 'round 6 alive'
 round 6 alive
@@ -61,7 +61,7 @@ round 6 alive
 + tr '\r' '\n'
 + grep -i 'requests per second'
 + head -1
-SET: 781249.94 requests per second, p50=1.023 msec
+SET: 607902.75 requests per second, p50=1.279 msec
 + timeout 5 redis-cli -p 7777 PING
 + echo 'round 7 alive'
 round 7 alive
@@ -70,7 +70,7 @@ round 7 alive
 + tr '\r' '\n'
 + grep -i 'requests per second'
 + head -1
-SET: 709219.88 requests per second, p50=1.047 msec
+SET: 503778.31 requests per second, p50=1.727 msec
 + timeout 5 redis-cli -p 7777 PING
 + echo 'round 8 alive'
 round 8 alive
@@ -79,7 +79,7 @@ round 8 alive
 + tr '\r' '\n'
 + grep -i 'requests per second'
 + head -1
-SET: 677966.12 requests per second, p50=1.071 msec
+SET: 606060.56 requests per second, p50=1.287 msec
 + timeout 5 redis-cli -p 7777 PING
 + echo 'round 9 alive'
 round 9 alive
@@ -88,7 +88,7 @@ round 9 alive
 + tr '\r' '\n'
 + grep -i 'requests per second'
 + head -1
-SET: 732600.75 requests per second, p50=1.047 msec
+SET: 609756.06 requests per second, p50=1.279 msec
 + timeout 5 redis-cli -p 7777 PING
 + echo 'round 10 alive'
 round 10 alive
@@ -97,7 +97,7 @@ round 10 alive
 + tr '\r' '\n'
 + grep -i 'requests per second'
 + head -1
-SET: 727272.69 requests per second, p50=1.039 msec
+SET: 595238.12 requests per second, p50=1.287 msec
 + timeout 5 redis-cli -p 7777 PING
 + echo 'round 11 alive'
 round 11 alive
@@ -106,7 +106,7 @@ round 11 alive
 + tr '\r' '\n'
 + grep -i 'requests per second'
 + head -1
-SET: 694444.50 requests per second, p50=1.079 msec
+SET: 579710.12 requests per second, p50=1.287 msec
 + timeout 5 redis-cli -p 7777 PING
 + echo 'round 12 alive'
 round 12 alive
