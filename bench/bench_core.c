@@ -26,6 +26,7 @@ static void build_cmd(resp_buf *b, const char *c1, const char *c2,
 {
     int argc = c3 != NULL ? 3 : (c2 != NULL ? 2 : 1);
     char tmp[128];
+    size_t vl;
     resp_write_array_header(b, (size_t)argc);
     snprintf(tmp, sizeof(tmp), "$%zu\r\n%s\r\n", strlen(c1), c1);
     resp_buf_reserve(b, strlen(tmp));
@@ -38,10 +39,16 @@ static void build_cmd(resp_buf *b, const char *c1, const char *c2,
         b->len += strlen(tmp);
     }
     if (argc >= 3) {
-        snprintf(tmp, sizeof(tmp), "$%zu\r\n%s\r\n", strlen(c3), c3);
-        resp_buf_reserve(b, strlen(tmp));
+        /* value may exceed the header scratch: write header + bulk copy */
+        vl = strlen(c3);
+        snprintf(tmp, sizeof(tmp), "$%zu\r\n", vl);
+        resp_buf_reserve(b, strlen(tmp) + vl + 2);
         memcpy(b->data + b->len, tmp, strlen(tmp));
         b->len += strlen(tmp);
+        memcpy(b->data + b->len, c3, vl);
+        b->len += vl;
+        b->data[b->len++] = '\r';
+        b->data[b->len++] = '\n';
     }
 }
 
@@ -147,12 +154,20 @@ static double run_phase(session *s, arena *ar, resp_buf *out,
 int main(int argc, char **argv)
 {
     long n = argc > 1 ? atol(argv[1]) : 200000;
+    long vlen = argc > 2 ? atol(argv[2]) : 16; /* SET value bytes */
     resp_buf sets, gets, out;
     db d;
     session *s;
     arena ar;
     long i;
+    char *val;
     double set_ops, get_ops, get2_ops;
+
+    val = (char *)malloc((size_t)vlen + 1);
+    if (val == NULL)
+        return 1;
+    memset(val, 'x', (size_t)vlen);
+    val[vlen] = '\0';
 
     resp_buf_init(&sets);
     resp_buf_init(&gets);
@@ -164,7 +179,7 @@ int main(int argc, char **argv)
     for (i = 0; i < n; i++) {
         char key[32];
         snprintf(key, sizeof(key), "bench:%08ld", i);
-        build_cmd(&sets, "SET", key, "0123456789abcdef");
+        build_cmd(&sets, "SET", key, val);
         build_cmd(&gets, "GET", key, NULL);
     }
 
@@ -173,8 +188,8 @@ int main(int argc, char **argv)
     get_ops = run_phase(s, &ar, &out, gets.data, gets.len);
     get2_ops = run_phase(s, &ar, &out, gets.data, gets.len);
 
-    printf("bench_core: %ld commands/phase, db=%zu keys\n", n,
-           rh_size(&d.table));
+    printf("bench_core: %ld commands/phase, db=%zu keys, value=%ld bytes\n",
+           n, rh_size(&d.table), vlen);
     printf("SET (cold, includes inserts): %12.0f ops/s\n", set_ops);
     printf("GET (warm):                   %12.0f ops/s\n", get_ops);
     printf("GET (warm, run 2):            %12.0f ops/s\n", get2_ops);

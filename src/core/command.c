@@ -212,19 +212,40 @@ static void db_set_kv(db *d, const char *key, size_t klen, const char *val,
     db_touch_key(d, key, klen);
 }
 
-/* Store a string payload (adds the type tag). */
-static void db_set_string(db *d, const char *key, size_t klen, const char *val,
-                          size_t vlen, uint64_t now_ms)
+/* String store with the tag built into the kv block directly (Phase 28):
+ * one allocation, no temporary concatenation. Strings have no extra
+ * object memory, so accounting skips obj_extra_mem. */
+static void db_set_kv_string(db *d, const char *key, size_t klen,
+                             const char *val, size_t vlen, uint64_t now_ms)
 {
-    char stackbuf[256];
-    char *buf = stackbuf;
-    if (vlen + 1 > sizeof(stackbuf))
-        buf = (char *)malloc(vlen + 1);
-    buf[0] = (char)DDUP_OBJ_STRING;
-    memcpy(buf + 1, val, vlen);
-    db_set_kv(d, key, klen, buf, vlen + 1, now_ms);
-    if (buf != stackbuf)
-        free(buf);
+    char *old_kv;
+    size_t old_vlen;
+    const char tag = (char)DDUP_OBJ_STRING;
+    if (rh_size(&d->expires) > 0) {
+        const char *old;
+        size_t oldl;
+        if (rh_get(&d->expires, key, klen, &old, &oldl)) {
+            rh_del(&d->expires, key, klen);
+            d->used_memory -= entry_bytes(klen, 8);
+        }
+    }
+    if (rh_set_ex2(&d->table, key, klen, &tag, 1, val, vlen,
+                   lru_clock(now_ms), &old_kv, &old_vlen)) {
+        const char *oldv = old_kv + klen;
+        d->used_memory -=
+            entry_bytes(klen, old_vlen) + obj_extra_mem(oldv, old_vlen);
+        obj_free_value(oldv, old_vlen);
+        free(old_kv);
+    }
+    d->used_memory += entry_bytes(klen, vlen + 1);
+    db_touch_key(d, key, klen);
+}
+
+/* Store a string payload (fused tag+value write, no temporary blob). */
+static void db_set_string(db *d, const char *key, size_t klen,
+                          const char *val, size_t vlen, uint64_t now_ms)
+{
+    db_set_kv_string(d, key, klen, val, vlen, now_ms);
 }
 
 /* Delete key and expiry (and any owned object). Returns 1 if existed. */

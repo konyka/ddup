@@ -59,6 +59,13 @@ void rh_set(rh_table *t, const char *key, size_t klen,
 int rh_set_ex(rh_table *t, const char *key, size_t klen, const char *val,
               size_t vlen, uint32_t meta, char **old_kv, size_t *old_vlen);
 
+/* Two-part value variant (Phase 28): the stored value blob is v1||v2,
+ * so callers can prepend a type tag without a temporary concatenation.
+ * v2 may be NULL when n2 is 0. */
+int rh_set_ex2(rh_table *t, const char *key, size_t klen, const char *v1,
+               size_t n1, const char *v2, size_t n2, uint32_t meta,
+               char **old_kv, size_t *old_vlen);
+
 /* Read the meta field of an existing key (0 when absent). */
 uint32_t rh_meta_of(rh_table *t, const char *key, size_t klen);
 

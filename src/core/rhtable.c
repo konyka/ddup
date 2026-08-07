@@ -291,9 +291,12 @@ void rh_set(rh_table *t, const char *key, size_t klen,
     t->size++;
 }
 
-int rh_set_ex(rh_table *t, const char *key, size_t klen, const char *val,
-              size_t vlen, uint32_t meta, char **old_kv, size_t *old_vlen)
+int rh_set_ex2(rh_table *t, const char *key, size_t klen, const char *v1,
+               size_t n1, const char *v2, size_t n2, uint32_t meta,
+               char **old_kv, size_t *old_vlen)
 {
+    size_t vlen = n1 + n2;
+
     rh_migrate_some(t);
     uint64_t h = rh_hash(key, klen);
 
@@ -316,7 +319,9 @@ int rh_set_ex(rh_table *t, const char *key, size_t klen, const char *val,
             exit(1);
         }
         memcpy(kv, key, klen);
-        memcpy(kv + klen, val, vlen);
+        memcpy(kv + klen, v1, n1);
+        if (n2 > 0)
+            memcpy(kv + klen + n1, v2, n2);
         *old_kv = target->kv;
         *old_vlen = target->vlen;
         target->kv = kv;
@@ -336,12 +341,21 @@ int rh_set_ex(rh_table *t, const char *key, size_t klen, const char *val,
         exit(1);
     }
     memcpy(e.kv, key, klen);
-    memcpy(e.kv + klen, val, vlen);
+    memcpy(e.kv + klen, v1, n1);
+    if (n2 > 0)
+        memcpy(e.kv + klen + n1, v2, n2);
     e.psl = 0;
     e.meta = meta;
     rh_insert_entry(t->slots, t->cap, e);
     t->size++;
     return 0;
+}
+
+int rh_set_ex(rh_table *t, const char *key, size_t klen, const char *val,
+              size_t vlen, uint32_t meta, char **old_kv, size_t *old_vlen)
+{
+    return rh_set_ex2(t, key, klen, val, vlen, NULL, 0, meta, old_kv,
+                      old_vlen);
 }
 
 uint32_t rh_meta_of(rh_table *t, const char *key, size_t klen)
