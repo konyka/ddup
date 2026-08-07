@@ -235,6 +235,88 @@ static cluster_node *apply_node(struct db *d, const char *id, const char *ip,
     return n;
 }
 
+/* grant a failover vote when the Redis conditions hold (7.0 semantics;
+ * the voted_time throttle is the documented omission): voter is a master
+ * serving slots, req epoch >= current, not yet voted this epoch, requester
+ * is a slave whose master is marked failed, and the claim's configEpoch
+ * dominates every current slot owner. On grant: record last_vote_epoch and
+ * append an AUTH_ACK frame to reply_out. */
+static void handle_auth_request(struct db *d, const char *frame,
+                                resp_buf *reply_out)
+{
+    cluster_node *me = cluster_myself(d);
+    uint64_t req_cur = get64be(frame + 16);
+    uint64_t req_cfg = get64be(frame + 24);
+    char id[41];
+    cluster_node *sender, *master;
+    uint32_t s;
+
+    if (me == NULL || !(me->flags & CLUSTER_NODE_MASTER))
+        return;
+    for (s = 0; s < 16384; s++)
+        if (cluster_slots_get(me->slots, s))
+            break;
+    if (s == 16384)
+        return; /* masters without slots have no vote */
+    if (req_cur > d->cluster_current_epoch)
+        d->cluster_current_epoch = req_cur;
+    if (req_cur < d->cluster_current_epoch)
+        return; /* stale election epoch */
+    if (d->last_vote_epoch == d->cluster_current_epoch)
+        return; /* already voted in this epoch */
+
+    memcpy(id, frame + 40, 40);
+    id[40] = '\0';
+    sender = cluster_node_find(d, id);
+    if (sender == NULL || !(sender->flags & CLUSTER_NODE_SLAVE))
+        return;
+    if (sender->master_id[0] == '-' || sender->master_id[0] == '\0')
+        return;
+    master = cluster_node_find(d, sender->master_id);
+    if (master == NULL || !(master->flags & CLUSTER_NODE_DISCONNECTED))
+        return; /* its master is not failing in our view */
+
+    /* the claimed slots must dominate their current owners' epochs */
+    for (s = 0; s < 16384; s++) {
+        int j;
+        if (!(frame[80 + s / 8] & (1u << (s % 8))))
+            continue;
+        for (j = 0; j < d->nnodes; j++) {
+            cluster_node *o = &d->nodes[j];
+            if (o != sender && cluster_slots_get(o->slots, s) &&
+                o->epoch > req_cfg)
+                return; /* a live owner has a newer claim */
+        }
+    }
+    d->last_vote_epoch = d->cluster_current_epoch;
+    redbus_build_frame(d, REDBUS_TYPE_AUTH_ACK, reply_out);
+}
+
+static void handle_auth_ack(struct db *d, const char *frame)
+{
+    char id[41];
+    cluster_node *sender;
+    uint64_t ack_epoch = get64be(frame + 16);
+    int idx;
+    if (d->failover_req_epoch == 0 || ack_epoch < d->failover_req_epoch)
+        return;
+    memcpy(id, frame + 40, 40);
+    id[40] = '\0';
+    sender = cluster_node_find(d, id);
+    if (sender == NULL || !(sender->flags & CLUSTER_NODE_MASTER))
+        return;
+    for (idx = 0; idx < 16384; idx++)
+        if (cluster_slots_get(sender->slots, (uint32_t)idx))
+            break;
+    if (idx == 16384)
+        return; /* only masters serving slots count */
+    idx = (int)(sender - d->nodes);
+    if (idx < 32 && !(d->failover_ack_mask & (1u << idx))) {
+        d->failover_ack_mask |= 1u << idx;
+        d->failover_ack_count++;
+    }
+}
+
 int redbus_handle_frame(struct db *d, const char *frame, size_t len,
                         resp_buf *reply_out, uint64_t now_ms,
                         const char *src_ip)
@@ -290,6 +372,18 @@ int redbus_handle_frame(struct db *d, const char *frame, size_t len,
             n->flags |= CLUSTER_NODE_DISCONNECTED;
             d->cluster_changes++;
         }
+        return 0;
+    }
+    if (type == REDBUS_TYPE_AUTH_REQUEST) {
+        if (len < REDBUS_HDR_LEN)
+            return -1;
+        handle_auth_request(d, frame, reply_out);
+        return 0;
+    }
+    if (type == REDBUS_TYPE_AUTH_ACK) {
+        if (len < REDBUS_HDR_LEN)
+            return -1;
+        handle_auth_ack(d, frame);
         return 0;
     }
     if (type != REDBUS_TYPE_PING && type != REDBUS_TYPE_PONG &&

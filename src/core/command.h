@@ -42,6 +42,10 @@ typedef struct db {
     uint16_t slot_importing[16384]; /* per slot: source node idx, 0xFFFF none */
     uint64_t cluster_changes;   /* bumped on any node-table mutation */
     uint64_t cluster_current_epoch; /* max config epoch seen (starts 1) */
+    uint64_t last_vote_epoch;   /* failover: last epoch we voted for */
+    uint64_t failover_req_epoch; /* election epoch we requested, 0 = none */
+    uint32_t failover_ack_mask; /* node indexes that granted a vote */
+    int failover_ack_count;
     char cluster_ip[64];   /* bind address reported by CLUSTER SLOTS */
     uint16_t cluster_port; /* listen port reported by CLUSTER SLOTS */
     const char *snapshot_path; /* SAVE target (not owned; may be NULL) */

@@ -28,6 +28,8 @@
 #define REDBUS_TYPE_MEET 2
 #define REDBUS_TYPE_FAIL 3
 #define REDBUS_TYPE_PUBLISH 4
+#define REDBUS_TYPE_AUTH_REQUEST 5 /* Redis 7.0 numbering (verified) */
+#define REDBUS_TYPE_AUTH_ACK 6
 #define REDBUS_TYPE_UPDATE 7
 
 /* redis node flag bits (subset we map; rest tolerated) */
