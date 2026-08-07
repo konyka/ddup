@@ -1,4 +1,4 @@
-+ MTPID=6664
++ MTPID=6665
 + sleep 2
 + ./build/ddup-server --port 7777 --io-threads 4
 + echo '== per-conn PING x12 =='
@@ -42,31 +42,136 @@ PONG
 PONG
 + echo '== threads =='
 == threads ==
-+ ps -T -p 6664 -o pid,tid,stat,time,wchan:32
++ ps -T -p 6665 -o pid,tid,stat,time,wchan:32
     PID     TID STAT     TIME WCHAN
-   6664    6664 Sl   00:00:00 hrtimer_nanosleep
-   6664    6666 Sl   00:00:00 ep_poll
-   6664    6667 Sl   00:00:00 ep_poll
-   6664    6668 Sl   00:00:00 ep_poll
-   6664    6669 Sl   00:00:00 ep_poll
-   6664    6670 Sl   00:00:00 ep_poll
+   6665    6665 Sl   00:00:00 hrtimer_nanosleep
+   6665    6667 Sl   00:00:00 ep_poll
+   6665    6668 Sl   00:00:00 ep_poll
+   6665    6669 Sl   00:00:00 ep_poll
+   6665    6670 Sl   00:00:00 ep_poll
+   6665    6671 Sl   00:00:00 ep_poll
 + echo '== drive load until wedge =='
 == drive load until wedge ==
-++ seq 1 10
-+ for r in $(seq 1 10)
-+ timeout 30 redis-benchmark -p 7777 -n 200000 -c 50 -P 16 -t set -q
-+ timeout 3 redis-cli -p 7777 PING
+++ seq 1 6
++ for r in $(seq 1 6)
++ timeout -k 2 20 redis-benchmark -p 7777 -n 100000 -c 50 -P 16 -t set -q
++ timeout -k 1 3 redis-cli -p 7777 PING
 + echo 'round 1 alive'
 round 1 alive
-+ for r in $(seq 1 10)
-+ timeout 30 redis-benchmark -p 7777 -n 200000 -c 50 -P 16 -t set -q
-+ timeout 3 redis-cli -p 7777 PING
++ ps -T -p 6665 -o tid,stat,time,wchan:32
++ tail -n +2
+   6665 Sl   00:00:00 hrtimer_nanosleep
+   6667 Sl   00:00:00 ep_poll
+   6668 Sl   00:00:00 ep_poll
+   6669 Sl   00:00:00 ep_poll
+   6670 Sl   00:00:00 ep_poll
+   6671 Sl   00:00:00 ep_poll
++ for r in $(seq 1 6)
++ timeout -k 2 20 redis-benchmark -p 7777 -n 100000 -c 50 -P 16 -t set -q
++ timeout -k 1 3 redis-cli -p 7777 PING
 + echo 'round 2 alive'
 round 2 alive
-+ for r in $(seq 1 10)
-+ timeout 30 redis-benchmark -p 7777 -n 200000 -c 50 -P 16 -t set -q
-+ timeout 3 redis-cli -p 7777 PING
++ ps -T -p 6665 -o tid,stat,time,wchan:32
++ tail -n +2
+   6665 Sl   00:00:00 hrtimer_nanosleep
+   6667 Sl   00:00:00 ep_poll
+   6668 Sl   00:00:00 ep_poll
+   6669 Sl   00:00:00 ep_poll
+   6670 Sl   00:00:00 ep_poll
+   6671 Sl   00:00:00 ep_poll
++ for r in $(seq 1 6)
++ timeout -k 2 20 redis-benchmark -p 7777 -n 100000 -c 50 -P 16 -t set -q
++ timeout -k 1 3 redis-cli -p 7777 PING
 + echo 'round 3 alive'
 round 3 alive
-+ for r in $(seq 1 10)
-+ timeout 30 redis-benchmark -p 7777 -n 200000 -c 50 -P 16 -t set -q
++ ps -T -p 6665 -o tid,stat,time,wchan:32
++ tail -n +2
+   6665 Sl   00:00:00 hrtimer_nanosleep
+   6667 Sl   00:00:00 ep_poll
+   6668 Sl   00:00:00 ep_poll
+   6669 Sl   00:00:00 ep_poll
+   6670 Sl   00:00:00 ep_poll
+   6671 Sl   00:00:00 ep_poll
++ for r in $(seq 1 6)
++ timeout -k 2 20 redis-benchmark -p 7777 -n 100000 -c 50 -P 16 -t set -q
++ timeout -k 1 3 redis-cli -p 7777 PING
++ echo 'round 4 alive'
+round 4 alive
++ ps -T -p 6665 -o tid,stat,time,wchan:32
++ tail -n +2
+   6665 Sl   00:00:00 hrtimer_nanosleep
+   6667 Sl   00:00:00 ep_poll
+   6668 Sl   00:00:00 ep_poll
+   6669 Sl   00:00:00 ep_poll
+   6670 Sl   00:00:00 ep_poll
+   6671 Sl   00:00:00 ep_poll
++ for r in $(seq 1 6)
++ timeout -k 2 20 redis-benchmark -p 7777 -n 100000 -c 50 -P 16 -t set -q
++ timeout -k 1 3 redis-cli -p 7777 PING
++ echo 'round 5 alive'
+round 5 alive
++ ps -T -p 6665 -o tid,stat,time,wchan:32
++ tail -n +2
+   6665 Sl   00:00:00 hrtimer_nanosleep
+   6667 Sl   00:00:00 ep_poll
+   6668 Sl   00:00:00 ep_poll
+   6669 Sl   00:00:00 ep_poll
+   6670 Sl   00:00:00 ep_poll
+   6671 Sl   00:00:00 ep_poll
++ for r in $(seq 1 6)
++ timeout -k 2 20 redis-benchmark -p 7777 -n 100000 -c 50 -P 16 -t set -q
++ timeout -k 1 3 redis-cli -p 7777 PING
++ echo 'round 6 alive'
+round 6 alive
++ ps -T -p 6665 -o tid,stat,time,wchan:32
++ tail -n +2
+   6665 Sl   00:00:00 hrtimer_nanosleep
+   6667 Sl   00:00:00 ep_poll
+   6668 Sl   00:00:00 ep_poll
+   6669 Sl   00:00:01 ep_poll
+   6670 Sl   00:00:00 ep_poll
+   6671 Sl   00:00:00 ep_poll
++ echo '== threads after =='
+== threads after ==
++ ps -T -p 6665 -o pid,tid,stat,time,wchan:32
+    PID     TID STAT     TIME WCHAN
+   6665    6665 Sl   00:00:00 hrtimer_nanosleep
+   6665    6667 Sl   00:00:00 ep_poll
+   6665    6668 Sl   00:00:00 ep_poll
+   6665    6669 Sl   00:00:01 ep_poll
+   6665    6670 Sl   00:00:00 ep_poll
+   6665    6671 Sl   00:00:00 ep_poll
++ for t in /proc/$MTPID/task/*
+++ cat /proc/6665/task/6665/wchan
+++ awk '{print $3}' /proc/6665/task/6665/stat
++ echo 'tid 6665 wchan=hrtimer_nanosleep state=S'
+tid 6665 wchan=hrtimer_nanosleep state=S
++ for t in /proc/$MTPID/task/*
+++ cat /proc/6665/task/6667/wchan
+++ awk '{print $3}' /proc/6665/task/6667/stat
++ echo 'tid 6667 wchan=ep_poll state=S'
+tid 6667 wchan=ep_poll state=S
++ for t in /proc/$MTPID/task/*
+++ cat /proc/6665/task/6668/wchan
+++ awk '{print $3}' /proc/6665/task/6668/stat
++ echo 'tid 6668 wchan=ep_poll state=S'
+tid 6668 wchan=ep_poll state=S
++ for t in /proc/$MTPID/task/*
+++ cat /proc/6665/task/6669/wchan
+++ awk '{print $3}' /proc/6665/task/6669/stat
++ echo 'tid 6669 wchan=ep_poll state=S'
+tid 6669 wchan=ep_poll state=S
++ for t in /proc/$MTPID/task/*
+++ cat /proc/6665/task/6670/wchan
+++ awk '{print $3}' /proc/6665/task/6670/stat
++ echo 'tid 6670 wchan=ep_poll state=S'
+tid 6670 wchan=ep_poll state=S
++ for t in /proc/$MTPID/task/*
+++ cat /proc/6665/task/6671/wchan
+++ awk '{print $3}' /proc/6665/task/6671/stat
++ echo 'tid 6671 wchan=ep_poll state=S'
+tid 6671 wchan=ep_poll state=S
++ cat /tmp/d7.log
+ddup-server 0.1.0 (platform: linux, C standard: C23)
+io backend: mt (4 workers)
+listening on port 7777
