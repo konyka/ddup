@@ -150,6 +150,7 @@ struct server {
     buf_pool pool;        /* per-server buffer pool for conn rbuf/out */
     resp_buf prop_buf;    /* reusable propagation serialization buffer */
     repl_info repl;       /* INFO replication snapshot */
+    int backlog_used;     /* a replica attached at least once (Phase 28) */
     io_counters io;       /* always-on IO counters (Phase 27; calloc-zeroed) */
     conn *master_link;    /* outbound link to the master (replica side) */
     uint64_t last_reconnect; /* pal_now_ms of the last connect attempt */
@@ -479,6 +480,12 @@ static void srv_propagate(void *ctx, int db_index, const resp_value *argv,
     if (srv->aof != NULL)
         srv_aof_log(srv, db_index, argv, argc);
 
+    /* no replication sinks: with zero downstream replicas and no replica
+     * ever attached, the backlog can never be resumed from, so skip the
+     * append entirely (Phase 28). A first replica always full-resyncs. */
+    if (srv->repl.connected_slaves == 0 && !srv->backlog_used)
+        return;
+
     /* raw fast path (Phase 27): top-level client commands forward their
      * exact request bytes; the re-serialization below is only for
      * replays, script effects and internal executions */
@@ -588,6 +595,7 @@ static void srv_sync(void *ctx, session *sess)
     if (!c->is_replica) {
         c->is_replica = 1;
         srv->repl.connected_slaves++;
+        srv->backlog_used = 1; /* PSYNC resumes need appends from now on */
     }
 }
 
@@ -630,6 +638,7 @@ static void srv_psync(void *ctx, session *sess, const char *replid,
         if (!c->is_replica) {
             c->is_replica = 1;
             srv->repl.connected_slaves++;
+            srv->backlog_used = 1; /* PSYNC resumes need appends from now on */
         }
         return;
     }
