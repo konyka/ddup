@@ -1,11 +1,11 @@
-+ MTPID=6924
-+ '[' -f /home/runner/work/_temp/garnet-out/GarnetServer.dll ']'
-+ sleep 10
-+ dotnet /home/runner/work/_temp/garnet-out/GarnetServer.dll --bind 127.0.0.1 --port 7772
++ ./build/ddup-server --port 7771 --io select
++ MTPID=7118
 + ./build/ddup-server --port 7774 --io-threads 4
 + ./build/ddup-server --port 7775 --io iouring
-+ ./build/ddup-server --port 7771 --io select
++ '[' -f /home/runner/work/_temp/garnet-out/GarnetServer.dll ']'
++ sleep 10
 + redis-server --port 7773 --save '' --appendonly no --protected-mode no
++ dotnet /home/runner/work/_temp/garnet-out/GarnetServer.dll --bind 127.0.0.1 --port 7772
 + for p in 7771 7773 7774 7775 7772
 + timeout 5 redis-cli -p 7771 PING
 PONG
