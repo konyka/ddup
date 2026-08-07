@@ -88,6 +88,26 @@ typedef struct session {
     void (*deliver)(void *owner, const char *ch, size_t chlen,
                     const char *msg, size_t mlen);
     size_t nsub; /* channels this session is subscribed to */
+    /* shard pub/sub (Redis 7 sharded channels): parallel registry hooks,
+     * same ownership model; deliver_shard writes "smessage" pushes;
+     * spublish_bus propagates a SPUBLISH onto the cluster bus (server) */
+    size_t (*ssubscribe)(void *ctx, struct session *s, const char *ch,
+                         size_t len);
+    size_t (*sunsubscribe)(void *ctx, struct session *s, const char *ch,
+                           size_t len);
+    void (*each_schannel)(void *ctx, struct session *s,
+                          void (*cb)(const char *ch, size_t len, void *arg),
+                          void *arg);
+    long (*spublish)(void *ctx, const char *ch, size_t chlen,
+                     const char *msg, size_t mlen);
+    long (*schannel_nsub)(void *ctx, const char *ch, size_t len);
+    size_t (*shard_channels)(void *ctx, const char *pat, size_t patlen,
+                             resp_buf *out);
+    void (*deliver_shard)(void *owner, const char *ch, size_t chlen,
+                          const char *msg, size_t mlen);
+    void (*spublish_bus)(void *ctx, const char *ch, size_t chlen,
+                         const char *msg, size_t mlen);
+    size_t nssub; /* shard channels this session is subscribed to */
     /* AOF hook (server-owned): called with the session's db index and the
      * original argv of every successful mutating command. NULL = no
      * persistence logging. */

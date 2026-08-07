@@ -227,10 +227,14 @@ enum {
     CMD_SWAPDB,
     CMD_EVAL,
     CMD_EVALSHA,
-    CMD_SCRIPT
+    CMD_SCRIPT,
+    CMD_SSUBSCRIBE,
+    CMD_SUNSUBSCRIBE,
+    CMD_SPUBLISH,
+    CMD_PUBSUB
 };
 
-#define CMD_MAX CMD_SCRIPT
+#define CMD_MAX CMD_PUBSUB
 
 /* Resolve a command name to its stable ID; case-insensitive. */
 uint16_t cmd_resolve(const char *name, size_t len);

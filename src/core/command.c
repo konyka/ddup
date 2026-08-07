@@ -1304,6 +1304,7 @@ static int cluster_keyless_id(uint16_t cmd_id)
     case CMD_PSYNC:      case CMD_AUTH:       case CMD_SELECT:
     case CMD_SWAPDB:
     case CMD_SUBSCRIBE:  case CMD_UNSUBSCRIBE:case CMD_PUBLISH:
+    case CMD_SSUBSCRIBE: case CMD_SUNSUBSCRIBE: case CMD_PUBSUB:
     case CMD_QUIT:       case CMD_MULTI:      case CMD_EXEC:
     case CMD_DISCARD:    case CMD_UNWATCH:    case CMD_DBSIZE:
     case CMD_FLUSHDB:    case CMD_CLUSTER:    case CMD_PERSIST:
@@ -3733,6 +3734,129 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
         return;
     }
 
+    if (cmd_id == CMD_SSUBSCRIBE) {
+        size_t i;
+        if (argc < 2) {
+            wrong_args(out, "ssubscribe");
+            return;
+        }
+        for (i = 1; i < argc; i++) {
+            const char *ch;
+            size_t cl;
+            if (!arg_str(&argv[i], &ch, &cl))
+                goto bad_type;
+            if (s->ssubscribe != NULL) {
+                write_sub_reply(out, "ssubscribe", 10, ch, cl,
+                                (long long)s->ssubscribe(s->ps_ctx, s, ch,
+                                                         cl));
+            } else {
+                s->nssub++; /* no registry (stack session) */
+                write_sub_reply(out, "ssubscribe", 10, ch, cl,
+                                (long long)s->nssub);
+            }
+        }
+        return;
+    }
+
+    if (cmd_id == CMD_SUNSUBSCRIBE) {
+        if (argc > 1) {
+            size_t i;
+            for (i = 1; i < argc; i++) {
+                const char *ch;
+                size_t cl;
+                size_t cnt = 0;
+                if (!arg_str(&argv[i], &ch, &cl))
+                    goto bad_type;
+                if (s->sunsubscribe != NULL)
+                    cnt = s->sunsubscribe(s->ps_ctx, s, ch, cl);
+                else if (s->nssub > 0)
+                    cnt = --s->nssub;
+                write_sub_reply(out, "sunsubscribe", 12, ch, cl,
+                                (long long)cnt);
+            }
+            return;
+        }
+        /* no args: unsubscribe every shard channel */
+        if (s->nssub == 0 || s->each_schannel == NULL) {
+            s->nssub = 0;
+            write_sub_reply(out, "sunsubscribe", 12, NULL, 0, 0);
+            return;
+        }
+        {
+            unsub_ctx u = {0};
+            size_t i;
+            s->each_schannel(s->ps_ctx, s, unsub_collect_cb, &u);
+            for (i = 0; i < u.n; i++) {
+                size_t cnt = s->sunsubscribe(s->ps_ctx, s, u.names[i],
+                                             u.lens[i]);
+                write_sub_reply(out, "sunsubscribe", 12, u.names[i],
+                                u.lens[i], (long long)cnt);
+                free(u.names[i]);
+            }
+            free(u.names);
+            free(u.lens);
+        }
+        return;
+    }
+
+    if (cmd_id == CMD_SPUBLISH) {
+        if (argc != 3) {
+            wrong_args(out, "spublish");
+            return;
+        }
+        const char *ch, *msg;
+        size_t cl, ml;
+        if (!arg_str(&argv[1], &ch, &cl) || !arg_str(&argv[2], &msg, &ml))
+            goto bad_type;
+        {
+            long n = s->spublish != NULL
+                         ? s->spublish(s->ps_ctx, ch, cl, msg, ml)
+                         : 0;
+            /* receivers count is local-only (Redis semantics); the bus
+             * propagation is asynchronous and not counted */
+            if (d->cluster_enabled && s->spublish_bus != NULL)
+                s->spublish_bus(s->ps_ctx, ch, cl, msg, ml);
+            resp_write_integer(out, n);
+        }
+        return;
+    }
+
+    if (cmd_id == CMD_PUBSUB) {
+        const char *sub;
+        size_t sl;
+        if (argc < 2 || !arg_str(&argv[1], &sub, &sl))
+            goto bad_type;
+        if (ci_equal(sub, sl, "SHARDNUMSUB") && argc >= 2) {
+            size_t i;
+            resp_write_array_header(out, (argc - 2) * 2);
+            for (i = 2; i < argc; i++) {
+                const char *ch;
+                size_t cl;
+                if (!arg_str(&argv[i], &ch, &cl))
+                    goto bad_type;
+                resp_write_bulk(out, ch, cl);
+                resp_write_integer(out,
+                                   s->schannel_nsub != NULL
+                                       ? s->schannel_nsub(s->ps_ctx, ch, cl)
+                                       : 0);
+            }
+            return;
+        }
+        if (ci_equal(sub, sl, "SHARDCHANNELS") && (argc == 2 || argc == 3)) {
+            const char *pat = NULL;
+            size_t pl = 0;
+            if (argc == 3 && !arg_str(&argv[2], &pat, &pl))
+                goto bad_type;
+            if (s->shard_channels != NULL)
+                s->shard_channels(s->ps_ctx, pat, pl, out);
+            else
+                resp_write_array_header(out, 0);
+            return;
+        }
+        resp_write_error(out, "ERR Unknown PUBSUB subcommand", 27);
+        return;
+    }
+
     if (cmd_id == CMD_QUIT) {
         if (argc != 1) {
             wrong_args(out, "quit");
@@ -4505,6 +4629,10 @@ static const cmd_entry CMD_TABLE[] = {
     {"eval", CMD_EVAL, 3, -1, 0, CMD_WRITE},
     {"evalsha", CMD_EVALSHA, 3, -1, 0, CMD_WRITE},
     {"script", CMD_SCRIPT, 2, -1, 0, 0},
+    {"ssubscribe", CMD_SSUBSCRIBE, 2, -1, 0, 0},
+    {"sunsubscribe", CMD_SUNSUBSCRIBE, 1, -1, 0, 0},
+    {"spublish", CMD_SPUBLISH, 3, 3, 0, 0},
+    {"pubsub", CMD_PUBSUB, 2, -1, 0, 0},
 };
 
 static const cmd_entry *cmd_table_entry(uint16_t id)
@@ -4748,9 +4876,11 @@ void session_execute_at(session *s, const resp_value *argv, size_t argc,
     }
 
     /* subscribed mode: only a small command set is allowed */
-    if (s->nsub > 0 && name != NULL &&
+    if ((s->nsub > 0 || s->nssub > 0) && name != NULL &&
         cmd_id != CMD_SUBSCRIBE &&
         cmd_id != CMD_UNSUBSCRIBE &&
+        cmd_id != CMD_SSUBSCRIBE &&
+        cmd_id != CMD_SUNSUBSCRIBE &&
         !ci_equal(name, nlen, "PSUBSCRIBE") &&
         !ci_equal(name, nlen, "PUNSUBSCRIBE") &&
         cmd_id != CMD_PING && cmd_id != CMD_QUIT &&

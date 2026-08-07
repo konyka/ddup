@@ -80,6 +80,7 @@ struct conn {
     arena arena;
     session *sess; /* per-connection command context (MULTI/WATCH/pubsub) */
     conn_sub *subs; /* channels this conn is subscribed to */
+    conn_sub *ssubs; /* shard channels (Redis 7 sharded pub/sub) */
     struct server *srv;
     int is_replica;     /* downstream replica (we are the master) */
     int is_master_link; /* our outbound link to the master (we are replica) */
@@ -135,6 +136,7 @@ struct server {
     db *extra_dbs;    /* dbs 1..ndbs-1 */
     int ndbs;         /* total logical databases (default 16) */
     rh_table channels; /* pub/sub: channel -> chan_node list head (8-byte ptr) */
+    rh_table schannels; /* shard channels (Redis 7 sharded pub/sub) */
     aof *aof;          /* NULL when appendonly=no */
     int aof_db_index;  /* last db index written to the AOF (SELECT prefix) */
     const char *requirepass; /* AUTH password (not owned); NULL/"" = off */
@@ -190,49 +192,53 @@ static void server_accept_iocp(server *s, pal_socket_t fd);
 static void bus_conn_free(server *s, bus_conn *bc);
 static void cluster_nodes_save(server *s);
 static int srv_cluster_meet(void *ctx, const char *ip, uint16_t port);
+static void srv_spublish_bus(void *ctx, const char *ch, size_t chlen,
+                             const char *msg, size_t mlen);
 
 /* ------------------------------------------------------------------ */
 /* pub/sub registry + session hooks                                   */
 /* ------------------------------------------------------------------ */
 
-static chan_node *chan_get(server *srv, const char *ch, size_t len)
+static chan_node *chan_get(rh_table *tab, const char *ch, size_t len)
 {
     const char *v;
     size_t vl;
     chan_node *head = NULL;
-    if (rh_get(&srv->channels, ch, len, &v, &vl) && vl == 8)
+    if (rh_get(tab, ch, len, &v, &vl) && vl == 8)
         memcpy(&head, v, 8);
     return head;
 }
 
-static void chan_put(server *srv, const char *ch, size_t len, chan_node *head)
+static void chan_put(rh_table *tab, const char *ch, size_t len,
+                     chan_node *head)
 {
     char b[8];
     if (head == NULL) {
-        rh_del(&srv->channels, ch, len);
+        rh_del(tab, ch, len);
         return;
     }
     memcpy(b, &head, 8);
-    rh_set(&srv->channels, ch, len, b, 8);
+    rh_set(tab, ch, len, b, 8);
 }
 
-static size_t srv_subscribe(void *ctx, session *sess, const char *ch,
-                            size_t len)
+/* shared subscribe/unsubscribe body over (registry table, per-conn list,
+ * session counter) triples */
+static size_t chan_subscribe(rh_table *tab, conn_sub **listp, session *sess,
+                             const char *ch, size_t len, size_t *counter)
 {
-    server *srv = (server *)ctx;
     conn *c = (conn *)sess->owner;
-    chan_node *head = chan_get(srv, ch, len);
+    chan_node *head = chan_get(tab, ch, len);
     chan_node *n;
     conn_sub *cs;
     for (n = head; n != NULL; n = n->next)
         if (n->c == c)
-            return sess->nsub; /* already subscribed */
+            return *counter; /* already subscribed */
     n = (chan_node *)malloc(sizeof(*n));
     if (n == NULL)
-        return sess->nsub;
+        return *counter;
     n->c = c;
     n->next = head;
-    chan_put(srv, ch, len, n);
+    chan_put(tab, ch, len, n);
     cs = (conn_sub *)malloc(sizeof(*cs));
     cs->ch = (char *)malloc(len);
     if (cs == NULL || cs->ch == NULL) {
@@ -241,31 +247,30 @@ static size_t srv_subscribe(void *ctx, session *sess, const char *ch,
     }
     memcpy(cs->ch, ch, len);
     cs->chlen = len;
-    cs->next = c->subs;
-    c->subs = cs;
-    sess->nsub++;
-    return sess->nsub;
+    cs->next = *listp;
+    *listp = cs;
+    (*counter)++;
+    return *counter;
 }
 
-static size_t srv_unsubscribe(void *ctx, session *sess, const char *ch,
-                              size_t len)
+static size_t chan_unsubscribe(rh_table *tab, conn_sub **listp, session *sess,
+                               const char *ch, size_t len, size_t *counter)
 {
-    server *srv = (server *)ctx;
     conn *c = (conn *)sess->owner;
-    chan_node *head = chan_get(srv, ch, len);
+    chan_node *head = chan_get(tab, ch, len);
     chan_node **pp = &head;
     conn_sub **csp;
     while (*pp != NULL && (*pp)->c != c)
         pp = &(*pp)->next;
     if (*pp == NULL)
-        return sess->nsub; /* not subscribed */
+        return *counter; /* not subscribed */
     {
         chan_node *dead = *pp;
         *pp = dead->next;
         free(dead);
     }
-    chan_put(srv, ch, len, head);
-    for (csp = &c->subs; *csp != NULL; csp = &(*csp)->next) {
+    chan_put(tab, ch, len, head);
+    for (csp = listp; *csp != NULL; csp = &(*csp)->next) {
         if ((*csp)->chlen == len && memcmp((*csp)->ch, ch, len) == 0) {
             conn_sub *dead = *csp;
             *csp = dead->next;
@@ -274,9 +279,25 @@ static size_t srv_unsubscribe(void *ctx, session *sess, const char *ch,
             break;
         }
     }
-    if (sess->nsub > 0)
-        sess->nsub--;
-    return sess->nsub;
+    if (*counter > 0)
+        (*counter)--;
+    return *counter;
+}
+
+static size_t srv_subscribe(void *ctx, session *sess, const char *ch,
+                            size_t len)
+{
+    server *srv = (server *)ctx;
+    return chan_subscribe(&srv->channels, &((conn *)sess->owner)->subs,
+                          sess, ch, len, &sess->nsub);
+}
+
+static size_t srv_unsubscribe(void *ctx, session *sess, const char *ch,
+                              size_t len)
+{
+    server *srv = (server *)ctx;
+    return chan_unsubscribe(&srv->channels, &((conn *)sess->owner)->subs,
+                            sess, ch, len, &sess->nsub);
 }
 
 static void srv_each_channel(void *ctx, session *sess,
@@ -294,7 +315,7 @@ static long srv_publish(void *ctx, const char *ch, size_t chlen,
                         const char *msg, size_t mlen)
 {
     server *srv = (server *)ctx;
-    chan_node *n = chan_get(srv, ch, chlen);
+    chan_node *n = chan_get(&srv->channels, ch, chlen);
     long count = 0;
     for (; n != NULL; n = n->next) {
         conn *sc = n->c;
@@ -311,6 +332,136 @@ static void srv_deliver(void *owner, const char *ch, size_t chlen,
     conn *c = (conn *)owner;
     resp_write_array_header(&c->out, 3);
     resp_write_bulk(&c->out, "message", 7);
+    resp_write_bulk(&c->out, ch, chlen);
+    resp_write_bulk(&c->out, msg, mlen);
+}
+
+/* ------------------------------------------------------------------ */
+/* shard channel hooks (Redis 7 sharded pub/sub)                       */
+/* ------------------------------------------------------------------ */
+
+static size_t srv_ssubscribe(void *ctx, session *sess, const char *ch,
+                             size_t len)
+{
+    server *srv = (server *)ctx;
+    return chan_subscribe(&srv->schannels, &((conn *)sess->owner)->ssubs,
+                          sess, ch, len, &sess->nssub);
+}
+
+static size_t srv_sunsubscribe(void *ctx, session *sess, const char *ch,
+                               size_t len)
+{
+    server *srv = (server *)ctx;
+    return chan_unsubscribe(&srv->schannels, &((conn *)sess->owner)->ssubs,
+                            sess, ch, len, &sess->nssub);
+}
+
+static void srv_each_schannel(void *ctx, session *sess,
+                              void (*cb)(const char *ch, size_t len,
+                                         void *arg),
+                              void *arg)
+{
+    conn *c = (conn *)sess->owner;
+    conn_sub *cs;
+    (void)ctx;
+    for (cs = c->ssubs; cs != NULL; cs = cs->next)
+        cb(cs->ch, cs->chlen, arg);
+}
+
+static long srv_spublish(void *ctx, const char *ch, size_t chlen,
+                         const char *msg, size_t mlen)
+{
+    server *srv = (server *)ctx;
+    chan_node *n = chan_get(&srv->schannels, ch, chlen);
+    long count = 0;
+    for (; n != NULL; n = n->next) {
+        conn *sc = n->c;
+        if (sc->sess->deliver_shard != NULL)
+            sc->sess->deliver_shard(sc->sess->owner, ch, chlen, msg, mlen);
+        count++;
+    }
+    return count;
+}
+
+static long srv_schannel_nsub(void *ctx, const char *ch, size_t len)
+{
+    server *srv = (server *)ctx;
+    chan_node *n = chan_get(&srv->schannels, ch, len);
+    long count = 0;
+    for (; n != NULL; n = n->next)
+        count++;
+    return count;
+}
+
+/* minimal glob: * and ? only (documented; no [] classes) */
+static int shard_pat_match(const char *pat, size_t plen, const char *s,
+                           size_t slen)
+{
+    size_t p = 0, i = 0, star = (size_t)-1, mark = 0;
+    while (i < slen) {
+        if (p < plen && (pat[p] == '?' || pat[p] == s[i])) {
+            p++;
+            i++;
+        } else if (p < plen && pat[p] == '*') {
+            star = p++;
+            mark = i;
+        } else if (star != (size_t)-1) {
+            p = star + 1;
+            i = ++mark;
+        } else {
+            return 0;
+        }
+    }
+    while (p < plen && pat[p] == '*')
+        p++;
+    return p == plen;
+}
+
+typedef struct shard_list_ctx {
+    resp_buf *out;
+    const char *pat;
+    size_t patlen;
+    size_t n;
+    int write; /* 0 = count pass, 1 = write pass */
+} shard_list_ctx;
+
+static void shard_chan_cb(const char *ch, size_t len, const char *v,
+                          size_t vlen, void *arg)
+{
+    shard_list_ctx *lc = (shard_list_ctx *)arg;
+    (void)v;
+    (void)vlen;
+    if (lc->pat != NULL && !shard_pat_match(lc->pat, lc->patlen, ch, len))
+        return;
+    if (lc->write)
+        resp_write_bulk(lc->out, ch, len);
+    lc->n++;
+}
+
+static size_t srv_shard_channels(void *ctx, const char *pat, size_t patlen,
+                                 resp_buf *out)
+{
+    server *srv = (server *)ctx;
+    shard_list_ctx lc;
+    lc.out = out;
+    lc.pat = patlen ? pat : NULL;
+    lc.patlen = patlen;
+    lc.n = 0;
+    lc.write = 0;
+    rh_each(&srv->schannels, shard_chan_cb, &lc);
+    resp_write_array_header(out, lc.n);
+    lc.n = 0;
+    lc.write = 1;
+    rh_each(&srv->schannels, shard_chan_cb, &lc);
+    return lc.n;
+}
+
+static void srv_deliver_shard(void *owner, const char *ch, size_t chlen,
+                              const char *msg, size_t mlen)
+{
+    conn *c = (conn *)owner;
+    resp_write_array_header(&c->out, 3);
+    resp_write_bulk(&c->out, "smessage", 8);
     resp_write_bulk(&c->out, ch, chlen);
     resp_write_bulk(&c->out, msg, mlen);
 }
@@ -503,6 +654,14 @@ static conn *conn_create(server *srv, pal_socket_t fd)
     c->sess->unsubscribe = srv_unsubscribe;
     c->sess->each_channel = srv_each_channel;
     c->sess->publish = srv_publish;
+    c->sess->ssubscribe = srv_ssubscribe;
+    c->sess->sunsubscribe = srv_sunsubscribe;
+    c->sess->each_schannel = srv_each_schannel;
+    c->sess->spublish = srv_spublish;
+    c->sess->schannel_nsub = srv_schannel_nsub;
+    c->sess->shard_channels = srv_shard_channels;
+    c->sess->deliver_shard = srv_deliver_shard;
+    c->sess->spublish_bus = srv_spublish_bus;
     c->sess->deliver = srv_deliver;
     c->sess->shutdown_ctx = srv;
     c->sess->request_shutdown = srv_request_shutdown;
@@ -542,6 +701,8 @@ static void conn_free(conn *c)
     /* unsubscribe from every channel before disappearing */
     while (c->subs != NULL)
         srv_unsubscribe(c->srv, c->sess, c->subs->ch, c->subs->chlen);
+    while (c->ssubs != NULL)
+        srv_sunsubscribe(c->srv, c->sess, c->ssubs->ch, c->ssubs->chlen);
     if (c->tls != NULL) {
         pal_tls_shutdown(c->tls);
         pal_tls_free(c->tls);
@@ -898,6 +1059,7 @@ server *server_create_ex(const char *host, uint16_t port, int backend)
             db_init(&s->extra_dbs[i]);
     }
     rh_init(&s->channels);
+    rh_init(&s->schannels);
     if (host != NULL)
         snprintf(s->db.cluster_ip, sizeof(s->db.cluster_ip), "%s", host);
     s->db.cluster_port = s->port;
@@ -1208,6 +1370,7 @@ void server_destroy(server *s)
     if (s->loop != NULL)
         pal_loop_free(s->loop);
     rh_destroy(&s->channels);
+    rh_destroy(&s->schannels);
     aof_close(s->aof);
     repl_backlog_free(&s->backlog);
     resp_buf_free(&s->prop_buf);
@@ -1750,6 +1913,17 @@ static bus_conn *bus_connect(server *s, const char *ip, uint16_t bus_port)
     snprintf(bc->peer_ip, sizeof(bc->peer_ip), "%s", ip);
     bus_conn_add(s, bc);
     return bc;
+}
+
+static void srv_spublish_bus(void *ctx, const char *ch, size_t chlen,
+                             const char *msg, size_t mlen)
+{
+    /* sub-step 2 fills in the PUBLISH frame broadcast */
+    (void)ctx;
+    (void)ch;
+    (void)chlen;
+    (void)msg;
+    (void)mlen;
 }
 
 static int srv_cluster_meet(void *ctx, const char *ip, uint16_t port)
