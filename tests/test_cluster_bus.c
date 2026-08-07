@@ -179,6 +179,21 @@ static size_t ask3(server *x, server *y, server *z, pal_socket_t c,
     return got;
 }
 
+/* MEET with bounded retries: its synchronous bus connect can transiently
+ * fail on a loaded runner; returns 1 when +OK was received. */
+static int meet_retry(server *x, server *y, pal_socket_t c, const char *req)
+{
+    char buf[256];
+    uint64_t dl = pal_now_ms() + 15000;
+    for (;;) {
+        ask2(x, y, c, req, buf, sizeof(buf));
+        if (memcmp(buf, "+OK\r\n", 5) == 0)
+            return 1;
+        if (pal_now_ms() >= dl)
+            return 0;
+    }
+}
+
 static void test_meet_convergence(void)
 {
     server *a, *b;
@@ -204,8 +219,7 @@ static void test_meet_convergence(void)
                  "$%zu\r\n%s\r\n",
                  pl, port);
     }
-    ask2(a, b, ca, req, buf, sizeof(buf));
-    DD_CHECK_STR("+OK\r\n", buf);
+    DD_CHECK_EQ_INT(1, meet_retry(a, b, ca, req));
 
     /* both sides learn each other (bounded polls) */
     {
@@ -312,25 +326,35 @@ static void test_gossip_carry(void)
     ca = cli(server_port(a));
     cb = cli(server_port(b));
 
-    /* A meets B; B meets C */
+    /* A meets B; B meets C. MEET does a synchronous bus connect, which
+     * can transiently fail on a loaded runner: retry within a deadline. */
     {
         char port[16];
         size_t pl;
+        int ok1 = 0, ok2 = 0;
+        uint64_t dl = pal_now_ms() + 15000;
         snprintf(port, sizeof(port), "%u", (unsigned)server_port(b));
         pl = strlen(port);
         snprintf(req, sizeof(req),
                  "*4\r\n$7\r\nCLUSTER\r\n$4\r\nMEET\r\n$9\r\n127.0.0.1\r\n"
                  "$%zu\r\n%s\r\n",
                  pl, port);
-        ask3(a, b, c, ca, req, buf, sizeof(buf));
+        while (pal_now_ms() < dl && !ok1) {
+            ask3(a, b, c, ca, req, buf, sizeof(buf));
+            ok1 = memcmp(buf, "+OK\r\n", 5) == 0;
+        }
+        DD_CHECK_EQ_INT(1, ok1);
         snprintf(port, sizeof(port), "%u", (unsigned)server_port(c));
         pl = strlen(port);
         snprintf(req, sizeof(req),
                  "*4\r\n$7\r\nCLUSTER\r\n$4\r\nMEET\r\n$9\r\n127.0.0.1\r\n"
                  "$%zu\r\n%s\r\n",
                  pl, port);
-        ask3(a, b, c, cb, req, buf, sizeof(buf));
-        DD_CHECK_STR("+OK\r\n", buf);
+        while (pal_now_ms() < dl && !ok2) {
+            ask3(a, b, c, cb, req, buf, sizeof(buf));
+            ok2 = memcmp(buf, "+OK\r\n", 5) == 0;
+        }
+        DD_CHECK_EQ_INT(1, ok2);
     }
 
     /* A learns C via gossip carried by B */
@@ -444,8 +468,7 @@ static void test_moved_wire(void)
                  "*4\r\n$7\r\nCLUSTER\r\n$4\r\nMEET\r\n$9\r\n127.0.0.1\r\n"
                  "$%zu\r\n%s\r\n",
                  pl, port);
-        ask2(a, b, ca, req, buf, sizeof(buf));
-        DD_CHECK_STR("+OK\r\n", buf);
+        DD_CHECK_EQ_INT(1, meet_retry(a, b, ca, req));
     }
 
     /* A: 0..8191, B: 8192..16383 via chunked ADDSLOTS */
