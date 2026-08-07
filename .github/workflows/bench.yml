@@ -42,14 +42,16 @@ jobs:
           dotnet publish main/GarnetServer -c Release -f net10.0 -o "$RUNNER_TEMP/garnet-out" >"$GITHUB_WORKSPACE/garnet-build.log" 2>&1
           tail -5 "$GITHUB_WORKSPACE/garnet-build.log"
 
-      - name: Start all three servers
+      - name: Start all servers
         run: |
           "$GITHUB_WORKSPACE/build/ddup-server" --port 7771 --io select >"$GITHUB_WORKSPACE/ddup.log" 2>&1 &
+          "$GITHUB_WORKSPACE/build/ddup-server" --port 7774 --io-threads 4 >"$GITHUB_WORKSPACE/ddup-mt4.log" 2>&1 &
+          "$GITHUB_WORKSPACE/build/ddup-server" --port 7775 --io iouring >"$GITHUB_WORKSPACE/ddup-uring.log" 2>&1 &
           redis-server --port 7773 --save '' --appendonly no --protected-mode no >"$GITHUB_WORKSPACE/redis.log" 2>&1 &
           if [ -f "$RUNNER_TEMP/garnet-out/GarnetServer.dll" ]; then
             dotnet "$RUNNER_TEMP/garnet-out/GarnetServer.dll" --bind 127.0.0.1 --port 7772 >"$GITHUB_WORKSPACE/garnet.log" 2>&1 &
           fi
-          for p in 7771 7772 7773; do
+          for p in 7771 7772 7773 7774 7775; do
             ok=0
             for i in $(seq 1 60); do
               if (echo > /dev/tcp/127.0.0.1/$p) 2>/dev/null; then ok=1; break; fi
@@ -60,46 +62,64 @@ jobs:
           echo "ddup PING: $(redis-cli -p 7771 PING || echo DOWN)"
           echo "redis PING: $(redis-cli -p 7773 PING || echo DOWN)"
           echo "garnet PING: $(redis-cli -p 7772 PING || echo DOWN)"
+          echo "ddup-mt4 PING: $(redis-cli -p 7774 PING || echo DOWN)"
+          echo "ddup-uring PING: $(redis-cli -p 7775 PING || echo DOWN)"
           true
 
       - name: Measure (same client for all)
         run: |
           set -x
           cd "$GITHUB_WORKSPACE"
-          GARNET_OK=1
-          redis-cli -p 7772 PING >/dev/null 2>&1 || GARNET_OK=0
+          up() { redis-cli -p "$1" PING >/dev/null 2>&1; }
 
-          rps() { # $1=port $2=test
-            timeout 120 redis-benchmark -p "$1" -t "$2" -n 200000 -c 50 -P 16 -q 2>/dev/null \
+          rps() { # $1=port $2=test $3=c $4=P $5=d
+            timeout 120 redis-benchmark -p "$1" -t "$2" -n 200000 -c "$3" -P "$4" -d "$5" -q 2>/dev/null \
               | tr '\r' '\n' | grep -i "^$2: .*requests per second" \
               | sed -E 's/.*: ([0-9.]+) requests per second.*/\1/'
           }
-          median3() { # 3 runs of $1 $2
-            a=$(rps "$1" "$2"); b=$(rps "$1" "$2"); c=$(rps "$1" "$2")
+          median3() { # same args as rps
+            a=$(rps "$@"); b=$(rps "$@"); c=$(rps "$@")
             printf '%s\n%s\n%s\n' "${a:-0}" "${b:-0}" "${c:-0}" | sort -n | sed -n '2p'
           }
           warm() { timeout 60 redis-benchmark -p "$1" -n 10000 -c 50 -P 16 -t set,get -q >/dev/null 2>&1 || true; }
+          cell() { # port c P d -> "set/get" (n/a when the server is down)
+            if up "$1"; then
+              local s g
+              s=$(median3 "$1" set "$2" "$3" "$4")
+              g=$(median3 "$1" get "$2" "$3" "$4")
+              echo "$s / $g"
+            else
+              echo "n/a"
+            fi
+          }
 
           # one raw sample for debugging the parse pipeline
           timeout 120 redis-benchmark -p 7771 -t set -n 1000 -c 50 -P 16 -q > bench-raw-set.txt 2>&1 || true
           cat bench-raw-set.txt
 
-          warm 7771; warm 7773
-          DD_SET=$(median3 7771 set); DD_GET=$(median3 7771 get)
-          RD_SET=$(median3 7773 set); RD_GET=$(median3 7773 get)
-          if [ "$GARNET_OK" = "1" ]; then
-            warm 7772
-            GA_SET=$(median3 7772 set); GA_GET=$(median3 7772 get)
-          else
-            GA_SET="n/a"; GA_GET="n/a"
-          fi
+          warm 7771; warm 7773; warm 7774; warm 7775
+
+          # scenario matrix: c50 P16 (continuity row), c500 P16, c500 P64,
+          # and 1KB values at c50 P16; every cell is "SET / GET", median of 3
+          ROWS=""
+          for sc in "50 16 16" "500 16 16" "500 64 16" "50 16 1024"; do
+            set -- $sc
+            LABEL="c$1 P$2 d$3"
+            DD=$(cell 7771 "$1" "$2" "$3")
+            DU=$(cell 7775 "$1" "$2" "$3")
+            DM=$(cell 7774 "$1" "$2" "$3")
+            GA=$(cell 7772 "$1" "$2" "$3")
+            RD=$(cell 7773 "$1" "$2" "$3")
+            ROWS="$ROWS
+          | $LABEL | $DD | $DU | $DM | $GA | $RD |"
+          done
 
           # internal consistency: ddup-bench against ddup
           DB_SET=$(./build/ddup-bench -p 7771 -n 200000 -c 50 -P 16 -t set | tail -1 | grep -oE '[0-9.]+')
           DB_GET=$(./build/ddup-bench -p 7771 -n 200000 -c 50 -P 16 -t get | tail -1 | grep -oE '[0-9.]+')
 
           GA_VER="unavailable"
-          if [ "$GARNET_OK" = "1" ]; then
+          if up 7772; then
             GA_VER=$(git -C "$RUNNER_TEMP/garnet" rev-parse --short HEAD)
           fi
 
@@ -111,15 +131,14 @@ jobs:
             echo "- ddup commit: $(git rev-parse --short HEAD)"
             echo "- garnet commit: $GA_VER"
             echo "- $(redis-server --version)"
-            echo "- client: redis-benchmark -t set|get -n 200000 -c 50 -P 16, median of 3"
+            echo "- client: redis-benchmark -t set|get -n 200000, median of 3; cells are SET / GET"
+            echo "- ddup rows: st select (7771), st io_uring (7775), mt --io-threads 4 (7774)"
             echo
-            echo "| server | SET req/s | GET req/s |"
-            echo "|--------|-----------|-----------|"
-            echo "| ddup   | $DD_SET | $DD_GET |"
-            echo "| garnet | $GA_SET | $GA_GET |"
-            echo "| redis  | $RD_SET | $RD_GET |"
+            echo "| scenario | ddup-st | ddup-st-uring | ddup-mt4 | garnet | redis |"
+            echo "|----------|---------|---------------|----------|--------|-------|"
+            echo "$ROWS"
             echo
-            echo "internal consistency (ddup-bench on ddup): SET $DB_SET req/s, GET $DB_GET req/s"
+            echo "internal consistency (ddup-bench on ddup-st): SET $DB_SET req/s, GET $DB_GET req/s"
           } > bench-report.md
           cat bench-report.md
 
@@ -144,6 +163,8 @@ jobs:
           fi
           [ -f "$GITHUB_WORKSPACE/build.log" ] && cp "$GITHUB_WORKSPACE/build.log" . || true
           [ -f "$GITHUB_WORKSPACE/ddup.log" ] && cp "$GITHUB_WORKSPACE/ddup.log" . || true
+          [ -f "$GITHUB_WORKSPACE/ddup-mt4.log" ] && cp "$GITHUB_WORKSPACE/ddup-mt4.log" . || true
+          [ -f "$GITHUB_WORKSPACE/ddup-uring.log" ] && cp "$GITHUB_WORKSPACE/ddup-uring.log" . || true
           [ -f "$GITHUB_WORKSPACE/redis.log" ] && cp "$GITHUB_WORKSPACE/redis.log" . || true
           [ -f "$GITHUB_WORKSPACE/garnet.log" ] && cp "$GITHUB_WORKSPACE/garnet.log" . || true
           [ -f "$GITHUB_WORKSPACE/garnet-build.log" ] && cp "$GITHUB_WORKSPACE/garnet-build.log" . || true
