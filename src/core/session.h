@@ -110,10 +110,16 @@ typedef struct session {
     size_t nssub; /* shard channels this session is subscribed to */
     /* AOF hook (server-owned): called with the session's db index and the
      * original argv of every successful mutating command. NULL = no
-     * persistence logging. */
+     * persistence logging. raw/raw_len carry the exact client request
+     * bytes for top-level socket commands (NULL for replays, script
+     * effects and internal executions) so the replication stream can
+     * skip re-serialization. */
     void *aof_ctx;
     void (*aof_log)(void *ctx, int db_index, const resp_value *argv,
-                    size_t argc);
+                    size_t argc, const char *raw, size_t raw_len);
+    /* set by the server's input loop around each top-level command */
+    const char *raw_cmd;
+    size_t raw_cmd_len;
     /* SHUTDOWN hook (server-owned): flips the server shutdown flag. */
     void *shutdown_ctx;
     void (*request_shutdown)(void *ctx);

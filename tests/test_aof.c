@@ -11,9 +11,11 @@
 #define TMP_AOF "test_aof_tmp.aof"
 
 static void test_log(void *ctx, int db_index, const resp_value *argv,
-                     size_t argc)
+                     size_t argc, const char *raw, size_t raw_len)
 {
     (void)db_index;
+    (void)raw;
+    (void)raw_len;
     aof_log_cmd((aof *)ctx, argv, argc);
 }
 

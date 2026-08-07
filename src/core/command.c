@@ -4883,7 +4883,7 @@ static void exec_transaction(session *s, resp_buf *out, uint64_t now_ms)
             for (i = 0; i < s->queue_len; i++)
                 if (!s->queue[i].skip_log)
                     s->aof_log(s->aof_ctx, s->db_index, s->queue[i].argv,
-                               s->queue[i].argc);
+                               s->queue[i].argc, NULL, 0);
     }
     /* queued writes may have crossed maxmemory */
     if (s->d->maxmemory_policy == DB_POLICY_ALLKEYS_LRU)
@@ -5042,7 +5042,8 @@ void session_execute_at(session *s, const resp_value *argv, size_t argc,
     /* AOF: log the original command if it mutated the db (script effects
      * were already logged individually by redis.call) */
     if (s->d->dirty != dirty_before && s->aof_log != NULL && !s->aof_skip)
-        s->aof_log(s->aof_ctx, s->db_index, argv, argc);
+        s->aof_log(s->aof_ctx, s->db_index, argv, argc, s->raw_cmd,
+                   s->raw_cmd_len);
     s->aof_skip = 0;
     /* allkeys-lru eviction runs after write commands (and CONFIG SET) */
     if (s->d->maxmemory_policy == DB_POLICY_ALLKEYS_LRU)

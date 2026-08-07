@@ -338,3 +338,12 @@ send/IOCP post 改为原子 pending 标志去重——worker 每次唤醒 drain 
 唤醒。A/B（c500 P64 SET mt4，同机）：1.10M → 1.70M req/s（+55%）；
 事件搅动 0.30 → 0.096 events/cmd（3.1x 收敛）。低并发（c50 P16）
 基本持平（826k vs 844k，噪声内）：去重只在多生产者并发时有冗余可消。
+
+**opt-2 传播路径 raw 转发**：顶层客户端命令的 AOF/backlog/副本流改为
+直接转发原始请求字节（conn_process_input 把当前命令的原始区间挂在
+session 上，aof_log 钩子加 raw 参数；MULTI 重放、Lua 效果命令与内部
+执行仍走原来的规范化序列化，AOF 始终规范化）。交错 A/B（c50 P16，
+before/after ×3）：SET 881k→902k（+2.4%，接近噪声但方向一致）；
+GET 1049k→1008k（不经过传播路径，差异为噪声）。端到端收益被
+loopback 内核时间摊薄——如实记录为边际收益，保留（结构更简单、
+零行为变化）。

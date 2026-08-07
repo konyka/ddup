@@ -264,7 +264,7 @@ static int lua_redis_generic(lua_State *L, int raise_error)
     /* effects replication: log the effect command itself (AOF/backlog/
      * downstream replicas) — never the script */
     if (s->d->dirty != dirty_before && s->aof_log != NULL)
-        s->aof_log(s->aof_ctx, s->db_index, argv, (size_t)argc);
+        s->aof_log(s->aof_ctx, s->db_index, argv, (size_t)argc, NULL, 0);
 
     /* parse the single reply the dispatch produced */
     arena_init(&a, 4096);

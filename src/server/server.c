@@ -472,12 +472,31 @@ static void srv_deliver_shard(void *owner, const char *ch, size_t chlen,
  * serialize once, then fan out to AOF (if any), the replication backlog
  * and all downstream replica conns (flushed at end of run_once). */
 static void srv_propagate(void *ctx, int db_index, const resp_value *argv,
-                          size_t argc)
+                          size_t argc, const char *raw, size_t raw_len)
 {
     server *srv = (server *)ctx;
     size_t i;
     if (srv->aof != NULL)
         srv_aof_log(srv, db_index, argv, argc);
+
+    /* raw fast path (Phase 27): top-level client commands forward their
+     * exact request bytes; the re-serialization below is only for
+     * replays, script effects and internal executions */
+    if (raw != NULL) {
+        repl_backlog_append(&srv->backlog, raw, raw_len);
+        srv->repl.offset = srv->backlog.offset;
+        if (srv->repl.connected_slaves == 0)
+            return;
+        for (i = 0; i < srv->nconns; i++) {
+            conn *rc = srv->conns[i];
+            if (rc->is_replica) {
+                resp_buf_reserve(&rc->out, raw_len);
+                memcpy(rc->out.data + rc->out.len, raw, raw_len);
+                rc->out.len += raw_len;
+            }
+        }
+        return;
+    }
 
     srv->prop_buf.len = 0;
     resp_write_array_header(&srv->prop_buf, argc);
@@ -2301,7 +2320,11 @@ static int conn_process_input(server *s, conn *c)
                 continue; /* routed / handled by the mt layer */
             }
         }
+        c->sess->raw_cmd = c->rbuf + off;
+        c->sess->raw_cmd_len = (size_t)used;
         session_execute(c->sess, v.items, v.count, &c->out);
+        c->sess->raw_cmd = NULL;
+        c->sess->raw_cmd_len = 0;
         arena_reset(&c->arena);
         off += (size_t)used;
     }
