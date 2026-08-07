@@ -143,6 +143,10 @@
     （node_timeout*2）、master 多数派提升 FAIL + FAIL 帧广播（RCM2
     type 5 / redbus type 3）、failover 门控于 FAIL、2 主死锁记录在案
     （Phase 26）
+  - [x] 性能剖析与优化设施：场景矩阵（st/mt × c50-c1000 × P1-P64 ×
+    16B/1KB + ping）、常开 IO 计数器（INFO # IO）、WPR 采样剖析；
+    mt 唤醒去重（c500 P64 mt4 +55%）、传播 raw 转发、SET 单探测
+    （进程内 +10.5%）（Phase 27）
   - [ ] 范围化排除（记录在案，不实施）：
     - 分层存储（热/冷数据落盘）：超出"内存缓存存储"定位
     - mt 模式的复制/集群适配：见 Phase 15 说明
