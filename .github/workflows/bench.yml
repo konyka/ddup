@@ -117,6 +117,10 @@ jobs:
                 MTPID=$(pgrep -f "ddup-server --port $1" | head -1)
                 if [ -n "$MTPID" ]; then
                   ps -T -p "$MTPID" -o tid,stat,time,wchan:32 | tail -n +2
+                  grep -E "VmSize|VmRSS|FDSize" /proc/$MTPID/status
+                  echo "open fds: $(ls /proc/$MTPID/fd | wc -l)"
+                  echo "estab conns: $(ss -tn state established 2>/dev/null | grep -c ":$1" || true)"
+                  timeout 5 redis-cli -p "$1" INFO 2>/dev/null | grep -E "^used_memory:|^dbsize:|^io_" || echo "INFO failed"
                   echo 0 | sudo tee /proc/sys/kernel/yama/ptrace_scope >/dev/null 2>&1 || true
                   timeout 60 gdb -p "$MTPID" -batch -ex "set pagination off" -ex "thread apply all bt" 2>&1 | head -120 || echo "gdb failed"
                 fi
