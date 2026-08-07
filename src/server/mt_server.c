@@ -1902,11 +1902,17 @@ static void mt_kick(worker *w)
 static void mt_push_task(worker *self, mt_spsc *q, mt_task *t,
                          worker *target)
 {
+    int spins = 0;
     int pr = mt_spsc_push(q, t);
     while (pr < 0) {
         if (self != NULL) {
             mt_drain_completions(self);
             mt_drain_inbox(self);
+            /* a spinning producer starves the (descheduled) consumer on
+             * few-core hosts and can livelock the pool into a wedge;
+             * after a bounded spin, yield so the target can drain */
+            if (++spins > 64)
+                pal_sleep_ms(1);
         } else {
             pal_sleep_ms(1);
         }
