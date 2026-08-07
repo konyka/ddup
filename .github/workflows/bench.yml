@@ -96,6 +96,11 @@ jobs:
               g=$(median3 "$1" get "$2" "$3" "$4")
               echo "$s / $g"
             else
+              {
+                echo "=== n/a diag port $1 ($(date -u +%H:%M:%S)) =="
+                ps aux | grep "ddup-server\|GarnetServer\|redis-server" | grep -v grep || echo "no server processes"
+                timeout 5 redis-cli -p "$1" PING && echo "ping OK" || echo "ping FAILED"
+              } >> bench-diag.txt
               echo "n/a"
             fi
           }
@@ -176,6 +181,7 @@ jobs:
           [ -f "$GITHUB_WORKSPACE/garnet.log" ] && cp "$GITHUB_WORKSPACE/garnet.log" . || true
           [ -f "$GITHUB_WORKSPACE/garnet-build.log" ] && cp "$GITHUB_WORKSPACE/garnet-build.log" . || true
           [ -f "$GITHUB_WORKSPACE/bench-raw-set.txt" ] && cp "$GITHUB_WORKSPACE/bench-raw-set.txt" . || true
+          [ -f "$GITHUB_WORKSPACE/bench-diag.txt" ] && cp "$GITHUB_WORKSPACE/bench-diag.txt" . || true
           git config user.email ci@ddup.local
           git config user.name ddup-ci
           git add -A
