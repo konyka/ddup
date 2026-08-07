@@ -140,35 +140,29 @@ static void build_gossip_entry(char *p, const cluster_node *n)
     /* pport @100, notused1 @102: zero */
 }
 
-void redbus_build_frame(struct db *d, int type, resp_buf *out)
+/* the node whose identity goes into the frame header: myself, falling
+ * back to the first known node (pre-handshake corner) */
+static const cluster_node *find_sender(struct db *d)
 {
-    const cluster_node *sn = NULL;
-    size_t start, total;
-    char *p, *cp;
-    uint16_t gc = 0;
     int i;
-
     for (i = 0; i < d->nnodes; i++)
-        if (d->nodes[i].flags & CLUSTER_NODE_MYSELF) {
-            sn = &d->nodes[i];
-            break;
-        }
-    if (sn == NULL && d->nnodes > 0)
-        sn = &d->nodes[0];
-    if (sn == NULL)
-        return;
+        if (d->nodes[i].flags & CLUSTER_NODE_MYSELF)
+            return &d->nodes[i];
+    return d->nnodes > 0 ? &d->nodes[0] : NULL;
+}
 
-    start = out->len;
-    resp_buf_reserve(out, REDBUS_HDR_LEN +
-                             REDBUS_GOSSIP_MAX * REDBUS_GOSSIP_LEN + 16);
-    p = out->data + out->len;
+/* write the 2256-byte header (count left 0, totlen patched by caller);
+ * returns the payload cursor past the header, NULL without a sender */
+static char *write_header(struct db *d, const cluster_node *sn, int type,
+                          char *p)
+{
     memset(p, 0, REDBUS_HDR_LEN);
     memcpy(p, "RCmb", 4);
-    /* totlen patched below */
+    /* totlen patched by caller */
     put16be(p + 8, 1); /* protocol version 1 */
     put16be(p + 10, sn->port);
     put16be(p + 12, (uint16_t)type);
-    /* count patched below */
+    /* count patched by caller (0 default from memset) */
     put64be(p + 16, d->cluster_current_epoch);
     put64be(p + 24, sn->epoch);
     put64be(p + 32, 0); /* replication offset: unused on the bus */
@@ -181,7 +175,25 @@ void redbus_build_frame(struct db *d, int type, resp_buf *out)
     put16be(p + 2250, flags_to_wire(sn));
     p[2252] = 0; /* CLUSTER_OK */
     /* mflags[3] @2253: zero */
-    cp = p + REDBUS_HDR_LEN;
+    return p + REDBUS_HDR_LEN;
+}
+
+void redbus_build_frame(struct db *d, int type, resp_buf *out)
+{
+    const cluster_node *sn = find_sender(d);
+    size_t start, total;
+    char *p, *cp;
+    uint16_t gc = 0;
+    int i;
+
+    if (sn == NULL)
+        return;
+
+    start = out->len;
+    resp_buf_reserve(out, REDBUS_HDR_LEN +
+                             REDBUS_GOSSIP_MAX * REDBUS_GOSSIP_LEN + 16);
+    p = out->data + out->len;
+    cp = write_header(d, sn, type, p);
 
     /* FAILOVER_AUTH_REQUEST/ACK are header-only messages in Redis
      * (receivers reject them with gossip attached) */
@@ -195,6 +207,32 @@ void redbus_build_frame(struct db *d, int type, resp_buf *out)
             gc++;
         }
     put16be(p + 14, gc);
+
+    total = (size_t)(cp - p);
+    out->len = start + total;
+    put32be(out->data + start + 4, (uint32_t)total);
+}
+
+void redbus_build_publish(struct db *d, int type, const char *ch,
+                          size_t chlen, const char *msg, size_t mlen,
+                          resp_buf *out)
+{
+    const cluster_node *sn = find_sender(d);
+    size_t start, total;
+    char *p, *cp;
+
+    if (sn == NULL)
+        return;
+
+    start = out->len;
+    resp_buf_reserve(out, REDBUS_HDR_LEN + 8 + chlen + mlen);
+    p = out->data + out->len;
+    cp = write_header(d, sn, type, p); /* count stays 0: no gossip */
+    put32be(cp, (uint32_t)chlen);
+    put32be(cp + 4, (uint32_t)mlen);
+    memcpy(cp + 8, ch, chlen);
+    memcpy(cp + 8 + chlen, msg, mlen);
+    cp += 8 + chlen + mlen;
 
     total = (size_t)(cp - p);
     out->len = start + total;

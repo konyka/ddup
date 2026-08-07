@@ -597,6 +597,25 @@ void cluster_bus_build_frame(struct db *d, int type, resp_buf *out)
     put32(out->data + start + 4, (uint32_t)total);
 }
 
+void cluster_bus_build_publish(struct db *d, const char *ch, size_t chlen,
+                               const char *msg, size_t mlen, resp_buf *out)
+{
+    size_t start = out->len;
+    size_t total = 10 + 4 + chlen + 4 + mlen;
+    char *p;
+    (void)d; /* publish frames carry no node record */
+    resp_buf_reserve(out, total);
+    p = out->data + start;
+    memcpy(p, CLUSTER_BUS_MAGIC_V2, 4);
+    put32(p + 4, (uint32_t)total);
+    put16(p + 8, (uint16_t)CLUSTER_MSG_PUBLISH);
+    put32(p + 10, (uint32_t)chlen);
+    memcpy(p + 14, ch, chlen);
+    put32(p + 14 + chlen, (uint32_t)mlen);
+    memcpy(p + 18 + chlen, msg, mlen);
+    out->len = start + total;
+}
+
 int cluster_bus_handle_frame(struct db *d, const char *frame, size_t len,
                              resp_buf *reply_out, uint64_t now_ms)
 {

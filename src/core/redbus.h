@@ -31,6 +31,7 @@
 #define REDBUS_TYPE_AUTH_REQUEST 5 /* Redis 7.0 numbering (verified) */
 #define REDBUS_TYPE_AUTH_ACK 6
 #define REDBUS_TYPE_UPDATE 7
+#define REDBUS_TYPE_PUBLISHSHARD 10 /* Redis 7.0 numbering (verified) */
 
 /* redis node flag bits (subset we map; rest tolerated) */
 #define REDBUS_NODE_MASTER 1
@@ -71,5 +72,12 @@ int redbus_handle_frame(struct db *d, const char *frame, size_t len,
  * election epoch. */
 void redbus_build_auth_request(struct db *d, uint64_t election_epoch,
                                resp_buf *out);
+
+/* Build a PUBLISH (type 4) or PUBLISHSHARD (type 10) frame: full header
+ * with count=0 and no gossip entries, then the clusterMsgDataPublish
+ * payload u32BE channel_len, u32BE message_len, channel, message. */
+void redbus_build_publish(struct db *d, int type, const char *ch,
+                          size_t chlen, const char *msg, size_t mlen,
+                          resp_buf *out);
 
 #endif /* DDUP_REDBUS_H */

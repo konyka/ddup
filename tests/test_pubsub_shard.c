@@ -224,11 +224,111 @@ static void test_spublish_ownership(void)
     (void)i;
 }
 
+/* ------------------------------------------------------------------ */
+/* bus propagation: SPUBLISH on A reaches shard subscribers on B       */
+/* ------------------------------------------------------------------ */
+
+static void pump2(server *x, server *y)
+{
+    server_run_once(x, 5);
+    server_run_once(y, 5);
+}
+
+/* rt() over a two-server pair so bus frames flow both ways */
+static int rt2(server *x, server *y, pal_socket_t c, const char *req,
+               const char *want, char *buf, size_t cap)
+{
+    size_t got = 0;
+    uint64_t dl = pal_now_ms() + 10000;
+    DD_CHECK_EQ_INT((long long)strlen(req),
+                    (long long)pal_send(c, req, strlen(req)));
+    while (pal_now_ms() < dl) {
+        ptrdiff_t n;
+        pump2(x, y);
+        n = pal_recv(c, buf + got, cap - got - 1);
+        if (n > 0) {
+            got += (size_t)n;
+            buf[got] = '\0';
+            if (strstr(buf, want) != NULL)
+                return 1;
+        }
+    }
+    buf[got] = '\0';
+    fprintf(stderr, "rt2 timeout: want [%s] got [%s]\n", want, buf);
+    return 0;
+}
+
+static void spublish_bus_case(int proto)
+{
+    server *a, *b;
+    pal_socket_t ca, cb;
+    char buf[4096], req[256], port[16], slotstr[16];
+    uint32_t slot;
+
+    DD_CHECK_EQ_INT(0, pal_socket_init());
+    a = server_create_ex("127.0.0.1", 0, SERVER_BACKEND_SELECT);
+    b = server_create_ex("127.0.0.1", 0, SERVER_BACKEND_SELECT);
+    DD_CHECK(a != NULL && b != NULL);
+    server_enable_cluster(a, TEST_ID);
+    server_enable_cluster(b, OTHER_ID);
+    server_set_bus_protocol(a, proto);
+    server_set_bus_protocol(b, proto);
+    ca = cli(server_port(a));
+    cb = cli(server_port(b));
+
+    /* A meets B (opens A's outbound bus conn) */
+    snprintf(port, sizeof(port), "%u", (unsigned)server_port(b));
+    snprintf(req, sizeof(req),
+             "*4\r\n$7\r\nCLUSTER\r\n$4\r\nMEET\r\n$9\r\n127.0.0.1\r\n"
+             "$%zu\r\n%s\r\n",
+             strlen(port), port);
+    DD_CHECK(rt2(a, b, ca, req, "+OK\r\n", buf, sizeof(buf)));
+
+    /* A owns the channel's slot so SPUBLISH passes the ownership check */
+    slot = hash_slot("busch", 5);
+    snprintf(slotstr, sizeof(slotstr), "%u", (unsigned)slot);
+    snprintf(req, sizeof(req),
+             "*3\r\n$7\r\nCLUSTER\r\n$8\r\nADDSLOTS\r\n$%zu\r\n%s\r\n",
+             strlen(slotstr), slotstr);
+    DD_CHECK(rt2(a, b, ca, req, "+OK\r\n", buf, sizeof(buf)));
+
+    /* B subscribes; A publishes (no local receivers on A) */
+    DD_CHECK(rt2(a, b, cb, "*2\r\n$10\r\nSSUBSCRIBE\r\n$5\r\nbusch\r\n",
+                 "*3\r\n$10\r\nssubscribe\r\n$5\r\nbusch\r\n:1\r\n", buf,
+                 sizeof(buf)));
+    DD_CHECK(rt2(a, b, ca,
+                 "*3\r\n$8\r\nSPUBLISH\r\n$5\r\nbusch\r\n$5\r\nhello\r\n",
+                 ":0\r\n", buf, sizeof(buf)));
+
+    /* the bus frame delivers an smessage push to B's subscriber */
+    DD_CHECK(rt2(a, b, cb, "",
+                 "*3\r\n$8\r\nsmessage\r\n$5\r\nbusch\r\n$5\r\nhello\r\n",
+                 buf, sizeof(buf)));
+
+    pal_close(cb);
+    pal_close(ca);
+    server_destroy(b);
+    server_destroy(a);
+    pal_socket_cleanup();
+}
+
+static void test_spublish_bus_ddup(void)
+{
+    spublish_bus_case(SERVER_BUS_PROTOCOL_DDUP);
+}
+
+static void test_spublish_bus_redis(void)
+{
+    spublish_bus_case(SERVER_BUS_PROTOCOL_REDIS);
+}
+
 int main(void)
 {
     setvbuf(stdout, NULL, _IONBF, 0);
     DD_RUN(test_local_shard_pubsub);
     DD_RUN(test_shard_multi_and_introspection);
     DD_RUN(test_spublish_ownership);
+    DD_RUN(test_spublish_bus_ddup);
+    DD_RUN(test_spublish_bus_redis);
     return DD_TEST_SUMMARY();
 }

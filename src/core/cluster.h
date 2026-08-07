@@ -96,6 +96,7 @@ int cluster_nodes_parse_line(struct db *d, const char *line, size_t len);
 #define CLUSTER_MSG_PING 1
 #define CLUSTER_MSG_PONG 2
 #define CLUSTER_MSG_MEET 3
+#define CLUSTER_MSG_PUBLISH 4
 #define CLUSTER_MSG_MAX 16384
 
 /* Wire magic: "RCMB" = v1 (no role/master_id/epoch fields; senders are
@@ -113,5 +114,12 @@ void cluster_bus_build_frame(struct db *d, int type, resp_buf *out);
  * success, -1 on malformed input. */
 int cluster_bus_handle_frame(struct db *d, const char *frame, size_t len,
                              resp_buf *reply_out, uint64_t now_ms);
+
+/* Build a PUBLISH frame (shard channel fan-out): [RCM2][totlen u32le]
+ * [type u16le=4][u32le chlen][channel][u32le msglen][message]. These
+ * frames carry no node record; receivers deliver to local shard
+ * subscribers and never feed them to cluster_bus_handle_frame. */
+void cluster_bus_build_publish(struct db *d, const char *ch, size_t chlen,
+                               const char *msg, size_t mlen, resp_buf *out);
 
 #endif /* DDUP_CLUSTER_H */

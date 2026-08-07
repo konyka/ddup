@@ -1918,12 +1918,83 @@ static bus_conn *bus_connect(server *s, const char *ip, uint16_t bus_port)
 static void srv_spublish_bus(void *ctx, const char *ch, size_t chlen,
                              const char *msg, size_t mlen)
 {
-    /* sub-step 2 fills in the PUBLISH frame broadcast */
-    (void)ctx;
-    (void)ch;
-    (void)chlen;
-    (void)msg;
-    (void)mlen;
+    server *s = (server *)ctx;
+    bus_conn *bc;
+    /* Broadcast to every bus peer. Redis propagates a shard publish only
+     * within the channel's shard; ddup broadcasts to all peers instead
+     * (documented divergence). Frames that would exceed the bus size cap
+     * are dropped (local delivery already happened regardless). */
+    if (chlen + mlen + REDBUS_HDR_LEN + 8 > CLUSTER_MSG_MAX)
+        return;
+    for (bc = s->bus; bc != NULL; bc = bc->next) {
+        if (s->bus_protocol == SERVER_BUS_PROTOCOL_REDIS)
+            redbus_build_publish(&s->db, REDBUS_TYPE_PUBLISHSHARD, ch, chlen,
+                                 msg, mlen, &bc->out);
+        else
+            cluster_bus_build_publish(&s->db, ch, chlen, msg, mlen, &bc->out);
+        bus_flush(s, bc);
+    }
+}
+
+/* Intercept a bus PUBLISH frame before the node-table handlers: deliver
+ * to local subscribers directly. Returns 1 when the frame was consumed
+ * (delivered, or dropped as malformed), 0 when it is not a publish
+ * frame. redbus type 4 feeds regular subscribers ("message"), redbus
+ * type 10 and RCM2 CLUSTER_MSG_PUBLISH feed shard ones ("smessage"). */
+static int bus_try_publish(server *s, const char *frame, uint32_t totlen)
+{
+    if (s->bus_protocol == SERVER_BUS_PROTOCOL_REDIS) {
+        uint16_t wt;
+        uint32_t cl, ml;
+        if (totlen < 14)
+            return 0;
+        wt = (uint16_t)(((uint16_t)(uint8_t)frame[12] << 8) |
+                        (uint16_t)(uint8_t)frame[13]);
+        if (wt != REDBUS_TYPE_PUBLISH && wt != REDBUS_TYPE_PUBLISHSHARD)
+            return 0;
+        if (totlen < REDBUS_HDR_LEN + 8)
+            return 1; /* malformed: drop */
+        cl = ((uint32_t)(uint8_t)frame[REDBUS_HDR_LEN] << 24) |
+             ((uint32_t)(uint8_t)frame[REDBUS_HDR_LEN + 1] << 16) |
+             ((uint32_t)(uint8_t)frame[REDBUS_HDR_LEN + 2] << 8) |
+             (uint32_t)(uint8_t)frame[REDBUS_HDR_LEN + 3];
+        ml = ((uint32_t)(uint8_t)frame[REDBUS_HDR_LEN + 4] << 24) |
+             ((uint32_t)(uint8_t)frame[REDBUS_HDR_LEN + 5] << 16) |
+             ((uint32_t)(uint8_t)frame[REDBUS_HDR_LEN + 6] << 8) |
+             (uint32_t)(uint8_t)frame[REDBUS_HDR_LEN + 7];
+        if ((uint64_t)REDBUS_HDR_LEN + 8 + cl + ml > totlen)
+            return 1; /* malformed: drop */
+        if (wt == REDBUS_TYPE_PUBLISHSHARD)
+            srv_spublish(s, frame + REDBUS_HDR_LEN + 8, cl,
+                         frame + REDBUS_HDR_LEN + 8 + cl, ml);
+        else
+            srv_publish(s, frame + REDBUS_HDR_LEN + 8, cl,
+                        frame + REDBUS_HDR_LEN + 8 + cl, ml);
+        return 1;
+    }
+    {
+        uint16_t wt = (uint16_t)((uint16_t)(uint8_t)frame[8] |
+                                 ((uint16_t)(uint8_t)frame[9] << 8));
+        uint32_t cl, ml;
+        if (wt != CLUSTER_MSG_PUBLISH)
+            return 0;
+        if (totlen < 18)
+            return 1; /* malformed: drop */
+        cl = (uint32_t)(uint8_t)frame[10] |
+             ((uint32_t)(uint8_t)frame[11] << 8) |
+             ((uint32_t)(uint8_t)frame[12] << 16) |
+             ((uint32_t)(uint8_t)frame[13] << 24);
+        if ((uint64_t)18 + cl > totlen)
+            return 1; /* malformed: drop */
+        ml = (uint32_t)(uint8_t)frame[14 + cl] |
+             ((uint32_t)(uint8_t)frame[15 + cl] << 8) |
+             ((uint32_t)(uint8_t)frame[16 + cl] << 16) |
+             ((uint32_t)(uint8_t)frame[17 + cl] << 24);
+        if ((uint64_t)18 + cl + ml > totlen)
+            return 1; /* malformed: drop */
+        srv_spublish(s, frame + 14, cl, frame + 18 + cl, ml);
+        return 1;
+    }
 }
 
 static int srv_cluster_meet(void *ctx, const char *ip, uint16_t port)
@@ -1976,6 +2047,11 @@ static void bus_service(server *s, bus_conn *bc, int writable)
         }
         if (bc->rlen < totlen)
             break; /* incomplete frame */
+        if (bus_try_publish(s, bc->rbuf, totlen)) {
+            memmove(bc->rbuf, bc->rbuf + totlen, bc->rlen - totlen);
+            bc->rlen -= totlen;
+            continue;
+        }
         if (s->bus_protocol == SERVER_BUS_PROTOCOL_REDIS)
             rc = redbus_handle_frame(&s->db, bc->rbuf, totlen, &bc->out,
                                      pal_wall_ms(),
