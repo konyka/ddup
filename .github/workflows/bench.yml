@@ -117,7 +117,8 @@ jobs:
                 MTPID=$(pgrep -f "ddup-server --port $1" | head -1)
                 if [ -n "$MTPID" ]; then
                   ps -T -p "$MTPID" -o tid,stat,time,wchan:32 | tail -n +2
-                  timeout 30 gdb -p "$MTPID" -batch -ex "thread apply all bt" 2>/dev/null | grep -E "^Thread|#[0-9]+ " | head -60 || echo "gdb failed"
+                  echo 0 | sudo tee /proc/sys/kernel/yama/ptrace_scope >/dev/null 2>&1 || true
+                  timeout 60 gdb -p "$MTPID" -batch -ex "set pagination off" -ex "thread apply all bt" 2>&1 | head -120 || echo "gdb failed"
                 fi
                 timeout 5 redis-cli -p "$1" PING && echo "ping OK" || echo "ping FAILED"
               } >> bench-diag.txt
