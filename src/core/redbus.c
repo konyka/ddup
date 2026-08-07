@@ -183,14 +183,17 @@ void redbus_build_frame(struct db *d, int type, resp_buf *out)
     /* mflags[3] @2253: zero */
     cp = p + REDBUS_HDR_LEN;
 
-    for (i = 0; i < d->nnodes && gc < REDBUS_GOSSIP_MAX; i++) {
-        const cluster_node *n = &d->nodes[i];
-        if (n == sn)
-            continue;
-        build_gossip_entry(cp, n);
-        cp += REDBUS_GOSSIP_LEN;
-        gc++;
-    }
+    /* FAILOVER_AUTH_REQUEST/ACK are header-only messages in Redis
+     * (receivers reject them with gossip attached) */
+    if (type != REDBUS_TYPE_AUTH_REQUEST && type != REDBUS_TYPE_AUTH_ACK)
+        for (i = 0; i < d->nnodes && gc < REDBUS_GOSSIP_MAX; i++) {
+            const cluster_node *n = &d->nodes[i];
+            if (n == sn)
+                continue;
+            build_gossip_entry(cp, n);
+            cp += REDBUS_GOSSIP_LEN;
+            gc++;
+        }
     put16be(p + 14, gc);
 
     total = (size_t)(cp - p);

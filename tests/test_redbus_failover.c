@@ -15,6 +15,7 @@
 
 static void test_vote_grant_matrix(void);
 static void test_ack_counting(void);
+static void test_auth_frames_are_header_only(void);
 
 static uint16_t get16be_inline(const char *p)
 {
@@ -119,6 +120,7 @@ int main(void)
     setvbuf(stdout, NULL, _IONBF, 0);
     DD_RUN(test_vote_grant_matrix);
     DD_RUN(test_ack_counting);
+    DD_RUN(test_auth_frames_are_header_only);
     return DD_TEST_SUMMARY();
 }
 
@@ -265,5 +267,39 @@ static void test_ack_counting(void)
     DD_CHECK_EQ_INT(0, d.failover_ack_count);
 
     resp_buf_free(&reply);
+    db_destroy(&d);
+}
+
+static void test_auth_frames_are_header_only(void)
+{
+    db d;
+    resp_buf out;
+    db_init(&d);
+    resp_buf_init(&out);
+    mk_cluster(&d);
+    /* become the dead master's slave and request votes */
+    {
+        cluster_node *me = cluster_myself(&d);
+        me->flags &= ~(uint32_t)CLUSTER_NODE_MASTER;
+        me->flags |= CLUSTER_NODE_SLAVE;
+        snprintf(me->master_id, sizeof(me->master_id), "%s", DEAD);
+    }
+    d.failover_req_epoch = 11;
+    redbus_build_auth_request(&d, 11, &out);
+    DD_CHECK_EQ_INT(REDBUS_HDR_LEN, (long long)out.len);
+    DD_CHECK_EQ_INT(0, (out.data[14] << 8) | (uint8_t)out.data[15]);
+    DD_CHECK_EQ_INT(REDBUS_TYPE_AUTH_REQUEST,
+                    (out.data[12] << 8) | (uint8_t)out.data[13]);
+    /* the request aliases the dead master's slots (100-199) and epoch */
+    DD_CHECK(out.data[80 + 100 / 8] & (1 << (100 % 8)));
+    DD_CHECK(!(out.data[80] & 1)); /* slot 0 is NOT claimed */
+    {
+        uint64_t ce = 0;
+        int i;
+        for (i = 0; i < 8; i++)
+            ce = (ce << 8) | (uint64_t)(uint8_t)out.data[24 + i];
+        DD_CHECK_EQ_INT(5, (long long)ce); /* dead master's configEpoch */
+    }
+    resp_buf_free(&out);
     db_destroy(&d);
 }
