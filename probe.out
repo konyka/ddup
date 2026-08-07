@@ -1,3 +1,9 @@
++ uname -a
+Linux runnervmvrwv9 6.17.0-1020-azure #20~24.04.1-Ubuntu SMP Fri Jun 19 20:09:14 UTC 2026 x86_64 x86_64 x86_64 GNU/Linux
++ sysctl kernel.io_uring_disabled
+kernel.io_uring_disabled = 0
++ ulimit -l
+8192
 + ./build/ddup-server --port 7771 --io select
 + ./build/ddup-server --port 7774 --io-threads 4
 + sleep 3
@@ -42,16 +48,16 @@ listening on port 7775
 == stress 7771 ==
 + timeout 20 redis-benchmark -p 7771 -n 2000 -c 50 -P 16 -t set,get -q
 WARNING: Could not fetch server CONFIG
- SET: rps=0.0 (overall: -nan) avg_msec=-nan (overall: -nan)                                                           SET: 666666.69 requests per second, p50=0.975 msec
- GET: 666666.69 requests per second, p50=0.551 msec
+ SET: rps=0.0 (overall: 0.0) avg_msec=-nan (overall: -nan)                                                          SET: 499999.97 requests per second, p50=0.919 msec
+ GET: 666666.69 requests per second, p50=0.735 msec
 
 + for p in 7771 7774 7775
 + echo '== stress 7774 =='
 == stress 7774 ==
 + timeout 20 redis-benchmark -p 7774 -n 2000 -c 50 -P 16 -t set,get -q
 WARNING: Could not fetch server CONFIG
- SET: rps=0.0 (overall: 0.0) avg_msec=-nan (overall: -nan)                                                          SET: 499999.97 requests per second, p50=1.063 msec
- GET: 666666.69 requests per second, p50=0.575 msec
+ SET: rps=0.0 (overall: 0.0) avg_msec=-nan (overall: -nan)                                                          SET: 499999.97 requests per second, p50=1.167 msec
+ GET: 666666.69 requests per second, p50=0.823 msec
 
 + for p in 7771 7774 7775
 + echo '== stress 7775 =='
@@ -59,3 +65,48 @@ WARNING: Could not fetch server CONFIG
 + timeout 20 redis-benchmark -p 7775 -n 2000 -c 50 -P 16 -t set,get -q
 + echo 'STALL port 7775'
 STALL port 7775
++ echo '== strace the uring server =='
+== strace the uring server ==
++ sleep 3
++ strace -f -tt -o /tmp/strace.log ./build/ddup-server --port 7776 --io iouring
++ timeout 5 redis-cli -p 7776 PING
++ echo 'MUTE/FAIL port 7776'
+MUTE/FAIL port 7776
++ sleep 1
++ pkill -f 'ddup-server --port 7776'
++ sleep 1
++ tail -30 /tmp/strace.log
+8803  14:57:44.740181 brk(0x55c19eba1000) = 0x55c19eba1000
+8803  14:57:44.740237 mmap(NULL, 233472, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0) = 0x7ff029abb000
+8803  14:57:44.740296 io_uring_setup(4, {flags=0, sq_thread_cpu=0, sq_thread_idle=0, sq_entries=4, cq_entries=8, features=IORING_FEAT_SINGLE_MMAP|IORING_FEAT_NODROP|IORING_FEAT_SUBMIT_STABLE|IORING_FEAT_RW_CUR_POS|IORING_FEAT_CUR_PERSONALITY|IORING_FEAT_FAST_POLL|IORING_FEAT_POLL_32BITS|IORING_FEAT_SQPOLL_NONFIXED|IORING_FEAT_EXT_ARG|IORING_FEAT_NATIVE_WORKERS|IORING_FEAT_RSRC_TAGS|IORING_FEAT_CQE_SKIP|IORING_FEAT_LINKED_FILE|IORING_FEAT_REG_REG_RING|0x3c000, sq_off={head=0, tail=4, ring_mask=16, ring_entries=24, flags=36, dropped=32, array=192, user_addr=0}, cq_off={head=8, tail=12, ring_mask=20, ring_entries=28, overflow=44, cqes=64, flags=40, user_addr=0}}) = 3
+8803  14:57:44.740388 close(3)          = 0
+8803  14:57:44.740480 epoll_create1(0)  = 3
+8803  14:57:44.740812 io_uring_setup(256, {flags=0, sq_thread_cpu=0, sq_thread_idle=0, sq_entries=256, cq_entries=512, features=IORING_FEAT_SINGLE_MMAP|IORING_FEAT_NODROP|IORING_FEAT_SUBMIT_STABLE|IORING_FEAT_RW_CUR_POS|IORING_FEAT_CUR_PERSONALITY|IORING_FEAT_FAST_POLL|IORING_FEAT_POLL_32BITS|IORING_FEAT_SQPOLL_NONFIXED|IORING_FEAT_EXT_ARG|IORING_FEAT_NATIVE_WORKERS|IORING_FEAT_RSRC_TAGS|IORING_FEAT_CQE_SKIP|IORING_FEAT_LINKED_FILE|IORING_FEAT_REG_REG_RING|0x3c000, sq_off={head=0, tail=4, ring_mask=16, ring_entries=24, flags=36, dropped=32, array=8256, user_addr=0}, cq_off={head=8, tail=12, ring_mask=20, ring_entries=28, overflow=44, cqes=64, flags=40, user_addr=0}}) = 4
+8803  14:57:44.740918 mmap(NULL, 9280, PROT_READ|PROT_WRITE, MAP_SHARED|MAP_POPULATE, 4, 0) = 0x7ff029c90000
+8803  14:57:44.741000 mmap(NULL, 16384, PROT_READ|PROT_WRITE, MAP_SHARED|MAP_POPULATE, 4, 0x10000000) = 0x7ff029c8c000
+8803  14:57:44.741113 socket(AF_INET, SOCK_STREAM, IPPROTO_TCP) = 5
+8803  14:57:44.741195 setsockopt(5, SOL_SOCKET, SO_REUSEADDR, [1], 4) = 0
+8803  14:57:44.741264 bind(5, {sa_family=AF_INET, sin_port=htons(7776), sin_addr=inet_addr("0.0.0.0")}, 16) = 0
+8803  14:57:44.741351 listen(5, 511)    = 0
+8803  14:57:44.741418 getsockname(5, {sa_family=AF_INET, sin_port=htons(7776), sin_addr=inet_addr("0.0.0.0")}, [128 => 16]) = 0
+8803  14:57:44.741547 mmap(NULL, 3457024, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0) = 0x7ff028eb4000
+8803  14:57:44.742093 mmap(NULL, 1052672, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0) = 0x7ff028db3000
+8803  14:57:44.742206 openat(AT_FDCWD, "./dump.ddr", O_RDONLY) = -1 ENOENT (No such file or directory)
+8803  14:57:44.742288 munmap(0x7ff028db3000, 1052672) = 0
+8803  14:57:44.742365 brk(0x55c19ecaa000) = 0x55c19ecaa000
+8803  14:57:44.742453 rt_sigaction(SIGINT, {sa_handler=0x55c17bb83ae0, sa_mask=[INT], sa_flags=SA_RESTORER|SA_RESTART, sa_restorer=0x7ff029845330}, {sa_handler=SIG_IGN, sa_mask=[], sa_flags=0}, 8) = 0
+8803  14:57:44.742530 rt_sigaction(SIGTERM, {sa_handler=0x55c17bb83ae0, sa_mask=[TERM], sa_flags=SA_RESTORER|SA_RESTART, sa_restorer=0x7ff029845330}, {sa_handler=SIG_DFL, sa_mask=[], sa_flags=0}, 8) = 0
+8803  14:57:44.742600 write(1, "ddup-server 0.1.0 (platform: lin"..., 96) = 96
+8803  14:57:44.742712 io_uring_enter(4, 2, 1, IORING_ENTER_GETEVENTS, NULL, 0) = 2
+8803  14:57:47.655465 accept(5, NULL, NULL) = 6
+8803  14:57:47.655536 setsockopt(6, SOL_TCP, TCP_NODELAY, [1], 4) = 0
+8803  14:57:47.655597 fcntl(6, F_GETFL) = 0x2 (flags O_RDWR)
+8803  14:57:47.655645 fcntl(6, F_SETFL, O_RDWR|O_NONBLOCK) = 0
+8803  14:57:47.655730 accept(5, NULL, NULL) = ? ERESTARTSYS (To be restarted if SA_RESTART is set)
+8803  14:57:53.668423 --- SIGTERM {si_signo=SIGTERM, si_code=SI_USER, si_pid=8809, si_uid=1001} ---
+8803  14:57:53.668491 rt_sigreturn({mask=[]}) = 43
+8803  14:57:53.668833 accept(5, NULL, NULL+ echo '== test_server backend probe =='
+== test_server backend probe ==
++ timeout 200 ctest --test-dir build -R '^test_server$' --output-on-failure
++ grep -E 'backend|tests passed|Failed'
+0% tests passed, 1 tests failed out of 1
