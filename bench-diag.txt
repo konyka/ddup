@@ -1,76 +1,75 @@
-=== n/a diag port 7774 (21:19:21) ==
-redis       9689  0.1  0.1  98120 18236 ?        Ssl  21:18   0:00 /usr/bin/redis-server 127.0.0.1:6379
-runner     10168 12.1  0.1 179116 16404 ?        S    21:18   0:04 /home/runner/work/ddup/ddup/build/ddup-server --port 7771 --io select
-runner     10169  6.7  0.1 527348 17772 ?        Sl   21:18   0:02 /home/runner/work/ddup/ddup/build/ddup-server --port 7774 --io-threads 4
-runner     10170 13.1  0.1 179296 16636 ?        S    21:18   0:04 /home/runner/work/ddup/ddup/build/ddup-server --port 7775 --io iouring
-runner     10171  4.3  0.1 100684 18344 ?        Sl   21:18   0:01 redis-server *:7773
-runner     10172 17.1  0.7 275336480 127784 ?    Sl   21:18   0:06 dotnet /home/runner/work/_temp/garnet-out/GarnetServer.dll --bind 127.0.0.1 --port 7772
-  10169 Sl   00:00:00 hrtimer_nanosleep
-  10175 Sl   00:00:00 ep_poll
-  10176 Sl   00:00:00 ep_poll
-  10177 Sl   00:00:02 ep_poll
-  10178 Sl   00:00:00 ep_poll
-  10179 Sl   00:00:00 ep_poll
+=== n/a diag port 7774 (22:23:54) ==
+redis       9783  0.1  0.1  98120 18252 ?        Ssl  22:22   0:00 /usr/bin/redis-server 127.0.0.1:6379
+runner     10273 11.5  0.1 179116 16440 ?        S    22:23   0:04 /home/runner/work/ddup/ddup/build/ddup-server --port 7771 --io select
+runner     10274  6.1  0.1 529428 20140 ?        Sl   22:23   0:02 /home/runner/work/ddup/ddup/build/ddup-server --port 7774 --io-threads 4
+runner     10275 11.4  0.1 179296 16648 ?        S    22:23   0:04 /home/runner/work/ddup/ddup/build/ddup-server --port 7775 --io iouring
+runner     10276  4.9  0.1 100684 18200 ?        Sl   22:23   0:01 redis-server *:7773
+runner     10277 20.0  0.7 275139832 126008 ?    Sl   22:23   0:07 dotnet /home/runner/work/_temp/garnet-out/GarnetServer.dll --bind 127.0.0.1 --port 7772
+  10274 Sl   00:00:00 hrtimer_nanosleep
+  10279 Sl   00:00:00 ep_poll
+  10280 Sl   00:00:00 ep_poll
+  10281 Sl   00:00:02 ep_poll
+  10282 Sl   00:00:00 ep_poll
+  10283 Sl   00:00:00 ep_poll
 FDSize:	256
-VmSize:	  527348 kB
-VmRSS:	   17772 kB
-open fds: 20
+VmSize:	  529428 kB
+VmRSS:	   20140 kB
+open fds: 23
 estab conns: 0
 INFO failed
-[New LWP 10179]
-[New LWP 10178]
-[New LWP 10177]
-[New LWP 10176]
-[New LWP 10175]
+[New LWP 10283]
+[New LWP 10282]
+[New LWP 10281]
+[New LWP 10280]
+[New LWP 10279]
 [Thread debugging using libthread_db enabled]
 Using host libthread_db library "/lib/x86_64-linux-gnu/libthread_db.so.1".
-0x00007f63dbaecbdf in __GI___clock_nanosleep (clock_id=clock_id@entry=0, flags=flags@entry=0, req=0x7fff64451640, rem=0x0) at ../sysdeps/unix/sysv/linux/clock_nanosleep.c:78
+0x00007f79a86ecbdf in __GI___clock_nanosleep (clock_id=clock_id@entry=0, flags=flags@entry=0, req=0x7ffd5a8a0ac0, rem=0x0) at ../sysdeps/unix/sysv/linux/clock_nanosleep.c:78
 
 warning: 78	../sysdeps/unix/sysv/linux/clock_nanosleep.c: No such file or directory
 
-Thread 6 (Thread 0x7f63da2cb6c0 (LWP 10175) "ddup-server"):
-#0  0x00007f63dbb2a172 in epoll_wait (epfd=4, events=0x7f63da2ca100, maxevents=64, timeout=50) at ../sysdeps/unix/sysv/linux/epoll_wait.c:30
-#1  0x000055afafc285c3 in pal_loop_wait ()
-#2  0x000055afafc4b7b5 in server_run_once.isra ()
-#3  0x000055afafc26986 in worker_main.lto_priv ()
-#4  0x00007f63dba9cb84 in start_thread (arg=<optimized out>) at ./nptl/pthread_create.c:447
-#5  0x00007f63dbb29d6c in clone3 () at ../sysdeps/unix/sysv/linux/x86_64/clone3.S:78
+Thread 6 (Thread 0x7f79a6fcc6c0 (LWP 10279) "ddup-server"):
+#0  0x00007f79a872a172 in epoll_wait (epfd=4, events=0x7f79a6fcb100, maxevents=64, timeout=50) at ../sysdeps/unix/sysv/linux/epoll_wait.c:30
+#1  0x000055fb80920803 in pal_loop_wait ()
+#2  0x000055fb80943f45 in server_run_once.isra ()
+#3  0x000055fb8091e976 in worker_main.lto_priv ()
+#4  0x00007f79a869cb84 in start_thread (arg=<optimized out>) at ./nptl/pthread_create.c:447
+#5  0x00007f79a8729d6c in clone3 () at ../sysdeps/unix/sysv/linux/x86_64/clone3.S:78
 
-Thread 5 (Thread 0x7f63d92ca6c0 (LWP 10176) "ddup-server"):
-#0  0x00007f63dbb2a172 in epoll_wait (epfd=5, events=0x7f63d92c9100, maxevents=64, timeout=50) at ../sysdeps/unix/sysv/linux/epoll_wait.c:30
-#1  0x000055afafc285c3 in pal_loop_wait ()
-#2  0x000055afafc4b7b5 in server_run_once.isra ()
-#3  0x000055afafc26986 in worker_main.lto_priv ()
-#4  0x00007f63dba9cb84 in start_thread (arg=<optimized out>) at ./nptl/pthread_create.c:447
-#5  0x00007f63dbb29d6c in clone3 () at ../sysdeps/unix/sysv/linux/x86_64/clone3.S:78
+Thread 5 (Thread 0x7f79a5fcb6c0 (LWP 10280) "ddup-server"):
+#0  0x00007f79a872a172 in epoll_wait (epfd=5, events=0x7f79a5fca100, maxevents=64, timeout=50) at ../sysdeps/unix/sysv/linux/epoll_wait.c:30
+#1  0x000055fb80920803 in pal_loop_wait ()
+#2  0x000055fb80943f45 in server_run_once.isra ()
+#3  0x000055fb8091e976 in worker_main.lto_priv ()
+#4  0x00007f79a869cb84 in start_thread (arg=<optimized out>) at ./nptl/pthread_create.c:447
+#5  0x00007f79a8729d6c in clone3 () at ../sysdeps/unix/sysv/linux/x86_64/clone3.S:78
 
-Thread 4 (Thread 0x7f63d82c96c0 (LWP 10177) "ddup-server"):
-#0  0x00007f63dbb2a172 in epoll_wait (epfd=8, events=0x7f63d82c8100, maxevents=64, timeout=50) at ../sysdeps/unix/sysv/linux/epoll_wait.c:30
-#1  0x000055afafc285c3 in pal_loop_wait ()
-#2  0x000055afafc4b7b5 in server_run_once.isra ()
-#3  0x000055afafc26986 in worker_main.lto_priv ()
-#4  0x00007f63dba9cb84 in start_thread (arg=<optimized out>) at ./nptl/pthread_create.c:447
-#5  0x00007f63dbb29d6c in clone3 () at ../sysdeps/unix/sysv/linux/x86_64/clone3.S:78
+Thread 4 (Thread 0x7f79a4fca6c0 (LWP 10281) "ddup-server"):
+#0  0x00007f79a872a172 in epoll_wait (epfd=8, events=0x7f79a4fc9100, maxevents=64, timeout=50) at ../sysdeps/unix/sysv/linux/epoll_wait.c:30
+#1  0x000055fb80920803 in pal_loop_wait ()
+#2  0x000055fb80943f45 in server_run_once.isra ()
+#3  0x000055fb8091e976 in worker_main.lto_priv ()
+#4  0x00007f79a869cb84 in start_thread (arg=<optimized out>) at ./nptl/pthread_create.c:447
+#5  0x00007f79a8729d6c in clone3 () at ../sysdeps/unix/sysv/linux/x86_64/clone3.S:78
 
-Thread 3 (Thread 0x7f63d72c86c0 (LWP 10178) "ddup-server"):
-#0  0x00007f63dbb2a172 in epoll_wait (epfd=11, events=0x7f63d72c7100, maxevents=64, timeout=50) at ../sysdeps/unix/sysv/linux/epoll_wait.c:30
-#1  0x000055afafc285c3 in pal_loop_wait ()
-#2  0x000055afafc4b7b5 in server_run_once.isra ()
-#3  0x000055afafc26986 in worker_main.lto_priv ()
-#4  0x00007f63dba9cb84 in start_thread (arg=<optimized out>) at ./nptl/pthread_create.c:447
-#5  0x00007f63dbb29d6c in clone3 () at ../sysdeps/unix/sysv/linux/x86_64/clone3.S:78
+Thread 3 (Thread 0x7f79a3fc96c0 (LWP 10282) "ddup-server"):
+#0  0x00007f79a872a172 in epoll_wait (epfd=11, events=0x7f79a3fc8100, maxevents=64, timeout=50) at ../sysdeps/unix/sysv/linux/epoll_wait.c:30
+#1  0x000055fb80920803 in pal_loop_wait ()
+#2  0x000055fb80943f45 in server_run_once.isra ()
+#3  0x000055fb8091e976 in worker_main.lto_priv ()
+#4  0x00007f79a869cb84 in start_thread (arg=<optimized out>) at ./nptl/pthread_create.c:447
+#5  0x00007f79a8729d6c in clone3 () at ../sysdeps/unix/sysv/linux/x86_64/clone3.S:78
 
-Thread 2 (Thread 0x7f63d62c76c0 (LWP 10179) "ddup-server"):
-#0  0x00007f63dbb2a172 in epoll_wait (epfd=14, events=0x7f63d62c6750, maxevents=8, timeout=50) at ../sysdeps/unix/sysv/linux/epoll_wait.c:30
-#1  0x000055afafc285c3 in pal_loop_wait ()
-#2  0x000055afafc28a7b in acceptor_main.lto_priv ()
-#3  0x00007f63dba9cb84 in start_thread (arg=<optimized out>) at ./nptl/pthread_create.c:447
-#4  0x00007f63dbb29d6c in clone3 () at ../sysdeps/unix/sysv/linux/x86_64/clone3.S:78
+Thread 2 (Thread 0x7f79a2fc86c0 (LWP 10283) "ddup-server"):
+#0  0x00007f79a872a172 in epoll_wait (epfd=14, events=0x7f79a2fc7750, maxevents=8, timeout=50) at ../sysdeps/unix/sysv/linux/epoll_wait.c:30
+#1  0x000055fb80920803 in pal_loop_wait ()
+#2  0x000055fb80920cbb in acceptor_main.lto_priv ()
+#3  0x00007f79a869cb84 in start_thread (arg=<optimized out>) at ./nptl/pthread_create.c:447
+#4  0x00007f79a8729d6c in clone3 () at ../sysdeps/unix/sysv/linux/x86_64/clone3.S:78
 
-Thread 1 (Thread 0x7f63dbc75240 (LWP 10169) "ddup-server"):
-#0  0x00007f63dbaecbdf in __GI___clock_nanosleep (clock_id=clock_id@entry=0, flags=flags@entry=0, req=0x7fff64451640, rem=0x0) at ../sysdeps/unix/sysv/linux/clock_nanosleep.c:78
-#1  0x00007f63dbaf9b27 in __GI___nanosleep (req=<optimized out>, rem=<optimized out>) at ../sysdeps/unix/sysv/linux/nanosleep.c:25
-#2  0x000055afafc1abe3 in main ()
-[Inferior 1 (process 10169) detached]
-PONG
-ping OK
+Thread 1 (Thread 0x7f79a8a07240 (LWP 10274) "ddup-server"):
+#0  0x00007f79a86ecbdf in __GI___clock_nanosleep (clock_id=clock_id@entry=0, flags=flags@entry=0, req=0x7ffd5a8a0ac0, rem=0x0) at ../sysdeps/unix/sysv/linux/clock_nanosleep.c:78
+#1  0x00007f79a86f9b27 in __GI___nanosleep (req=<optimized out>, rem=<optimized out>) at ../sysdeps/unix/sysv/linux/nanosleep.c:25
+#2  0x000055fb80912bdc in main ()
+[Inferior 1 (process 10274) detached]
+ping FAILED
