@@ -1,0 +1,61 @@
+name: bench-debug
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  probe:
+    name: find where ddup mt4 dies under sustained load
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build ddup (Release)
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release && cmake --build build --target ddup-server
+      - name: Install redis-tools
+        run: sudo apt-get update && sudo apt-get install -y redis-tools
+      - name: Long mt4 sequence
+        run: |
+          {
+          set -x
+          ./build/ddup-server --port 7777 --io-threads 4 >/tmp/d7.log 2>&1 &
+          MTPID=$!
+          sleep 2
+          for i in $(seq 1 12); do
+            timeout 60 redis-benchmark -p 7777 -t set -n 200000 -c 50 -P 16 -d 16 -q 2>/dev/null | tr '\r' '\n' | grep -i "requests per second" | head -1
+            if timeout 5 redis-cli -p 7777 PING >/dev/null 2>&1; then
+              echo "round $i alive"
+            else
+              echo "round $i DEAD"
+              if kill -0 $MTPID 2>/dev/null; then echo "process WEDGED (alive but mute)"; else echo "process GONE (crashed)"; fi
+              break
+            fi
+          done
+          cat /tmp/d7.log
+          } > /tmp/probe.out 2>&1
+          true
+      - name: Publish probe output
+        if: always()
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          REPO_URL="https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          cd "$RUNNER_TEMP"
+          rm -rf dbg
+          if ! git clone --quiet --branch bench-debug --single-branch "$REPO_URL" dbg; then
+            git clone --quiet --no-checkout --depth 1 "$REPO_URL" dbg
+            git -C dbg checkout --orphan bench-debug
+            git -C dbg rm -rf . 2>/dev/null || true
+          fi
+          cd dbg
+          cp /tmp/probe.out . || true
+          git config user.email ci@ddup.local
+          git config user.name "ddup-ci"
+          git add -A
+          git commit -m "probe @ ${GITHUB_SHA:0:7}" || exit 0
+          git push -f origin bench-debug
