@@ -306,11 +306,13 @@ static void test_wire_auto_failover(void)
     /* node timeout must exceed the 1s gossip cadence, else live masters
      * get false-positive failure marks between pings */
     server_set_node_timeout(b, 2000);
+    server_set_node_timeout(c, 2000);
     ca = cli(server_port(a));
     cb = cli(server_port(b));
     cc = cli(server_port(c));
 
-    /* topology: a<->b, b<->c; a owns everything; b replicates a */
+    /* topology: full mesh (a<->b, a<->c, b<->c) so every master can form
+     * local suspicion of every other; a owns everything; b replicates a */
     snprintf(port, sizeof(port), "%u", (unsigned)server_port(b));
     snprintf(req, sizeof(req),
              "*4\r\n$7\r\nCLUSTER\r\n$4\r\nMEET\r\n$9\r\n127.0.0.1\r\n"
@@ -323,6 +325,8 @@ static void test_wire_auto_failover(void)
              "*4\r\n$7\r\nCLUSTER\r\n$4\r\nMEET\r\n$9\r\n127.0.0.1\r\n"
              "$%zu\r\n%s\r\n",
              strlen(port), port);
+    ask3(a, b, c, ca, req, buf, sizeof(buf));
+    DD_CHECK_STR("+OK\r\n", buf);
     ask3(a, b, c, cb, req, buf, sizeof(buf));
     DD_CHECK_STR("+OK\r\n", buf);
     addslots_all(a, b, c, ca, buf, sizeof(buf));
@@ -336,17 +340,16 @@ static void test_wire_auto_failover(void)
     /* b must have learned a's claims via gossip before a dies */
     DD_CHECK(wait_nodes(a, b, c, cb, "0-16383", buf, sizeof(buf)));
 
-    /* a dies: stop pumping it entirely. Suspicion alone (PFAIL, rendered
-     * as fail?) does not fail the state -- only quorum-confirmed FAIL
-     * does; b keeps serving a's slots in the meantime */
-    DD_CHECK(wait_nodes(b, c, NULL, cb, "fail?", buf, sizeof(buf)));
-    DD_CHECK(wait_state(b, c, NULL, cb, "cluster_state:ok\r\n", buf,
-                        sizeof(buf)));
-
-    /* b promotes itself within bounded time; state heals */
-    DD_CHECK(wait_state(b, c, NULL, cb, "cluster_state:ok\r\n", buf,
-                        sizeof(buf)));
+    /* a dies: stop pumping it entirely. The PFAIL window is not reliably
+     * observable here (a pre-existing report from c completes the quorum
+     * in the same cron tick that sets PFAIL -- covered deterministically
+     * in test_cluster_pfail.c), so assert the order that matters: a is
+     * marked FAIL first, and only then does b's promotion heal the
+     * state */
+    DD_CHECK(wait_nodes(b, c, NULL, cb, ",fail ", buf, sizeof(buf)));
     DD_CHECK(wait_nodes(b, c, NULL, cb, "myself,master", buf, sizeof(buf)));
+    DD_CHECK(wait_state(b, c, NULL, cb, "cluster_state:ok\r\n", buf,
+                        sizeof(buf)));
     DD_CHECK(wait_state(b, c, NULL, cc, "cluster_state:ok\r\n", buf,
                         sizeof(buf)));
 

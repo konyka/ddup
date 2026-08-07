@@ -340,8 +340,9 @@ static void handle_auth_request(struct db *d, const char *frame,
     if (sender->master_id[0] == '-' || sender->master_id[0] == '\0')
         return;
     master = cluster_node_find(d, sender->master_id);
-    if (master == NULL || !(master->flags & CLUSTER_NODE_DISCONNECTED))
-        return; /* its master is not failing in our view */
+    if (master == NULL || !(master->flags & CLUSTER_NODE_FAIL))
+        return; /* its master is not failing in our view (PFAIL is not
+                 * enough: the quorum-confirmed FAIL is required) */
 
     /* the claimed slots must dominate their current owners' epochs */
     for (s = 0; s < 16384; s++) {

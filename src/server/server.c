@@ -2107,31 +2107,40 @@ static void cluster_fail_check(server *s, uint64_t now_ms)
             0 &&
             n->last_seen_ms > 0 &&
             now_ms - n->last_seen_ms > s->node_timeout_ms) {
-            cluster_node *me;
             n->flags |= CLUSTER_NODE_DISCONNECTED | CLUSTER_NODE_PFAIL;
             s->nodes_dirty = 1;
             /* fresh local suspicion may complete a quorum whose reports
              * arrived while the node was still reachable from here */
             (void)cluster_mark_fail_if_quorum(&s->db, n, now_ms);
-            /* failover: a slave of a dead, slot-owning master schedules
-             * its promotion (election delay = node timeout + 500 ms) */
-            me = cluster_myself(&s->db);
-            if (me != NULL && (me->flags & CLUSTER_NODE_SLAVE) &&
-                memcmp(me->master_id, n->id, 40) == 0 &&
-                (n->flags & CLUSTER_NODE_MASTER) &&
-                s->failover_deadline_ms == 0) {
-                uint32_t sl;
-                for (sl = 0; sl < 16384; sl++)
-                    if (cluster_slots_get(n->slots, sl)) {
-                        s->failover_deadline_ms =
-                            now_ms + s->node_timeout_ms + 500;
-                        break;
-                    }
-            }
         }
     }
     if (s->db.fail_broadcast_id[0] != '\0')
         cluster_broadcast_fail(s); /* quorum completed on local suspicion */
+
+    /* failover: a slave whose master is objectively FAIL (quorum
+     * confirmed -- mere PFAIL suspicion is not enough) schedules its
+     * promotion (election delay = node timeout + 500 ms, fixed instead
+     * of Redis's randomized delay: documented) */
+    {
+        cluster_node *me = cluster_myself(&s->db);
+        cluster_node *m =
+            me != NULL && !(me->master_id[0] == '-' &&
+                            me->master_id[1] == '\0')
+                ? cluster_node_find(&s->db, me->master_id)
+                : NULL;
+        if (me != NULL && (me->flags & CLUSTER_NODE_SLAVE) && m != NULL &&
+            (m->flags & (CLUSTER_NODE_MASTER | CLUSTER_NODE_FAIL)) ==
+                (CLUSTER_NODE_MASTER | CLUSTER_NODE_FAIL) &&
+            s->failover_deadline_ms == 0) {
+            uint32_t sl;
+            for (sl = 0; sl < 16384; sl++)
+                if (cluster_slots_get(m->slots, sl)) {
+                    s->failover_deadline_ms =
+                        now_ms + s->node_timeout_ms + 500;
+                    break;
+                }
+        }
+    }
 }
 
 /* broadcast a FAILOVER_AUTH_REQUEST on every bus conn (redis mode) */
@@ -2161,7 +2170,7 @@ static void cluster_failover_check(server *s, uint64_t now_ms)
             ? cluster_node_find(d, me->master_id)
             : NULL;
     if (me == NULL || !(me->flags & CLUSTER_NODE_SLAVE) || m == NULL ||
-        !(m->flags & CLUSTER_NODE_DISCONNECTED)) {
+        !(m->flags & CLUSTER_NODE_FAIL)) {
         d->failover_req_epoch = 0; /* master recovered (or we promoted) */
         return;
     }

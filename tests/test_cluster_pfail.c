@@ -535,6 +535,53 @@ static void test_quorum_fail_e2e(void)
     pal_socket_cleanup();
 }
 
+/* suspicion without quorum must NOT trigger auto-failover either: a
+ * lone slave of a silent master stays a slave (2-party deadlock,
+ * documented; Redis likewise needs a master majority) */
+static void test_pfail_only_no_failover(void)
+{
+    server *a, *b;
+    pal_socket_t ca, cb;
+    char buf[8192], req[128];
+    uint64_t dl;
+
+    DD_CHECK_EQ_INT(0, pal_socket_init());
+    a = server_create_ex("127.0.0.1", 0, SERVER_BACKEND_SELECT);
+    b = server_create_ex("127.0.0.1", 0, SERVER_BACKEND_SELECT);
+    DD_CHECK(a != NULL && b != NULL);
+    server_enable_cluster(a, ME);
+    server_enable_cluster(b, NB);
+    server_set_node_timeout(a, 1000);
+    server_set_node_timeout(b, 1000);
+    ca = e2e_cli(server_port(a));
+    cb = e2e_cli(server_port(b));
+
+    meet3(a, b, NULL, ca, server_port(b), buf, sizeof(buf));
+    addslots_span(a, b, NULL, ca, 0, 16384, buf, sizeof(buf));
+    snprintf(req, sizeof(req),
+             "*3\r\n$7\r\nCLUSTER\r\n$9\r\nREPLICATE\r\n$40\r\n%s\r\n", ME);
+    DD_CHECK(ask3(a, b, NULL, cb, req, "+OK\r\n", buf, sizeof(buf)));
+    /* let b learn a's claims before a goes silent */
+    DD_CHECK(wait_nodes3(a, b, NULL, cb, "0-16383", buf, sizeof(buf)));
+
+    /* a goes silent: b suspects (fail?) but can never reach a master
+     * quorum alone, so no FAIL and no promotion */
+    DD_CHECK(wait_nodes3(b, NULL, NULL, cb, "fail?", buf, sizeof(buf)));
+    dl = pal_now_ms() + 5000;
+    while (pal_now_ms() < dl)
+        pump3(b, NULL, NULL);
+    DD_CHECK(ask3(b, NULL, NULL, cb, "*2\r\n$7\r\nCLUSTER\r\n$5\r\nNODES\r\n",
+                  "fail?", buf, sizeof(buf)));
+    DD_CHECK(strstr(buf, ",fail ") == NULL);
+    DD_CHECK(strstr(buf, "myself,slave") != NULL);
+
+    pal_close(cb);
+    pal_close(ca);
+    server_destroy(b);
+    server_destroy(a);
+    pal_socket_cleanup();
+}
+
 static void test_two_master_deadlock(void)
 {
     server *a, *b;
@@ -591,6 +638,7 @@ int main(void)
     DD_RUN(test_quorum_promotion);
     DD_RUN(test_fail_frames);
     DD_RUN(test_quorum_fail_e2e);
+    DD_RUN(test_pfail_only_no_failover);
     DD_RUN(test_two_master_deadlock);
     return DD_TEST_SUMMARY();
 }

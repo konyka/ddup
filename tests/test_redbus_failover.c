@@ -54,8 +54,8 @@ static cluster_node *mk(db *d, const char *id, uint32_t flags, uint16_t port)
 }
 
 /* a db where myself (ME) is a master owning slots 0-99, DEAD is a
- * disconnected master owning 100-199 (epoch 5), SLV its slave (epoch 2),
- * OTHER a master with 200-299 (epoch 4); current epoch 10 */
+ * quorum-failed (FAIL) master owning 100-199 (epoch 5), SLV its slave
+ * (epoch 2), OTHER a master with 200-299 (epoch 4); current epoch 10 */
 static void mk_cluster(db *d)
 {
     cluster_node *me, *dead, *slv, *other;
@@ -65,8 +65,7 @@ static void mk_cluster(db *d)
     for (i = 0; i < 100; i++)
         cluster_slots_set(me->slots, (uint32_t)i, 1);
     me->epoch = 3;
-    dead = mk(d, DEAD, CLUSTER_NODE_MASTER | CLUSTER_NODE_DISCONNECTED,
-              7001);
+    dead = mk(d, DEAD, CLUSTER_NODE_MASTER | CLUSTER_NODE_FAIL, 7001);
     for (i = 100; i < 200; i++)
         cluster_slots_set(dead->slots, (uint32_t)i, 1);
     dead->epoch = 5;
@@ -171,12 +170,11 @@ static void test_vote_grant_matrix(void)
     DD_CHECK(!reply_is_ack(&reply));
     db_destroy(&d);
 
-    /* master not marked failed -> no ACK */
+    /* master not marked FAIL (mere suspicion is not enough) -> no ACK */
     db_init(&d);
     resp_buf_init(&reply);
     mk_cluster(&d);
-    cluster_node_find(&d, DEAD)->flags &=
-        ~(uint32_t)CLUSTER_NODE_DISCONNECTED;
+    cluster_node_find(&d, DEAD)->flags &= ~(uint32_t)CLUSTER_NODE_FAIL;
     flen = mk_auth_request(frame, 11, 5);
     DD_CHECK_EQ_INT(0,
                     redbus_handle_frame(&d, frame, flen, &reply, T0, NULL));

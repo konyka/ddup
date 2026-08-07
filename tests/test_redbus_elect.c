@@ -116,6 +116,36 @@ static void peer_send_ack(server *a, fake_peer *fp, uint64_t epoch)
     peer_write_all(a, fp, f, REDBUS_HDR_LEN);
 }
 
+/* PING carrying one gossip entry: D flagged master+PFAIL -- a failure
+ * report from this master about the dead one (drives the quorum) */
+static void peer_send_ping_report_d(server *a, fake_peer *fp, uint32_t base,
+                                    uint32_t count, uint64_t ep)
+{
+    static char f[REDBUS_HDR_LEN + REDBUS_GOSSIP_LEN];
+    uint32_t s;
+    memset(f, 0, sizeof(f));
+    memcpy(f, "RCmb", 4);
+    put32be(f + 4, REDBUS_HDR_LEN + REDBUS_GOSSIP_LEN);
+    put16be(f + 8, 1);
+    put16be(f + 10, fp->port);
+    put16be(f + 12, REDBUS_TYPE_PING);
+    put16be(f + 14, 1); /* one gossip entry */
+    put64be(f + 16, ep);
+    put64be(f + 24, ep);
+    memcpy(f + 40, fp->id, 40);
+    for (s = base; s < base + count; s++)
+        f[80 + s / 8] |= (char)(1u << (s % 8));
+    put16be(f + 2248, (uint16_t)(fp->port + 10000));
+    put16be(f + 2250, REDBUS_NODE_MASTER);
+    /* gossip entry @2256: nodename@0, port@94, cport@96, flags@98 */
+    memcpy(f + REDBUS_HDR_LEN, ID_D, 40);
+    put16be(f + REDBUS_HDR_LEN + 94, 7001);
+    put16be(f + REDBUS_HDR_LEN + 96, 17001);
+    put16be(f + REDBUS_HDR_LEN + 98,
+            REDBUS_NODE_MASTER | REDBUS_NODE_PFAIL);
+    peer_write_all(a, fp, f, REDBUS_HDR_LEN + REDBUS_GOSSIP_LEN);
+}
+
 /* pump the server once, then read/parse frames from a peer; ACK any
  * AUTH_REQUEST when allowed */
 static void peer_pump(server *a, fake_peer *fp)
@@ -225,15 +255,17 @@ static void test_redis_mode_vote_election(void)
             buf, sizeof(buf), &m1, &m2);
     DD_CHECK_STR("+OK\r\n", buf);
 
-    /* D goes silent: only M1 ACKs the first election -> no majority */
+    /* D goes silent: only M1 ACKs the first election -> no majority.
+     * Both fake masters gossip D as PFAIL so the local quorum can mark
+     * D FAIL -- promotion may only start from the objective FAIL. */
     m1.ack_requests = 1;
     promoted = 0;
     dl = pal_now_ms() + 15000;
     while (pal_now_ms() < dl && !promoted) {
         peer_pump(a, &m1);
         peer_pump(a, &m2);
-        peer_send_ping(a, &m1, 0, 100, 2);
-        peer_send_ping(a, &m2, 200, 100, 3);
+        peer_send_ping_report_d(a, &m1, 0, 100, 2);
+        peer_send_ping_report_d(a, &m2, 200, 100, 3);
         cli_ask(a, ca, "*2\r\n$7\r\nCLUSTER\r\n$5\r\nNODES\r\n", buf,
                 sizeof(buf), &m1, &m2);
         if (strstr(buf, "myself,master") != NULL)
@@ -248,8 +280,8 @@ static void test_redis_mode_vote_election(void)
     while (pal_now_ms() < dl && !promoted) {
         peer_pump(a, &m1);
         peer_pump(a, &m2);
-        peer_send_ping(a, &m1, 0, 100, 2);
-        peer_send_ping(a, &m2, 200, 100, 3);
+        peer_send_ping_report_d(a, &m1, 0, 100, 2);
+        peer_send_ping_report_d(a, &m2, 200, 100, 3);
         cli_ask(a, ca, "*2\r\n$7\r\nCLUSTER\r\n$5\r\nNODES\r\n", buf,
                 sizeof(buf), &m1, &m2);
         if (strstr(buf, "myself,master") != NULL)
