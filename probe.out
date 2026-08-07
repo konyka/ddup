@@ -47,24 +47,24 @@ listening on port 7775
 == stress 7771 ==
 + timeout 20 redis-benchmark -p 7771 -n 2000 -c 50 -P 16 -t set,get -q
 WARNING: Could not fetch server CONFIG
- SET: rps=0.0 (overall: 0.0) avg_msec=-nan (overall: -nan)                                                          SET: 499999.97 requests per second, p50=1.207 msec
- GET: 666666.69 requests per second, p50=0.735 msec
+ SET: rps=0.0 (overall: -nan) avg_msec=-nan (overall: -nan)                                                           SET: 499999.97 requests per second, p50=1.023 msec
+ GET: 666666.69 requests per second, p50=0.687 msec
 
 + for p in 7771 7774 7775
 + echo '== stress 7774 =='
 == stress 7774 ==
 + timeout 20 redis-benchmark -p 7774 -n 2000 -c 50 -P 16 -t set,get -q
 WARNING: Could not fetch server CONFIG
- SET: rps=0.0 (overall: 0.0) avg_msec=-nan (overall: -nan)                                                          SET: 400000.00 requests per second, p50=1.487 msec
- GET: 666666.69 requests per second, p50=0.839 msec
+ SET: rps=0.0 (overall: 0.0) avg_msec=-nan (overall: -nan)                                                          SET: 499999.97 requests per second, p50=1.439 msec
+ GET: 499999.97 requests per second, p50=1.007 msec
 
 + for p in 7771 7774 7775
 + echo '== stress 7775 =='
 == stress 7775 ==
 + timeout 20 redis-benchmark -p 7775 -n 2000 -c 50 -P 16 -t set,get -q
 WARNING: Could not fetch server CONFIG
- SET: rps=0.0 (overall: 0.0) avg_msec=-nan (overall: -nan)                                                          SET: 499999.97 requests per second, p50=1.023 msec
- GET: 666666.69 requests per second, p50=0.663 msec
+ SET: rps=0.0 (overall: 0.0) avg_msec=-nan (overall: -nan)                                                          SET: 400000.00 requests per second, p50=1.519 msec
+ GET: 499999.97 requests per second, p50=0.999 msec
 
 + echo '== strace the uring server =='
 == strace the uring server ==
@@ -76,44 +76,82 @@ PONG
 + pkill -f 'ddup-server --port 7776'
 + sleep 1
 + tail -30 /tmp/strace.log
-8725  15:29:32.315766 io_uring_enter(4, 1, 1, IORING_ENTER_GETEVENTS, NULL, 0) = 1
-8725  15:29:32.316166 io_uring_enter(4, 1, 1, IORING_ENTER_GETEVENTS, NULL, 0) = 1
-8725  15:29:32.316649 io_uring_enter(4, 1, 1, IORING_ENTER_GETEVENTS, NULL, 0) = 1
-8725  15:29:32.316740 io_uring_enter(4, 1, 1, IORING_ENTER_GETEVENTS, NULL, 0) = 1
-8725  15:29:32.366700 io_uring_enter(4, 1, 1, IORING_ENTER_GETEVENTS, NULL, 0) = 1
-8725  15:29:32.415907 io_uring_enter(4, 1, 1, IORING_ENTER_GETEVENTS, NULL, 0) = 1
-8725  15:29:32.416294 io_uring_enter(4, 1, 1, IORING_ENTER_GETEVENTS, NULL, 0) = 1
-8725  15:29:32.416767 io_uring_enter(4, 1, 1, IORING_ENTER_GETEVENTS, NULL, 0) = 1
-8725  15:29:32.416853 io_uring_enter(4, 1, 1, IORING_ENTER_GETEVENTS, NULL, 0) = 1
-8725  15:29:32.466896 io_uring_enter(4, 1, 1, IORING_ENTER_GETEVENTS, NULL, 0) = 1
-8725  15:29:32.516024 io_uring_enter(4, 1, 1, IORING_ENTER_GETEVENTS, NULL, 0) = 1
-8725  15:29:32.516404 io_uring_enter(4, 1, 1, IORING_ENTER_GETEVENTS, NULL, 0) = 1
-8725  15:29:32.516890 io_uring_enter(4, 1, 1, IORING_ENTER_GETEVENTS, NULL, 0) = 1
-8725  15:29:32.516964 io_uring_enter(4, 1, 1, IORING_ENTER_GETEVENTS, NULL, 0) = 1
-8725  15:29:32.567034 io_uring_enter(4, 1, 1, IORING_ENTER_GETEVENTS, NULL, 0) = 1
-8725  15:29:32.616160 io_uring_enter(4, 1, 1, IORING_ENTER_GETEVENTS, NULL, 0) = 1
-8725  15:29:32.616529 io_uring_enter(4, 1, 1, IORING_ENTER_GETEVENTS, NULL, 0) = 1
-8725  15:29:32.617229 io_uring_enter(4, 1, 1, IORING_ENTER_GETEVENTS, NULL, 0) = 1
-8725  15:29:32.637303 --- SIGTERM {si_signo=SIGTERM, si_code=SI_USER, si_pid=8729, si_uid=1001} ---
-8725  15:29:32.637347 rt_sigreturn({mask=[]}) = 1
-8725  15:29:32.637771 close(5)          = 0
-8725  15:29:32.637827 munmap(0x7fa4bf8d7000, 16384) = 0
-8725  15:29:32.637888 munmap(0x7fa4bf8db000, 9280) = 0
-8725  15:29:32.637946 close(4)          = 0
-8725  15:29:32.638025 close(3)          = 0
-8725  15:29:32.638087 munmap(0x7fa4beab4000, 3457024) = 0
-8725  15:29:32.638208 munmap(0x7fa4bf706000, 233472) = 0
-8725  15:29:32.638296 write(1, "shutting down\n", 14) = 14
-8725  15:29:32.638360 exit_group(0)     = ?
-8725  15:29:32.638639 +++ exited with 0 +++
+9037  15:43:08.328394 io_uring_enter(4, 1, 1, IORING_ENTER_GETEVENTS, NULL, 0) = 1
+9037  15:43:08.427786 io_uring_enter(4, 1, 1, IORING_ENTER_GETEVENTS, NULL, 0) = 1
+9037  15:43:08.428289 io_uring_enter(4, 1, 1, IORING_ENTER_GETEVENTS, NULL, 0) = 1
+9037  15:43:08.428347 io_uring_enter(4, 1, 1, IORING_ENTER_GETEVENTS, NULL, 0) = 1
+9037  15:43:08.428465 io_uring_enter(4, 1, 1, IORING_ENTER_GETEVENTS, NULL, 0) = 1
+9037  15:43:08.528045 io_uring_enter(4, 1, 1, IORING_ENTER_GETEVENTS, NULL, 0) = 1
+9037  15:43:08.528362 io_uring_enter(4, 1, 1, IORING_ENTER_GETEVENTS, NULL, 0) = 1
+9037  15:43:08.528417 io_uring_enter(4, 1, 1, IORING_ENTER_GETEVENTS, NULL, 0) = 1
+9037  15:43:08.528531 io_uring_enter(4, 1, 1, IORING_ENTER_GETEVENTS, NULL, 0) = 1
+9037  15:43:08.628309 io_uring_enter(4, 1, 1, IORING_ENTER_GETEVENTS, NULL, 0) = 1
+9037  15:43:08.628425 io_uring_enter(4, 1, 1, IORING_ENTER_GETEVENTS, NULL, 0) = 1
+9037  15:43:08.628478 io_uring_enter(4, 1, 1, IORING_ENTER_GETEVENTS, NULL, 0) = 1
+9037  15:43:08.628591 io_uring_enter(4, 1, 1, IORING_ENTER_GETEVENTS, NULL, 0) = 1
+9037  15:43:08.728542 io_uring_enter(4, 1, 1, IORING_ENTER_GETEVENTS, NULL, 0) = 1
+9037  15:43:08.728659 io_uring_enter(4, 1, 1, IORING_ENTER_GETEVENTS, NULL, 0) = 1
+9037  15:43:08.828744 io_uring_enter(4, 1, 1, IORING_ENTER_GETEVENTS, NULL, 0) = 1
+9037  15:43:08.928975 io_uring_enter(4, 1, 1, IORING_ENTER_GETEVENTS, NULL, 0) = 1
+9037  15:43:09.029154 io_uring_enter(4, 1, 1, IORING_ENTER_GETEVENTS, NULL, 0) = 1
+9037  15:43:09.047521 --- SIGTERM {si_signo=SIGTERM, si_code=SI_USER, si_pid=9042, si_uid=1001} ---
+9037  15:43:09.047572 rt_sigreturn({mask=[]}) = 1
+9037  15:43:09.047878 close(5)          = 0
+9037  15:43:09.047936 munmap(0x7f7cb42ef000, 16384) = 0
+9037  15:43:09.048002 munmap(0x7f7cb42f3000, 9280) = 0
+9037  15:43:09.048062 close(4)          = 0
+9037  15:43:09.048149 close(3)          = 0
+9037  15:43:09.048221 munmap(0x7f7cb34b4000, 3457024) = 0
+9037  15:43:09.048374 munmap(0x7f7cb411e000, 233472) = 0
+9037  15:43:09.048476 write(1, "shutting down\n", 14) = 14
+9037  15:43:09.048547 exit_group(0)     = ?
+9037  15:43:09.048841 +++ exited with 0 +++
 + echo '== test_server backend probe =='
 == test_server backend probe ==
 + timeout 200 ctest --test-dir build -R '^test_server$' --output-on-failure
 Internal ctest changing into directory: /home/runner/work/ddup/ddup/build
 Test project /home/runner/work/ddup/ddup/build
     Start 11: test_server
-1/1 Test #11: test_server ......................   Passed    0.68 sec
+1/1 Test #11: test_server ......................   Passed    0.72 sec
 
 100% tests passed, 0 tests failed out of 1
 
-Total Test time (real) =   0.84 sec
+Total Test time (real) =   0.77 sec
++ echo '== mt4 exact bench sequence =='
+== mt4 exact bench sequence ==
++ sleep 2
++ ./build/ddup-server --port 7777 --io-threads 4
++ timeout 5 redis-cli -p 7777 PING
+PONG
++ timeout 60 redis-benchmark -p 7777 -n 10000 -c 50 -P 16 -t set,get -q
++ timeout 15 redis-benchmark -p 7777 -n 100 -c 10 -P 1 -t set -q
++ for i in 1 2 3
++ timeout 60 redis-benchmark -p 7777 -t set -n 200000 -c 50 -P 16 -d 16 -q
++ tr '\r' '\n'
++ grep -i '^set: .*requests per second'
+SET: 473933.66 requests per second, p50=1.615 msec
++ for i in 1 2 3
++ timeout 60 redis-benchmark -p 7777 -t set -n 200000 -c 50 -P 16 -d 16 -q
++ tr '\r' '\n'
++ grep -i '^set: .*requests per second'
+SET: 497512.44 requests per second, p50=1.567 msec
++ for i in 1 2 3
++ timeout 60 redis-benchmark -p 7777 -t set -n 200000 -c 50 -P 16 -d 16 -q
++ tr '\r' '\n'
++ grep -i '^set: .*requests per second'
+SET: 481927.72 requests per second, p50=1.567 msec
++ timeout 5 redis-cli -p 7777 PING
+PONG
++ ps aux
++ grep ddup-server
++ grep -v grep
+runner      9011  0.0  0.0  31144  8036 ?        S    15:43   0:00 ./build/ddup-server --port 7771 --io select
+runner      9012  0.3  0.1 461356 31484 ?        Sl   15:43   0:00 ./build/ddup-server --port 7774 --io-threads 4
+runner      9013  0.5  0.0  31168  8040 ?        S    15:43   0:00 ./build/ddup-server --port 7775 --io iouring
+runner      9056 38.6  0.1 492556 19284 ?        Sl   15:43   0:01 ./build/ddup-server --port 7777 --io-threads 4
++ dmesg
++ tail -5
++ cat /tmp/d7.log
+ddup-server 0.1.0 (platform: linux, C standard: C23)
+io backend: mt (4 workers)
+listening on port 7777
