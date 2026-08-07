@@ -621,8 +621,11 @@ DBSIZE 为 O(1)，可能计入尚未回收的过期 key。
   双向收敛（redis CLUSTER NODES 见 ddup id、ddup known_nodes=4）、
   ddup 认领 0-99 槽经 gossip 被 redis 接受、SET 落 ddup、redis 侧 GET
   收到指向 ddup 的 MOVED。已验证可用：PING/PONG/MEET/UPDATE/FAIL、
-  epoch 冲突裁决、槽位移交。未覆盖（记录在案）：FAIL 投票法定人数、
-  AUTH 选举、PUBLISH 帧、混部集群副本 failover 全流程。
+  epoch 冲突裁决、槽位移交。Phase 24 补齐：FAILOVER_AUTH_REQUEST/ACK
+  投票帧（redis 模式下副本提升需多数派 ACK，含 lastVoteEpoch 防重复
+  投票）、UPDATE 帧通用收养、混部集群副本 failover 全流程 CI（杀主→
+  ddup 副本投票提升→接槽→旧主重连让步）。未覆盖（记录在案）：
+  PUBLISH 帧（分片 pubsub）、FAIL 的完整 PFAIL 法定人数语义。
 
 ## Lua 脚本（Phase 19）
 

@@ -132,6 +132,9 @@
     （Phase 22）
   - [x] mt 批量写出：完成队列 drain 轮末每连接一次 flush（seq 顺序
     不变），消除逐完成项 send 放大；A/B 中性如实记录（Phase 23）
+  - [x] 混部集群 failover：FAILOVER_AUTH_REQUEST/ACK 投票帧、UPDATE
+    通用收养、redis 模式副本投票提升（多数派 ACK + lastVoteEpoch）、
+    混部杀主→提升→接槽→旧主让步全流程 interop CI（Phase 24）
   - [ ] 范围化排除（记录在案，不实施）：
     - 分层存储（热/冷数据落盘）：超出"内存缓存存储"定位
     - mt 模式的复制/集群适配：见 Phase 15 说明
