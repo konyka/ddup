@@ -135,6 +135,10 @@
   - [x] 混部集群 failover：FAILOVER_AUTH_REQUEST/ACK 投票帧、UPDATE
     通用收养、redis 模式副本投票提升（多数派 ACK + lastVoteEpoch）、
     混部杀主→提升→接槽→旧主让步全流程 interop CI（Phase 24）
+  - [x] 分片发布订阅：SSUBSCRIBE/SUNSUBSCRIBE/SPUBLISH（槽属主校验）、
+    PUBSUB SHARDCHANNELS/SHARDNUMSUB、总线 PUBLISH 帧传播（redbus
+    type 10 / RCM2 type 4，入站 type 4 投递普通订阅者）、双向
+    interop CI（Phase 25）
   - [ ] 范围化排除（记录在案，不实施）：
     - 分层存储（热/冷数据落盘）：超出"内存缓存存储"定位
     - mt 模式的复制/集群适配：见 Phase 15 说明

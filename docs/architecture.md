@@ -282,7 +282,8 @@ SADD SREM SISMEMBER SMISMEMBER SCARD SMEMBERS SPOP SRANDMEMBER SMOVE
 SINTER SUNION SDIFF ｜
 ZADD ZSCORE ZCARD ZINCRBY ZREM ZRANGE ZREVRANGE ZRANK ZREVRANK ZCOUNT
 ZRANGEBYSCORE ZREMRANGEBYSCORE ｜
-MULTI EXEC DISCARD WATCH UNWATCH ｜ SUBSCRIBE UNSUBSCRIBE PUBLISH QUIT ｜
+MULTI EXEC DISCARD WATCH UNWATCH ｜ SUBSCRIBE UNSUBSCRIBE PUBLISH
+SSUBSCRIBE SUNSUBSCRIBE SPUBLISH PUBSUB(SHARDCHANNELS/SHARDNUMSUB) QUIT ｜
 AUTH SELECT SWAPDB ｜ SAVE LASTSAVE SHUTDOWN ｜ SYNC REPLICAOF ｜
 DUMP RESTORE MIGRATE ASKING ｜ EVAL EVALSHA SCRIPT(LOAD/EXISTS/FLUSH) ｜
 INFO（内部变体 INFO __STATS__ 供 mt 聚合）
@@ -625,7 +626,41 @@ DBSIZE 为 O(1)，可能计入尚未回收的过期 key。
   投票帧（redis 模式下副本提升需多数派 ACK，含 lastVoteEpoch 防重复
   投票）、UPDATE 帧通用收养、混部集群副本 failover 全流程 CI（杀主→
   ddup 副本投票提升→接槽→旧主重连让步）。未覆盖（记录在案）：
-  PUBLISH 帧（分片 pubsub）、FAIL 的完整 PFAIL 法定人数语义。
+  FAIL 的完整 PFAIL 法定人数语义。
+
+## 分片发布订阅（Phase 25）
+
+- **命令面**：SSUBSCRIBE/SUNSUBSCRIBE（语义同普通订阅，推送种类为
+  `smessage`）、SPUBLISH（返回**本地**接收者数，异步传播不计）、
+  PUBSUB SHARDCHANNELS [pattern] / SHARDNUMSUB（glob 仅 `*`/`?`，
+  记录在案）。SPUBLISH 走默认单键槽位校验（hash_slot(channel)：
+  非本节点槽 → MOVED，未指派 → CLUSTERDOWN）；SSUBSCRIBE 无属主
+  校验，任何节点可订（Redis 语义）。订阅态白名单并入
+  SSUBSCRIBE/SUNSUBSCRIBE。
+- **注册表**：与 channels 平行的第二张表（`rh_table schannels` +
+  conn `ssubs` + session `nssub`），订阅/退订主体与普通频道共用
+  （chan_subscribe/chan_unsubscribe 以表指针为参数）；连接关闭时
+  两张表都自动清退。
+- **总线传播**：SPUBLISH 本地投递后向**所有**总线连接广播一帧——
+  redbus PUBLISHSHARD（type 10，Redis 7.0 编号核实；2256 头 +
+  count=0 无 gossip + u32BE chlen/msglen 负载，即 redis
+  clusterMsgDataPublish 布局）或 RCM2 CLUSTER_MSG_PUBLISH（4：
+  [RCM2][totlen][type][u32le chlen][ch][u32le msglen][msg]，无节点
+  记录）。接收端在节点表 handler 之前按类型拦截：redbus type 4
+  （普通 PUBLISH，redis 全集群广播）投递本地普通订阅者
+  （"message"），type 10 / RCM2 publish 投递本地分片订阅者
+  （"smessage"）；长度畸形的帧静默吞掉（容错，不杀连接）。
+- **记录在案的分歧**：redis 7.0 的 PUBLISHSHARD 只发往发布槽所在
+  shard（主 + 其副本，7.0.15 clusterPropagatePublish 核实）；ddup
+  广播给全部总线对等——任意节点的订阅者都能收到，无需加入发布
+  槽的 shard。接收侧双方都不做槽位校验（7.0.15 clusterProcessPacket
+  核实：仅要求发送者已知 + 本地有对应订阅）。超过总线 16KiB 上限
+  （CLUSTER_MSG_MAX）的帧不传播（本地投递不受影响）。
+- **CI 互操作**（cluster-interop.yml）：ddup SPUBLISH → redis
+  SSUBSCRIBE 收到（type 10 出站）；redis PUBLISH → ddup SUBSCRIBE
+  收到（type 4 入站）；redis SPUBLISH → ddup 副本（CLUSTER
+  REPLICATE 加入 7101 的 shard）上的 SSUBSCRIBE 收到（type 10
+  入站）。
 
 ## Lua 脚本（Phase 19）
 

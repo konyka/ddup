@@ -10,7 +10,8 @@ redis c 的另一种实现 —— 参考微软 [Garnet](https://github.com/micro
   （Linux: io_uring/epoll，macOS/FreeBSD: kqueue，Windows: IOCP）、
   零拷贝解析、arena/对象池内存管理
 - 数据类型：String/Hash/List/Set/ZSet（跳表）；事务 MULTI/EXEC/WATCH；
-  发布订阅；过期与 maxmemory 淘汰
+  发布订阅（含 Redis 7 分片频道 SSUBSCRIBE/SPUBLISH）；过期与
+  maxmemory 淘汰
 - 脚本：Lua 5.1 嵌入（EVAL/EVALSHA/SCRIPT，vendored deps/lua，
   base/string/table/math 沙箱，redis.call/pcall，效果复制语义）
 - 持久化：AOF（命令流追加 + 启动重放）与 RDB 风格二进制快照
