@@ -86,11 +86,26 @@ jobs:
             printf '%s\n%s\n%s\n' "${a:-0}" "${b:-0}" "${c:-0}" | sort -n | sed -n '2p'
           }
           warm() { timeout 60 redis-benchmark -p "$1" -n 10000 -c 50 -P 16 -t set,get -q >/dev/null 2>&1 || true; }
+          # mt4 can wedge alive-but-mute under full-bench contention (rare
+          # livelock, under investigation -- see docs/performance.md). A
+          # fresh process measures fine, so restart it once per cell as a
+          # last resort and say so in the report.
+          MT4_RESTARTS=0
+          restart_mt4() {
+            pkill -f "ddup-server --port 7774" || true
+            sleep 1
+            "$GITHUB_WORKSPACE/build/ddup-server" --port 7774 --io-threads 4 >>"$GITHUB_WORKSPACE/ddup-mt4.log" 2>&1 &
+            MT4_RESTARTS=$((MT4_RESTARTS + 1))
+            sleep 2
+          }
           cell() { # port c P d -> "set/get" (n/a when the server is down)
-            local s g
+            local s g tries
             # one retry after a pause: a transient scheduling hiccup on the
             # shared 4-CPU runner must not bench a whole variant as n/a
-            if ! alive "$1"; then sleep 2; fi
+            for tries in 1 2 3; do
+              if alive "$1"; then break; fi
+              if [ "$1" = "7774" ]; then restart_mt4; else sleep 2; fi
+            done
             if alive "$1"; then
               s=$(median3 "$1" set "$2" "$3" "$4")
               g=$(median3 "$1" get "$2" "$3" "$4")
@@ -153,6 +168,8 @@ jobs:
             echo "| scenario | ddup-st | ddup-st-uring | ddup-mt4 | garnet | redis |"
             echo "|----------|---------|---------------|----------|--------|-------|"
             echo "$ROWS"
+            echo
+            echo "mt4 mid-run restarts (wedge mitigation): $MT4_RESTARTS"
             echo
             echo "internal consistency (ddup-bench on ddup-st): SET $DB_SET req/s, GET $DB_GET req/s"
           } > bench-report.md
