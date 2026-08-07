@@ -328,3 +328,13 @@ mt4（c500 P64 SET）：内核+DLL 占 72%（唤醒投递 + 双倍 send 的代�
 3. 哈希路径：确认 Release LTO 下 wyhash 内联后评估；mt 路由+查找
    双哈希可合并（crc16 与 wyhash 都全读键）。
 4. c1000-st 的 select fd_set 重建与客户端饱和分摊（如需）。
+
+### 27.3 优化记录
+
+**opt-1 mt 唤醒去重**（commit 见日志）：kick 从逐任务一次 self-pipe
+send/IOCP post 改为原子 pending 标志去重——worker 每次唤醒 drain 开头
+重装标志，生产者仅在 0→1 时真踢。无锁序：push 先于 kick、标志重置
+先于队列 drain，任何生产者推送要么被本次 drain 看到、要么触发新
+唤醒。A/B（c500 P64 SET mt4，同机）：1.10M → 1.70M req/s（+55%）；
+事件搅动 0.30 → 0.096 events/cmd（3.1x 收敛）。低并发（c50 P16）
+基本持平（826k vs 844k，噪声内）：去重只在多生产者并发时有冗余可消。

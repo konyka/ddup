@@ -141,6 +141,12 @@ struct worker {
     mt_spsc *migrate;     /* MT_TASK_MIGRATE conns from other workers */
     arena exec_arena;     /* re-parse scratch for routed commands */
     uint64_t tasks_executed; /* routed tasks executed (test/observability) */
+#if DDUP_HAS_C_ATOMICS
+    /* Kick dedup (Phase 27): 1 while a wakeup byte/completion is queued
+     * but not yet consumed; producers skip redundant kicks. Reset at the
+     * top of every wakeup drain, before any queue is read. */
+    _Atomic int kick_pending;
+#endif
     /* Guards mt_conn_state.pending/closing of every conn homed on this
      * worker (increments can come from other workers' delivery paths). */
     pal_mutex pending_mu;
@@ -1877,6 +1883,12 @@ static void mt_drain_inbox(worker *w);
  * kick. */
 static void mt_kick(worker *w)
 {
+#if DDUP_HAS_C_ATOMICS
+    /* dedup: one queued wakeup covers every push since the last drain */
+    if (atomic_exchange_explicit(&w->kick_pending, 1,
+                                 memory_order_acq_rel) != 0)
+        return;
+#endif
     if (server_backend(w->srv) == SERVER_BACKEND_IOCP)
         server_wakeup_kick(w->srv);
     else
@@ -2156,6 +2168,12 @@ static void worker_on_wakeup(void *ctx)
 {
     worker *w = (worker *)ctx;
     int pi;
+#if DDUP_HAS_C_ATOMICS
+    /* re-arm kicks before touching any queue: a producer that pushed
+     * before this store is covered by the drain below; one that pushes
+     * after it will post a fresh wakeup */
+    atomic_store_explicit(&w->kick_pending, 0, memory_order_release);
+#endif
     (void)pal_wakeup_drain(&w->wakeup);
 
     /* 1. adopt accepted fds */
