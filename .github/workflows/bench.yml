@@ -99,6 +99,10 @@ jobs:
               {
                 echo "=== n/a diag port $1 ($(date -u +%H:%M:%S)) =="
                 ps aux | grep "ddup-server\|GarnetServer\|redis-server" | grep -v grep || echo "no server processes"
+                MTPID=$(pgrep -f "ddup-server --port $1" | head -1)
+                if [ -n "$MTPID" ]; then
+                  ps -T -p "$MTPID" -o tid,stat,time,wchan:32 | tail -n +2
+                fi
                 timeout 5 redis-cli -p "$1" PING && echo "ping OK" || echo "ping FAILED"
               } >> bench-diag.txt
               echo "n/a"
