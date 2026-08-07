@@ -1,70 +1,122 @@
-=== n/a diag port 7774 (18:38:06) ==
-redis       9542  0.1  0.1  98120 18428 ?        Ssl  18:36   0:00 /usr/bin/redis-server 127.0.0.1:6379
-runner     10025  6.9  0.1 179108 20632 ?        S    18:37   0:03 /home/runner/work/ddup/ddup/build/ddup-server --port 7771 --io select
-runner     10026  6.2  0.2 1705976 41824 ?       Sl   18:37   0:03 /home/runner/work/ddup/ddup/build/ddup-server --port 7774 --io-threads 4
-runner     10027  7.7  0.1 179428 20972 ?        S    18:37   0:04 /home/runner/work/ddup/ddup/build/ddup-server --port 7775 --io iouring
-runner     10028  4.5  0.1 174924 18212 ?        Sl   18:37   0:02 redis-server *:7773
-runner     10029 16.4  1.7 275615368 280744 ?    Sl   18:37   0:09 dotnet /home/runner/work/_temp/garnet-out/GarnetServer.dll --bind 127.0.0.1 --port 7772
-  10026 Sl   00:00:00 hrtimer_nanosleep
-  10031 Sl   00:00:00 ep_poll
-  10032 Sl   00:00:00 ep_poll
-  10033 Sl   00:00:03 ep_poll
-  10034 Sl   00:00:00 ep_poll
-  10035 Sl   00:00:00 ep_poll
-[New LWP 10035]
-[New LWP 10034]
-[New LWP 10033]
-[New LWP 10032]
-[New LWP 10031]
+=== n/a diag port 7774 (19:00:25) ==
+redis       9546  0.0  0.1  98120 18364 ?        Ssl  18:53   0:00 /usr/bin/redis-server 127.0.0.1:6379
+runner     10009  0.6  0.3 179108 61248 ?        S    18:53   0:02 /home/runner/work/ddup/ddup/build/ddup-server --port 7771 --io select
+runner     10010  1.5  0.1 577576 23320 ?        Sl   18:53   0:06 /home/runner/work/ddup/ddup/build/ddup-server --port 7774 --io-threads 4
+runner     10011  1.1  0.1 179424 19572 ?        S    18:53   0:04 /home/runner/work/ddup/ddup/build/ddup-server --port 7775 --io iouring
+runner     10012  0.4  0.1 160588 18432 ?        Sl   18:53   0:01 redis-server *:7773
+runner     10013  1.6  1.6 275336512 274764 ?    Sl   18:53   0:06 dotnet /home/runner/work/_temp/garnet-out/GarnetServer.dll --bind 127.0.0.1 --port 7772
+  10010 Sl   00:00:00 futex_do_wait
+  10017 Sl   00:00:01 hrtimer_nanosleep
+  10018 Sl   00:00:01 hrtimer_nanosleep
+  10020 Sl   00:00:01 hrtimer_nanosleep
+[New LWP 10020]
+[New LWP 10018]
+[New LWP 10017]
 [Thread debugging using libthread_db enabled]
 Using host libthread_db library "/lib/x86_64-linux-gnu/libthread_db.so.1".
-0x00007fa5af2ecbdf in __GI___clock_nanosleep (clock_id=clock_id@entry=0, flags=flags@entry=0, req=0x7ffc13980560, rem=0x0) at ../sysdeps/unix/sysv/linux/clock_nanosleep.c:78
+0x00007f29d9098e51 in __futex_abstimed_wait_common64 (private=128, cancel=true, abstime=0x0, op=265, expected=10017, futex_word=0x7f29d79cc990) at ./nptl/futex-internal.c:57
 
-warning: 78	../sysdeps/unix/sysv/linux/clock_nanosleep.c: No such file or directory
+warning: 57	./nptl/futex-internal.c: No such file or directory
 
-Thread 6 (Thread 0x7fa5adacb6c0 (LWP 10031) "ddup-server"):
-#0  0x00007fa5af32a172 in epoll_wait (epfd=4, events=0x7fa5adaca100, maxevents=64, timeout=50) at ../sysdeps/unix/sysv/linux/epoll_wait.c:30
-#1  0x000055e9b0916533 in pal_loop_wait ()
-#2  0x000055e9b09393a5 in server_run_once.isra ()
-#3  0x000055e9b0914946 in worker_main.lto_priv ()
-#4  0x00007fa5af29cb84 in start_thread (arg=<optimized out>) at ./nptl/pthread_create.c:447
-#5  0x00007fa5af329d6c in clone3 () at ../sysdeps/unix/sysv/linux/x86_64/clone3.S:78
+Thread 4 (Thread 0x7f29d79cc6c0 (LWP 10017) "ddup-server"):
+#0  0x00007f29d90ecbdf in __GI___clock_nanosleep (clock_id=clock_id@entry=0, flags=flags@entry=0, req=0x7f29d79cb4d0, rem=0x0) at ../sysdeps/unix/sysv/linux/clock_nanosleep.c:78
+#1  0x00007f29d90f9b27 in __GI___nanosleep (req=<optimized out>, rem=<optimized out>) at ../sysdeps/unix/sysv/linux/nanosleep.c:25
+#2  0x000055b9d11894e1 in mt_push_task ()
+#3  0x000055b9d118da79 in mt_route.lto_priv ()
+#4  0x000055b9d1185a6c in conn_process_input.lto_priv ()
+#5  0x000055b9d11aaaa6 in server_run_once.isra ()
+#6  0x000055b9d1185946 in worker_main.lto_priv ()
+#7  0x00007f29d909cb84 in start_thread (arg=<optimized out>) at ./nptl/pthread_create.c:447
+#8  0x00007f29d9129d6c in clone3 () at ../sysdeps/unix/sysv/linux/x86_64/clone3.S:78
 
-Thread 5 (Thread 0x7fa5acaca6c0 (LWP 10032) "ddup-server"):
-#0  0x00007fa5af32a172 in epoll_wait (epfd=5, events=0x7fa5acac9100, maxevents=64, timeout=50) at ../sysdeps/unix/sysv/linux/epoll_wait.c:30
-#1  0x000055e9b0916533 in pal_loop_wait ()
-#2  0x000055e9b09393a5 in server_run_once.isra ()
-#3  0x000055e9b0914946 in worker_main.lto_priv ()
-#4  0x00007fa5af29cb84 in start_thread (arg=<optimized out>) at ./nptl/pthread_create.c:447
-#5  0x00007fa5af329d6c in clone3 () at ../sysdeps/unix/sysv/linux/x86_64/clone3.S:78
+Thread 3 (Thread 0x7f29d69cb6c0 (LWP 10018) "ddup-server"):
+#0  0x00007f29d90ecbdf in __GI___clock_nanosleep (clock_id=clock_id@entry=0, flags=flags@entry=0, req=0x7f29d69ca4d0, rem=0x0) at ../sysdeps/unix/sysv/linux/clock_nanosleep.c:78
+#1  0x00007f29d90f9b27 in __GI___nanosleep (req=<optimized out>, rem=<optimized out>) at ../sysdeps/unix/sysv/linux/nanosleep.c:25
+#2  0x000055b9d11894e1 in mt_push_task ()
+#3  0x000055b9d118da79 in mt_route.lto_priv ()
+#4  0x000055b9d1185a6c in conn_process_input.lto_priv ()
+#5  0x000055b9d11aaaa6 in server_run_once.isra ()
+#6  0x000055b9d1185946 in worker_main.lto_priv ()
+#7  0x00007f29d909cb84 in start_thread (arg=<optimized out>) at ./nptl/pthread_create.c:447
+#8  0x00007f29d9129d6c in clone3 () at ../sysdeps/unix/sysv/linux/x86_64/clone3.S:78
 
-Thread 4 (Thread 0x7fa5abac96c0 (LWP 10033) "ddup-server"):
-#0  0x00007fa5af32a172 in epoll_wait (epfd=8, events=0x7fa5abac8100, maxevents=64, timeout=50) at ../sysdeps/unix/sysv/linux/epoll_wait.c:30
-#1  0x000055e9b0916533 in pal_loop_wait ()
-#2  0x000055e9b09393a5 in server_run_once.isra ()
-#3  0x000055e9b0914946 in worker_main.lto_priv ()
-#4  0x00007fa5af29cb84 in start_thread (arg=<optimized out>) at ./nptl/pthread_create.c:447
-#5  0x00007fa5af329d6c in clone3 () at ../sysdeps/unix/sysv/linux/x86_64/clone3.S:78
+Thread 2 (Thread 0x7f29d49c96c0 (LWP 10020) "ddup-server"):
+#0  0x00007f29d90ecbdf in __GI___clock_nanosleep (clock_id=clock_id@entry=0, flags=flags@entry=0, req=0x7f29d49c84d0, rem=0x0) at ../sysdeps/unix/sysv/linux/clock_nanosleep.c:78
+#1  0x00007f29d90f9b27 in __GI___nanosleep (req=<optimized out>, rem=<optimized out>) at ../sysdeps/unix/sysv/linux/nanosleep.c:25
+#2  0x000055b9d11894e1 in mt_push_task ()
+#3  0x000055b9d118da79 in mt_route.lto_priv ()
+#4  0x000055b9d1185a6c in conn_process_input.lto_priv ()
+#5  0x000055b9d11aaaa6 in server_run_once.isra ()
+#6  0x000055b9d1185946 in worker_main.lto_priv ()
+#7  0x00007f29d909cb84 in start_thread (arg=<optimized out>) at ./nptl/pthread_create.c:447
+#8  0x00007f29d9129d6c in clone3 () at ../sysdeps/unix/sysv/linux/x86_64/clone3.S:78
 
-Thread 3 (Thread 0x7fa5aaac86c0 (LWP 10034) "ddup-server"):
-#0  0x00007fa5af32a172 in epoll_wait (epfd=11, events=0x7fa5aaac7100, maxevents=64, timeout=50) at ../sysdeps/unix/sysv/linux/epoll_wait.c:30
-#1  0x000055e9b0916533 in pal_loop_wait ()
-#2  0x000055e9b09393a5 in server_run_once.isra ()
-#3  0x000055e9b0914946 in worker_main.lto_priv ()
-#4  0x00007fa5af29cb84 in start_thread (arg=<optimized out>) at ./nptl/pthread_create.c:447
-#5  0x00007fa5af329d6c in clone3 () at ../sysdeps/unix/sysv/linux/x86_64/clone3.S:78
+Thread 1 (Thread 0x7f29d93b2240 (LWP 10010) "ddup-server"):
+#0  0x00007f29d9098e51 in __futex_abstimed_wait_common64 (private=128, cancel=true, abstime=0x0, op=265, expected=10017, futex_word=0x7f29d79cc990) at ./nptl/futex-internal.c:57
+#1  __futex_abstimed_wait_common (cancel=true, private=128, abstime=0x0, clockid=0, expected=10017, futex_word=0x7f29d79cc990) at ./nptl/futex-internal.c:87
+#2  __GI___futex_abstimed_wait_cancelable64 (futex_word=futex_word@entry=0x7f29d79cc990, expected=10017, clockid=clockid@entry=0, abstime=abstime@entry=0x0, private=private@entry=128) at ./nptl/futex-internal.c:139
+#3  0x00007f29d909e883 in __pthread_clockjoin_ex (threadid=139817687762624, thread_return=0x0, clockid=0, abstime=0x0, block=<optimized out>) at ./nptl/pthread_join_common.c:102
+#4  0x000055b9d1179c75 in main ()
+[Inferior 1 (process 10010) detached]
+ping FAILED
+=== n/a diag port 7774 (19:01:46) ==
+redis       9546  0.0  0.1  98120 18364 ?        Ssl  18:53   0:00 /usr/bin/redis-server 127.0.0.1:6379
+runner     10009  0.6  1.0 179108 171052 ?       S    18:53   0:03 /home/runner/work/ddup/ddup/build/ddup-server --port 7771 --io select
+runner     10010  1.4  0.1 577576 23320 ?        Sl   18:53   0:07 /home/runner/work/ddup/ddup/build/ddup-server --port 7774 --io-threads 4
+runner     10011  1.2  0.1 179424 31212 ?        S    18:53   0:05 /home/runner/work/ddup/ddup/build/ddup-server --port 7775 --io iouring
+runner     10012  0.4  0.1 174924 18280 ?        Sl   18:53   0:02 redis-server *:7773
+runner     10013  1.6  1.8 275336508 310008 ?    Sl   18:53   0:07 dotnet /home/runner/work/_temp/garnet-out/GarnetServer.dll --bind 127.0.0.1 --port 7772
+  10010 Sl   00:00:00 futex_do_wait
+  10017 Sl   00:00:02 hrtimer_nanosleep
+  10018 Sl   00:00:01 hrtimer_nanosleep
+  10020 Sl   00:00:01 hrtimer_nanosleep
+[New LWP 10020]
+[New LWP 10018]
+[New LWP 10017]
+[Thread debugging using libthread_db enabled]
+Using host libthread_db library "/lib/x86_64-linux-gnu/libthread_db.so.1".
+0x00007f29d9098e51 in __futex_abstimed_wait_common64 (private=128, cancel=true, abstime=0x0, op=265, expected=10017, futex_word=0x7f29d79cc990) at ./nptl/futex-internal.c:57
 
-Thread 2 (Thread 0x7fa5a9ac76c0 (LWP 10035) "ddup-server"):
-#0  0x00007fa5af32a172 in epoll_wait (epfd=14, events=0x7fa5a9ac6750, maxevents=8, timeout=50) at ../sysdeps/unix/sysv/linux/epoll_wait.c:30
-#1  0x000055e9b0916533 in pal_loop_wait ()
-#2  0x000055e9b09169ba in acceptor_main.lto_priv ()
-#3  0x00007fa5af29cb84 in start_thread (arg=<optimized out>) at ./nptl/pthread_create.c:447
-#4  0x00007fa5af329d6c in clone3 () at ../sysdeps/unix/sysv/linux/x86_64/clone3.S:78
+warning: 57	./nptl/futex-internal.c: No such file or directory
 
-Thread 1 (Thread 0x7fa5af47c240 (LWP 10026) "ddup-server"):
-#0  0x00007fa5af2ecbdf in __GI___clock_nanosleep (clock_id=clock_id@entry=0, flags=flags@entry=0, req=0x7ffc13980560, rem=0x0) at ../sysdeps/unix/sysv/linux/clock_nanosleep.c:78
-#1  0x00007fa5af2f9b27 in __GI___nanosleep (req=<optimized out>, rem=<optimized out>) at ../sysdeps/unix/sysv/linux/nanosleep.c:25
-#2  0x000055e9b0908ba8 in main ()
-[Inferior 1 (process 10026) detached]
-PONG
-ping OK
+Thread 4 (Thread 0x7f29d79cc6c0 (LWP 10017) "ddup-server"):
+#0  0x00007f29d90ecbdf in __GI___clock_nanosleep (clock_id=clock_id@entry=0, flags=flags@entry=0, req=0x7f29d79cb4d0, rem=0x0) at ../sysdeps/unix/sysv/linux/clock_nanosleep.c:78
+#1  0x00007f29d90f9b27 in __GI___nanosleep (req=<optimized out>, rem=<optimized out>) at ../sysdeps/unix/sysv/linux/nanosleep.c:25
+#2  0x000055b9d11894e1 in mt_push_task ()
+#3  0x000055b9d118da79 in mt_route.lto_priv ()
+#4  0x000055b9d1185a6c in conn_process_input.lto_priv ()
+#5  0x000055b9d11aaaa6 in server_run_once.isra ()
+#6  0x000055b9d1185946 in worker_main.lto_priv ()
+#7  0x00007f29d909cb84 in start_thread (arg=<optimized out>) at ./nptl/pthread_create.c:447
+#8  0x00007f29d9129d6c in clone3 () at ../sysdeps/unix/sysv/linux/x86_64/clone3.S:78
+
+Thread 3 (Thread 0x7f29d69cb6c0 (LWP 10018) "ddup-server"):
+#0  0x00007f29d90ecbdf in __GI___clock_nanosleep (clock_id=clock_id@entry=0, flags=flags@entry=0, req=0x7f29d69ca4d0, rem=0x0) at ../sysdeps/unix/sysv/linux/clock_nanosleep.c:78
+#1  0x00007f29d90f9b27 in __GI___nanosleep (req=<optimized out>, rem=<optimized out>) at ../sysdeps/unix/sysv/linux/nanosleep.c:25
+#2  0x000055b9d11894e1 in mt_push_task ()
+#3  0x000055b9d118da79 in mt_route.lto_priv ()
+#4  0x000055b9d1185a6c in conn_process_input.lto_priv ()
+#5  0x000055b9d11aaaa6 in server_run_once.isra ()
+#6  0x000055b9d1185946 in worker_main.lto_priv ()
+#7  0x00007f29d909cb84 in start_thread (arg=<optimized out>) at ./nptl/pthread_create.c:447
+#8  0x00007f29d9129d6c in clone3 () at ../sysdeps/unix/sysv/linux/x86_64/clone3.S:78
+
+Thread 2 (Thread 0x7f29d49c96c0 (LWP 10020) "ddup-server"):
+#0  0x00007f29d90ecbdf in __GI___clock_nanosleep (clock_id=clock_id@entry=0, flags=flags@entry=0, req=0x7f29d49c84d0, rem=0x0) at ../sysdeps/unix/sysv/linux/clock_nanosleep.c:78
+#1  0x00007f29d90f9b27 in __GI___nanosleep (req=<optimized out>, rem=<optimized out>) at ../sysdeps/unix/sysv/linux/nanosleep.c:25
+#2  0x000055b9d11894e1 in mt_push_task ()
+#3  0x000055b9d118da79 in mt_route.lto_priv ()
+#4  0x000055b9d1185a6c in conn_process_input.lto_priv ()
+#5  0x000055b9d11aaaa6 in server_run_once.isra ()
+#6  0x000055b9d1185946 in worker_main.lto_priv ()
+#7  0x00007f29d909cb84 in start_thread (arg=<optimized out>) at ./nptl/pthread_create.c:447
+#8  0x00007f29d9129d6c in clone3 () at ../sysdeps/unix/sysv/linux/x86_64/clone3.S:78
+
+Thread 1 (Thread 0x7f29d93b2240 (LWP 10010) "ddup-server"):
+#0  0x00007f29d9098e51 in __futex_abstimed_wait_common64 (private=128, cancel=true, abstime=0x0, op=265, expected=10017, futex_word=0x7f29d79cc990) at ./nptl/futex-internal.c:57
+#1  __futex_abstimed_wait_common (cancel=true, private=128, abstime=0x0, clockid=0, expected=10017, futex_word=0x7f29d79cc990) at ./nptl/futex-internal.c:87
+#2  __GI___futex_abstimed_wait_cancelable64 (futex_word=futex_word@entry=0x7f29d79cc990, expected=10017, clockid=clockid@entry=0, abstime=abstime@entry=0x0, private=private@entry=128) at ./nptl/futex-internal.c:139
+#3  0x00007f29d909e883 in __pthread_clockjoin_ex (threadid=139817687762624, thread_return=0x0, clockid=0, abstime=0x0, block=<optimized out>) at ./nptl/pthread_join_common.c:102
+#4  0x000055b9d1179c75 in main ()
+[Inferior 1 (process 10010) detached]
+ping FAILED
