@@ -10,52 +10,33 @@ permissions:
 
 jobs:
   probe:
-    name: full bench reproduction with mt4 thread forensics
+    name: does a bare connect-close wedge an mt worker
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - name: Build ddup (Release)
         run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release && cmake --build build --target ddup-server
-      - name: Install redis + tools
-        run: sudo apt-get update && sudo apt-get install -y redis-server redis-tools
-      - name: Clone Garnet (shallow)
-        run: git clone --depth 1 https://github.com/microsoft/garnet.git "$RUNNER_TEMP/garnet"
-      - name: Build Garnet (tolerate failure)
-        continue-on-error: true
-        env:
-          DOTNET_ROLL_FORWARD: LatestMajor
-        run: |
-          cd "$RUNNER_TEMP/garnet"
-          rm -f global.json
-          dotnet publish main/GarnetServer -c Release -f net10.0 -o "$RUNNER_TEMP/garnet-out" >"$GITHUB_WORKSPACE/garnet-build.log" 2>&1
-          tail -3 "$GITHUB_WORKSPACE/garnet-build.log"
-      - name: Full bench sequence with mt4 forensics
+      - name: Install redis-tools
+        run: sudo apt-get update && sudo apt-get install -y redis-tools
+      - name: Bare connect-close probe
         run: |
           {
           set -x
-          ./build/ddup-server --port 7771 --io select >/tmp/d1.log 2>&1 &
-          ./build/ddup-server --port 7774 --io-threads 4 >/tmp/d4.log 2>&1 &
+          ./build/ddup-server --port 7777 --io-threads 4 >/tmp/d7.log 2>&1 &
           MTPID=$!
-          ./build/ddup-server --port 7775 --io iouring >/tmp/d5.log 2>&1 &
-          redis-server --port 7773 --save '' --appendonly no --protected-mode no >/dev/null 2>&1 &
-          if [ -f "$RUNNER_TEMP/garnet-out/GarnetServer.dll" ]; then
-            dotnet "$RUNNER_TEMP/garnet-out/GarnetServer.dll" --bind 127.0.0.1 --port 7772 >/tmp/garnet.log 2>&1 &
-          fi
-          sleep 10
-          mtstate() { ps -T -p $MTPID -o tid,stat,time,wchan:32 | tail -n +2; }
-          alive4() { timeout -k 1 15 redis-benchmark -p 7774 -n 100 -c 10 -P 1 -t set -q >/dev/null 2>&1; }
-          for p in 7771 7773 7774 7775 7772; do timeout 5 redis-cli -p $p PING || echo "DOWN $p"; done
-          for sc in "50 16" "500 16" "500 64" "50 16"; do
-            set -- $sc
-            for port in 7771 7775 7774 7772 7773; do
-              timeout -k 2 60 redis-benchmark -p $port -t set -n 200000 -c $1 -P $2 -q >/dev/null 2>&1 || true
-            done
-            if alive4; then echo "after c$1-P$2: mt4 alive"; else
-              echo "after c$1-P$2: mt4 WEDGED -- thread state:"
-              mtstate || echo "process gone"
-            fi
-          done
+          sleep 2
+          echo "== phase 1: bare connect-close x1 =="
+          (echo > /dev/tcp/127.0.0.1/7777) && echo "probe sent"
+          sleep 1
+          for i in $(seq 1 8); do timeout 3 redis-cli -p 7777 PING || echo "ping $i FAILED"; done
+          echo "== phase 2: bare connect-close x4 more =="
+          for i in 1 2 3 4; do (echo > /dev/tcp/127.0.0.1/7777) || true; done
+          sleep 1
+          for i in $(seq 1 8); do timeout 3 redis-cli -p 7777 PING || echo "ping2 $i FAILED"; done
+          echo "== phase 3: bench after bare closes =="
+          timeout -k 2 20 redis-benchmark -p 7777 -n 100000 -c 50 -P 16 -t set -q 2>/dev/null | tr '\r' '\n' | grep -i "requests per second" || echo "BENCH FAILED after bare closes"
+          ps -T -p $MTPID -o tid,stat,time,wchan:32 | tail -n +2
           } > /tmp/probe.out 2>&1
           true
       - name: Publish probe output
