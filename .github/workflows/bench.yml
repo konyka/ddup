@@ -70,10 +70,14 @@ jobs:
         run: |
           set -x
           cd "$GITHUB_WORKSPACE"
-          up() { redis-cli -p "$1" PING >/dev/null 2>&1; }
+          up() { timeout 5 redis-cli -p "$1" PING >/dev/null 2>&1; }
+          # liveness under load: a bare PING is not enough (a backend can
+          # answer PING yet stall under concurrency) -- 100 requests must
+          # finish inside 15s or the variant is benched as n/a
+          alive() { timeout 15 redis-benchmark -p "$1" -n 100 -c 10 -P 1 -t set -q >/dev/null 2>&1; }
 
           rps() { # $1=port $2=test $3=c $4=P $5=d
-            timeout 120 redis-benchmark -p "$1" -t "$2" -n 200000 -c "$3" -P "$4" -d "$5" -q 2>/dev/null \
+            timeout 60 redis-benchmark -p "$1" -t "$2" -n 200000 -c "$3" -P "$4" -d "$5" -q 2>/dev/null \
               | tr '\r' '\n' | grep -i "^$2: .*requests per second" \
               | sed -E 's/.*: ([0-9.]+) requests per second.*/\1/'
           }
@@ -83,7 +87,7 @@ jobs:
           }
           warm() { timeout 60 redis-benchmark -p "$1" -n 10000 -c 50 -P 16 -t set,get -q >/dev/null 2>&1 || true; }
           cell() { # port c P d -> "set/get" (n/a when the server is down)
-            if up "$1"; then
+            if alive "$1"; then
               local s g
               s=$(median3 "$1" set "$2" "$3" "$4")
               g=$(median3 "$1" get "$2" "$3" "$4")
