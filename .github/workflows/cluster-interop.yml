@@ -125,24 +125,25 @@ jobs:
           MOVED=$(timeout 10 redis-cli -p 7001 get $KEY 2>&1 | tr -d '\r')
           echo "redis get reply: $MOVED"
 
-          # --- sharded pub/sub, ddup -> redis ---
-          # channel hashing into ddup's 0-99 range
+          # --- sharded pub/sub, ddup -> redis (wire acceptance) ---
+          # redis only allows SSUBSCRIBE on the node serving the channel's
+          # slot (MOVED otherwise), so no redis client can subscribe to a
+          # ddup-owned channel; assert instead that real redis accepts
+          # ddup's PUBLISHSHARD frame on the wire (CLUSTER INFO counter)
           CHA=""
           for i in $(seq 0 300); do
             sl=$(timeout 10 redis-cli -p 7001 cluster keyslot sch:$i | tr -d '\r')
             [ "$sl" -lt 100 ] && { CHA="sch:$i"; break; }
           done
           echo "shard channel on ddup range: '$CHA' (slot $sl)"
-          timeout 60 stdbuf -oL redis-cli -p 7001 ssubscribe $CHA > $R/ssub-a.out 2>&1 &
-          SSUBA=$!
-          # ddup SPUBLISH -> bus PUBLISHSHARD (type 10) -> redis delivers
           okA=0
           for i in $(seq 1 20); do
             timeout 10 redis-cli -p 7400 spublish $CHA hello-from-ddup
-            grep -q "hello-from-ddup" $R/ssub-a.out && { okA=1; break; }
+            n=$(redis-cli -p 7001 cluster info | grep publishshard_received | grep -oE '[0-9]+')
+            [ -n "$n" ] && [ "$n" -ge 1 ] && { okA=1; break; }
             sleep 1
           done
-          echo "assert ddup-spublish-reaches-redis: $okA"
+          echo "assert redis-accepts-ddup-publishshard: $okA (received=$n)"
 
           # --- regular pub/sub, redis -> ddup (type 4 is cluster-wide) ---
           timeout 60 stdbuf -oL redis-cli -p 7400 subscribe rchan > $R/sub-a.out 2>&1 &
@@ -154,7 +155,7 @@ jobs:
             sleep 1
           done
           echo "assert redis-publish-reaches-ddup: $okA2"
-          kill $SSUBA $SUBA 2>/dev/null || true
+          kill $SUBA 2>/dev/null || true
 
           test "$ok1" = 1
           test "$ok2" = 1

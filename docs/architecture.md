@@ -635,8 +635,9 @@ DBSIZE 为 O(1)，可能计入尚未回收的过期 key。
   PUBSUB SHARDCHANNELS [pattern] / SHARDNUMSUB（glob 仅 `*`/`?`，
   记录在案）。SPUBLISH 走默认单键槽位校验（hash_slot(channel)：
   非本节点槽 → MOVED，未指派 → CLUSTERDOWN）；SSUBSCRIBE 无属主
-  校验，任何节点可订（Redis 语义）。订阅态白名单并入
-  SSUBSCRIBE/SUNSUBSCRIBE。
+  校验，任何节点可订——比 redis 宽（redis 经命令 key spec 对
+  非本地槽回 MOVED，7.0.15 核实），记录在案的放宽，正确路由的
+  客户端行为一致。订阅态白名单并入 SSUBSCRIBE/SUNSUBSCRIBE。
 - **注册表**：与 channels 平行的第二张表（`rh_table schannels` +
   conn `ssubs` + session `nssub`），订阅/退订主体与普通频道共用
   （chan_subscribe/chan_unsubscribe 以表指针为参数）；连接关闭时
@@ -656,11 +657,13 @@ DBSIZE 为 O(1)，可能计入尚未回收的过期 key。
   槽的 shard。接收侧双方都不做槽位校验（7.0.15 clusterProcessPacket
   核实：仅要求发送者已知 + 本地有对应订阅）。超过总线 16KiB 上限
   （CLUSTER_MSG_MAX）的帧不传播（本地投递不受影响）。
-- **CI 互操作**（cluster-interop.yml）：ddup SPUBLISH → redis
-  SSUBSCRIBE 收到（type 10 出站）；redis PUBLISH → ddup SUBSCRIBE
-  收到（type 4 入站）；redis SPUBLISH → ddup 副本（CLUSTER
-  REPLICATE 加入 7101 的 shard）上的 SSUBSCRIBE 收到（type 10
-  入站）。
+- **CI 互操作**（cluster-interop.yml）：ddup SPUBLISH 的 type 10 出站
+  帧被真实 redis 接受（CLUSTER INFO 的 publishshard_received 计数
+  递增——redis 对非本地槽的 SSUBSCRIBE 回 MOVED，故 redis 客户端
+  无法订阅 ddup 属主的频道，端到端方向只能验到线上受理）；redis
+  PUBLISH → ddup SUBSCRIBE 端到端（type 4 入站）；redis SPUBLISH →
+  ddup 副本（CLUSTER REPLICATE 加入 7101 的 shard）上的 SSUBSCRIBE
+  端到端（type 10 入站）。
 
 ## Lua 脚本（Phase 19）
 
