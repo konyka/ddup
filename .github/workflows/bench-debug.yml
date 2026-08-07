@@ -1,0 +1,38 @@
+name: bench-debug
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  probe:
+    name: which ddup variant is mute on ubuntu
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build ddup (Release)
+        run: |
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release && cmake --build build --target ddup-server
+      - name: Install redis-tools
+        run: sudo apt-get update && sudo apt-get install -y redis-tools
+      - name: Probe variants
+        run: |
+          set -x
+          ./build/ddup-server --port 7771 --io select >/tmp/d1.log 2>&1 &
+          ./build/ddup-server --port 7774 --io-threads 4 >/tmp/d4.log 2>&1 &
+          ./build/ddup-server --port 7775 --io iouring >/tmp/d5.log 2>&1 &
+          sleep 3
+          for p in 7771 7774 7775; do
+            echo "== port $p =="
+            timeout 5 redis-cli -p $p PING || echo "MUTE/FAIL port $p"
+          done
+          echo "== banners =="
+          head -5 /tmp/d1.log /tmp/d4.log /tmp/d5.log
+          echo "== stress each =="
+          for p in 7771 7774 7775; do
+            echo "== stress $p =="
+            timeout 20 redis-benchmark -p $p -n 2000 -c 50 -P 16 -t set,get -q || echo "STALL port $p"
+          done
+          true
