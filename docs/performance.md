@@ -440,8 +440,8 @@ garnet 领先 ddup-st ~1.6x——garnet 的主场优势真实存在，ddup-mt4 �
    活着但哑，线程全在 ep_poll 空等）。改为 64 轮自排干后让出 1ms。
    注：CI bench 里 mt4 仍偶发 wedge（探针无法复现， bench 高复发），
    bench.yml 暂以重启该进程兜底并在报告披露重启次数（本轮为 0）。
-   根因未完全定位——已排除：kick 去重（反向二分证明无罪）、accept
-   环满丢连接、裸连即断、单纯 CPU 饥饿。待后续专门的 mt 攻坚。
+   **根因已在 Phase 29 定位并修复**（关停 join 楔死 + 退避量化
+   崩塌，见下节）。
 
 ### 方法论备注
 
@@ -449,3 +449,48 @@ garnet 领先 ddup-st ~1.6x——garnet 的主场优势真实存在，ddup-mt4 �
   为准入（半残后端不再烧 24×120s）；n/a 时把进程/线程状态写入
   bench-diag.txt 随 bench-results 发布。
 - 教训：CI 矩阵每加一个变体都要先过"哑server 不拖死全 job"这关。
+
+## Phase 29 mt 深度流水扩展与 wedge 根因（2026-08-07）
+
+### Wedge RCA（终结 Phase 28 的悬案）
+
+gdb 线程取证（bench.yml 在变体 n/a 时自动 dump 全线程栈）钉死了链条：
+主线程卡在 mt_server_stop 的 pthread_join，而某 worker 停在
+mt_push_task 的环满退避循环里——该循环从不检查 running。一次运行中
+的优雅停止（SIGTERM 触发 g_stop）因此永远无法完成：acceptor 与其他
+worker 退出、卡住的 worker 不退、join 永远等待——进程活着、监听
+开着、无人服务，即"活着但哑"的 wedge。停止的触发源有二：bench 的
+restart 兜底 pkill（且计数器因 cell() 在 $() 子壳中执行而静默丢失，
+restarts=0 是假象）；更早无 pkill 的运行里的触发源未最终定位
+（疑似 runner 侧信号），修复后即使触发也只是干净退出+被重启。
+修复（cf2b4ef）：退避循环检查 running，停止时丢弃在途任务（将死
+进程的未发回复无意义）让 join 完成。
+
+### 随后暴露的吞吐崩塌（同根因家族）
+
+关停楔死修好后，mt4 在 c500 P64 / d1k 单元格仍有 8k-39k/s 的爬行：
+生产者/消费者瞬时滞后填满 1024 槽任务环，1ms 睡眠退避把全池进度
+量化成毫秒跳。修复（26c994f）：退避改 sched_yield（新增
+pal_thread_yield），inbox/completion 环加深到 8192。
+
+### 修复后官方表（26c994f，同窗口）
+
+| 场景 | ddup-st | ddup-st-uring | ddup-mt4 | garnet | redis |
+|------|---------|---------------|----------|--------|-------|
+| c50 P16 d16 | 556k/667k | 521k/576k | 448k/496k | 427k/518k | 733k/826k |
+| c500 P16 d16 | 567k/641k | 554k/592k | 518k/535k | 552k/495k | 433k/545k |
+| c500 P64 d16 | 581k/612k | 521k/549k | **722k/778k** | 2062k/2128k | 1626k/2020k |
+| c50 P16 d1024 | 588k/580k | 568k/562k | 512k/528k | 543k/565k | 826k/749k |
+
+mt4 全场景有数、无 n/a、无 0 值（1 次重启自愈）。mt4 在 c500 P64
+首次稳定超过 st（722k vs 581k）。剩余差距：garnet 在 c500 P64 仍
+领先 ~2.8x（4 核 runner 上 garnet 的批量/channel 设计 + ddup mt 的
+跨线程路由成本）；这是下一个结构性目标，不是回归。
+
+### 防再发
+
+bench.yml：n/a 时自动采集 ps -T / VmSize / fd 数 / INFO / gdb 全线程
+栈并发布到 bench-results（bench-diag.txt）——本次 RCA 全靠它。
+教训入库：mt 任何等待/退避循环都必须检查 running；CI 的进程兜底
+（pkill/重启）会把"优雅停止"路径变成负载路径的一部分，必须同样
+可测。
