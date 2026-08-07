@@ -28,6 +28,8 @@ uint16_t mt_server_port(const mt_server *ms);
 
 /* Total routed tasks executed across all workers (test/observability). */
 uint64_t mt_server_tasks_executed(const mt_server *ms);
+/* pooled-task freelist hits across workers (Phase 31 observability) */
+uint64_t mt_server_pool_hits(const mt_server *ms);
 
 /* Per-worker persistence: each worker owns
  * "<dir>/worker-<id>-<filename>". enable_aof replays the file when it

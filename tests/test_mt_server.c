@@ -1042,6 +1042,17 @@ static void test_connection_migration_to_key_owner(void)
     after = mt_server_tasks_executed(ms);
     DD_CHECK_EQ_INT((long long)(before + 1), (long long)after);
 
+    /* routed single commands recycle pooled task objects (Phase 31):
+     * the first routed command's free stocked the freelist, the next
+     * one must pop it */
+    {
+        uint64_t ph0 = mt_server_pool_hits(ms);
+        snprintf(req, sizeof(req), "*2\r\n$3\r\nGET\r\n$%zu\r\n%s\r\n",
+                 strlen(k0), k0);
+        roundtrip(a, req, "$-1\r\n");
+        DD_CHECK(mt_server_pool_hits(ms) > ph0);
+    }
+
     /* and the data is visible from other connections */
     snprintf(req, sizeof(req), "*2\r\n$3\r\nGET\r\n$%zu\r\n%s\r\n",
              strlen(k1), k1);

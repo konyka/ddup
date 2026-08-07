@@ -123,7 +123,19 @@ typedef struct mt_task {
     /* EXEC input: watch entries transferred from the home conn state */
     mt_watch_entry *exec_watches;
     size_t nexec_watches;
+    /* task pool (Phase 31): pooled tasks carry their single command in
+     * inline_cmd/inline_buf (raw payloads larger than inline_buf fall
+     * back to a malloc'd side buffer) and return to the home worker's
+     * freelist instead of the allocator. pooled tasks are allocated AND
+     * recycled through mt_task_free on any thread (mutex-guarded list). */
+    struct mt_task *pool_next;
+    mt_cmd_blob inline_cmd;
+    char inline_buf[256];
+    int pooled;
 } mt_task;
+
+#define MT_TASK_INLINE_MAX 256 /* inline_buf size */
+#define MT_TASK_POOL_MAX 256   /* freelist cap per worker (overflow: free) */
 
 struct worker {
     int id;
@@ -141,6 +153,14 @@ struct worker {
     mt_spsc *migrate;     /* MT_TASK_MIGRATE conns from other workers */
     arena exec_arena;     /* re-parse scratch for routed commands */
     uint64_t tasks_executed; /* routed tasks executed (test/observability) */
+    /* task object pool (Phase 31): recycled single-command tasks; the
+     * mutex also covers the rare cross-thread recycle (UNWATCH/UNSUB are
+     * freed on the executing worker) */
+    pal_mutex task_pool_mu;
+    mt_task *task_pool;
+    uint32_t task_pool_n;
+    uint64_t task_pool_hits; /* freelist pops (observability) */
+    int pool_off;            /* set at destroy: free, never recycle */
 #if DDUP_HAS_C_ATOMICS
     /* Kick dedup (Phase 27): 1 while a wakeup byte/completion is queued
      * but not yet consumed; producers skip redundant kicks. Reset at the
@@ -212,6 +232,9 @@ typedef struct mt_conn_state {
     mt_cmd_blob *batch;
     size_t batch_n;
     size_t batch_cap;
+    /* inline staging for the first blob of an open batch (Phase 31):
+     * batch[0].raw == batch_inline means "not heap-owned" */
+    char batch_inline[MT_TASK_INLINE_MAX];
     /* mt-level transaction state (session never enters MULTI in mt mode) */
     int in_multi;
     mt_cmd_blob *mq; /* queued command blobs between MULTI and EXEC */
@@ -266,17 +289,47 @@ static mt_task *mt_task_new(void *conn, worker *home, uint64_t seq,
 static void mt_task_free(void *ptr)
 {
     mt_task *t = (mt_task *)ptr;
+    worker *home;
     size_t i;
     if (t == NULL)
         return;
-    mt_blobs_free(t->cmds, t->ncmds);
-    resp_buf_free(&t->reply);
+    /* release the dynamic payloads (inline staging is not heap) */
+    if (t->cmds != NULL && t->cmds != &t->inline_cmd)
+        mt_blobs_free(t->cmds, t->ncmds);
+    else if (t->cmds == &t->inline_cmd &&
+             t->inline_cmd.raw != t->inline_buf)
+        free(t->inline_cmd.raw);
     free(t->watch_out);
     if (t->exec_watches != NULL) {
         for (i = 0; i < t->nexec_watches; i++)
             free(t->exec_watches[i].key);
         free(t->exec_watches);
     }
+    /* recycle the object into the home worker's freelist (struct +
+     * reply capacity survive; reply buffers >256KB are let go) */
+    home = t->home;
+    if (home != NULL && home->pool_off)
+        home = NULL; /* teardown: plain free, the mutex may be gone */
+    if (home != NULL && t->reply.cap <= 256 * 1024) {
+        int stocked = 0;
+        pal_mutex_lock(&home->task_pool_mu);
+        if (home->task_pool_n < MT_TASK_POOL_MAX) {
+            t->cmds = NULL;
+            t->ncmds = 0;
+            t->watch_out = NULL;
+            t->exec_watches = NULL;
+            t->agg = NULL;
+            t->pooled = 1;
+            t->pool_next = home->task_pool;
+            home->task_pool = t;
+            home->task_pool_n++;
+            stocked = 1;
+        }
+        pal_mutex_unlock(&home->task_pool_mu);
+        if (stocked)
+            return;
+    }
+    resp_buf_free(&t->reply);
     free(t);
 }
 
@@ -577,8 +630,15 @@ static void mt_state_free_cb(void *ctx, void *ptr)
         st->reorder = t->next;
         mt_task_free(t);
     }
-    /* drop an unflushed merge batch (conn closed mid-pipeline) */
-    mt_blobs_free(st->batch, st->batch_n);
+    /* drop an unflushed merge batch (conn closed mid-pipeline); the first
+     * blob's bytes may live in st->batch_inline (never heap) */
+    if (st->batch != NULL) {
+        size_t bi;
+        for (bi = 0; bi < st->batch_n; bi++)
+            if (st->batch[bi].raw != st->batch_inline)
+                free(st->batch[bi].raw);
+        free(st->batch);
+    }
     /* drop transaction state */
     mt_blobs_free(st->mq, st->mq_n);
     mt_watches_clear((worker *)ctx, st);
@@ -1082,13 +1142,73 @@ static int mt_route_aggregate(worker *home, void *conn,
     return 1;
 }
 
-/* Flush the open merge batch (if any) as one routed task. */
+/* Pop a task from the home worker's freelist (NULL when empty: caller
+ * falls back to the heap path). The reply buffer keeps its capacity. */
+static mt_task *mt_pool_task_new(worker *home)
+{
+    mt_task *t;
+    pal_mutex_lock(&home->task_pool_mu);
+    t = home->task_pool;
+    if (t != NULL) {
+        home->task_pool = t->pool_next;
+        home->task_pool_n--;
+        home->task_pool_hits++;
+    }
+    pal_mutex_unlock(&home->task_pool_mu);
+    if (t == NULL)
+        return NULL;
+    t->next = NULL;
+    t->agg = NULL;
+    t->kind = MT_TASK_CMD;
+    t->db_index = 0;
+    t->watch_out = NULL;
+    t->nwatch_out = 0;
+    t->exec_watches = NULL;
+    t->nexec_watches = 0;
+    t->reply.len = 0;
+    t->pool_next = NULL;
+    return t;
+}
+
+/* Flush the open merge batch (if any) as one routed task. A single
+ * command whose bytes sit in st->batch_inline gets a pooled task with an
+ * inline blob (no allocator traffic on the hot path, Phase 31). */
 static void mt_batch_flush(worker *home, void *conn, mt_conn_state *st)
 {
     int target = st->batch_target;
     mt_task *t;
     if (st->batch_n == 0)
         return;
+    if (st->batch_n == 1 && st->batch[0].raw == st->batch_inline) {
+        t = mt_pool_task_new(home);
+        if (t != NULL) {
+            t->conn = conn;
+            t->home = home;
+            t->seq = st->batch_seq;
+            t->span = 1;
+            t->ncmds = 1;
+            t->cmds = &t->inline_cmd;
+            t->db_index = st->batch_db;
+            memcpy(t->inline_buf, st->batch_inline, st->batch[0].len);
+            t->inline_cmd.raw = t->inline_buf;
+            t->inline_cmd.len = st->batch[0].len;
+            mt_pending_inc(home, st);
+            mt_push_task(home, &home->ms->workers[target].inbox[home->id],
+                         t, &home->ms->workers[target]);
+            goto flushed;
+        }
+        /* pool empty: move the inline bytes to the heap and take the
+         * normal path (double OOM: drop, parity with alloc-failure) */
+        {
+            char *p = (char *)malloc(st->batch[0].len);
+            if (p == NULL) {
+                free(st->batch); /* inline bytes stay with st */
+                goto flushed;
+            }
+            memcpy(p, st->batch_inline, st->batch[0].len);
+            st->batch[0].raw = p;
+        }
+    }
     t = mt_task_new(conn, home, st->batch_seq, (uint32_t)st->batch_n,
                     (uint32_t)st->batch_n, st->batch);
     if (t == NULL) {
@@ -1099,12 +1219,16 @@ static void mt_batch_flush(worker *home, void *conn, mt_conn_state *st)
         mt_push_task(home, &home->ms->workers[target].inbox[home->id], t,
                      &home->ms->workers[target]);
     }
+flushed:
     st->batch = NULL;
     st->batch_n = 0;
     st->batch_cap = 0;
     st->batch_target = -1;
 }
 
+/* Append one raw command to the open batch. The first blob's bytes live
+ * in st->batch_inline when they fit (no allocation on the hot path);
+ * growing past one command materializes it into a heap block. */
 static int mt_batch_append(mt_conn_state *st, const char *raw, size_t rawlen)
 {
     mt_cmd_blob *b;
@@ -1117,7 +1241,21 @@ static int mt_batch_append(mt_conn_state *st, const char *raw, size_t rawlen)
         st->batch = nb;
         st->batch_cap = ncap;
     }
+    if (st->batch_n == 1 && st->batch[0].raw == st->batch_inline) {
+        char *p = (char *)malloc(st->batch[0].len);
+        if (p == NULL)
+            return -1;
+        memcpy(p, st->batch_inline, st->batch[0].len);
+        st->batch[0].raw = p;
+    }
     b = &st->batch[st->batch_n];
+    if (st->batch_n == 0 && rawlen <= sizeof(st->batch_inline)) {
+        memcpy(st->batch_inline, raw, rawlen);
+        b->raw = st->batch_inline;
+        b->len = rawlen;
+        st->batch_n = 1;
+        return 0;
+    }
     b->raw = (char *)malloc(rawlen);
     if (b->raw == NULL)
         return -1;
@@ -2378,6 +2516,7 @@ mt_server *mt_server_create_ex(const char *host, uint16_t port, int nworkers,
             w->migrate == NULL || mt_spsc_init(&w->accepts, 256) != 0 ||
             mt_spsc_init(&w->accepts_tls, 256) != 0 ||
             pal_mutex_init(&w->pending_mu) != 0 ||
+            pal_mutex_init(&w->task_pool_mu) != 0 ||
             pal_wakeup_create(&w->wakeup) != 0) {
             ms->nworkers = i; /* destroy only initialized workers */
             mt_server_destroy(ms);
@@ -2434,6 +2573,15 @@ uint64_t mt_server_tasks_executed(const mt_server *ms)
     int i;
     for (i = 0; i < ms->nworkers; i++)
         total += ms->workers[i].tasks_executed;
+    return total;
+}
+
+uint64_t mt_server_pool_hits(const mt_server *ms)
+{
+    uint64_t total = 0;
+    int i;
+    for (i = 0; i < ms->nworkers; i++)
+        total += ms->workers[i].task_pool_hits;
     return total;
 }
 
@@ -2533,6 +2681,11 @@ void mt_server_destroy(mt_server *ms)
     pal_close(ms->listen_fd);
     if (ms->tls_listen_fd != PAL_SOCKET_INVALID)
         pal_close(ms->tls_listen_fd);
+    /* stop recycling BEFORE draining any rings: drains free tasks into
+     * home pools, and an earlier worker's pool mutex is destroyed by the
+     * time a later worker's drain runs */
+    for (i = 0; i < ms->nworkers; i++)
+        ms->workers[i].pool_off = 1;
     for (i = 0; i < ms->nworkers; i++) {
         worker *w = &ms->workers[i];
         if (w->srv == NULL)
@@ -2574,6 +2727,22 @@ void mt_server_destroy(mt_server *ms)
         pal_wakeup_destroy(&w->wakeup);
         arena_destroy(&w->exec_arena);
         server_destroy(w->srv);
+        /* drain the task pool: recycled tasks still own their reply bufs */
+        {
+            mt_task *tp;
+            pal_mutex_lock(&w->task_pool_mu);
+            tp = w->task_pool;
+            w->task_pool = NULL;
+            w->task_pool_n = 0;
+            pal_mutex_unlock(&w->task_pool_mu);
+            while (tp != NULL) {
+                mt_task *nx = tp->pool_next;
+                resp_buf_free(&tp->reply);
+                free(tp);
+                tp = nx;
+            }
+        }
+        pal_mutex_destroy(&w->task_pool_mu);
     }
     free(ms->workers);
     free(ms);
