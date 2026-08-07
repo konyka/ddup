@@ -52,6 +52,19 @@ jobs:
           tail -30 /tmp/strace.log || true
           echo "== test_server backend probe =="
           timeout 200 ctest --test-dir build -R '^test_server$' --output-on-failure 2>&1 || true
+          echo "== mt4 exact bench sequence =="
+          ./build/ddup-server --port 7777 --io-threads 4 >/tmp/d7.log 2>&1 &
+          sleep 2
+          timeout 5 redis-cli -p 7777 PING || echo "MUTE 7777"
+          timeout 60 redis-benchmark -p 7777 -n 10000 -c 50 -P 16 -t set,get -q >/dev/null 2>&1 || echo "WARM-FAIL 7777"
+          timeout 15 redis-benchmark -p 7777 -n 100 -c 10 -P 1 -t set -q >/dev/null 2>&1 || echo "ALIVE-FAIL 7777"
+          for i in 1 2 3; do
+            timeout 60 redis-benchmark -p 7777 -t set -n 200000 -c 50 -P 16 -d 16 -q 2>/dev/null | tr '\r' '\n' | grep -i "^set: .*requests per second" || echo "CELL-RUN-FAIL $i"
+          done
+          timeout 5 redis-cli -p 7777 PING || echo "DEAD-AFTER 7777"
+          ps aux | grep ddup-server | grep -v grep || echo "no ddup-server processes left"
+          dmesg 2>/dev/null | tail -5 || true
+          cat /tmp/d7.log
           } > /tmp/probe.out 2>&1
           true
       - name: Publish probe output
