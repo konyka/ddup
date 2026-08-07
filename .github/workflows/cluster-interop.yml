@@ -133,6 +133,97 @@ jobs:
           echo "$MOVED" | grep -q "7400"
           echo "INTEROP PASS"
 
+      - name: "Mixed failover: ddup slave of a killed redis master promotes"
+        shell: bash
+        run: |
+          exec > >(tee -a /tmp/interop-run.log) 2>&1
+          set -x
+          R=/tmp/interop-fo
+          rm -rf $R && mkdir -p $R
+
+          # fresh 3-master redis cluster on 7101-7103
+          for p in 7101 7102 7103; do
+            mkdir -p $R/rc$p
+            redis-server --port $p --cluster-enabled yes \
+              --cluster-config-file nodes.conf --dir $R/rc$p \
+              --daemonize yes --logfile $R/rc$p/log.txt
+          done
+          for p in 7101 7102 7103; do
+            for i in $(seq 1 30); do
+              redis-cli -p $p ping 2>/dev/null | grep -q PONG && break
+              sleep 1
+            done
+          done
+          echo yes | redis-cli --cluster create 127.0.0.1:7101 127.0.0.1:7102 \
+            127.0.0.1:7103 --cluster-replicas 0
+          for i in $(seq 1 30); do
+            redis-cli -p 7102 cluster info | grep -q "cluster_state:ok" && break
+            sleep 1
+          done
+
+          # ddup node 2 in redis bus mode joins, then becomes 7101's slave.
+          # (data replication across implementations is RDB-incompatible and
+          # full-resync fails by design; the cluster role is what matters.)
+          mkdir -p $R/ddup2
+          ./build/ddup-server --port 7401 --cluster-enabled yes \
+            --cluster-bus-protocol redis --dir $R/ddup2 > $R/ddup2/stdout.log 2>&1 &
+          for i in $(seq 1 30); do
+            redis-cli -p 7401 ping 2>/dev/null | grep -q PONG && break
+            sleep 1
+          done
+          D2_ID=$(redis-cli -p 7401 cluster myid | tr -d '\r')
+          M1_ID=$(redis-cli -p 7101 cluster myid | tr -d '\r')
+          echo "ddup2 id: $D2_ID, redis master 7101 id: $M1_ID"
+          redis-cli -p 7102 cluster meet 127.0.0.1 7401
+          conv=0
+          for i in $(seq 1 60); do
+            n=$(redis-cli -p 7401 cluster info | grep cluster_known_nodes | grep -oE '[0-9]+')
+            [ "$n" = "4" ] && { conv=1; break; }
+            sleep 1
+          done
+          echo "assert ddup2-known-nodes-4: $conv"
+          timeout 10 redis-cli -p 7401 cluster replicate $M1_ID
+
+          # kill the redis master: SIGKILL, no farewell
+          pkill -9 -f "redis-server.*:7101" || true
+          for i in $(seq 1 15); do
+            redis-cli -p 7101 ping 2>/dev/null | grep -q PONG || break
+            sleep 1
+          done
+
+          # ddup2 must detect, win the vote, promote and claim 7101's slots
+          promoted=0
+          for i in $(seq 1 150); do
+            timeout 10 redis-cli -p 7401 cluster nodes | grep -q "myself,master" && { promoted=1; break; }
+            sleep 2
+          done
+          echo "assert ddup2-promoted: $promoted"
+          ok4=0
+          for i in $(seq 1 150); do
+            redis-cli -p 7102 cluster info | grep -q "cluster_state:ok" && { ok4=1; break; }
+            sleep 2
+          done
+          echo "assert cluster-state-ok-after-failover: $ok4"
+
+          # restart the killed master: it must rejoin and yield its slots
+          redis-server --port 7101 --cluster-enabled yes \
+            --cluster-config-file nodes.conf --dir $R/rc7101 \
+            --daemonize yes --logfile $R/rc7101/log2.txt
+          ok5=0
+          for i in $(seq 1 90); do
+            line=$(redis-cli -p 7102 cluster nodes | grep "$M1_ID" | tr -d '\r')
+            if echo "$line" | grep -q "slave"; then ok5=1; break; fi
+            if echo "$line" | grep -q "master" && ! echo "$line" | grep -q "0-5460"; then ok5=1; break; fi
+            sleep 2
+          done
+          echo "assert old-master-yielded: $ok5 ($line)"
+
+          test "$conv" = 1
+          test "$promoted" = 1
+          test "$ok4" = 1
+          test "$ok5" = 1
+          echo "MIXED FAILOVER PASS"
+
       - name: Publish failure logs
         if: failure()
         shell: bash
@@ -152,6 +243,7 @@ jobs:
           rm -f *.log *.txt
           cp /tmp/interop-run.log . 2>/dev/null || true
           cp -r /tmp/interop logs 2>/dev/null || true
+          cp -r /tmp/interop-fo logs-fo 2>/dev/null || true
           echo "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" > RUN.txt
           git config user.email ci@ddup.local
           git config user.name "ddup-ci"
