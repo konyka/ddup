@@ -125,11 +125,44 @@ jobs:
           MOVED=$(timeout 10 redis-cli -p 7001 get $KEY 2>&1 | tr -d '\r')
           echo "redis get reply: $MOVED"
 
+          # --- sharded pub/sub, ddup -> redis ---
+          # channel hashing into ddup's 0-99 range
+          CHA=""
+          for i in $(seq 0 300); do
+            sl=$(timeout 10 redis-cli -p 7001 cluster keyslot sch:$i | tr -d '\r')
+            [ "$sl" -lt 100 ] && { CHA="sch:$i"; break; }
+          done
+          echo "shard channel on ddup range: '$CHA' (slot $sl)"
+          timeout 60 stdbuf -oL redis-cli -p 7001 ssubscribe $CHA > $R/ssub-a.out 2>&1 &
+          SSUBA=$!
+          # ddup SPUBLISH -> bus PUBLISHSHARD (type 10) -> redis delivers
+          okA=0
+          for i in $(seq 1 20); do
+            timeout 10 redis-cli -p 7400 spublish $CHA hello-from-ddup
+            grep -q "hello-from-ddup" $R/ssub-a.out && { okA=1; break; }
+            sleep 1
+          done
+          echo "assert ddup-spublish-reaches-redis: $okA"
+
+          # --- regular pub/sub, redis -> ddup (type 4 is cluster-wide) ---
+          timeout 60 stdbuf -oL redis-cli -p 7400 subscribe rchan > $R/sub-a.out 2>&1 &
+          SUBA=$!
+          okA2=0
+          for i in $(seq 1 20); do
+            timeout 10 redis-cli -p 7001 publish rchan hello-regular
+            grep -q "hello-regular" $R/sub-a.out && { okA2=1; break; }
+            sleep 1
+          done
+          echo "assert redis-publish-reaches-ddup: $okA2"
+          kill $SSUBA $SUBA 2>/dev/null || true
+
           test "$ok1" = 1
           test "$ok2" = 1
           test "$ok3a" = 1
           test "$ok3" = 1
           test "$VAL" = "interop-ok"
+          test "$okA" = 1
+          test "$okA2" = 1
           echo "$MOVED" | grep -q "7400"
           echo "INTEROP PASS"
 
@@ -184,6 +217,27 @@ jobs:
           echo "assert ddup2-known-nodes-4: $conv"
           timeout 10 redis-cli -p 7401 cluster replicate $M1_ID
 
+          # --- sharded pub/sub, redis -> ddup (before the kill) ---
+          # redis propagates PUBLISHSHARD only inside the slot's shard
+          # (primary + its replicas), so the ddup subscriber must hang off
+          # ddup2, 7101's replica; channel hashes into 7101's 0-5460 range
+          CHB=""
+          for i in $(seq 0 300); do
+            sl=$(timeout 10 redis-cli -p 7102 cluster keyslot rch:$i | tr -d '\r')
+            [ "$sl" -le 5460 ] && { CHB="rch:$i"; break; }
+          done
+          echo "shard channel on 7101 range: '$CHB' (slot $sl)"
+          timeout 60 stdbuf -oL redis-cli -p 7401 ssubscribe $CHB > $R/ssub-b.out 2>&1 &
+          SSUBB=$!
+          okB=0
+          for i in $(seq 1 25); do
+            timeout 10 redis-cli -p 7101 spublish $CHB hello-from-redis
+            grep -q "hello-from-redis" $R/ssub-b.out && { okB=1; break; }
+            sleep 1
+          done
+          kill $SSUBB 2>/dev/null || true
+          echo "assert redis-spublish-reaches-ddup-replica: $okB"
+
           # kill the redis master: SIGKILL, no farewell
           pkill -9 -f "redis-server.*:7101" || true
           for i in $(seq 1 15); do
@@ -219,6 +273,7 @@ jobs:
           echo "assert old-master-yielded: $ok5 ($line)"
 
           test "$conv" = 1
+          test "$okB" = 1
           test "$promoted" = 1
           test "$ok4" = 1
           test "$ok5" = 1
