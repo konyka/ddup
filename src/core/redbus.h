@@ -53,7 +53,9 @@ void redbus_build_frame(struct db *d, int type, resp_buf *out);
  * cluster_merge_claims with configEpoch), merge gossip entries,
  * update last_seen; MEET additionally completes the handshake; FAIL
  * marks the named node disconnected; UPDATE applies a slot claim
- * (adopting it when it names myself); other types are tolerated
+ * (adopting it when it names myself); FAILOVER_AUTH_REQUEST is answered
+ * with an ACK frame when the vote-grant conditions hold; AUTH_ACKs are
+ * counted into the pending election; other types are tolerated
  * (ignored). src_ip (may be NULL) is the connection's peer address,
  * used when the frame's myip is empty (redis auto-discovery: myip is
  * only filled when cluster-announce-ip is configured). On PING or
@@ -62,5 +64,12 @@ void redbus_build_frame(struct db *d, int type, resp_buf *out);
 int redbus_handle_frame(struct db *d, const char *frame, size_t len,
                         resp_buf *reply_out, uint64_t now_ms,
                         const char *src_ip);
+
+/* Build a FAILOVER_AUTH_REQUEST for an in-flight election: PING-like
+ * frame whose slots/configEpoch alias the dead master (Redis
+ * clusterRequestFailoverAuth semantics) and whose currentEpoch is the
+ * election epoch. */
+void redbus_build_auth_request(struct db *d, uint64_t election_epoch,
+                               resp_buf *out);
 
 #endif /* DDUP_REDBUS_H */

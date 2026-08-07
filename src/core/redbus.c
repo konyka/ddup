@@ -317,6 +317,26 @@ static void handle_auth_ack(struct db *d, const char *frame)
     }
 }
 
+void redbus_build_auth_request(struct db *d, uint64_t election_epoch,
+                               resp_buf *out)
+{
+    size_t start = out->len;
+    cluster_node *me = cluster_myself(d);
+    cluster_node *m = (me != NULL && me->master_id[0] != '-')
+                          ? cluster_node_find(d, me->master_id)
+                          : NULL;
+    redbus_build_frame(d, REDBUS_TYPE_AUTH_REQUEST, out);
+    if (out->len == start)
+        return; /* no myself node: nothing was built */
+    put64be(out->data + start + 16, election_epoch);
+    if (m != NULL) {
+        /* alias the dead master's claim (Redis: a slave announces its
+         * master's slots and configEpoch with the request) */
+        put64be(out->data + start + 24, m->epoch);
+        memcpy(out->data + start + 80, m->slots, 2048);
+    }
+}
+
 int redbus_handle_frame(struct db *d, const char *frame, size_t len,
                         resp_buf *reply_out, uint64_t now_ms,
                         const char *src_ip)

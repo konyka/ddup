@@ -36,6 +36,15 @@ pal_socket_t pal_tcp_listen(const char *host, uint16_t port, int backlog,
 
 /* Blocking connect. Returns PAL_SOCKET_INVALID on failure. */
 pal_socket_t pal_tcp_connect(const char *host, uint16_t port);
+/* Non-blocking connect start: *out_fd is a non-blocking socket; returns
+ * 1 = connected, 0 = in progress (finish via pal_connect_finish on
+ * writability), -1 = failure. */
+int pal_tcp_connect_start(const char *host, uint16_t port,
+                          pal_socket_t *out_fd);
+/* Outcome of a pending connect: 0 connected, -1 failed. */
+int pal_connect_finish(pal_socket_t fd);
+/* Bounded wait for a pending connect: 0 = connected within timeout. */
+int pal_connect_wait(pal_socket_t fd, int timeout_ms);
 
 /* Accept one pending connection (blocking unless the listener is
  * non-blocking). Returns PAL_SOCKET_INVALID on failure. */

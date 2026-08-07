@@ -84,6 +84,72 @@ int pal_would_block(int err)
 #endif
 }
 
+/* Non-blocking connect start: *out_fd receives a NON-blocking socket.
+ * Returns 1 = connected already, 0 = in progress (complete via writable
+ * readiness + pal_connect_finish), -1 = failure. */
+int pal_tcp_connect_start(const char *host, uint16_t port,
+                          pal_socket_t *out_fd)
+{
+    char port_str[8];
+    struct addrinfo hints;
+    struct addrinfo *res = NULL;
+    struct addrinfo *ai;
+    pal_socket_t fd = PAL_SOCKET_INVALID;
+    int rc = -1;
+
+    snprintf(port_str, sizeof(port_str), "%u", (unsigned)port);
+    memset(&hints, 0, sizeof(hints));
+    hints.ai_family = AF_UNSPEC;
+    hints.ai_socktype = SOCK_STREAM;
+    if (getaddrinfo(host, port_str, &hints, &res) != 0)
+        return -1;
+    for (ai = res; ai != NULL; ai = ai->ai_next) {
+        fd = (pal_socket_t)socket(ai->ai_family, ai->ai_socktype,
+                                  ai->ai_protocol);
+        if (fd == PAL_SOCKET_INVALID)
+            continue;
+        pal_no_sigpipe(fd);
+        if (pal_set_nonblocking(fd, 1) != 0) {
+            pal_close(fd);
+            fd = PAL_SOCKET_INVALID;
+            continue;
+        }
+        if (connect(fd, ai->ai_addr, (pal_socklen_t)ai->ai_addrlen) == 0) {
+            rc = 1;
+            break;
+        }
+#if DDUP_OS_WINDOWS
+        if (WSAGetLastError() == WSAEWOULDBLOCK) {
+#else
+        if (errno == EINPROGRESS || errno == EAGAIN) {
+#endif
+            rc = 0;
+            break;
+        }
+        pal_close(fd);
+        fd = PAL_SOCKET_INVALID;
+    }
+    freeaddrinfo(res);
+    if (rc < 0)
+        return -1;
+    *out_fd = fd;
+    return rc;
+}
+
+/* Outcome of a pending pal_tcp_connect_start: 0 connected, -1 failed. */
+int pal_connect_finish(pal_socket_t fd)
+{
+    int err = 0;
+    pal_socklen_t el = (pal_socklen_t)sizeof(err);
+#if DDUP_OS_WINDOWS
+    if (getsockopt((SOCKET)fd, SOL_SOCKET, SO_ERROR, (char *)&err, &el) != 0)
+#else
+    if (getsockopt(fd, SOL_SOCKET, SO_ERROR, &err, &el) != 0)
+#endif
+        return -1;
+    return err == 0 ? 0 : -1;
+}
+
 int pal_set_nonblocking(pal_socket_t fd, int on)
 {
 #if DDUP_OS_WINDOWS
@@ -180,6 +246,43 @@ pal_socket_t pal_tcp_listen(const char *host, uint16_t port, int backlog,
     return fd;
 }
 
+/* Wait (bounded) for a nonblocking connect to complete; 0 = connected. */
+int pal_connect_wait(pal_socket_t fd, int timeout_ms)
+{
+    fd_set wfds, efds;
+    struct timeval tv;
+    int rc, err = 0;
+    pal_socklen_t el = (pal_socklen_t)sizeof(err);
+    FD_ZERO(&wfds);
+    FD_ZERO(&efds);
+#if DDUP_OS_WINDOWS
+    FD_SET((SOCKET)fd, &wfds);
+    FD_SET((SOCKET)fd, &efds);
+    tv.tv_sec = timeout_ms / 1000;
+    tv.tv_usec = (long)(timeout_ms % 1000) * 1000L;
+    rc = select(0, NULL, &wfds, &efds, &tv);
+    if (rc <= 0 || FD_ISSET(fd, &efds) || !FD_ISSET(fd, &wfds))
+        return -1;
+    if (getsockopt((SOCKET)fd, SOL_SOCKET, SO_ERROR, (char *)&err, &el) != 0)
+        return -1;
+#else
+    FD_SET(fd, &wfds);
+    FD_SET(fd, &efds);
+    tv.tv_sec = timeout_ms / 1000;
+    tv.tv_usec = (long)(timeout_ms % 1000) * 1000L;
+    rc = select((int)fd + 1, NULL, &wfds, &efds, &tv);
+    if (rc <= 0)
+        return -1;
+    if (getsockopt(fd, SOL_SOCKET, SO_ERROR, &err, &el) != 0)
+        return -1;
+#endif
+    return err == 0 ? 0 : -1;
+}
+
+/* Connect to host:port, bounded: healthy connects complete instantly,
+ * refused ones fail in milliseconds, silently dropped ones in ~1s
+ * (unbounded OS SYN retry stacks stall event loops for seconds — seen
+ * on Windows where a refused loopback connect blocks ~2s). */
 pal_socket_t pal_tcp_connect(const char *host, uint16_t port)
 {
     char port_str[8];
@@ -202,8 +305,16 @@ pal_socket_t pal_tcp_connect(const char *host, uint16_t port)
         if (fd == PAL_SOCKET_INVALID)
             continue;
         pal_no_sigpipe(fd);
-        if (connect(fd, ai->ai_addr, (pal_socklen_t)ai->ai_addrlen) == 0)
+        if (pal_set_nonblocking(fd, 1) != 0) {
+            pal_close(fd);
+            fd = PAL_SOCKET_INVALID;
+            continue;
+        }
+        if (connect(fd, ai->ai_addr, (pal_socklen_t)ai->ai_addrlen) == 0 ||
+            pal_connect_wait(fd, 1000) == 0) {
+            (void)pal_set_nonblocking(fd, 0); /* legacy blocking semantics */
             break;
+        }
         pal_close(fd);
         fd = PAL_SOCKET_INVALID;
     }

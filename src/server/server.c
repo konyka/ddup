@@ -99,6 +99,7 @@ struct conn {
 #define LINK_SNAPSHOT 1
 #define LINK_STREAMING 2
 #define LINK_SNAP_HDR 3 /* PSYNC FULLRESYNC: snapshot frame header next */
+#define LINK_CONNECTING 4 /* async connect in flight (readiness backend) */
 
 /* cluster bus connection (cluster bus protocol v1, server side) */
 typedef struct bus_conn {
@@ -602,14 +603,49 @@ static ptrdiff_t conn_write(conn *c, const void *buf, size_t n)
 /* master link (replica side)                                         */
 /* ------------------------------------------------------------------ */
 
+/* queue the PSYNC handshake (resume attempt when we have a cached master
+ * id/offset, full resync otherwise) into the link's out buffer */
+static void repl_link_queue_psync(server *srv, conn *c)
+{
+    char psync[160];
+    int pl;
+    if (srv->repl.master_replid[0] != '\0') {
+        char offstr[24];
+        int ol = snprintf(offstr, sizeof(offstr), "%llu",
+                          (unsigned long long)srv->repl.master_offset);
+        pl = snprintf(psync, sizeof(psync),
+                      "*3\r\n$5\r\nPSYNC\r\n$40\r\n%s\r\n$%d\r\n%s\r\n",
+                      srv->repl.master_replid, ol, offstr);
+    } else {
+        pl = snprintf(psync, sizeof(psync),
+                      "*3\r\n$5\r\nPSYNC\r\n$1\r\n?\r\n$2\r\n-1\r\n");
+    }
+    resp_buf_reserve(&c->out, (size_t)pl);
+    memcpy(c->out.data, psync, (size_t)pl);
+    c->out.len = (size_t)pl;
+    c->link_state = LINK_SYNC_SENT;
+}
+
 static int repl_link_connect(server *srv)
 {
-    pal_socket_t fd;
+    pal_socket_t fd = PAL_SOCKET_INVALID;
     conn *c;
+    int cr;
 
     srv->last_reconnect = pal_now_ms();
-    fd = pal_tcp_connect(srv->repl.master_host, srv->repl.master_port);
-    if (fd == PAL_SOCKET_INVALID)
+    cr = pal_tcp_connect_start(srv->repl.master_host, srv->repl.master_port,
+                               &fd);
+    if (cr == 0 && srv->backend == SERVER_BACKEND_IOCP) {
+        /* no readiness on the proactor: bounded finish (refused peers fail
+         * fast, healthy ones complete instantly; a dropping network costs
+         * 50ms, retried by the 500ms timer without stalling the loop) */
+        if (pal_connect_wait(fd, 50) != 0) {
+            pal_close(fd);
+            return -1;
+        }
+        cr = 1;
+    }
+    if (cr < 0)
         return -1;
     (void)pal_set_tcp_nodelay(fd, 1);
     c = conn_create(srv, fd);
@@ -639,34 +675,18 @@ static int repl_link_connect(server *srv)
             conn_close(srv, srv->nconns - 1);
             return -1;
         }
-    } else if (pal_loop_add(srv->loop, fd, 1, 0, c) != 0) {
+    } else if (pal_loop_add(srv->loop, fd, 1, cr == 0, c) != 0) {
         conn_close(srv, srv->nconns - 1);
         return -1;
     }
     srv->master_link = c;
-    {
-        /* PSYNC with the cached master id/offset when we have one (resume
-         * attempt), otherwise "? -1" (first sync: full resync) */
-        char psync[160];
-        int pl;
-        if (srv->repl.master_replid[0] != '\0') {
-            char offstr[24];
-            int ol = snprintf(offstr, sizeof(offstr), "%llu",
-                              (unsigned long long)srv->repl.master_offset);
-            pl = snprintf(psync, sizeof(psync),
-                          "*3\r\n$5\r\nPSYNC\r\n$40\r\n%s\r\n$%d\r\n%s\r\n",
-                          srv->repl.master_replid, ol, offstr);
-        } else {
-            pl = snprintf(psync, sizeof(psync),
-                          "*3\r\n$5\r\nPSYNC\r\n$1\r\n?\r\n$2\r\n-1\r\n");
-        }
-        resp_buf_reserve(&c->out, (size_t)pl);
-        memcpy(c->out.data, psync, (size_t)pl);
-        c->out.len = (size_t)pl;
+    if (cr == 1) {
+        repl_link_queue_psync(srv, c);
+        if (srv->backend == SERVER_BACKEND_IOCP)
+            kick_flush(srv, c); /* ship the PSYNC via the proactor */
+    } else {
+        c->link_state = LINK_CONNECTING; /* PSYNC on writability */
     }
-    c->link_state = LINK_SYNC_SENT;
-    if (srv->backend == SERVER_BACKEND_IOCP)
-        kick_flush(srv, c); /* ship the PSYNC via the proactor */
     return 0;
 }
 
@@ -1840,21 +1860,77 @@ static void cluster_fail_check(server *s, uint64_t now_ms)
     }
 }
 
+/* broadcast a FAILOVER_AUTH_REQUEST on every bus conn (redis mode) */
+static void cluster_request_votes(server *s)
+{
+    bus_conn *bc;
+    for (bc = s->bus; bc != NULL; bc = bc->next) {
+        redbus_build_auth_request(&s->db, s->db.failover_req_epoch,
+                                  &bc->out);
+        bus_flush(s, bc);
+    }
+}
+
 /* promote myself when the failover election delay has elapsed and the
- * master is still down; announce the claims immediately */
+ * master is still down; announce the claims immediately. In redis bus
+ * mode this runs the vote round instead: request on the first expiry,
+ * promote on majority of slot-serving masters at the second. */
 static void cluster_failover_check(server *s, uint64_t now_ms)
 {
     cluster_node *me, *m;
+    db *d = &s->db;
     if (s->failover_deadline_ms == 0 || now_ms < s->failover_deadline_ms)
         return;
     s->failover_deadline_ms = 0;
-    me = cluster_myself(&s->db);
+    me = cluster_myself(d);
     m = me != NULL && !(me->master_id[0] == '-' && me->master_id[1] == '\0')
-            ? cluster_node_find(&s->db, me->master_id)
+            ? cluster_node_find(d, me->master_id)
             : NULL;
     if (me == NULL || !(me->flags & CLUSTER_NODE_SLAVE) || m == NULL ||
-        !(m->flags & CLUSTER_NODE_DISCONNECTED))
-        return; /* master recovered (or we were promoted) meanwhile */
+        !(m->flags & CLUSTER_NODE_DISCONNECTED)) {
+        d->failover_req_epoch = 0; /* master recovered (or we promoted) */
+        return;
+    }
+    if (s->bus_protocol == SERVER_BUS_PROTOCOL_REDIS) {
+        if (d->failover_req_epoch == 0) {
+            /* start the election: bump the epoch and request votes */
+            d->failover_req_epoch = cluster_next_epoch(d);
+            d->failover_ack_mask = 0;
+            d->failover_ack_count = 0;
+            cluster_request_votes(s);
+            s->failover_deadline_ms = now_ms + s->node_timeout_ms;
+            return;
+        }
+        /* election window closed: promote on a majority of slot-serving
+         * masters, else retry shortly */
+        {
+            int masters = 0, i;
+            uint32_t sl;
+            for (i = 0; i < d->nnodes; i++) {
+                cluster_node *n = &d->nodes[i];
+                if (!(n->flags & CLUSTER_NODE_MASTER) ||
+                    (n->flags & CLUSTER_NODE_MYSELF))
+                    continue;
+                for (sl = 0; sl < 16384; sl++)
+                    if (cluster_slots_get(n->slots, sl))
+                        break;
+                if (sl < 16384)
+                    masters++;
+            }
+            if (d->failover_ack_count > masters / 2) {
+                d->failover_req_epoch = 0;
+                if (cluster_failover_promote(d)) {
+                    srv_replicaof(s, NULL, 0); /* stop data replication */
+                    s->nodes_dirty = 1;
+                    cluster_gossip_round(s);
+                }
+            } else {
+                d->failover_req_epoch = 0;
+                s->failover_deadline_ms = now_ms + 500; /* retry election */
+            }
+            return;
+        }
+    }
     if (cluster_failover_promote(&s->db)) {
         srv_replicaof(s, NULL, 0); /* stop data replication */
         s->nodes_dirty = 1;
@@ -2254,6 +2330,16 @@ int server_run_once(server *s, int timeout_ms)
 
             /* the outbound master link has its own protocol path */
             if (c->is_master_link) {
+                if (c->link_state == LINK_CONNECTING) {
+                    if (pal_connect_finish(c->fd) != 0) {
+                        conn_close(s, idx); /* retry timer reconnects */
+                        continue;
+                    }
+                    repl_link_queue_psync(s, c);
+                    pal_loop_mod(s->loop, c->fd, 1, 0, c);
+                    (void)conn_flush(s, c); /* ship the PSYNC */
+                    continue;
+                }
                 repl_link_service(s, c);
                 continue;
             }
