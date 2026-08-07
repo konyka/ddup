@@ -170,6 +170,10 @@ db *server_select_db(void *ctx, int idx);
 /* Total logical databases (default 16). */
 int server_ndbs(const server *s);
 
+/* Always-on IO counters (Phase 27); pointer owned by the server, used by
+ * the mt INFO __STATS__ stack session. */
+const io_counters *server_io_counters(server *s);
+
 /* Append a mutating command to the worker's AOF with the multi-db SELECT
  * prefix rule (no-op when AOF is off; used by the mt routed-task path). */
 void server_aof_log_cmd(server *s, int db_index, const resp_value *argv,

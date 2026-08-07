@@ -444,6 +444,9 @@ static void test_info_aggregation(void)
     DD_CHECK(strstr(buf, "cmdstat_set:calls=2,") != NULL);
     /* memory accounting is non-zero and aggregated */
     DD_CHECK(strstr(buf, "used_memory:0\r\n") == NULL);
+    /* IO counters (Phase 27) aggregate across workers too */
+    DD_CHECK(strstr(buf, "io_loops:") != NULL);
+    DD_CHECK(strstr(buf, "io_reads:0\r\n") == NULL);
 
     pal_close(a);
     mt_server_stop(ms);

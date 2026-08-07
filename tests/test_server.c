@@ -504,6 +504,57 @@ static void test_partial_reads(void)
     server_destroy(s);
 }
 
+static long long info_val(const char *buf, const char *key)
+{
+    const char *p = strstr(buf, key);
+    if (p == NULL)
+        return -1;
+    return strtoll(p + strlen(key), NULL, 10);
+}
+
+static void test_info_io_counters(void)
+{
+    server *s = make_server();
+    pal_socket_t c;
+    char buf[8192];
+    size_t got = 0;
+    int idle = 0, iter = 0;
+
+    DD_CHECK(s != NULL);
+    c = connect_client(s);
+    roundtrip(s, c, "*1\r\n$4\r\nPING\r\n", "+PONG\r\n");
+    roundtrip(s, c, "*3\r\n$3\r\nSET\r\n$1\r\nk\r\n$1\r\nv\r\n", "+OK\r\n");
+    roundtrip(s, c, "*2\r\n$3\r\nGET\r\n$1\r\nk\r\n", "$1\r\nv\r\n");
+
+    /* fetch the full INFO (pump until the reply stops growing) */
+    DD_CHECK_EQ_INT(14, pal_send(c, "*1\r\n$4\r\nINFO\r\n", 14));
+    while (idle < 3 && iter < 2000) {
+        ptrdiff_t n;
+        iter++;
+        server_run_once(s, 5);
+        n = pal_recv(c, buf + got, sizeof(buf) - got - 1);
+        if (n > 0) {
+            got += (size_t)n;
+            idle = 0;
+        } else {
+            idle++;
+        }
+    }
+    buf[got] = '\0';
+    /* always-on server IO counters (Phase 27): present and nonzero */
+    DD_CHECK(info_val(buf, "io_loops:") > 0);
+    DD_CHECK(info_val(buf, "io_events:") > 0);
+    DD_CHECK(info_val(buf, "io_reads:") > 0);
+    DD_CHECK(info_val(buf, "io_writes:") > 0);
+    DD_CHECK(info_val(buf, "io_bytes_read:") > 0);
+    DD_CHECK(info_val(buf, "io_bytes_written:") > 0);
+    /* the running INFO counts itself only after rendering: 3 visible */
+    DD_CHECK(info_val(buf, "total_commands:") >= 3);
+
+    pal_close(c);
+    server_destroy(s);
+}
+
 static void run_all_tests(void)
 {
     DD_RUN(test_ping_set_get);
@@ -520,6 +571,7 @@ static void run_all_tests(void)
     DD_RUN(test_pipeline_2000);
     DD_RUN(test_slow_client_no_stall);
     DD_RUN(test_partial_reads);
+    DD_RUN(test_info_io_counters);
 }
 
 int main(void)

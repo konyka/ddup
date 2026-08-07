@@ -150,6 +150,7 @@ struct server {
     buf_pool pool;        /* per-server buffer pool for conn rbuf/out */
     resp_buf prop_buf;    /* reusable propagation serialization buffer */
     repl_info repl;       /* INFO replication snapshot */
+    io_counters io;       /* always-on IO counters (Phase 27; calloc-zeroed) */
     conn *master_link;    /* outbound link to the master (replica side) */
     uint64_t last_reconnect; /* pal_now_ms of the last connect attempt */
     /* IOCP backend (Windows) */
@@ -664,6 +665,7 @@ static conn *conn_create(server *srv, pal_socket_t fd)
     c->sess->deliver_shard = srv_deliver_shard;
     c->sess->spublish_bus = srv_spublish_bus;
     c->sess->deliver = srv_deliver;
+    c->sess->io = &srv->io;
     c->sess->shutdown_ctx = srv;
     c->sess->request_shutdown = srv_request_shutdown;
     c->sess->repl = &srv->repl;
@@ -746,19 +748,32 @@ static int conn_rbuf_grow(conn *c)
     return 0;
 }
 
-/* conn IO: TLS when attached, plain socket otherwise */
+/* conn IO: TLS when attached, plain socket otherwise; the IO counters
+ * (Phase 27) count raw calls here, bytes only on success */
 static ptrdiff_t conn_read(conn *c, void *buf, size_t n)
 {
+    ptrdiff_t r;
     if (c->tls != NULL)
-        return pal_tls_read(c->tls, buf, n);
-    return pal_recv(c->fd, buf, n);
+        r = pal_tls_read(c->tls, buf, n);
+    else
+        r = pal_recv(c->fd, buf, n);
+    c->srv->io.reads++;
+    if (r > 0)
+        c->srv->io.bytes_read += (uint64_t)r;
+    return r;
 }
 
 static ptrdiff_t conn_write(conn *c, const void *buf, size_t n)
 {
+    ptrdiff_t r;
     if (c->tls != NULL)
-        return pal_tls_write(c->tls, buf, n);
-    return pal_send(c->fd, buf, n);
+        r = pal_tls_write(c->tls, buf, n);
+    else
+        r = pal_send(c->fd, buf, n);
+    c->srv->io.writes++;
+    if (r > 0)
+        c->srv->io.bytes_written += (uint64_t)r;
+    return r;
 }
 
 /* ------------------------------------------------------------------ */
@@ -832,6 +847,7 @@ static int repl_link_connect(server *srv)
         /* proactor path: post the first overlapped recv; the PSYNC goes
          * out through kick_flush below */
         c->pending_ops++;
+        srv->io.reads++;
         if (pal_iocp_recv(srv->iocp, fd, c->rbuf, c->rcap, c) != 0) {
             c->pending_ops--;
             conn_close(srv, srv->nconns - 1);
@@ -1136,6 +1152,11 @@ db *server_select_db(void *ctx, int idx)
 int server_ndbs(const server *s)
 {
     return s->ndbs;
+}
+
+const io_counters *server_io_counters(server *s)
+{
+    return &s->io;
 }
 
 /* shared AOF writer with the multi-db SELECT prefix rule */
@@ -2317,6 +2338,7 @@ static void kick_flush(server *s, conn *c)
         c->scap = ncap;
     }
     memcpy(c->sbuf, c->out.data + c->out_sent, n);
+    s->io.writes++;
     if (pal_iocp_send(s->iocp, c->fd, c->sbuf, n, c) == 0) {
         c->send_outstanding = 1;
         c->pending_ops++;
@@ -2352,6 +2374,7 @@ static void server_accept_iocp(server *s, pal_socket_t fd)
     }
     s->conns[s->nconns++] = c;
     c->pending_ops++;
+    s->io.reads++;
     if (pal_iocp_recv(s->iocp, c->fd, c->rbuf, c->rcap, c) != 0) {
         c->pending_ops--;
         conn_close(s, s->nconns - 1);
@@ -2365,6 +2388,7 @@ static int server_run_once_iocp(server *s, int timeout_ms)
     int i;
     if (nev <= 0)
         return nev;
+    s->io.events += (uint64_t)nev;
 
     for (i = 0; i < nev; i++) {
         pal_iocp_event *ev = &evs[i];
@@ -2424,6 +2448,7 @@ static int server_run_once_iocp(server *s, int timeout_ms)
                     continue;
                 }
                 c->rlen += (size_t)ev->bytes;
+                s->io.bytes_read += (uint64_t)ev->bytes;
                 repl_link_feed(s, c);
                 if (s->master_link != c)
                     continue; /* the feed closed the link */
@@ -2434,6 +2459,7 @@ static int server_run_once_iocp(server *s, int timeout_ms)
                     }
                 }
                 c->pending_ops++;
+                s->io.reads++;
                 if (pal_iocp_recv(s->iocp, c->fd, c->rbuf + c->rlen,
                                   c->rcap - c->rlen, c) != 0) {
                     c->pending_ops--;
@@ -2446,6 +2472,7 @@ static int server_run_once_iocp(server *s, int timeout_ms)
                 continue;
             }
             c->rlen += (size_t)ev->bytes;
+            s->io.bytes_read += (uint64_t)ev->bytes;
             if (conn_process_input(s, c) != 0) {
                 resp_write_error(&c->out, "ERR Protocol error", 18);
                 kick_flush(s, c);
@@ -2461,6 +2488,7 @@ static int server_run_once_iocp(server *s, int timeout_ms)
                 }
             }
             c->pending_ops++;
+            s->io.reads++;
             if (pal_iocp_recv(s->iocp, c->fd, c->rbuf + c->rlen,
                               c->rcap - c->rlen, c) != 0) {
                 c->pending_ops--;
@@ -2473,6 +2501,7 @@ static int server_run_once_iocp(server *s, int timeout_ms)
                 conn_close(s, idx);
                 continue;
             }
+            s->io.bytes_written += (uint64_t)ev->bytes;
             c->out_sent += (size_t)ev->bytes;
             if (c->out_sent < c->out.len) {
                 kick_flush(s, c);
@@ -2507,6 +2536,7 @@ int server_run_once(server *s, int timeout_ms)
     int nev;
     int i;
 
+    s->io.loops++;
     /* active expiration: at most one cycle per 100 ms of monotonic time;
      * every logical db gets a pass (empty expires tables exit in O(1)) */
     {
@@ -2560,6 +2590,7 @@ int server_run_once(server *s, int timeout_ms)
     nev = pal_loop_wait(s->loop, evs, SERVER_MAX_EVENTS, timeout_ms);
     if (nev <= 0)
         return nev;
+    s->io.events += (uint64_t)nev;
 
     for (i = 0; i < nev; i++) {
         if (s->wakeup_fd != PAL_SOCKET_INVALID &&

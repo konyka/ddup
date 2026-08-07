@@ -129,6 +129,7 @@ typedef struct session {
     /* replication (server-owned; NULL for stack sessions) */
     const repl_info *repl;  /* INFO replication source */
     const int *role;        /* server role, for READONLY checks */
+    const io_counters *io;  /* server IO counters for INFO (Phase 27) */
     int repl_link;          /* this session is the inbound master link */
     void (*sync_hook)(void *ctx, struct session *s);
     void *sync_ctx;

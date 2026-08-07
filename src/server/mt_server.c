@@ -623,6 +623,18 @@ static void mt_agg_info_line(mt_agg *agg, const char *p, size_t n)
                 st->cmd_usecs[id] += strtoull(q + 1, NULL, 10);
             }
         }
+    } else if (n >= 9 && memcmp(p, "io_loops:", 9) == 0) {
+        st->io.loops += strtoull(p + 9, NULL, 10);
+    } else if (n >= 10 && memcmp(p, "io_events:", 10) == 0) {
+        st->io.events += strtoull(p + 10, NULL, 10);
+    } else if (n >= 9 && memcmp(p, "io_reads:", 9) == 0) {
+        st->io.reads += strtoull(p + 9, NULL, 10);
+    } else if (n >= 10 && memcmp(p, "io_writes:", 10) == 0) {
+        st->io.writes += strtoull(p + 10, NULL, 10);
+    } else if (n >= 14 && memcmp(p, "io_bytes_read:", 14) == 0) {
+        st->io.bytes_read += strtoull(p + 14, NULL, 10);
+    } else if (n >= 17 && memcmp(p, "io_bytes_written:", 17) == 0) {
+        st->io.bytes_written += strtoull(p + 17, NULL, 10);
     }
 }
 
@@ -955,6 +967,7 @@ static void mt_info_exec(worker *w, resp_buf *out)
     sess.sel_ctx = w->srv;
     sess.sel_fn = server_select_db;
     sess.sel_ndbs = server_ndbs(w->srv);
+    sess.io = server_io_counters(w->srv);
     arena_init(&ar, 256);
     if (resp_parse(req, sizeof(req) - 1, &v, &ar) ==
         (ptrdiff_t)(sizeof(req) - 1))

@@ -70,6 +70,20 @@ void db_destroy(db *d);
 
 #define INFO_STATS_MAX_DBS 16
 
+/* Always-on server IO counters (Phase 27): cheap increments on the hot
+ * path; per-server in mt mode, summed across workers via the INFO
+ * __STATS__ transport. reads/writes count raw calls (incl. would-block
+ * and overlapped posts), the byte counters only successful transfers.
+ * Client and replication conns are covered; the cluster bus is not. */
+typedef struct io_counters {
+    uint64_t loops;         /* server_run_once iterations */
+    uint64_t events;        /* loop events / completions dispatched */
+    uint64_t reads;         /* recv-side calls or overlapped recv posts */
+    uint64_t writes;        /* send-side calls or overlapped send posts */
+    uint64_t bytes_read;
+    uint64_t bytes_written;
+} io_counters;
+
 /* Numeric snapshot behind INFO. mt mode transports one snapshot per worker
  * in a machine format (INFO __STATS__) and sums them into this struct. */
 typedef struct info_stats {
@@ -82,6 +96,7 @@ typedef struct info_stats {
     uint64_t db_expires[INFO_STATS_MAX_DBS];
     uint64_t cmd_calls[128];  /* indexed by CMD_* id */
     uint64_t cmd_usecs[128];
+    io_counters io;
 } info_stats;
 
 /* Render an INFO bulk reply from a stats snapshot. Per-process scalars

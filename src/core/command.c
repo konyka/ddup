@@ -919,6 +919,9 @@ static void info_fill(const session *s, info_stats *st)
             st->cmd_usecs[id] = d->cmd_usecs[id];
         }
     }
+    /* server IO counters are per-process, not per-db: copy once */
+    if (s->io != NULL)
+        st->io = *s->io;
 }
 
 /* Machine-readable snapshot (INFO __STATS__, internal): the mt aggregation
@@ -936,11 +939,23 @@ static void info_format_stats(const info_stats *st, resp_buf *out)
                   "expired_keys:%llu\r\n"
                   "evicted_keys:%llu\r\n"
                   "dbsize:%llu\r\n"
-                  "ndbs:%d\r\n",
+                  "ndbs:%d\r\n"
+                  "io_loops:%llu\r\n"
+                  "io_events:%llu\r\n"
+                  "io_reads:%llu\r\n"
+                  "io_writes:%llu\r\n"
+                  "io_bytes_read:%llu\r\n"
+                  "io_bytes_written:%llu\r\n",
                   (unsigned long long)st->used_memory,
                   (unsigned long long)st->expired_keys,
                   (unsigned long long)st->evicted_keys,
-                  (unsigned long long)st->dbsize, st->ndbs);
+                  (unsigned long long)st->dbsize, st->ndbs,
+                  (unsigned long long)st->io.loops,
+                  (unsigned long long)st->io.events,
+                  (unsigned long long)st->io.reads,
+                  (unsigned long long)st->io.writes,
+                  (unsigned long long)st->io.bytes_read,
+                  (unsigned long long)st->io.bytes_written);
     for (i = 0; i < st->ndbs; i++) {
         if (st->db_keys[i] > 0)
             n2 += snprintf(buf + n2, sizeof(buf) - (size_t)n2,
@@ -992,6 +1007,28 @@ void command_info_render(const db *home, const repl_info *repl,
                            "db%d:keys=%llu,expires=%llu,avg_ttl=0\r\n", i,
                            (unsigned long long)st->db_keys[i],
                            (unsigned long long)st->db_expires[i]);
+    }
+    /* server IO counters (Phase 27) + derived total command count */
+    {
+        uint64_t total_cmds = 0;
+        for (id = 1; id <= CMD_MAX; id++)
+            total_cmds += st->cmd_calls[id];
+        n2 += snprintf(buf + n2, sizeof(buf) - (size_t)n2,
+                       "# IO\r\n"
+                       "io_loops:%llu\r\n"
+                       "io_events:%llu\r\n"
+                       "io_reads:%llu\r\n"
+                       "io_writes:%llu\r\n"
+                       "io_bytes_read:%llu\r\n"
+                       "io_bytes_written:%llu\r\n"
+                       "total_commands:%llu\r\n",
+                       (unsigned long long)st->io.loops,
+                       (unsigned long long)st->io.events,
+                       (unsigned long long)st->io.reads,
+                       (unsigned long long)st->io.writes,
+                       (unsigned long long)st->io.bytes_read,
+                       (unsigned long long)st->io.bytes_written,
+                       (unsigned long long)total_cmds);
     }
     n2 += snprintf(buf + n2, sizeof(buf) - (size_t)n2,
                    "# Cluster\r\n"

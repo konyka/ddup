@@ -1,13 +1,15 @@
 /* ddup-bench.c - redis-benchmark-style load client for ddup-server.
  *
  * Usage: ddup-bench [-h host] [-p port] [-n requests] [-c clients]
- *                   [-P pipeline] [-t set|get] [-r keyspace]
+ *                   [-P pipeline] [-t set|get|ping] [-r keyspace] [-d bytes]
  *
  * All -c client connections are live SIMULTANEOUSLY: non-blocking sockets
  * driven by one readiness loop (pal_event). Each connection keeps up to -P
  * requests in flight; wall time runs from loop start to the last reply.
  * Keys are "bench:" + 12 digits; with -r N each command picks a random key
  * in [0, N). For -t get, run -t set with the same -n first so keys exist.
+ * -t ping sends PING (pure RTT/throughput ceiling, no keyspace). -d sets
+ * the SET value size in bytes (default 16).
  *
  * Correctness: replies are parsed and counted (must equal requests), SET
  * replies must be +OK; error replies and protocol/IO failures abort.
@@ -24,7 +26,6 @@
 #include "pal/pal_time.h"
 #include "resp/resp_parser.h"
 
-#define VALUE_SIZE 16
 #define CONN_RCAP (64 * 1024)
 #define MAX_EVENTS 64
 #define STALL_MS 30000 /* abort when no reply arrives for this long */
@@ -35,7 +36,10 @@ static long g_requests = 100000;
 static long g_clients = 50;
 static long g_pipe = 1;
 static long g_rand_range = 0; /* -r: random keyspace size, 0 = sequential */
-static int g_is_set = 1;
+static long g_value_size = 16; /* -d: SET payload bytes */
+static char *g_value;          /* -d payload bytes (filled in main) */
+static size_t g_cmd_cap = 96;  /* per-request send budget (from -d) */
+static int g_mode = 1;         /* 0=get 1=set 2=ping */
 
 /* latency histogram: log2 microsecond buckets + exact min/max */
 static uint64_t g_hist[64];
@@ -46,19 +50,27 @@ static long g_error_replies = 0;
 static void usage(const char *prog)
 {
     printf("Usage: %s [-h host] [-p port] [-n requests] [-c clients]\n"
-           "          [-P pipeline] [-t set|get] [-r keyspace]\n",
+           "          [-P pipeline] [-t set|get|ping] [-r keyspace] [-d bytes]\n",
            prog);
 }
 
-/* Append one SET/GET command for key index i to buf. Keys are 18 bytes:
- * "bench:" + 12 zero-padded digits. */
-static size_t build_cmd(char *buf, long i, int is_set)
+/* Append one SET/GET/PING command for key index i to buf. Keys are 18
+ * bytes: "bench:" + 12 zero-padded digits. SET carries the -d payload. */
+static size_t build_cmd(char *buf, long i, int mode)
 {
-    if (is_set)
-        return (size_t)snprintf(buf, 96,
-                                "*3\r\n$3\r\nSET\r\n$18\r\nbench:%012ld\r\n"
-                                "$16\r\n0123456789abcdef\r\n",
-                                i);
+    if (mode == 1) {
+        size_t n = (size_t)snprintf(buf, 64,
+                                    "*3\r\n$3\r\nSET\r\n$18\r\nbench:%012ld\r\n"
+                                    "$%ld\r\n",
+                                    i, g_value_size);
+        memcpy(buf + n, g_value, (size_t)g_value_size);
+        n += (size_t)g_value_size;
+        buf[n++] = '\r';
+        buf[n++] = '\n';
+        return n;
+    }
+    if (mode == 2)
+        return (size_t)snprintf(buf, 32, "*1\r\n$4\r\nPING\r\n");
     return (size_t)snprintf(buf, 96,
                             "*2\r\n$3\r\nGET\r\n$18\r\nbench:%012ld\r\n", i);
 }
@@ -165,9 +177,9 @@ static int conn_pump_write(bconn *c)
         c->sblen = 0;
         c->ssent = 0;
         while (c->sent < c->share && c->sent - c->done < g_pipe &&
-               c->sblen + 96 <= c->sbcap) {
+               c->sblen + g_cmd_cap <= c->sbcap) {
             c->sblen += build_cmd(c->sbuf + c->sblen, conn_next_key(c),
-                                  g_is_set);
+                                  g_mode);
             c->ts[c->sent % g_pipe] = pal_now_us();
             c->sent++;
         }
@@ -182,9 +194,15 @@ static int conn_check_reply(const resp_value *v)
         g_error_replies++;
         return 0;
     }
-    if (g_is_set &&
+    if (g_mode == 1 &&
         !(v->type == RESP_SIMPLE_STRING && v->len == 2 &&
           memcmp(v->str, "OK", 2) == 0)) {
+        g_error_replies++;
+        return 0;
+    }
+    if (g_mode == 2 &&
+        !(v->type == RESP_SIMPLE_STRING && v->len == 4 &&
+          memcmp(v->str, "PONG", 4) == 0)) {
         g_error_replies++;
         return 0;
     }
@@ -256,12 +274,16 @@ int main(int argc, char **argv)
             g_pipe = strtol(argv[++i], NULL, 10);
         } else if (strcmp(argv[i], "-r") == 0 && i + 1 < argc) {
             g_rand_range = strtol(argv[++i], NULL, 10);
+        } else if (strcmp(argv[i], "-d") == 0 && i + 1 < argc) {
+            g_value_size = strtol(argv[++i], NULL, 10);
         } else if (strcmp(argv[i], "-t") == 0 && i + 1 < argc) {
             const char *t = argv[++i];
             if (strcmp(t, "set") == 0)
-                g_is_set = 1;
+                g_mode = 1;
             else if (strcmp(t, "get") == 0)
-                g_is_set = 0;
+                g_mode = 0;
+            else if (strcmp(t, "ping") == 0)
+                g_mode = 2;
             else {
                 usage(argv[0]);
                 return 1;
@@ -272,10 +294,17 @@ int main(int argc, char **argv)
         }
     }
     if (g_requests <= 0 || g_clients <= 0 || g_pipe <= 0 || g_port == 0 ||
-        g_rand_range < 0) {
+        g_rand_range < 0 || g_value_size <= 0 || g_value_size > 1048576) {
         usage(argv[0]);
         return 1;
     }
+    g_cmd_cap = (size_t)g_value_size + 64;
+    g_value = (char *)malloc((size_t)g_value_size);
+    if (g_value == NULL) {
+        fprintf(stderr, "out of memory\n");
+        return 1;
+    }
+    memset(g_value, 'x', (size_t)g_value_size);
 
     if (pal_socket_init() != 0) {
         fprintf(stderr, "socket init failed\n");
@@ -299,7 +328,7 @@ int main(int argc, char **argv)
             c->key_next = base;
             base += c->share;
             c->rng = 0x9E3779B9u ^ (uint32_t)(ci + 1);
-            c->sbcap = (size_t)g_pipe * 96 + 96;
+            c->sbcap = (size_t)g_pipe * g_cmd_cap + g_cmd_cap;
             c->sbuf = (char *)malloc(c->sbcap);
             c->rbuf = (char *)malloc(CONN_RCAP);
             c->ts = (uint64_t *)malloc((size_t)g_pipe * sizeof(uint64_t));
@@ -322,10 +351,12 @@ int main(int argc, char **argv)
         }
     }
 
-    printf("====== %s ======\n", g_is_set ? "SET" : "GET");
+    printf("====== %s ======\n",
+           g_mode == 1 ? "SET" : g_mode == 0 ? "GET" : "PING");
     printf("  %ld requests, %ld clients (parallel), pipeline %ld\n",
            g_requests, g_clients, g_pipe);
-    printf("  %d bytes payload\n", VALUE_SIZE);
+    if (g_mode == 1)
+        printf("  %ld bytes payload\n", g_value_size);
     if (g_rand_range > 0)
         printf("  random keys in [0, %ld)\n", g_rand_range);
 
