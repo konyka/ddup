@@ -1,0 +1,26 @@
+=== n/a diag port 7774 (16:15:28) ==
+redis       9001  0.1  0.1  98120 18308 ?        Ssl  16:13   0:00 /usr/bin/redis-server 127.0.0.1:6379
+runner      9315  8.8  0.1 179108 17440 ?        S    16:14   0:04 /home/runner/work/ddup/ddup/build/ddup-server --port 7771 --io select
+runner      9316  4.9  0.1 525576 17572 ?        Sl   16:14   0:02 /home/runner/work/ddup/ddup/build/ddup-server --port 7774 --io-threads 4
+runner      9317  8.9  0.1 179296 17676 ?        S    16:14   0:04 /home/runner/work/ddup/ddup/build/ddup-server --port 7775 --io iouring
+runner      9318  3.1  0.1 100684 18320 ?        Sl   16:14   0:01 redis-server *:7773
+runner      9319 11.4  0.7 274746620 130592 ?    Sl   16:14   0:06 dotnet /home/runner/work/_temp/garnet-out/GarnetServer.dll --bind 127.0.0.1 --port 7772
+PONG
+ping OK
+=== n/a diag port 7774 (16:16:16) ==
+redis       9001  0.1  0.1  98120 18308 ?        Ssl  16:13   0:00 /usr/bin/redis-server 127.0.0.1:6379
+runner      9315  6.3  0.1 179108 20200 ?        S    16:14   0:06 /home/runner/work/ddup/ddup/build/ddup-server --port 7771 --io select
+runner      9316  2.7  0.1 529476 17632 ?        Sl   16:14   0:02 /home/runner/work/ddup/ddup/build/ddup-server --port 7774 --io-threads 4
+runner      9317  6.6  0.1 179428 20564 ?        S    16:14   0:06 /home/runner/work/ddup/ddup/build/ddup-server --port 7775 --io iouring
+runner      9318  3.0  0.1 174924 18252 ?        Sl   16:14   0:03 redis-server *:7773
+runner      9319 10.1  1.5 275336448 248876 ?    Sl   16:14   0:10 dotnet /home/runner/work/_temp/garnet-out/GarnetServer.dll --bind 127.0.0.1 --port 7772
+ping FAILED
+=== n/a diag port 7774 (16:17:09) ==
+redis       9001  0.1  0.1  98120 18308 ?        Ssl  16:13   0:00 /usr/bin/redis-server 127.0.0.1:6379
+runner      9315  7.2  0.1 179108 21500 ?        S    16:14   0:11 /home/runner/work/ddup/ddup/build/ddup-server --port 7771 --io select
+runner      9316  1.8  0.1 531556 17664 ?        Sl   16:14   0:02 /home/runner/work/ddup/ddup/build/ddup-server --port 7774 --io-threads 4
+runner      9317  7.6  0.1 179428 21872 ?        S    16:14   0:11 /home/runner/work/ddup/ddup/build/ddup-server --port 7775 --io iouring
+runner      9318  2.5  0.1 191308 18160 ?        Sl   16:14   0:03 redis-server *:7773
+runner      9319  7.8  1.8 275336452 294912 ?    Sl   16:14   0:12 dotnet /home/runner/work/_temp/garnet-out/GarnetServer.dll --bind 127.0.0.1 --port 7772
+PONG
+ping OK
