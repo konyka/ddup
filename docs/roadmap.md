@@ -130,6 +130,8 @@
     （重叠 recv 完成驱动 repl_link_feed，大快照帧增量装载），双后端
     full-cycle + 断线重同步覆盖；io_uring 本就走 readiness 路径
     （Phase 22）
+  - [x] mt 批量写出：完成队列 drain 轮末每连接一次 flush（seq 顺序
+    不变），消除逐完成项 send 放大；A/B 中性如实记录（Phase 23）
   - [ ] 范围化排除（记录在案，不实施）：
     - 分层存储（热/冷数据落盘）：超出"内存缓存存储"定位
     - mt 模式的复制/集群适配：见 Phase 15 说明
