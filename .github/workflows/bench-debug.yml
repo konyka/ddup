@@ -12,7 +12,7 @@ jobs:
   probe:
     name: mt4 per-thread state at wedge time
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - name: Build ddup (Release)
@@ -33,9 +33,10 @@ jobs:
           echo "== threads =="
           ps -T -p $MTPID -o pid,tid,stat,time,wchan:32
           echo "== drive load until wedge =="
-          for r in $(seq 1 10); do
-            timeout 30 redis-benchmark -p 7777 -n 200000 -c 50 -P 16 -t set -q >/dev/null 2>&1
-            if timeout 3 redis-cli -p 7777 PING >/dev/null 2>&1; then echo "round $r alive"; else echo "round $r WEDGED"; break; fi
+          for r in $(seq 1 6); do
+            timeout -k 2 20 redis-benchmark -p 7777 -n 100000 -c 50 -P 16 -t set -q >/dev/null 2>&1
+            if timeout -k 1 3 redis-cli -p 7777 PING >/dev/null 2>&1; then echo "round $r alive"; else echo "round $r WEDGED"; break; fi
+            ps -T -p $MTPID -o tid,stat,time,wchan:32 | tail -n +2
           done
           echo "== threads after =="
           ps -T -p $MTPID -o pid,tid,stat,time,wchan:32 || echo "process gone"
