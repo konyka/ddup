@@ -1,112 +1,72 @@
-+ for variant in build build-nodedup
-+ echo '########## variant: build ##########'
-########## variant: build ##########
-+ MTPID=9970
-+ ./build/ddup-server --port 7774 --io-threads 4
-+ ./build/ddup-server --port 7771 --io select
++ MTPID=6664
 + sleep 2
-+ redis-server --port 7773 --save '' --appendonly no --protected-mode no
-+ timeout 5 redis-cli -p 7774 PING
++ ./build/ddup-server --port 7777 --io-threads 4
++ echo '== per-conn PING x12 =='
+== per-conn PING x12 ==
+++ seq 1 12
++ for i in $(seq 1 12)
++ timeout 3 redis-cli -p 7777 PING
 PONG
-+ for round in 1 2 3
-+ timeout 60 redis-benchmark -p 7771 -t set,get -n 200000 -c 500 -P 16 -q
-+ timeout 60 redis-benchmark -p 7773 -t set,get -n 200000 -c 500 -P 16 -q
-+ timeout 15 redis-benchmark -p 7774 -n 100 -c 10 -P 1 -t set -q
-+ echo 'round 1 mt4 alive'
-round 1 mt4 alive
-+ timeout 60 redis-benchmark -p 7774 -t set -n 200000 -c 50 -P 16 -q
-+ tr '\r' '\n'
-+ grep -i 'requests per second'
-+ head -1
-SET: 975609.75 requests per second, p50=0.807 msec
-+ timeout 15 redis-benchmark -p 7774 -n 100 -c 10 -P 1 -t set -q
-+ echo 'post-cell alive'
-post-cell alive
-+ for round in 1 2 3
-+ timeout 60 redis-benchmark -p 7771 -t set,get -n 200000 -c 500 -P 16 -q
-+ timeout 60 redis-benchmark -p 7773 -t set,get -n 200000 -c 500 -P 16 -q
-+ timeout 15 redis-benchmark -p 7774 -n 100 -c 10 -P 1 -t set -q
-+ echo 'round 2 mt4 alive'
-round 2 mt4 alive
-+ timeout 60 redis-benchmark -p 7774 -t set -n 200000 -c 50 -P 16 -q
-+ tr '\r' '\n'
-+ grep -i 'requests per second'
-+ head -1
-SET: 990099.00 requests per second, p50=0.735 msec
-+ timeout 15 redis-benchmark -p 7774 -n 100 -c 10 -P 1 -t set -q
-+ echo 'post-cell alive'
-post-cell alive
-+ for round in 1 2 3
-+ timeout 60 redis-benchmark -p 7771 -t set,get -n 200000 -c 500 -P 16 -q
-+ timeout 60 redis-benchmark -p 7773 -t set,get -n 200000 -c 500 -P 16 -q
-+ timeout 15 redis-benchmark -p 7774 -n 100 -c 10 -P 1 -t set -q
-+ echo 'round 3 mt4 alive'
-round 3 mt4 alive
-+ timeout 60 redis-benchmark -p 7774 -t set -n 200000 -c 50 -P 16 -q
-+ tr '\r' '\n'
-+ grep -i 'requests per second'
-+ head -1
-SET: 1176470.62 requests per second, p50=0.671 msec
-+ timeout 15 redis-benchmark -p 7774 -n 100 -c 10 -P 1 -t set -q
-+ echo 'post-cell alive'
-post-cell alive
-+ pkill -f 'ddup-server --port 777'
-+ pkill redis-server
-pkill: killing pid 9897 failed: Operation not permitted
-+ sleep 1
-+ for variant in build build-nodedup
-+ echo '########## variant: build-nodedup ##########'
-########## variant: build-nodedup ##########
-+ MTPID=10030
-+ ./build-nodedup/ddup-server --port 7774 --io-threads 4
-+ ./build-nodedup/ddup-server --port 7771 --io select
-+ sleep 2
-+ redis-server --port 7773 --save '' --appendonly no --protected-mode no
-+ timeout 5 redis-cli -p 7774 PING
++ for i in $(seq 1 12)
++ timeout 3 redis-cli -p 7777 PING
 PONG
-+ for round in 1 2 3
-+ timeout 60 redis-benchmark -p 7771 -t set,get -n 200000 -c 500 -P 16 -q
-+ timeout 60 redis-benchmark -p 7773 -t set,get -n 200000 -c 500 -P 16 -q
-+ timeout 15 redis-benchmark -p 7774 -n 100 -c 10 -P 1 -t set -q
-+ echo 'round 1 mt4 alive'
-round 1 mt4 alive
-+ timeout 60 redis-benchmark -p 7774 -t set -n 200000 -c 50 -P 16 -q
-+ tr '\r' '\n'
-+ grep -i 'requests per second'
-+ head -1
-SET: 1086956.50 requests per second, p50=0.671 msec
-+ timeout 15 redis-benchmark -p 7774 -n 100 -c 10 -P 1 -t set -q
-+ echo 'post-cell alive'
-post-cell alive
-+ for round in 1 2 3
-+ timeout 60 redis-benchmark -p 7771 -t set,get -n 200000 -c 500 -P 16 -q
-+ timeout 60 redis-benchmark -p 7773 -t set,get -n 200000 -c 500 -P 16 -q
-+ timeout 15 redis-benchmark -p 7774 -n 100 -c 10 -P 1 -t set -q
-+ echo 'round 2 mt4 alive'
-round 2 mt4 alive
-+ timeout 60 redis-benchmark -p 7774 -t set -n 200000 -c 50 -P 16 -q
-+ tr '\r' '\n'
-+ grep -i 'requests per second'
-+ head -1
-SET: 1156069.38 requests per second, p50=0.663 msec
-+ timeout 15 redis-benchmark -p 7774 -n 100 -c 10 -P 1 -t set -q
-+ echo 'post-cell alive'
-post-cell alive
-+ for round in 1 2 3
-+ timeout 60 redis-benchmark -p 7771 -t set,get -n 200000 -c 500 -P 16 -q
-+ timeout 60 redis-benchmark -p 7773 -t set,get -n 200000 -c 500 -P 16 -q
-+ timeout 15 redis-benchmark -p 7774 -n 100 -c 10 -P 1 -t set -q
-+ echo 'round 3 mt4 alive'
-round 3 mt4 alive
-+ timeout 60 redis-benchmark -p 7774 -t set -n 200000 -c 50 -P 16 -q
-+ tr '\r' '\n'
-+ grep -i 'requests per second'
-+ head -1
-SET: 1169590.62 requests per second, p50=0.671 msec
-+ timeout 15 redis-benchmark -p 7774 -n 100 -c 10 -P 1 -t set -q
-+ echo 'post-cell alive'
-post-cell alive
-+ pkill -f 'ddup-server --port 777'
-+ pkill redis-server
-pkill: killing pid 9897 failed: Operation not permitted
-+ sleep 1
++ for i in $(seq 1 12)
++ timeout 3 redis-cli -p 7777 PING
+PONG
++ for i in $(seq 1 12)
++ timeout 3 redis-cli -p 7777 PING
+PONG
++ for i in $(seq 1 12)
++ timeout 3 redis-cli -p 7777 PING
+PONG
++ for i in $(seq 1 12)
++ timeout 3 redis-cli -p 7777 PING
+PONG
++ for i in $(seq 1 12)
++ timeout 3 redis-cli -p 7777 PING
+PONG
++ for i in $(seq 1 12)
++ timeout 3 redis-cli -p 7777 PING
+PONG
++ for i in $(seq 1 12)
++ timeout 3 redis-cli -p 7777 PING
+PONG
++ for i in $(seq 1 12)
++ timeout 3 redis-cli -p 7777 PING
+PONG
++ for i in $(seq 1 12)
++ timeout 3 redis-cli -p 7777 PING
+PONG
++ for i in $(seq 1 12)
++ timeout 3 redis-cli -p 7777 PING
+PONG
++ echo '== threads =='
+== threads ==
++ ps -T -p 6664 -o pid,tid,stat,time,wchan:32
+    PID     TID STAT     TIME WCHAN
+   6664    6664 Sl   00:00:00 hrtimer_nanosleep
+   6664    6666 Sl   00:00:00 ep_poll
+   6664    6667 Sl   00:00:00 ep_poll
+   6664    6668 Sl   00:00:00 ep_poll
+   6664    6669 Sl   00:00:00 ep_poll
+   6664    6670 Sl   00:00:00 ep_poll
++ echo '== drive load until wedge =='
+== drive load until wedge ==
+++ seq 1 10
++ for r in $(seq 1 10)
++ timeout 30 redis-benchmark -p 7777 -n 200000 -c 50 -P 16 -t set -q
++ timeout 3 redis-cli -p 7777 PING
++ echo 'round 1 alive'
+round 1 alive
++ for r in $(seq 1 10)
++ timeout 30 redis-benchmark -p 7777 -n 200000 -c 50 -P 16 -t set -q
++ timeout 3 redis-cli -p 7777 PING
++ echo 'round 2 alive'
+round 2 alive
++ for r in $(seq 1 10)
++ timeout 30 redis-benchmark -p 7777 -n 200000 -c 50 -P 16 -t set -q
++ timeout 3 redis-cli -p 7777 PING
++ echo 'round 3 alive'
+round 3 alive
++ for r in $(seq 1 10)
++ timeout 30 redis-benchmark -p 7777 -n 200000 -c 50 -P 16 -t set -q
