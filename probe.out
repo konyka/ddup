@@ -1,4 +1,4 @@
-+ MTPID=6580
++ MTPID=6597
 + sleep 2
 + ./build/ddup-server --port 7777 --io-threads 4
 + echo '== phase 1: bare connect-close x1 =='
@@ -73,12 +73,12 @@ PONG
 + timeout -k 2 20 redis-benchmark -p 7777 -n 100000 -c 50 -P 16 -t set -q
 + tr '\r' '\n'
 + grep -i 'requests per second'
-SET: 704225.31 requests per second, p50=1.071 msec
-+ ps -T -p 6580 -o tid,stat,time,wchan:32
+SET: 694444.50 requests per second, p50=1.087 msec
++ ps -T -p 6597 -o tid,stat,time,wchan:32
 + tail -n +2
-   6580 Sl   00:00:00 hrtimer_nanosleep
-   6582 Sl   00:00:00 ep_poll
-   6583 Sl   00:00:00 ep_poll
-   6584 Sl   00:00:00 ep_poll
-   6585 Sl   00:00:00 ep_poll
-   6586 Sl   00:00:00 ep_poll
+   6597 Sl   00:00:00 hrtimer_nanosleep
+   6599 Sl   00:00:00 ep_poll
+   6600 Sl   00:00:00 ep_poll
+   6601 Sl   00:00:00 ep_poll
+   6602 Sl   00:00:00 ep_poll
+   6603 Sl   00:00:00 ep_poll
