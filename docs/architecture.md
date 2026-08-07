@@ -463,9 +463,15 @@ DBSIZE 为 O(1)，可能计入尚未回收的过期 key。
   丢弃策略一致；AOF flush/主动过期与 autosave 照旧。
 - **生命周期**：conn 有在飞操作时关闭走 zombie 路径（CancelIoEx 后等
   pending_ops 归零再真正释放，避免完成事件悬垂引用）。
+- **复制副本侧（Phase 22）**：master link 支持 IOCP——阻塞 connect（既有
+  简化）后 post 首个重叠 recv，PSYNC 经 kick_flush 发出，recv 完成喂入
+  与 readiness 共用的两阶段状态机（repl_link_feed）；大于接收块的快照
+  帧按 link_got/link_need 增量装载，与 readiness 路径一致。双后端
+  full-cycle + 断线重同步测试覆盖（非 Windows 上 IOCP 变体自动跳过）。
+  io_uring 后端本就工作（它是 pal_loop 就绪 API 的实现，走 readiness
+  路径，无额外改动）。
 - **限制（记录在案）**：IOCP 后端不支持 TLS（tls-port 自动回落
-  readiness）；不支持复制副本侧 master link（REPLICAOF 报错），master
-  侧供流正常。pal_iocp 在非 Windows 为空 stub（创建返回 NULL）。
+  readiness）。pal_iocp 在非 Windows 为空 stub（创建返回 NULL）。
 - ping-pong 基准见 docs/performance.md Phase 7.5 表。
 
 ## 单节点集群模式（Phase 7.7）

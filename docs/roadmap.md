@@ -126,6 +126,10 @@
     根治）、wyhash 替换 FNV（rhtable：SET +19.6%/GET +13.5%）、
     skiplist 逐层 span（rank/index ~3 个数量级）、GET 路径分析与
     有界读排干（负结果如实记录）（Phase 21）
+  - [x] IOCP 副本侧复制：REPLICAOF master link 接入 proactor
+    （重叠 recv 完成驱动 repl_link_feed，大快照帧增量装载），双后端
+    full-cycle + 断线重同步覆盖；io_uring 本就走 readiness 路径
+    （Phase 22）
   - [ ] 范围化排除（记录在案，不实施）：
     - 分层存储（热/冷数据落盘）：超出"内存缓存存储"定位
     - mt 模式的复制/集群适配：见 Phase 15 说明
