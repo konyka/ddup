@@ -1,0 +1,61 @@
++ ./build/ddup-server --port 7771 --io select
++ ./build/ddup-server --port 7774 --io-threads 4
++ sleep 3
++ ./build/ddup-server --port 7775 --io iouring
++ for p in 7771 7774 7775
++ echo '== port 7771 =='
+== port 7771 ==
++ timeout 5 redis-cli -p 7771 PING
+PONG
++ for p in 7771 7774 7775
++ echo '== port 7774 =='
+== port 7774 ==
++ timeout 5 redis-cli -p 7774 PING
+PONG
++ for p in 7771 7774 7775
++ echo '== port 7775 =='
+== port 7775 ==
++ timeout 5 redis-cli -p 7775 PING
++ echo 'MUTE/FAIL port 7775'
+MUTE/FAIL port 7775
++ echo '== banners =='
+== banners ==
++ head -5 /tmp/d1.log /tmp/d4.log /tmp/d5.log
+==> /tmp/d1.log <==
+ddup-server 0.1.0 (platform: linux, C standard: C23)
+io backend: select
+listening on port 7771
+
+==> /tmp/d4.log <==
+ddup-server 0.1.0 (platform: linux, C standard: C23)
+io backend: mt (4 workers)
+listening on port 7774
+
+==> /tmp/d5.log <==
+ddup-server 0.1.0 (platform: linux, C standard: C23)
+io backend: iouring
+listening on port 7775
++ echo '== stress each =='
+== stress each ==
++ for p in 7771 7774 7775
++ echo '== stress 7771 =='
+== stress 7771 ==
++ timeout 20 redis-benchmark -p 7771 -n 2000 -c 50 -P 16 -t set,get -q
+WARNING: Could not fetch server CONFIG
+ SET: rps=0.0 (overall: -nan) avg_msec=-nan (overall: -nan)                                                           SET: 666666.69 requests per second, p50=0.975 msec
+ GET: 666666.69 requests per second, p50=0.551 msec
+
++ for p in 7771 7774 7775
++ echo '== stress 7774 =='
+== stress 7774 ==
++ timeout 20 redis-benchmark -p 7774 -n 2000 -c 50 -P 16 -t set,get -q
+WARNING: Could not fetch server CONFIG
+ SET: rps=0.0 (overall: 0.0) avg_msec=-nan (overall: -nan)                                                          SET: 499999.97 requests per second, p50=1.063 msec
+ GET: 666666.69 requests per second, p50=0.575 msec
+
++ for p in 7771 7774 7775
++ echo '== stress 7775 =='
+== stress 7775 ==
++ timeout 20 redis-benchmark -p 7775 -n 2000 -c 50 -P 16 -t set,get -q
++ echo 'STALL port 7775'
+STALL port 7775
