@@ -1,87 +1,84 @@
-+ ./build/ddup-server --port 7771 --io select
-+ MTPID=7118
-+ ./build/ddup-server --port 7774 --io-threads 4
-+ ./build/ddup-server --port 7775 --io iouring
-+ '[' -f /home/runner/work/_temp/garnet-out/GarnetServer.dll ']'
-+ sleep 10
-+ redis-server --port 7773 --save '' --appendonly no --protected-mode no
-+ dotnet /home/runner/work/_temp/garnet-out/GarnetServer.dll --bind 127.0.0.1 --port 7772
-+ for p in 7771 7773 7774 7775 7772
-+ timeout 5 redis-cli -p 7771 PING
++ MTPID=6580
++ sleep 2
++ ./build/ddup-server --port 7777 --io-threads 4
++ echo '== phase 1: bare connect-close x1 =='
+== phase 1: bare connect-close x1 ==
++ echo
++ echo 'probe sent'
+probe sent
++ sleep 1
+++ seq 1 8
++ for i in $(seq 1 8)
++ timeout 3 redis-cli -p 7777 PING
 PONG
-+ for p in 7771 7773 7774 7775 7772
-+ timeout 5 redis-cli -p 7773 PING
++ for i in $(seq 1 8)
++ timeout 3 redis-cli -p 7777 PING
 PONG
-+ for p in 7771 7773 7774 7775 7772
-+ timeout 5 redis-cli -p 7774 PING
++ for i in $(seq 1 8)
++ timeout 3 redis-cli -p 7777 PING
 PONG
-+ for p in 7771 7773 7774 7775 7772
-+ timeout 5 redis-cli -p 7775 PING
++ for i in $(seq 1 8)
++ timeout 3 redis-cli -p 7777 PING
 PONG
-+ for p in 7771 7773 7774 7775 7772
-+ timeout 5 redis-cli -p 7772 PING
++ for i in $(seq 1 8)
++ timeout 3 redis-cli -p 7777 PING
 PONG
-+ for sc in "50 16" "500 16" "500 64" "50 16"
-+ set -- 50 16
-+ for port in 7771 7775 7774 7772 7773
-+ timeout -k 2 60 redis-benchmark -p 7771 -t set -n 200000 -c 50 -P 16 -q
-+ for port in 7771 7775 7774 7772 7773
-+ timeout -k 2 60 redis-benchmark -p 7775 -t set -n 200000 -c 50 -P 16 -q
-+ for port in 7771 7775 7774 7772 7773
-+ timeout -k 2 60 redis-benchmark -p 7774 -t set -n 200000 -c 50 -P 16 -q
-+ for port in 7771 7775 7774 7772 7773
-+ timeout -k 2 60 redis-benchmark -p 7772 -t set -n 200000 -c 50 -P 16 -q
-+ for port in 7771 7775 7774 7772 7773
-+ timeout -k 2 60 redis-benchmark -p 7773 -t set -n 200000 -c 50 -P 16 -q
-+ alive4
-+ timeout -k 1 15 redis-benchmark -p 7774 -n 100 -c 10 -P 1 -t set -q
-+ echo 'after c50-P16: mt4 alive'
-after c50-P16: mt4 alive
-+ for sc in "50 16" "500 16" "500 64" "50 16"
-+ set -- 500 16
-+ for port in 7771 7775 7774 7772 7773
-+ timeout -k 2 60 redis-benchmark -p 7771 -t set -n 200000 -c 500 -P 16 -q
-+ for port in 7771 7775 7774 7772 7773
-+ timeout -k 2 60 redis-benchmark -p 7775 -t set -n 200000 -c 500 -P 16 -q
-+ for port in 7771 7775 7774 7772 7773
-+ timeout -k 2 60 redis-benchmark -p 7774 -t set -n 200000 -c 500 -P 16 -q
-+ for port in 7771 7775 7774 7772 7773
-+ timeout -k 2 60 redis-benchmark -p 7772 -t set -n 200000 -c 500 -P 16 -q
-+ for port in 7771 7775 7774 7772 7773
-+ timeout -k 2 60 redis-benchmark -p 7773 -t set -n 200000 -c 500 -P 16 -q
-+ alive4
-+ timeout -k 1 15 redis-benchmark -p 7774 -n 100 -c 10 -P 1 -t set -q
-+ echo 'after c500-P16: mt4 alive'
-after c500-P16: mt4 alive
-+ for sc in "50 16" "500 16" "500 64" "50 16"
-+ set -- 500 64
-+ for port in 7771 7775 7774 7772 7773
-+ timeout -k 2 60 redis-benchmark -p 7771 -t set -n 200000 -c 500 -P 64 -q
-+ for port in 7771 7775 7774 7772 7773
-+ timeout -k 2 60 redis-benchmark -p 7775 -t set -n 200000 -c 500 -P 64 -q
-+ for port in 7771 7775 7774 7772 7773
-+ timeout -k 2 60 redis-benchmark -p 7774 -t set -n 200000 -c 500 -P 64 -q
-+ for port in 7771 7775 7774 7772 7773
-+ timeout -k 2 60 redis-benchmark -p 7772 -t set -n 200000 -c 500 -P 64 -q
-+ for port in 7771 7775 7774 7772 7773
-+ timeout -k 2 60 redis-benchmark -p 7773 -t set -n 200000 -c 500 -P 64 -q
-+ alive4
-+ timeout -k 1 15 redis-benchmark -p 7774 -n 100 -c 10 -P 1 -t set -q
-+ echo 'after c500-P64: mt4 alive'
-after c500-P64: mt4 alive
-+ for sc in "50 16" "500 16" "500 64" "50 16"
-+ set -- 50 16
-+ for port in 7771 7775 7774 7772 7773
-+ timeout -k 2 60 redis-benchmark -p 7771 -t set -n 200000 -c 50 -P 16 -q
-+ for port in 7771 7775 7774 7772 7773
-+ timeout -k 2 60 redis-benchmark -p 7775 -t set -n 200000 -c 50 -P 16 -q
-+ for port in 7771 7775 7774 7772 7773
-+ timeout -k 2 60 redis-benchmark -p 7774 -t set -n 200000 -c 50 -P 16 -q
-+ for port in 7771 7775 7774 7772 7773
-+ timeout -k 2 60 redis-benchmark -p 7772 -t set -n 200000 -c 50 -P 16 -q
-+ for port in 7771 7775 7774 7772 7773
-+ timeout -k 2 60 redis-benchmark -p 7773 -t set -n 200000 -c 50 -P 16 -q
-+ alive4
-+ timeout -k 1 15 redis-benchmark -p 7774 -n 100 -c 10 -P 1 -t set -q
-+ echo 'after c50-P16: mt4 alive'
-after c50-P16: mt4 alive
++ for i in $(seq 1 8)
++ timeout 3 redis-cli -p 7777 PING
+PONG
++ for i in $(seq 1 8)
++ timeout 3 redis-cli -p 7777 PING
+PONG
++ for i in $(seq 1 8)
++ timeout 3 redis-cli -p 7777 PING
+PONG
++ echo '== phase 2: bare connect-close x4 more =='
+== phase 2: bare connect-close x4 more ==
++ for i in 1 2 3 4
++ echo
++ for i in 1 2 3 4
++ echo
++ for i in 1 2 3 4
++ echo
++ for i in 1 2 3 4
++ echo
++ sleep 1
+++ seq 1 8
++ for i in $(seq 1 8)
++ timeout 3 redis-cli -p 7777 PING
+PONG
++ for i in $(seq 1 8)
++ timeout 3 redis-cli -p 7777 PING
+PONG
++ for i in $(seq 1 8)
++ timeout 3 redis-cli -p 7777 PING
+PONG
++ for i in $(seq 1 8)
++ timeout 3 redis-cli -p 7777 PING
+PONG
++ for i in $(seq 1 8)
++ timeout 3 redis-cli -p 7777 PING
+PONG
++ for i in $(seq 1 8)
++ timeout 3 redis-cli -p 7777 PING
+PONG
++ for i in $(seq 1 8)
++ timeout 3 redis-cli -p 7777 PING
+PONG
++ for i in $(seq 1 8)
++ timeout 3 redis-cli -p 7777 PING
+PONG
++ echo '== phase 3: bench after bare closes =='
+== phase 3: bench after bare closes ==
++ timeout -k 2 20 redis-benchmark -p 7777 -n 100000 -c 50 -P 16 -t set -q
++ tr '\r' '\n'
++ grep -i 'requests per second'
+SET: 704225.31 requests per second, p50=1.071 msec
++ ps -T -p 6580 -o tid,stat,time,wchan:32
++ tail -n +2
+   6580 Sl   00:00:00 hrtimer_nanosleep
+   6582 Sl   00:00:00 ep_poll
+   6583 Sl   00:00:00 ep_poll
+   6584 Sl   00:00:00 ep_poll
+   6585 Sl   00:00:00 ep_poll
+   6586 Sl   00:00:00 ep_poll
