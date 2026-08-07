@@ -87,8 +87,11 @@ jobs:
           }
           warm() { timeout 60 redis-benchmark -p "$1" -n 10000 -c 50 -P 16 -t set,get -q >/dev/null 2>&1 || true; }
           cell() { # port c P d -> "set/get" (n/a when the server is down)
+            local s g
+            # one retry after a pause: a transient scheduling hiccup on the
+            # shared 4-CPU runner must not bench a whole variant as n/a
+            if ! alive "$1"; then sleep 2; fi
             if alive "$1"; then
-              local s g
               s=$(median3 "$1" set "$2" "$3" "$4")
               g=$(median3 "$1" get "$2" "$3" "$4")
               echo "$s / $g"
