@@ -1,156 +1,115 @@
-+ uname -a
-Linux runnervmvrwv9 6.17.0-1020-azure #20~24.04.1-Ubuntu SMP Fri Jun 19 20:09:14 UTC 2026 x86_64 x86_64 x86_64 GNU/Linux
-+ sysctl kernel.io_uring_disabled
-kernel.io_uring_disabled = 0
-+ ulimit -l
-8192
-+ ./build/ddup-server --port 7771 --io select
-+ ./build/ddup-server --port 7774 --io-threads 4
-+ sleep 3
-+ ./build/ddup-server --port 7775 --io iouring
-+ for p in 7771 7774 7775
-+ echo '== port 7771 =='
-== port 7771 ==
-+ timeout 5 redis-cli -p 7771 PING
-PONG
-+ for p in 7771 7774 7775
-+ echo '== port 7774 =='
-== port 7774 ==
-+ timeout 5 redis-cli -p 7774 PING
-PONG
-+ for p in 7771 7774 7775
-+ echo '== port 7775 =='
-== port 7775 ==
-+ timeout 5 redis-cli -p 7775 PING
-PONG
-+ echo '== banners =='
-== banners ==
-+ head -5 /tmp/d1.log /tmp/d4.log /tmp/d5.log
-==> /tmp/d1.log <==
-ddup-server 0.1.0 (platform: linux, C standard: C23)
-io backend: select
-listening on port 7771
-
-==> /tmp/d4.log <==
-ddup-server 0.1.0 (platform: linux, C standard: C23)
-io backend: mt (4 workers)
-listening on port 7774
-
-==> /tmp/d5.log <==
-ddup-server 0.1.0 (platform: linux, C standard: C23)
-io backend: iouring
-listening on port 7775
-+ echo '== stress each =='
-== stress each ==
-+ for p in 7771 7774 7775
-+ echo '== stress 7771 =='
-== stress 7771 ==
-+ timeout 20 redis-benchmark -p 7771 -n 2000 -c 50 -P 16 -t set,get -q
-WARNING: Could not fetch server CONFIG
- SET: rps=0.0 (overall: -nan) avg_msec=-nan (overall: -nan)                                                           SET: 499999.97 requests per second, p50=1.023 msec
- GET: 666666.69 requests per second, p50=0.687 msec
-
-+ for p in 7771 7774 7775
-+ echo '== stress 7774 =='
-== stress 7774 ==
-+ timeout 20 redis-benchmark -p 7774 -n 2000 -c 50 -P 16 -t set,get -q
-WARNING: Could not fetch server CONFIG
- SET: rps=0.0 (overall: 0.0) avg_msec=-nan (overall: -nan)                                                          SET: 499999.97 requests per second, p50=1.439 msec
- GET: 499999.97 requests per second, p50=1.007 msec
-
-+ for p in 7771 7774 7775
-+ echo '== stress 7775 =='
-== stress 7775 ==
-+ timeout 20 redis-benchmark -p 7775 -n 2000 -c 50 -P 16 -t set,get -q
-WARNING: Could not fetch server CONFIG
- SET: rps=0.0 (overall: 0.0) avg_msec=-nan (overall: -nan)                                                          SET: 400000.00 requests per second, p50=1.519 msec
- GET: 499999.97 requests per second, p50=0.999 msec
-
-+ echo '== strace the uring server =='
-== strace the uring server ==
-+ sleep 3
-+ strace -f -tt -o /tmp/strace.log ./build/ddup-server --port 7776 --io iouring
-+ timeout 5 redis-cli -p 7776 PING
-PONG
-+ sleep 1
-+ pkill -f 'ddup-server --port 7776'
-+ sleep 1
-+ tail -30 /tmp/strace.log
-9037  15:43:08.328394 io_uring_enter(4, 1, 1, IORING_ENTER_GETEVENTS, NULL, 0) = 1
-9037  15:43:08.427786 io_uring_enter(4, 1, 1, IORING_ENTER_GETEVENTS, NULL, 0) = 1
-9037  15:43:08.428289 io_uring_enter(4, 1, 1, IORING_ENTER_GETEVENTS, NULL, 0) = 1
-9037  15:43:08.428347 io_uring_enter(4, 1, 1, IORING_ENTER_GETEVENTS, NULL, 0) = 1
-9037  15:43:08.428465 io_uring_enter(4, 1, 1, IORING_ENTER_GETEVENTS, NULL, 0) = 1
-9037  15:43:08.528045 io_uring_enter(4, 1, 1, IORING_ENTER_GETEVENTS, NULL, 0) = 1
-9037  15:43:08.528362 io_uring_enter(4, 1, 1, IORING_ENTER_GETEVENTS, NULL, 0) = 1
-9037  15:43:08.528417 io_uring_enter(4, 1, 1, IORING_ENTER_GETEVENTS, NULL, 0) = 1
-9037  15:43:08.528531 io_uring_enter(4, 1, 1, IORING_ENTER_GETEVENTS, NULL, 0) = 1
-9037  15:43:08.628309 io_uring_enter(4, 1, 1, IORING_ENTER_GETEVENTS, NULL, 0) = 1
-9037  15:43:08.628425 io_uring_enter(4, 1, 1, IORING_ENTER_GETEVENTS, NULL, 0) = 1
-9037  15:43:08.628478 io_uring_enter(4, 1, 1, IORING_ENTER_GETEVENTS, NULL, 0) = 1
-9037  15:43:08.628591 io_uring_enter(4, 1, 1, IORING_ENTER_GETEVENTS, NULL, 0) = 1
-9037  15:43:08.728542 io_uring_enter(4, 1, 1, IORING_ENTER_GETEVENTS, NULL, 0) = 1
-9037  15:43:08.728659 io_uring_enter(4, 1, 1, IORING_ENTER_GETEVENTS, NULL, 0) = 1
-9037  15:43:08.828744 io_uring_enter(4, 1, 1, IORING_ENTER_GETEVENTS, NULL, 0) = 1
-9037  15:43:08.928975 io_uring_enter(4, 1, 1, IORING_ENTER_GETEVENTS, NULL, 0) = 1
-9037  15:43:09.029154 io_uring_enter(4, 1, 1, IORING_ENTER_GETEVENTS, NULL, 0) = 1
-9037  15:43:09.047521 --- SIGTERM {si_signo=SIGTERM, si_code=SI_USER, si_pid=9042, si_uid=1001} ---
-9037  15:43:09.047572 rt_sigreturn({mask=[]}) = 1
-9037  15:43:09.047878 close(5)          = 0
-9037  15:43:09.047936 munmap(0x7f7cb42ef000, 16384) = 0
-9037  15:43:09.048002 munmap(0x7f7cb42f3000, 9280) = 0
-9037  15:43:09.048062 close(4)          = 0
-9037  15:43:09.048149 close(3)          = 0
-9037  15:43:09.048221 munmap(0x7f7cb34b4000, 3457024) = 0
-9037  15:43:09.048374 munmap(0x7f7cb411e000, 233472) = 0
-9037  15:43:09.048476 write(1, "shutting down\n", 14) = 14
-9037  15:43:09.048547 exit_group(0)     = ?
-9037  15:43:09.048841 +++ exited with 0 +++
-+ echo '== test_server backend probe =='
-== test_server backend probe ==
-+ timeout 200 ctest --test-dir build -R '^test_server$' --output-on-failure
-Internal ctest changing into directory: /home/runner/work/ddup/ddup/build
-Test project /home/runner/work/ddup/ddup/build
-    Start 11: test_server
-1/1 Test #11: test_server ......................   Passed    0.72 sec
-
-100% tests passed, 0 tests failed out of 1
-
-Total Test time (real) =   0.77 sec
-+ echo '== mt4 exact bench sequence =='
-== mt4 exact bench sequence ==
++ MTPID=6478
 + sleep 2
 + ./build/ddup-server --port 7777 --io-threads 4
+++ seq 1 12
++ for i in $(seq 1 12)
++ timeout 60 redis-benchmark -p 7777 -t set -n 200000 -c 50 -P 16 -d 16 -q
++ tr '\r' '\n'
++ grep -i 'requests per second'
++ head -1
+SET: 716845.81 requests per second, p50=1.079 msec
 + timeout 5 redis-cli -p 7777 PING
-PONG
-+ timeout 60 redis-benchmark -p 7777 -n 10000 -c 50 -P 16 -t set,get -q
-+ timeout 15 redis-benchmark -p 7777 -n 100 -c 10 -P 1 -t set -q
-+ for i in 1 2 3
++ echo 'round 1 alive'
+round 1 alive
++ for i in $(seq 1 12)
 + timeout 60 redis-benchmark -p 7777 -t set -n 200000 -c 50 -P 16 -d 16 -q
 + tr '\r' '\n'
-+ grep -i '^set: .*requests per second'
-SET: 473933.66 requests per second, p50=1.615 msec
-+ for i in 1 2 3
-+ timeout 60 redis-benchmark -p 7777 -t set -n 200000 -c 50 -P 16 -d 16 -q
-+ tr '\r' '\n'
-+ grep -i '^set: .*requests per second'
-SET: 497512.44 requests per second, p50=1.567 msec
-+ for i in 1 2 3
-+ timeout 60 redis-benchmark -p 7777 -t set -n 200000 -c 50 -P 16 -d 16 -q
-+ tr '\r' '\n'
-+ grep -i '^set: .*requests per second'
-SET: 481927.72 requests per second, p50=1.567 msec
++ grep -i 'requests per second'
++ head -1
+SET: 740740.69 requests per second, p50=1.071 msec
 + timeout 5 redis-cli -p 7777 PING
-PONG
-+ ps aux
-+ grep ddup-server
-+ grep -v grep
-runner      9011  0.0  0.0  31144  8036 ?        S    15:43   0:00 ./build/ddup-server --port 7771 --io select
-runner      9012  0.3  0.1 461356 31484 ?        Sl   15:43   0:00 ./build/ddup-server --port 7774 --io-threads 4
-runner      9013  0.5  0.0  31168  8040 ?        S    15:43   0:00 ./build/ddup-server --port 7775 --io iouring
-runner      9056 38.6  0.1 492556 19284 ?        Sl   15:43   0:01 ./build/ddup-server --port 7777 --io-threads 4
-+ dmesg
-+ tail -5
++ echo 'round 2 alive'
+round 2 alive
++ for i in $(seq 1 12)
++ timeout 60 redis-benchmark -p 7777 -t set -n 200000 -c 50 -P 16 -d 16 -q
++ tr '\r' '\n'
++ grep -i 'requests per second'
++ head -1
+SET: 735294.06 requests per second, p50=1.079 msec
++ timeout 5 redis-cli -p 7777 PING
++ echo 'round 3 alive'
+round 3 alive
++ for i in $(seq 1 12)
++ timeout 60 redis-benchmark -p 7777 -t set -n 200000 -c 50 -P 16 -d 16 -q
++ tr '\r' '\n'
++ grep -i 'requests per second'
++ head -1
+SET: 754717.00 requests per second, p50=1.063 msec
++ timeout 5 redis-cli -p 7777 PING
++ echo 'round 4 alive'
+round 4 alive
++ for i in $(seq 1 12)
++ timeout 60 redis-benchmark -p 7777 -t set -n 200000 -c 50 -P 16 -d 16 -q
++ tr '\r' '\n'
++ grep -i 'requests per second'
++ head -1
+SET: 727272.69 requests per second, p50=1.071 msec
++ timeout 5 redis-cli -p 7777 PING
++ echo 'round 5 alive'
+round 5 alive
++ for i in $(seq 1 12)
++ timeout 60 redis-benchmark -p 7777 -t set -n 200000 -c 50 -P 16 -d 16 -q
++ tr '\r' '\n'
++ grep -i 'requests per second'
++ head -1
+SET: 796812.81 requests per second, p50=0.999 msec
++ timeout 5 redis-cli -p 7777 PING
++ echo 'round 6 alive'
+round 6 alive
++ for i in $(seq 1 12)
++ timeout 60 redis-benchmark -p 7777 -t set -n 200000 -c 50 -P 16 -d 16 -q
++ tr '\r' '\n'
++ grep -i 'requests per second'
++ head -1
+SET: 781249.94 requests per second, p50=1.023 msec
++ timeout 5 redis-cli -p 7777 PING
++ echo 'round 7 alive'
+round 7 alive
++ for i in $(seq 1 12)
++ timeout 60 redis-benchmark -p 7777 -t set -n 200000 -c 50 -P 16 -d 16 -q
++ tr '\r' '\n'
++ grep -i 'requests per second'
++ head -1
+SET: 709219.88 requests per second, p50=1.047 msec
++ timeout 5 redis-cli -p 7777 PING
++ echo 'round 8 alive'
+round 8 alive
++ for i in $(seq 1 12)
++ timeout 60 redis-benchmark -p 7777 -t set -n 200000 -c 50 -P 16 -d 16 -q
++ tr '\r' '\n'
++ grep -i 'requests per second'
++ head -1
+SET: 677966.12 requests per second, p50=1.071 msec
++ timeout 5 redis-cli -p 7777 PING
++ echo 'round 9 alive'
+round 9 alive
++ for i in $(seq 1 12)
++ timeout 60 redis-benchmark -p 7777 -t set -n 200000 -c 50 -P 16 -d 16 -q
++ tr '\r' '\n'
++ grep -i 'requests per second'
++ head -1
+SET: 732600.75 requests per second, p50=1.047 msec
++ timeout 5 redis-cli -p 7777 PING
++ echo 'round 10 alive'
+round 10 alive
++ for i in $(seq 1 12)
++ timeout 60 redis-benchmark -p 7777 -t set -n 200000 -c 50 -P 16 -d 16 -q
++ tr '\r' '\n'
++ grep -i 'requests per second'
++ head -1
+SET: 727272.69 requests per second, p50=1.039 msec
++ timeout 5 redis-cli -p 7777 PING
++ echo 'round 11 alive'
+round 11 alive
++ for i in $(seq 1 12)
++ timeout 60 redis-benchmark -p 7777 -t set -n 200000 -c 50 -P 16 -d 16 -q
++ tr '\r' '\n'
++ grep -i 'requests per second'
++ head -1
+SET: 694444.50 requests per second, p50=1.079 msec
++ timeout 5 redis-cli -p 7777 PING
++ echo 'round 12 alive'
+round 12 alive
 + cat /tmp/d7.log
 ddup-server 0.1.0 (platform: linux, C standard: C23)
 io backend: mt (4 workers)
