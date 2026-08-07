@@ -10,33 +10,53 @@ permissions:
 
 jobs:
   probe:
-    name: find where ddup mt4 dies under sustained load
+    name: reproduce the mt4 wedge under full bench contention
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - name: Build ddup (Release)
         run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release && cmake --build build --target ddup-server
-      - name: Install redis-tools
-        run: sudo apt-get update && sudo apt-get install -y redis-tools
-      - name: Long mt4 sequence
+      - name: Build ddup without kick dedup
+        run: |
+          cp -r build build-nodedup
+          sed -i 's/if (atomic_exchange_explicit(&w->kick_pending, 1,/if (0 \&\& atomic_exchange_explicit(\&w->kick_pending, 1,/' src/server/mt_server.c
+          grep -n "if (0 &&" src/server/mt_server.c
+          cmake -S . -B build-nodedup -DCMAKE_BUILD_TYPE=Release && cmake --build build-nodedup --target ddup-server
+          git checkout -- src/server/mt_server.c
+      - name: Install redis-tools + redis-server
+        run: sudo apt-get update && sudo apt-get install -y redis-tools redis-server
+      - name: Reproduce under contention
         run: |
           {
           set -x
-          ./build/ddup-server --port 7777 --io-threads 4 >/tmp/d7.log 2>&1 &
-          MTPID=$!
-          sleep 2
-          for i in $(seq 1 12); do
-            timeout 60 redis-benchmark -p 7777 -t set -n 200000 -c 50 -P 16 -d 16 -q 2>/dev/null | tr '\r' '\n' | grep -i "requests per second" | head -1
-            if timeout 5 redis-cli -p 7777 PING >/dev/null 2>&1; then
-              echo "round $i alive"
-            else
-              echo "round $i DEAD"
-              if kill -0 $MTPID 2>/dev/null; then echo "process WEDGED (alive but mute)"; else echo "process GONE (crashed)"; fi
-              break
-            fi
+          for variant in build build-nodedup; do
+            echo "########## variant: $variant ##########"
+            ./$variant/ddup-server --port 7774 --io-threads 4 >/tmp/dmt.log 2>&1 &
+            MTPID=$!
+            ./$variant/ddup-server --port 7771 --io select >/tmp/dst.log 2>&1 &
+            redis-server --port 7773 --save '' --appendonly no --protected-mode no >/dev/null 2>&1 &
+            sleep 2
+            timeout 5 redis-cli -p 7774 PING || echo "MT4 MUTE AT START"
+            # hammer the OTHER servers at c500 while mt4 idles, then load mt4
+            for round in 1 2 3; do
+              timeout 60 redis-benchmark -p 7771 -t set,get -n 200000 -c 500 -P 16 -q >/dev/null 2>&1 || true
+              timeout 60 redis-benchmark -p 7773 -t set,get -n 200000 -c 500 -P 16 -q >/dev/null 2>&1 || true
+              if timeout 15 redis-benchmark -p 7774 -n 100 -c 10 -P 1 -t set -q >/dev/null 2>&1; then
+                echo "round $round mt4 alive"
+              else
+                echo "round $round mt4 ALIVE-FAIL"
+                if kill -0 $MTPID 2>/dev/null; then echo "mt4 WEDGED (alive, mute)"; else echo "mt4 CRASHED"; fi
+                ps aux | grep 7774 | grep -v grep || true
+                break
+              fi
+              timeout 60 redis-benchmark -p 7774 -t set -n 200000 -c 50 -P 16 -q 2>/dev/null | tr '\r' '\n' | grep -i "requests per second" | head -1
+              timeout 15 redis-benchmark -p 7774 -n 100 -c 10 -P 1 -t set -q >/dev/null 2>&1 && echo "post-cell alive" || { echo "POST-CELL DEAD"; kill -0 $MTPID 2>/dev/null && echo "WEDGED" || echo "CRASHED"; break; }
+            done
+            pkill -f "ddup-server --port 777" || true
+            pkill redis-server || true
+            sleep 1
           done
-          cat /tmp/d7.log
           } > /tmp/probe.out 2>&1
           true
       - name: Publish probe output
