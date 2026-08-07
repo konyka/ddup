@@ -21,8 +21,10 @@ typedef struct mt_spsc {
     void **buf;
     size_t mask;
 #if DDUP_HAS_C_ATOMICS
-    _Atomic size_t head; /* consumer index */
-    _Atomic size_t tail; /* producer index */
+    /* head/tail on separate cache lines: producer and consumer hammer
+     * their own index without ping-ponging a shared line (Phase 30) */
+    ddup_alignas(64) _Atomic size_t head; /* consumer index */
+    ddup_alignas(64) _Atomic size_t tail; /* producer index */
 #else
     size_t head;
     size_t tail;
