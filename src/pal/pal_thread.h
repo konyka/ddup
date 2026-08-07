@@ -41,4 +41,8 @@ void pal_cond_signal(pal_cond *c);
 void pal_cond_broadcast(pal_cond *c);
 void pal_cond_destroy(pal_cond *c);
 
+/* Offer the rest of the time slice to a runnable peer (sched_yield /
+ * SwitchToThread): cheaper than a 1ms sleep for backpressure handoff. */
+void pal_thread_yield(void);
+
 #endif /* DDUP_PAL_THREAD_H */

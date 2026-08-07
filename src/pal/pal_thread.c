@@ -124,9 +124,15 @@ void pal_cond_destroy(pal_cond *c)
     c->impl = NULL;
 }
 
+void pal_thread_yield(void)
+{
+    SwitchToThread();
+}
+
 #else /* POSIX */
 
 #include <pthread.h>
+#include <sched.h>
 
 typedef struct posix_thread {
     pthread_t tid;
@@ -228,6 +234,11 @@ void pal_cond_destroy(pal_cond *c)
         free(cv);
         c->impl = NULL;
     }
+}
+
+void pal_thread_yield(void)
+{
+    (void)sched_yield();
 }
 
 #endif

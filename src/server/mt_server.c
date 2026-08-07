@@ -1915,8 +1915,11 @@ static void mt_push_task(worker *self, mt_spsc *q, mt_task *t,
             }
             mt_drain_completions(self);
             mt_drain_inbox(self);
+            /* yield (not sleep) past the spin bound: a 1ms sleep quantum
+             * turns transient ring-full backpressure into a pool-wide
+             * throughput collapse on few-core hosts */
             if (++spins > 64)
-                pal_sleep_ms(1);
+                pal_thread_yield();
         } else {
             pal_sleep_ms(1);
         }
@@ -2381,8 +2384,10 @@ mt_server *mt_server_create_ex(const char *host, uint16_t port, int nworkers,
             return NULL;
         }
         for (j = 0; j < nworkers; j++) {
-            if (mt_spsc_init(&w->inbox[j], 1024) != 0 ||
-                mt_spsc_init(&w->completions[j], 1024) != 0 ||
+            /* deep rings: a transient producer/consumer lag must not hit
+             * the backpressure path at bench burst sizes */
+            if (mt_spsc_init(&w->inbox[j], 8192) != 0 ||
+                mt_spsc_init(&w->completions[j], 8192) != 0 ||
                 mt_spsc_init(&w->migrate[j], 64) != 0) {
                 ms->nworkers = i + 1;
                 mt_server_destroy(ms);
