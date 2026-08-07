@@ -130,6 +130,18 @@
   保护（跨线程投递可安全 test-and-increment）；连接关闭时有未决工作
   则成为 zombie（摘出事件循环、关 fd，保留 conn/session/mt_state），
   最后一项工作回收时由 mt 层释放（per-worker zombie 清单兜底）。
+- **任务对象池（Phase 31）**：单命令路由任务的对象经 home worker 的
+  自由列表回收复用（互斥锁保护；跨线程回收仅限 UNWATCH/UNSUB 等
+  少数路径），命令字节两级内联（conn 态 batch_inline 暂存 + 任务态
+  inline_buf 携带，≤256B 全程零分配）；多命令批、大载荷、特殊任务
+  保持堆路径。池空回退 malloc、池满回退 free。销毁顺序（记录在案
+  的修复）：先对全部 worker 置 pool_off 再排空环与池——否则后排
+  空把任务回收到互斥锁已销毁的 worker 池里。
+- **背压与唤醒（Phase 27/29/30）**：kick 去重（pending 原子标志，
+  空→非空才真踢）；SPSC head/tail 分缓存行；环满退避为自排干 +
+  sched_yield（且必须检查 running——否则关停 join 永远等不到退出
+  的 worker，进程活而不哑的 CI wedge 根因）。inbox/completion 环
+  8192 槽。
 - **事务（mt 层实现）**：MULTI/EXEC/DISCARD/WATCH/UNWATCH 由路由层接管
   （session 不进入 MULTI）。EXEC 要求所有排队命令与 WATCH key 同属一个
   worker（否则 -EXECABORT），打包为单个 bundle 在属主 worker 上重新

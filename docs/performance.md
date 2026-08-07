@@ -531,3 +531,31 @@ CI 数字应按"可达上限"解读：c500 P64 ≈ 1.8M/2.0M（与 st 同量级�
 约为 garnet 同场景的 45-55%）。wedge 类停摆（进程哑死）自
 cf2b4ef 起未再出现；残留的偶发 stall 归因为 runner 争用下的
 背压雪崩，重启兜底有效。
+
+## Phase 31 mt 任务对象池（2026-08-08）
+
+**设计**：路由单命令任务不再触碰分配器。突发内第一条命令的字节先
+落 conn 态的 batch_inline（≤256B 免分配）；flush 时从 home worker
+的互斥自由列表取回收任务，命令随 inline_cmd/inline_buf 走；
+mt_task_free 统一把对象还回 home 的池（跨线程回收由互斥锁覆盖，
+仅限 UNWATCH/UNSUB 等少数路径）。多命令批、>256B 载荷与特殊任务
+类型保持堆路径。池上限 256/worker，回复缓冲 >256KB 直接释放。
+
+**池化暴露并修复的真实 bug**：销毁顺序——ring 排空时任务被回收进
+home worker 的池，而排在前面的 worker 的池互斥锁已销毁，回收即锁
+已毁互斥体崩溃（Windows  vectored 异常栈 + llvm-symbolizer 定位到
+mt_task_free←mt_server_destroy）。修复：销毁前先把全 worker 置
+pool_off，回收退化为普通释放。
+
+**数字**：本机 A/B（16C/32T，mt4）：c500 P64 SET 1856k→2016k
+（+8.6%）、GET +2.3%；c50 P16 中性（噪声内）。CI（4 核）：见
+bench-results 最新表——mt4 c500 P64 685k/717k（该窗口 st 797k/
+820k、garnet 1980k/2041k）。
+
+**遗留（诚实记录）**：CI 全负载 bench 里 mt4 仍偶发爬行单元格
+（~8k/s 或 0，重启可自愈）——关停楔死/acceptor 丢连接/背压量化
+三个真 bug 已修，残余 stall 只在 4 核 runner 五服务全负载下偶发，
+本地（Windows/Linux 皆不可得）与隔离探针均无法复现。已排除项与
+取证（线程栈、fd 计数、INFO 采样）在 bench-diag.txt 设施里；建议
+后续用一台本地 Linux 机或 WSL 复现攻坚。bench.yml 的重启兜底保留，
+重启次数随报告披露。
