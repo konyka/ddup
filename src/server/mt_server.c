@@ -155,6 +155,13 @@ struct worker {
     char aof_path[1088];
     char snap_path[1088];
     volatile int running;
+    /* Batched reply flush: conns that received reply bytes during one
+     * mt_drain_completions pass are flushed once at the end of the pass
+     * (replies are seq-ordered into conn->out, so coalescing is free). */
+    uint64_t drain_epoch;
+    void **flush_list;
+    size_t flush_n;
+    size_t flush_cap;
 };
 
 struct mt_server {
@@ -219,6 +226,9 @@ typedef struct mt_conn_state {
     /* connection-key affinity: set once the conn has been migrated to the
      * worker owning its (first) keys; further commands stay put */
     int migrated;
+    /* home-worker drain pass id at which this conn was queued for a flush
+     * (0 = not queued) */
+    uint64_t flush_epoch;
 } mt_conn_state;
 
 static void mt_blobs_free(mt_cmd_blob *blobs, size_t n)
@@ -2029,6 +2039,31 @@ static void mt_drain_inbox(worker *w)
 static void mt_drain_completions(worker *w)
 {
     int pi;
+    size_t fi;
+
+    /* queue a conn for the single end-of-pass flush (dedup per pass) */
+#define mt_mark_flush(conn_, st_)                                             \
+    do {                                                                      \
+        if ((st_)->flush_epoch != w->drain_epoch) {                           \
+            (st_)->flush_epoch = w->drain_epoch;                              \
+            if (w->flush_n == w->flush_cap) {                                 \
+                size_t ncap_ = w->flush_cap == 0 ? 64 : w->flush_cap * 2;     \
+                void **nl_ =                                                  \
+                    (void **)realloc(w->flush_list,                           \
+                                     ncap_ * sizeof(void *));                 \
+                if (nl_ != NULL) {                                            \
+                    w->flush_list = nl_;                                      \
+                    w->flush_cap = ncap_;                                     \
+                }                                                             \
+            }                                                                 \
+            if (w->flush_n < w->flush_cap)                                    \
+                w->flush_list[w->flush_n++] = (conn_);                        \
+            else                                                              \
+                (void)server_conn_flush(w->srv, (conn_)); /* no room: now */  \
+        }                                                                     \
+    } while (0)
+
+    w->drain_epoch++;
     for (pi = 0; pi < w->ms->nworkers; pi++) {
         int n = 0;
         while (n < MT_DRAIN_MAX) {
@@ -2058,7 +2093,7 @@ static void mt_drain_completions(worker *w)
                     if (deliver) {
                         server_conn_out_append(w->srv, conn, t->reply.data,
                                                t->reply.len);
-                        (void)server_conn_flush(w->srv, conn);
+                        mt_mark_flush(conn, st);
                     }
                     mt_pending_dec(w, conn, st);
                 }
@@ -2089,7 +2124,7 @@ static void mt_drain_completions(worker *w)
                     mt_drain_ready(w->srv, &w->exec_arena, conn, st, 0);
                 } else {
                     mt_drain_ready(w->srv, &w->exec_arena, conn, st, 1);
-                    (void)server_conn_flush(w->srv, conn);
+                    mt_mark_flush(conn, st);
                 }
                 mt_pending_dec(w, conn, st);
             } else {
@@ -2097,6 +2132,11 @@ static void mt_drain_completions(worker *w)
             }
         }
     }
+    /* one flush per touched conn per drain pass */
+    for (fi = 0; fi < w->flush_n; fi++)
+        (void)server_conn_flush(w->srv, w->flush_list[fi]);
+    w->flush_n = 0;
+#undef mt_mark_flush
 }
 
 static void worker_on_wakeup(void *ctx)
@@ -2458,6 +2498,7 @@ void mt_server_destroy(mt_server *ms)
             for (zi = 0; zi < w->nzombies; zi++)
                 server_conn_free_now(w->srv, w->zombies[zi]);
             free(w->zombies);
+            free(w->flush_list);
         }
         pal_mutex_destroy(&w->pending_mu);
         pal_wakeup_destroy(&w->wakeup);
