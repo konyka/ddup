@@ -241,16 +241,18 @@ static void test_update_fail_and_tolerance(void)
     DD_CHECK_EQ_INT(9, n->epoch);
     DD_CHECK_EQ_INT(9, d.cluster_current_epoch);
 
-    /* FAIL: marks the node disconnected */
+    /* FAIL: forces the objective fail state (PFAIL cleared) */
     memset(frame, 0, REDBUS_HDR_LEN + 40);
     memcpy(frame, "RCmb", 4);
     put32be(frame + 4, REDBUS_HDR_LEN + 40);
     put16be(frame + 12, REDBUS_TYPE_FAIL);
     memcpy(frame + REDBUS_HDR_LEN, ID2, 40);
+    n->flags |= CLUSTER_NODE_PFAIL;
     DD_CHECK_EQ_INT(0,
                     redbus_handle_frame(&d, frame, REDBUS_HDR_LEN + 40,
                                         &reply, T0, NULL));
-    DD_CHECK(n->flags & CLUSTER_NODE_DISCONNECTED);
+    DD_CHECK(n->flags & CLUSTER_NODE_FAIL);
+    DD_CHECK(!(n->flags & CLUSTER_NODE_PFAIL));
 
     /* PUBLISH and unknown types are tolerated (ignored, no reply) */
     put16be(frame + 12, REDBUS_TYPE_PUBLISH);

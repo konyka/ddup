@@ -67,6 +67,7 @@ void db_init(db *d)
     d->cluster_changes = 0;
     d->cluster_current_epoch = 1;
     d->cluster_node_timeout_ms = 15000; /* Redis default node-timeout */
+    d->fail_broadcast_id[0] = '\0';
     strcpy(d->cluster_ip, "0.0.0.0");
     d->cluster_port = 0;
     d->snapshot_path = NULL;

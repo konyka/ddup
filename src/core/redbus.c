@@ -244,6 +244,27 @@ void redbus_build_publish(struct db *d, int type, const char *ch,
     put32be(out->data + start + 4, (uint32_t)total);
 }
 
+void redbus_build_fail(struct db *d, const char *subject_id, resp_buf *out)
+{
+    const cluster_node *sn = find_sender(d);
+    size_t start, total;
+    char *p, *cp;
+
+    if (sn == NULL)
+        return;
+
+    start = out->len;
+    resp_buf_reserve(out, REDBUS_HDR_LEN + 40);
+    p = out->data + out->len;
+    cp = write_header(d, sn, REDBUS_TYPE_FAIL, p); /* count stays 0 */
+    put_name(cp, subject_id); /* clusterMsgDataFail: nodename[40] */
+    cp += 40;
+
+    total = (size_t)(cp - p);
+    out->len = start + total;
+    put32be(out->data + start + 4, (uint32_t)total);
+}
+
 /* ------------------------------------------------------------------ */
 /* parse                                                              */
 /* ------------------------------------------------------------------ */
@@ -428,16 +449,14 @@ int redbus_handle_frame(struct db *d, const char *frame, size_t len,
         return 0;
     }
     if (type == REDBUS_TYPE_FAIL) {
-        /* clusterMsgDataFail: nodename[40] */
+        /* clusterMsgDataFail: nodename[40]; force FAIL on receipt */
         if (len < REDBUS_HDR_LEN + 40)
             return -1;
         memcpy(id, frame + REDBUS_HDR_LEN, 40);
         id[40] = '\0';
         n = cluster_node_find(d, id);
-        if (n != NULL) {
-            n->flags |= CLUSTER_NODE_DISCONNECTED;
-            d->cluster_changes++;
-        }
+        if (n != NULL)
+            cluster_mark_fail(d, n, now_ms);
         return 0;
     }
     if (type == REDBUS_TYPE_AUTH_REQUEST) {
@@ -499,10 +518,12 @@ int redbus_handle_frame(struct db *d, const char *frame, size_t len,
                    (n->flags & CLUSTER_NODE_MASTER) != 0) {
             /* failure reports: a master's PFAIL/FAIL gossip about a known
              * third node is a report from the sender; clean retracts it */
-            if (gflags & (REDBUS_NODE_PFAIL | REDBUS_NODE_FAIL))
+            if (gflags & (REDBUS_NODE_PFAIL | REDBUS_NODE_FAIL)) {
                 cluster_report_failure(d, g, n->id, now_ms);
-            else
+                (void)cluster_mark_fail_if_quorum(d, g, now_ms);
+            } else {
                 cluster_report_heal(d, g, n->id);
+            }
         }
         p += REDBUS_GOSSIP_LEN;
     }

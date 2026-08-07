@@ -3,10 +3,12 @@
  * cluster_state evaluation. */
 #include <stdarg.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "core/cluster.h"
 #include "core/command.h"
+#include "core/redbus.h"
 #include "core/session.h"
 #include "test.h"
 
@@ -14,6 +16,7 @@
 #define ME "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 #define NB "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
 #define NC "cccccccccccccccccccccccccccccccccccccccc"
+#define NX "dddddddddddddddddddddddddddddddddddddddd"
 
 static cluster_node *mknode(db *d, const char *id, uint32_t flags)
 {
@@ -224,6 +227,360 @@ static void test_state_pfail_vs_fail(void)
     db_destroy(&d);
 }
 
+/* ------------------------------------------------------------------ */
+/* quorum promotion: PFAIL -> FAIL on a majority of slot-serving      */
+/* masters (reports + myself), only while we suspect the node locally */
+/* ------------------------------------------------------------------ */
+static void test_quorum_promotion(void)
+{
+    db d;
+    cluster_node *me, *b, *c, *x;
+
+    db_init(&d);
+    cluster_nodes_init(&d);
+    d.cluster_node_timeout_ms = 1000;
+    me = mknode(&d, ME, CLUSTER_NODE_MYSELF | CLUSTER_NODE_MASTER);
+    b = mknode(&d, NB, CLUSTER_NODE_MASTER);
+    c = mknode(&d, NC, CLUSTER_NODE_MASTER);
+    x = mknode(&d, NX, CLUSTER_NODE_MASTER);
+    cluster_slots_set(me->slots, 0, 1);
+    cluster_slots_set(b->slots, 1, 1);
+    cluster_slots_set(c->slots, 2, 1);
+    cluster_slots_set(x->slots, 3, 1);
+    /* 4 slot-serving masters -> quorum 3 */
+
+    /* reports alone do not promote: local suspicion is required */
+    cluster_report_failure(&d, x, NB, T0);
+    cluster_report_failure(&d, x, NC, T0);
+    DD_CHECK_EQ_INT(0, cluster_mark_fail_if_quorum(&d, x, T0));
+    DD_CHECK(!(x->flags & CLUSTER_NODE_FAIL));
+
+    /* local PFAIL + 2 reports + myself = 3 >= 3 -> FAIL, broadcast due */
+    x->flags |= CLUSTER_NODE_PFAIL;
+    DD_CHECK_EQ_INT(1, cluster_mark_fail_if_quorum(&d, x, T0));
+    DD_CHECK(x->flags & CLUSTER_NODE_FAIL);
+    DD_CHECK(!(x->flags & CLUSTER_NODE_PFAIL));
+    DD_CHECK_STR(NX, d.fail_broadcast_id);
+
+    /* already FAIL: no re-trigger */
+    d.fail_broadcast_id[0] = '\0';
+    DD_CHECK_EQ_INT(0, cluster_mark_fail_if_quorum(&d, x, T0));
+    DD_CHECK(d.fail_broadcast_id[0] == '\0');
+
+    db_destroy(&d);
+
+    /* 2-master cluster: quorum 2, our own suspicion alone is a deadlock
+     * (documented; Redis needs >= 3 masters for automatic FAIL) */
+    db_init(&d);
+    cluster_nodes_init(&d);
+    d.cluster_node_timeout_ms = 1000;
+    me = mknode(&d, ME, CLUSTER_NODE_MYSELF | CLUSTER_NODE_MASTER);
+    x = mknode(&d, NX, CLUSTER_NODE_MASTER);
+    cluster_slots_set(me->slots, 0, 1);
+    cluster_slots_set(x->slots, 1, 1);
+    x->flags |= CLUSTER_NODE_PFAIL;
+    DD_CHECK_EQ_INT(0, cluster_mark_fail_if_quorum(&d, x, T0));
+    /* one report from the other master completes the majority */
+    cluster_report_failure(&d, x, NX, T0);
+    DD_CHECK_EQ_INT(1, cluster_mark_fail_if_quorum(&d, x, T0));
+    DD_CHECK(x->flags & CLUSTER_NODE_FAIL);
+
+    db_destroy(&d);
+}
+
+/* ------------------------------------------------------------------ */
+/* FAIL frames force the objective state on receivers (both codecs)   */
+/* ------------------------------------------------------------------ */
+static void test_fail_frames(void)
+{
+    db da, db_;
+    resp_buf frame, reply;
+    cluster_node *x;
+
+    /* RCM2: [RCM2][totlen][type=5][40-byte subject id] */
+    db_init(&da);
+    db_init(&db_);
+    cluster_nodes_init(&da);
+    cluster_nodes_init(&db_);
+    resp_buf_init(&frame);
+    resp_buf_init(&reply);
+    mknode(&da, ME, CLUSTER_NODE_MYSELF | CLUSTER_NODE_MASTER);
+    mknode(&db_, NB, CLUSTER_NODE_MYSELF | CLUSTER_NODE_MASTER);
+    x = mknode(&db_, NX, CLUSTER_NODE_MASTER | CLUSTER_NODE_PFAIL);
+
+    cluster_bus_build_fail(&da, NX, &frame);
+    DD_CHECK(frame.len == 50 && memcmp(frame.data, "RCM2", 4) == 0);
+    DD_CHECK_EQ_INT(0, cluster_bus_handle_frame(&db_, frame.data, frame.len,
+                                                &reply, T0));
+    DD_CHECK(x->flags & CLUSTER_NODE_FAIL);
+    DD_CHECK(!(x->flags & CLUSTER_NODE_PFAIL));
+    DD_CHECK(reply.len == 0); /* no PONG for a FAIL frame */
+
+    /* unknown subject: tolerated; myself: never marked */
+    frame.len = 0;
+    cluster_bus_build_fail(&da, NC, &frame);
+    DD_CHECK_EQ_INT(0, cluster_bus_handle_frame(&db_, frame.data, frame.len,
+                                                &reply, T0));
+    DD_CHECK(cluster_node_find(&db_, NC) == NULL);
+    frame.len = 0;
+    cluster_bus_build_fail(&da, NB, &frame);
+    DD_CHECK_EQ_INT(0, cluster_bus_handle_frame(&db_, frame.data, frame.len,
+                                                &reply, T0));
+    DD_CHECK(!(cluster_node_find(&db_, NB)->flags & CLUSTER_NODE_FAIL));
+
+    resp_buf_free(&reply);
+    resp_buf_free(&frame);
+    db_destroy(&db_);
+    db_destroy(&da);
+
+    /* redbus: full header + nodename payload, same receiver semantics */
+    db_init(&da);
+    db_init(&db_);
+    cluster_nodes_init(&da);
+    cluster_nodes_init(&db_);
+    resp_buf_init(&frame);
+    resp_buf_init(&reply);
+    mknode(&da, ME, CLUSTER_NODE_MYSELF | CLUSTER_NODE_MASTER);
+    mknode(&db_, NB, CLUSTER_NODE_MYSELF | CLUSTER_NODE_MASTER);
+    x = mknode(&db_, NX, CLUSTER_NODE_MASTER | CLUSTER_NODE_PFAIL);
+
+    redbus_build_fail(&da, NX, &frame);
+    DD_CHECK(frame.len == REDBUS_HDR_LEN + 40);
+    DD_CHECK_EQ_INT(0, redbus_handle_frame(&db_, frame.data, frame.len,
+                                           &reply, T0, NULL));
+    DD_CHECK(x->flags & CLUSTER_NODE_FAIL);
+    DD_CHECK(!(x->flags & CLUSTER_NODE_PFAIL));
+
+    resp_buf_free(&reply);
+    resp_buf_free(&frame);
+    db_destroy(&db_);
+    db_destroy(&da);
+}
+
+/* ------------------------------------------------------------------ */
+/* end to end: 3 masters, full mesh; one goes silent -> PFAIL ->      */
+/* quorum FAIL -> FAIL frame -> all agree; heal on return             */
+/* ------------------------------------------------------------------ */
+#include "pal/pal_socket.h"
+#include "pal/pal_time.h"
+#include "server/server.h"
+
+static pal_socket_t e2e_cli(uint16_t port)
+{
+    pal_socket_t c = pal_tcp_connect("127.0.0.1", port);
+    DD_CHECK(c != PAL_SOCKET_INVALID);
+    DD_CHECK_EQ_INT(0, pal_set_nonblocking(c, 1));
+    return c;
+}
+
+static void pump3(server *x, server *y, server *z)
+{
+    server_run_once(x, 5);
+    if (y != NULL)
+        server_run_once(y, 5);
+    if (z != NULL)
+        server_run_once(z, 5);
+}
+
+/* send req, pump the trio, read until want appears (bounded) */
+static int ask3(server *x, server *y, server *z, pal_socket_t c,
+                const char *req, const char *want, char *buf, size_t cap)
+{
+    size_t got = 0;
+    uint64_t dl = pal_now_ms() + 15000;
+    DD_CHECK_EQ_INT((long long)strlen(req),
+                    (long long)pal_send(c, req, strlen(req)));
+    while (pal_now_ms() < dl) {
+        ptrdiff_t n;
+        pump3(x, y, z);
+        n = pal_recv(c, buf + got, cap - got - 1);
+        if (n > 0) {
+            got += (size_t)n;
+            buf[got] = '\0';
+            if (strstr(buf, want) != NULL)
+                return 1;
+        }
+    }
+    buf[got] = '\0';
+    fprintf(stderr, "ask3 timeout: want [%s] got [%.600s]\n", want, buf);
+    return 0;
+}
+
+static int wait_nodes3(server *x, server *y, server *z, pal_socket_t c,
+                       const char *needle, char *buf, size_t cap)
+{
+    int i;
+    for (i = 0; i < 800; i++) {
+        pump3(x, y, z);
+        if (i % 40 == 0) {
+            if (ask3(x, y, z, c, "*2\r\n$7\r\nCLUSTER\r\n$5\r\nNODES\r\n",
+                     needle, buf, cap))
+                return 1;
+        }
+    }
+    return 0;
+}
+
+static int wait_state3(server *x, server *y, server *z, pal_socket_t c,
+                       const char *want, char *buf, size_t cap)
+{
+    int i;
+    for (i = 0; i < 800; i++) {
+        pump3(x, y, z);
+        if (i % 40 == 0) {
+            if (ask3(x, y, z, c, "*2\r\n$7\r\nCLUSTER\r\n$4\r\nINFO\r\n",
+                     want, buf, cap))
+                return 1;
+        }
+    }
+    return 0;
+}
+
+static void meet3(server *x, server *y, server *z, pal_socket_t cx,
+                  uint16_t port, char *buf, size_t cap)
+{
+    char req[256], ps[16];
+    snprintf(ps, sizeof(ps), "%u", (unsigned)port);
+    snprintf(req, sizeof(req),
+             "*4\r\n$7\r\nCLUSTER\r\n$4\r\nMEET\r\n$9\r\n127.0.0.1\r\n"
+             "$%zu\r\n%s\r\n",
+             strlen(ps), ps);
+    DD_CHECK(ask3(x, y, z, cx, req, "+OK\r\n", buf, cap));
+}
+
+/* chunked ADDSLOTS for [base, base+count) on one server */
+static void addslots_span(server *x, server *y, server *z, pal_socket_t c,
+                          int base, int count, char *buf, size_t cap)
+{
+    int off;
+    for (off = 0; off < count; off += 1000) {
+        int chunk = count - off < 1000 ? count - off : 1000;
+        char *big = malloc(32768);
+        size_t bl = 0, woff = 0;
+        int sl;
+        DD_CHECK(big != NULL);
+        bl += (size_t)snprintf(big + bl, 32768 - bl, "*%d\r\n$7\r\nCLUSTER\r\n"
+                               "$8\r\nADDSLOTS\r\n", chunk + 2);
+        for (sl = base + off; sl < base + off + chunk; sl++) {
+            char num[8];
+            int nl = snprintf(num, sizeof(num), "%d", sl);
+            bl += (size_t)snprintf(big + bl, 32768 - bl, "$%d\r\n%s\r\n", nl,
+                                   num);
+        }
+        while (woff < bl) {
+            ptrdiff_t w = pal_send(c, big + woff, bl - woff);
+            if (w > 0)
+                woff += (size_t)w;
+            else
+                pump3(x, y, z);
+        }
+        DD_CHECK(ask3(x, y, z, c, "", "+OK\r\n", buf, cap));
+        free(big);
+    }
+}
+
+static void test_quorum_fail_e2e(void)
+{
+    server *a, *b, *c;
+    pal_socket_t ca, cb, cc;
+    char buf[8192];
+
+    DD_CHECK_EQ_INT(0, pal_socket_init());
+    a = server_create_ex("127.0.0.1", 0, SERVER_BACKEND_SELECT);
+    b = server_create_ex("127.0.0.1", 0, SERVER_BACKEND_SELECT);
+    c = server_create_ex("127.0.0.1", 0, SERVER_BACKEND_SELECT);
+    DD_CHECK(a != NULL && b != NULL && c != NULL);
+    server_enable_cluster(a, ME);
+    server_enable_cluster(b, NB);
+    server_enable_cluster(c, NC);
+    server_set_node_timeout(a, 2000);
+    server_set_node_timeout(b, 2000);
+    server_set_node_timeout(c, 2000);
+    ca = e2e_cli(server_port(a));
+    cb = e2e_cli(server_port(b));
+    cc = e2e_cli(server_port(c));
+
+    /* full mesh: a->b, a->c, b->c */
+    meet3(a, b, c, ca, server_port(b), buf, sizeof(buf));
+    meet3(a, b, c, ca, server_port(c), buf, sizeof(buf));
+    meet3(a, b, c, cb, server_port(c), buf, sizeof(buf));
+
+    /* slots split three ways */
+    addslots_span(a, b, c, ca, 0, 5461, buf, sizeof(buf));
+    addslots_span(a, b, c, cb, 5461, 5462, buf, sizeof(buf));
+    addslots_span(a, b, c, cc, 10923, 5461, buf, sizeof(buf));
+    DD_CHECK(wait_state3(a, b, c, ca, "cluster_state:ok\r\n", buf,
+                         sizeof(buf)));
+
+    /* a goes silent: b and c must agree on FAIL (quorum of masters);
+     * flags render as "master,disconnected,fail" (trailing comma is
+     * stripped), so the needle carries the following space */
+    DD_CHECK(wait_nodes3(b, c, NULL, cb, ",fail ", buf, sizeof(buf)));
+    DD_CHECK(wait_nodes3(b, c, NULL, cc, ",fail ", buf, sizeof(buf)));
+    DD_CHECK(wait_state3(b, c, NULL, cb, "cluster_state:fail\r\n", buf,
+                         sizeof(buf)));
+
+    /* a returns: fresh direct frames clear the FAIL mark, state heals */
+    DD_CHECK(wait_state3(a, b, c, cb, "cluster_state:ok\r\n", buf,
+                         sizeof(buf)));
+    DD_CHECK(wait_state3(a, b, c, cc, "cluster_state:ok\r\n", buf,
+                         sizeof(buf)));
+
+    pal_close(cc);
+    pal_close(cb);
+    pal_close(ca);
+    server_destroy(c);
+    server_destroy(b);
+    server_destroy(a);
+    pal_socket_cleanup();
+}
+
+static void test_two_master_deadlock(void)
+{
+    server *a, *b;
+    pal_socket_t ca, cb;
+    char buf[8192];
+    uint64_t dl;
+
+    DD_CHECK_EQ_INT(0, pal_socket_init());
+    a = server_create_ex("127.0.0.1", 0, SERVER_BACKEND_SELECT);
+    b = server_create_ex("127.0.0.1", 0, SERVER_BACKEND_SELECT);
+    DD_CHECK(a != NULL && b != NULL);
+    server_enable_cluster(a, ME);
+    server_enable_cluster(b, NB);
+    server_set_node_timeout(a, 1000);
+    server_set_node_timeout(b, 1000);
+    ca = e2e_cli(server_port(a));
+    cb = e2e_cli(server_port(b));
+
+    meet3(a, b, NULL, ca, server_port(b), buf, sizeof(buf));
+    addslots_span(a, b, NULL, ca, 0, 8192, buf, sizeof(buf));
+    addslots_span(a, b, NULL, cb, 8192, 8192, buf, sizeof(buf));
+    /* claims ride the 1s-cadence gossip PINGs: wait until b actually
+     * sees a's slots before silencing a (else b's view of a is the
+     * slotless MEET-time record and the quorum math degenerates) */
+    DD_CHECK(wait_nodes3(a, b, NULL, cb, "0-8191", buf, sizeof(buf)));
+
+    /* a goes silent: with only 2 masters the majority is 2, and the dead
+     * one cannot report -- b suspects (fail?) but never confirms (fail,)
+     * and keeps the state ok on a's covered slots */
+    DD_CHECK(wait_nodes3(b, NULL, NULL, cb, "fail?", buf, sizeof(buf)));
+    dl = pal_now_ms() + 5000;
+    while (pal_now_ms() < dl)
+        pump3(b, NULL, NULL);
+    DD_CHECK(ask3(b, NULL, NULL, cb, "*2\r\n$7\r\nCLUSTER\r\n$5\r\nNODES\r\n",
+                  "fail?", buf, sizeof(buf)));
+    DD_CHECK(strstr(buf, ",fail ") == NULL);
+    DD_CHECK(ask3(b, NULL, NULL, cb, "*2\r\n$7\r\nCLUSTER\r\n$4\r\nINFO\r\n",
+                  "cluster_state:ok\r\n", buf, sizeof(buf)));
+
+    pal_close(cb);
+    pal_close(ca);
+    server_destroy(b);
+    server_destroy(a);
+    pal_socket_cleanup();
+}
+
 int main(void)
 {
     setvbuf(stdout, NULL, _IONBF, 0);
@@ -231,5 +588,9 @@ int main(void)
     DD_RUN(test_gossip_pfail_report);
     DD_RUN(test_direct_frame_clears_flags);
     DD_RUN(test_state_pfail_vs_fail);
+    DD_RUN(test_quorum_promotion);
+    DD_RUN(test_fail_frames);
+    DD_RUN(test_quorum_fail_e2e);
+    DD_RUN(test_two_master_deadlock);
     return DD_TEST_SUMMARY();
 }

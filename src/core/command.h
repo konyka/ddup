@@ -47,6 +47,7 @@ typedef struct db {
     uint64_t failover_req_epoch; /* election epoch we requested, 0 = none */
     uint32_t failover_ack_mask; /* node indexes that granted a vote */
     int failover_ack_count;
+    char fail_broadcast_id[41]; /* FAIL frame to broadcast ("" = none) */
     char cluster_ip[64];   /* bind address reported by CLUSTER SLOTS */
     uint16_t cluster_port; /* listen port reported by CLUSTER SLOTS */
     const char *snapshot_path; /* SAVE target (not owned; may be NULL) */

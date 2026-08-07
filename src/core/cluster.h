@@ -45,6 +45,7 @@ typedef struct cluster_node {
     uint8_t slots[2048]; /* 16384-bit slot bitmap */
     cluster_fail_report reports[CLUSTER_MAX_NODES]; /* who suspects it */
     int nreports;
+    uint64_t fail_time_ms; /* when FAIL was marked (0 = never) */
 } cluster_node;
 
 struct db; /* command.h */
@@ -110,6 +111,20 @@ void cluster_report_heal(struct db *d, cluster_node *subject,
 int cluster_report_count(struct db *d, cluster_node *subject,
                          uint64_t now_ms);
 
+/* Force the objective FAIL state (a FAIL frame was received; receivers
+ * honor it immediately). Clears PFAIL, records fail_time_ms, bumps
+ * cluster_changes. No-op on myself or an already-FAIL node. */
+void cluster_mark_fail(struct db *d, cluster_node *subject,
+                       uint64_t now_ms);
+
+/* Promote subject PFAIL -> FAIL when we suspect it locally AND a
+ * majority of slot-serving masters (valid reports + myself if master)
+ * suspect it too (Redis markNodeAsFailingIfNeeded). On promotion the
+ * subject id lands in db.fail_broadcast_id for the server to broadcast
+ * a FAIL frame, and 1 is returned. */
+int cluster_mark_fail_if_quorum(struct db *d, cluster_node *subject,
+                                uint64_t now_ms);
+
 /* nodes.conf format: one line per node
  * "<id> <ip:port@busport> <flags> <master> <ping> <pong> <epoch>
  *  <link> <slots>" */
@@ -123,6 +138,7 @@ int cluster_nodes_parse_line(struct db *d, const char *line, size_t len);
 #define CLUSTER_MSG_PONG 2
 #define CLUSTER_MSG_MEET 3
 #define CLUSTER_MSG_PUBLISH 4
+#define CLUSTER_MSG_FAIL 5
 #define CLUSTER_MSG_MAX 16384
 
 /* Wire magic: "RCMB" = v1 (no role/master_id/epoch fields; senders are
@@ -147,5 +163,10 @@ int cluster_bus_handle_frame(struct db *d, const char *frame, size_t len,
  * subscribers and never feed them to cluster_bus_handle_frame. */
 void cluster_bus_build_publish(struct db *d, const char *ch, size_t chlen,
                                const char *msg, size_t mlen, resp_buf *out);
+
+/* Build a FAIL frame: [RCM2][totlen=50][type u16le=5][subject id 40].
+ * Receivers mark the subject FAIL immediately (Redis FAIL semantics). */
+void cluster_bus_build_fail(struct db *d, const char *subject_id,
+                            resp_buf *out);
 
 #endif /* DDUP_CLUSTER_H */

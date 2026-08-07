@@ -80,4 +80,10 @@ void redbus_build_publish(struct db *d, int type, const char *ch,
                           size_t chlen, const char *msg, size_t mlen,
                           resp_buf *out);
 
+/* Build a FAIL frame: full header (count=0, no gossip) + the
+ * clusterMsgDataFail payload nodename[40]. Receivers mark the subject
+ * FAIL immediately. */
+void redbus_build_fail(struct db *d, const char *subject_id,
+                       resp_buf *out);
+
 #endif /* DDUP_REDBUS_H */

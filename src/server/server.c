@@ -194,6 +194,7 @@ static void cluster_nodes_save(server *s);
 static int srv_cluster_meet(void *ctx, const char *ip, uint16_t port);
 static void srv_spublish_bus(void *ctx, const char *ch, size_t chlen,
                              const char *msg, size_t mlen);
+static void cluster_broadcast_fail(server *s);
 
 /* ------------------------------------------------------------------ */
 /* pub/sub registry + session hooks                                   */
@@ -2065,6 +2066,8 @@ static void bus_service(server *s, bus_conn *bc, int writable)
             return;
         }
         s->nodes_dirty = 1;
+        if (s->db.fail_broadcast_id[0] != '\0')
+            cluster_broadcast_fail(s); /* quorum reached via this gossip */
         memmove(bc->rbuf, bc->rbuf + totlen, bc->rlen - totlen);
         bc->rlen -= totlen;
     }
@@ -2080,6 +2083,21 @@ static void cluster_gossip_round(server *s)
             bus_queue_frame(s, bc, CLUSTER_MSG_PING);
 }
 
+/* broadcast a FAIL frame for db.fail_broadcast_id on every bus conn */
+static void cluster_broadcast_fail(server *s)
+{
+    bus_conn *bc;
+    for (bc = s->bus; bc != NULL; bc = bc->next) {
+        if (s->bus_protocol == SERVER_BUS_PROTOCOL_REDIS)
+            redbus_build_fail(&s->db, s->db.fail_broadcast_id, &bc->out);
+        else
+            cluster_bus_build_fail(&s->db, s->db.fail_broadcast_id,
+                                   &bc->out);
+        bus_flush(s, bc);
+    }
+    s->db.fail_broadcast_id[0] = '\0';
+}
+
 static void cluster_fail_check(server *s, uint64_t now_ms)
 {
     int i;
@@ -2092,6 +2110,9 @@ static void cluster_fail_check(server *s, uint64_t now_ms)
             cluster_node *me;
             n->flags |= CLUSTER_NODE_DISCONNECTED | CLUSTER_NODE_PFAIL;
             s->nodes_dirty = 1;
+            /* fresh local suspicion may complete a quorum whose reports
+             * arrived while the node was still reachable from here */
+            (void)cluster_mark_fail_if_quorum(&s->db, n, now_ms);
             /* failover: a slave of a dead, slot-owning master schedules
              * its promotion (election delay = node timeout + 500 ms) */
             me = cluster_myself(&s->db);
@@ -2109,6 +2130,8 @@ static void cluster_fail_check(server *s, uint64_t now_ms)
             }
         }
     }
+    if (s->db.fail_broadcast_id[0] != '\0')
+        cluster_broadcast_fail(s); /* quorum completed on local suspicion */
 }
 
 /* broadcast a FAILOVER_AUTH_REQUEST on every bus conn (redis mode) */

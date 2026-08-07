@@ -148,6 +148,51 @@ int cluster_report_count(struct db *d, cluster_node *subject, uint64_t now_ms)
     return subject->nreports;
 }
 
+void cluster_mark_fail(struct db *d, cluster_node *subject, uint64_t now_ms)
+{
+    if (subject->flags & (CLUSTER_NODE_FAIL | CLUSTER_NODE_MYSELF))
+        return;
+    subject->flags &= ~(uint32_t)CLUSTER_NODE_PFAIL;
+    subject->flags |= CLUSTER_NODE_FAIL;
+    subject->fail_time_ms = now_ms;
+    d->cluster_changes++;
+}
+
+int cluster_mark_fail_if_quorum(struct db *d, cluster_node *subject,
+                                uint64_t now_ms)
+{
+    cluster_node *me = cluster_myself(d);
+    int masters = 0, failures, i;
+    uint32_t sl;
+
+    /* local suspicion is required, and FAIL is terminal here */
+    if (!(subject->flags & CLUSTER_NODE_PFAIL) ||
+        (subject->flags & CLUSTER_NODE_FAIL))
+        return 0;
+
+    /* cluster size: masters serving at least one slot */
+    for (i = 0; i < d->nnodes; i++) {
+        cluster_node *n = &d->nodes[i];
+        if (!(n->flags & CLUSTER_NODE_MASTER))
+            continue;
+        for (sl = 0; sl < 16384; sl++)
+            if (cluster_slots_get(n->slots, sl))
+                break;
+        if (sl < 16384)
+            masters++;
+    }
+
+    failures = cluster_report_count(d, subject, now_ms);
+    if (me != NULL && (me->flags & CLUSTER_NODE_MASTER))
+        failures++; /* our own suspicion counts (we are a master) */
+    if (failures < masters / 2 + 1)
+        return 0;
+
+    cluster_mark_fail(d, subject, now_ms);
+    memcpy(d->fail_broadcast_id, subject->id, 41);
+    return 1;
+}
+
 void cluster_slots_set(uint8_t *bm, uint32_t slot, int on)
 {
     if (on)
@@ -672,6 +717,21 @@ void cluster_bus_build_publish(struct db *d, const char *ch, size_t chlen,
     out->len = start + total;
 }
 
+void cluster_bus_build_fail(struct db *d, const char *subject_id,
+                            resp_buf *out)
+{
+    size_t start = out->len;
+    char *p;
+    (void)d; /* FAIL frames carry no node record */
+    resp_buf_reserve(out, 50);
+    p = out->data + start;
+    memcpy(p, CLUSTER_BUS_MAGIC_V2, 4);
+    put32(p + 4, 50);
+    put16(p + 8, (uint16_t)CLUSTER_MSG_FAIL);
+    memcpy(p + 10, subject_id, 40);
+    out->len = start + 50;
+}
+
 int cluster_bus_handle_frame(struct db *d, const char *frame, size_t len,
                              resp_buf *reply_out, uint64_t now_ms)
 {
@@ -696,6 +756,19 @@ int cluster_bus_handle_frame(struct db *d, const char *frame, size_t len,
     if (totlen != len || totlen > CLUSTER_MSG_MAX)
         return -1;
     type = get16(frame + 8);
+    if (type == CLUSTER_MSG_FAIL) {
+        /* [RCM2][totlen=50][type=5][subject id]: force FAIL on receipt */
+        cluster_node *f;
+        char fid[41];
+        if (totlen != 50)
+            return -1;
+        memcpy(fid, frame + 10, 40);
+        fid[40] = '\0';
+        f = cluster_node_find(d, fid);
+        if (f != NULL)
+            cluster_mark_fail(d, f, now_ms);
+        return 0;
+    }
     if (type < CLUSTER_MSG_PING || type > CLUSTER_MSG_MEET)
         return -1;
 
@@ -790,10 +863,12 @@ int cluster_bus_handle_frame(struct db *d, const char *frame, size_t len,
              * retracts that sender's report (Redis gossip semantics) */
             if (g != NULL && !(g->flags & CLUSTER_NODE_MYSELF) &&
                 (n->flags & CLUSTER_NODE_MASTER) != 0) {
-                if (flags & (CLUSTER_NODE_PFAIL | CLUSTER_NODE_FAIL))
+                if (flags & (CLUSTER_NODE_PFAIL | CLUSTER_NODE_FAIL)) {
                     cluster_report_failure(d, g, n->id, now_ms);
-                else
+                    (void)cluster_mark_fail_if_quorum(d, g, now_ms);
+                } else {
                     cluster_report_heal(d, g, n->id);
+                }
             }
             epoch = 0;
             if (v2)
