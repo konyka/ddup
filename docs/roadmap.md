@@ -139,6 +139,10 @@
     PUBSUB SHARDCHANNELS/SHARDNUMSUB、总线 PUBLISH 帧传播（redbus
     type 10 / RCM2 type 4，入站 type 4 投递普通订阅者）、双向
     interop CI（Phase 25）
+  - [x] PFAIL/FAIL 法定人数：主观怀疑状态 + 失败报告窗
+    （node_timeout*2）、master 多数派提升 FAIL + FAIL 帧广播（RCM2
+    type 5 / redbus type 3）、failover 门控于 FAIL、2 主死锁记录在案
+    （Phase 26）
   - [ ] 范围化排除（记录在案，不实施）：
     - 分层存储（热/冷数据落盘）：超出"内存缓存存储"定位
     - mt 模式的复制/集群适配：见 Phase 15 说明

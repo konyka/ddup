@@ -517,9 +517,9 @@ DBSIZE 为 O(1)，可能计入尚未回收的过期 key。
   nodes.conf 多行格式 render/parse 双向序列化；每 10s 脏检测持久化
   （原子 rename），启动时先装载再覆盖 myself 条目。
 - **故障检测**：NODE_TIMEOUT 默认 15s（测试可调；必须大于 1s 的 gossip
-  周期，否则在线节点会在 PING 间隔内被误标）；超时标记 disconnected。
-  cluster_state = ok 当 16384 槽被在线节点全覆盖且无 disconnected 节点
-  持有槽，否则 fail。自动故障转移见 Phase 7.10。
+  周期，否则在线节点会在 PING 间隔内被误标）；超时标记 PFAIL +
+  disconnected 链路位。PFAIL→FAIL 的法定人数语义、cluster_state 规则
+  与自动故障转移门控见 Phase 26/7.10。
 - **TLS**：总线不支持 TLS（记录在案）。
 
 ## 槽分配与重定向（Phase 7.8b，多节点第二部分）
@@ -585,18 +585,55 @@ DBSIZE 为 O(1)，可能计入尚未回收的过期 key。
   与足够新的 gossip 条目生效）：epoch 高者胜，平局取节点 id 字典序大者
   （Redis 规则），败者位图即时清除——包括 myself 的让步；未再声明的位
   被收回。CLUSTER INFO 如实上报 current/my epoch。
-- **自动故障转移**：master 被标记 disconnected 且（按本地视图）持有槽
-  时，其 slave 设定选举定时（node_timeout + 500ms，记录在案的简化：无
-  投票/法定人数，多 slave 同时提升时靠 epoch 平局规则收敛）；到期且
-  master 仍失联即提升：转 master、清 master_id、以新 epoch 认领其全部
-  槽、停止数据复制并立即 gossip。死亡 master 重新上线后看到更高 epoch
-  的声明即让步。
+- **自动故障转移**：master 被 quorum 确认为 FAIL（见 Phase 26）且
+  （按本地视图）持有槽时，其 slave 设定选举定时（node_timeout +
+  500ms，记录在案的简化：无 Redis 的随机化延迟）；到期且 master
+  仍为 FAIL 即提升：转 master、清 master_id、以新 epoch 认领其全部
+  槽、停止数据复制并立即 gossip。死亡 master 重新上线后看到更高
+  epoch 的声明即让步。
 - **手动**：`CLUSTER FAILOVER [TAKEOVER]`，仅副本可执行（否则
   `You should send CLUSTER FAILOVER to a replica`）。简化：无 TAKEOVER
   时不等待 master 同意，与 TAKEOVER 行为一致（记录在案）。
-- **其余简化（记录在案）**：无 FAILOVER AUTH 授权、无副本迁移
-  （replica migration）、无 PFAIL 主观失联状态；last_seen 只被直连
-  帧刷新（第三方 gossip 不影响失联判定）。
+- **其余简化（记录在案）**：ddup 协议下无 FAILOVER AUTH 投票轮
+  （redis 总线模式的投票见 Phase 20/24）、无副本迁移（replica
+  migration）；last_seen 只被直连帧刷新（第三方 gossip 不影响失联
+  判定）。
+
+## 客观故障判定与法定人数（Phase 26）
+
+- **状态机**（对齐 Redis 7.0，源码核实）：无标记 → **PFAIL**（主观
+  怀疑：本地静默 > node_timeout 时由 fail_check 设置，渲染为
+  `fail?`，节点的直连帧立即清除）→ **FAIL**（客观故障；两条路径：
+  法定人数提升、或收到 FAIL 帧强令）。FAIL 同样被直连帧清除——
+  记录在案的简化：Redis 对仍持槽的 master 延迟撤销 FAIL
+  （fail_time + node_timeout*2，CLUSTER_FAIL_UNDO_TIME_MULT），
+  ddup 一律即收即清。
+- **failure reports**：每节点一张报告表（reporter id + 时间戳，上限
+  32 条），有效期 node_timeout*2（CLUSTER_FAIL_REPORT_VALIDITY_
+  MULT），过期在计数时懒清除。gossip 条目里已知第三方带 PFAIL/FAIL
+  标志 = 帧发送者的一票报告（干净标志 = 撤回该发送者的报告）；
+  只有 **master 发送者**的报告计数，subject 为 myself 忽略。
+- **法定人数提升**（markNodeAsFailingIfNeeded 语义）：本地已怀疑
+  （PFAIL）且 有效报告数 +（myself 是 master 则 +1）≥ 持槽 master
+  数/2+1 时标记 FAIL，并向全部总线连接广播 FAIL 帧（redbus type 3
+  clusterMsgDataFail；RCM2 新类型 `CLUSTER_MSG_FAIL=5`：
+  [RCM2][totlen=50][type][40 字节 id]）。收 FAIL 帧立即标记（清
+  PFAIL、记 fail_time），未知节点容忍忽略，myself 永不标记。提升
+  评估点在 gossip 接收与本地怀疑设置两处（Redis 只在前者；后者是
+  为确定性加的，记录在案）。
+- **cluster_state 新规**：只有 FAIL 持有者使状态 fail；PFAIL 节点
+  的槽仍计入覆盖、不影响状态（Redis 的 minority-partition 规则
+  ——可达 master 不足半数即 fail——未实现，记录在案）。
+- **failover 门控**：ddup 自动提升与 redis 模式投票轮（AUTH_REQUEST
+  授权方 likewise）都要求 master 为 FAIL；仅 PFAIL/失联不再触发任何
+  选举。
+- **局限（记录在案）**：2 个 master 的集群永远无法自动 FAIL
+  （majority=2 而死者无法投票，Redis 相同）；本地怀疑要求曾有的
+  直连接触——ddup 不会自动向 gossip 学到的节点建总线连接（Redis
+  由 clusterCron 全互联），部分网状拓扑里无直连的节点对不能互相
+  怀疑，自动 FAIL 需要全互联 MEET（测试拓扑即如此）。
+- **wire 映射**：redbus 的 PFAIL/FAIL 位与 ddup 标志 1:1 直译；
+  DISCONNECTED 是纯本地链路状态，从不上线。
 
 ## Redis 总线协议兼容（Phase 20）
 
@@ -625,8 +662,9 @@ DBSIZE 为 O(1)，可能计入尚未回收的过期 key。
   epoch 冲突裁决、槽位移交。Phase 24 补齐：FAILOVER_AUTH_REQUEST/ACK
   投票帧（redis 模式下副本提升需多数派 ACK，含 lastVoteEpoch 防重复
   投票）、UPDATE 帧通用收养、混部集群副本 failover 全流程 CI（杀主→
-  ddup 副本投票提升→接槽→旧主重连让步）。未覆盖（记录在案）：
-  FAIL 的完整 PFAIL 法定人数语义。
+  ddup 副本投票提升→接槽→旧主重连让步）。Phase 26 补齐：PFAIL/FAIL
+  法定人数语义（报告窗、多数派提升、FAIL 帧强令），混部 failover
+  CI 在新门控下保持绿色。
 
 ## 分片发布订阅（Phase 25）
 
