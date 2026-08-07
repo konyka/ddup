@@ -187,18 +187,27 @@ static int db_get(db *d, const char *key, size_t klen, const char **val,
 static void db_set_kv(db *d, const char *key, size_t klen, const char *val,
                       size_t vlen, uint64_t now_ms)
 {
-    const char *old;
-    size_t oldl;
-    if (rh_get(&d->expires, key, klen, &old, &oldl)) {
-        rh_del(&d->expires, key, klen);
-        d->used_memory -= entry_bytes(klen, 8);
+    char *old_kv;
+    size_t old_vlen;
+    /* expires probe only when the table is non-empty (common case: no
+     * TTLs at all, skip the hash+probe entirely) */
+    if (rh_size(&d->expires) > 0) {
+        const char *old;
+        size_t oldl;
+        if (rh_get(&d->expires, key, klen, &old, &oldl)) {
+            rh_del(&d->expires, key, klen);
+            d->used_memory -= entry_bytes(klen, 8);
+        }
     }
-    if (rh_get(&d->table, key, klen, &old, &oldl)) {
-        d->used_memory -= entry_bytes(klen, oldl) + obj_extra_mem(old, oldl);
-        obj_free_value(old, oldl);
+    /* single hash+probe for lookup-old + insert + LRU meta (Phase 27) */
+    if (rh_set_ex(&d->table, key, klen, val, vlen, lru_clock(now_ms),
+                  &old_kv, &old_vlen)) {
+        const char *oldv = old_kv + klen;
+        d->used_memory -=
+            entry_bytes(klen, old_vlen) + obj_extra_mem(oldv, old_vlen);
+        obj_free_value(oldv, old_vlen);
+        free(old_kv);
     }
-    rh_set(&d->table, key, klen, val, vlen);
-    rh_touch(&d->table, key, klen, lru_clock(now_ms));
     d->used_memory += entry_bytes(klen, vlen) + obj_extra_mem(val, vlen);
     db_touch_key(d, key, klen);
 }

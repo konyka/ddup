@@ -347,3 +347,10 @@ before/after ×3）：SET 881k→902k（+2.4%，接近噪声但方向一致）�
 GET 1049k→1008k（不经过传播路径，差异为噪声）。端到端收益被
 loopback 内核时间摊薄——如实记录为边际收益，保留（结构更简单、
 零行为变化）。
+
+**opt-3 SET 路径单探测**：db_set_kv 原来对同一键做 4 次哈希+探测
+（expires 查、旧值查、rh_set、rh_touch）。新增 rh_set_ex（一次探测
+完成 查旧+覆盖+LRU meta，旧 kv 块交还调用方析构），expires 探测加
+空表跳过。bench_core 进程内 A/B（4 轮交替）：SET 4.12M→4.56M ops/s
+（+10.5%，每轮都胜）；socket 端到端被 loopback 内核时间摊薄为噪声级
+中性（941k vs 922k，重叠区间）。GET 未触碰。

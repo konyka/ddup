@@ -52,6 +52,16 @@ int rh_get_touch(rh_table *t, const char *key, size_t klen,
 void rh_set(rh_table *t, const char *key, size_t klen,
             const char *val, size_t vlen);
 
+/* Insert-or-overwrite in a single probe (Phase 27): on overwrite the old
+ * kv block is handed back UNFREED through old_kv/old_vlen (caller does
+ * object teardown + free) and 1 is returned; on plain insert 0. meta is
+ * set on the entry either way. */
+int rh_set_ex(rh_table *t, const char *key, size_t klen, const char *val,
+              size_t vlen, uint32_t meta, char **old_kv, size_t *old_vlen);
+
+/* Read the meta field of an existing key (0 when absent). */
+uint32_t rh_meta_of(rh_table *t, const char *key, size_t klen);
+
 /* Returns 1 if the key existed and was removed. */
 int rh_del(rh_table *t, const char *key, size_t klen);
 

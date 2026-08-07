@@ -291,6 +291,73 @@ void rh_set(rh_table *t, const char *key, size_t klen,
     t->size++;
 }
 
+int rh_set_ex(rh_table *t, const char *key, size_t klen, const char *val,
+              size_t vlen, uint32_t meta, char **old_kv, size_t *old_vlen)
+{
+    rh_migrate_some(t);
+    uint64_t h = rh_hash(key, klen);
+
+    long i = rh_find_in(t->slots, t->cap, h, key, klen);
+    rh_entry *target = NULL;
+    if (i >= 0) {
+        target = &t->slots[i];
+    } else if (t->old_slots) {
+        long oi = rh_find_in(t->old_slots, t->old_cap, h, key, klen);
+        if (oi >= 0)
+            target = &t->old_slots[oi];
+    }
+
+    if (target) {
+        /* overwrite: keep key, swap in the new owned block, hand the old
+         * one back unfreed (caller tears it down) */
+        char *kv = malloc(klen + vlen);
+        if (!kv) {
+            fprintf(stderr, "ddup: out of memory\n");
+            exit(1);
+        }
+        memcpy(kv, key, klen);
+        memcpy(kv + klen, val, vlen);
+        *old_kv = target->kv;
+        *old_vlen = target->vlen;
+        target->kv = kv;
+        target->vlen = (uint32_t)vlen;
+        target->meta = meta;
+        return 1;
+    }
+
+    rh_maybe_grow(t);
+    rh_entry e;
+    e.hash = h;
+    e.klen = (uint32_t)klen;
+    e.vlen = (uint32_t)vlen;
+    e.kv = malloc(klen + vlen);
+    if (!e.kv) {
+        fprintf(stderr, "ddup: out of memory\n");
+        exit(1);
+    }
+    memcpy(e.kv, key, klen);
+    memcpy(e.kv + klen, val, vlen);
+    e.psl = 0;
+    e.meta = meta;
+    rh_insert_entry(t->slots, t->cap, e);
+    t->size++;
+    return 0;
+}
+
+uint32_t rh_meta_of(rh_table *t, const char *key, size_t klen)
+{
+    uint64_t h = rh_hash(key, klen);
+    long i = rh_find_in(t->slots, t->cap, h, key, klen);
+    if (i >= 0)
+        return t->slots[i].meta;
+    if (t->old_slots) {
+        long oi = rh_find_in(t->old_slots, t->old_cap, h, key, klen);
+        if (oi >= 0)
+            return t->old_slots[oi].meta;
+    }
+    return 0;
+}
+
 /* First occupied slot at or after start (wrapping), or NULL. */
 static const rh_entry *rh_scan_occupied(const rh_entry *slots, size_t cap,
                                         size_t start)

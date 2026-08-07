@@ -36,6 +36,42 @@ static void test_overwrite(void)
     rh_destroy(&t);
 }
 
+static void test_set_ex(void)
+{
+    rh_table t;
+    const char *v;
+    size_t vl;
+    char *old_kv;
+    size_t old_vlen;
+
+    rh_init(&t);
+    /* insert: no old block, meta lands on the new entry */
+    DD_CHECK_EQ_INT(0, rh_set_ex(&t, "k", 1, "v1", 2, 42, &old_kv,
+                                 &old_vlen));
+    DD_CHECK_EQ_INT(1, rh_size(&t));
+    DD_CHECK(rh_get(&t, "k", 1, &v, &vl) == 1);
+    DD_CHECK_MEM("v1", 2, v, vl);
+    DD_CHECK_EQ_INT(42, (int)rh_meta_of(&t, "k", 1));
+
+    /* overwrite: old block comes back unfreed, entry keeps the key */
+    DD_CHECK_EQ_INT(1, rh_set_ex(&t, "k", 1, "v2-longer", 9, 77, &old_kv,
+                                 &old_vlen));
+    DD_CHECK_EQ_INT(1, rh_size(&t));
+    DD_CHECK_EQ_INT(2, (long long)old_vlen);
+    DD_CHECK_MEM("v1", 2, old_kv + 1, old_vlen);
+    free(old_kv);
+    DD_CHECK(rh_get(&t, "k", 1, &v, &vl) == 1);
+    DD_CHECK_MEM("v2-longer", 9, v, vl);
+    DD_CHECK_EQ_INT(77, (int)rh_meta_of(&t, "k", 1));
+
+    /* table stays consistent across delete + reinsert */
+    DD_CHECK_EQ_INT(1, rh_del(&t, "k", 1));
+    DD_CHECK_EQ_INT(0, rh_set_ex(&t, "k", 1, "x", 1, 1, &old_kv, &old_vlen));
+    DD_CHECK(rh_get(&t, "k", 1, &v, &vl) == 1);
+    DD_CHECK_MEM("x", 1, v, vl);
+    rh_destroy(&t);
+}
+
 static void test_delete(void)
 {
     rh_table t;
@@ -218,6 +254,7 @@ int main(void)
 {
     DD_RUN(test_set_get);
     DD_RUN(test_overwrite);
+    DD_RUN(test_set_ex);
     DD_RUN(test_delete);
     DD_RUN(test_binary_keys_values);
     DD_RUN(test_many_keys_growth);
