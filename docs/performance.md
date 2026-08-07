@@ -250,3 +250,81 @@ loopback syscall/RTT 主导**——bench_core 单命令成本 SET 0.28µs、
 GET 0.12µs，而 loopback 每命令墙钟 ~1.8µs，CPU 占比约 15%。
 因此优化目标 = 写路径上的重复哈希查询与传播开销，以 bench_core 验证
 CPU 收益，run_bench 记录端到端影响。
+
+## Phase 27 剖析报告（2026-08-07）
+
+测量设施：ddup-bench 新增 `-d`（值大小）与 `-t ping`（纯 RTT 上限）；
+`bench/run_matrix.sh` 场景矩阵（CSV 输出；从 /tmp 副本运行以规避
+Windows Defender 对新建未签名二进制的瞬态查杀）；服务器常开 IO 计数器
+（INFO `# IO`：loops/events/reads/writes/bytes，mt 经 __STATS__ 聚合）。
+CPU 剖析：WPR CPU 采样 + xperf 导出 + llvm-symbolizer（构建关 ASLR +
+CodeView PDB）。环境：Windows 11，16C/32T，clang 22.1.6，loopback。
+注意：本机有一个杀不掉的僵尸 lld-link 进程独占 1 核（~3% 总容量），
+所有数字含此底噪（建议重启机器后再做精确复测）。
+
+### 基线矩阵（n=200000，qps 为单次运行；延迟单位 µs）
+
+| 场景 | SET qps | GET qps | 备注 |
+|------|---------|---------|------|
+| base-st (c50 P16 16B) | 985k | 1099k | |
+| base-mt4 | 844k | 844k | mt 低并发不占优 |
+| base-mt8 | 775k | 763k | worker 越多开销越大 |
+| c500-st | 743k | 840k | |
+| c500-mt4 | 694k | 687k | |
+| c1000-st | 457k | 601k | 含客户端饱和（见下） |
+| c1000-mt4 | 542k | 455k | |
+| p1-st (c50) | 92k | 84k | 客户端循环受限（见下） |
+| p1-mt4 | 87k | 75k | |
+| p64-st | 1905k | 2439k | 流水加深有效 |
+| p64-mt4 | 2151k | 2273k | mt 首次反超 st |
+| d1k-st (1KB 值) | 319k | 873k | st 大值写入明显吃亏 |
+| d1k-mt4 | 738k | 769k | mt 大值 2.3x st |
+| ping-p1-st / mt4 | 97k / 72k | - | 同 p1：客户端受限 |
+| ping-p64-st / mt4 | 4348k / 5000k | - | 纯协议+回写上限 |
+| ping-c1000-st / mt4 | 592k / 587k | - | |
+
+### IO 计数器（c500 P64 SET，3M 命令，同一次负载前后采样）
+
+| 指标 | st | mt4 |
+|------|-----|-----|
+| loops | 2314 | 89663（39x） |
+| events | 95006 | 894905（9.4x） |
+| reads（recv 调用） | 47503（63 cmd/recv） | 65241 |
+| writes（send 调用/投递） | 47001（64 回复/send） | 98929 |
+| bytes_read / written | 183M / 15M | 同 |
+
+结论：st 的读写合并已经很好（每命令 ~0.032 次收发调用），sys-call
+数不是 st 的瓶颈；mt 的唤醒/事件搅动是 st 的 9 倍量级（每次任务
+投递一次 kick），这是 mt 低并发吃亏的主因之一。
+
+### CPU 热点（WPR 采样，ddup-server 进程内占比）
+
+st（c500 P64 SET）：用户态 44% / 内核 43% / 用户 DLL 13%。用户态热点：
+
+- **哈希表路径 ≈16%**（wyhash/_wymix/_wymum + rh_hash/rh_find_in/
+  rh_get_touch 合计）：每命令一次 18B 键哈希 + 探测 + LRU touch。
+  剖析构建无 LTO（wyhash 未内联），Release（thin-LTO）占比应更低，
+  但仍是最大用户态块。
+- **命令传播 ≈5%**（srv_propagate + repl_backlog_append）：零副本零
+  AOF 时仍在做 prop_buf 序列化 + backlog 追加。
+- resp 解析 parse_at、session_execute、pal_wall_ms 等各 ~0.5–1.5%。
+
+mt4（c500 P64 SET）：内核+DLL 占 72%（唤醒投递 + 双倍 send 的代价）；
+代码侧 parse_at 1.3%、mt_exec_task ~1.3%、crc16+hash_slot（路由哈希）
+~0.6%——注意 mt 对每命令做 crc16（路由）+ wyhash（查找）两次哈希。
+
+### 客户端饱和与 P1 说明（诚实记录）
+
+- ddup-bench 单线程事件循环每事件约 10µs；c50 P1 时每客户端周期
+  ~513µs ≈ 50 × 客户端每事件成本，P1 行测的是客户端而非服务器。
+  c1 P1 ping 服务器端 p50 = 8µs（loopback 全链路）。
+- c1000 行：客户端与服务器的 CPU 采样几乎相等（2884 vs 2914），
+  客户端接近饱和，c1000 数字是两侧共同瓶颈。
+
+### 优化方向（按数据排序，27.3 执行）
+
+1. mt 唤醒合并：按批 kick 而非逐任务（events 9.4x 的主因）。
+2. 传播路径：无副本/AOF 时转发原始请求字节，跳过 prop_buf 序列化。
+3. 哈希路径：确认 Release LTO 下 wyhash 内联后评估；mt 路由+查找
+   双哈希可合并（crc16 与 wyhash 都全读键）。
+4. c1000-st 的 select fd_set 重建与客户端饱和分摊（如需）。
