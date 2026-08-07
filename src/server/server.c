@@ -359,8 +359,6 @@ static void srv_request_shutdown(void *ctx)
 static int srv_replicaof(void *ctx, const char *host, uint16_t port)
 {
     server *srv = (server *)ctx;
-    if (srv->backend == SERVER_BACKEND_IOCP)
-        return -1; /* replica-side master link needs the readiness backend */
     repl_link_close(srv);
     if (host == NULL) {
         srv->role = SESSION_ROLE_MASTER;
@@ -632,7 +630,16 @@ static int repl_link_connect(server *srv)
         srv->cap = ncap;
     }
     srv->conns[srv->nconns++] = c;
-    if (pal_loop_add(srv->loop, fd, 1, 0, c) != 0) {
+    if (srv->backend == SERVER_BACKEND_IOCP) {
+        /* proactor path: post the first overlapped recv; the PSYNC goes
+         * out through kick_flush below */
+        c->pending_ops++;
+        if (pal_iocp_recv(srv->iocp, fd, c->rbuf, c->rcap, c) != 0) {
+            c->pending_ops--;
+            conn_close(srv, srv->nconns - 1);
+            return -1;
+        }
+    } else if (pal_loop_add(srv->loop, fd, 1, 0, c) != 0) {
         conn_close(srv, srv->nconns - 1);
         return -1;
     }
@@ -658,6 +665,8 @@ static int repl_link_connect(server *srv)
         c->out.len = (size_t)pl;
     }
     c->link_state = LINK_SYNC_SENT;
+    if (srv->backend == SERVER_BACKEND_IOCP)
+        kick_flush(srv, c); /* ship the PSYNC via the proactor */
     return 0;
 }
 
@@ -675,27 +684,10 @@ static void repl_link_close(server *srv)
     srv->repl.link_up = 0;
 }
 
-/* Service the outbound master link: read the $<len> snapshot frame, load
- * it, then apply the streamed commands (replies discarded). */
-static void repl_link_service(server *srv, conn *c)
+/* Consume c->rbuf bytes through the master-link state machine (shared by
+ * the readiness and IOCP paths; reads nothing from the socket itself). */
+static void repl_link_feed(server *srv, conn *c)
 {
-    ptrdiff_t n;
-
-    if (c->rcap - c->rlen < SERVER_RECV_CHUNK) {
-        if (conn_rbuf_grow(c) != 0) {
-            repl_link_close(srv);
-            return;
-        }
-    }
-    n = conn_read(c, c->rbuf + c->rlen, c->rcap - c->rlen);
-    if (n == 0 || (n < 0 && n != -2 && !pal_would_block(pal_socket_error()))) {
-        repl_link_close(srv); /* link down; the retry timer reconnects */
-        return;
-    }
-    if (n < 0)
-        return;
-    c->rlen += (size_t)n;
-
     if (c->link_state == LINK_SYNC_SENT) {
         size_t pos = 0;
         while (pos < c->rlen && c->rbuf[pos] != '\n')
@@ -817,6 +809,29 @@ static void repl_link_service(server *srv, conn *c)
             c->rlen -= off;
         }
     }
+}
+
+/* Service the outbound master link on the readiness backend: read, then
+ * feed the state machine. */
+static void repl_link_service(server *srv, conn *c)
+{
+    ptrdiff_t n;
+
+    if (c->rcap - c->rlen < SERVER_RECV_CHUNK) {
+        if (conn_rbuf_grow(c) != 0) {
+            repl_link_close(srv);
+            return;
+        }
+    }
+    n = conn_read(c, c->rbuf + c->rlen, c->rcap - c->rlen);
+    if (n == 0 || (n < 0 && n != -2 && !pal_would_block(pal_socket_error()))) {
+        repl_link_close(srv); /* link down; the retry timer reconnects */
+        return;
+    }
+    if (n < 0)
+        return;
+    c->rlen += (size_t)n;
+    repl_link_feed(srv, c);
 }
 
 server *server_create_ex(const char *host, uint16_t port, int backend)
@@ -2042,6 +2057,31 @@ static int server_run_once_iocp(server *s, int timeout_ms)
         c->pending_ops--;
 
         if (ev->op == PAL_IOCP_RECV) {
+            if (c->is_master_link) {
+                /* replica master link: feed the link state machine and
+                 * re-post the recv (never goes through conn_process_input) */
+                if (ev->bytes <= 0) {
+                    repl_link_close(s); /* retry timer reconnects */
+                    continue;
+                }
+                c->rlen += (size_t)ev->bytes;
+                repl_link_feed(s, c);
+                if (s->master_link != c)
+                    continue; /* the feed closed the link */
+                if (c->rcap - c->rlen < SERVER_RECV_CHUNK) {
+                    if (conn_rbuf_grow(c) != 0) {
+                        repl_link_close(s);
+                        continue;
+                    }
+                }
+                c->pending_ops++;
+                if (pal_iocp_recv(s->iocp, c->fd, c->rbuf + c->rlen,
+                                  c->rcap - c->rlen, c) != 0) {
+                    c->pending_ops--;
+                    repl_link_close(s);
+                }
+                continue;
+            }
             if (ev->bytes <= 0) { /* orderly close or error */
                 conn_close(s, idx);
                 continue;

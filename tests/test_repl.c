@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "pal/pal_iocp.h"
 #include "server/repl.h"
 #include "test.h"
 
@@ -53,7 +54,9 @@ static void test_psync_stale_offset_fullresync(void);
 static void test_chained_replication(void);
 static void test_replica_large_snapshot(void);
 static void test_replica_full_cycle(void);
+static void test_replica_full_cycle_iocp(void);
 static void test_replica_reconnect_resync(void);
+static void test_replica_reconnect_resync_iocp(void);
 
 int main(void)
 {
@@ -66,7 +69,9 @@ int main(void)
     DD_RUN(test_chained_replication);
     DD_RUN(test_replica_large_snapshot);
     DD_RUN(test_replica_full_cycle);
+    DD_RUN(test_replica_full_cycle_iocp);
     DD_RUN(test_replica_reconnect_resync);
+    DD_RUN(test_replica_reconnect_resync_iocp);
     return DD_TEST_SUMMARY();
 }
 
@@ -711,7 +716,7 @@ static void test_replica_large_snapshot(void)
     pal_socket_cleanup();
 }
 
-static void test_replica_full_cycle(void)
+static void full_cycle_at(int backend)
 {
     server *m, *r;
     pal_socket_t mc, rc;
@@ -721,8 +726,8 @@ static void test_replica_full_cycle(void)
     int synced;
 
     DD_CHECK_EQ_INT(0, pal_socket_init());
-    m = server_create("127.0.0.1", 0);
-    r = server_create("127.0.0.1", 0);
+    m = server_create_ex("127.0.0.1", 0, backend);
+    r = server_create_ex("127.0.0.1", 0, backend);
     DD_CHECK(m != NULL && r != NULL);
     mc = nb_client(server_port(m));
     rc = nb_client(server_port(r));
@@ -802,6 +807,20 @@ static void test_replica_full_cycle(void)
     pal_socket_cleanup();
 }
 
+static void test_replica_full_cycle(void)
+{
+    full_cycle_at(SERVER_BACKEND_SELECT);
+}
+
+static void test_replica_full_cycle_iocp(void)
+{
+    pal_iocp *probe = pal_iocp_create();
+    if (probe == NULL)
+        return; /* non-Windows platform: no IOCP backend */
+    pal_iocp_free(probe);
+    full_cycle_at(SERVER_BACKEND_IOCP);
+}
+
 /* ------------------------------------------------------------------ */
 /* PSYNC +CONTINUE: reconnect replays only the backlog tail            */
 /* ------------------------------------------------------------------ */
@@ -871,7 +890,7 @@ static void test_psync_continue_partial(void)
     pal_socket_cleanup();
 }
 
-static void test_replica_reconnect_resync(void)
+static void reconnect_resync_at(int backend)
 {
     server *m, *r;
     pal_socket_t mc, rc;
@@ -882,8 +901,8 @@ static void test_replica_reconnect_resync(void)
     int synced;
 
     DD_CHECK_EQ_INT(0, pal_socket_init());
-    m = server_create("127.0.0.1", 0);
-    r = server_create("127.0.0.1", 0);
+    m = server_create_ex("127.0.0.1", 0, backend);
+    r = server_create_ex("127.0.0.1", 0, backend);
     DD_CHECK(m != NULL && r != NULL);
     mport = server_port(m);
     mc = nb_client(mport);
@@ -945,4 +964,18 @@ static void test_replica_reconnect_resync(void)
     server_destroy(r);
     server_destroy(m);
     pal_socket_cleanup();
+}
+
+static void test_replica_reconnect_resync(void)
+{
+    reconnect_resync_at(SERVER_BACKEND_SELECT);
+}
+
+static void test_replica_reconnect_resync_iocp(void)
+{
+    pal_iocp *probe = pal_iocp_create();
+    if (probe == NULL)
+        return; /* non-Windows platform: no IOCP backend */
+    pal_iocp_free(probe);
+    reconnect_resync_at(SERVER_BACKEND_IOCP);
 }
