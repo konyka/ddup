@@ -86,16 +86,17 @@ jobs:
             printf '%s\n%s\n%s\n' "${a:-0}" "${b:-0}" "${c:-0}" | sort -n | sed -n '2p'
           }
           warm() { timeout 60 redis-benchmark -p "$1" -n 10000 -c 50 -P 16 -t set,get -q >/dev/null 2>&1 || true; }
-          # mt4 can wedge alive-but-mute under full-bench contention (rare
-          # livelock, under investigation -- see docs/performance.md). A
-          # fresh process measures fine, so restart it once per cell as a
-          # last resort and say so in the report.
-          MT4_RESTARTS=0
+          # mt4 can enter a graceful shutdown mid-run on rare occasions
+          # (trigger under investigation); before the Phase 29 stop-join
+          # fix that could leave a permanently mute process. Restart it
+          # as a last resort; the counter lives in a file because cell()
+          # runs in a command-substitution subshell (variable increments
+          # would be lost).
           restart_mt4() {
             pkill -f "ddup-server --port 7774" || true
             sleep 1
             "$GITHUB_WORKSPACE/build/ddup-server" --port 7774 --io-threads 4 >>"$GITHUB_WORKSPACE/ddup-mt4.log" 2>&1 &
-            MT4_RESTARTS=$((MT4_RESTARTS + 1))
+            echo $(( $(cat bench-mt4-restarts 2>/dev/null || echo 0) + 1 )) > bench-mt4-restarts
             sleep 2
           }
           cell() { # port c P d -> "set/get" (n/a when the server is down)
@@ -175,7 +176,7 @@ jobs:
             echo "|----------|---------|---------------|----------|--------|-------|"
             echo "$ROWS"
             echo
-            echo "mt4 mid-run restarts (wedge mitigation): $MT4_RESTARTS"
+            echo "mt4 mid-run restarts (wedge mitigation): $(cat bench-mt4-restarts 2>/dev/null || echo 0)"
             echo
             echo "internal consistency (ddup-bench on ddup-st): SET $DB_SET req/s, GET $DB_GET req/s"
           } > bench-report.md

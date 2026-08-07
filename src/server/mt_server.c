@@ -1897,8 +1897,11 @@ static void mt_kick(worker *w)
 
 /* Push a task with backpressure: while the downstream ring is full, drain
  * our own queues to relieve pressure (breaks circular waits between
- * workers); kick the consumer when it may be asleep. self may be NULL
- * (acceptor thread: plain sleep-retry). */
+ * workers); after a bounded spin, yield so a descheduled consumer gets
+ * CPU. During shutdown (self->running cleared by mt_server_stop) the
+ * target may never drain: drop the task -- in-flight replies are moot
+ * when the process is exiting, and spinning here would hang the stop
+ * path's thread joins, leaving the process up but permanently mute. */
 static void mt_push_task(worker *self, mt_spsc *q, mt_task *t,
                          worker *target)
 {
@@ -1906,11 +1909,12 @@ static void mt_push_task(worker *self, mt_spsc *q, mt_task *t,
     int pr = mt_spsc_push(q, t);
     while (pr < 0) {
         if (self != NULL) {
+            if (!self->running) {
+                mt_task_free(t);
+                return;
+            }
             mt_drain_completions(self);
             mt_drain_inbox(self);
-            /* a spinning producer starves the (descheduled) consumer on
-             * few-core hosts and can livelock the pool into a wedge;
-             * after a bounded spin, yield so the target can drain */
             if (++spins > 64)
                 pal_sleep_ms(1);
         } else {
