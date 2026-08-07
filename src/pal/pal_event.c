@@ -45,8 +45,10 @@ struct pal_loop {
     size_t ring_sz;
     struct io_uring_sqe *sqes;
     struct io_uring_cqe *cqes;
+    unsigned *sq_array;  /* SQ indirection array (kernel reads sqes via it) */
     unsigned *sq_tail;
     unsigned *sq_ring_mask;
+    unsigned sq_entries;
     unsigned *cq_head;
     unsigned *cq_tail;
     unsigned *cq_ring_mask;
@@ -136,6 +138,8 @@ static int uring_init(pal_loop *l)
     }
 
     l->cqes = (struct io_uring_cqe *)(base + p.cq_off.cqes);
+    l->sq_array = (unsigned *)(base + p.sq_off.array);
+    l->sq_entries = p.sq_entries;
     l->sq_tail = (unsigned *)(base + p.sq_off.tail);
     l->sq_ring_mask = (unsigned *)(base + p.sq_off.ring_mask);
     l->cq_head = (unsigned *)(base + p.cq_off.head);
@@ -164,9 +168,23 @@ pal_loop *pal_loop_create_iouring(void)
 static struct io_uring_sqe *uring_get_sqe(pal_loop *l)
 {
     unsigned tail = __atomic_load_n(l->sq_tail, __ATOMIC_RELAXED);
-    struct io_uring_sqe *sqe = &l->sqes[tail & *l->sq_ring_mask];
+    unsigned idx = tail & *l->sq_ring_mask;
+    struct io_uring_sqe *sqe;
+    if (tail - l->sq_submit >= l->sq_entries) {
+        /* SQ full (bursty mod/rearm storms at high fd counts): submit the
+         * queue now; non-SQPOLL enter copies the sqes synchronously, so
+         * the slots are reusable on return */
+        unsigned n = tail - l->sq_submit;
+        l->sq_submit = tail;
+        (void)uring_sys_enter(l->uring_fd, n, 0, 0);
+    }
+    sqe = &l->sqes[idx];
     memset(sqe, 0, sizeof(*sqe));
-    /* publish the sqe before the tail (ARM needs the release store) */
+    /* the kernel dereferences sqes through the SQ indirection array --
+     * without this write every submission aliases sqe[0] */
+    l->sq_array[idx] = idx;
+    /* publish the sqe + array entry before the tail (ARM needs the
+     * release store) */
     __atomic_store_n(l->sq_tail, tail + 1, __ATOMIC_RELEASE);
     return sqe;
 }

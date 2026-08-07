@@ -59,11 +59,11 @@ jobs:
             done
             echo "port $p ready=$ok"
           done
-          echo "ddup PING: $(redis-cli -p 7771 PING || echo DOWN)"
-          echo "redis PING: $(redis-cli -p 7773 PING || echo DOWN)"
-          echo "garnet PING: $(redis-cli -p 7772 PING || echo DOWN)"
-          echo "ddup-mt4 PING: $(redis-cli -p 7774 PING || echo DOWN)"
-          echo "ddup-uring PING: $(redis-cli -p 7775 PING || echo DOWN)"
+          echo "ddup PING: $(timeout 5 redis-cli -p 7771 PING || echo DOWN)"
+          echo "redis PING: $(timeout 5 redis-cli -p 7773 PING || echo DOWN)"
+          echo "garnet PING: $(timeout 5 redis-cli -p 7772 PING || echo DOWN)"
+          echo "ddup-mt4 PING: $(timeout 5 redis-cli -p 7774 PING || echo DOWN)"
+          echo "ddup-uring PING: $(timeout 5 redis-cli -p 7775 PING || echo DOWN)"
           true
 
       - name: Measure (same client for all)
