@@ -1,11 +1,11 @@
 + for variant in build build-nodedup
 + echo '########## variant: build ##########'
 ########## variant: build ##########
-+ MTPID=9953
++ MTPID=9970
 + ./build/ddup-server --port 7774 --io-threads 4
 + ./build/ddup-server --port 7771 --io select
-+ redis-server --port 7773 --save '' --appendonly no --protected-mode no
 + sleep 2
++ redis-server --port 7773 --save '' --appendonly no --protected-mode no
 + timeout 5 redis-cli -p 7774 PING
 PONG
 + for round in 1 2 3
@@ -18,7 +18,7 @@ round 1 mt4 alive
 + tr '\r' '\n'
 + grep -i 'requests per second'
 + head -1
-SET: 1176470.62 requests per second, p50=0.663 msec
+SET: 975609.75 requests per second, p50=0.807 msec
 + timeout 15 redis-benchmark -p 7774 -n 100 -c 10 -P 1 -t set -q
 + echo 'post-cell alive'
 post-cell alive
@@ -32,7 +32,7 @@ round 2 mt4 alive
 + tr '\r' '\n'
 + grep -i 'requests per second'
 + head -1
-SET: 1162790.62 requests per second, p50=0.679 msec
+SET: 990099.00 requests per second, p50=0.735 msec
 + timeout 15 redis-benchmark -p 7774 -n 100 -c 10 -P 1 -t set -q
 + echo 'post-cell alive'
 post-cell alive
@@ -46,18 +46,18 @@ round 3 mt4 alive
 + tr '\r' '\n'
 + grep -i 'requests per second'
 + head -1
-SET: 1176470.62 requests per second, p50=0.663 msec
+SET: 1176470.62 requests per second, p50=0.671 msec
 + timeout 15 redis-benchmark -p 7774 -n 100 -c 10 -P 1 -t set -q
 + echo 'post-cell alive'
 post-cell alive
 + pkill -f 'ddup-server --port 777'
 + pkill redis-server
-pkill: killing pid 9891 failed: Operation not permitted
+pkill: killing pid 9897 failed: Operation not permitted
 + sleep 1
 + for variant in build build-nodedup
 + echo '########## variant: build-nodedup ##########'
 ########## variant: build-nodedup ##########
-+ MTPID=10011
++ MTPID=10030
 + ./build-nodedup/ddup-server --port 7774 --io-threads 4
 + ./build-nodedup/ddup-server --port 7771 --io select
 + sleep 2
@@ -74,7 +74,7 @@ round 1 mt4 alive
 + tr '\r' '\n'
 + grep -i 'requests per second'
 + head -1
-SET: 1219512.12 requests per second, p50=0.647 msec
+SET: 1086956.50 requests per second, p50=0.671 msec
 + timeout 15 redis-benchmark -p 7774 -n 100 -c 10 -P 1 -t set -q
 + echo 'post-cell alive'
 post-cell alive
@@ -88,15 +88,25 @@ round 2 mt4 alive
 + tr '\r' '\n'
 + grep -i 'requests per second'
 + head -1
-SET: 1226993.88 requests per second, p50=0.647 msec
+SET: 1156069.38 requests per second, p50=0.663 msec
 + timeout 15 redis-benchmark -p 7774 -n 100 -c 10 -P 1 -t set -q
-+ echo 'POST-CELL DEAD'
-POST-CELL DEAD
-+ kill -0 10011
-+ echo WEDGED
-WEDGED
-+ break
++ echo 'post-cell alive'
+post-cell alive
++ for round in 1 2 3
++ timeout 60 redis-benchmark -p 7771 -t set,get -n 200000 -c 500 -P 16 -q
++ timeout 60 redis-benchmark -p 7773 -t set,get -n 200000 -c 500 -P 16 -q
++ timeout 15 redis-benchmark -p 7774 -n 100 -c 10 -P 1 -t set -q
++ echo 'round 3 mt4 alive'
+round 3 mt4 alive
++ timeout 60 redis-benchmark -p 7774 -t set -n 200000 -c 50 -P 16 -q
++ tr '\r' '\n'
++ grep -i 'requests per second'
++ head -1
+SET: 1169590.62 requests per second, p50=0.671 msec
++ timeout 15 redis-benchmark -p 7774 -n 100 -c 10 -P 1 -t set -q
++ echo 'post-cell alive'
+post-cell alive
 + pkill -f 'ddup-server --port 777'
 + pkill redis-server
-pkill: killing pid 9891 failed: Operation not permitted
+pkill: killing pid 9897 failed: Operation not permitted
 + sleep 1
