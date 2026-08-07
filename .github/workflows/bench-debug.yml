@@ -17,13 +17,16 @@ jobs:
       - uses: actions/checkout@v4
       - name: Build ddup (Release)
         run: |
-          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release && cmake --build build --target ddup-server
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release && cmake --build build
       - name: Install redis-tools
-        run: sudo apt-get update && sudo apt-get install -y redis-tools
+        run: sudo apt-get update && sudo apt-get install -y redis-tools strace
       - name: Probe variants
         run: |
           set -x
           {
+          uname -a
+          sysctl kernel.io_uring_disabled 2>&1 || true
+          ulimit -l
           ./build/ddup-server --port 7771 --io select >/tmp/d1.log 2>&1 &
           ./build/ddup-server --port 7774 --io-threads 4 >/tmp/d4.log 2>&1 &
           ./build/ddup-server --port 7775 --io iouring >/tmp/d5.log 2>&1 &
@@ -39,6 +42,16 @@ jobs:
             echo "== stress $p =="
             timeout 20 redis-benchmark -p $p -n 2000 -c 50 -P 16 -t set,get -q || echo "STALL port $p"
           done
+          echo "== strace the uring server =="
+          strace -f -tt -o /tmp/strace.log ./build/ddup-server --port 7776 --io iouring >/tmp/d6.log 2>&1 &
+          sleep 3
+          timeout 5 redis-cli -p 7776 PING || echo "MUTE/FAIL port 7776"
+          sleep 1
+          pkill -f "ddup-server --port 7776" || true
+          sleep 1
+          tail -30 /tmp/strace.log || true
+          echo "== test_server backend probe =="
+          timeout 200 ctest --test-dir build -R '^test_server$' --output-on-failure 2>&1 | grep -E "backend|tests passed|Failed" || true
           } > /tmp/probe.out 2>&1
           true
       - name: Publish probe output
