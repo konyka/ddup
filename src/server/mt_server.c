@@ -117,18 +117,6 @@ typedef struct mt_task {
     mt_agg *agg;          /* broadcast group this task is a part of (or NULL) */
     int kind;             /* MT_TASK_* */
     int db_index;         /* logical db the task executes against (SELECT) */
-    /* grouped bursts (Phase 30): seqs[ci] gives each command its pipeline
-     * seq (non-contiguous across the burst), rlens[ci] its reply slice
-     * length; both NULL for legacy contiguous-span tasks. On completion
-     * the home splits a grouped task into per-command child units
-     * (is_child) that borrow reply bytes from the parent; the parent is
-     * freed when refs drains to zero. refs/children live on the home
-     * thread only. */
-    uint64_t *seqs;
-    uint32_t *rlens;
-    int refs;
-    int is_child;
-    struct mt_task *parent;
     /* WATCH result: 2 slots per key (version, epoch), filled on the owner */
     uint64_t *watch_out;
     size_t nwatch_out;
@@ -136,14 +124,6 @@ typedef struct mt_task {
     mt_watch_entry *exec_watches;
     size_t nexec_watches;
 } mt_task;
-
-/* one target worker's open group within a conn's input burst */
-typedef struct mt_group {
-    mt_cmd_blob *blobs;
-    uint64_t *seqs;
-    size_t n, cap;
-    int db_index;
-} mt_group;
 
 struct worker {
     int id;
@@ -223,12 +203,15 @@ typedef struct mt_conn_state {
     uint64_t seq_next;  /* next sequence number to assign */
     uint64_t seq_write; /* next sequence number to append to conn->out */
     mt_task *reorder;   /* ready replies waiting, sorted by seq */
-    /* Grouped routing (Phase 30): within one input burst, pipelined plain
-     * commands accumulate per target worker (wire order is restored by
-     * the per-command split at completion); flushed as one task per
-     * target on a local/special command or at the end of the burst. */
-    mt_group *groups;   /* [ngroups] lazily allocated */
-    int ngroups;
+    /* Open merge batch: consecutive routed commands for the same target
+     * worker are merged into one task (flushed on target change, on a
+     * local/blocked command, or at the end of the parse loop). */
+    int batch_target;   /* -1 = no open batch */
+    uint64_t batch_seq; /* base seq of the open batch */
+    int batch_db;       /* db_index of the open batch's commands */
+    mt_cmd_blob *batch;
+    size_t batch_n;
+    size_t batch_cap;
     /* mt-level transaction state (session never enters MULTI in mt mode) */
     int in_multi;
     mt_cmd_blob *mq; /* queued command blobs between MULTI and EXEC */
@@ -286,19 +269,8 @@ static void mt_task_free(void *ptr)
     size_t i;
     if (t == NULL)
         return;
-    if (t->is_child) {
-        /* completion slice of a grouped task: reply bytes are borrowed
-         * from the parent, which is freed with its last slice */
-        mt_task *p = t->parent;
-        free(t);
-        if (p != NULL && --p->refs == 0)
-            mt_task_free(p);
-        return;
-    }
     mt_blobs_free(t->cmds, t->ncmds);
     resp_buf_free(&t->reply);
-    free(t->seqs);
-    free(t->rlens);
     free(t->watch_out);
     if (t->exec_watches != NULL) {
         for (i = 0; i < t->nexec_watches; i++)
@@ -605,15 +577,8 @@ static void mt_state_free_cb(void *ctx, void *ptr)
         st->reorder = t->next;
         mt_task_free(t);
     }
-    /* drop unflushed routing groups (conn closed mid-pipeline) */
-    if (st->groups != NULL) {
-        int gi;
-        for (gi = 0; gi < st->ngroups; gi++) {
-            mt_blobs_free(st->groups[gi].blobs, st->groups[gi].n);
-            free(st->groups[gi].seqs);
-        }
-        free(st->groups);
-    }
+    /* drop an unflushed merge batch (conn closed mid-pipeline) */
+    mt_blobs_free(st->batch, st->batch_n);
     /* drop transaction state */
     mt_blobs_free(st->mq, st->mq_n);
     mt_watches_clear((worker *)ctx, st);
@@ -1037,6 +1002,7 @@ static int mt_route_aggregate(worker *home, void *conn,
         st = (mt_conn_state *)calloc(1, sizeof(*st));
         if (st == NULL)
             return 0;
+        st->batch_target = -1;
         server_conn_set_mt_state(conn, st);
     }
     seq = st->seq_next++;
@@ -1116,86 +1082,48 @@ static int mt_route_aggregate(worker *home, void *conn,
     return 1;
 }
 
-/* Flush every non-empty group as one routed task per target worker.
- * Ordering: each command kept its arrival seq in the group's seqs array;
- * the home restores wire order when splitting the completion. */
-static void mt_groups_flush(worker *home, void *conn, mt_conn_state *st)
+/* Flush the open merge batch (if any) as one routed task. */
+static void mt_batch_flush(worker *home, void *conn, mt_conn_state *st)
 {
-    int i;
-    if (st->groups == NULL)
+    int target = st->batch_target;
+    mt_task *t;
+    if (st->batch_n == 0)
         return;
-    for (i = 0; i < st->ngroups; i++) {
-        mt_group *g = &st->groups[i];
-        mt_task *t;
-        if (g->n == 0)
-            continue;
-        t = mt_task_new(conn, home, g->seqs[0], (uint32_t)g->n,
-                        (uint32_t)g->n, g->blobs);
-        if (t == NULL) {
-            mt_blobs_free(g->blobs, g->n);
-            free(g->seqs);
-        } else {
-            t->db_index = g->db_index;
-            t->seqs = g->seqs; /* ownership transfers to the task */
-            t->rlens = (uint32_t *)calloc(g->n, sizeof(uint32_t));
-            if (t->rlens == NULL) {
-                /* OOM: cannot split later; drop like a task-alloc failure
-                 * (reorder hole on OOM is the pre-existing behavior) */
-                mt_task_free(t);
-            } else {
-                mt_pending_inc(home, st);
-                mt_push_task(home, &home->ms->workers[i].inbox[home->id],
-                             t, &home->ms->workers[i]);
-            }
-        }
-        g->blobs = NULL;
-        g->seqs = NULL;
-        g->n = 0;
-        g->cap = 0;
+    t = mt_task_new(conn, home, st->batch_seq, (uint32_t)st->batch_n,
+                    (uint32_t)st->batch_n, st->batch);
+    if (t == NULL) {
+        mt_blobs_free(st->batch, st->batch_n);
+    } else {
+        t->db_index = st->batch_db;
+        mt_pending_inc(home, st);
+        mt_push_task(home, &home->ms->workers[target].inbox[home->id], t,
+                     &home->ms->workers[target]);
     }
+    st->batch = NULL;
+    st->batch_n = 0;
+    st->batch_cap = 0;
+    st->batch_target = -1;
 }
 
-/* 1 when no group holds an unflushed command (conn is migratable etc.) */
-static int mt_groups_empty(const mt_conn_state *st)
-{
-    int i;
-    if (st->groups == NULL)
-        return 1;
-    for (i = 0; i < st->ngroups; i++)
-        if (st->groups[i].n > 0)
-            return 0;
-    return 1;
-}
-
-static int mt_group_append(mt_group *g, const char *raw, size_t rawlen,
-                           uint64_t seq, int db_index)
+static int mt_batch_append(mt_conn_state *st, const char *raw, size_t rawlen)
 {
     mt_cmd_blob *b;
-    if (g->n == g->cap) {
-        size_t ncap = g->cap == 0 ? 8 : g->cap * 2;
+    if (st->batch_n == st->batch_cap) {
+        size_t ncap = st->batch_cap == 0 ? 8 : st->batch_cap * 2;
         mt_cmd_blob *nb =
-            (mt_cmd_blob *)realloc(g->blobs, ncap * sizeof(*nb));
-        uint64_t *ns = (uint64_t *)realloc(g->seqs, ncap * sizeof(*ns));
-        /* a successful realloc may have moved its block even when the
-         * other one fails: keep both pointers valid, and only grow the
-         * logical capacity when both succeeded */
-        if (nb != NULL)
-            g->blobs = nb;
-        if (ns != NULL)
-            g->seqs = ns;
-        if (nb == NULL || ns == NULL)
+            (mt_cmd_blob *)realloc(st->batch, ncap * sizeof(*nb));
+        if (nb == NULL)
             return -1;
-        g->cap = ncap;
+        st->batch = nb;
+        st->batch_cap = ncap;
     }
-    b = &g->blobs[g->n];
+    b = &st->batch[st->batch_n];
     b->raw = (char *)malloc(rawlen);
     if (b->raw == NULL)
         return -1;
     memcpy(b->raw, raw, rawlen);
     b->len = rawlen;
-    g->seqs[g->n] = seq;
-    g->db_index = db_index;
-    g->n++;
+    st->batch_n++;
     return 0;
 }
 
@@ -1205,7 +1133,7 @@ static void mt_route_flush_cb(void *ctx, void *conn)
     worker *home = (worker *)ctx;
     mt_conn_state *st = (mt_conn_state *)server_conn_mt_state(conn);
     if (st != NULL)
-        mt_groups_flush(home, conn, st);
+        mt_batch_flush(home, conn, st);
 }
 
 /* ------------------------------------------------------------------ */
@@ -1797,9 +1725,10 @@ static int mt_route(void *ctx, void *conn, session *sess,
             st = (mt_conn_state *)calloc(1, sizeof(*st));
             if (st == NULL)
                 return 0;
+            st->batch_target = -1;
             server_conn_set_mt_state(conn, st);
         }
-        mt_groups_flush(home, conn, st);
+        mt_batch_flush(home, conn, st);
         seq = st->seq_next++;
         mt_reply_local(home, conn, st, seq, noauth, sizeof(noauth) - 1,
                        out);
@@ -1809,12 +1738,13 @@ static int mt_route(void *ctx, void *conn, session *sess,
         st = (mt_conn_state *)calloc(1, sizeof(*st));
         if (st == NULL)
             return 0;
+        st->batch_target = -1;
         server_conn_set_mt_state(conn, st);
     }
 
     if (cmd == CMD_MULTI || cmd == CMD_EXEC || cmd == CMD_DISCARD ||
         cmd == CMD_WATCH || cmd == CMD_UNWATCH || st->in_multi) {
-        mt_groups_flush(home, conn, st);
+        mt_batch_flush(home, conn, st);
         return mt_route_txn(home, conn, st, argv, argc, raw, rawlen, cmd,
                             sess->db_index, out);
     }
@@ -1822,7 +1752,7 @@ static int mt_route(void *ctx, void *conn, session *sess,
     if (cmd == CMD_SUBSCRIBE || cmd == CMD_UNSUBSCRIBE ||
         cmd == CMD_PUBLISH) {
         uint64_t seq;
-        mt_groups_flush(home, conn, st);
+        mt_batch_flush(home, conn, st);
         seq = st->seq_next++;
         if (cmd == CMD_SUBSCRIBE)
             return mt_route_subscribe(home, conn, st, argv, argc, seq,
@@ -1836,7 +1766,7 @@ static int mt_route(void *ctx, void *conn, session *sess,
 
     if (cmd == CMD_DBSIZE || cmd == CMD_FLUSHDB || cmd == CMD_SAVE ||
         cmd == CMD_LASTSAVE || cmd == CMD_SWAPDB || cmd == CMD_INFO) {
-        mt_groups_flush(home, conn, st);
+        mt_batch_flush(home, conn, st);
         return mt_route_aggregate(home, conn, argv, argc, raw, rawlen, cmd,
                                   sess->db_index);
     }
@@ -1847,9 +1777,9 @@ static int mt_route(void *ctx, void *conn, session *sess,
 
     seq = st->seq_next++;
 
-    /* Forward to the owning worker: commands accumulate per target group
-     * (flushed on a local/special command or at the end of the parse
-     * loop); the home restores wire order at completion split. */
+    /* Forward to the owning worker: merge consecutive commands for the same
+     * target into one task (flushed on target change / local command /
+     * end of the parse loop). */
     if (target >= 0 && target != home->id) {
         /* connection-key affinity: a clean connection migrates once to the
          * worker owning its keys (the current command stays unconsumed in
@@ -1859,7 +1789,7 @@ static int mt_route(void *ctx, void *conn, session *sess,
          * plain task routing still applies. */
         if (server_backend(home->srv) != SERVER_BACKEND_IOCP &&
             !st->migrated && st->pending == 0 && st->reorder == NULL &&
-            mt_groups_empty(st) && !st->in_multi && st->nwatch == 0 &&
+            st->batch_n == 0 && !st->in_multi && st->nwatch == 0 &&
             st->subs == NULL && !st->closing) {
             st->seq_next--; /* nothing was answered yet */
             st->migrated = 1;
@@ -1883,20 +1813,15 @@ static int mt_route(void *ctx, void *conn, session *sess,
             st->migrated = 0;
             st->seq_next++;
         }
-        if (st->groups == NULL) {
-            st->ngroups = home->ms->nworkers;
-            st->groups = (mt_group *)calloc((size_t)st->ngroups,
-                                            sizeof(mt_group));
-            if (st->groups == NULL) {
-                st->ngroups = 0;
-                resp_write_error(out, "ERR out of memory", 17);
-                st->seq_write++;
-                return 1;
-            }
+        if (st->batch_target >= 0 && st->batch_target != target)
+            mt_batch_flush(home, conn, st);
+        if (st->batch_target < 0) {
+            st->batch_target = target;
+            st->batch_seq = seq;
+            st->batch_db = sess->db_index;
         }
-        if (mt_group_append(&st->groups[target], raw, rawlen, seq,
-                            sess->db_index) != 0) {
-            mt_groups_flush(home, conn, st); /* keep the earlier commands */
+        if (mt_batch_append(st, raw, rawlen) != 0) {
+            mt_batch_flush(home, conn, st); /* keep the earlier commands */
             resp_write_error(out, "ERR out of memory", 17);
             st->seq_write++;
             return 1;
@@ -1906,7 +1831,7 @@ static int mt_route(void *ctx, void *conn, session *sess,
 
     /* Local / blocked / crossslot: any open batch must go out first to keep
      * pipeline order (its seqs precede this command's). */
-    mt_groups_flush(home, conn, st);
+    mt_batch_flush(home, conn, st);
 
     /* Local fast path: nothing outstanding, reply straight into conn->out. */
     if (seq == st->seq_write) {
@@ -2088,7 +2013,6 @@ static void mt_exec_task(worker *w, mt_task *t)
             resp_value v;
             ptrdiff_t used;
             uint64_t dirty_before;
-            size_t reply_before = t->reply.len;
             db *d = server_db_at(w->srv, t->db_index);
             arena_reset(&w->exec_arena);
             used = resp_parse(t->cmds[ci].raw, t->cmds[ci].len, &v,
@@ -2097,9 +2021,6 @@ static void mt_exec_task(worker *w, mt_task *t)
                 v.type != RESP_ARRAY || v.is_null) {
                 resp_write_error(&t->reply, "ERR Protocol error",
                                  18);
-                if (t->rlens != NULL)
-                    t->rlens[ci] =
-                        (uint32_t)(t->reply.len - reply_before);
                 continue;
             }
             /* SWAPDB executes on every worker (broadcast): swap this
@@ -2108,9 +2029,6 @@ static void mt_exec_task(worker *w, mt_task *t)
                 v.items[0].len == 6 &&
                 mt_ci_equal(v.items[0].str, v.items[0].len, "swapdb")) {
                 mt_swapdb_exec(w, t->db_index, &v, &t->reply);
-                if (t->rlens != NULL)
-                    t->rlens[ci] =
-                        (uint32_t)(t->reply.len - reply_before);
                 continue;
             }
             /* INFO __STATS__ (aggregation fan-out): machine-format snapshot
@@ -2121,9 +2039,6 @@ static void mt_exec_task(worker *w, mt_task *t)
                 v.items[1].str != NULL && v.items[1].len == 9 &&
                 mt_ci_equal(v.items[1].str, v.items[1].len, "__stats__")) {
                 mt_info_exec(w, &t->reply);
-                if (t->rlens != NULL)
-                    t->rlens[ci] =
-                        (uint32_t)(t->reply.len - reply_before);
                 continue;
             }
             dirty_before = d->dirty;
@@ -2133,8 +2048,6 @@ static void mt_exec_task(worker *w, mt_task *t)
              * worker's own AOF */
             if (d->dirty != dirty_before)
                 server_aof_log_cmd(w->srv, t->db_index, v.items, v.count);
-            if (t->rlens != NULL)
-                t->rlens[ci] = (uint32_t)(t->reply.len - reply_before);
         }
     }
     w->tasks_executed++;
@@ -2244,44 +2157,6 @@ static void mt_drain_completions(worker *w)
                 continue;
             }
             if (st != NULL) {
-                if (t->seqs != NULL) {
-                    /* grouped burst: split into per-command child units so
-                     * the seq-ordered reorder buffer restores wire order */
-                    uint32_t ci;
-                    size_t off = 0;
-                    t->refs = (int)t->ncmds;
-                    for (ci = 0; ci < t->ncmds; ci++) {
-                        mt_task *u = (mt_task *)calloc(1, sizeof(*u));
-                        if (u == NULL) {
-                            if (t->refs > 0)
-                                t->refs--;
-                            continue; /* OOM: slice lost (OOM-only hole,
-                                         same parity as alloc-fail drops) */
-                        }
-                        u->is_child = 1;
-                        u->parent = t;
-                        u->conn = t->conn;
-                        u->home = t->home;
-                        u->kind = MT_TASK_CMD;
-                        u->seq = t->seqs[ci];
-                        u->span = 1;
-                        resp_buf_init(&u->reply);
-                        u->reply.data = t->reply.data + off;
-                        u->reply.len = t->rlens != NULL
-                                           ? (size_t)t->rlens[ci]
-                                           : 0;
-                        off += u->reply.len;
-                        mt_reorder_insert(st, u);
-                    }
-                    if (st->closing) {
-                        mt_drain_ready(w->srv, &w->exec_arena, conn, st, 0);
-                    } else {
-                        mt_drain_ready(w->srv, &w->exec_arena, conn, st, 1);
-                        mt_mark_flush(conn, st);
-                    }
-                    mt_pending_dec(w, conn, st);
-                    continue;
-                }
                 mt_reorder_insert(st, t);
                 if (st->closing) {
                     mt_drain_ready(w->srv, &w->exec_arena, conn, st, 0);
