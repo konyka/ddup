@@ -20,6 +20,7 @@ jobs:
       - name: Probe variants
         run: |
           set -x
+          {
           ./build/ddup-server --port 7771 --io select >/tmp/d1.log 2>&1 &
           ./build/ddup-server --port 7774 --io-threads 4 >/tmp/d4.log 2>&1 &
           ./build/ddup-server --port 7775 --io iouring >/tmp/d5.log 2>&1 &
@@ -35,4 +36,25 @@ jobs:
             echo "== stress $p =="
             timeout 20 redis-benchmark -p $p -n 2000 -c 50 -P 16 -t set,get -q || echo "STALL port $p"
           done
+          } > /tmp/probe.out 2>&1
           true
+      - name: Publish probe output
+        if: always()
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          REPO_URL="https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          cd "$RUNNER_TEMP"
+          rm -rf dbg
+          if ! git clone --quiet --branch bench-debug --single-branch "$REPO_URL" dbg; then
+            git clone --quiet --no-checkout --depth 1 "$REPO_URL" dbg
+            git -C dbg checkout --orphan bench-debug
+            git -C dbg rm -rf . 2>/dev/null || true
+          fi
+          cd dbg
+          cp /tmp/probe.out . || true
+          git config user.email ci@ddup.local
+          git config user.name "ddup-ci"
+          git add -A
+          git commit -m "probe @ ${GITHUB_SHA:0:7}" || exit 0
+          git push -f origin bench-debug
