@@ -168,7 +168,8 @@ static void test_roundtrip(void)
     snprintf(n->master_id, sizeof(n->master_id), "%s", ID1);
     n->epoch = 2;
     mk_node(&d1, ID3, "10.0.0.3", 7003,
-            CLUSTER_NODE_MASTER | CLUSTER_NODE_DISCONNECTED);
+            CLUSTER_NODE_MASTER | CLUSTER_NODE_PFAIL |
+                CLUSTER_NODE_DISCONNECTED);
 
     redbus_build_frame(&d1, REDBUS_TYPE_PING, &frame);
     DD_CHECK(frame.len >= REDBUS_HDR_LEN);
@@ -194,7 +195,10 @@ static void test_roundtrip(void)
 
     n = cluster_node_find(&d2, ID3);
     DD_CHECK(n != NULL);
-    DD_CHECK(n->flags & CLUSTER_NODE_DISCONNECTED);
+    /* suspicion travels as PFAIL; the DISCONNECTED link state is local
+     * only and never leaks onto the wire */
+    DD_CHECK(n->flags & CLUSTER_NODE_PFAIL);
+    DD_CHECK(!(n->flags & CLUSTER_NODE_DISCONNECTED));
 
     /* reply is a PONG frame that parses back */
     DD_CHECK_EQ_INT(0,

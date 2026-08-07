@@ -101,6 +101,53 @@ cluster_node *cluster_node_add(struct db *d, const char *id)
     return n;
 }
 
+void cluster_report_failure(struct db *d, cluster_node *subject,
+                            const char *reporter, uint64_t now_ms)
+{
+    int i;
+    (void)d;
+    for (i = 0; i < subject->nreports; i++)
+        if (memcmp(subject->reports[i].reporter, reporter, 40) == 0) {
+            subject->reports[i].time_ms = now_ms; /* refresh */
+            return;
+        }
+    if (subject->nreports >= CLUSTER_MAX_NODES)
+        return; /* report table cap (documented) */
+    memcpy(subject->reports[subject->nreports].reporter, reporter, 40);
+    subject->reports[subject->nreports].reporter[40] = '\0';
+    subject->reports[subject->nreports].time_ms = now_ms;
+    subject->nreports++;
+}
+
+void cluster_report_heal(struct db *d, cluster_node *subject,
+                         const char *reporter)
+{
+    int i;
+    (void)d;
+    for (i = 0; i < subject->nreports; i++)
+        if (memcmp(subject->reports[i].reporter, reporter, 40) == 0) {
+            subject->reports[i] = subject->reports[subject->nreports - 1];
+            subject->nreports--;
+            return;
+        }
+}
+
+int cluster_report_count(struct db *d, cluster_node *subject, uint64_t now_ms)
+{
+    uint64_t window = d->cluster_node_timeout_ms * 2;
+    int i = 0;
+    /* drop expired entries in place, then the remainder is the count */
+    while (i < subject->nreports) {
+        if (now_ms - subject->reports[i].time_ms > window) {
+            subject->reports[i] = subject->reports[subject->nreports - 1];
+            subject->nreports--;
+        } else {
+            i++;
+        }
+    }
+    return subject->nreports;
+}
+
 void cluster_slots_set(uint8_t *bm, uint32_t slot, int on)
 {
     if (on)
@@ -284,6 +331,10 @@ static void flags_render(uint32_t flags, char *out, size_t cap)
         strcat(out, "noaddr,");
     if (flags & CLUSTER_NODE_DISCONNECTED)
         strcat(out, "disconnected,");
+    if (flags & CLUSTER_NODE_PFAIL)
+        strcat(out, "fail?,");
+    if (flags & CLUSTER_NODE_FAIL)
+        strcat(out, "fail,");
     {
         size_t n = strlen(out);
         if (n == 0)
@@ -322,6 +373,11 @@ static uint32_t flags_parse(const char *s, size_t len)
         f |= CLUSTER_NODE_NOADDR;
     if (strnstr(s, len, "disconnected", 12) != NULL)
         f |= CLUSTER_NODE_DISCONNECTED;
+    /* "fail?" contains "fail": test the longer token first */
+    if (strnstr(s, len, "fail?", 5) != NULL)
+        f |= CLUSTER_NODE_PFAIL;
+    else if (strnstr(s, len, "fail", 4) != NULL)
+        f |= CLUSTER_NODE_FAIL;
     return f;
 }
 
@@ -729,6 +785,16 @@ int cluster_bus_handle_frame(struct db *d, const char *frame, size_t len,
             /* unseen nodes are added, then claims merged (epoch rules);
              * known nodes only accept gossip at least as fresh as ours */
             g = cluster_node_find(d, id);
+            /* failure reports: a master's PFAIL/FAIL gossip about a known
+             * third node is a report from the frame sender; a clean view
+             * retracts that sender's report (Redis gossip semantics) */
+            if (g != NULL && !(g->flags & CLUSTER_NODE_MYSELF) &&
+                (n->flags & CLUSTER_NODE_MASTER) != 0) {
+                if (flags & (CLUSTER_NODE_PFAIL | CLUSTER_NODE_FAIL))
+                    cluster_report_failure(d, g, n->id, now_ms);
+                else
+                    cluster_report_heal(d, g, n->id);
+            }
             epoch = 0;
             if (v2)
                 epoch = get64(p + sl + 40);

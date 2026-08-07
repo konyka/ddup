@@ -19,9 +19,18 @@
 #define CLUSTER_NODE_NOADDR       (1u << 3)
 #define CLUSTER_NODE_DISCONNECTED (1u << 4)
 #define CLUSTER_NODE_SLAVE        (1u << 5)
+#define CLUSTER_NODE_PFAIL        (1u << 6) /* local suspicion (fail?) */
+#define CLUSTER_NODE_FAIL         (1u << 7) /* quorum-confirmed (fail) */
 
 /* node table cap (documented; single node table per db) */
 #define CLUSTER_MAX_NODES 32
+
+/* one failure report: `reporter` claims the node is down, valid for
+ * cluster_node_timeout_ms * 2 (Redis NODE_TIMEOUT*2 rule) */
+typedef struct cluster_fail_report {
+    char reporter[41];
+    uint64_t time_ms;
+} cluster_fail_report;
 
 typedef struct cluster_node {
     char id[41];
@@ -34,6 +43,8 @@ typedef struct cluster_node {
     uint64_t epoch;
     char master_id[41]; /* 40-hex master id, or "-" when a master */
     uint8_t slots[2048]; /* 16384-bit slot bitmap */
+    cluster_fail_report reports[CLUSTER_MAX_NODES]; /* who suspects it */
+    int nreports;
 } cluster_node;
 
 struct db; /* command.h */
@@ -83,6 +94,21 @@ int cluster_failover_promote(struct db *d);
  * own entry is never applied (our claims are locally authoritative). */
 void cluster_merge_claims(struct db *d, cluster_node *claimant,
                           const uint8_t *bm, uint64_t epoch);
+
+/* ------------------------------------------------------------------ */
+/* failure reports (PFAIL quorum input)                               */
+/* ------------------------------------------------------------------ */
+
+/* Record/refresh reporter's suspicion of subject (time injected). */
+void cluster_report_failure(struct db *d, cluster_node *subject,
+                            const char *reporter, uint64_t now_ms);
+/* Retract reporter's suspicion (its gossip shows the subject healthy). */
+void cluster_report_heal(struct db *d, cluster_node *subject,
+                         const char *reporter);
+/* Count reports still inside the validity window
+ * (db.cluster_node_timeout_ms * 2); expired entries are dropped. */
+int cluster_report_count(struct db *d, cluster_node *subject,
+                         uint64_t now_ms);
 
 /* nodes.conf format: one line per node
  * "<id> <ip:port@busport> <flags> <master> <ping> <pong> <epoch>

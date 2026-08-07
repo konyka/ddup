@@ -1784,6 +1784,7 @@ void server_set_nodes_path(server *s, const char *path)
 void server_set_node_timeout(server *s, uint64_t ms)
 {
     s->node_timeout_ms = ms;
+    s->db.cluster_node_timeout_ms = ms;
 }
 
 void server_set_bus_protocol(server *s, int proto)
@@ -2089,7 +2090,7 @@ static void cluster_fail_check(server *s, uint64_t now_ms)
             n->last_seen_ms > 0 &&
             now_ms - n->last_seen_ms > s->node_timeout_ms) {
             cluster_node *me;
-            n->flags |= CLUSTER_NODE_DISCONNECTED;
+            n->flags |= CLUSTER_NODE_DISCONNECTED | CLUSTER_NODE_PFAIL;
             s->nodes_dirty = 1;
             /* failover: a slave of a dead, slot-owning master schedules
              * its promotion (election delay = node timeout + 500 ms) */

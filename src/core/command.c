@@ -66,6 +66,7 @@ void db_init(db *d)
     d->slot_owner_dirty = 1;
     d->cluster_changes = 0;
     d->cluster_current_epoch = 1;
+    d->cluster_node_timeout_ms = 15000; /* Redis default node-timeout */
     strcpy(d->cluster_ip, "0.0.0.0");
     d->cluster_port = 0;
     d->snapshot_path = NULL;
@@ -4052,12 +4053,13 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
                 const char *state;
                 memset(bm, 0, sizeof(bm));
                 for (i = 0; i < d->nnodes; i++) {
-                    if (d->nodes[i].flags & CLUSTER_NODE_DISCONNECTED) {
+                    /* only a quorum-confirmed FAIL holder fails the
+                     * state; suspicion (PFAIL/disconnected) does not */
+                    if (d->nodes[i].flags & CLUSTER_NODE_FAIL) {
                         for (sl2 = 0; sl2 < 16384 && !fail_slots; sl2++)
                             if (cluster_slots_get(d->nodes[i].slots,
                                                   (uint32_t)sl2))
                                 fail_slots = 1;
-                        continue;
                     }
                     for (sl2 = 0; sl2 < 16384; sl2++)
                         if (cluster_slots_get(d->nodes[i].slots,

@@ -336,9 +336,12 @@ static void test_wire_auto_failover(void)
     /* b must have learned a's claims via gossip before a dies */
     DD_CHECK(wait_nodes(a, b, c, cb, "0-16383", buf, sizeof(buf)));
 
-    /* a dies: stop pumping it entirely */
-    DD_CHECK(wait_state(b, c, NULL, cb, "cluster_state:fail\r\n", buf,
-                        sizeof(buf))); /* b sees dead a holding slots */
+    /* a dies: stop pumping it entirely. Suspicion alone (PFAIL, rendered
+     * as fail?) does not fail the state -- only quorum-confirmed FAIL
+     * does; b keeps serving a's slots in the meantime */
+    DD_CHECK(wait_nodes(b, c, NULL, cb, "fail?", buf, sizeof(buf)));
+    DD_CHECK(wait_state(b, c, NULL, cb, "cluster_state:ok\r\n", buf,
+                        sizeof(buf)));
 
     /* b promotes itself within bounded time; state heals */
     DD_CHECK(wait_state(b, c, NULL, cb, "cluster_state:ok\r\n", buf,

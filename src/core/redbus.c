@@ -71,8 +71,11 @@ static uint16_t flags_to_wire(const cluster_node *n)
         f |= REDBUS_NODE_HANDSHAKE;
     if (n->flags & CLUSTER_NODE_NOADDR)
         f |= REDBUS_NODE_NOADDR;
-    if (n->flags & CLUSTER_NODE_DISCONNECTED)
-        f |= REDBUS_NODE_FAIL; /* PFAIL left unset (documented) */
+    if (n->flags & CLUSTER_NODE_PFAIL)
+        f |= REDBUS_NODE_PFAIL;
+    if (n->flags & CLUSTER_NODE_FAIL)
+        f |= REDBUS_NODE_FAIL;
+    /* CLUSTER_NODE_DISCONNECTED is a local link state: never on the wire */
     return f;
 }
 
@@ -87,8 +90,10 @@ static uint32_t flags_from_wire(uint16_t f)
         g |= CLUSTER_NODE_HANDSHAKE;
     if (f & REDBUS_NODE_NOADDR)
         g |= CLUSTER_NODE_NOADDR;
-    if (f & (REDBUS_NODE_FAIL | REDBUS_NODE_PFAIL))
-        g |= CLUSTER_NODE_DISCONNECTED; /* PFAIL mapped too (documented) */
+    if (f & REDBUS_NODE_PFAIL)
+        g |= CLUSTER_NODE_PFAIL;
+    if (f & REDBUS_NODE_FAIL)
+        g |= CLUSTER_NODE_FAIL;
     return g;
 }
 
@@ -479,15 +484,25 @@ int redbus_handle_frame(struct db *d, const char *frame, size_t len,
     p = frame + REDBUS_HDR_LEN;
     for (j = 0; j < count; j++) {
         uint16_t gflags;
+        cluster_node *g;
         memcpy(id, p, 40);
         id[40] = '\0';
         memcpy(ip, p + 48, 46);
         ip[46] = '\0';
         gflags = get16be(p + 98);
+        g = cluster_node_find(d, id);
         /* only add when unseen (third-party records never overwrite) */
-        if (cluster_node_find(d, id) == NULL) {
+        if (g == NULL) {
             (void)apply_node(d, id, ip, get16be(p + 94), get16be(p + 96),
                              gflags, NULL, 0, CLUSTER_NODE_HANDSHAKE, src_ip);
+        } else if (!(g->flags & CLUSTER_NODE_MYSELF) &&
+                   (n->flags & CLUSTER_NODE_MASTER) != 0) {
+            /* failure reports: a master's PFAIL/FAIL gossip about a known
+             * third node is a report from the sender; clean retracts it */
+            if (gflags & (REDBUS_NODE_PFAIL | REDBUS_NODE_FAIL))
+                cluster_report_failure(d, g, n->id, now_ms);
+            else
+                cluster_report_heal(d, g, n->id);
         }
         p += REDBUS_GOSSIP_LEN;
     }
