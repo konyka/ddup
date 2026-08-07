@@ -399,3 +399,53 @@ P64 达 ~2.0M req/s、d1k-mt4 达 2.2-2.3x st 的扩展性是 ddup 在那些
 维度的证据。下一步与 Garnet 的高并发对比应在 CI（Linux epoll）上
 做——Windows select/IOCP 与 Linux epoll 的高连接成本结构不同，
 本机数字外推到 Garnet 主场不公平。
+
+## Phase 28 高并发三方对比与修复（2026-08-07）
+
+CI 矩阵扩展（bench.yml）：5 个变体 × 4 场景，redis-benchmark 同一
+客户端、median-of-3（ubuntu 4C runner）。官方一轮（4916203，
+同窗口数字可比）：
+
+| 场景 | ddup-st | ddup-st-uring | ddup-mt4 | garnet | redis |
+|------|---------|---------------|----------|--------|-------|
+| c50 P16 16B | 1333k/1408k | 1183k/1105k | 935k/1064k | 629k/939k | 939k/1370k |
+| c500 P16 16B | 1163k/1093k | 1075k/1449k | 1130k/1136k | 1333k/1274k | 1504k/1770k |
+| c500 P64 16B | 2105k/2020k | 2041k/2247k | 1481k/1786k | 3226k/3509k | 2198k/2817k |
+| c50 P16 1KB | 1242k/1198k | 1176k/1307k | 1042k/1099k | 1036k/1064k | 1205k/1316k |
+
+（单元格 = SET/GET req/s。runner 窗口间漂移 ±30% 常见；同表内可比。）
+
+**格局**：c50 P16 ddup-st SET/GET 双双第一（SET 超 redis 42%）；1KB
+ddup-st ≈ redis、超 garnet；c500 P16 redis 领先 ddup ~30%；c500 P64
+garnet 领先 ddup-st ~1.6x——garnet 的主场优势真实存在，ddup-mt4 在
+该场景反不及 st（跨线程成本 vs 4 核竞争者瓜分 CPU），列为后续目标。
+
+### 本阶段修复（全部由新矩阵暴露）
+
+1. **io_uring SQ 间接数组从未写入**（dbbaf76）：uring_get_sqe 只写
+   sqe 槽位、不写内核解引用用的 SQ 数组——所有提交都别名到 sqe[0]，
+   首个 poll（监听 fd）碰巧可用，之后重复完成导致第二次阻塞 accept
+   挂死：进程活着但哑巴。strace 实证（listen→accept→accept 阻塞）。
+   补数组写入 + SQ 满时冲刷。这是 bench 里 uring 变体哑掉的根因；
+   ctest 此前未暴露因为 ubuntu runner 上该变体在测试规模……修复后
+   test_server 的 io_uring 轮在 ubuntu 实测通过。
+2. **1KB SET 写路径**（323c2ee + c6a78a1）：(a) 无 AOF 且无副本从未
+   接入时跳过整个 backlog 追加（每命令一次 1KB 环形拷贝白付）；
+   (b) rh_set_ex2 把类型标签+载荷一次分配写入（省一次 1KB malloc+
+   拷贝）。本机 loopback A/B：d1024 SET 382k→932k（+143%）；
+   bench_core 进程内 +11%；CI 同场景从 ~160-175k 到 1042-1242k
+   （> garnet，≈ redis）。16B 路径中性偏好。
+3. **mt 背压自旋楔死**（e1f58cf）：环形队列满时生产者空转自排干，
+   4 核 runner 上自旋者饿死被调度的消费者，全池互等成 wedge（进程
+   活着但哑，线程全在 ep_poll 空等）。改为 64 轮自排干后让出 1ms。
+   注：CI bench 里 mt4 仍偶发 wedge（探针无法复现， bench 高复发），
+   bench.yml 暂以重启该进程兜底并在报告披露重启次数（本轮为 0）。
+   根因未完全定位——已排除：kick 去重（反向二分证明无罪）、accept
+   环满丢连接、裸连即断、单纯 CPU 饥饿。待后续专门的 mt 攻坚。
+
+### 方法论备注
+
+- bench.yml 防挂：所有存活检查带 timeout；cell 以"15s 内完成 100 请求"
+  为准入（半残后端不再烧 24×120s）；n/a 时把进程/线程状态写入
+  bench-diag.txt 随 bench-results 发布。
+- 教训：CI 矩阵每加一个变体都要先过"哑server 不拖死全 job"这关。
