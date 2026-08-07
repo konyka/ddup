@@ -51,7 +51,7 @@ jobs:
           sleep 1
           tail -30 /tmp/strace.log || true
           echo "== test_server backend probe =="
-          timeout 200 ctest --test-dir build -R '^test_server$' --output-on-failure 2>&1 | grep -E "backend|tests passed|Failed" || true
+          timeout 200 ctest --test-dir build -R '^test_server$' --output-on-failure 2>&1 || true
           } > /tmp/probe.out 2>&1
           true
       - name: Publish probe output
