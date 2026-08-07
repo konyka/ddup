@@ -2247,6 +2247,8 @@ static void *acceptor_main(void *arg)
 {
     mt_server *ms = (mt_server *)arg;
     pal_loop *l = pal_loop_create();
+    pal_socket_t held = PAL_SOCKET_INVALID;
+    int held_tls = 0;
     int rr = 0;
     if (l == NULL)
         return NULL;
@@ -2261,8 +2263,24 @@ static void *acceptor_main(void *arg)
     }
     while (ms->running) {
         pal_event evs[8];
-        int n = pal_loop_wait(l, evs, 8, 50);
+        int n;
         int i;
+        /* a held fd (its worker's accept ring was full) goes first; never
+         * drop a just-accepted client on the floor */
+        if (held != PAL_SOCKET_INVALID) {
+            worker *w = &ms->workers[rr % ms->nworkers];
+            mt_spsc *ring = held_tls ? &w->accepts_tls : &w->accepts;
+            int pr = mt_spsc_push(ring, (void *)(uintptr_t)held);
+            if (pr >= 0) {
+                if (pr == 1)
+                    mt_kick(w);
+                rr++;
+                held = PAL_SOCKET_INVALID;
+            }
+        }
+        /* while holding, skip the accept loop (the wait below still
+         * wakes on listen events or after the 50ms re-poll) */
+        n = pal_loop_wait(l, evs, 8, 50);
         for (i = 0; i < n; i++) {
             int is_tls;
             if (!evs[i].readable)
@@ -2276,21 +2294,27 @@ static void *acceptor_main(void *arg)
                 continue;
             }
             for (;;) {
-                pal_socket_t fd = pal_accept(evs[i].fd);
+                pal_socket_t fd;
                 worker *w;
+                if (held != PAL_SOCKET_INVALID)
+                    break; /* one at a time; retry next round */
+                fd = pal_accept(evs[i].fd);
                 if (fd == PAL_SOCKET_INVALID)
                     break;
                 w = &ms->workers[rr % ms->nworkers];
-                rr++;
                 {
                     mt_spsc *ring =
                         is_tls ? &w->accepts_tls : &w->accepts;
                     int pr =
                         mt_spsc_push(ring, (void *)(uintptr_t)fd);
                     if (pr < 0) {
-                        pal_close(fd);
-                        continue;
+                        /* ring full: hold the fd and stop accepting
+                         * (the listen backlog absorbs the burst) */
+                        held = fd;
+                        held_tls = is_tls;
+                        break;
                     }
+                    rr++;
                     if (pr == 1)
                         mt_kick(w);
                 }
