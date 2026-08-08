@@ -34,40 +34,18 @@
 #ifndef IORING_RECV_MULTISHOT
 #define IORING_RECV_MULTISHOT (1U << 1)
 #endif
-#ifndef IORING_CQE_F_BUFFER
-#define IORING_CQE_F_BUFFER (1U << 0)
-#endif
+/* IORING_REGISTER_PBUF_RING is an enum constant, not a macro, so it
+ * cannot guard fallback struct definitions; IORING_CQE_F_BUFFER (a macro
+ * from the same 5.19 UAPI update as the pbuf structs) is the sentinel:
+ * without it the headers predate pbuf support and the feature compiles
+ * out (enable fails at runtime, the server falls back to recv reposts). */
+#ifdef IORING_CQE_F_BUFFER
+#define PAL_IOU_HAVE_PBUF 1
 #ifndef IORING_CQE_BUFFER_SHIFT
 #define IORING_CQE_BUFFER_SHIFT 16
 #endif
-#ifndef IORING_REGISTER_PBUF_RING
-#define IORING_REGISTER_PBUF_RING 22
-#define IORING_UNREGISTER_PBUF_RING 23
-/* headers predate 5.19: provide the UAPI structs too */
-struct io_uring_buf {
-    unsigned long long addr;
-    unsigned int len;
-    unsigned short bid;
-    unsigned short resv;
-};
-struct io_uring_buf_ring {
-    union {
-        struct {
-            unsigned long long resv1;
-            unsigned int resv2;
-            unsigned short resv3;
-            unsigned short tail;
-        };
-        struct io_uring_buf bufs[0];
-    };
-};
-struct io_uring_buf_reg {
-    unsigned long long ring_addr;
-    unsigned int ring_entries;
-    unsigned short bgid;
-    unsigned short flags;
-    unsigned long long resv[3];
-};
+#else
+#define PAL_IOU_HAVE_PBUF 0
 #endif
 
 #define PAL_IOU_SQ_ENTRIES 1024 /* CQ is 2x; overflow is kernel-buffered */
@@ -288,6 +266,7 @@ int pal_iouring_send(pal_iouring *r, pal_socket_t fd, const void *buf,
 
 int pal_iouring_enable_pbuf(pal_iouring *r, unsigned count, size_t size)
 {
+#if PAL_IOU_HAVE_PBUF
     struct io_uring_buf_reg reg;
     unsigned i;
 
@@ -333,6 +312,10 @@ int pal_iouring_enable_pbuf(pal_iouring *r, unsigned count, size_t size)
         return -1; /* kernel too old: caller falls back to reposts */
     }
     return 0;
+#else
+    (void)r; (void)count; (void)size;
+    return -1; /* headers predate pbuf support */
+#endif
 }
 
 int pal_iouring_pbuf_active(const pal_iouring *r)
@@ -342,6 +325,7 @@ int pal_iouring_pbuf_active(const pal_iouring *r)
 
 int pal_iouring_recv_ms(pal_iouring *r, pal_socket_t fd, void *userdata)
 {
+#if PAL_IOU_HAVE_PBUF
     struct io_uring_sqe *sqe;
     if (r->pbuf_ring == NULL)
         return -1;
@@ -356,17 +340,22 @@ int pal_iouring_recv_ms(pal_iouring *r, pal_socket_t fd, void *userdata)
                      (unsigned long long)PAL_IOURING_RECV;
     pal_mutex_unlock(&r->lock);
     return 0;
+#else
+    (void)r; (void)fd; (void)userdata;
+    return -1;
+#endif
 }
 
 const void *pal_iouring_buf(const pal_iouring *r, int bid)
 {
-    if (bid < 0 || (unsigned)bid >= r->pbuf_count)
+    if (r->pbuf_ring == NULL || bid < 0 || (unsigned)bid >= r->pbuf_count)
         return NULL;
     return r->pbuf_data + (size_t)bid * r->pbuf_size;
 }
 
 void pal_iouring_recycle(pal_iouring *r, int bid)
 {
+#if PAL_IOU_HAVE_PBUF
     /* single consumer (the reap thread): read tail, fill, release-store */
     unsigned short tail = __atomic_load_n(&r->pbuf_ring->tail,
                                           __ATOMIC_RELAXED);
@@ -378,6 +367,9 @@ void pal_iouring_recycle(pal_iouring *r, int bid)
     b->resv = 0;
     __atomic_store_n(&r->pbuf_ring->tail, (unsigned short)(tail + 1),
                      __ATOMIC_RELEASE);
+#else
+    (void)r; (void)bid;
+#endif
 }
 
 int pal_iouring_post(pal_iouring *r, void *userdata)
@@ -448,9 +440,13 @@ int pal_iouring_wait(pal_iouring *r, pal_iouring_event *evs, int max,
             ev->err = cqe->res < 0 ? -cqe->res : 0;
             /* F_MORE: the underlying multishot request is still armed */
             ev->op_done = (cqe->flags & IORING_CQE_F_MORE) ? 0 : 1;
+#if PAL_IOU_HAVE_PBUF
             ev->buf_id = (cqe->flags & IORING_CQE_F_BUFFER)
                              ? (int)(cqe->flags >> IORING_CQE_BUFFER_SHIFT)
                              : -1;
+#else
+            ev->buf_id = -1;
+#endif
             if (op == PAL_IOURING_ACCEPT) {
                 if (cqe->res < 0) {
                     r->accept_armed = 0;
