@@ -471,10 +471,13 @@ DBSIZE 为 O(1)，可能计入尚未回收的过期 key。
 - **后端选择**：`server_create_ex(host, port, backend)`；`--io select|iocp`
   配置项，默认运行时探测（Windows 用 IOCP，其他平台 select）。IOCP 不可
   用时自动回落 readiness。
-- **流程**：`pal_iocp_listen` 监听；ACCEPT 完成 → 建 conn（session/arena/
-  64KB recv 缓冲）→ post 首个 WSARecv 并重挂 AcceptEx；RECV 完成 → 同一
+- **流程**：`pal_iocp_listen` 监听（Phase 32a 起常态保持 2 个 AcceptEx
+  在飞，完成即补挂）；ACCEPT 完成 → 建 conn（session/arena/64KB recv
+  缓冲）→ post 首个 WSARecv；RECV 完成 → 同一
   parse→execute 流水线（与 readiness 共享 conn_process_input）→
-  kick_flush；SEND 完成 → 推进 out_sent，未发完则续发（单块 ≤256KB，经
+  kick_flush → 补投下一个 WSARecv（Phase 32a 评估过"先补投再处理"，
+  loopback 上批次被切碎、一致性负收益，已回退，见 performance.md）。
+  SEND 完成 → 推进 out_sent，未发完则续发（单块 ≤256KB，经
   conn 私有稳定 sbuf 发送，避免 resp_buf 扩容导致悬垂）。发布订阅、复制
   推流、SYNC 帧共用 kick_flush（有 send 在飞时自动跳过）。16MB 慢副本
   丢弃策略一致；AOF flush/主动过期与 autosave 照旧。

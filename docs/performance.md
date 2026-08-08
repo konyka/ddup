@@ -559,3 +559,61 @@ bench-results 最新表——mt4 c500 P64 685k/717k（该窗口 st 797k/
 取证（线程栈、fd 计数、INFO 采样）在 bench-diag.txt 设施里；建议
 后续用一台本地 Linux 机或 WSL 复现攻坚。bench.yml 的重启兜底保留，
 重启次数随报告披露。
+
+## Phase 32a IOCP 后端深度优化（2026-08-08）
+
+针对 Windows IOCP（st）后端的逐项评估：accept 池、recv 补投时机、
+send 路径、flush 纪律。本机 16C/32T，`--io iocp` 单线程；基线
+（32a 前）：c50 P16 SET 996k/GET 1044k；c500 P64 1385k/1558k；
+d1024 673k/825k（本机有一个杀不掉的僵尸 lld-link 独占 1 核，
+所有数字含此底噪，A/B 同窗口交错运行可比对）。
+
+**1. AcceptEx 池（保留，8ce9131）**：listen 时多挂一个 AcceptEx
+（常态 2 个在飞，每个完成补挂一个）。消除连接风暴窗口内"上一个
+accept 完成到补挂之间"的 accept 空转；稳态吞吐中性（收益在连接
+建立速率，不在 ping-pong 吞吐）。
+
+**2. RECV 先补投后处理（负结果，已回退）**：设想是 RECV 完成时先
+补投下一个 WSARecv 再 parse→execute，让内核在处理期间填充下一块。
+配套把接收缓冲改为 roff 消费偏移窗口 rbuf[roff, roff+rlen)——
+conn_process_input 只推进偏移不再 memmove（在飞 recv 的落点
+roff+rlen 从而保持有效），物理 compact/grow 只在完成入口（唯一
+无在飞 recv 的时刻）进行；readiness 路径无在飞 recv，compact 随时
+安全。实现正确性无误（ctest 55/55，含 IOCP 轮），但 A/B（base=仅
+accept 池，3 轮交错 × {c50,c500}×{P16,P64}×{16B,1KB}×{set,get}）
+一致性变差：
+
+| 场景（中位数） | base | post-first | 差值 |
+| --- | --- | --- | --- |
+| c50 P16 16B SET | 938k | 887k | -5.5% |
+| c50 P16 16B GET | 863k | 745k | -13.7% |
+| c50 P16 1KB SET/GET | 502k/494k | 480k/472k | ~-4.4% |
+| c500 P64 16B SET | 1418k | 1324k | -6.6% |
+| c500 P64 16B GET | 1740k | 1608k | -7.6% |
+| c500 P64 1KB SET | 641k | 629k | 噪声内 |
+
+反向运行顺序（after 先跑）复验仍为负（c50 P16 GET 1143-1149k 对
+1234-1276k），排除顺序偏差。原因：loopback 上处理期间到达的数据
+本就在内核 TCP 缓冲里累积，旧模型"处理后补投"下一跳收到的是累积
+的大块；先补投则下一完成事件只含处理窗口内到达的小块——批次被
+切碎，每字节的完成周期（GQCS + 解析调度）开销变高。代码已回退，
+设计记录于此备查（roff 偏移模型本身正确，可供将来真正需要双在飞
+recv 的场景复用）。
+
+**3. send 路径（评估后不改）**：零拷贝（直接投 out.data）不可行——
+resp_buf out 在回复追加时可能 realloc，在飞 WSASend 引用它会悬垂；
+经 conn 私有稳定 sbuf 拷贝是必要代价。多并发 send 缓冲队列复杂度
+高、收益存疑（单在飞 send 已足够喂满 loopback）。
+
+**4. flush 纪律（验证已满足）**：SEND 完成即推进 out_sent 并
+kick_flush 续发；无 send 在飞时任何产出路径都直接 kick_flush。
+无改动。
+
+**附带观察（非本次改动引入）**：c500 P64 1KB GET 单元格在矩阵中曾
+三轮连续 stall 到 ~10-20k/s，但同一二进制单独复跑正常
+（1681-1948k/s）——运行窗口性环境抖动（Defender 扫描/僵尸进程
+争用），非代码回退；该单元格标记为不稳定，若再现需按 Phase 30/31
+的 wedge 取证流程排查。
+
+**测试设施**：test_server 新增 `DDUP_TEST_IOCP_ONLY=1` 环境开关，
+只跑 IOCP 轮（调试 IOCP 路径时免去 select 轮的等待）。
