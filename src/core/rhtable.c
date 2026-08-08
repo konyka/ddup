@@ -138,10 +138,8 @@ static void rh_delete_at(rh_entry *slots, size_t cap, size_t i)
 }
 
 /* Migrate up to RH_MIGRATE_BATCH occupied buckets from old to new table. */
-static void rh_migrate_some(rh_table *t)
+static void rh_migrate_some_slow(rh_table *t)
 {
-    if (!t->old_slots)
-        return;
     size_t moved = 0;
     while (moved < RH_MIGRATE_BATCH && t->old_live > 0) {
         if (t->migrate_pos >= t->old_cap)
@@ -161,6 +159,15 @@ static void rh_migrate_some(rh_table *t)
         t->old_cap = 0;
         t->migrate_pos = 0;
     }
+}
+
+/* Hot-path wrapper (Phase 36): every table op pays exactly one inlined
+ * load + predictable branch when no migration is in flight; the migration
+ * loop itself stays out of line. */
+static inline void rh_migrate_some(rh_table *t)
+{
+    if (t->old_slots != NULL)
+        rh_migrate_some_slow(t);
 }
 
 static void rh_maybe_grow(rh_table *t)
