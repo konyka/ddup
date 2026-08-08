@@ -537,10 +537,11 @@ DBSIZE 为 O(1)，可能计入尚未回收的过期 key。
   parse→execute 流水线（与 readiness 共享 conn_process_input）→
   kick_flush → 补投下一个 WSARecv（Phase 32a 评估过"先补投再处理"，
   loopback 上批次被切碎、一致性负收益，已回退，见 performance.md）。
-  SEND 完成 → 推进 out_sent，未发完则续发（单块 ≤256KB，经
-  conn 私有稳定 sbuf 发送，避免 resp_buf 扩容导致悬垂）。发布订阅、复制
+  SEND 完成 → 推进发送进度，未发完则续发（单块 ≤256KB；Phase 34c 起
+  回复缓冲整体 detach 移交发送角色、out 取池温热备件顶替，零拷贝；
+  发完的缓冲归还 buf_pool）。发布订阅、复制
   推流、SYNC 帧共用 kick_flush（有 send 在飞时自动跳过）。16MB 慢副本
-  丢弃策略一致；AOF flush/主动过期与 autosave 照旧。
+  丢弃策略一致（计入 detach 尾部）；AOF flush/主动过期与 autosave 照旧。
 - **生命周期**：conn 有在飞操作时关闭走 zombie 路径（CancelIoEx 后等
   pending_ops 归零再真正释放，避免完成事件悬垂引用）。
 - **复制副本侧（Phase 22）**：master link 支持 IOCP——阻塞 connect（既有

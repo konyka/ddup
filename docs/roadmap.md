@@ -172,6 +172,10 @@
     DEFER_TASKRUN|SINGLE_ISSUER 探测（env 门控默认关）；registered
     send buffers/SEND_ZC 评估后不做（记录在案）；bench 常驻 repost
     vs 全栈双变体，全栈持平或略胜（Phase 33）
+  - [x] 本地 Garnet 对垒定点优化：proactor 发送路径零拷贝 detach
+    （st 中性、mt4 +2~3%，保留）；c500 P64/P16 计数器取证 IO 已最优
+    （P64 63 命令/recv、1 send/批），差距归为单核天花板与 mt 扩展
+    效率，记录在案（Phase 34c）
   - [ ] 范围化排除（记录在案，不实施）：
     - 分层存储（热/冷数据落盘）：超出"内存缓存存储"定位
     - mt 模式的复制/集群适配：见 Phase 15 说明

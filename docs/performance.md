@@ -708,3 +708,44 @@ iouring-op`），multishot 在其内默认开（测试默认覆盖），
 SQPOLL/DEFER 维持 env 门控（DDUP_IOU_SQPOLL=1 DDUP_IOU_DEFER=1
 即实测配置）；bench 常驻 7776(repost)/7777（全栈）双变体持续
 对照。
+
+## Phase 34c 本地 Garnet 对垒定点优化（2026-08-08）
+
+本机 16C/32T 全矩阵（ddup-bench 同客户端，compare.sh full）：
+
+| 场景 | ddup-st | ddup-mt4 | garnet |
+| --- | --- | --- | --- |
+| c50 P16 16B | 917k/935k | 806k/980k | 833k/905k |
+| c500 P16 16B | 778k/683k | 687k/830k | 794k/823k |
+| c500 P64 16B | 1429k/1770k | 1493k/1786k | 1905k/2000k |
+| c50 P16 1KB | 606k/702k | 769k/769k | 680k/971k |
+
+**方差警示（诚实记录）**：本机绝对值窗口间波动极大（st c50 P16
+1KB GET 在对垒窗口 702k、A/B 窗口 1246-1317k），只有同窗口交错
+A/B 可比对；跨窗口的绝对对比（包括对 garnet 的百分比差）应按
+趋势解读。
+
+**Target 1 — 1KB GET 消除二次拷贝（555bb80，保留）**：proactor 发送
+路径从"out 拷入稳定 sbuf 再投重叠发送"改为**缓冲区 detach**——out
+的分配整体移交发送角色（out 立即从 buf_pool 取同档温热备件，否则
+每批重爬 256B→128KB 翻倍链、代价比省下的拷贝还大），发送完成确认
+后归还池。readiness 路径本就是原地发送（一次拷贝），不动；慢副本
+outbuf 检查计入 detach 尾部。A/B（c50 P16 d1024 GET，3 轮交错 ×
+两版实现）：st 中性（噪声内），mt4 两轮各 3 回合一致 +2~3%。
+预期的 +20-35% 没有出现——旧 sbuf 拷贝是缓存热的、近乎免费；
+garnet 在 1KB GET 的领先不在这里。
+
+**Target 2 — c500 P64 深管道（st IOCP）：计数器取证后不改代码**。
+INFO # IO 差值（300 万 GET）：47502 次 recv 完成 = **63 命令/recv**
+（P64 近似完美合批）、47001 次 send = 1 次/批、syscall/命令 ≈ 0.031、
+events/loop ≈ 18。IO 路径已接近最优；对 garnet 的差是**单核天花板
+对多核**（st 单核打满；该窗口 st 实测 2.31M rps，已超对垒窗口的
+garnet 读数）。out 在 64 回复突发的翻倍重分配问题已被 Target 1 的
+温热备件顺带消除（备件即预分配）。
+
+**Target 3 — c500 P16：同样取证无异常**（15.97 命令/recv = P16 满批，
+1 send/批，events/loop ≈ 25），按"先测量、小修为主"规则跳过。
+
+**剩余差距**：st 单核天花板 vs garnet 多核；mt4 的每命令路由开销
+吃掉多核扩展性（c500 P64 mt4 ≈ st，4 worker 未换算成倍数）——后者
+是 Phase 28-31 未竟之地，候选后续靶点。
