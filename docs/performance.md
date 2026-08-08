@@ -2,9 +2,11 @@
 
 每个涉及热路径的阶段完成后更新。测试方法、硬件环境随数字一并记录。
 
-## 基线
-
-待 Phase 3（网络服务器 + 压测客户端）完成后记录首批数字。
+- 与 Garnet/Redis 的对比：本机同窗口矩阵见下方 Phase 34–37 各节；
+  CI 每周自动对比见 `bench-results` 分支（bench.yml）。
+- 架构层面对比（分片路由 vs 共享存储的定性分析）：
+  见 [architecture.md](architecture.md)「架构对比：分片存储 + 消息路由
+  （ddup mt）vs 共享存储（Garnet/Tsavorite）」一节。
 
 ## 记录格式
 
