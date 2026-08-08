@@ -47,9 +47,11 @@
 #define IOCP_SEND_CHUNK (256 * 1024)
 
 /* io_uring op-mode multishot recv (Phase 33): provided-buffer ring of
- * 256 x 16KB slabs shared by all conns of this server. */
+ * 256 x 64KB slabs shared by all conns of this server. 64KB slots match
+ * the repost model's SERVER_RECV_CHUNK reads: smaller slots fragment
+ * each burst into several CQEs (Phase 32a batching lesson). */
 #define IOU_PBUF_COUNT 256
-#define IOU_PBUF_SIZE (16 * 1024)
+#define IOU_PBUF_SIZE (64 * 1024)
 
 /* ENOBUFS is POSIX-only; the ms-recv starvation check must still compile
  * on Windows (where iou_ms is always 0). */
