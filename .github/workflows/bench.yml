@@ -47,11 +47,12 @@ jobs:
           "$GITHUB_WORKSPACE/build/ddup-server" --port 7771 --io select >"$GITHUB_WORKSPACE/ddup.log" 2>&1 &
           "$GITHUB_WORKSPACE/build/ddup-server" --port 7774 --io-threads 4 >"$GITHUB_WORKSPACE/ddup-mt4.log" 2>&1 &
           "$GITHUB_WORKSPACE/build/ddup-server" --port 7775 --io iouring >"$GITHUB_WORKSPACE/ddup-uring.log" 2>&1 &
+          "$GITHUB_WORKSPACE/build/ddup-server" --port 7776 --io iouring-op >"$GITHUB_WORKSPACE/ddup-uring-op.log" 2>&1 &
           redis-server --port 7773 --save '' --appendonly no --protected-mode no >"$GITHUB_WORKSPACE/redis.log" 2>&1 &
           if [ -f "$RUNNER_TEMP/garnet-out/GarnetServer.dll" ]; then
             dotnet "$RUNNER_TEMP/garnet-out/GarnetServer.dll" --bind 127.0.0.1 --port 7772 >"$GITHUB_WORKSPACE/garnet.log" 2>&1 &
           fi
-          for p in 7771 7772 7773 7774 7775; do
+          for p in 7771 7772 7773 7774 7775 7776; do
             ok=0
             for i in $(seq 1 60); do
               if (echo > /dev/tcp/127.0.0.1/$p) 2>/dev/null; then ok=1; break; fi
@@ -64,6 +65,7 @@ jobs:
           echo "garnet PING: $(timeout 5 redis-cli -p 7772 PING || echo DOWN)"
           echo "ddup-mt4 PING: $(timeout 5 redis-cli -p 7774 PING || echo DOWN)"
           echo "ddup-uring PING: $(timeout 5 redis-cli -p 7775 PING || echo DOWN)"
+          echo "ddup-uring-op PING: $(timeout 5 redis-cli -p 7776 PING || echo DOWN)"
           true
 
       - name: Measure (same client for all)
@@ -142,7 +144,7 @@ jobs:
           timeout 120 redis-benchmark -p 7771 -t set -n 1000 -c 50 -P 16 -q > bench-raw-set.txt 2>&1 || true
           cat bench-raw-set.txt
 
-          warm 7771; warm 7773; warm 7774; warm 7775
+          warm 7771; warm 7773; warm 7774; warm 7775; warm 7776
 
           # scenario matrix: c50 P16 (continuity row), c500 P16, c500 P64,
           # and 1KB values at c50 P16; every cell is "SET / GET", median of 3
@@ -152,11 +154,12 @@ jobs:
             LABEL="c$1 P$2 d$3"
             DD=$(cell 7771 "$1" "$2" "$3")
             DU=$(cell 7775 "$1" "$2" "$3")
+            DO=$(cell 7776 "$1" "$2" "$3")
             DM=$(cell 7774 "$1" "$2" "$3")
             GA=$(cell 7772 "$1" "$2" "$3")
             RD=$(cell 7773 "$1" "$2" "$3")
             ROWS="$ROWS
-          | $LABEL | $DD | $DU | $DM | $GA | $RD |"
+          | $LABEL | $DD | $DU | $DO | $DM | $GA | $RD |"
           done
 
           # internal consistency: ddup-bench against ddup
@@ -177,10 +180,10 @@ jobs:
             echo "- garnet commit: $GA_VER"
             echo "- $(redis-server --version)"
             echo "- client: redis-benchmark -t set|get -n 200000, median of 3; cells are SET / GET"
-            echo "- ddup rows: st select (7771), st io_uring (7775), mt --io-threads 4 (7774)"
+            echo "- ddup rows: st select (7771), st io_uring readiness (7775), st io_uring op-mode (7776), mt --io-threads 4 (7774)"
             echo
-            echo "| scenario | ddup-st | ddup-st-uring | ddup-mt4 | garnet | redis |"
-            echo "|----------|---------|---------------|----------|--------|-------|"
+            echo "| scenario | ddup-st | ddup-st-uring | ddup-st-uring-op | ddup-mt4 | garnet | redis |"
+            echo "|----------|---------|---------------|------------------|----------|--------|-------|"
             echo "$ROWS"
             echo
             echo "mt4 mid-run restarts (wedge mitigation): $(cat bench-mt4-restarts 2>/dev/null || echo 0)"
@@ -212,6 +215,7 @@ jobs:
           [ -f "$GITHUB_WORKSPACE/ddup.log" ] && cp "$GITHUB_WORKSPACE/ddup.log" . || true
           [ -f "$GITHUB_WORKSPACE/ddup-mt4.log" ] && cp "$GITHUB_WORKSPACE/ddup-mt4.log" . || true
           [ -f "$GITHUB_WORKSPACE/ddup-uring.log" ] && cp "$GITHUB_WORKSPACE/ddup-uring.log" . || true
+          [ -f "$GITHUB_WORKSPACE/ddup-uring-op.log" ] && cp "$GITHUB_WORKSPACE/ddup-uring-op.log" . || true
           [ -f "$GITHUB_WORKSPACE/redis.log" ] && cp "$GITHUB_WORKSPACE/redis.log" . || true
           [ -f "$GITHUB_WORKSPACE/garnet.log" ] && cp "$GITHUB_WORKSPACE/garnet.log" . || true
           [ -f "$GITHUB_WORKSPACE/garnet-build.log" ] && cp "$GITHUB_WORKSPACE/garnet-build.log" . || true
