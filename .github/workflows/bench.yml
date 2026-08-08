@@ -48,7 +48,7 @@ jobs:
           "$GITHUB_WORKSPACE/build/ddup-server" --port 7774 --io-threads 4 >"$GITHUB_WORKSPACE/ddup-mt4.log" 2>&1 &
           "$GITHUB_WORKSPACE/build/ddup-server" --port 7775 --io iouring >"$GITHUB_WORKSPACE/ddup-uring.log" 2>&1 &
           DDUP_IOU_RECV_MS=0 "$GITHUB_WORKSPACE/build/ddup-server" --port 7776 --io iouring-op >"$GITHUB_WORKSPACE/ddup-uring-op.log" 2>&1 &
-          "$GITHUB_WORKSPACE/build/ddup-server" --port 7777 --io iouring-op >"$GITHUB_WORKSPACE/ddup-uring-ms.log" 2>&1 &
+          DDUP_IOU_SQPOLL=1 DDUP_IOU_DEFER=1 "$GITHUB_WORKSPACE/build/ddup-server" --port 7777 --io iouring-op >"$GITHUB_WORKSPACE/ddup-uring-ms.log" 2>&1 &
           redis-server --port 7773 --save '' --appendonly no --protected-mode no >"$GITHUB_WORKSPACE/redis.log" 2>&1 &
           if [ -f "$RUNNER_TEMP/garnet-out/GarnetServer.dll" ]; then
             dotnet "$RUNNER_TEMP/garnet-out/GarnetServer.dll" --bind 127.0.0.1 --port 7772 >"$GITHUB_WORKSPACE/garnet.log" 2>&1 &
