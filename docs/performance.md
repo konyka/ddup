@@ -693,10 +693,18 @@ realloc 与注册缓冲固定地址模型冲突（扩容=注销重注册）；lo
 | 同上 | c500P16 d16 | 574k/597k | 591k/617k | +3%/+3% |
 | 同上 | c500P64 d16 | 586k/711k | 586k/692k | 0/-3% |
 | 同上 | c50P16 d1024 | 495k/501k | 522k/540k | +5.5%/+7.8% |
+| b0a3ae8（同配置复窗口） | c50P16 d16 | 593k/628k | 649k/626k | +9%/0% |
+| 同上 | c500P16 d16 | 684k/706k | 763k/787k | +11%/+11% |
+| 同上 | c500P64 d16 | 1015k/1075k | **1219k/1282k** | **+20%/+19%** |
+| 同上 | c50P16 d1024 | 626k/625k | 680k/682k | +8.5%/+9% |
 
 第一窗口（16KB 槽、无 SQPOLL）multishot 一致性小负——16KB 槽把管道
 突发切成多条 CQE，正是 Phase 32a 在 IOCP 上量到的批次碎片化；换
-64KB 槽（对齐 SERVER_RECV_CHUNK）+ SQPOLL/DEFER 后第二窗口反转为大
-部分格小胜。runner 噪声量级与效应相当，结论按"持平或略胜"保留全栈
-为 7777 常驻变体；默认配置不变（op 后端默认关，SQPOLL/DEFER env
-门控，multishot 在 op 后端内默认开）。
+64KB 槽（对齐 SERVER_RECV_CHUNK）+ SQPOLL/DEFER 后连续两个窗口
+反转为胜，c500 P64 最高 +20% 且超过全部 ddup 变体。64KB 槽与
+SQPOLL/DEFER 同窗口切换、归因不细分；包级结论：**全栈胜，幅度
+≥ 噪声，保留**。默认配置保持保守：op 后端默认关（`--io
+iouring-op`），multishot 在其内默认开（测试默认覆盖），
+SQPOLL/DEFER 维持 env 门控（DDUP_IOU_SQPOLL=1 DDUP_IOU_DEFER=1
+即实测配置）；bench 常驻 7776(repost)/7777（全栈）双变体持续
+对照。
