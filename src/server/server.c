@@ -84,9 +84,13 @@ struct conn {
     int zombie;          /* closed with ops in flight: freed at 0 pending */
     int zombie_mt_free;  /* zombie whose owner (mt layer) released it */
     int send_outstanding;
-    size_t out_sent;     /* bytes of out already handed to the kernel */
-    char *sbuf;          /* stable overlapped-send buffer */
-    size_t scap;
+    /* detached send buffer: out's allocation moves here at kick_flush time
+     * (zero-copy handoff, Phase 34); owned until fully sent, then returned
+     * to the pool */
+    char *sbuf;
+    size_t sbuf_len;       /* valid bytes in sbuf */
+    size_t sbuf_sent;      /* bytes of sbuf confirmed sent */
+    size_t sbuf_pool_size; /* pool allocation size, 0 = malloc'd */
     char *rbuf;  /* receive buffer, pool or malloc'd, compacted after parsing */
     size_t rlen; /* valid bytes in rbuf */
     size_t rcap; /* allocated size of rbuf */
@@ -815,7 +819,10 @@ static void conn_free(conn *c)
         c->srv->mt_state_free(c->srv->route_ctx, c->mt_state);
     session_free(c->sess);
     free(c->link_snap);
-    free(c->sbuf);
+    if (c->sbuf_pool_size > 0)
+        buf_pool_put(&c->srv->pool, c->sbuf, c->sbuf_pool_size);
+    else
+        free(c->sbuf);
     if (c->rbuf_pool_size > 0)
         buf_pool_put(&c->srv->pool, c->rbuf, c->rbuf_pool_size);
     else
@@ -2460,31 +2467,49 @@ static int conn_process_input(server *s, conn *c)
 
 /* Proactor backend (IOCP / io_uring op-mode): post at most one overlapped
  * send per conn; no-op while one is in flight (its completion re-kicks).
- * The chunk is copied into the conn's stable send buffer, which is only
- * (re)allocated while no send is outstanding (the resp_buf out may realloc
- * whenever replies are appended). */
+ * The reply buffer is DETACHED, not copied (Phase 34): out's allocation
+ * moves to the send role and out restarts empty, so a reply is copied
+ * exactly once (value -> out) even for overlapped IO -- appends while a
+ * send is in flight simply grow the fresh out. The detached buffer is
+ * returned to the pool once its last byte is confirmed sent. */
 static void kick_flush(server *s, conn *c)
 {
     size_t n;
-    if (c->send_outstanding || c->out_sent >= c->out.len)
+    if (c->send_outstanding)
         return;
-    n = c->out.len - c->out_sent;
+    if (c->sbuf == NULL) {
+        size_t old_cap;
+        if (c->out.len == 0)
+            return;
+        /* detach: out's buffer becomes the send buffer */
+        old_cap = c->out.pool != NULL ? c->out.pool_size : c->out.cap;
+        c->sbuf = c->out.data;
+        c->sbuf_len = c->out.len;
+        c->sbuf_sent = 0;
+        c->sbuf_pool_size = c->out.pool != NULL ? c->out.pool_size : 0;
+        c->out.data = NULL;
+        c->out.len = 0;
+        c->out.cap = 0;
+        c->out.pool_size = 0;
+        /* warm spare: hand out a same-size buffer right away, otherwise
+         * the next batch would re-climb the 256B..128KB doubling chain
+         * (a memcpy per doubling) -- that regrowth costs more than the
+         * copy this detach just eliminated */
+        if (c->out.pool != NULL) {
+            size_t actual;
+            char *p = (char *)buf_pool_get(c->out.pool, old_cap, &actual);
+            if (p != NULL) {
+                c->out.data = p;
+                c->out.cap = actual;
+                c->out.pool_size = actual;
+            }
+        }
+    }
+    n = c->sbuf_len - c->sbuf_sent;
     if (n > IOCP_SEND_CHUNK)
         n = IOCP_SEND_CHUNK;
-    if (c->scap < n) {
-        size_t ncap = c->scap == 0 ? 64 * 1024 : c->scap;
-        char *nb;
-        while (ncap < n)
-            ncap *= 2;
-        nb = (char *)realloc(c->sbuf, ncap);
-        if (nb == NULL)
-            return; /* retried on a later pass */
-        c->sbuf = nb;
-        c->scap = ncap;
-    }
-    memcpy(c->sbuf, c->out.data + c->out_sent, n);
     s->io.writes++;
-    if (pro_send(s, c->fd, c->sbuf, n, c) == 0) {
+    if (pro_send(s, c->fd, c->sbuf + c->sbuf_sent, n, c) == 0) {
         c->send_outstanding = 1;
         c->pending_ops++;
     } else {
@@ -2766,13 +2791,21 @@ static int server_run_once_proactor(server *s, int timeout_ms)
                 continue;
             }
             s->io.bytes_written += (uint64_t)ev->bytes;
-            c->out_sent += (size_t)ev->bytes;
-            if (c->out_sent < c->out.len) {
-                kick_flush(s, c);
-            } else {
-                c->out.len = 0;
-                c->out_sent = 0;
+            c->sbuf_sent += (size_t)ev->bytes;
+            if (c->sbuf_sent >= c->sbuf_len) {
+                /* detached buffer fully sent: return it to the pool */
+                if (c->sbuf_pool_size > 0)
+                    buf_pool_put(&s->pool, c->sbuf, c->sbuf_pool_size);
+                else
+                    free(c->sbuf);
+                c->sbuf = NULL;
+                c->sbuf_len = 0;
+                c->sbuf_sent = 0;
+                c->sbuf_pool_size = 0;
             }
+            /* next chunk of the same buffer, or detach whatever
+             * accumulated in out while the send was in flight */
+            kick_flush(s, c);
         }
     }
 
@@ -2781,7 +2814,11 @@ static int server_run_once_proactor(server *s, int timeout_ms)
         size_t ci;
         for (ci = 0; ci < s->nconns; ci++) {
             conn *c = s->conns[ci];
-            if (c->is_replica && c->out.len > REPL_MAX_OUTBUF) {
+            /* pending output = fresh out + the unsent tail of the
+             * detached send buffer */
+            if (c->is_replica &&
+                c->out.len + (c->sbuf_len - c->sbuf_sent) >
+                    REPL_MAX_OUTBUF) {
                 conn_close(s, ci);
                 ci--;
                 continue;
