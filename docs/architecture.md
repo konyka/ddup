@@ -64,6 +64,11 @@
   开放寻址哈希）。命令分发由原先的字串比较链改为 `cmd_id` 整数比较；
   写命令判定、最小/最大参数个数、参数奇偶校验等元数据均通过 ID 直接索引，
   O(1)。未知命令快速返回 `CMD_ID_UNKNOWN`。
+- **lean GET/SET（Phase 36）**：plain 会话（已认证、非 MULTI、未订阅、
+  集群关；SET 另限无选项且非只读副本）在 session 层 resolve 一次后
+  直接执行，跳过 dispatch 层的二次 resolve、READONLY/ownership 包装
+  与 if 链；语义与通用块逐条一致（含 dirty→aof_log 传播与 LRU 驱逐
+  尾），cmd_calls 仍计数、usec 计时不计。
 - **缓冲池**：`src/core/buf_pool.{h,c}` 提供单线程、无锁分层固定大小缓冲池：
   4 KiB / 16 KiB / 64 KiB / 256 KiB 四档。`buf_pool_get(size, &actual)` 返回
   不小于请求大小的缓冲（命中空闲链则复用，否则 malloc），`buf_pool_put`

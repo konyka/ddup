@@ -790,3 +790,29 @@ SET 2005k vs 1472k（+36%）、GET 2183k vs 1896k（+15%）；c50 P16
 **剩余差距的定性**：st 单核分层每命令 CPU 是天花板所在；要再近
 garnet 需要结构性减重（更浅的命令路径、存储层内联）而非微优化，
 或接受单核定位。mt4 在 c500 P64 GET 已超 st（1449k vs 1307k）。
+
+## Phase 36 命令热路径压平（2026-08-08）
+
+Phase 35 剖析显示每命令成本均匀碎在分层链上、无单点热点；本阶段做
+**深度削减**。判定仪器换成 bench_core（进程内，方差 <1-2%）——
+socket A/B 的 ±10% 噪声地板对 3-8% 的胜利不可见（Phase 35 教训）。
+
+逐项结果（bench_core 400k 命令，6 组交错，中位数）：
+
+| 项 | 内容 | SET cold | GET warm | parse-only | 结论 |
+| --- | --- | --- | --- | --- | --- |
+| 解析器 \$bulk 内联（6975a4c） | \*N 数组的 \$ 子元素内联解析，免每元素递归分发 | 中性 | +3.6%（5/6） | **+20%（6/6）** / GET +13% | 保留 |
+| rh_migrate_some 内联早退（d1aae9a） | 每次表操作的无迁移检查从跨函数调用变成内联 load+branch | 中性 | **+8%（6/6）** | - | 保留 |
+| lean GET/SET（0670412） | plain 会话（已认证/非 MULTI/未订阅/无集群；SET 限无选项+非副本）跳过二次 cmd_resolve、READONLY/ownership 包装与分发 if 链 | **+24%（6/6）** | **+40%（6/6）** | - | 保留 |
+| db_get expire 检查内联 | 把空表快路径移进 db_get | 符号不一致 | 符号不一致 | - | **回退**（仪器证不出，守纪律） |
+
+关键发现：通用路径每条命令跑 **2-3 次 cmd_resolve**（session 层、
+dispatch 层、写命令的 is_write_command 又一次）+ 长 if 链分发 +
+每次 2 次时钟读（commandstats 计时）——lean 路径省掉这些；语义与
+command_dispatch 块逐条一致（参数/类型检查、回复字节、dirty→
+aof_log 传播、LRU 驱逐尾）。cmd_calls 仍计数（usec 计时不计——
+两次时钟读比该统计值钱；INFO commandstats 的 calls= 保持精确）。
+
+socket 终检（compare.sh full，单轮噪声窗口）：c500 P64 st 与 garnet
+打平（1265k/1449k vs 1265k/1470k），c50 P16 16B st 领先；无归因
+性回退。1KB 单元格 garnet 仍领先（绝对值随窗口漂移，差距结构未变）。

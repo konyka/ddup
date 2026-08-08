@@ -180,6 +180,10 @@
     均匀分布在 解析→resolve→分发→哈希→存取 分层链；解析器 $bulk
     快路径实现后 A/B 不胜噪声、按规则回退（未入历史）；最终矩阵与
     top-10 函数表入档（Phase 35）
+  - [x] 命令热路径压平（bench_core 为判定仪器）：解析器 $bulk 内联
+    （parse +20%）、rh_migrate_some 内联早退（GET +8%）、plain 会话
+    lean GET/SET（GET +40%、SET +24%，6/6 全正）；expire 内联证不出
+    胜利已回退；socket 终检 c500 P64 与 garnet 打平（Phase 36）
   - [ ] 范围化排除（记录在案，不实施）：
     - 分层存储（热/冷数据落盘）：超出"内存缓存存储"定位
     - mt 模式的复制/集群适配：见 Phase 15 说明
