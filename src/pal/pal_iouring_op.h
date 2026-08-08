@@ -55,7 +55,15 @@ typedef struct pal_iouring_event {
 
 typedef struct pal_iouring pal_iouring;
 
+/* Optional create flags (runtime-probed with silent fallback): */
+#define PAL_IOURING_F_SQPOLL 1u /* kernel SQ-poll thread: submissions need
+                                   no io_uring_enter; sq_thread_idle 1s */
+#define PAL_IOURING_F_DEFER 2u  /* DEFER_TASKRUN|SINGLE_ISSUER (6.0+):
+                                   taskwork runs at enter; NOTE: with this
+                                   flag pal_iouring_post is only legal from
+                                   the owning (reap) thread */
 pal_iouring *pal_iouring_create(void);
+pal_iouring *pal_iouring_create_ex(unsigned flags);
 void pal_iouring_free(pal_iouring *p);
 
 /* Listen on host:port (0 = ephemeral, read back via bound_port) and arm

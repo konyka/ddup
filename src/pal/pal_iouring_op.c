@@ -48,6 +48,14 @@
 #define PAL_IOU_HAVE_PBUF 0
 #endif
 
+/* 6.0+ setup hints (macro-guarded like the rest) */
+#ifndef IORING_SETUP_DEFER_TASKRUN
+#define IORING_SETUP_DEFER_TASKRUN (1U << 9)
+#endif
+#ifndef IORING_SETUP_SINGLE_ISSUER
+#define IORING_SETUP_SINGLE_ISSUER (1U << 12)
+#endif
+
 #define PAL_IOU_SQ_ENTRIES 1024 /* CQ is 2x; overflow is kernel-buffered */
 
 #define UD_TAG_MASK 0x7ull /* low 3 bits carry the op kind */
@@ -68,6 +76,7 @@ struct pal_iouring {
     unsigned sq_submit; /* last tail the kernel was told about */
     int accept_multishot; /* cleared on the first -EINVAL from accept */
     int accept_armed;     /* an accept is live (multi- or single-shot) */
+    int defer_taskrun;    /* DEFER_TASKRUN active: pump via enter always */
     pal_mutex lock;       /* SQ is single-producer: serialize submitters */
     /* provided-buffer ring (Phase 33 multishot recv); inactive when NULL */
     struct io_uring_buf_ring *pbuf_ring;
@@ -89,7 +98,7 @@ static int iou_sys_enter(int fd, unsigned to_submit, unsigned min_complete,
                         flags, NULL, 0);
 }
 
-pal_iouring *pal_iouring_create(void)
+pal_iouring *pal_iouring_create_ex(unsigned flags)
 {
     struct io_uring_params p;
     size_t sq_ring_sz, cq_ring_sz, sqes_sz;
@@ -102,12 +111,24 @@ pal_iouring *pal_iouring_create(void)
         return NULL;
     }
     memset(&p, 0, sizeof(p));
+    if (flags & PAL_IOURING_F_SQPOLL) {
+        p.flags |= IORING_SETUP_SQPOLL;
+        p.sq_thread_idle = 1000; /* park the SQ thread after 1s idle */
+    }
+    if (flags & PAL_IOURING_F_DEFER)
+        p.flags |= IORING_SETUP_DEFER_TASKRUN | IORING_SETUP_SINGLE_ISSUER;
     r->ring_fd = iou_sys_setup(PAL_IOU_SQ_ENTRIES, &p);
+    if (r->ring_fd < 0 && p.flags != 0) {
+        /* privilege/kernel too old for the hints: retry plain (silent) */
+        memset(&p, 0, sizeof(p));
+        r->ring_fd = iou_sys_setup(PAL_IOU_SQ_ENTRIES, &p);
+    }
     if (r->ring_fd < 0) {
         pal_mutex_destroy(&r->lock);
         free(r);
         return NULL;
     }
+    r->defer_taskrun = (p.flags & IORING_SETUP_DEFER_TASKRUN) != 0;
     sq_ring_sz = p.sq_off.array + p.sq_entries * sizeof(unsigned);
     cq_ring_sz = p.cq_off.cqes + p.cq_entries * sizeof(struct io_uring_cqe);
     if (sq_ring_sz < cq_ring_sz)
@@ -141,6 +162,11 @@ fail:
     pal_mutex_destroy(&r->lock);
     free(r);
     return NULL;
+}
+
+pal_iouring *pal_iouring_create(void)
+{
+    return pal_iouring_create_ex(0);
 }
 
 void pal_iouring_free(pal_iouring *r)
@@ -415,7 +441,9 @@ int pal_iouring_wait(pal_iouring *r, pal_iouring_event *evs, int max,
          * pal_iouring_post must be able to submit its NOP concurrently,
          * otherwise the kick could never wake this wait */
         pal_mutex_unlock(&r->lock);
-        if (to_submit > 0 || min_complete > 0) {
+        /* with DEFER_TASKRUN, completions are only generated when the
+         * taskwork runs at an enter: always pump, even an empty poll */
+        if (to_submit > 0 || min_complete > 0 || r->defer_taskrun) {
             do {
                 rc = iou_sys_enter(r->ring_fd, to_submit, min_complete,
                                    IORING_ENTER_GETEVENTS);
@@ -487,6 +515,11 @@ void pal_iouring_close(pal_iouring *r, pal_socket_t fd)
  * pal_iouring_create() and fall back to the readiness backend. */
 pal_iouring *pal_iouring_create(void)
 {
+    return NULL;
+}
+pal_iouring *pal_iouring_create_ex(unsigned flags)
+{
+    (void)flags;
     return NULL;
 }
 void pal_iouring_free(pal_iouring *p)

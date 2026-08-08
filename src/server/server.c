@@ -1153,7 +1153,17 @@ server *server_create_ex(const char *host, uint16_t port, int backend)
         if (s->iocp == NULL)
             s->backend = SERVER_BACKEND_SELECT; /* unavailable: fall back */
     } else if (backend == SERVER_BACKEND_IOURING_OP) {
-        s->iou = pal_iouring_create();
+        unsigned iou_flags = 0;
+        const char *e;
+        /* Phase 33 hints, env-gated for A/B; each is runtime-probed with
+         * silent fallback inside pal_iouring_create_ex */
+        e = getenv("DDUP_IOU_SQPOLL");
+        if (e != NULL && strcmp(e, "1") == 0)
+            iou_flags |= PAL_IOURING_F_SQPOLL;
+        e = getenv("DDUP_IOU_DEFER");
+        if (e != NULL && strcmp(e, "1") == 0)
+            iou_flags |= PAL_IOURING_F_DEFER;
+        s->iou = pal_iouring_create_ex(iou_flags);
         if (s->iou == NULL)
             s->backend = SERVER_BACKEND_SELECT; /* unavailable: fall back */
     }
