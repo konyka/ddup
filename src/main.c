@@ -119,6 +119,10 @@ int main(int argc, char **argv)
         if (cfg.requirepass[0] != '\0')
             mt_server_set_requirepass(ms, cfg.requirepass);
         mt_server_set_maxmemory(ms, cfg.maxmemory, cfg.maxmemory_policy);
+        mt_server_set_proto_max_request_bytes(ms,
+                                              (size_t)cfg.proto_max_request_bytes);
+        mt_server_set_repl_max_snapshot_bytes(ms,
+                                               (size_t)cfg.repl_max_snapshot_bytes);
         if (cfg.appendonly) {
             if (mt_server_enable_aof(ms, cfg.dir,
                                      cfg.appendfilename) != 0) {
@@ -214,6 +218,8 @@ int main(int argc, char **argv)
             return 1;
         }
     }
+    server_set_proto_max_request_bytes(s, (size_t)cfg.proto_max_request_bytes);
+    server_set_repl_max_snapshot_bytes(s, (size_t)cfg.repl_max_snapshot_bytes);
     if (cfg.tls_port > 0) {
         if (server_enable_tls(s, cfg.bind, cfg.tls_port, cfg.tls_cert_file,
                               cfg.tls_key_file) != 0) {

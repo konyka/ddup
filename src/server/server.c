@@ -38,6 +38,7 @@
 
 /* Bytes requested per pal_recv; the receive buffer grows on demand. */
 #define SERVER_RECV_CHUNK (64 * 1024)
+#define SERVER_DEFAULT_MAX_REQUEST (1024ULL * 1024ULL * 1024ULL)
 /* Readiness events consumed per server_run_once() call. */
 #define SERVER_MAX_EVENTS 64
 /* Replicas with more pending output than this are dropped (re-SYNC). */
@@ -113,6 +114,8 @@ struct conn {
     size_t link_need;
     size_t link_got;
     char *link_snap;
+    char pending_replid[41];
+    uint64_t pending_offset;
 };
 
 /* master link states */
@@ -174,6 +177,8 @@ struct server {
     io_counters io;       /* always-on IO counters (Phase 27; calloc-zeroed) */
     conn *master_link;    /* outbound link to the master (replica side) */
     uint64_t last_reconnect; /* pal_now_ms of the last connect attempt */
+    size_t proto_max_request_bytes;
+    size_t repl_max_snapshot_bytes;
     /* proactor backend (Windows IOCP / Linux io_uring op-mode) */
     int backend;
     pal_iocp *iocp;
@@ -742,13 +747,21 @@ static conn *conn_create(server *srv, pal_socket_t fd)
     c->fd = fd;
     c->srv = srv;
     c->sess = session_create(&srv->db);
-    c->rbuf = (char *)buf_pool_get(&srv->pool, SERVER_RECV_CHUNK,
-                                   &c->rbuf_pool_size);
+    if (srv->proto_max_request_bytes < SERVER_RECV_CHUNK) {
+        c->rbuf = (char *)malloc(srv->proto_max_request_bytes);
+        c->rbuf_pool_size = 0;
+    } else {
+        c->rbuf = (char *)buf_pool_get(&srv->pool, SERVER_RECV_CHUNK,
+                                       &c->rbuf_pool_size);
+    }
     if (c->rbuf != NULL) {
-        c->rcap = c->rbuf_pool_size;
+        c->rcap = c->rbuf_pool_size > 0 ? c->rbuf_pool_size
+                                       : srv->proto_max_request_bytes;
     } else {
         /* Pool exhausted: fall back to malloc. */
-        c->rcap = SERVER_RECV_CHUNK;
+        c->rcap = srv->proto_max_request_bytes < SERVER_RECV_CHUNK
+                      ? srv->proto_max_request_bytes
+                      : SERVER_RECV_CHUNK;
         c->rbuf = (char *)malloc(c->rcap);
         c->rbuf_pool_size = 0;
     }
@@ -843,11 +856,28 @@ static void conn_free(conn *c)
  * Returns 0 on success, -1 on allocation failure. */
 static int conn_rbuf_grow(conn *c)
 {
-    size_t need = c->rcap * 2;
+    size_t need;
     size_t actual;
     char *nb;
 
-    nb = (char *)buf_pool_get(&c->srv->pool, need, &actual);
+    if (c->rlen >= c->srv->proto_max_request_bytes)
+        return -1;
+    need = c->rcap > c->srv->proto_max_request_bytes / 2
+               ? c->srv->proto_max_request_bytes
+               : c->rcap * 2;
+    if (need > c->srv->proto_max_request_bytes)
+        need = c->srv->proto_max_request_bytes;
+    if (need < SERVER_RECV_CHUNK) {
+        nb = (char *)malloc(need);
+        actual = nb == NULL ? 0 : need;
+    } else {
+        nb = (char *)buf_pool_get(&c->srv->pool, need, &actual);
+        if (actual > c->srv->proto_max_request_bytes) {
+            buf_pool_put(&c->srv->pool, nb, actual);
+            nb = (char *)malloc(need);
+            actual = nb == NULL ? 0 : need;
+        }
+    }
     if (nb == NULL)
         return -1;
     if (c->rlen > 0)
@@ -858,7 +888,7 @@ static int conn_rbuf_grow(conn *c)
         free(c->rbuf);
     c->rbuf = nb;
     c->rcap = actual;
-    c->rbuf_pool_size = actual;
+    c->rbuf_pool_size = actual == need && need >= SERVER_RECV_CHUNK ? actual : 0;
     return 0;
 }
 
@@ -996,6 +1026,21 @@ static void repl_link_close(server *srv)
     srv->repl.link_up = 0;
 }
 
+static void repl_link_close_fatal(server *srv)
+{
+    srv->repl.master_replid[0] = '\0';
+    srv->repl.master_offset = 0;
+    repl_link_close(srv);
+}
+
+static void repl_link_close_transport(server *srv, conn *c)
+{
+    if (c->link_state == LINK_SNAP_HDR || c->link_state == LINK_SNAPSHOT)
+        repl_link_close_fatal(srv);
+    else
+        repl_link_close(srv);
+}
+
 /* Consume c->rbuf bytes through the master-link state machine (shared by
  * the readiness and IOCP paths; reads nothing from the socket itself). */
 static void repl_link_feed(server *srv, conn *c)
@@ -1006,7 +1051,7 @@ static void repl_link_feed(server *srv, conn *c)
             pos++;
         if (pos == c->rlen) {
             if (c->rlen > 128)
-                repl_link_close(srv); /* garbage instead of a frame */
+                repl_link_close_fatal(srv); /* garbage instead of a frame */
             return;                 /* wait for the rest of the header */
         }
         if (c->rbuf[0] == '+') {
@@ -1015,21 +1060,32 @@ static void repl_link_feed(server *srv, conn *c)
                 uint64_t moff = 0;
                 size_t i;
                 if (pos < 12 + 40 + 2) {
-                    repl_link_close(srv);
+                    repl_link_close_fatal(srv);
                     return;
                 }
-                memcpy(srv->repl.master_replid, c->rbuf + 12, 40);
-                srv->repl.master_replid[40] = '\0';
-                for (i = 12 + 40 + 1;
-                     i < pos && c->rbuf[i] >= '0' && c->rbuf[i] <= '9'; i++)
+                memcpy(c->pending_replid, c->rbuf + 12, 40);
+                c->pending_replid[40] = '\0';
+                if (c->rbuf[pos - 1] != '\r' || pos <= 12 + 40 + 1 ||
+                    c->rbuf[12 + 40 + 1] < '0' ||
+                    c->rbuf[12 + 40 + 1] > '9') {
+                    repl_link_close_fatal(srv);
+                    return;
+                }
+                for (i = 12 + 40 + 1; i < pos - 1; i++) {
+                    if (c->rbuf[i] < '0' || c->rbuf[i] > '9' ||
+                        moff > (UINT64_MAX - (unsigned)(c->rbuf[i] - '0')) / 10) {
+                        repl_link_close_fatal(srv);
+                        return;
+                    }
                     moff = moff * 10 + (unsigned)(c->rbuf[i] - '0');
-                srv->repl.master_offset = moff;
+                }
+                c->pending_offset = moff;
                 memmove(c->rbuf, c->rbuf + pos + 1, c->rlen - pos - 1);
                 c->rlen -= pos + 1;
                 c->link_state = LINK_SNAP_HDR;
             } else if (pos >= 10 && memcmp(c->rbuf, "+CONTINUE ", 10) == 0) {
                 if (pos < 10 + 40) {
-                    repl_link_close(srv);
+                    repl_link_close_fatal(srv);
                     return;
                 }
                 memcpy(srv->repl.master_replid, c->rbuf + 10, 40);
@@ -1039,7 +1095,7 @@ static void repl_link_feed(server *srv, conn *c)
                 c->link_state = LINK_STREAMING;
                 srv->repl.link_up = 1;
             } else {
-                repl_link_close(srv);
+                repl_link_close_fatal(srv);
                 return;
             }
         } else if (c->rbuf[0] == '$') {
@@ -1057,19 +1113,31 @@ static void repl_link_feed(server *srv, conn *c)
             pos++;
         if (pos == c->rlen) {
             if (c->rlen > 64)
-                repl_link_close(srv); /* garbage instead of a frame */
+                repl_link_close_fatal(srv); /* garbage instead of a frame */
             return;                 /* wait for the rest of the header */
         }
-        if (c->rbuf[0] != '$') {
-            repl_link_close(srv);
+        if (c->rbuf[0] != '$' || pos < 3 || c->rbuf[pos - 1] != '\r' ||
+            c->rbuf[1] < '0' || c->rbuf[1] > '9') {
+            repl_link_close_fatal(srv);
             return;
         }
-        for (i = 1; i < pos && c->rbuf[i] >= '0' && c->rbuf[i] <= '9'; i++)
+        for (i = 1; i < pos - 1; i++) {
+            if (c->rbuf[i] < '0' || c->rbuf[i] > '9' ||
+                slen > (UINT64_MAX - (unsigned)(c->rbuf[i] - '0')) / 10) {
+                repl_link_close_fatal(srv);
+                return;
+            }
             slen = slen * 10 + (unsigned)(c->rbuf[i] - '0');
+        }
+        if ((uint64_t)(size_t)slen != slen ||
+            slen > (uint64_t)c->srv->repl_max_snapshot_bytes) {
+            repl_link_close_fatal(srv);
+            return;
+        }
         c->link_need = (size_t)slen;
         c->link_snap = (char *)malloc(c->link_need == 0 ? 1 : c->link_need);
         if (c->link_snap == NULL) {
-            repl_link_close(srv);
+            repl_link_close_fatal(srv);
             return;
         }
         c->link_got = 0;
@@ -1088,10 +1156,16 @@ static void repl_link_feed(server *srv, conn *c)
         c->rlen -= take;
         if (c->link_got < c->link_need)
             return; /* wait for the rest of the snapshot */
-        db_flush(&srv->db);
-        (void)snapshot_load_mem_multi(srv, srv_select_db, srv->ndbs,
-                                      c->link_snap, c->link_need,
-                                      pal_wall_ms());
+        if (snapshot_load_mem_multi(srv, srv_select_db, srv->ndbs,
+                                    c->link_snap, c->link_need,
+                                    pal_wall_ms()) != 0) {
+            free(c->link_snap);
+            c->link_snap = NULL;
+            repl_link_close_fatal(srv);
+            return;
+        }
+        memcpy(srv->repl.master_replid, c->pending_replid, 41);
+        srv->repl.master_offset = c->pending_offset;
         free(c->link_snap);
         c->link_snap = NULL;
         c->link_state = LINK_STREAMING;
@@ -1106,7 +1180,7 @@ static void repl_link_feed(server *srv, conn *c)
             if (used == 0)
                 break; /* incomplete command: wait for more bytes */
             if (used < 0 || v.type != RESP_ARRAY || v.is_null) {
-                repl_link_close(srv); /* stream desync: full resync */
+            repl_link_close_fatal(srv); /* stream desync: full resync */
                 return;
             }
             c->out.len = 0; /* replies are discarded */
@@ -1131,13 +1205,13 @@ static void repl_link_service(server *srv, conn *c)
 
     if (c->rcap - c->rlen < SERVER_RECV_CHUNK) {
         if (conn_rbuf_grow(c) != 0) {
-            repl_link_close(srv);
+            repl_link_close_transport(srv, c);
             return;
         }
     }
     n = conn_read(c, c->rbuf + c->rlen, c->rcap - c->rlen);
     if (n == 0 || (n < 0 && n != -2 && !pal_would_block(pal_socket_error()))) {
-        repl_link_close(srv); /* link down; the retry timer reconnects */
+        repl_link_close_transport(srv, c); /* link down; retry timer reconnects */
         return;
     }
     if (n < 0)
@@ -1156,6 +1230,8 @@ server *server_create_ex(const char *host, uint16_t port, int backend)
     s->bus_listen_fd = PAL_SOCKET_INVALID;
     s->wakeup_fd = PAL_SOCKET_INVALID;
     s->node_timeout_ms = 15000;
+    s->proto_max_request_bytes = (size_t)SERVER_DEFAULT_MAX_REQUEST;
+    s->repl_max_snapshot_bytes = (size_t)SERVER_DEFAULT_MAX_REQUEST;
     s->backend = backend;
     if (backend == SERVER_BACKEND_IOURING) {
         s->loop = pal_loop_create_iouring();
@@ -1407,6 +1483,18 @@ void server_set_maxmemory(server *s, uint64_t bytes, int policy)
         d->maxmemory = bytes;
         d->maxmemory_policy = policy;
     }
+}
+
+void server_set_proto_max_request_bytes(server *s, size_t bytes)
+{
+    if (bytes > 0)
+        s->proto_max_request_bytes = bytes;
+}
+
+void server_set_repl_max_snapshot_bytes(server *s, size_t bytes)
+{
+    if (bytes > 0)
+        s->repl_max_snapshot_bytes = bytes;
 }
 
 void server_set_snapshot_path(server *s, const char *path)
@@ -2472,6 +2560,8 @@ static int conn_process_input(server *s, conn *c)
         memmove(c->rbuf, c->rbuf + off, c->rlen - off);
         c->rlen -= off;
     }
+    if (c->rlen >= s->proto_max_request_bytes)
+        return -1;
     return 0;
 }
 
@@ -2693,7 +2783,7 @@ static int server_run_once_proactor(server *s, int timeout_ms)
                 /* replica master link: feed the link state machine and
                  * re-post the recv (never goes through conn_process_input) */
                 if (ev->bytes <= 0) {
-                    repl_link_close(s); /* retry timer reconnects */
+                    repl_link_close_transport(s, c); /* retry timer reconnects */
                     continue;
                 }
                 c->rlen += (size_t)ev->bytes;
@@ -2701,9 +2791,10 @@ static int server_run_once_proactor(server *s, int timeout_ms)
                 repl_link_feed(s, c);
                 if (s->master_link != c)
                     continue; /* the feed closed the link */
-                if (c->rcap - c->rlen < SERVER_RECV_CHUNK) {
+                if (c->rcap - c->rlen < SERVER_RECV_CHUNK &&
+                    c->rcap < c->srv->proto_max_request_bytes) {
                     if (conn_rbuf_grow(c) != 0) {
-                        repl_link_close(s);
+                        repl_link_close_transport(s, c);
                         continue;
                     }
                 }
@@ -2712,7 +2803,7 @@ static int server_run_once_proactor(server *s, int timeout_ms)
                 if (pro_recv(s, c->fd, c->rbuf + c->rlen,
                              c->rcap - c->rlen, c) < 0) {
                     c->pending_ops--;
-                    repl_link_close(s);
+                    repl_link_close_transport(s, c);
                 }
                 continue;
             }
@@ -2743,21 +2834,48 @@ static int server_run_once_proactor(server *s, int timeout_ms)
                     continue;
                 }
                 {
-                    int grow_ok = 1;
-                    while (c->rcap - c->rlen < (size_t)ev->bytes) {
-                        if (conn_rbuf_grow(c) != 0) {
-                            pal_iouring_recycle(s->iou, ev->buf_id);
-                            conn_close(s, idx); /* may free c: stop here */
-                            grow_ok = 0;
+                    size_t copied = 0;
+                    int process_error = 0;
+                    while (copied < (size_t)ev->bytes) {
+                        size_t avail = c->rcap - c->rlen;
+                        size_t take;
+                        int pr;
+                        if (avail == 0) {
+                            pr = conn_process_input(s, c);
+                            if (pr != 0) {
+                                process_error = 1;
+                                break;
+                            }
+                            avail = c->rcap - c->rlen;
+                            if (avail == 0) {
+                                if (c->rcap >= c->srv->proto_max_request_bytes ||
+                                    conn_rbuf_grow(c) != 0) {
+                                    process_error = 1;
+                                    break;
+                                }
+                                avail = c->rcap - c->rlen;
+                            }
+                        }
+                        take = (size_t)ev->bytes - copied;
+                        if (take > avail)
+                            take = avail;
+                        memcpy(c->rbuf + c->rlen, chunk + copied, take);
+                        c->rlen += take;
+                        copied += take;
+                        pr = conn_process_input(s, c);
+                        if (pr != 0) {
+                            process_error = 1;
                             break;
                         }
                     }
-                    if (!grow_ok)
+                    pal_iouring_recycle(s->iou, ev->buf_id);
+                    if (process_error) {
+                        resp_write_error(&c->out, "ERR Protocol error", 18);
+                        c->close_after_send = 1;
+                        kick_flush(s, c);
                         continue;
+                    }
                 }
-                memcpy(c->rbuf + c->rlen, chunk, (size_t)ev->bytes);
-                pal_iouring_recycle(s->iou, ev->buf_id);
-                c->rlen += (size_t)ev->bytes;
                 s->io.bytes_read += (uint64_t)ev->bytes;
                 if (conn_process_input(s, c) != 0) {
                     resp_write_error(&c->out, "ERR Protocol error", 18);
@@ -2785,7 +2903,8 @@ static int server_run_once_proactor(server *s, int timeout_ms)
             }
             kick_flush(s, c);
             /* re-post the next recv (grow the buffer when nearly full) */
-            if (c->rcap - c->rlen < SERVER_RECV_CHUNK) {
+            if (c->rcap - c->rlen < SERVER_RECV_CHUNK &&
+                c->rcap < c->srv->proto_max_request_bytes) {
                 if (conn_rbuf_grow(c) != 0) {
                     conn_close(s, idx);
                     continue;
@@ -3004,8 +3123,21 @@ int server_run_once(server *s, int timeout_ms)
             /* drain the socket (bounded) so pipelined input coalesces into
              * one dispatch+flush batch per readiness event */
             {
-                int reads, dead = 0;
+                int reads, dead = 0, protocol_error = 0;
                 for (reads = 0; reads < 4 && !dead; reads++) {
+                    if (c->rlen >= c->srv->proto_max_request_bytes) {
+                        int pr = conn_process_input(s, c);
+                        if (pr < 0) {
+                            protocol_error = 1;
+                            break;
+                        }
+                        if (pr == 2)
+                            break;
+                        if (c->rlen >= c->srv->proto_max_request_bytes) {
+                            dead = 1;
+                            break;
+                        }
+                    }
                     if (c->rcap - c->rlen < SERVER_RECV_CHUNK &&
                         conn_rbuf_grow(c) != 0) {
                         dead = 1;
@@ -3023,6 +3155,13 @@ int server_run_once(server *s, int timeout_ms)
                     c->rlen += (size_t)n;
                 }
                 if (dead) {
+                    conn_close(s, idx);
+                    continue;
+                }
+                if (protocol_error) {
+                    static const char proto_err[] =
+                        "-ERR Protocol error\r\n";
+                    (void)conn_write(c, proto_err, sizeof(proto_err) - 1);
                     conn_close(s, idx);
                     continue;
                 }

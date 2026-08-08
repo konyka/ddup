@@ -7,6 +7,9 @@
 - 架构层面对比（分片路由 vs 共享存储的定性分析）：
   见 [architecture.md](architecture.md)「架构对比：分片存储 + 消息路由
   （ddup mt）vs 共享存储（Garnet/Tsavorite）」一节。
+- 资源边界检查只发生在接收缓冲扩容和复制快照分配之前，不增加每字节或
+  每条命令的热路径开销；默认 `proto-max-request-bytes` 与
+  `repl-max-snapshot-bytes` 均为 1 GiB。
 
 ## 记录格式
 

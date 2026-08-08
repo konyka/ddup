@@ -29,6 +29,10 @@ static void test_defaults(void)
     DD_CHECK_STR("dump.ddr", cfg.dbfilename);
     DD_CHECK_EQ_INT(0, cfg.save_sec);
     DD_CHECK_EQ_INT(1, cfg.io_threads);
+    DD_CHECK_EQ_INT(1024LL * 1024LL * 1024LL,
+                    (long long)cfg.proto_max_request_bytes);
+    DD_CHECK_EQ_INT(1024LL * 1024LL * 1024LL,
+                    (long long)cfg.repl_max_snapshot_bytes);
 }
 
 static void test_requirepass(void)
@@ -166,6 +170,14 @@ static void test_inline_overrides(void)
     DD_CHECK_EQ_INT(6380, cfg.replicaof_port);
     DD_CHECK_EQ_INT(0, config_apply(&cfg, "repl-backlog-size", "2097152"));
     DD_CHECK_EQ_INT(2097152, (long long)cfg.repl_backlog_size);
+    DD_CHECK_EQ_INT(0, config_apply(&cfg, "proto-max-request-bytes", "128"));
+    DD_CHECK_EQ_INT(128, (long long)cfg.proto_max_request_bytes);
+    DD_CHECK_EQ_INT(0, config_apply(&cfg, "repl-max-snapshot-bytes", "256"));
+    DD_CHECK_EQ_INT(256, (long long)cfg.repl_max_snapshot_bytes);
+    DD_CHECK_EQ_INT(-1, config_apply(&cfg, "proto-max-request-bytes",
+                                     "18446744073709551616"));
+    DD_CHECK_EQ_INT(-1, config_apply(&cfg, "repl-max-snapshot-bytes",
+                                     "18446744073709551616"));
     DD_CHECK_EQ_INT(-1, config_apply(&cfg, "replicaof", "nohost"));
     DD_CHECK_EQ_INT(-1, config_apply(&cfg, "replicaof", "host 99999"));
     DD_CHECK_EQ_INT(0, config_apply(&cfg, "tls-port", "6381"));
@@ -176,6 +188,20 @@ static void test_inline_overrides(void)
     DD_CHECK_STR("k.pem", cfg.tls_key_file);
     DD_CHECK_EQ_INT(-1, config_apply(&cfg, "nonsense", "1"));
     DD_CHECK_EQ_INT(-1, config_apply(&cfg, "port", "0"));
+}
+
+static void test_resource_limit_validation(void)
+{
+    ddup_config cfg;
+    char err[256];
+    config_init(&cfg);
+    cfg.proto_max_request_bytes = 0;
+    DD_CHECK_EQ_INT(-1, config_validate(&cfg, err, sizeof(err)));
+    DD_CHECK(strstr(err, "proto-max-request-bytes") != NULL);
+    config_init(&cfg);
+    cfg.repl_max_snapshot_bytes = 0;
+    DD_CHECK_EQ_INT(-1, config_validate(&cfg, err, sizeof(err)));
+    DD_CHECK(strstr(err, "repl-max-snapshot-bytes") != NULL);
 }
 
 static void test_validate_tls(void)
@@ -225,5 +251,6 @@ int main(void)
     DD_RUN(test_io_threads);
     DD_RUN(test_validate_tls);
     DD_RUN(test_repl_backlog_size);
+    DD_RUN(test_resource_limit_validation);
     return DD_TEST_SUMMARY();
 }

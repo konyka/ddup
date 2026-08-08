@@ -219,6 +219,117 @@ static void test_protocol_error_closes_conn(void)
     server_destroy(s);
 }
 
+static void test_request_limit_fragmentation(void)
+{
+    server *s = make_server();
+    pal_socket_t c;
+    char req[128];
+    char buf[64];
+    size_t sent = 0;
+    ptrdiff_t n;
+    int iter = 0;
+    DD_CHECK(s != NULL);
+    server_set_proto_max_request_bytes(s, sizeof(req));
+    c = connect_client(s);
+    memset(req, 'x', sizeof(req));
+    memcpy(req, "*1\r\n$120\r\n", 10);
+    while (sent < sizeof(req)) {
+        size_t part = sizeof(req) - sent;
+        if (part > 17)
+            part = 17;
+        n = pal_send(c, req + sent, part);
+        if (n > 0)
+            sent += (size_t)n;
+        else if (n == 0)
+            break;
+        server_run_once(s, 10);
+    }
+    n = -1;
+    while (iter++ < 10000) {
+        server_run_once(s, 5);
+        n = pal_recv(c, buf, sizeof(buf));
+        if (n == 0)
+            break;
+    }
+    DD_CHECK_EQ_INT(0, n);
+    pal_close(c);
+    server_destroy(s);
+}
+
+static void test_iouring_multishot_complete_at_limit(void)
+{
+    server *s;
+    pal_socket_t c;
+    const char *one = "*1\r\n$4\r\nPING\r\n";
+    char req[14 * 5];
+    char buf[128];
+    size_t sent = 0, got = 0;
+    int i, iter = 0;
+
+    if (g_backend != SERVER_BACKEND_IOURING_OP)
+        return;
+    s = make_server();
+    DD_CHECK(s != NULL);
+    if (s == NULL)
+        return;
+    server_set_proto_max_request_bytes(s, 28);
+    c = connect_client(s);
+    for (i = 0; i < 5; i++)
+        memcpy(req + i * 14, one, strlen(one));
+    while (sent < sizeof(req) && iter++ < 10000) {
+        ptrdiff_t n = pal_send(c, req + sent, sizeof(req) - sent);
+        if (n > 0)
+            sent += (size_t)n;
+        server_run_once(s, 5);
+    }
+    DD_CHECK_EQ_INT((long long)sizeof(req), (long long)sent);
+    iter = 0;
+    while (got < 35 && iter++ < 10000) {
+        ptrdiff_t n;
+        server_run_once(s, 5);
+        n = pal_recv(c, buf + got, sizeof(buf) - got);
+        if (n > 0)
+            got += (size_t)n;
+    }
+    DD_CHECK_EQ_INT(35, (long long)got);
+    for (i = 0; i < 5; i++)
+        DD_CHECK_MEM("+PONG\r\n", 7, buf + i * 7, 7);
+    pal_close(c);
+    server_destroy(s);
+}
+
+static void test_readiness_complete_at_limit(void)
+{
+    server *s;
+    pal_socket_t c;
+    const char req[] = "*1\r\n$4\r\nPING\r\n*1\r\n$4\r\nPING\r\n";
+    char buf[32];
+    size_t got = 0;
+    int iter = 0;
+
+    if (g_backend != SERVER_BACKEND_SELECT)
+        return;
+    s = make_server();
+    DD_CHECK(s != NULL);
+    if (s == NULL)
+        return;
+    server_set_proto_max_request_bytes(s, sizeof(req) - 1);
+    c = connect_client(s);
+    DD_CHECK_EQ_INT((long long)(sizeof(req) - 1),
+                    (long long)pal_send(c, req, sizeof(req) - 1));
+    while (got < 14 && iter++ < 10000) {
+        ptrdiff_t n;
+        server_run_once(s, 5);
+        n = pal_recv(c, buf + got, sizeof(buf) - got);
+        if (n > 0)
+            got += (size_t)n;
+    }
+    DD_CHECK_EQ_INT(14, (long long)got);
+    DD_CHECK_MEM("+PONG\r\n+PONG\r\n", 14, buf, got);
+    pal_close(c);
+    server_destroy(s);
+}
+
 static void test_pubsub_over_socket(void)
 {
     server *s = make_server();
@@ -571,6 +682,9 @@ static void run_all_tests(void)
     DD_RUN(test_split_delivery);
     DD_RUN(test_many_connections);
     DD_RUN(test_protocol_error_closes_conn);
+    DD_RUN(test_request_limit_fragmentation);
+    DD_RUN(test_iouring_multishot_complete_at_limit);
+    DD_RUN(test_readiness_complete_at_limit);
     DD_RUN(test_pubsub_over_socket);
     DD_RUN(test_auth_over_socket);
     DD_RUN(test_shutdown_command);

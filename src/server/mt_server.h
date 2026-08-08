@@ -8,6 +8,7 @@
 #ifndef DDUP_MT_SERVER_H
 #define DDUP_MT_SERVER_H
 
+#include <stddef.h>
 #include <stdint.h>
 
 typedef struct mt_server mt_server;
@@ -57,6 +58,8 @@ void mt_server_set_requirepass(mt_server *ms, const char *pw);
 
 /* Apply the memory limit and eviction policy on every worker. */
 void mt_server_set_maxmemory(mt_server *ms, uint64_t bytes, int policy);
+void mt_server_set_proto_max_request_bytes(mt_server *ms, size_t bytes);
+void mt_server_set_repl_max_snapshot_bytes(mt_server *ms, size_t bytes);
 
 /* Stop all threads (joins them). Safe to call once before destroy. */
 void mt_server_stop(mt_server *ms);

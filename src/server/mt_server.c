@@ -2567,6 +2567,20 @@ void mt_server_set_maxmemory(mt_server *ms, uint64_t bytes, int policy)
         server_set_maxmemory(ms->workers[i].srv, bytes, policy);
 }
 
+void mt_server_set_proto_max_request_bytes(mt_server *ms, size_t bytes)
+{
+    int i;
+    for (i = 0; i < ms->nworkers; i++)
+        server_set_proto_max_request_bytes(ms->workers[i].srv, bytes);
+}
+
+void mt_server_set_repl_max_snapshot_bytes(mt_server *ms, size_t bytes)
+{
+    int i;
+    for (i = 0; i < ms->nworkers; i++)
+        server_set_repl_max_snapshot_bytes(ms->workers[i].srv, bytes);
+}
+
 uint64_t mt_server_tasks_executed(const mt_server *ms)
 {
     uint64_t total = 0;

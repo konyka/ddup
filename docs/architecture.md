@@ -34,6 +34,9 @@
 3. **零拷贝 RESP 解析**：解析结果直接引用接收缓冲，不落盘复制；
    批量（pipelining）命令在一次 recv 缓冲内连续解析。
 4. **内存管理**：热路径禁止逐次 malloc；arena + 对象池复用。
+   外部 RESP 请求接收缓冲默认上限为 1 GiB（`proto-max-request-bytes`），
+   复制快照接收默认上限同为 1 GiB（`repl-max-snapshot-bytes`）；两者在
+   缓冲扩容或快照分配前检查，避免不受控的资源消耗。
 5. **主存哈希表**：Robin Hood 开放寻址 + 增量 rehash，缓存友好。
 6. **C 标准自适应**：构建期探测 C23→C17→C11→C99，取最高可用标准；
    原子操作优先 C11 `<stdatomic.h>`，缺失时降级平台原生 API。

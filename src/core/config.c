@@ -21,6 +21,8 @@ void config_init(ddup_config *cfg)
     cfg->replicaof_host[0] = '\0';
     cfg->replicaof_port = 0;
     cfg->repl_backlog_size = 1024 * 1024;
+    cfg->proto_max_request_bytes = 1024ULL * 1024ULL * 1024ULL;
+    cfg->repl_max_snapshot_bytes = 1024ULL * 1024ULL * 1024ULL;
     cfg->tls_port = 0;
     cfg->tls_cert_file[0] = '\0';
     cfg->tls_key_file[0] = '\0';
@@ -161,6 +163,10 @@ int config_apply(ddup_config *cfg, const char *key, const char *value)
         cfg->repl_backlog_size = bytes;
         return 0;
     }
+    if (key_eq(key, "proto-max-request-bytes"))
+        return parse_u64(value, &cfg->proto_max_request_bytes);
+    if (key_eq(key, "repl-max-snapshot-bytes"))
+        return parse_u64(value, &cfg->repl_max_snapshot_bytes);
     if (key_eq(key, "tls-port"))
         return parse_port(value, &cfg->tls_port);
     if (key_eq(key, "tls-cert-file"))
@@ -217,6 +223,20 @@ int config_validate(const ddup_config *cfg, char *err, size_t errcap)
         (uint64_t)(size_t)cfg->repl_backlog_size != cfg->repl_backlog_size) {
         snprintf(err, errcap,
                  "repl-backlog-size must be between 1 and SIZE_MAX bytes");
+        return -1;
+    }
+    if (cfg->proto_max_request_bytes == 0 ||
+        (uint64_t)(size_t)cfg->proto_max_request_bytes !=
+            cfg->proto_max_request_bytes) {
+        snprintf(err, errcap,
+                 "proto-max-request-bytes must be between 1 and SIZE_MAX bytes");
+        return -1;
+    }
+    if (cfg->repl_max_snapshot_bytes == 0 ||
+        (uint64_t)(size_t)cfg->repl_max_snapshot_bytes !=
+            cfg->repl_max_snapshot_bytes) {
+        snprintf(err, errcap,
+                 "repl-max-snapshot-bytes must be between 1 and SIZE_MAX bytes");
         return -1;
     }
     if (cfg->io_threads > 1 &&

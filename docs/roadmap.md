@@ -31,7 +31,8 @@
 - [x] **Phase 6 — 持久化与配置**
   AOF（RESP 命令流追加，启动重放，容忍截断尾部）、RDB 风格二进制快照
   （原子写、全有或全无加载、过期 key 跳过）、SAVE/LASTSAVE/SHUTDOWN、
-  redis 风格配置文件 + 命令行覆盖、save 间隔自动快照、信号/命令优雅退出
+  redis 风格配置文件 + 命令行覆盖、save 间隔自动快照、信号/命令优雅退出；
+  配置化请求接收缓冲与复制快照大小上限
 - [x] **Phase 8 — C 标准自适应与 Garnet 化底座**
   细粒度 C 标准能力探测（atomics/threads/typeof/constexpr/stdckdint 等）、
   `src/pal/pal_cstd.h` 统一封装与 C99 降级路径、`test_cstd` 覆盖、

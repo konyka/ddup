@@ -61,6 +61,8 @@ void server_set_requirepass(server *s, const char *pw);
 
 /* Apply the memory limit and eviction policy to every logical db. */
 void server_set_maxmemory(server *s, uint64_t bytes, int policy);
+void server_set_proto_max_request_bytes(server *s, size_t bytes);
+void server_set_repl_max_snapshot_bytes(server *s, size_t bytes);
 
 /* Point SAVE at path (not owned) and, if the file exists, load it into the
  * db. load returns 0 on success, -1 on corrupt/missing file. */

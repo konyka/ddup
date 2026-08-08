@@ -118,6 +118,8 @@ static void test_psync_continue_partial(void);
 static void test_psync_stale_offset_fullresync(void);
 static void test_chained_replication(void);
 static void test_replica_large_snapshot(void);
+static void test_invalid_snapshot_preserves_db(void);
+static void test_rejected_fullresync_does_not_cache_psync(void);
 static void test_replica_full_cycle(void);
 static void test_replica_full_cycle_iocp(void);
 static void test_replica_reconnect_resync(void);
@@ -135,6 +137,8 @@ int main(void)
     DD_RUN(test_psync_stale_offset_fullresync);
     DD_RUN(test_chained_replication);
     DD_RUN(test_replica_large_snapshot);
+    DD_RUN(test_invalid_snapshot_preserves_db);
+    DD_RUN(test_rejected_fullresync_does_not_cache_psync);
     DD_RUN(test_replica_full_cycle);
     DD_RUN(test_replica_full_cycle_iocp);
     DD_RUN(test_replica_reconnect_resync);
@@ -812,6 +816,169 @@ static void test_replica_large_snapshot(void)
     pal_close(mc);
     server_destroy(r);
     server_destroy(m);
+    pal_socket_cleanup();
+}
+
+static void test_invalid_snapshot_preserves_db(void)
+{
+    db d;
+    session *s;
+    resp_buf out;
+    const char invalid[] = "DDUP0002\x01";
+
+    db_init(&d);
+    s = session_create(&d);
+    resp_buf_init(&out);
+    DD_CHECK(s != NULL);
+    if (s == NULL)
+        return;
+    sess_cmd(s, &out, 3, "SET", "survivor", "yes");
+
+    /* Invalid and zero-length frames must not flush data.  The wire-side
+     * replica path uses this same all-or-nothing loader before LINK_STREAMING. */
+    DD_CHECK_EQ_INT(-1, snapshot_load_mem_multi(&d, repl_snap_get, 1,
+                                                invalid, sizeof(invalid) - 1,
+                                                1000000));
+    DD_CHECK_EQ_INT(-1, snapshot_load_mem_multi(&d, repl_snap_get, 1,
+                                                "", 0, 1000000));
+    sess_cmd(s, &out, 2, "GET", "survivor");
+    EXPECT(out, "$3\r\nyes\r\n");
+
+    session_free(s);
+    resp_buf_free(&out);
+    db_destroy(&d);
+}
+
+static void test_rejected_fullresync_does_not_cache_psync(void)
+{
+    server *r;
+    pal_socket_t listener, client, master_link = PAL_SOCKET_INVALID;
+    uint16_t port;
+    char req[512];
+    char buf[256];
+    size_t got;
+    int i;
+
+    DD_CHECK_EQ_INT(0, pal_socket_init());
+    listener = pal_tcp_listen("127.0.0.1", 0, 4, &port);
+    DD_CHECK(listener != PAL_SOCKET_INVALID);
+    if (listener == PAL_SOCKET_INVALID)
+        return;
+    DD_CHECK_EQ_INT(0, pal_set_nonblocking(listener, 1));
+    r = server_create("127.0.0.1", 0);
+    DD_CHECK(r != NULL);
+    client = nb_client(server_port(r));
+
+    /* Preserve a replica-local value across the rejected full resync. */
+    rt2(r, r, client, "*3\r\n$3\r\nSET\r\n$9\r\npreserved\r\n$2\r\nok\r\n",
+        "+OK\r\n", buf, sizeof(buf));
+    {
+        char cmd[128];
+        char port_text[16];
+        snprintf(port_text, sizeof(port_text), "%u", (unsigned)port);
+        int n = snprintf(cmd, sizeof(cmd),
+                         "*3\r\n$9\r\nREPLICAOF\r\n$9\r\n127.0.0.1\r\n$%u\r\n%u\r\n",
+                         (unsigned)strlen(port_text), (unsigned)port);
+        DD_CHECK(n > 0);
+        rt2(r, r, client, cmd, "+OK\r\n", buf, sizeof(buf));
+    }
+
+    /* Observe the initial PSYNC, then send metadata with a zero snapshot. */
+    for (i = 0; i < 10000 && master_link == PAL_SOCKET_INVALID; i++) {
+        server_run_once(r, 1);
+        master_link = pal_accept(listener);
+    }
+    DD_CHECK(master_link != PAL_SOCKET_INVALID);
+    if (master_link == PAL_SOCKET_INVALID)
+        goto cleanup;
+    DD_CHECK_EQ_INT(0, pal_set_nonblocking(master_link, 1));
+    got = 0;
+    for (i = 0; i < 10000 && got == 0; i++) {
+        ptrdiff_t n = pal_recv(master_link, req, sizeof(req));
+        if (n > 0)
+            got = (size_t)n;
+        server_run_once(r, 1);
+    }
+    DD_CHECK(got > 0 && strstr(req, "$1\r\n?\r\n$2\r\n-1\r\n") != NULL);
+    {
+        char frame[128];
+        const char payload[] = "DDUP0002\x01\x00";
+        int hdr = snprintf(frame, sizeof(frame),
+                           "+FULLRESYNC abcdef0123456789abcdef0123456789abcdef01 42\r\n$10\r\n");
+        DD_CHECK(hdr > 0);
+        memcpy(frame + hdr, payload, sizeof(payload) - 1);
+        DD_CHECK_EQ_INT((long long)hdr + (long long)(sizeof(payload) - 1),
+                        (long long)pal_send(master_link, frame,
+                                            (size_t)hdr + sizeof(payload) - 1));
+    }
+    for (i = 0; i < 10000; i++)
+        server_run_once(r, 1);
+    {
+        const char command[] =
+            "*3\r\n$3\r\nSET\r\n$9\r\npreserved\r\n$2\r\nok\r\n";
+        DD_CHECK_EQ_INT((long long)strlen(command),
+                        (long long)pal_send(master_link, command,
+                                            strlen(command)));
+        for (i = 0; i < 1000; i++)
+            server_run_once(r, 1);
+    }
+    pal_close(master_link);
+    master_link = PAL_SOCKET_INVALID;
+
+    /* A transport reconnect must still use the metadata from the valid sync. */
+    master_link = PAL_SOCKET_INVALID;
+    got = 0;
+    for (i = 0; i < 20000 && master_link == PAL_SOCKET_INVALID; i++) {
+        server_run_once(r, 1);
+        master_link = pal_accept(listener);
+    }
+    DD_CHECK(master_link != PAL_SOCKET_INVALID);
+    if (master_link != PAL_SOCKET_INVALID) {
+        DD_CHECK_EQ_INT(0, pal_set_nonblocking(master_link, 1));
+        for (i = 0; i < 10000 && got == 0; i++) {
+            ptrdiff_t n = pal_recv(master_link, req, sizeof(req));
+            if (n > 0)
+                got = (size_t)n;
+            server_run_once(r, 1);
+        }
+        DD_CHECK(got > 0 && strstr(req, "$40\r\nabcdef0123456789abcdef0123456789abcdef01\r\n") != NULL);
+        {
+            const char invalid[] =
+                "+FULLRESYNC 0123456789abcdef0123456789abcdef0123 99\r\n$10\r\nX";
+            DD_CHECK_EQ_INT((long long)strlen(invalid),
+                            (long long)pal_send(master_link, invalid,
+                                                strlen(invalid)));
+        }
+        pal_close(master_link);
+        master_link = PAL_SOCKET_INVALID;
+    }
+
+    /* The rejected FULLRESYNC must clear the old cache before reconnect. */
+    got = 0;
+    for (i = 0; i < 20000 && master_link == PAL_SOCKET_INVALID; i++) {
+        server_run_once(r, 1);
+        master_link = pal_accept(listener);
+    }
+    DD_CHECK(master_link != PAL_SOCKET_INVALID);
+    if (master_link != PAL_SOCKET_INVALID) {
+        DD_CHECK_EQ_INT(0, pal_set_nonblocking(master_link, 1));
+        for (i = 0; i < 10000 && got == 0; i++) {
+            ptrdiff_t n = pal_recv(master_link, req, sizeof(req));
+            if (n > 0)
+                got = (size_t)n;
+            server_run_once(r, 1);
+        }
+        DD_CHECK(got > 0 && strstr(req, "$1\r\n?\r\n$2\r\n-1\r\n") != NULL);
+    }
+    rt2(r, r, client, "*2\r\n$3\r\nGET\r\n$9\r\npreserved\r\n",
+        "$2\r\nok\r\n", buf, sizeof(buf));
+
+cleanup:
+    if (master_link != PAL_SOCKET_INVALID)
+        pal_close(master_link);
+    pal_close(client);
+    pal_close(listener);
+    server_destroy(r);
     pal_socket_cleanup();
 }
 
