@@ -22,13 +22,15 @@
 
 1. **Thread-per-core 无共享**：每个 IO 线程独立运行事件循环，连接上的解析、
    命令执行、存储访问全部在 IO 线程就地完成，避免线程切换与数据搬运。
-2. **平台最优 IO 模型（readiness 模式已落地）**：
-   - Linux：epoll（level-triggered）；io_uring（内核 ≥ 5.10）列为后续优化
+2. **平台最优 IO 模型**：
+   - Linux：epoll（level-triggered）；io_uring 双模式——readiness
+     （Phase 14）与 op 模式 proactor（Phase 32b）
    - macOS / FreeBSD：kqueue
-   - Windows：select()（FD_SETSIZE 提升至 1024）；IOCP proactor 层
-     （pal_iocp，completion 模型）已就位，服务器接入列为下一阶段
+   - Windows：select()（FD_SETSIZE 提升至 1024）；IOCP proactor
+     （pal_iocp，completion 模型，Phase 7.5）
    - 统一抽象为 `pal_event`：`pal_loop_add/mod/del/wait`，事件携带
-     fd + userdata + readable/writable。
+     fd + userdata + readable/writable；proactor 后端（IOCP /
+     io_uring op）共享 server.c 的 completion 路径。
 3. **零拷贝 RESP 解析**：解析结果直接引用接收缓冲，不落盘复制；
    批量（pipelining）命令在一次 recv 缓冲内连续解析。
 4. **内存管理**：热路径禁止逐次 malloc；arena + 对象池复用。
@@ -213,6 +215,42 @@
   错误。del = deactivate + POLL_REMOVE + dead 链（loop_free 统一释放）；
   mod = remove + add。TIMEOUT sqe 的 `__kernel_timespec` 在 enter 同步
   提交期内有效（栈上安全）。
+
+## io_uring op 模式后端（Phase 32b，Linux）
+
+Phase 14 的 io_uring 是 epoll 替代品（readiness）；op 模式是真正的
+proactor——提交 IORING_OP_RECV/SEND/ACCEPT 操作本身，完成携带结果。
+
+- **API 与共享路径**：`pal_iouring_op.{h,c}` 镜像 `pal_iocp.h`（op
+  kind 数值一致，server.c 静态断言保证）；server.c 的 proactor 路径
+  （accept → 建 conn + post recv；RECV 完成 → parse→execute →
+  kick_flush → 补投 recv；SEND 完成 → 推进 out_sent 续发）经 pro_*
+  分发被 IOCP 与 io_uring op 两种后端共享，事件归一化为同一形状。
+  `--io iouring-op` / `SERVER_BACKEND_IOURING_OP`，仅 st；mt workers
+  保持 readiness（记录在案，不接）。TLS/集群总线维持 readiness 限定。
+  内核不支持 io_uring 时回落 epoll/select；非 Linux 为空 stub。
+- **完成关联**：cqe 只有 user_data——op kind 编进低 3 位（指针至少
+  8 对齐），解tag 得 op + conn/listen cookie。超时经 IORING_OP_TIMEOUT
+  （count=1 提前退役，user_data=0 的完成跳过）。
+- **multishot accept**：优先 IORING_ACCEPT_MULTISHOT（5.19+）——单个
+  accept 请求持续产出 ACCEPT 完成（F_MORE），补投调用在其存活期间为
+  no-op；首个 -EINVAL 完成自愈降级为单发补投（同 IOCP 的完成即补挂
+  模型）。接受的 fd 带 SOCK_NONBLOCK。
+- **SQE 批处理**：recv/send/accept 只入队不提交，wait 时一次
+  io_uring_enter（submit all + 按需 GETEVENTS）刷出；跨线程唤醒
+  （IORING_OP_NOP）立即提交。互斥锁不跨阻塞 enter 持有，否则唤醒
+  投递永远无法把 NOP 送进环（死锁）。
+- **关停语义**：`pal_iouring_close` = shutdown + close——在飞 recv
+  立即以 0（对端 orderly）完成，send 以 -EPIPE 完成，io_uring 请求
+  持有文件引用故 close 本身安全；完成按 user_data 回到 zombie 排水
+  路径（与 IOCP 同一契约）。server_destroy 先释放 proactor（关环 =
+  内核同步取消全部在飞请求）再释放 conn，保证没有内核写落入已释放
+  的 rbuf/sbuf。SEND 带 MSG_NOSIGNAL。
+- **测试**：test_server 探测到 io_uring 时追加 op 模式整轮（另有
+  DDUP_TEST_IOURING_OP_ONLY 单跑开关）；Ubuntu CI（内核 6.x）覆盖。
+- **未做（记录在案）**：multishot recv + provided buffers、fixed
+  buffers、SQPOLL——先从简单补投模型拿基准数字再决定（Phase 32a 的
+  IOCP 经验：loopback 上批次完整性比"提前武装"更重要）。
 
 ## mt 生产化（Phase 15）
 

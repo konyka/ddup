@@ -162,6 +162,11 @@
     后处理（roff 偏移窗口模型实现正确但 loopback A/B 一致性 -4~-14%，
     负结果回退并记录）；send 零拷贝评估为不可行（resp_buf realloc
     悬垂），flush 纪律验证已满足（Phase 32a）
+  - [x] io_uring op 模式 proactor 后端：IORING_OP_RECV/SEND/ACCEPT 真
+    提交模型，镜像 IOCP 设计（共享 server.c proactor 路径）；
+    multishot accept 自愈降级、SQE 批提交、zombie 排水；`--io
+    iouring-op`（仅 st，默认关闭）；CI c500 P64 与 epoll 持平或略胜
+    （Phase 32b）
   - [ ] 范围化排除（记录在案，不实施）：
     - 分层存储（热/冷数据落盘）：超出"内存缓存存储"定位
     - mt 模式的复制/集群适配：见 Phase 15 说明

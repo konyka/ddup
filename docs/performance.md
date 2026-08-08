@@ -617,3 +617,40 @@ kick_flush 续发；无 send 在飞时任何产出路径都直接 kick_flush。
 
 **测试设施**：test_server 新增 `DDUP_TEST_IOCP_ONLY=1` 环境开关，
 只跑 IOCP 轮（调试 IOCP 路径时免去 select 轮的等待）。
+
+## Phase 32b io_uring op 模式后端（2026-08-08）
+
+把 io_uring 从"epoll 替代品"（Phase 14 的 oneshot POLL_ADD readiness）
+升级为真正的 proactor：提交 IORING_OP_RECV/SEND/ACCEPT 操作本身。
+API 与 server 路径镜像 IOCP（pal_iouring_op.h 对 pal_iocp.h，op kind
+数值一致；server.c proactor 路径两后端共享）：单在飞 recv/send、
+kick_flush、sbuf 稳定发送缓冲、zombie 排水，全部复用 Phase 7.5-32a
+验证过的模型。multishot accept（5.19+，-EINVAL 自愈降级单发补投）、
+SQE 批量提交（每 loop 迭代一次 enter）、跨线程唤醒 NOP（锁不跨阻塞
+enter）。仅 st；mt/TLS/集群总线维持原有限定。
+
+**数字（CI ubuntu runner，4 核共享，redis-benchmark 同客户端，median
+of 3，bench.yml 六变体矩阵，commit 863392e）**：
+
+| 场景 | st select | st uring(readiness) | st uring-op |
+| --- | --- | --- | --- |
+| c50 P16 d16 | 1092k/1298k | 1142k/1098k | 1136k/0 * |
+| c500 P16 d16 | 980k/1212k | 1273k/1342k | 1257k/1333k |
+| c500 P64 d16 | 1960k/2247k | 1960k/2061k | **2061k/2272k** |
+| c50 P16 d1024 | 1111k/1298k | 1156k/1226k | 1123k/1092k |
+
+*首跑该单元格 GET 三次采样两次为空（median 0），同 cell SET 正常、
+其余三个 cell GET 均正常——疑似 runner 抖动，待复跑确认；若复现则
+按 wedge 取证流程排查。除该异常格外：c500 高并发下 op 模式与
+epoll 持平或略胜（c500 P64 为全部 ddup st 变体最高），c50 低并发
+互有胜负在噪声内。结论：保留，默认仍关闭（`--io iouring-op` 开启；
+默认后端选择逻辑不变）。
+
+**过程中修的 bug**：`config_apply` 的 io 白名单不认识 iouring-op，
+`--io iouring-op` 直接 invalid option 退出——bench 变体首跑全 n/a
+暴露（服务器日志即根因）。修复 + test_config 白名单测试（863392e）。
+
+**设计备注**：multishot recv + provided buffers / fixed buffers /
+SQPOLL 未做——Phase 32a（IOCP）证明 loopback 上批次完整性比提前武装
+更重要，先以简单补投模型取数；若后续复跑显示 op 模式持续无胜，
+负结果如实记录、后端保持默认关闭。
