@@ -3,20 +3,42 @@
 
 #include <string.h>
 
-uint16_t crc16(const char *buf, size_t len)
+/* Table-driven CRC16-XMODEM (Phase 37): the bit-by-bit loop cost
+ * 8 branchy iterations per key byte and topped the mt routing profile
+ * (every routed command pays one hash_slot). One table lookup per byte
+ * now. The table is initialized lazily; concurrent initializations
+ * write identical contents (same pattern as cmd_hash_init). */
+static uint16_t crc16_tab[256];
+static int crc16_tab_inited = 0;
+
+static void crc16_tab_init(void)
 {
-    uint16_t crc = 0;
-    size_t i;
+    unsigned i;
     int b;
-    for (i = 0; i < len; i++) {
-        crc ^= (uint16_t)((uint8_t)buf[i]) << 8;
+    if (crc16_tab_inited)
+        return;
+    for (i = 0; i < 256; i++) {
+        uint16_t crc = (uint16_t)(i << 8);
         for (b = 0; b < 8; b++) {
             if (crc & 0x8000)
                 crc = (uint16_t)((crc << 1) ^ 0x1021);
             else
                 crc = (uint16_t)(crc << 1);
         }
+        crc16_tab[i] = crc;
     }
+    crc16_tab_inited = 1;
+}
+
+uint16_t crc16(const char *buf, size_t len)
+{
+    uint16_t crc = 0;
+    size_t i;
+    if (!crc16_tab_inited)
+        crc16_tab_init();
+    for (i = 0; i < len; i++)
+        crc = (uint16_t)((crc << 8) ^
+                         crc16_tab[((crc >> 8) ^ (uint8_t)buf[i]) & 0xFF]);
     return crc;
 }
 
