@@ -816,3 +816,45 @@ aof_log 传播、LRU 驱逐尾）。cmd_calls 仍计数（usec 计时不计—�
 socket 终检（compare.sh full，单轮噪声窗口）：c500 P64 st 与 garnet
 打平（1265k/1449k vs 1265k/1470k），c50 P16 16B st 领先；无归因
 性回退。1KB 单元格 garnet 仍领先（绝对值随窗口漂移，差距结构未变）。
+
+## Phase 37 mt 路由成本结构性削减（2026-08-08）
+
+先取证：mt4 c500 P64 WPR 函数级剖析（prof.exe 含 PDB）。mt 特有成本
+排序：mt_exec_task（含目标侧**重解析**）> mt_classify > cmd_resolve >
+mt_push_task ≈ mt_drain_completions > mt_route > worker_on_wakeup >
+mt_batch_flush；命令被路由时经历 home 解析 + target 重解析**两次**。
+
+**逐项结论**：
+
+1. **execute-in-place（home==owner）——已存在**。mt_route 的 local
+   fast path（target==home->id 且无未决回复时直接 session_execute，
+   有未决时算好进 reorder 缓冲）本就是就地执行，Phase 36 的 lean
+   路径对它同样生效。本轮只是确认，无代码改动。
+2. **mt_classify 热点 = crc16 逐位循环**（保留，a38bb15）：每字节 8
+   次带分支迭代，每条被路由命令至少一次。改表驱动（每字节一次查表，
+   惰性初始化、同值写竞态模式同 cmd_hash_init）。mt4 A/B 3 轮中位：
+   **c500 P16 +5~8%（6/6 同号）**，c50 P16/c500 P64 噪声内。
+   test_hashslot 全绿（槽位值不变）。
+3. **回复直写（reply direct-write）——分析否决，未实施**。目标侧直接
+   写 home conn 的 out 有数据竞争（out 可能正在 append/realloc），安全
+   子集要求 home 借出期间推迟本地回复进 reorder——用 reorder 开销换
+   拷贝，得不偿失。缓冲区 take 变体（空 out 时整体接管 reply 缓冲）：
+   task 池回复容量随 take 流失，每 take 引入一对 malloc/free（~150ns）
+   对 16B~1KB 拷贝（30-50ns）——稳态更贵；把 task reply 挂到 home 池
+   则是跨线程池访问（池单线程无锁）。两条路都不通，记录在案。
+4. **批路由 v2（按目标分组）——推迟（记录在案）**。现合批只合并
+   连续同目标命令；按目标分组要求组内 seq 非连续，而 reorder 契约是
+   seq+span 连续区间——这是 Phase 30 失败的同一个结构性原因，要动
+   排序契约本身，风险/收益不划算。
+5. **完成合批（completion coalescing）——推迟（记录在案）**。估算省
+   每任务约 2 次原子操作（~1-3%），低于本机 socket 噪声地板且需引入
+   带部分成功语义的链式 push（与背压循环交织），不可测量的复杂性
+   不合并。
+6. **parsed-forward（免目标侧重解析）——实现后回退（未入历史）**。
+   home 把 argv 以 (off,len,type) 内联元数据随 raw 前递，target 重建
+   argv 跳过 resp_parse。A/B：c500 P64 GET 3/3 一致 -5~-8%——meta
+   的写入落在 home（瓶颈侧）而省下的解析在 target（非瓶颈侧），且
+   blob 结构 +88B 伤池缓存局部性。方向性负收益，git checkout 回退。
+
+**st 路径**：本轮未触碰（crc16 只在 mt 路由与集群槽位计算中使用；
+st 非集群不经过）。
