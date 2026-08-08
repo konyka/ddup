@@ -4937,6 +4937,71 @@ void session_execute_at(session *s, const resp_value *argv, size_t argc,
     if (name != NULL)
         cmd_id = cmd_resolve(name, nlen);
 
+    /* Lean GET/SET (Phase 36): a plain session (authed, not in MULTI, not
+     * subscribed, cluster off) running GET, or SET with no options, skips
+     * the second cmd_resolve, the READONLY/ownership wrappers and the
+     * dispatch if-chain. Semantics are identical to the command_dispatch
+     * blocks (same arg checks, same replies, same propagation/eviction
+     * tail); cmd_calls still counts, per-call usec timing is skipped --
+     * the two clock reads cost more than the stat is worth on this path. */
+    if (cmd_id == CMD_GET && s->authed && !s->in_multi && s->nsub == 0 &&
+        s->nssub == 0 && !s->d->cluster_enabled) {
+        const char *k;
+        size_t kl;
+        const char *v;
+        size_t vl;
+        if (argc != 2) {
+            wrong_args(out, "get");
+            return;
+        }
+        if (!arg_str(&argv[1], &k, &kl))
+            goto bad_type;
+        if (db_get(s->d, k, kl, &v, &vl, now_ms)) {
+            const char *sv;
+            size_t sl;
+            if (!as_string(out, v, vl, &sv, &sl))
+                return;
+            resp_write_bulk(out, sv, sl);
+        } else {
+            resp_write_bulk(out, NULL, 0);
+        }
+        s->d->cmd_calls[CMD_GET]++;
+        if (s->d->maxmemory_policy == DB_POLICY_ALLKEYS_LRU)
+            db_evict_if_needed(s->d);
+        return;
+    }
+    if (cmd_id == CMD_SET && argc == 3 && s->authed && !s->in_multi &&
+        s->nsub == 0 && s->nssub == 0 && !s->d->cluster_enabled &&
+        (s->role == NULL || *s->role != SESSION_ROLE_REPLICA ||
+         s->repl_link)) {
+        const char *k, *v;
+        size_t kl, vl;
+        if (!arg_str(&argv[1], &k, &kl) || !arg_str(&argv[2], &v, &vl))
+            goto bad_type;
+        {
+            const char *old;
+            size_t oldl;
+            int exists = db_get(s->d, k, kl, &old, &oldl, now_ms);
+            if (exists && obj_tag_of(old, oldl) != DDUP_OBJ_STRING) {
+                wrongtype(out);
+                return;
+            }
+        }
+        if (oom_blocked(s->d, out))
+            return;
+        db_set_string(s->d, k, kl, v, vl, now_ms);
+        resp_write_simple_string(out, "OK", 2);
+        s->d->cmd_calls[CMD_SET]++;
+        if (s->d->dirty != dirty_before && s->aof_log != NULL &&
+            !s->aof_skip)
+            s->aof_log(s->aof_ctx, s->db_index, argv, argc, s->raw_cmd,
+                       s->raw_cmd_len);
+        s->aof_skip = 0;
+        if (s->d->maxmemory_policy == DB_POLICY_ALLKEYS_LRU)
+            db_evict_if_needed(s->d);
+        return;
+    }
+
     /* AUTH gate: unauthenticated sessions may only run AUTH and QUIT */
     if (!s->authed && name != NULL && cmd_id != CMD_AUTH &&
         cmd_id != CMD_QUIT) {
