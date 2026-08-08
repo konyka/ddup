@@ -639,12 +639,14 @@ of 3，bench.yml 六变体矩阵，commit 863392e）**：
 | c500 P64 d16 | 1960k/2247k | 1960k/2061k | **2061k/2272k** |
 | c50 P16 d1024 | 1111k/1298k | 1156k/1226k | 1123k/1092k |
 
-*首跑该单元格 GET 三次采样两次为空（median 0），同 cell SET 正常、
-其余三个 cell GET 均正常——疑似 runner 抖动，待复跑确认；若复现则
-按 wedge 取证流程排查。除该异常格外：c500 高并发下 op 模式与
-epoll 持平或略胜（c500 P64 为全部 ddup st 变体最高），c50 低并发
-互有胜负在噪声内。结论：保留，默认仍关闭（`--io iouring-op` 开启；
-默认后端选择逻辑不变）。
+*首跑该单元格 GET median 0；复跑（2235a4d，整体更慢窗口）该格
+781k 正常，确认是 runner 抖动而非后端缺陷（复跑中 mt4 自己的
+c50 GET 也出了 0，同类 flake 各变体都会中）。复跑各格对比：
+uring-op 763k/781k、c500 P16 738k/769k、c500 P64 1156k/1197k、
+d1024 677k/673k——与 select/uring 同窗口互有胜负，全在噪声内。
+两轮合并结论：op 模式对 epoll 持平（c500 P64 曾领先 5-10%），
+满足保留标准；默认仍关闭（`--io iouring-op` 开启；默认后端选择
+逻辑不变）。
 
 **过程中修的 bug**：`config_apply` 的 io 白名单不认识 iouring-op，
 `--io iouring-op` 直接 invalid option 退出——bench 变体首跑全 n/a
