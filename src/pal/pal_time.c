@@ -48,6 +48,7 @@ void pal_sleep_ms(uint64_t ms)
 
 #else /* POSIX */
 
+#include <errno.h>
 #include <time.h>
 
 uint64_t pal_now_us(void)
@@ -72,9 +73,11 @@ uint64_t pal_wall_ms(void)
 void pal_sleep_ms(uint64_t ms)
 {
     struct timespec ts;
+    struct timespec remaining;
     ts.tv_sec = (time_t)(ms / 1000ULL);
     ts.tv_nsec = (long)((ms % 1000ULL) * 1000000ULL);
-    nanosleep(&ts, NULL);
+    while (nanosleep(&ts, &remaining) != 0 && errno == EINTR)
+        ts = remaining;
 }
 
 #endif

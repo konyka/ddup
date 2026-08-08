@@ -31,24 +31,39 @@ int pal_wakeup_create(pal_wakeup *w)
         w->kick_fd = PAL_SOCKET_INVALID;
         return -1;
     }
-    (void)pal_set_nonblocking(w->wait_fd, 1);
-    (void)pal_set_nonblocking(w->kick_fd, 1);
+    if (pal_set_nonblocking(w->wait_fd, 1) != 0 ||
+        pal_set_nonblocking(w->kick_fd, 1) != 0) {
+        pal_close(w->wait_fd);
+        pal_close(w->kick_fd);
+        w->wait_fd = PAL_SOCKET_INVALID;
+        w->kick_fd = PAL_SOCKET_INVALID;
+        return -1;
+    }
     return 0;
 }
 
 #else /* POSIX */
 
+#include <errno.h>
 #include <sys/socket.h>
 
 int pal_wakeup_create(pal_wakeup *w)
 {
     int fds[2];
+    w->wait_fd = PAL_SOCKET_INVALID;
+    w->kick_fd = PAL_SOCKET_INVALID;
     if (socketpair(AF_UNIX, SOCK_STREAM, 0, fds) != 0)
         return -1;
     w->wait_fd = fds[0];
     w->kick_fd = fds[1];
-    (void)pal_set_nonblocking(w->wait_fd, 1);
-    (void)pal_set_nonblocking(w->kick_fd, 1);
+    if (pal_set_nonblocking(w->wait_fd, 1) != 0 ||
+        pal_set_nonblocking(w->kick_fd, 1) != 0) {
+        pal_close(w->wait_fd);
+        pal_close(w->kick_fd);
+        w->wait_fd = PAL_SOCKET_INVALID;
+        w->kick_fd = PAL_SOCKET_INVALID;
+        return -1;
+    }
     return 0;
 }
 
@@ -57,7 +72,14 @@ int pal_wakeup_create(pal_wakeup *w)
 int pal_wakeup_kick(pal_wakeup *w)
 {
     static const char b = 1;
-    return pal_send(w->kick_fd, &b, 1) == 1 ? 0 : -1;
+    ptrdiff_t n;
+    do {
+        n = pal_send(w->kick_fd, &b, 1);
+    } while (n < 0 && pal_interrupted(pal_socket_error()));
+    if (n == 1)
+        return 0;
+    /* A full nonblocking queue already guarantees a pending wakeup. */
+    return n < 0 && pal_would_block(pal_socket_error()) ? 0 : -1;
 }
 
 int pal_wakeup_drain(pal_wakeup *w)
@@ -70,6 +92,8 @@ int pal_wakeup_drain(pal_wakeup *w)
             total += (int)n;
             continue;
         }
+        if (n < 0 && pal_interrupted(pal_socket_error()))
+            continue;
         break; /* would-block / close / error: nothing more to drain */
     }
     return total;

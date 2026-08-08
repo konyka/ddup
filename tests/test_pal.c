@@ -7,6 +7,11 @@
 #include "pal/pal_simd.h"
 #include "pal/pal_time.h"
 
+#if DDUP_OS_LINUX
+#include <signal.h>
+#include <sys/time.h>
+#endif
+
 static void test_exactly_one_os(void)
 {
     int count = DDUP_OS_WINDOWS + DDUP_OS_LINUX + DDUP_OS_MACOS +
@@ -53,6 +58,51 @@ static void test_wall_clock_sane(void)
         prev = now;
     }
 }
+
+#if DDUP_OS_LINUX
+static volatile sig_atomic_t alarm_seen;
+
+static void alarm_handler(int signo)
+{
+    if (signo == SIGALRM)
+        alarm_seen = 1;
+}
+
+static void test_sleep_completes_after_signal(void)
+{
+    struct sigaction sa;
+    struct sigaction old_sa;
+    struct itimerval timer;
+    struct itimerval old_timer;
+    uint64_t start;
+    uint64_t elapsed;
+
+    memset(&sa, 0, sizeof(sa));
+    sa.sa_handler = alarm_handler;
+    if (sigemptyset(&sa.sa_mask) != 0 ||
+        sigaction(SIGALRM, &sa, &old_sa) != 0) {
+        DD_CHECK(0);
+        return;
+    }
+    memset(&timer, 0, sizeof(timer));
+    timer.it_value.tv_usec = 10000;
+    alarm_seen = 0;
+    if (setitimer(ITIMER_REAL, &timer, &old_timer) != 0) {
+        DD_CHECK(0);
+        DD_CHECK_EQ_INT(0, sigaction(SIGALRM, &old_sa, NULL));
+        return;
+    }
+
+    start = pal_now_ms();
+    pal_sleep_ms(100);
+    elapsed = pal_now_ms() - start;
+    DD_CHECK(alarm_seen != 0);
+    DD_CHECK(elapsed >= 80);
+
+    DD_CHECK_EQ_INT(0, setitimer(ITIMER_REAL, &old_timer, NULL));
+    DD_CHECK_EQ_INT(0, sigaction(SIGALRM, &old_sa, NULL));
+}
+#endif
 
 static const char *find_crlf_ref(const char *p, const char *end)
 {
@@ -129,6 +179,9 @@ int main(void)
     DD_RUN(test_monotonic_non_decreasing);
     DD_RUN(test_us_at_least_ms_resolution);
     DD_RUN(test_wall_clock_sane);
+#if DDUP_OS_LINUX
+    DD_RUN(test_sleep_completes_after_signal);
+#endif
     DD_RUN(test_ddup_find_crlf_basic);
     DD_RUN(test_ddup_find_crlf_cr_not_lf);
     DD_RUN(test_ddup_find_crlf_edge);

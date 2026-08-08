@@ -84,6 +84,15 @@ int pal_would_block(int err)
 #endif
 }
 
+int pal_interrupted(int err)
+{
+#if DDUP_OS_WINDOWS
+    return err == WSAEINTR;
+#else
+    return err == EINTR;
+#endif
+}
+
 /* Non-blocking connect start: *out_fd receives a NON-blocking socket.
  * Returns 1 = connected already, 0 = in progress (complete via writable
  * readiness + pal_connect_finish), -1 = failure. */

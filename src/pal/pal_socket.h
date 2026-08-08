@@ -65,6 +65,8 @@ ptrdiff_t pal_send(pal_socket_t fd, const void *buf, size_t n);
 int pal_socket_error(void);
 /* Non-zero if err is a transient would-block error. */
 int pal_would_block(int err);
+/* Non-zero if err is an interrupted socket operation. */
+int pal_interrupted(int err);
 
 /* Peer IPv4/IPv6 address of a connected socket as text (getpeername).
  * Returns 0 on success, -1 on failure. */
