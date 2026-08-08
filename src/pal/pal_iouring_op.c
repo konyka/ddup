@@ -31,6 +31,44 @@
 #ifndef IORING_CQE_F_MORE
 #define IORING_CQE_F_MORE (1U << 1)
 #endif
+#ifndef IORING_RECV_MULTISHOT
+#define IORING_RECV_MULTISHOT (1U << 1)
+#endif
+#ifndef IORING_CQE_F_BUFFER
+#define IORING_CQE_F_BUFFER (1U << 0)
+#endif
+#ifndef IORING_CQE_BUFFER_SHIFT
+#define IORING_CQE_BUFFER_SHIFT 16
+#endif
+#ifndef IORING_REGISTER_PBUF_RING
+#define IORING_REGISTER_PBUF_RING 22
+#define IORING_UNREGISTER_PBUF_RING 23
+/* headers predate 5.19: provide the UAPI structs too */
+struct io_uring_buf {
+    unsigned long long addr;
+    unsigned int len;
+    unsigned short bid;
+    unsigned short resv;
+};
+struct io_uring_buf_ring {
+    union {
+        struct {
+            unsigned long long resv1;
+            unsigned int resv2;
+            unsigned short resv3;
+            unsigned short tail;
+        };
+        struct io_uring_buf bufs[0];
+    };
+};
+struct io_uring_buf_reg {
+    unsigned long long ring_addr;
+    unsigned int ring_entries;
+    unsigned short bgid;
+    unsigned short flags;
+    unsigned long long resv[3];
+};
+#endif
 
 #define PAL_IOU_SQ_ENTRIES 1024 /* CQ is 2x; overflow is kernel-buffered */
 
@@ -53,6 +91,12 @@ struct pal_iouring {
     int accept_multishot; /* cleared on the first -EINVAL from accept */
     int accept_armed;     /* an accept is live (multi- or single-shot) */
     pal_mutex lock;       /* SQ is single-producer: serialize submitters */
+    /* provided-buffer ring (Phase 33 multishot recv); inactive when NULL */
+    struct io_uring_buf_ring *pbuf_ring;
+    char *pbuf_data;      /* count slabs of pbuf_size bytes */
+    unsigned pbuf_count;  /* power of two */
+    unsigned pbuf_mask;
+    size_t pbuf_size;
 };
 
 static int iou_sys_setup(unsigned entries, struct io_uring_params *p)
@@ -131,6 +175,8 @@ void pal_iouring_free(pal_iouring *r)
     close(r->ring_fd);
     munmap(r->sqes, r->sq_entries * sizeof(struct io_uring_sqe));
     munmap(r->ring, r->ring_sz);
+    free(r->pbuf_ring);
+    free(r->pbuf_data);
     pal_mutex_destroy(&r->lock);
     free(r);
 }
@@ -240,6 +286,100 @@ int pal_iouring_send(pal_iouring *r, pal_socket_t fd, const void *buf,
     return 0;
 }
 
+int pal_iouring_enable_pbuf(pal_iouring *r, unsigned count, size_t size)
+{
+    struct io_uring_buf_reg reg;
+    unsigned i;
+
+    if (r->pbuf_ring != NULL)
+        return 0; /* already enabled */
+    if (count == 0 || (count & (count - 1)) != 0)
+        return -1; /* ring entries must be a power of two */
+    r->pbuf_ring = (struct io_uring_buf_ring *)calloc(
+        count, sizeof(struct io_uring_buf));
+    r->pbuf_data = (char *)malloc((size_t)count * size);
+    if (r->pbuf_ring == NULL || r->pbuf_data == NULL) {
+        free(r->pbuf_ring);
+        free(r->pbuf_data);
+        r->pbuf_ring = NULL;
+        r->pbuf_data = NULL;
+        return -1;
+    }
+    r->pbuf_count = count;
+    r->pbuf_mask = count - 1;
+    r->pbuf_size = size;
+    /* the ring tail aliases bufs[0].resv (UAPI layout): slot array is
+     * fully usable, only the reserved halfword is shared */
+    for (i = 0; i < count; i++) {
+        struct io_uring_buf *b = &r->pbuf_ring->bufs[i];
+        b->addr = (unsigned long long)(uintptr_t)(r->pbuf_data +
+                                                  (size_t)i * size);
+        b->len = (unsigned int)size;
+        b->bid = (unsigned short)i;
+        b->resv = 0;
+    }
+    memset(&reg, 0, sizeof(reg));
+    reg.ring_addr = (unsigned long long)(uintptr_t)r->pbuf_ring;
+    reg.ring_entries = count;
+    reg.bgid = 0;
+    __atomic_store_n(&r->pbuf_ring->tail, (unsigned short)count,
+                     __ATOMIC_RELEASE);
+    if ((int)syscall(__NR_io_uring_register, r->ring_fd,
+                     IORING_REGISTER_PBUF_RING, &reg, 1) != 0) {
+        free(r->pbuf_ring);
+        free(r->pbuf_data);
+        r->pbuf_ring = NULL;
+        r->pbuf_data = NULL;
+        return -1; /* kernel too old: caller falls back to reposts */
+    }
+    return 0;
+}
+
+int pal_iouring_pbuf_active(const pal_iouring *r)
+{
+    return r->pbuf_ring != NULL;
+}
+
+int pal_iouring_recv_ms(pal_iouring *r, pal_socket_t fd, void *userdata)
+{
+    struct io_uring_sqe *sqe;
+    if (r->pbuf_ring == NULL)
+        return -1;
+    pal_mutex_lock(&r->lock);
+    sqe = iou_get_sqe(r);
+    sqe->opcode = IORING_OP_RECV;
+    sqe->fd = (int)fd;
+    /* addr/len unused with provided buffers: the kernel picks a slot */
+    sqe->ioprio = IORING_RECV_MULTISHOT;
+    sqe->buf_group = 0; /* matches the registered bgid */
+    sqe->user_data = (unsigned long long)(uintptr_t)userdata |
+                     (unsigned long long)PAL_IOURING_RECV;
+    pal_mutex_unlock(&r->lock);
+    return 0;
+}
+
+const void *pal_iouring_buf(const pal_iouring *r, int bid)
+{
+    if (bid < 0 || (unsigned)bid >= r->pbuf_count)
+        return NULL;
+    return r->pbuf_data + (size_t)bid * r->pbuf_size;
+}
+
+void pal_iouring_recycle(pal_iouring *r, int bid)
+{
+    /* single consumer (the reap thread): read tail, fill, release-store */
+    unsigned short tail = __atomic_load_n(&r->pbuf_ring->tail,
+                                          __ATOMIC_RELAXED);
+    struct io_uring_buf *b = &r->pbuf_ring->bufs[tail & r->pbuf_mask];
+    b->addr = (unsigned long long)(uintptr_t)(r->pbuf_data +
+                                              (size_t)bid * r->pbuf_size);
+    b->len = (unsigned int)r->pbuf_size;
+    b->bid = (unsigned short)bid;
+    b->resv = 0;
+    __atomic_store_n(&r->pbuf_ring->tail, (unsigned short)(tail + 1),
+                     __ATOMIC_RELEASE);
+}
+
 int pal_iouring_post(pal_iouring *r, void *userdata)
 {
     struct io_uring_sqe *sqe;
@@ -305,6 +445,12 @@ int pal_iouring_wait(pal_iouring *r, pal_iouring_event *evs, int max,
             ev->op = (pal_iouring_ev)op;
             ev->fd = PAL_SOCKET_INVALID;
             ev->bytes = cqe->res >= 0 ? (ptrdiff_t)cqe->res : -1;
+            ev->err = cqe->res < 0 ? -cqe->res : 0;
+            /* F_MORE: the underlying multishot request is still armed */
+            ev->op_done = (cqe->flags & IORING_CQE_F_MORE) ? 0 : 1;
+            ev->buf_id = (cqe->flags & IORING_CQE_F_BUFFER)
+                             ? (int)(cqe->flags >> IORING_CQE_BUFFER_SHIFT)
+                             : -1;
             if (op == PAL_IOURING_ACCEPT) {
                 if (cqe->res < 0) {
                     r->accept_armed = 0;
@@ -381,6 +527,30 @@ int pal_iouring_wait(pal_iouring *p, pal_iouring_event *evs, int max,
 {
     (void)p; (void)evs; (void)max; (void)timeout_ms;
     return -1;
+}
+int pal_iouring_enable_pbuf(pal_iouring *p, unsigned count, size_t size)
+{
+    (void)p; (void)count; (void)size;
+    return -1;
+}
+int pal_iouring_pbuf_active(const pal_iouring *p)
+{
+    (void)p;
+    return 0;
+}
+int pal_iouring_recv_ms(pal_iouring *p, pal_socket_t fd, void *userdata)
+{
+    (void)p; (void)fd; (void)userdata;
+    return -1;
+}
+const void *pal_iouring_buf(const pal_iouring *p, int bid)
+{
+    (void)p; (void)bid;
+    return NULL;
+}
+void pal_iouring_recycle(pal_iouring *p, int bid)
+{
+    (void)p; (void)bid;
 }
 int pal_iouring_post(pal_iouring *p, void *userdata)
 {

@@ -46,6 +46,17 @@
 /* IOCP backend: single send chunk cap per overlapped WSASend. */
 #define IOCP_SEND_CHUNK (256 * 1024)
 
+/* io_uring op-mode multishot recv (Phase 33): provided-buffer ring of
+ * 256 x 16KB slabs shared by all conns of this server. */
+#define IOU_PBUF_COUNT 256
+#define IOU_PBUF_SIZE (16 * 1024)
+
+/* ENOBUFS is POSIX-only; the ms-recv starvation check must still compile
+ * on Windows (where iou_ms is always 0). */
+#ifndef ENOBUFS
+#define ENOBUFS 119
+#endif
+
 typedef struct conn conn;
 
 /* pub/sub registry: channel -> list of subscribed conns (server-owned,
@@ -160,6 +171,7 @@ struct server {
     int backend;
     pal_iocp *iocp;
     pal_iouring *iou;
+    int iou_ms; /* io_uring op-mode: multishot recv + pbuf ring active */
     conn **zombies; /* conns closed with ops in flight, freed when drained */
     size_t nzombies;
     size_t zombie_cap;
@@ -1155,6 +1167,16 @@ server *server_create_ex(const char *host, uint16_t port, int backend)
         /* multishot accept is armed inside listen; nothing to replenish */
         s->listen_fd = pal_iouring_listen(s->iou, host, port, &s->port,
                                           NULL);
+        /* multishot recv + provided-buffer ring (Phase 33); on kernels
+         * without pbuf support the enable fails and the server keeps the
+         * per-completion repost model. DDUP_IOU_RECV_MS=0 forces the
+         * repost model (A/B comparisons). */
+        if (s->listen_fd != PAL_SOCKET_INVALID &&
+            (getenv("DDUP_IOU_RECV_MS") == NULL ||
+             strcmp(getenv("DDUP_IOU_RECV_MS"), "0") != 0) &&
+            pal_iouring_enable_pbuf(s->iou, IOU_PBUF_COUNT,
+                                    IOU_PBUF_SIZE) == 0)
+            s->iou_ms = 1;
     } else
         s->listen_fd = pal_tcp_listen(host, port, 511, &s->port);
     if (s->loop == NULL || s->listen_fd == PAL_SOCKET_INVALID) {
@@ -2463,6 +2485,18 @@ static void kick_flush(server *s, conn *c)
     }
 }
 
+/* Arm/rearm the multishot recv of a live conn (io_uring ms mode only);
+ * one armed request counts as one pending op until its final CQE. */
+static void iou_ms_rearm(server *s, conn *c, size_t idx)
+{
+    c->pending_ops++;
+    s->io.reads++;
+    if (pal_iouring_recv_ms(s->iou, c->fd, c) != 0) {
+        c->pending_ops--;
+        conn_close(s, idx);
+    }
+}
+
 /* Accept a connection on the proactor backend and post its first recv. */
 static void server_accept_pro(server *s, pal_socket_t fd)
 {
@@ -2484,6 +2518,10 @@ static void server_accept_pro(server *s, pal_socket_t fd)
         s->cap = ncap;
     }
     s->conns[s->nconns++] = c;
+    if (s->iou_ms) {
+        iou_ms_rearm(s, c, s->nconns - 1);
+        return;
+    }
     c->pending_ops++;
     s->io.reads++;
     if (pro_recv(s, c->fd, c->rbuf, c->rcap, c) != 0) {
@@ -2502,6 +2540,9 @@ static int server_run_once_proactor(server *s, int timeout_ms)
         int op;
         pal_socket_t fd;
         ptrdiff_t bytes;
+        int err;     /* errno when bytes == -1 (io_uring), else 0 */
+        int buf_id;  /* io_uring pbuf ring slot, -1 otherwise */
+        int op_done; /* 0 = multishot request still armed (IOCP: always 1) */
     } pro_event;
     pro_event evs[SERVER_MAX_EVENTS];
     int nev;
@@ -2515,6 +2556,9 @@ static int server_run_once_proactor(server *s, int timeout_ms)
             evs[i].op = (int)raw[i].op;
             evs[i].fd = raw[i].fd;
             evs[i].bytes = raw[i].bytes;
+            evs[i].err = 0;
+            evs[i].buf_id = -1;
+            evs[i].op_done = 1;
         }
     } else {
         pal_iouring_event raw[SERVER_MAX_EVENTS];
@@ -2524,6 +2568,9 @@ static int server_run_once_proactor(server *s, int timeout_ms)
             evs[i].op = (int)raw[i].op;
             evs[i].fd = raw[i].fd;
             evs[i].bytes = raw[i].bytes;
+            evs[i].err = raw[i].err;
+            evs[i].buf_id = raw[i].buf_id;
+            evs[i].op_done = raw[i].op_done;
         }
     }
     if (nev <= 0)
@@ -2562,8 +2609,13 @@ static int server_run_once_proactor(server *s, int timeout_ms)
             continue;
         if (c->zombie) {
             /* drained op from a closed conn: free when nothing is left
-             * and the owner (mt routing layer) released it */
-            c->pending_ops--;
+             * and the owner (mt routing layer) released it. A multishot
+             * CQE may still carry a ring buffer: hand it back even here,
+             * and only the final CQE retires the pending op. */
+            if (ev->buf_id >= 0)
+                pal_iouring_recycle(s->iou, ev->buf_id);
+            if (ev->op_done)
+                c->pending_ops--;
             if (c->pending_ops <= 0 && c->zombie_mt_free) {
                 for (idx = 0; idx < s->nzombies; idx++)
                     if (s->zombies[idx] == c)
@@ -2581,7 +2633,8 @@ static int server_run_once_proactor(server *s, int timeout_ms)
                 break;
         if (idx == s->nconns)
             continue; /* closed earlier within this iteration */
-        c->pending_ops--;
+        if (ev->op_done)
+            c->pending_ops--;
 
         if (ev->op == PAL_IOCP_RECV) {
             if (c->is_master_link) {
@@ -2609,6 +2662,61 @@ static int server_run_once_proactor(server *s, int timeout_ms)
                     c->pending_ops--;
                     repl_link_close(s);
                 }
+                continue;
+            }
+            if (s->iou_ms) {
+                /* multishot recv: the chunk sits in a provided-buffer ring
+                 * slot; CQEs of one socket arrive in receive order (the
+                 * request is a single sequential consumer of the socket
+                 * receive queue), so appending in CQE order is exact */
+                const char *chunk;
+                if (ev->bytes < 0) {
+                    if (ev->err == ENOBUFS) {
+                        /* ring starvation ends the request (final CQE,
+                         * already decremented above); buffers recycled by
+                         * this same batch are back -- rearm, do NOT close */
+                        iou_ms_rearm(s, c, idx);
+                        continue;
+                    }
+                    conn_close(s, idx);
+                    continue;
+                }
+                if (ev->bytes == 0) { /* orderly close (final CQE) */
+                    conn_close(s, idx);
+                    continue;
+                }
+                chunk = (const char *)pal_iouring_buf(s->iou, ev->buf_id);
+                if (chunk == NULL) { /* corrupt buf_id: bail out */
+                    conn_close(s, idx);
+                    continue;
+                }
+                {
+                    int grow_ok = 1;
+                    while (c->rcap - c->rlen < (size_t)ev->bytes) {
+                        if (conn_rbuf_grow(c) != 0) {
+                            pal_iouring_recycle(s->iou, ev->buf_id);
+                            conn_close(s, idx); /* may free c: stop here */
+                            grow_ok = 0;
+                            break;
+                        }
+                    }
+                    if (!grow_ok)
+                        continue;
+                }
+                memcpy(c->rbuf + c->rlen, chunk, (size_t)ev->bytes);
+                pal_iouring_recycle(s->iou, ev->buf_id);
+                c->rlen += (size_t)ev->bytes;
+                s->io.bytes_read += (uint64_t)ev->bytes;
+                if (conn_process_input(s, c) != 0) {
+                    resp_write_error(&c->out, "ERR Protocol error", 18);
+                    kick_flush(s, c);
+                    conn_close(s, idx);
+                    continue;
+                }
+                kick_flush(s, c);
+                if (!ev->op_done)
+                    continue; /* request still armed: zero reposts */
+                iou_ms_rearm(s, c, idx); /* final CQE carried data: rearm */
                 continue;
             }
             if (ev->bytes <= 0) { /* orderly close or error */

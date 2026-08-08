@@ -46,6 +46,11 @@ typedef struct pal_iouring_event {
     pal_iouring_ev op;
     pal_socket_t fd;   /* ACCEPT: the NEW connection; RECV/SEND: invalid */
     ptrdiff_t bytes;   /* >= 0 bytes (RECV: 0 = orderly close), -1 = error */
+    int err;           /* errno value when bytes == -1, else 0 */
+    int buf_id;        /* RECV from the provided-buffer ring: buffer slot,
+                          -1 otherwise (single-shot recv / other ops) */
+    int op_done;       /* 0 = multishot request still armed (more CQEs will
+                          follow for it); 1 = the request completed */
 } pal_iouring_event;
 
 typedef struct pal_iouring pal_iouring;
@@ -69,6 +74,27 @@ int pal_iouring_recv(pal_iouring *p, pal_socket_t fd, void *buf, size_t cap,
                      void *userdata);
 int pal_iouring_send(pal_iouring *p, pal_socket_t fd, const void *buf,
                      size_t n, void *userdata);
+
+/* Provided-buffer ring + multishot recv (Phase 33).
+ * pal_iouring_enable_pbuf registers a ring of `count` power-of-two buffers
+ * of `size` bytes; returns 0 on success, -1 when the kernel/headers lack
+ * support (callers fall back to pal_iouring_recv reposts). Once enabled,
+ * pal_iouring_recv_ms arms ONE multishot recv per connection: the kernel
+ * then delivers a CQE per received chunk, each carrying a buf_id into the
+ * ring; the consumer copies the bytes out (pal_iouring_buf) and returns
+ * the slot (pal_iouring_recycle). While op_done == 0 no rearm is needed;
+ * when the request terminates (op_done == 1) the caller rearms -- a
+ * termination with err == ENOBUFS is ring starvation, not a connection
+ * error. CQEs of one socket arrive in receive order (the multishot
+ * request is a single sequential consumer of the socket receive queue). */
+int pal_iouring_enable_pbuf(pal_iouring *p, unsigned count, size_t size);
+int pal_iouring_pbuf_active(const pal_iouring *p);
+int pal_iouring_recv_ms(pal_iouring *p, pal_socket_t fd, void *userdata);
+/* Data pointer of ring slot bid (valid until pal_iouring_recycle). */
+const void *pal_iouring_buf(const pal_iouring *p, int bid);
+/* Return ring slot bid to the kernel. Safe on any reap-thread CQE,
+ * including ones for already-closed connections. */
+void pal_iouring_recycle(pal_iouring *p, int bid);
 
 /* Flush queued submissions, wait per timeout_ms (0 = poll), and reap
  * completions; returns count (>=1), 0 on timeout, -1 on error. */
