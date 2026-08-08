@@ -216,10 +216,11 @@
   最近兴趣集 re-arm；`sq_tail/cq_head` 用 `__atomic_*` acquire/release
   同步。
 - **关键语义（记录在案）**：reap 只认 `res > 0`（POLL* 掩码）为事件；
-  `res == 0` 是 POLL_REMOVE/POLL_UPDATE 的**控制回执**，`res < 0` 为
-  错误。del = deactivate + POLL_REMOVE + dead 链（loop_free 统一释放）；
-  mod = remove + add。TIMEOUT sqe 的 `__kernel_timespec` 在 enter 同步
-  提交期内有效（栈上安全）。
+   `res == 0` 是 POLL_REMOVE/POLL_UPDATE 的**控制回执**，`res < 0` 为
+   错误。del = deactivate + POLL_REMOVE + dead 链（loop_free 统一释放）；
+   mod = remove + add。TIMEOUT sqe 的 `__kernel_timespec` 在 enter 同步
+   提交期内有效（栈上安全）。环与 SQE 映射均使用内核返回的实际大小创建、
+   保存并以同一大小释放。
 
 ## io_uring op 模式后端（Phase 32b，Linux）
 
@@ -250,7 +251,11 @@ proactor——提交 IORING_OP_RECV/SEND/ACCEPT 操作本身，完成携带结�
   持有文件引用故 close 本身安全；完成按 user_data 回到 zombie 排水
   路径（与 IOCP 同一契约）。server_destroy 先释放 proactor（关环 =
   内核同步取消全部在飞请求）再释放 conn，保证没有内核写落入已释放
-  的 rbuf/sbuf。SEND 带 MSG_NOSIGNAL。
+   的 rbuf/sbuf。SEND 带 MSG_NOSIGNAL。
+- **协议错误关闭**：proactor 在排入 `-ERR Protocol error` 后标记连接为
+  send-then-close，直到 detached send buffer 与新 out 均排空才执行
+  shutdown + close；这保证 io_uring 的用户态 SQE 会先提交完成，避免
+  close 抢先使错误回复变为 EOF。
 - **测试**：test_server 探测到 io_uring 时追加 op 模式整轮（另有
   DDUP_TEST_IOURING_OP_ONLY 单跑开关）；Ubuntu CI（内核 6.x）覆盖。
 - **multishot recv + provided-buffer 环（Phase 33）**：每连接一次

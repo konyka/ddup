@@ -44,6 +44,7 @@ struct pal_loop {
     void *ring_ptr;
     size_t ring_sz;
     struct io_uring_sqe *sqes;
+    size_t sqes_sz;
     struct io_uring_cqe *cqes;
     unsigned *sq_array;  /* SQ indirection array (kernel reads sqes via it) */
     unsigned *sq_tail;
@@ -136,6 +137,7 @@ static int uring_init(pal_loop *l)
         close(l->uring_fd);
         return -1;
     }
+    l->sqes_sz = sqes_sz;
 
     l->cqes = (struct io_uring_cqe *)(base + p.cq_off.cqes);
     l->sq_array = (unsigned *)(base + p.sq_off.array);
@@ -224,7 +226,7 @@ void pal_loop_free(pal_loop *l)
         free(r);
     }
     if (l->use_iouring) {
-        munmap(l->sqes, 256 * sizeof(struct io_uring_sqe));
+        munmap(l->sqes, l->sqes_sz);
         munmap(l->ring_ptr, l->ring_sz);
         close(l->uring_fd);
     }
