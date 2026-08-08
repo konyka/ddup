@@ -577,6 +577,13 @@ static void run_all_tests(void)
 int main(void)
 {
     DD_CHECK_EQ_INT(0, pal_socket_init());
+    if (getenv("DDUP_TEST_IOCP_ONLY") != NULL) {
+        g_backend = SERVER_BACKEND_IOCP;
+        printf("=== backend: IOCP ===\n");
+        run_all_tests();
+        pal_socket_cleanup();
+        return DD_TEST_SUMMARY();
+    }
     g_backend = SERVER_BACKEND_SELECT;
     printf("=== backend: readiness (select) ===\n");
     run_all_tests();
