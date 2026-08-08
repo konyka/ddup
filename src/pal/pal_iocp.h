@@ -8,7 +8,8 @@
  *   - at most ONE outstanding RECV and ONE outstanding SEND per connection;
  *   - IPv4 only for now (AcceptEx address buffers are sized for AF_INET);
  *   - every ACCEPT completion yields a new connected socket in ev->fd; the
- *     caller should re-post pal_iocp_accept_post to keep accepting;
+ *     caller should re-post pal_iocp_accept_post to keep accepting (the
+ *     server keeps TWO posted at all times -- accept pool, Phase 32a);
  *   - after pal_iocp_close, already-queued completions for that fd may still
  *     be delivered with bytes == -1; the caller must tolerate them.
  *

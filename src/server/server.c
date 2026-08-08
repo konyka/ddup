@@ -1083,9 +1083,13 @@ server *server_create_ex(const char *host, uint16_t port, int backend)
         if (s->iocp == NULL)
             s->backend = SERVER_BACKEND_SELECT; /* unavailable: fall back */
     }
-    if (s->backend == SERVER_BACKEND_IOCP)
+    if (s->backend == SERVER_BACKEND_IOCP) {
         s->listen_fd = pal_iocp_listen(s->iocp, host, port, &s->port, NULL);
-    else
+        /* accept pool (Phase 32a): keep a second AcceptEx in flight; each
+         * accept completion replenishes one, so two are always posted */
+        if (s->listen_fd != PAL_SOCKET_INVALID)
+            (void)pal_iocp_accept_post(s->iocp, s->listen_fd, NULL);
+    } else
         s->listen_fd = pal_tcp_listen(host, port, 511, &s->port);
     if (s->loop == NULL || s->listen_fd == PAL_SOCKET_INVALID) {
         server_destroy(s);
