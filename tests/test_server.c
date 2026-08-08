@@ -133,7 +133,7 @@ static void test_split_delivery(void)
     server *s = make_server();
     pal_socket_t c;
     char buf[64];
-    ptrdiff_t n = -1;
+    ptrdiff_t n;
     int iter = 0;
     DD_CHECK(s != NULL);
     c = connect_client(s);
@@ -185,20 +185,25 @@ static void test_protocol_error_closes_conn(void)
     server *s = make_server();
     pal_socket_t c;
     char buf[64];
-    ptrdiff_t n = -1;
+    size_t got = 0;
+    ptrdiff_t n;
     int iter = 0;
     DD_CHECK(s != NULL);
     c = connect_client(s);
 
     /* inline (non-array) command -> protocol error, then server closes */
     DD_CHECK_EQ_INT(6, pal_send(c, "PING\r\n", 6));
-    while (n <= 0 && iter < 10000) {
+    while (got < 21 && iter < 10000) {
         iter++;
         server_run_once(s, 50);
-        n = pal_recv(c, buf, sizeof(buf));
+        n = pal_recv(c, buf + got, 21 - got);
+        if (n > 0)
+            got += (size_t)n;
+        else if (n == 0)
+            break;
     }
-    DD_CHECK_EQ_INT(21, n);
-    DD_CHECK_MEM("-ERR Protocol error\r\n", 21, buf, 21);
+    DD_CHECK_EQ_INT(21, got);
+    DD_CHECK_MEM("-ERR Protocol error\r\n", 21, buf, got);
 
     /* connection closed by the server: next recv reports orderly close */
     n = -1;

@@ -84,6 +84,7 @@ struct conn {
     int zombie;          /* closed with ops in flight: freed at 0 pending */
     int zombie_mt_free;  /* zombie whose owner (mt layer) released it */
     int send_outstanding;
+    int close_after_send; /* protocol error reply must reach the peer first */
     /* detached send buffer: out's allocation moves here at kick_flush time
      * (zero-copy handoff, Phase 34); owned until fully sent, then returned
      * to the pool */
@@ -2674,6 +2675,11 @@ static int server_run_once_proactor(server *s, int timeout_ms)
             c->pending_ops--;
 
         if (ev->op == PAL_IOCP_RECV) {
+            if (c->close_after_send) {
+                if (ev->buf_id >= 0)
+                    pal_iouring_recycle(s->iou, ev->buf_id);
+                continue;
+            }
             if (c->is_master_link) {
                 /* replica master link: feed the link state machine and
                  * re-post the recv (never goes through conn_process_input) */
@@ -2746,8 +2752,8 @@ static int server_run_once_proactor(server *s, int timeout_ms)
                 s->io.bytes_read += (uint64_t)ev->bytes;
                 if (conn_process_input(s, c) != 0) {
                     resp_write_error(&c->out, "ERR Protocol error", 18);
+                    c->close_after_send = 1;
                     kick_flush(s, c);
-                    conn_close(s, idx);
                     continue;
                 }
                 kick_flush(s, c);
@@ -2764,8 +2770,8 @@ static int server_run_once_proactor(server *s, int timeout_ms)
             s->io.bytes_read += (uint64_t)ev->bytes;
             if (conn_process_input(s, c) != 0) {
                 resp_write_error(&c->out, "ERR Protocol error", 18);
+                c->close_after_send = 1;
                 kick_flush(s, c);
-                conn_close(s, idx);
                 continue;
             }
             kick_flush(s, c);
@@ -2802,6 +2808,10 @@ static int server_run_once_proactor(server *s, int timeout_ms)
                 c->sbuf_len = 0;
                 c->sbuf_sent = 0;
                 c->sbuf_pool_size = 0;
+            }
+            if (c->close_after_send && c->sbuf == NULL && c->out.len == 0) {
+                conn_close(s, idx);
+                continue;
             }
             /* next chunk of the same buffer, or detach whatever
              * accumulated in out while the send was in flight */
