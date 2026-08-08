@@ -643,10 +643,16 @@ int server_replicaof(server *s, const char *host, uint16_t port)
     return srv_replicaof(s, host, port);
 }
 
-void server_set_backlog_size(server *s, size_t bytes)
+int server_set_backlog_size(server *s, size_t bytes)
 {
+    repl_backlog replacement;
+    if (repl_backlog_init(&replacement, bytes) != 0)
+        return -1;
+    replacement.offset = s->backlog.offset;
     repl_backlog_free(&s->backlog);
-    repl_backlog_init(&s->backlog, bytes);
+    s->backlog = replacement;
+    s->repl.offset = s->backlog.offset;
+    return 0;
 }
 
 /* SYNC: write the $<len>\r\n<snapshot> full-resync frame into the conn's
@@ -1222,7 +1228,10 @@ server *server_create_ex(const char *host, uint16_t port, int backend)
     s->db.cluster_port = s->port;
     s->role = SESSION_ROLE_MASTER;
     buf_pool_init(&s->pool);
-    repl_backlog_init(&s->backlog, 1024 * 1024);
+    if (repl_backlog_init(&s->backlog, 1024 * 1024) != 0) {
+        server_destroy(s);
+        return NULL;
+    }
     resp_buf_init(&s->prop_buf);
     s->prop_buf.pool = &s->pool;
     memset(&s->repl, 0, sizeof(s->repl));

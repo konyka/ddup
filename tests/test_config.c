@@ -197,6 +197,23 @@ static void test_validate_tls(void)
     remove(TMP_CONF);
 }
 
+static void test_repl_backlog_size(void)
+{
+    ddup_config cfg;
+    char err[256];
+
+    config_init(&cfg);
+    DD_CHECK_EQ_INT(-1, config_apply(&cfg, "repl-backlog-size", "0"));
+    DD_CHECK_EQ_INT(-1, config_apply(&cfg, "repl-backlog-size", "-1"));
+    DD_CHECK_EQ_INT(-1, config_apply(&cfg, "repl-backlog-size",
+                                     "18446744073709551616"));
+    DD_CHECK_EQ_INT(1024 * 1024, (long long)cfg.repl_backlog_size);
+
+    cfg.repl_backlog_size = 0;
+    DD_CHECK_EQ_INT(-1, config_validate(&cfg, err, sizeof(err)));
+    DD_CHECK(strstr(err, "repl-backlog-size") != NULL);
+}
+
 int main(void)
 {
     DD_RUN(test_defaults);
@@ -207,5 +224,6 @@ int main(void)
     DD_RUN(test_io_backend_values);
     DD_RUN(test_io_threads);
     DD_RUN(test_validate_tls);
+    DD_RUN(test_repl_backlog_size);
     return DD_TEST_SUMMARY();
 }

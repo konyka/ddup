@@ -492,6 +492,10 @@ DBSIZE 为 O(1)，可能计入尚未回收的过期 key。
   argv 重序列化为 RESP 数组，经 server 复用缓冲 fan-out 到三类 sink：
   AOF、复制 backlog（环形缓冲，默认 1MB，`repl-backlog-size` 可调）、
   下游 replica 连接的 out 缓冲（run_once 末尾统一 flush）。
+- **backlog 安全性**：`repl-backlog-size` 必须为非零且能表示为本机
+  `size_t`；初始化或重配置分配失败会明确返回错误，重配置会保留原环形
+  缓冲，不会留下不可用的零容量状态。溢出时按一次计算直接丢弃最旧字节，
+  而不是逐字节淘汰；保留的字节流与绝对 offset 语义不变。
 - **复制标识（Phase 12）**：每个实例启动时生成 40-hex `master_replid`
   （`cluster_gen_id`）；INFO replication 暴露 `master_replid` 与
   `master_repl_offset`（backlog 绝对 offset）。

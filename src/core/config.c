@@ -1,6 +1,7 @@
 /* config.c - ddup-server configuration parsing; see config.h. */
 #include "core/config.h"
 
+#include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -68,8 +69,12 @@ static int parse_port(const char *v, uint16_t *out)
 static int parse_u64(const char *v, uint64_t *out)
 {
     char *end;
-    unsigned long long x = strtoull(v, &end, 10);
-    if (end == v || *end != '\0')
+    unsigned long long x;
+    if (*v == '-')
+        return -1;
+    errno = 0;
+    x = strtoull(v, &end, 10);
+    if (end == v || *end != '\0' || errno == ERANGE)
         return -1;
     *out = (uint64_t)x;
     return 0;
@@ -148,8 +153,14 @@ int config_apply(ddup_config *cfg, const char *key, const char *value)
         memcpy(cfg->replicaof_host, host, hl + 1);
         return 0;
     }
-    if (key_eq(key, "repl-backlog-size"))
-        return parse_u64(value, &cfg->repl_backlog_size);
+    if (key_eq(key, "repl-backlog-size")) {
+        uint64_t bytes;
+        if (parse_u64(value, &bytes) != 0 || bytes == 0 ||
+            (uint64_t)(size_t)bytes != bytes)
+            return -1;
+        cfg->repl_backlog_size = bytes;
+        return 0;
+    }
     if (key_eq(key, "tls-port"))
         return parse_port(value, &cfg->tls_port);
     if (key_eq(key, "tls-cert-file"))
@@ -202,6 +213,12 @@ static int file_readable(const char *path)
 
 int config_validate(const ddup_config *cfg, char *err, size_t errcap)
 {
+    if (cfg->repl_backlog_size == 0 ||
+        (uint64_t)(size_t)cfg->repl_backlog_size != cfg->repl_backlog_size) {
+        snprintf(err, errcap,
+                 "repl-backlog-size must be between 1 and SIZE_MAX bytes");
+        return -1;
+    }
     if (cfg->io_threads > 1 &&
         (cfg->cluster_enabled || cfg->replicaof_port > 0)) {
         snprintf(err, errcap,

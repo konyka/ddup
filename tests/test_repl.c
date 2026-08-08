@@ -10,7 +10,7 @@ static void test_backlog_basic(void)
 {
     repl_backlog b;
     char out[64];
-    repl_backlog_init(&b, 16);
+    DD_CHECK_EQ_INT(0, repl_backlog_init(&b, 16));
 
     repl_backlog_append(&b, "hello", 5);
     DD_CHECK_EQ_INT(5, (long long)b.offset);
@@ -29,7 +29,7 @@ static void test_backlog_wrap(void)
 {
     repl_backlog b;
     char out[64];
-    repl_backlog_init(&b, 16);
+    DD_CHECK_EQ_INT(0, repl_backlog_init(&b, 16));
 
     /* 10 + 10 bytes into a 16-byte ring: oldest 4 dropped */
     repl_backlog_append(&b, "0123456789", 10);
@@ -43,6 +43,71 @@ static void test_backlog_wrap(void)
     DD_CHECK_EQ_INT(40, (long long)b.offset);
     DD_CHECK_EQ_INT(16, (long long)repl_backlog_read(&b, out, sizeof(out)));
     DD_CHECK_MEM("456789ABCDEFGHIJ", 16, out, 16);
+
+    repl_backlog_free(&b);
+}
+
+static void test_backlog_empty_state(void)
+{
+    repl_backlog b;
+    char out[8] = {'s', 'e', 'n', 't', 'i', 'n', 'e', 'l'};
+
+    memset(&b, 0, sizeof(b));
+    DD_CHECK_EQ_INT(-1, repl_backlog_init(&b, 0));
+    DD_CHECK(b.buf == NULL);
+    DD_CHECK_EQ_INT(0, (long long)b.cap);
+    DD_CHECK_EQ_INT(0, (long long)b.start);
+    DD_CHECK_EQ_INT(0, (long long)b.len);
+    DD_CHECK_EQ_INT(0, (long long)b.offset);
+
+    repl_backlog_append(&b, "abc", 3);
+    DD_CHECK_EQ_INT(3, (long long)b.offset);
+    DD_CHECK_EQ_INT(0, (long long)repl_backlog_read(&b, out, sizeof(out)));
+    DD_CHECK_EQ_INT(0, (long long)repl_backlog_read_from(&b, 0, out,
+                                                        sizeof(out)));
+    DD_CHECK_MEM("sentinel", 8, out, 8);
+    repl_backlog_free(&b);
+}
+
+static void test_backlog_boundaries_and_offsets(void)
+{
+    repl_backlog b;
+    char out[32];
+
+    DD_CHECK_EQ_INT(0, repl_backlog_init(&b, 8));
+
+    repl_backlog_append(&b, "abcdefgh", 8);
+    DD_CHECK_EQ_INT(8, (long long)b.offset);
+    DD_CHECK_EQ_INT(8, (long long)repl_backlog_read(&b, out, sizeof(out)));
+    DD_CHECK_MEM("abcdefgh", 8, out, 8);
+
+    repl_backlog_append(&b, "12", 2);
+    DD_CHECK_EQ_INT(10, (long long)b.offset);
+    DD_CHECK_EQ_INT(8, (long long)repl_backlog_read(&b, out, sizeof(out)));
+    DD_CHECK_MEM("cdefgh12", 8, out, 8);
+    DD_CHECK_EQ_INT(6, (long long)repl_backlog_read_from(&b, 4, out,
+                                                        sizeof(out)));
+    DD_CHECK_MEM("efgh12", 6, out, 6);
+    DD_CHECK_EQ_INT(0, (long long)repl_backlog_read_from(&b, 10, out,
+                                                        sizeof(out)));
+    DD_CHECK_EQ_INT(0, (long long)repl_backlog_read_from(&b, UINT64_MAX, out,
+                                                        sizeof(out)));
+
+    repl_backlog_append(&b, "34567", 5);
+    DD_CHECK_EQ_INT(15, (long long)b.offset);
+    DD_CHECK_EQ_INT(8, (long long)repl_backlog_read(&b, out, sizeof(out)));
+    DD_CHECK_MEM("h1234567", 8, out, 8);
+    DD_CHECK_EQ_INT(8, (long long)repl_backlog_read_from(&b, 0, out,
+                                                        sizeof(out)));
+    DD_CHECK_MEM("h1234567", 8, out, 8);
+
+    repl_backlog_append(&b, "0123456789ABC", 13);
+    DD_CHECK_EQ_INT(28, (long long)b.offset);
+    DD_CHECK_EQ_INT(8, (long long)repl_backlog_read(&b, out, sizeof(out)));
+    DD_CHECK_MEM("56789ABC", 8, out, 8);
+    DD_CHECK_EQ_INT(4, (long long)repl_backlog_read_from(&b, 24, out,
+                                                        sizeof(out)));
+    DD_CHECK_MEM("9ABC", 4, out, 4);
 
     repl_backlog_free(&b);
 }
@@ -62,6 +127,8 @@ int main(void)
 {
     DD_RUN(test_backlog_basic);
     DD_RUN(test_backlog_wrap);
+    DD_RUN(test_backlog_empty_state);
+    DD_RUN(test_backlog_boundaries_and_offsets);
     DD_RUN(test_sync_master);
     DD_RUN(test_psync_fullresync);
     DD_RUN(test_psync_continue_partial);
@@ -132,9 +199,10 @@ static size_t pump_recv(server *s, pal_socket_t c, char *buf, size_t got,
 static void test_sync_master(void)
 {
     server *m;
-    pal_socket_t a, b;
+    pal_socket_t a, b, c;
     resp_buf out;
     char buf[8192];
+    char replid[41];
     size_t got;
     int iter;
 
@@ -198,6 +266,17 @@ static void test_sync_master(void)
     DD_CHECK_EQ_INT(29, (long long)got);
     DD_CHECK_MEM("*3\r\n$3\r\nSET\r\n$2\r\nk2\r\n$2\r\nv2\r\n", 29, buf, 29);
 
+    /* A successful resize clears retained bytes but preserves the absolute
+     * stream position for subsequent appends and INFO reporting. */
+    DD_CHECK_EQ_INT(0, server_set_backlog_size(m, 64));
+    DD_CHECK_EQ_INT(29, pal_send(a,
+                                "*3\r\n$3\r\nSET\r\n$2\r\nk3\r\n$2\r\nv3\r\n",
+                                29));
+    got = pump_recv(m, a, buf, 0, 5);
+    DD_CHECK(got >= 5);
+    got = pump_recv(m, b, buf, 0, 29);
+    DD_CHECK_EQ_INT(29, (long long)got);
+
     /* INFO replication on the master */
     DD_CHECK_EQ_INT(14, pal_send(a, "*1\r\n$4\r\nINFO\r\n", 14));
     iter = 0;
@@ -218,7 +297,7 @@ static void test_sync_master(void)
     buf[got] = '\0';
     DD_CHECK(strstr(buf, "role:master\r\n") != NULL);
     DD_CHECK(strstr(buf, "connected_slaves:1\r\n") != NULL);
-    DD_CHECK(strstr(buf, "master_repl_offset:") != NULL);
+    DD_CHECK(strstr(buf, "master_repl_offset:58\r\n") != NULL);
     /* Phase 12: every server has a 40-hex replication id */
     {
         const char *p = strstr(buf, "master_replid:");
@@ -227,6 +306,8 @@ static void test_sync_master(void)
         DD_CHECK(p != NULL);
         if (p != NULL) {
             p += strlen("master_replid:");
+            memcpy(replid, p, 40);
+            replid[40] = '\0';
             for (i = 0; i < 40; i++) {
                 char ch = p[i];
                 if ((ch >= '0' && ch <= '9') || (ch >= 'a' && ch <= 'f'))
@@ -237,6 +318,23 @@ static void test_sync_master(void)
         }
     }
 
+    /* Offset zero belonged to the cleared pre-resize contents. */
+    c = pal_tcp_connect("127.0.0.1", server_port(m));
+    DD_CHECK(c != PAL_SOCKET_INVALID);
+    DD_CHECK_EQ_INT(0, pal_set_nonblocking(c, 1));
+    {
+        char req[128];
+        int req_len = snprintf(req, sizeof(req),
+                               "*3\r\n$5\r\nPSYNC\r\n$40\r\n%s\r\n$1\r\n0\r\n",
+                               replid);
+        DD_CHECK(req_len > 0);
+        DD_CHECK_EQ_INT(req_len, pal_send(c, req, (size_t)req_len));
+    }
+    got = pump_recv(m, c, buf, 0, 12);
+    DD_CHECK(got >= 12);
+    DD_CHECK_MEM("+FULLRESYNC ", 12, buf, 12);
+
+    pal_close(c);
     pal_close(b);
     pal_close(a);
     server_destroy(m);
@@ -495,7 +593,8 @@ static void test_psync_stale_offset_fullresync(void)
     r = server_create("127.0.0.1", 0);
     DD_CHECK(m != NULL && r != NULL);
     /* tiny backlog: a few dozen bytes of commands evict the resume point */
-    server_set_backlog_size(m, 64);
+    DD_CHECK_EQ_INT(0, server_set_backlog_size(m, 64));
+    DD_CHECK_EQ_INT(-1, server_set_backlog_size(m, 0));
     mport = server_port(m);
     mc = nb_client(mport);
     rc = nb_client(server_port(r));
@@ -863,6 +962,7 @@ static void test_psync_continue_partial(void)
         "+OK\r\n", buf, sizeof(buf));
     rt2(m, r, mc, "*3\r\n$3\r\nSET\r\n$2\r\nk2\r\n$2\r\nv2\r\n", "+OK\r\n",
         buf, sizeof(buf));
+    DD_CHECK_EQ_INT(-1, server_set_backlog_size(m, 0));
 
     /* reconnect: PSYNC continues from the backlog (no full wipe) */
     {

@@ -254,7 +254,13 @@ int main(int argc, char **argv)
         }
     }
     server_set_save_interval(s, cfg.save_sec);
-    server_set_backlog_size(s, (size_t)cfg.repl_backlog_size);
+    if (server_set_backlog_size(s, (size_t)cfg.repl_backlog_size) != 0) {
+        fprintf(stderr, "failed to allocate replication backlog (%llu bytes)\n",
+                (unsigned long long)cfg.repl_backlog_size);
+        server_destroy(s);
+        pal_socket_cleanup();
+        return 1;
+    }
 
     if (cfg.cluster_enabled) {
         char cpath[1024];

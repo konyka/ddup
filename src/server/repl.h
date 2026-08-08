@@ -20,7 +20,9 @@ typedef struct repl_backlog {
     uint64_t offset;   /* total bytes ever appended (master_repl_offset) */
 } repl_backlog;
 
-void repl_backlog_init(repl_backlog *b, size_t cap);
+/* Initialize an empty ring. Returns 0 on success, -1 for zero capacity or
+ * allocation failure; on failure all fields are deterministically empty. */
+int repl_backlog_init(repl_backlog *b, size_t cap);
 void repl_backlog_free(repl_backlog *b);
 /* Append, dropping the oldest bytes on overflow. offset counts all bytes
  * ever appended, including dropped ones. */
