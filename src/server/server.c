@@ -25,8 +25,10 @@
 #include "core/session.h"
 #include "core/snapshot.h"
 #include "server/aof.h"
+#include "pal/pal_cstd.h"
 #include "pal/pal_event.h"
 #include "pal/pal_iocp.h"
+#include "pal/pal_iouring_op.h"
 #include "pal/pal_socket.h"
 #include "pal/pal_time.h"
 #include "pal/pal_tls.h"
@@ -154,9 +156,10 @@ struct server {
     io_counters io;       /* always-on IO counters (Phase 27; calloc-zeroed) */
     conn *master_link;    /* outbound link to the master (replica side) */
     uint64_t last_reconnect; /* pal_now_ms of the last connect attempt */
-    /* IOCP backend (Windows) */
+    /* proactor backend (Windows IOCP / Linux io_uring op-mode) */
     int backend;
     pal_iocp *iocp;
+    pal_iouring *iou;
     conn **zombies; /* conns closed with ops in flight, freed when drained */
     size_t nzombies;
     size_t zombie_cap;
@@ -188,15 +191,70 @@ static void srv_psync(void *ctx, session *sess, const char *replid,
                       size_t replid_len, long long offset);
 static void repl_link_close(server *srv);
 static int repl_link_connect(server *srv);
-static int server_run_once_iocp(server *s, int timeout_ms);
+static int server_run_once_proactor(server *s, int timeout_ms);
 static void kick_flush(server *s, conn *c);
-static void server_accept_iocp(server *s, pal_socket_t fd);
+static void server_accept_pro(server *s, pal_socket_t fd);
 static void bus_conn_free(server *s, bus_conn *bc);
 static void cluster_nodes_save(server *s);
 static int srv_cluster_meet(void *ctx, const char *ip, uint16_t port);
 static void srv_spublish_bus(void *ctx, const char *ch, size_t chlen,
                              const char *msg, size_t mlen);
 static void cluster_broadcast_fail(server *s);
+
+/* ------------------------------------------------------------------ */
+/* proactor dispatch (Windows IOCP / Linux io_uring op-mode share one  */
+/* server code path; op kinds carry identical values in both pals)     */
+/* ------------------------------------------------------------------ */
+
+ddup_static_assert((int)PAL_IOCP_ACCEPT == (int)PAL_IOURING_ACCEPT &&
+                       (int)PAL_IOCP_RECV == (int)PAL_IOURING_RECV &&
+                       (int)PAL_IOCP_SEND == (int)PAL_IOURING_SEND &&
+                       (int)PAL_IOCP_WAKEUP == (int)PAL_IOURING_WAKEUP,
+                   "proactor op kinds must mirror each other");
+
+static int srv_proactor(const server *s)
+{
+    return s->backend == SERVER_BACKEND_IOCP ||
+           s->backend == SERVER_BACKEND_IOURING_OP;
+}
+
+static int pro_accept_post(server *s, pal_socket_t listen_fd, void *ud)
+{
+    if (s->backend == SERVER_BACKEND_IOCP)
+        return pal_iocp_accept_post(s->iocp, listen_fd, ud);
+    return pal_iouring_accept_post(s->iou, listen_fd, ud);
+}
+
+static int pro_recv(server *s, pal_socket_t fd, void *buf, size_t cap,
+                    void *ud)
+{
+    if (s->backend == SERVER_BACKEND_IOCP)
+        return pal_iocp_recv(s->iocp, fd, buf, cap, ud);
+    return pal_iouring_recv(s->iou, fd, buf, cap, ud);
+}
+
+static int pro_send(server *s, pal_socket_t fd, const void *buf, size_t n,
+                    void *ud)
+{
+    if (s->backend == SERVER_BACKEND_IOCP)
+        return pal_iocp_send(s->iocp, fd, buf, n, ud);
+    return pal_iouring_send(s->iou, fd, buf, n, ud);
+}
+
+static void pro_close(server *s, pal_socket_t fd)
+{
+    if (s->backend == SERVER_BACKEND_IOCP)
+        pal_iocp_close(s->iocp, fd);
+    else
+        pal_iouring_close(s->iou, fd);
+}
+
+static int pro_kick(server *s)
+{
+    if (s->backend == SERVER_BACKEND_IOCP)
+        return pal_iocp_post(s->iocp, NULL);
+    return pal_iouring_post(s->iou, NULL);
+}
 
 /* ------------------------------------------------------------------ */
 /* pub/sub registry + session hooks                                   */
@@ -840,7 +898,7 @@ static int repl_link_connect(server *srv)
     srv->last_reconnect = pal_now_ms();
     cr = pal_tcp_connect_start(srv->repl.master_host, srv->repl.master_port,
                                &fd);
-    if (cr == 0 && srv->backend == SERVER_BACKEND_IOCP) {
+    if (cr == 0 && srv_proactor(srv)) {
         /* no readiness on the proactor: bounded finish (refused peers fail
          * fast, healthy ones complete instantly; a dropping network costs
          * 50ms, retried by the 500ms timer without stalling the loop) */
@@ -871,12 +929,12 @@ static int repl_link_connect(server *srv)
         srv->cap = ncap;
     }
     srv->conns[srv->nconns++] = c;
-    if (srv->backend == SERVER_BACKEND_IOCP) {
+    if (srv_proactor(srv)) {
         /* proactor path: post the first overlapped recv; the PSYNC goes
          * out through kick_flush below */
         c->pending_ops++;
         srv->io.reads++;
-        if (pal_iocp_recv(srv->iocp, fd, c->rbuf, c->rcap, c) != 0) {
+        if (pro_recv(srv, fd, c->rbuf, c->rcap, c) != 0) {
             c->pending_ops--;
             conn_close(srv, srv->nconns - 1);
             return -1;
@@ -888,7 +946,7 @@ static int repl_link_connect(server *srv)
     srv->master_link = c;
     if (cr == 1) {
         repl_link_queue_psync(srv, c);
-        if (srv->backend == SERVER_BACKEND_IOCP)
+        if (srv_proactor(srv))
             kick_flush(srv, c); /* ship the PSYNC via the proactor */
     } else {
         c->link_state = LINK_CONNECTING; /* PSYNC on writability */
@@ -1082,6 +1140,10 @@ server *server_create_ex(const char *host, uint16_t port, int backend)
         s->iocp = pal_iocp_create();
         if (s->iocp == NULL)
             s->backend = SERVER_BACKEND_SELECT; /* unavailable: fall back */
+    } else if (backend == SERVER_BACKEND_IOURING_OP) {
+        s->iou = pal_iouring_create();
+        if (s->iou == NULL)
+            s->backend = SERVER_BACKEND_SELECT; /* unavailable: fall back */
     }
     if (s->backend == SERVER_BACKEND_IOCP) {
         s->listen_fd = pal_iocp_listen(s->iocp, host, port, &s->port, NULL);
@@ -1089,6 +1151,10 @@ server *server_create_ex(const char *host, uint16_t port, int backend)
          * accept completion replenishes one, so two are always posted */
         if (s->listen_fd != PAL_SOCKET_INVALID)
             (void)pal_iocp_accept_post(s->iocp, s->listen_fd, NULL);
+    } else if (s->backend == SERVER_BACKEND_IOURING_OP) {
+        /* multishot accept is armed inside listen; nothing to replenish */
+        s->listen_fd = pal_iouring_listen(s->iou, host, port, &s->port,
+                                          NULL);
     } else
         s->listen_fd = pal_tcp_listen(host, port, 511, &s->port);
     if (s->loop == NULL || s->listen_fd == PAL_SOCKET_INVALID) {
@@ -1120,7 +1186,7 @@ server *server_create_ex(const char *host, uint16_t port, int backend)
     memset(&s->repl, 0, sizeof(s->repl));
     s->repl.role = SESSION_ROLE_MASTER;
     cluster_gen_id(s->repl.replid);
-    if (s->backend != SERVER_BACKEND_IOCP &&
+    if (!srv_proactor(s) &&
         pal_loop_add(s->loop, s->listen_fd, 1, 0, NULL) != 0) {
         server_destroy(s);
         return NULL;
@@ -1246,7 +1312,7 @@ int server_enable_tls(server *s, const char *host, uint16_t port,
 int server_tls_ctx_init(server *s, const char *cert_file,
                         const char *key_file)
 {
-    if (s->backend == SERVER_BACKEND_IOCP)
+    if (srv_proactor(s))
         return -1; /* TLS needs the readiness backend (documented) */
     if (s->tls_ctx != NULL)
         return -1; /* one context per server */
@@ -1356,7 +1422,7 @@ void server_enable_cluster(server *s, const char *node_id)
     }
 
     /* cluster bus listener on port+10000 (readiness backend only) */
-    if (s->backend == SERVER_BACKEND_IOCP ||
+    if (srv_proactor(s) ||
         s->bus_listen_fd != PAL_SOCKET_INVALID)
         return; /* unsupported backend, or already listening */
     s->bus_listen_fd = pal_tcp_listen("0.0.0.0",
@@ -1405,6 +1471,14 @@ void server_destroy(server *s)
         pal_loop_del(s->loop, s->bus_listen_fd);
         pal_close(s->bus_listen_fd);
     }
+    /* proactor teardown before any conn is freed: closing the IOCP port
+     * discards pending completions, and closing the io_uring fd cancels
+     * every in-flight request synchronously -- afterwards no kernel
+     * operation can still write into a conn buffer being freed below */
+    pal_iocp_free(s->iocp);
+    pal_iouring_free(s->iou);
+    s->iocp = NULL;
+    s->iou = NULL;
     for (i = 0; i < s->nconns; i++)
         conn_free(s->conns[i]);
     free(s->conns);
@@ -1412,7 +1486,7 @@ void server_destroy(server *s)
         conn_free(s->zombies[i]);
     free(s->zombies);
     if (s->loop != NULL && s->listen_fd != PAL_SOCKET_INVALID &&
-        s->backend != SERVER_BACKEND_IOCP)
+        !srv_proactor(s))
         pal_loop_del(s->loop, s->listen_fd);
     pal_close(s->listen_fd);
     if (s->tls_listen_fd != PAL_SOCKET_INVALID) {
@@ -1420,7 +1494,6 @@ void server_destroy(server *s)
         pal_close(s->tls_listen_fd);
     }
     pal_tls_ctx_free(s->tls_ctx);
-    pal_iocp_free(s->iocp);
     if (s->loop != NULL)
         pal_loop_free(s->loop);
     rh_destroy(&s->channels);
@@ -1447,7 +1520,7 @@ void server_close_listener(server *s)
 {
     if (s->listen_fd == PAL_SOCKET_INVALID)
         return;
-    if (s->loop != NULL && s->backend != SERVER_BACKEND_IOCP)
+    if (s->loop != NULL && !srv_proactor(s))
         (void)pal_loop_del(s->loop, s->listen_fd);
     pal_close(s->listen_fd);
     s->listen_fd = PAL_SOCKET_INVALID;
@@ -1456,9 +1529,9 @@ void server_close_listener(server *s)
 int server_adopt_fd(server *s, pal_socket_t fd)
 {
     conn *c;
-    if (s->backend == SERVER_BACKEND_IOCP) {
+    if (srv_proactor(s)) {
         /* completion model: register the conn and post the first recv */
-        server_accept_iocp(s, fd);
+        server_accept_pro(s, fd);
         return 0;
     }
     (void)pal_set_tcp_nodelay(fd, 1);
@@ -1534,7 +1607,7 @@ int server_adopt_fd_tls(server *s, pal_socket_t fd)
 int server_set_wakeup(server *s, pal_socket_t fd, void (*cb)(void *ctx),
                       void *ctx)
 {
-    if (s->backend == SERVER_BACKEND_IOCP) {
+    if (srv_proactor(s)) {
         /* no fd registration: kicks arrive as WAKEUP completions posted
          * via server_wakeup_kick() */
         s->wakeup_cb = cb;
@@ -1551,8 +1624,8 @@ int server_set_wakeup(server *s, pal_socket_t fd, void (*cb)(void *ctx),
 
 void server_wakeup_kick(server *s)
 {
-    if (s->backend == SERVER_BACKEND_IOCP && s->iocp != NULL)
-        (void)pal_iocp_post(s->iocp, NULL);
+    if (srv_proactor(s) && (s->iocp != NULL || s->iou != NULL))
+        (void)pro_kick(s);
 }
 
 void server_set_route(server *s, server_route_fn fn,
@@ -1583,7 +1656,7 @@ void server_conn_set_mt_state(void *conn_ptr, void *st)
 void server_conn_free_now(server *s, void *conn_ptr)
 {
     conn *c = (conn *)conn_ptr;
-    if (s->backend == SERVER_BACKEND_IOCP) {
+    if (srv_proactor(s)) {
         if (c->pending_ops > 0) {
             /* overlapped ops still in flight: the loop frees the conn
              * when the last completion drains */
@@ -1685,7 +1758,7 @@ void server_conn_out_append(server *s, void *conn_ptr, const char *data,
 
 int server_conn_flush(server *s, void *conn_ptr)
 {
-    if (s->backend == SERVER_BACKEND_IOCP) {
+    if (srv_proactor(s)) {
         /* completion model: post an overlapped send if none is in flight */
         kick_flush(s, (conn *)conn_ptr);
         return 0;
@@ -1763,15 +1836,16 @@ static void conn_close(server *s, size_t idx)
         s->repl.connected_slaves--;
     s->conns[idx] = s->conns[s->nconns - 1];
     s->nconns--;
-    if (s->backend == SERVER_BACKEND_IOCP) {
+    if (srv_proactor(s)) {
         int mt_kept = 0;
         /* the routing layer may keep the conn until its pending work
-         * drains; on IOCP the free additionally waits for outstanding
-         * overlapped ops to drain (whichever comes last frees) */
+         * drains; on the proactor the free additionally waits for
+         * outstanding overlapped ops to drain (whichever comes last
+         * frees) */
         if (s->mt_close_fn != NULL)
             mt_kept = s->mt_close_fn(s->route_ctx, c) != 0;
         if (c->pending_ops > 0) {
-            pal_iocp_close(s->iocp, c->fd);
+            pro_close(s, c->fd);
             c->zombie = 1;
             c->zombie_mt_free = !mt_kept;
             zombie_push(s, c);
@@ -2350,10 +2424,11 @@ static int conn_process_input(server *s, conn *c)
     return 0;
 }
 
-/* IOCP backend: post at most one overlapped send per conn; no-op while one
- * is in flight (its completion re-kicks). The chunk is copied into the
- * conn's stable send buffer, which is only (re)allocated while no send is
- * outstanding (the resp_buf out may realloc whenever replies are appended). */
+/* Proactor backend (IOCP / io_uring op-mode): post at most one overlapped
+ * send per conn; no-op while one is in flight (its completion re-kicks).
+ * The chunk is copied into the conn's stable send buffer, which is only
+ * (re)allocated while no send is outstanding (the resp_buf out may realloc
+ * whenever replies are appended). */
 static void kick_flush(server *s, conn *c)
 {
     size_t n;
@@ -2375,7 +2450,7 @@ static void kick_flush(server *s, conn *c)
     }
     memcpy(c->sbuf, c->out.data + c->out_sent, n);
     s->io.writes++;
-    if (pal_iocp_send(s->iocp, c->fd, c->sbuf, n, c) == 0) {
+    if (pro_send(s, c->fd, c->sbuf, n, c) == 0) {
         c->send_outstanding = 1;
         c->pending_ops++;
     } else {
@@ -2388,8 +2463,8 @@ static void kick_flush(server *s, conn *c)
     }
 }
 
-/* Accept a connection on the IOCP backend and post its first recv. */
-static void server_accept_iocp(server *s, pal_socket_t fd)
+/* Accept a connection on the proactor backend and post its first recv. */
+static void server_accept_pro(server *s, pal_socket_t fd)
 {
     conn *c;
     (void)pal_set_tcp_nodelay(fd, 1);
@@ -2411,23 +2486,52 @@ static void server_accept_iocp(server *s, pal_socket_t fd)
     s->conns[s->nconns++] = c;
     c->pending_ops++;
     s->io.reads++;
-    if (pal_iocp_recv(s->iocp, c->fd, c->rbuf, c->rcap, c) != 0) {
+    if (pro_recv(s, c->fd, c->rbuf, c->rcap, c) != 0) {
         c->pending_ops--;
         conn_close(s, s->nconns - 1);
     }
 }
 
-static int server_run_once_iocp(server *s, int timeout_ms)
+static int server_run_once_proactor(server *s, int timeout_ms)
 {
-    pal_iocp_event evs[SERVER_MAX_EVENTS];
-    int nev = pal_iocp_wait(s->iocp, evs, SERVER_MAX_EVENTS, timeout_ms);
+    /* backend-native completions normalized into one shape; op kinds have
+     * identical values in pal_iocp_op and pal_iouring_ev (asserted above),
+     * so the body below compares against PAL_IOCP_* for either backend */
+    typedef struct pro_event {
+        void *userdata;
+        int op;
+        pal_socket_t fd;
+        ptrdiff_t bytes;
+    } pro_event;
+    pro_event evs[SERVER_MAX_EVENTS];
+    int nev;
     int i;
+
+    if (s->backend == SERVER_BACKEND_IOCP) {
+        pal_iocp_event raw[SERVER_MAX_EVENTS];
+        nev = pal_iocp_wait(s->iocp, raw, SERVER_MAX_EVENTS, timeout_ms);
+        for (i = 0; i < nev; i++) {
+            evs[i].userdata = raw[i].userdata;
+            evs[i].op = (int)raw[i].op;
+            evs[i].fd = raw[i].fd;
+            evs[i].bytes = raw[i].bytes;
+        }
+    } else {
+        pal_iouring_event raw[SERVER_MAX_EVENTS];
+        nev = pal_iouring_wait(s->iou, raw, SERVER_MAX_EVENTS, timeout_ms);
+        for (i = 0; i < nev; i++) {
+            evs[i].userdata = raw[i].userdata;
+            evs[i].op = (int)raw[i].op;
+            evs[i].fd = raw[i].fd;
+            evs[i].bytes = raw[i].bytes;
+        }
+    }
     if (nev <= 0)
         return nev;
     s->io.events += (uint64_t)nev;
 
     for (i = 0; i < nev; i++) {
-        pal_iocp_event *ev = &evs[i];
+        pro_event *ev = &evs[i];
         conn *c;
         size_t idx;
 
@@ -2440,9 +2544,13 @@ static int server_run_once_iocp(server *s, int timeout_ms)
 
         if (ev->op == PAL_IOCP_ACCEPT) {
             if (s->listen_fd != PAL_SOCKET_INVALID) {
-                server_accept_iocp(s, ev->fd);
-                (void)pal_iocp_accept_post(s->iocp, s->listen_fd, NULL);
-            } else {
+                if (ev->fd != PAL_SOCKET_INVALID)
+                    server_accept_pro(s, ev->fd);
+                /* IOCP: replenishes the accept pool; io_uring op-mode:
+                 * no-op while the multishot accept stays armed, re-arms
+                 * it after termination */
+                (void)pro_accept_post(s, s->listen_fd, NULL);
+            } else if (ev->fd != PAL_SOCKET_INVALID) {
                 /* listener already closed (mt worker): drop the straggler */
                 pal_close(ev->fd);
             }
@@ -2496,8 +2604,8 @@ static int server_run_once_iocp(server *s, int timeout_ms)
                 }
                 c->pending_ops++;
                 s->io.reads++;
-                if (pal_iocp_recv(s->iocp, c->fd, c->rbuf + c->rlen,
-                                  c->rcap - c->rlen, c) != 0) {
+                if (pro_recv(s, c->fd, c->rbuf + c->rlen,
+                             c->rcap - c->rlen, c) != 0) {
                     c->pending_ops--;
                     repl_link_close(s);
                 }
@@ -2525,8 +2633,8 @@ static int server_run_once_iocp(server *s, int timeout_ms)
             }
             c->pending_ops++;
             s->io.reads++;
-            if (pal_iocp_recv(s->iocp, c->fd, c->rbuf + c->rlen,
-                              c->rcap - c->rlen, c) != 0) {
+            if (pro_recv(s, c->fd, c->rbuf + c->rlen,
+                         c->rcap - c->rlen, c) != 0) {
                 c->pending_ops--;
                 conn_close(s, idx);
                 continue;
@@ -2620,8 +2728,8 @@ int server_run_once(server *s, int timeout_ms)
         }
     }
 
-    if (s->backend == SERVER_BACKEND_IOCP)
-        return server_run_once_iocp(s, timeout_ms);
+    if (srv_proactor(s))
+        return server_run_once_proactor(s, timeout_ms);
 
     nev = pal_loop_wait(s->loop, evs, SERVER_MAX_EVENTS, timeout_ms);
     if (nev <= 0)

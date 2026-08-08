@@ -9,12 +9,14 @@
 #include "core/buf_pool.h"
 #include "pal/pal_event.h"
 #include "pal/pal_iocp.h"
+#include "pal/pal_iouring_op.h"
 #include "pal/pal_socket.h"
 #include "server/server.h"
 #include "test.h"
 
-/* Backend under test: SERVER_BACKEND_SELECT, or SERVER_BACKEND_IOCP when
- * available (Windows). Every scenario runs on both. */
+/* Backend under test: SERVER_BACKEND_SELECT, SERVER_BACKEND_IOCP (Windows),
+ * SERVER_BACKEND_IOURING / SERVER_BACKEND_IOURING_OP (Linux) when available.
+ * Every scenario runs on each available backend. */
 static int g_backend = SERVER_BACKEND_SELECT;
 
 static server *make_server(void)
@@ -584,6 +586,13 @@ int main(void)
         pal_socket_cleanup();
         return DD_TEST_SUMMARY();
     }
+    if (getenv("DDUP_TEST_IOURING_OP_ONLY") != NULL) {
+        g_backend = SERVER_BACKEND_IOURING_OP;
+        printf("=== backend: io_uring op-mode ===\n");
+        run_all_tests();
+        pal_socket_cleanup();
+        return DD_TEST_SUMMARY();
+    }
     g_backend = SERVER_BACKEND_SELECT;
     printf("=== backend: readiness (select) ===\n");
     run_all_tests();
@@ -604,6 +613,16 @@ int main(void)
             pal_loop_free(probe);
             g_backend = SERVER_BACKEND_IOURING;
             printf("=== backend: io_uring ===\n");
+            run_all_tests();
+        }
+    }
+    {
+        /* and the io_uring op-mode (proactor) flavor, same probe rule */
+        pal_iouring *probe = pal_iouring_create();
+        if (probe != NULL) {
+            pal_iouring_free(probe);
+            g_backend = SERVER_BACKEND_IOURING_OP;
+            printf("=== backend: io_uring op-mode ===\n");
             run_all_tests();
         }
     }

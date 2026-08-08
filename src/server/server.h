@@ -22,6 +22,9 @@ typedef struct buf_pool buf_pool;
                                     readiness when unavailable) */
 #define SERVER_BACKEND_IOURING 2 /* Linux io_uring readiness (falls back to
                                     epoll when unavailable) */
+#define SERVER_BACKEND_IOURING_OP 3 /* Linux io_uring proactor (op-mode:
+                                    submitted RECV/SEND/ACCEPT, falls back
+                                    to epoll when unavailable) */
 
 /* Create a server bound to host:port. host may be NULL (any interface);
  * port 0 picks an ephemeral port (read it back with server_port()).

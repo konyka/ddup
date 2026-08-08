@@ -38,6 +38,7 @@ add_library(ddup_core STATIC
     src/pal/pal_file.c
     src/pal/pal_tls.c
     src/pal/pal_iocp.c
+    src/pal/pal_iouring_op.c
     src/pal/pal_thread.c
     src/pal/pal_wakeup.c
     src/core/arena.c

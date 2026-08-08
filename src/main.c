@@ -176,17 +176,22 @@ int main(int argc, char **argv)
                 backend = SERVER_BACKEND_IOCP;
             else if (strcmp(cfg.io, "iouring") == 0)
                 backend = SERVER_BACKEND_IOURING;
+            else if (strcmp(cfg.io, "iouring-op") == 0)
+                backend = SERVER_BACKEND_IOURING_OP;
             else
                 backend = SERVER_BACKEND_SELECT;
         }
-        if (cfg.tls_port > 0 && backend == SERVER_BACKEND_IOCP) {
-            printf("note: TLS is unsupported on the IOCP backend; "
+        if (cfg.tls_port > 0 && (backend == SERVER_BACKEND_IOCP ||
+                                 backend == SERVER_BACKEND_IOURING_OP)) {
+            printf("note: TLS is unsupported on proactor backends; "
                    "using readiness\n");
             backend = SERVER_BACKEND_SELECT;
         }
         s = server_create_ex(cfg.bind, cfg.port, backend);
-        bname = backend == SERVER_BACKEND_IOCP ? "iocp"
+        bname = backend == SERVER_BACKEND_IOCP      ? "iocp"
                 : backend == SERVER_BACKEND_IOURING ? "iouring"
+                : backend == SERVER_BACKEND_IOURING_OP
+                                                    ? "iouring-op"
                                                     : "select";
         printf("io backend: %s\n", bname);
     }
