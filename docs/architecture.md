@@ -341,6 +341,8 @@ proactor——提交 IORING_OP_RECV/SEND/ACCEPT 操作本身，完成携带结�
 
 - **ddup-reshard**（tools/）：redis-cli `--cluster reshard` 风格：
   `--from host:port --to host:port --slot N [--count K] [--timeout ms]`。
+  端口范围为 1..65535，槽号为 0..16383，count 至少为 1，timeout
+  为非负且不超过平台 `int` 范围；所有数值参数必须是完整十进制串。
   流程：双端 CLUSTER MYID → 源 SETSLOT MIGRATING TO / 目标 SETSLOT
   IMPORTING FROM → 循环 GETKEYSINSLOT（每批 K 键）+ MIGRATE ... REPLACE
   KEYS（批量）→ 双端 SETSLOT NODE 收尾。失败时槽可能停留在

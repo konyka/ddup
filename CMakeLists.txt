@@ -157,7 +157,11 @@ ddup_apply_options(bench_core)
 # ---------------------------------------------------------------------------
 # Cluster resharding tool (redis-cli --cluster reshard style)
 # ---------------------------------------------------------------------------
-add_executable(ddup-reshard tools/ddup-reshard.c tools/reshard_client.c)
+add_executable(ddup-reshard
+    tools/ddup-reshard.c
+    tools/reshard_args.c
+    tools/reshard_client.c
+)
 target_link_libraries(ddup-reshard PRIVATE ddup_core)
 target_include_directories(ddup-reshard PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/tools")
 ddup_apply_options(ddup-reshard)
@@ -230,7 +234,7 @@ ddup_add_test(test_redbus tests/test_redbus.c)
 ddup_add_test(test_redbus_bus tests/test_redbus_bus.c)
 ddup_add_test(test_redbus_failover tests/test_redbus_failover.c)
 ddup_add_test(test_redbus_elect tests/test_redbus_elect.c)
-target_sources(test_reshard PRIVATE tools/reshard_client.c)
+target_sources(test_reshard PRIVATE tools/reshard_args.c tools/reshard_client.c)
 target_include_directories(test_reshard PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/tools")
 
 if(WIN32)

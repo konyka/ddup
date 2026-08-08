@@ -1,6 +1,7 @@
 /* test_reshard.c - end-to-end slot resharding: two cluster nodes on
  * background threads, reshard_slot() moves every key in batches and
  * finalizes ownership on both ends (covers the ddup-reshard tool core). */
+#include <limits.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -8,6 +9,7 @@
 #include "pal/pal_socket.h"
 #include "pal/pal_thread.h"
 #include "pal/pal_time.h"
+#include "reshard_args.h"
 #include "reshard_client.h"
 #include "server/server.h"
 #include "test.h"
@@ -82,6 +84,83 @@ static int keys_in_slot(int nkeys, char out[][32], uint32_t *slot_out)
     }
     *slot_out = slot;
     return n;
+}
+
+static void test_reshard_parse_addr(void)
+{
+    char host[256];
+    uint16_t port = 0;
+    const char *bad[] = {
+        "",          "localhost",  ":6379",      "localhost:",
+        "localhost:0", "localhost:-1", "localhost:+6379",
+        "localhost: 6379", "localhost:\t6379", "localhost:65536",
+        "localhost:1x", "[::1:6379", "[]:6379", "[::1]6379",
+        "[::1]]:6379", "[::1]:", "[::1]:+6379", "[::1]: 6379",
+        "[::1]:6379x", "[::1]:65536",
+        "localhost:999999999999999999999999999999999999999999"
+    };
+    size_t i;
+
+    DD_CHECK_EQ_INT(0, reshard_parse_addr("localhost:1", host, sizeof(host),
+                                         &port));
+    DD_CHECK(strcmp(host, "localhost") == 0);
+    DD_CHECK_EQ_INT(1, port);
+    DD_CHECK_EQ_INT(0, reshard_parse_addr("127.0.0.1:65535", host,
+                                         sizeof(host), &port));
+    DD_CHECK(strcmp(host, "127.0.0.1") == 0);
+    DD_CHECK_EQ_INT(65535, port);
+    DD_CHECK_EQ_INT(0, reshard_parse_addr("::1:6379", host, sizeof(host),
+                                         &port));
+    DD_CHECK(strcmp(host, "::1") == 0);
+    DD_CHECK_EQ_INT(6379, port);
+    DD_CHECK_EQ_INT(0, reshard_parse_addr("[::1]:6379", host, sizeof(host),
+                                         &port));
+    DD_CHECK(strcmp(host, "::1") == 0);
+    DD_CHECK_EQ_INT(6379, port);
+
+    for (i = 0; i < sizeof(bad) / sizeof(bad[0]); i++)
+        DD_CHECK_EQ_INT(-1, reshard_parse_addr(bad[i], host, sizeof(host),
+                                              &port));
+    DD_CHECK_EQ_INT(-1, reshard_parse_addr("abcd:1", host, 4, &port));
+    DD_CHECK_EQ_INT(-1, reshard_parse_addr("[::1]:1", host, 3, &port));
+}
+
+static void check_bad_int(const char *s, int min_value, int max_value)
+{
+    int out = 123;
+    DD_CHECK_EQ_INT(-1, reshard_parse_int(s, min_value, max_value, &out));
+    DD_CHECK_EQ_INT(123, out);
+}
+
+static void test_reshard_parse_int(void)
+{
+    char max_int[32];
+    int out = -1;
+
+    DD_CHECK_EQ_INT(0, reshard_parse_int("0", 0, 16383, &out));
+    DD_CHECK_EQ_INT(0, out);
+    DD_CHECK_EQ_INT(0, reshard_parse_int("16383", 0, 16383, &out));
+    DD_CHECK_EQ_INT(16383, out);
+    DD_CHECK_EQ_INT(0, reshard_parse_int("1", 1, INT_MAX, &out));
+    DD_CHECK_EQ_INT(1, out);
+    snprintf(max_int, sizeof(max_int), "%d", INT_MAX);
+    DD_CHECK_EQ_INT(0, reshard_parse_int(max_int, 1, INT_MAX, &out));
+    DD_CHECK_EQ_INT(INT_MAX, out);
+    DD_CHECK_EQ_INT(0, reshard_parse_int("0", 0, INT_MAX, &out));
+    DD_CHECK_EQ_INT(0, out);
+
+    check_bad_int("", 0, 16383);
+    check_bad_int("+1", 0, 16383);
+    check_bad_int(" 1", 0, 16383);
+    check_bad_int("\t1", 0, 16383);
+    check_bad_int("1x", 0, 16383);
+    check_bad_int("-1", 0, 16383);
+    check_bad_int("16384", 0, 16383);
+    check_bad_int("0", 1, INT_MAX);
+    check_bad_int("-1", 1, INT_MAX);
+    check_bad_int("-1", 0, INT_MAX);
+    check_bad_int("999999999999999999999999999999999999999999", 0,
+                  INT_MAX);
 }
 
 static void test_reshard_full_flow(void)
@@ -190,6 +269,8 @@ static void test_reshard_full_flow(void)
 
 int main(void)
 {
+    DD_RUN(test_reshard_parse_addr);
+    DD_RUN(test_reshard_parse_int);
     DD_RUN(test_reshard_full_flow);
     return DD_TEST_SUMMARY();
 }
