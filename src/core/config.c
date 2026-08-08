@@ -160,7 +160,7 @@ int config_apply(ddup_config *cfg, const char *key, const char *value)
                         value);
     if (key_eq(key, "io")) {
         if (!key_eq(value, "select") && !key_eq(value, "iocp") &&
-            !key_eq(value, "iouring"))
+            !key_eq(value, "iouring") && !key_eq(value, "iouring-op"))
             return -1;
         return copy_str(cfg->io, sizeof(cfg->io), value);
     }

@@ -42,6 +42,20 @@ static void test_requirepass(void)
     DD_CHECK_STR("other", cfg.requirepass);
 }
 
+static void test_io_backend_values(void)
+{
+    ddup_config cfg;
+
+    config_init(&cfg);
+    DD_CHECK_EQ_INT(0, config_apply(&cfg, "io", "select"));
+    DD_CHECK_STR("select", cfg.io);
+    DD_CHECK_EQ_INT(0, config_apply(&cfg, "io", "iocp"));
+    DD_CHECK_EQ_INT(0, config_apply(&cfg, "io", "iouring"));
+    DD_CHECK_EQ_INT(0, config_apply(&cfg, "io", "iouring-op"));
+    DD_CHECK_STR("iouring-op", cfg.io);
+    DD_CHECK_EQ_INT(-1, config_apply(&cfg, "io", "bogus"));
+}
+
 static void test_io_threads(void)
 {
     ddup_config cfg;
@@ -190,6 +204,7 @@ int main(void)
     DD_RUN(test_file_errors);
     DD_RUN(test_inline_overrides);
     DD_RUN(test_requirepass);
+    DD_RUN(test_io_backend_values);
     DD_RUN(test_io_threads);
     DD_RUN(test_validate_tls);
     return DD_TEST_SUMMARY();
