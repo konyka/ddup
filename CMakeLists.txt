@@ -5,9 +5,35 @@ project(ddup VERSION 0.1.0 LANGUAGES C)
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 include(DetectCStandard)
 include(DdupOptions)
+include(CheckCSourceCompiles)
 
 if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
     set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type" FORCE)
+endif()
+
+# Registered provided-buffer rings arrived as one Linux UAPI feature, but
+# some header combinations expose the CQE flag without the ring structs or
+# registration enum. Probe every declaration used by pal_iouring_op.c.
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    check_c_source_compiles("#include <linux/io_uring.h>
+int main(void) {
+    struct io_uring_buf buf;
+    struct io_uring_buf_ring ring;
+    struct io_uring_buf_reg reg;
+    struct io_uring_buf *slot = ring.bufs;
+    buf.addr = 0; buf.len = 0; buf.bid = 0; buf.resv = 0;
+    slot->addr = buf.addr;
+    ring.tail = 0;
+    reg.ring_addr = 0; reg.ring_entries = 0; reg.bgid = 0;
+    return IORING_REGISTER_PBUF_RING + IORING_CQE_F_BUFFER +
+           IORING_CQE_BUFFER_SHIFT + IOSQE_BUFFER_SELECT +
+           (int)sizeof(buf) + (int)sizeof(ring) + (int)sizeof(reg);
+}" _DDUP_HAVE_IOURING_PBUF_UAPI)
+endif()
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND _DDUP_HAVE_IOURING_PBUF_UAPI)
+    set(DDUP_HAVE_IOURING_PBUF_UAPI 1)
+else()
+    set(DDUP_HAVE_IOURING_PBUF_UAPI 0)
 endif()
 
 # ---------------------------------------------------------------------------
@@ -72,6 +98,7 @@ target_compile_definitions(ddup_core PUBLIC
     DDUP_VERSION_MAJOR=${PROJECT_VERSION_MAJOR}
     DDUP_VERSION_MINOR=${PROJECT_VERSION_MINOR}
     DDUP_VERSION_PATCH=${PROJECT_VERSION_PATCH}
+    DDUP_HAVE_IOURING_PBUF_UAPI=${DDUP_HAVE_IOURING_PBUF_UAPI}
 )
 
 if(WIN32)
@@ -210,6 +237,10 @@ if(WIN32)
     ddup_add_test(test_iocp tests/test_iocp.c)
 endif()
 
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    ddup_add_test(test_iouring_op tests/test_iouring_op.c)
+endif()
+
 if(DDUP_HAS_TLS)
     ddup_add_test(test_tls tests/test_tls.c)
     target_compile_definitions(test_tls PRIVATE
@@ -225,6 +256,9 @@ if(DDUP_HAS_TLS)
 endif()
 if(WIN32)
     list(APPEND DDUP_CHECK_DEPS test_iocp)
+endif()
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    list(APPEND DDUP_CHECK_DEPS test_iouring_op)
 endif()
 
 add_custom_target(check

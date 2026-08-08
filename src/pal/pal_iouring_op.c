@@ -34,23 +34,16 @@
 #ifndef IORING_RECV_MULTISHOT
 #define IORING_RECV_MULTISHOT (1U << 1)
 #endif
-/* IORING_REGISTER_PBUF_RING is an enum constant, not a macro, so it
- * cannot guard fallback struct definitions; IORING_CQE_F_BUFFER (a macro
- * from the same 5.19 UAPI update as the pbuf structs) is the sentinel:
- * without it the headers predate pbuf support and the feature compiles
- * out (enable fails at runtime, the server falls back to recv reposts). */
-#ifdef IORING_CQE_F_BUFFER
-#define PAL_IOU_HAVE_PBUF 1
-#ifndef IORING_CQE_BUFFER_SHIFT
-#define IORING_CQE_BUFFER_SHIFT 16
+/* CMake probes the complete registered-pbuf UAPI. Default off for builds
+ * that compile this source outside the project configuration. */
+#ifndef DDUP_HAVE_IOURING_PBUF_UAPI
+#define DDUP_HAVE_IOURING_PBUF_UAPI 0
 #endif
-#else
-#define PAL_IOU_HAVE_PBUF 0
-#endif
+#define PAL_IOU_HAVE_PBUF DDUP_HAVE_IOURING_PBUF_UAPI
 
 /* 6.0+ setup hints (macro-guarded like the rest) */
 #ifndef IORING_SETUP_DEFER_TASKRUN
-#define IORING_SETUP_DEFER_TASKRUN (1U << 9)
+#define IORING_SETUP_DEFER_TASKRUN (1U << 13)
 #endif
 #ifndef IORING_SETUP_SINGLE_ISSUER
 #define IORING_SETUP_SINGLE_ISSUER (1U << 12)
@@ -59,6 +52,12 @@
 #define PAL_IOU_SQ_ENTRIES 1024 /* CQ is 2x; overflow is kernel-buffered */
 
 #define UD_TAG_MASK 0x7ull /* low 3 bits carry the op kind */
+#define UD_TAG_TIMEOUT 0x5ull
+
+typedef struct iou_timeout {
+    struct __kernel_timespec ts;
+    struct iou_timeout *next;
+} iou_timeout;
 
 struct pal_iouring {
     int ring_fd;
@@ -67,13 +66,16 @@ struct pal_iouring {
     struct io_uring_sqe *sqes;
     struct io_uring_cqe *cqes;
     unsigned *sq_array; /* SQ indirection array */
+    unsigned *sq_head;
     unsigned *sq_tail;
+    unsigned *sq_flags;
     unsigned *sq_ring_mask;
     unsigned sq_entries;
     unsigned *cq_head;
     unsigned *cq_tail;
     unsigned *cq_ring_mask;
-    unsigned sq_submit; /* last tail the kernel was told about */
+    unsigned sq_submit; /* tail accepted by non-SQPOLL io_uring_enter */
+    int sqpoll;
     int accept_multishot; /* cleared on the first -EINVAL from accept */
     int accept_armed;     /* an accept is live (multi- or single-shot) */
     int defer_taskrun;    /* DEFER_TASKRUN active: pump via enter always */
@@ -84,6 +86,9 @@ struct pal_iouring {
     unsigned pbuf_count;  /* power of two */
     unsigned pbuf_mask;
     size_t pbuf_size;
+    iou_timeout *timeout_pool;
+    iou_timeout *timeout_free;
+    int test_fail_wake_once;
 };
 
 static int iou_sys_setup(unsigned entries, struct io_uring_params *p)
@@ -150,12 +155,30 @@ pal_iouring *pal_iouring_create_ex(unsigned flags)
     r->cqes = (struct io_uring_cqe *)(base + p.cq_off.cqes);
     r->sq_array = (unsigned *)(base + p.sq_off.array);
     r->sq_entries = p.sq_entries;
+    r->sq_head = (unsigned *)(base + p.sq_off.head);
     r->sq_tail = (unsigned *)(base + p.sq_off.tail);
+    r->sq_flags = (unsigned *)(base + p.sq_off.flags);
     r->sq_ring_mask = (unsigned *)(base + p.sq_off.ring_mask);
     r->cq_head = (unsigned *)(base + p.cq_off.head);
     r->cq_tail = (unsigned *)(base + p.cq_off.tail);
     r->cq_ring_mask = (unsigned *)(base + p.cq_off.ring_mask);
+    r->sq_submit = __atomic_load_n(r->sq_head, __ATOMIC_ACQUIRE);
+    r->sqpoll = (p.flags & IORING_SETUP_SQPOLL) != 0;
     r->accept_multishot = 1; /* probed live: first -EINVAL clears it */
+    r->timeout_pool = (iou_timeout *)calloc(r->sq_entries,
+                                            sizeof(*r->timeout_pool));
+    if (r->timeout_pool == NULL) {
+        munmap(r->sqes, sqes_sz);
+        munmap(r->ring, r->ring_sz);
+        goto fail;
+    }
+    {
+        unsigned i;
+        for (i = 0; i < r->sq_entries; i++) {
+            r->timeout_pool[i].next = r->timeout_free;
+            r->timeout_free = &r->timeout_pool[i];
+        }
+    }
     return r;
 fail:
     close(r->ring_fd);
@@ -181,42 +204,115 @@ void pal_iouring_free(pal_iouring *r)
     munmap(r->ring, r->ring_sz);
     free(r->pbuf_ring);
     free(r->pbuf_data);
+    free(r->timeout_pool);
     pal_mutex_destroy(&r->lock);
     free(r);
 }
 
-/* Caller must hold r->lock. */
-static struct io_uring_sqe *iou_get_sqe(pal_iouring *r)
+/* Submit all published normal-mode entries. Caller holds r->lock. */
+static int iou_submit_locked(pal_iouring *r)
+{
+    unsigned tail;
+    if (r->sqpoll)
+        return 0;
+    tail = __atomic_load_n(r->sq_tail, __ATOMIC_RELAXED);
+    while (r->sq_submit != tail) {
+        unsigned n = tail - r->sq_submit;
+        int rc;
+        do {
+            rc = iou_sys_enter(r->ring_fd, n, 0, 0);
+        } while (rc < 0 && errno == EINTR);
+        if (rc <= 0)
+            return -1;
+        if ((unsigned)rc > n) {
+            errno = EIO;
+            return -1;
+        }
+        r->sq_submit += (unsigned)rc;
+    }
+    return 0;
+}
+
+/* Wake a parked SQPOLL thread after publication. Caller holds r->lock. */
+static int iou_wake_sqpoll_locked(pal_iouring *r)
+{
+    int rc;
+    if (r->sqpoll && r->test_fail_wake_once) {
+        r->test_fail_wake_once = 0;
+        errno = EIO;
+        return -1;
+    }
+    if (!r->sqpoll ||
+        (__atomic_load_n(r->sq_flags, __ATOMIC_ACQUIRE) &
+         IORING_SQ_NEED_WAKEUP) == 0)
+        return 0;
+    do {
+        rc = iou_sys_enter(r->ring_fd, 0, 0, IORING_ENTER_SQ_WAKEUP);
+    } while (rc < 0 && errno == EINTR);
+    return rc < 0 ? -1 : 0;
+}
+
+/* A full SQPOLL ring needs the kernel consumer to make room. */
+static int iou_wait_sqpoll_space_locked(pal_iouring *r)
+{
+    unsigned flags = IORING_ENTER_SQ_WAIT;
+    int rc;
+    if (__atomic_load_n(r->sq_flags, __ATOMIC_ACQUIRE) &
+        IORING_SQ_NEED_WAKEUP)
+        flags |= IORING_ENTER_SQ_WAKEUP;
+    do {
+        rc = iou_sys_enter(r->ring_fd, 0, 0, flags);
+    } while (rc < 0 && errno == EINTR);
+    return rc < 0 ? -1 : 0;
+}
+
+/* Reserve one SQ slot without exposing it to the kernel. Caller holds lock. */
+static struct io_uring_sqe *iou_reserve_sqe(pal_iouring *r, unsigned *tail_out)
 {
     unsigned tail = __atomic_load_n(r->sq_tail, __ATOMIC_RELAXED);
-    unsigned idx = tail & *r->sq_ring_mask;
+    unsigned head = __atomic_load_n(r->sq_head, __ATOMIC_ACQUIRE);
+    unsigned idx;
     struct io_uring_sqe *sqe;
-    if (tail - r->sq_submit >= r->sq_entries) {
-        /* SQ full: submit now; non-SQPOLL enter copies the sqes
-         * synchronously, so the slots are reusable on return */
-        unsigned n = tail - r->sq_submit;
-        r->sq_submit = tail;
-        (void)iou_sys_enter(r->ring_fd, n, 0, 0);
+    if (tail - head >= r->sq_entries) {
+        if (r->sqpoll) {
+            if (iou_wait_sqpoll_space_locked(r) != 0)
+                return NULL;
+        }
+        else if (iou_submit_locked(r) != 0)
+            return NULL;
+        head = __atomic_load_n(r->sq_head, __ATOMIC_ACQUIRE);
+        if (tail - head >= r->sq_entries) {
+            errno = EAGAIN;
+            return NULL;
+        }
     }
+    idx = tail & *r->sq_ring_mask;
     sqe = &r->sqes[idx];
     memset(sqe, 0, sizeof(*sqe));
     /* the kernel dereferences sqes through the SQ indirection array */
     r->sq_array[idx] = idx;
-    __atomic_store_n(r->sq_tail, tail + 1, __ATOMIC_RELEASE);
+    *tail_out = tail;
     return sqe;
 }
 
-/* Submit everything queued so far. Caller must hold r->lock. */
-static void iou_flush(pal_iouring *r)
+/* Publish only after the reserved SQE and its array entry are complete. */
+static int iou_publish_sqe(pal_iouring *r, unsigned tail)
 {
-    unsigned n = *r->sq_tail - r->sq_submit;
-    if (n > 0) {
-        int rc;
-        r->sq_submit = *r->sq_tail;
-        do {
-            rc = iou_sys_enter(r->ring_fd, n, 0, 0);
-        } while (rc < 0 && errno == EINTR);
+    __atomic_store_n(r->sq_tail, tail + 1, __ATOMIC_RELEASE);
+    return iou_wake_sqpoll_locked(r) == 0
+               ? PAL_IOURING_PUBLISHED
+               : PAL_IOURING_PUBLISHED_RETRY;
+}
+
+/* Submit everything queued so far. Caller must hold r->lock. */
+static int iou_flush(pal_iouring *r)
+{
+    if (r->sqpoll) {
+        return iou_wake_sqpoll_locked(r) == 0
+                   ? PAL_IOURING_PUBLISHED
+                   : PAL_IOURING_PUBLISHED_RETRY;
     }
+    return iou_submit_locked(r);
 }
 
 pal_socket_t pal_iouring_listen(pal_iouring *r, const char *host,
@@ -226,7 +322,7 @@ pal_socket_t pal_iouring_listen(pal_iouring *r, const char *host,
     pal_socket_t fd = pal_tcp_listen(host, port, 511, bound_port);
     if (fd == PAL_SOCKET_INVALID)
         return PAL_SOCKET_INVALID;
-    if (pal_iouring_accept_post(r, fd, userdata) != 0) {
+    if (pal_iouring_accept_post(r, fd, userdata) < 0) {
         pal_close(fd);
         return PAL_SOCKET_INVALID;
     }
@@ -237,13 +333,19 @@ int pal_iouring_accept_post(pal_iouring *r, pal_socket_t listen_fd,
                             void *userdata)
 {
     struct io_uring_sqe *sqe;
+    unsigned tail;
+    int rc;
     pal_mutex_lock(&r->lock);
     if (r->accept_armed) {
         /* multishot accept still live: it keeps producing completions */
         pal_mutex_unlock(&r->lock);
         return 0;
     }
-    sqe = iou_get_sqe(r);
+    sqe = iou_reserve_sqe(r, &tail);
+    if (sqe == NULL) {
+        pal_mutex_unlock(&r->lock);
+        return -1;
+    }
     sqe->opcode = IORING_OP_ACCEPT;
     sqe->fd = (int)listen_fd;
     /* addr/addrlen NULL: peer address not needed */
@@ -251,17 +353,24 @@ int pal_iouring_accept_post(pal_iouring *r, pal_socket_t listen_fd,
                         (r->accept_multishot ? IORING_ACCEPT_MULTISHOT : 0);
     sqe->user_data = (unsigned long long)(uintptr_t)userdata |
                      (unsigned long long)PAL_IOURING_ACCEPT;
+    rc = iou_publish_sqe(r, tail);
     r->accept_armed = 1;
     pal_mutex_unlock(&r->lock);
-    return 0;
+    return rc;
 }
 
 int pal_iouring_recv(pal_iouring *r, pal_socket_t fd, void *buf, size_t cap,
                      void *userdata)
 {
     struct io_uring_sqe *sqe;
+    unsigned tail;
+    int rc;
     pal_mutex_lock(&r->lock);
-    sqe = iou_get_sqe(r);
+    sqe = iou_reserve_sqe(r, &tail);
+    if (sqe == NULL) {
+        pal_mutex_unlock(&r->lock);
+        return -1;
+    }
     sqe->opcode = IORING_OP_RECV;
     sqe->fd = (int)fd;
     sqe->addr = (unsigned long long)(uintptr_t)buf;
@@ -269,16 +378,23 @@ int pal_iouring_recv(pal_iouring *r, pal_socket_t fd, void *buf, size_t cap,
     sqe->msg_flags = 0;
     sqe->user_data = (unsigned long long)(uintptr_t)userdata |
                      (unsigned long long)PAL_IOURING_RECV;
+    rc = iou_publish_sqe(r, tail);
     pal_mutex_unlock(&r->lock);
-    return 0;
+    return rc;
 }
 
 int pal_iouring_send(pal_iouring *r, pal_socket_t fd, const void *buf,
                      size_t n, void *userdata)
 {
     struct io_uring_sqe *sqe;
+    unsigned tail;
+    int rc;
     pal_mutex_lock(&r->lock);
-    sqe = iou_get_sqe(r);
+    sqe = iou_reserve_sqe(r, &tail);
+    if (sqe == NULL) {
+        pal_mutex_unlock(&r->lock);
+        return -1;
+    }
     sqe->opcode = IORING_OP_SEND;
     sqe->fd = (int)fd;
     sqe->addr = (unsigned long long)(uintptr_t)buf;
@@ -286,22 +402,30 @@ int pal_iouring_send(pal_iouring *r, pal_socket_t fd, const void *buf,
     sqe->msg_flags = MSG_NOSIGNAL; /* a closed peer must not kill the loop */
     sqe->user_data = (unsigned long long)(uintptr_t)userdata |
                      (unsigned long long)PAL_IOURING_SEND;
+    rc = iou_publish_sqe(r, tail);
     pal_mutex_unlock(&r->lock);
-    return 0;
+    return rc;
 }
 
 int pal_iouring_enable_pbuf(pal_iouring *r, unsigned count, size_t size)
 {
 #if PAL_IOU_HAVE_PBUF
     struct io_uring_buf_reg reg;
+    void *ring_mem = NULL;
+    long page_size;
     unsigned i;
 
     if (r->pbuf_ring != NULL)
         return 0; /* already enabled */
     if (count == 0 || (count & (count - 1)) != 0)
         return -1; /* ring entries must be a power of two */
-    r->pbuf_ring = (struct io_uring_buf_ring *)calloc(
-        count, sizeof(struct io_uring_buf));
+    page_size = sysconf(_SC_PAGESIZE);
+    if (page_size <= 0 ||
+        posix_memalign(&ring_mem, (size_t)page_size,
+                       (size_t)count * sizeof(struct io_uring_buf)) != 0)
+        return -1;
+    memset(ring_mem, 0, (size_t)count * sizeof(struct io_uring_buf));
+    r->pbuf_ring = (struct io_uring_buf_ring *)ring_mem;
     r->pbuf_data = (char *)malloc((size_t)count * size);
     if (r->pbuf_ring == NULL || r->pbuf_data == NULL) {
         free(r->pbuf_ring);
@@ -349,23 +473,44 @@ int pal_iouring_pbuf_active(const pal_iouring *r)
     return r->pbuf_ring != NULL;
 }
 
+int pal_iouring_sqpoll_active(const pal_iouring *r)
+{
+    return r->sqpoll;
+}
+
+void pal_iouring_test_fail_next_sqpoll_wake(pal_iouring *r, int err)
+{
+    pal_mutex_lock(&r->lock);
+    r->test_fail_wake_once = err == 0 ? EIO : err;
+    pal_mutex_unlock(&r->lock);
+}
+
 int pal_iouring_recv_ms(pal_iouring *r, pal_socket_t fd, void *userdata)
 {
 #if PAL_IOU_HAVE_PBUF
     struct io_uring_sqe *sqe;
+    unsigned tail;
+    int rc;
     if (r->pbuf_ring == NULL)
         return -1;
     pal_mutex_lock(&r->lock);
-    sqe = iou_get_sqe(r);
+    sqe = iou_reserve_sqe(r, &tail);
+    if (sqe == NULL) {
+        pal_mutex_unlock(&r->lock);
+        return -1;
+    }
     sqe->opcode = IORING_OP_RECV;
     sqe->fd = (int)fd;
-    /* addr/len unused with provided buffers: the kernel picks a slot */
+    /* Buffer selection requires zero len; the kernel supplies slot capacity. */
+    sqe->flags = IOSQE_BUFFER_SELECT;
+    sqe->len = 0;
     sqe->ioprio = IORING_RECV_MULTISHOT;
     sqe->buf_group = 0; /* matches the registered bgid */
     sqe->user_data = (unsigned long long)(uintptr_t)userdata |
                      (unsigned long long)PAL_IOURING_RECV;
+    rc = iou_publish_sqe(r, tail);
     pal_mutex_unlock(&r->lock);
-    return 0;
+    return rc;
 #else
     (void)r; (void)fd; (void)userdata;
     return -1;
@@ -387,10 +532,10 @@ void pal_iouring_recycle(pal_iouring *r, int bid)
                                           __ATOMIC_RELAXED);
     struct io_uring_buf *b = &r->pbuf_ring->bufs[tail & r->pbuf_mask];
     b->addr = (unsigned long long)(uintptr_t)(r->pbuf_data +
-                                              (size_t)bid * r->pbuf_size);
+                                               (size_t)bid * r->pbuf_size);
     b->len = (unsigned int)r->pbuf_size;
     b->bid = (unsigned short)bid;
-    b->resv = 0;
+    /* bufs[0].resv aliases the shared ring tail; never write resv. */
     __atomic_store_n(&r->pbuf_ring->tail, (unsigned short)(tail + 1),
                      __ATOMIC_RELEASE);
 #else
@@ -401,56 +546,81 @@ void pal_iouring_recycle(pal_iouring *r, int bid)
 int pal_iouring_post(pal_iouring *r, void *userdata)
 {
     struct io_uring_sqe *sqe;
+    unsigned tail;
+    int rc;
     pal_mutex_lock(&r->lock);
-    sqe = iou_get_sqe(r);
+    sqe = iou_reserve_sqe(r, &tail);
+    if (sqe == NULL) {
+        pal_mutex_unlock(&r->lock);
+        return -1;
+    }
     sqe->opcode = IORING_OP_NOP;
     sqe->fd = -1;
     sqe->user_data = (unsigned long long)(uintptr_t)userdata |
                      (unsigned long long)PAL_IOURING_WAKEUP;
-    iou_flush(r); /* cross-thread kick: make the waiter see it now */
+    rc = iou_publish_sqe(r, tail);
+    if (rc == PAL_IOURING_PUBLISHED)
+        rc = iou_flush(r);
+    if (rc < 0) {
+        pal_mutex_unlock(&r->lock);
+        return PAL_IOURING_PUBLISHED_RETRY;
+    }
     pal_mutex_unlock(&r->lock);
-    return 0;
+    return rc;
 }
 
 int pal_iouring_wait(pal_iouring *r, pal_iouring_event *evs, int max,
                      int timeout_ms)
 {
-    struct __kernel_timespec ts;
     unsigned head;
     unsigned min_complete = timeout_ms == 0 ? 0 : 1;
     int nev = 0;
+    int rc = 0;
 
     pal_mutex_lock(&r->lock);
     if (timeout_ms > 0) {
         /* relative timeout so a fully idle loop still wakes up; count=1
          * retires it early once any other completion arrives */
-        struct io_uring_sqe *sqe = iou_get_sqe(r);
-        ts.tv_sec = timeout_ms / 1000;
-        ts.tv_nsec = (long long)(timeout_ms % 1000) * 1000000LL;
+        struct io_uring_sqe *sqe;
+        iou_timeout *timeout;
+        unsigned tail;
+        timeout = r->timeout_free;
+        if (timeout == NULL) {
+            pal_mutex_unlock(&r->lock);
+            errno = EAGAIN;
+            return -1;
+        }
+        sqe = iou_reserve_sqe(r, &tail);
+        if (sqe == NULL) {
+            pal_mutex_unlock(&r->lock);
+            return -1;
+        }
+        r->timeout_free = timeout->next;
+        timeout->next = NULL;
+        timeout->ts.tv_sec = timeout_ms / 1000;
+        timeout->ts.tv_nsec = (long long)(timeout_ms % 1000) * 1000000LL;
         sqe->opcode = IORING_OP_TIMEOUT;
         sqe->fd = -1;
-        sqe->addr = (unsigned long long)(uintptr_t)&ts;
+        sqe->addr = (unsigned long long)(uintptr_t)&timeout->ts;
         sqe->len = 1;
-        sqe->user_data = 0; /* timeout completions carry no tag: skipped */
+        sqe->user_data = (unsigned long long)(uintptr_t)timeout |
+                         UD_TAG_TIMEOUT;
+        (void)iou_publish_sqe(r, tail);
     }
-    {
-        unsigned to_submit = *r->sq_tail - r->sq_submit;
-        int rc = 0;
-        r->sq_submit = *r->sq_tail;
-        /* the lock is NOT held across the blocking enter: a cross-thread
-         * pal_iouring_post must be able to submit its NOP concurrently,
-         * otherwise the kick could never wake this wait */
+    if (iou_flush(r) < 0) {
         pal_mutex_unlock(&r->lock);
-        /* with DEFER_TASKRUN, completions are only generated when the
-         * taskwork runs at an enter: always pump, even an empty poll */
-        if (to_submit > 0 || min_complete > 0 || r->defer_taskrun) {
-            do {
-                rc = iou_sys_enter(r->ring_fd, to_submit, min_complete,
-                                   IORING_ENTER_GETEVENTS);
-            } while (rc < 0 && errno == EINTR);
-            if (rc < 0)
-                return -1;
-        }
+        return -1;
+    }
+    /* All normal SQEs were accepted above. Unlock before the blocking enter
+     * so a cross-thread post can submit its wakeup NOP with to_submit=0. */
+    pal_mutex_unlock(&r->lock);
+    if (min_complete > 0 || r->defer_taskrun) {
+        do {
+            rc = iou_sys_enter(r->ring_fd, 0, min_complete,
+                               IORING_ENTER_GETEVENTS);
+        } while (rc < 0 && errno == EINTR);
+        if (rc < 0)
+            return -1;
     }
 
     head = __atomic_load_n(r->cq_head, __ATOMIC_RELAXED);
@@ -458,7 +628,14 @@ int pal_iouring_wait(pal_iouring *r, pal_iouring_event *evs, int max,
            nev < max) {
         struct io_uring_cqe *cqe = &r->cqes[head & *r->cq_ring_mask];
         unsigned long long ud = cqe->user_data;
-        if (ud != 0) {
+        if ((ud & UD_TAG_MASK) == UD_TAG_TIMEOUT) {
+            iou_timeout *timeout =
+                (iou_timeout *)(uintptr_t)(ud & ~UD_TAG_MASK);
+            pal_mutex_lock(&r->lock);
+            timeout->next = r->timeout_free;
+            r->timeout_free = timeout;
+            pal_mutex_unlock(&r->lock);
+        } else if (ud != 0) {
             pal_iouring_event *ev = &evs[nev];
             int op = (int)(ud & UD_TAG_MASK);
             ev->userdata = (void *)(uintptr_t)(ud & ~UD_TAG_MASK);
@@ -566,6 +743,15 @@ int pal_iouring_pbuf_active(const pal_iouring *p)
 {
     (void)p;
     return 0;
+}
+int pal_iouring_sqpoll_active(const pal_iouring *p)
+{
+    (void)p;
+    return 0;
+}
+void pal_iouring_test_fail_next_sqpoll_wake(pal_iouring *p, int err)
+{
+    (void)p; (void)err;
 }
 int pal_iouring_recv_ms(pal_iouring *p, pal_socket_t fd, void *userdata)
 {

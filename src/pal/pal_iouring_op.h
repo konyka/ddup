@@ -23,8 +23,8 @@
  *   - direct syscalls, no liburing dependency (same discipline as the
  *     readiness io_uring flavor in pal_event.c).
  *
- * Non-Linux builds compile an empty translation unit: pal_iouring_create
- * returns NULL and callers fall back to the readiness backend.
+ * Non-Linux builds compile functional unavailable-backend stubs:
+ * pal_iouring_create returns NULL and callers fall back to readiness.
  */
 #ifndef DDUP_PAL_IOURING_OP_H
 #define DDUP_PAL_IOURING_OP_H
@@ -55,6 +55,13 @@ typedef struct pal_iouring_event {
 
 typedef struct pal_iouring pal_iouring;
 
+/* Submission result: -1 = SQE not published, 0 = published, 1 = published
+ * but activation needs retry (the request remains outstanding). */
+#define PAL_IOURING_PUBLISH_FAILED (-1)
+#define PAL_IOURING_PUBLISHED 0
+#define PAL_IOURING_PUBLISHED_RETRY 1
+#define PAL_IOURING_PUBLISHED_WAKE_FAILED PAL_IOURING_PUBLISHED_RETRY
+
 /* Optional create flags (runtime-probed with silent fallback): */
 #define PAL_IOURING_F_SQPOLL 1u /* kernel SQ-poll thread: submissions need
                                    no io_uring_enter; sq_thread_idle 1s */
@@ -77,16 +84,20 @@ int pal_iouring_accept_post(pal_iouring *p, pal_socket_t listen_fd,
                             void *userdata);
 
 /* Submit one recv/send (buffers caller-owned until completion).
- * 0 on success (queued), -1 on immediate error. */
+ * 0 on success (queued), -1 when no SQE was published, and 1 when the SQE
+ * was published but the SQPOLL wake failed. In SQPOLL mode a wake
+ * syscall failure is reported after the complete SQE is published, so that
+ * request may still complete and retains the normal buffer lifetime. */
 int pal_iouring_recv(pal_iouring *p, pal_socket_t fd, void *buf, size_t cap,
                      void *userdata);
 int pal_iouring_send(pal_iouring *p, pal_socket_t fd, const void *buf,
                      size_t n, void *userdata);
 
 /* Provided-buffer ring + multishot recv (Phase 33).
- * pal_iouring_enable_pbuf registers a ring of `count` power-of-two buffers
- * of `size` bytes; returns 0 on success, -1 when the kernel/headers lack
- * support (callers fall back to pal_iouring_recv reposts). Once enabled,
+ * pal_iouring_enable_pbuf registers a page-aligned ring of `count`
+ * power-of-two buffers of `size` bytes; returns 0 on success, -1 when the
+ * complete registered-pbuf UAPI or the running kernel lacks support (callers
+ * fall back to pal_iouring_recv reposts). Once enabled,
  * pal_iouring_recv_ms arms ONE multishot recv per connection: the kernel
  * then delivers a CQE per received chunk, each carrying a buf_id into the
  * ring; the consumer copies the bytes out (pal_iouring_buf) and returns
@@ -97,6 +108,9 @@ int pal_iouring_send(pal_iouring *p, pal_socket_t fd, const void *buf,
  * request is a single sequential consumer of the socket receive queue). */
 int pal_iouring_enable_pbuf(pal_iouring *p, unsigned count, size_t size);
 int pal_iouring_pbuf_active(const pal_iouring *p);
+/* True only when create_ex actually enabled SQPOLL (not after fallback). */
+int pal_iouring_sqpoll_active(const pal_iouring *p);
+void pal_iouring_test_fail_next_sqpoll_wake(pal_iouring *p, int err);
 int pal_iouring_recv_ms(pal_iouring *p, pal_socket_t fd, void *userdata);
 /* Data pointer of ring slot bid (valid until pal_iouring_recycle). */
 const void *pal_iouring_buf(const pal_iouring *p, int bid);
@@ -109,7 +123,8 @@ void pal_iouring_recycle(pal_iouring *p, int bid);
 int pal_iouring_wait(pal_iouring *p, pal_iouring_event *evs, int max,
                      int timeout_ms);
 
-/* Submit a WAKEUP completion (cross-thread kick). 0 on success. */
+/* Submit a WAKEUP completion (cross-thread kick). Uses the same tri-state
+ * publication result as recv/send. */
 int pal_iouring_post(pal_iouring *p, void *userdata);
 
 /* Shutdown + close the socket; in-flight ops complete (0/-1) afterwards. */

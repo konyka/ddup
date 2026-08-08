@@ -234,10 +234,11 @@ proactor——提交 IORING_OP_RECV/SEND/ACCEPT 操作本身，完成携带结�
   分发被 IOCP 与 io_uring op 两种后端共享，事件归一化为同一形状。
   `--io iouring-op` / `SERVER_BACKEND_IOURING_OP`，仅 st；mt workers
   保持 readiness（记录在案，不接）。TLS/集群总线维持 readiness 限定。
-  内核不支持 io_uring 时回落 epoll/select；非 Linux 为空 stub。
+  内核不支持 io_uring 时回落 epoll/select；非 Linux 为不可用后端 stub。
 - **完成关联**：cqe 只有 user_data——op kind 编进低 3 位（指针至少
   8 对齐），解tag 得 op + conn/listen cookie。超时经 IORING_OP_TIMEOUT
-  （count=1 提前退役，user_data=0 的完成跳过）。
+  （count=1 提前退役）；超时参数存放在环拥有的固定节点池，节点只在对应
+  CQE 被消费后复用，提前被其他完成唤醒或 enter 失败都不会留下栈悬垂指针。
 - **multishot accept**：优先 IORING_ACCEPT_MULTISHOT（5.19+）——单个
   accept 请求持续产出 ACCEPT 完成（F_MORE），补投调用在其存活期间为
   no-op；首个 -EINVAL 完成自愈降级为单发补投（同 IOCP 的完成即补挂
@@ -245,7 +246,18 @@ proactor——提交 IORING_OP_RECV/SEND/ACCEPT 操作本身，完成携带结�
 - **SQE 批处理**：recv/send/accept 只入队不提交，wait 时一次
   io_uring_enter（submit all + 按需 GETEVENTS）刷出；跨线程唤醒
   （IORING_OP_NOP）立即提交。互斥锁不跨阻塞 enter 持有，否则唤醒
-  投递永远无法把 NOP 送进环（死锁）。
+  投递永远无法把 NOP 送进环（死锁）。SQ 槽位在互斥锁内先保留并完整
+  填写 SQE 与间接数组，最后才用 release store 推进 `sq_tail`；因此
+  SQPOLL 内核线程与并发 enter 永远看不到半初始化请求。槽位可用量由
+  acquire-load 的内核 `sq_head` 计算，不能用“已交给 enter”的游标推断；
+  普通模式按 enter 实际返回的提交数推进游标并处理部分提交/失败，SQPOLL
+  模式读取 `sq_flags`，需要时发 IORING_ENTER_SQ_WAKEUP，满环时以
+  IORING_ENTER_SQ_WAIT 等待内核消费后再保留槽位。SQ_WAKEUP 的 enter
+  失败会沿 publish/flush 返回公开投递 API 的 tri-state 结果（-1 未发布、
+  0 已发布、1 已发布但需重试）；此时 SQE 已完整 release-publish，绝不会
+  暴露半初始化请求，并仍可能由恢复后的 SQPOLL 线程消费。调用方对 1 必须
+  保留 buffer/userdata/listener 所有权，不得重投，后续 wait/flush 会重试已
+  发布的 tail。
 - **关停语义**：`pal_iouring_close` = shutdown + close——在飞 recv
   立即以 0（对端 orderly）完成，send 以 -EPIPE 完成，io_uring 请求
   持有文件引用故 close 本身安全；完成按 user_data 回到 zombie 排水
@@ -256,15 +268,25 @@ proactor——提交 IORING_OP_RECV/SEND/ACCEPT 操作本身，完成携带结�
   send-then-close，直到 detached send buffer 与新 out 均排空才执行
   shutdown + close；这保证 io_uring 的用户态 SQE 会先提交完成，避免
   close 抢先使错误回复变为 EOF。
-- **测试**：test_server 探测到 io_uring 时追加 op 模式整轮（另有
-  DDUP_TEST_IOURING_OP_ONLY 单跑开关）；Ubuntu CI（内核 6.x）覆盖。
+- **测试**：test_iouring_op 以公开 API 覆盖 SQPOLL 请求下的完整 SQE
+  发布（仅在查询确认 SQPOLL 实际启用后运行）、提前唤醒时的超时参数生命
+  周期，以及单槽 provided-buffer 环的重复 buffer id/数据/recycle；环或
+  pbuf UAPI 不可用时分别跳过。test_server 探测到 io_uring 时追加 op
+  模式整轮（另有 DDUP_TEST_IOURING_OP_ONLY 单跑开关）；Ubuntu CI
+  （内核 6.x）覆盖。
 - **multishot recv + provided-buffer 环（Phase 33）**：每连接一次
-  IORING_OP_RECV|IORING_RECV_MULTISHOT（buf_group 指向
-  IORING_REGISTER_PBUF_RING 注册的 256×64KB 环），武装期间零补投；
+  IORING_OP_RECV|IORING_RECV_MULTISHOT（SQE 设置 IOSQE_BUFFER_SELECT、
+  `len=0`，buf_group 指向 IORING_REGISTER_PBUF_RING 注册的
+  256×64KB 环），武装期间零补投；注册环内存按运行时页大小显式对齐，
+  满足内核 UAPI 对 `ring_addr` 的页对齐要求。构建期编译探测同时引用
+  pbuf ring/buf/reg 三个结构、所用字段及注册/选择/CQE 常量；旧或不完整
+  Linux 头文件会把该优化编译掉，运行时注册失败仍回落单发 recv 补投。
   每个收到块一条 CQE（F_BUFFER 携带槽位 id，F_MORE 表示请求仍武装）。
   server 把块拷入 conn rbuf 后立刻 recycle 槽位；同一 socket 的 CQE
   按接收序到达（multishot 请求是 socket 接收队列的单一顺序消费者），
-  按 CQE 序追加即精确。环饥饿时请求以 -ENOBUFS 终态结束（无 F_MORE、
+  按 CQE 序追加即精确。recycle 只重写 addr/len/bid 后 release-store tail，
+  绝不写 `io_uring_buf.resv`（第 0 项该字段与共享 tail 别名）。环饥饿时
+  请求以 -ENOBUFS 终态结束（无 F_MORE、
   无槽位）——server 识别后立即重武装而不是关连接。完成事件契约扩展
   err/buf_id/op_done：pending_ops 只在终态 CQE 归账；zombie 完成也
   必须回收槽位。master link 保持单发补投（复制流量大块、按需增长）。
@@ -274,7 +296,7 @@ proactor——提交 IORING_OP_RECV/SEND/ACCEPT 操作本身，完成携带结�
 - **SQPOLL / DEFER_TASKRUN|SINGLE_ISSUER（Phase 33，探测+静默回落）**：
   `pal_iouring_create_ex(flags)`——F_SQPOLL 设 IORING_SETUP_SQPOLL
   （sq_thread_idle=1s，提交不再需要 enter）；F_DEFER 设
-  DEFER_TASKRUN|SINGLE_ISSUER（taskwork 只在 enter 时跑，wait 因此
+  DEFER_TASKRUN（UAPI bit 13）|SINGLE_ISSUER（taskwork 只在 enter 时跑，wait 因此
   每次必泵；该模式下 pal_iouring_post 仅允许属主线程调用——st 模式
   本就无人跨线程投递）。setup 失败即重试裸 flags。env 门控
   （DDUP_IOU_SQPOLL=1 / DDUP_IOU_DEFER=1），默认关。

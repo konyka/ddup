@@ -956,7 +956,7 @@ static int repl_link_connect(server *srv)
          * out through kick_flush below */
         c->pending_ops++;
         srv->io.reads++;
-        if (pro_recv(srv, fd, c->rbuf, c->rcap, c) != 0) {
+        if (pro_recv(srv, fd, c->rbuf, c->rcap, c) < 0) {
             c->pending_ops--;
             conn_close(srv, srv->nconns - 1);
             return -1;
@@ -2510,7 +2510,7 @@ static void kick_flush(server *s, conn *c)
     if (n > IOCP_SEND_CHUNK)
         n = IOCP_SEND_CHUNK;
     s->io.writes++;
-    if (pro_send(s, c->fd, c->sbuf + c->sbuf_sent, n, c) == 0) {
+    if (pro_send(s, c->fd, c->sbuf + c->sbuf_sent, n, c) >= 0) {
         c->send_outstanding = 1;
         c->pending_ops++;
     } else {
@@ -2529,7 +2529,7 @@ static void iou_ms_rearm(server *s, conn *c, size_t idx)
 {
     c->pending_ops++;
     s->io.reads++;
-    if (pal_iouring_recv_ms(s->iou, c->fd, c) != 0) {
+    if (pal_iouring_recv_ms(s->iou, c->fd, c) < 0) {
         c->pending_ops--;
         conn_close(s, idx);
     }
@@ -2562,7 +2562,7 @@ static void server_accept_pro(server *s, pal_socket_t fd)
     }
     c->pending_ops++;
     s->io.reads++;
-    if (pro_recv(s, c->fd, c->rbuf, c->rcap, c) != 0) {
+    if (pro_recv(s, c->fd, c->rbuf, c->rcap, c) < 0) {
         c->pending_ops--;
         conn_close(s, s->nconns - 1);
     }
@@ -2701,7 +2701,7 @@ static int server_run_once_proactor(server *s, int timeout_ms)
                 c->pending_ops++;
                 s->io.reads++;
                 if (pro_recv(s, c->fd, c->rbuf + c->rlen,
-                             c->rcap - c->rlen, c) != 0) {
+                             c->rcap - c->rlen, c) < 0) {
                     c->pending_ops--;
                     repl_link_close(s);
                 }
