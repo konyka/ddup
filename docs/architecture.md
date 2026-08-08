@@ -248,9 +248,31 @@ proactor——提交 IORING_OP_RECV/SEND/ACCEPT 操作本身，完成携带结�
   的 rbuf/sbuf。SEND 带 MSG_NOSIGNAL。
 - **测试**：test_server 探测到 io_uring 时追加 op 模式整轮（另有
   DDUP_TEST_IOURING_OP_ONLY 单跑开关）；Ubuntu CI（内核 6.x）覆盖。
-- **未做（记录在案）**：multishot recv + provided buffers、fixed
-  buffers、SQPOLL——先从简单补投模型拿基准数字再决定（Phase 32a 的
-  IOCP 经验：loopback 上批次完整性比"提前武装"更重要）。
+- **multishot recv + provided-buffer 环（Phase 33）**：每连接一次
+  IORING_OP_RECV|IORING_RECV_MULTISHOT（buf_group 指向
+  IORING_REGISTER_PBUF_RING 注册的 256×64KB 环），武装期间零补投；
+  每个收到块一条 CQE（F_BUFFER 携带槽位 id，F_MORE 表示请求仍武装）。
+  server 把块拷入 conn rbuf 后立刻 recycle 槽位；同一 socket 的 CQE
+  按接收序到达（multishot 请求是 socket 接收队列的单一顺序消费者），
+  按 CQE 序追加即精确。环饥饿时请求以 -ENOBUFS 终态结束（无 F_MORE、
+  无槽位）——server 识别后立即重武装而不是关连接。完成事件契约扩展
+  err/buf_id/op_done：pending_ops 只在终态 CQE 归账；zombie 完成也
+  必须回收槽位。master link 保持单发补投（复制流量大块、按需增长）。
+  64KB 槽位对齐补投模型的 SERVER_RECV_CHUNK——16KB 会把每次管道突发
+  切成多条 CQE（Phase 32a 批次碎片化教训）。DDUP_IOU_RECV_MS=0 回落
+  补投模型（bench A/B 用）。
+- **SQPOLL / DEFER_TASKRUN|SINGLE_ISSUER（Phase 33，探测+静默回落）**：
+  `pal_iouring_create_ex(flags)`——F_SQPOLL 设 IORING_SETUP_SQPOLL
+  （sq_thread_idle=1s，提交不再需要 enter）；F_DEFER 设
+  DEFER_TASKRUN|SINGLE_ISSUER（taskwork 只在 enter 时跑，wait 因此
+  每次必泵；该模式下 pal_iouring_post 仅允许属主线程调用——st 模式
+  本就无人跨线程投递）。setup 失败即重试裸 flags。env 门控
+  （DDUP_IOU_SQPOLL=1 / DDUP_IOU_DEFER=1），默认关。
+- **未做（记录在案）**：registered/fixed send buffers 与 SEND_ZC——
+  sbuf 按需 realloc 与注册缓冲的固定地址模型冲突（每次扩容要注销
+  重注册），loopback 上 pin 开销相对拷贝本身微小；SEND_ZC 的通知
+  CQE 对与缓冲生命周期规则同 sbuf 复用模式不兼容。评估结论：收益
+  不确定、复杂度实在，跳过（详见 performance.md Phase 33）。
 
 ## mt 生产化（Phase 15）
 

@@ -167,6 +167,11 @@
     multishot accept 自愈降级、SQE 批提交、zombie 排水；`--io
     iouring-op`（仅 st，默认关闭）；CI c500 P64 与 epoll 持平或略胜
     （Phase 32b）
+  - [x] io_uring op 进阶：multishot recv + 256×64KB provided-buffer
+    环（零补投、ENOBUFS 重武装、zombie 槽位回收）、SQPOLL 与
+    DEFER_TASKRUN|SINGLE_ISSUER 探测（env 门控默认关）；registered
+    send buffers/SEND_ZC 评估后不做（记录在案）；bench 常驻 repost
+    vs 全栈双变体，全栈持平或略胜（Phase 33）
   - [ ] 范围化排除（记录在案，不实施）：
     - 分层存储（热/冷数据落盘）：超出"内存缓存存储"定位
     - mt 模式的复制/集群适配：见 Phase 15 说明

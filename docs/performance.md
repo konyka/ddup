@@ -656,3 +656,47 @@ d1024 677k/673k——与 select/uring 同窗口互有胜负，全在噪声内。
 SQPOLL 未做——Phase 32a（IOCP）证明 loopback 上批次完整性比提前武装
 更重要，先以简单补投模型取数；若后续复跑显示 op 模式持续无胜，
 负结果如实记录、后端保持默认关闭。
+
+## Phase 33 io_uring op 模式进阶（2026-08-08）
+
+在 32b 的补投模型上加三个特性，全部运行时探测 + 静默回落，CI 驱动
+验证（本机无 Linux）。
+
+**1. multishot recv + provided-buffer 环**（b27119b + 2d2c1a9 头文件
+哨兵修复 + f21cd35 64KB 槽位）：每连接一次 IORING_OP_RECV|
+RECV_MULTISHOT 挂 256×64KB pbuf 环（bgid 0），武装期间零补投；CQE
+经 F_BUFFER 带槽位 id、F_MORE 表示请求存活；server 拷入 rbuf 即回收
+槽位；环饥饿以 -ENOBUFS 终态结束→立即重武装（不关连接）；zombie
+完成同样回收槽位；pending_ops 只在终态 CQE 归账。默认开（测试默认
+覆盖），DDUP_IOU_RECV_MS=0 回落补投。
+
+**2. SQPOLL / DEFER_TASKRUN|SINGLE_ISSUER**（32ed076）：
+pal_iouring_create_ex(flags)，setup 失败重试裸 flags；env 门控
+DDUP_IOU_SQPOLL=1 / DDUP_IOU_DEFER=1，默认关。DEFER 模式下 wait
+每次必泵 enter（taskwork 只在 enter 跑），pal_iouring_post 限属主
+线程。
+
+**3. registered send buffers / SEND_ZC：评估后不做**。sbuf 按需
+realloc 与注册缓冲固定地址模型冲突（扩容=注销重注册）；loopback 上
+页 pin 开销相对拷贝本身微小；SEND_ZC 的通知 CQE 对与缓冲生命周期
+规则同 sbuf 复用模式不兼容。复杂度实在、收益不确定。
+
+**A/B 数字**（bench.yml：7776 = op repost 基线 DDUP_IOU_RECV_MS=0；
+7777 = 全栈 multishot(+64KB 槽)+SQPOLL+DEFER；同窗口对比才有效，
+4 核共享 runner 跨窗口波动可达 2x）：
+
+| 窗口 | cell | repost 7776 | 全栈 7777 | 结论 |
+| --- | --- | --- | --- | --- |
+| 32ed076（ms 16KB 无 sqpoll） | c500P64 d16 | 1176k/1250k | 1136k/1176k | ms -3/-6% |
+| 同上 | c50P16 d16 | 671k/635k | 615k/651k | 互有胜负 |
+| ca51d6a（64KB+SQPOLL+DEFER） | c50P16 d16 | 554k/621k | 619k/639k | +12%/+3% |
+| 同上 | c500P16 d16 | 574k/597k | 591k/617k | +3%/+3% |
+| 同上 | c500P64 d16 | 586k/711k | 586k/692k | 0/-3% |
+| 同上 | c50P16 d1024 | 495k/501k | 522k/540k | +5.5%/+7.8% |
+
+第一窗口（16KB 槽、无 SQPOLL）multishot 一致性小负——16KB 槽把管道
+突发切成多条 CQE，正是 Phase 32a 在 IOCP 上量到的批次碎片化；换
+64KB 槽（对齐 SERVER_RECV_CHUNK）+ SQPOLL/DEFER 后第二窗口反转为大
+部分格小胜。runner 噪声量级与效应相当，结论按"持平或略胜"保留全栈
+为 7777 常驻变体；默认配置不变（op 后端默认关，SQPOLL/DEFER env
+门控，multishot 在 op 后端内默认开）。
