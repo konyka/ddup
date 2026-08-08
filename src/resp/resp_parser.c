@@ -207,10 +207,50 @@ static int parse_at(const char *start, const char *end, const char **pos,
         out->items = NULL;
         const char *cur = crlf + 2;
         if (slots > 0) {
+            size_t i = 0;
             out->items = arena_alloc(a, slots * sizeof(resp_value));
             if (!out->items)
                 return -1;
-            for (size_t i = 0; i < slots; i++) {
+            /* Fast path (Phase 36): command traffic is overwhelmingly
+             * *N arrays of $ bulks; parse bulk children inline instead of
+             * re-entering the full recursive dispatch per child. The
+             * semantics match the '$' case below exactly; the first
+             * non-bulk child falls back to the general recursion. */
+            if (type == '*') {
+                while (i < slots && cur < end && *cur == '$') {
+                    resp_value *it = &out->items[i];
+                    const char *bp = cur + 1;
+                    const char *bcrlf = ddup_find_crlf(bp, end);
+                    long long blen;
+                    const char *payload;
+                    if (!bcrlf)
+                        return 0;
+                    if (parse_ll(bp, bcrlf, &blen) != 0)
+                        return -1;
+                    it->is_null = 0;
+                    if (blen == -1) { /* null bulk */
+                        it->type = RESP_BULK_STRING;
+                        it->str = NULL;
+                        it->len = 0;
+                        cur = bcrlf + 2;
+                        i++;
+                        continue;
+                    }
+                    if (blen < 0 || blen > RESP_MAX_ARRAY_LEN)
+                        return -1;
+                    payload = bcrlf + 2;
+                    if ((size_t)(end - payload) < (size_t)blen + 2)
+                        return 0; /* incomplete */
+                    if (payload[blen] != '\r' || payload[blen + 1] != '\n')
+                        return -1;
+                    it->type = RESP_BULK_STRING;
+                    it->str = payload;
+                    it->len = (size_t)blen;
+                    cur = payload + blen + 2;
+                    i++;
+                }
+            }
+            for (; i < slots; i++) {
                 int r = parse_at(start, end, &cur, &out->items[i], a, depth + 1);
                 if (r <= 0)
                     return r;
