@@ -749,3 +749,44 @@ garnet 读数）。out 在 64 回复突发的翻倍重分配问题已被 Target 
 **剩余差距**：st 单核天花板 vs garnet 多核；mt4 的每命令路由开销
 吃掉多核扩展性（c500 P64 mt4 ≈ st，4 worker 未换算成倍数）——后者
 是 Phase 28-31 未竟之地，候选后续靶点。
+
+## Phase 35 函数级剖析与定点优化（2026-08-08）
+
+方法：同窗口交错 A/B 确认差距 → WPR CPU 采样（build-prof 含 PDB，
+xperf `-symbols -a profile -detail` 导出函数级自重）→ 只动 ddup 侧
+头部热点 → 每修复独立 A/B（≥3 轮交错取中位）。
+
+**差距确认（本窗口，garnet vs ddup-st 中位，3 轮）**：c500 P64 16B
+SET 2005k vs 1472k（+36%）、GET 2183k vs 1896k（+15%）；c50 P16
+1KB GET 1126k vs 963k（+17%）。
+
+**剖析 top（ddup 侧自重，采样权重）**：
+
+- c500 P64 SET：resp_parse 26% > session_execute 13% > rh_set_ex2 9%
+  > conn_process_input 9% > db_expire_if_needed 7% > rh_hash 6% >
+  rh_get_touch 6% > rh_migrate_some 5% > cmd_resolve 4.5%
+- c50 P16 1KB GET：resp_write_bulk（value→out 的 1KB 拷贝本身）>
+  resp_parse > rh_get_touch > conn_process_input > session_execute >
+  db_expire_if_needed > command_dispatch > cmd_resolve > rh_hash
+
+**结论：无可单点修复的热点**。成本均匀分布在 解析→命令解析→分发→
+哈希→存取 的分层链上（每层 4-9%）；expire 快路径（expires 空即返）
+与 cmd 哈希表已存在，LTO 已开。IO 层此前已证最优（Phase 34c）。
+
+**尝试并回退**：RESP 解析器"数组内联 \$bulk 快路径"（省每子元素一次
+递归分发）——实现语义等价、ctest 55/55，但 A/B 中位无任何一格超过
+噪声（c500P64 GET 中位 -13% 但三轮散布 1533k-1976k，噪声量级
+±10%），按"只留下可测胜利"规则回退（git checkout，未进入历史）。
+
+**最终矩阵（compare.sh full，本窗口单轮，绝对值随窗口漂移）**：
+
+| 场景 | ddup-st | ddup-mt4 | garnet |
+| --- | --- | --- | --- |
+| c50 P16 16B | 1025k/975k | 854k/947k | 909k/1058k |
+| c500 P16 16B | 704k/645k | 680k/793k | 668k/706k |
+| c500 P64 16B | 1379k/1307k | 1098k/1449k | 1526k/1515k |
+| c50 P16 1KB | 552k/751k | 619k/749k | 729k/873k |
+
+**剩余差距的定性**：st 单核分层每命令 CPU 是天花板所在；要再近
+garnet 需要结构性减重（更浅的命令路径、存储层内联）而非微优化，
+或接受单核定位。mt4 在 c500 P64 GET 已超 st（1449k vs 1307k）。
