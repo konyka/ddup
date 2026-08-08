@@ -858,3 +858,11 @@ mt_batch_flush；命令被路由时经历 home 解析 + target 重解析**两次
 
 **st 路径**：本轮未触碰（crc16 只在 mt 路由与集群槽位计算中使用；
 st 非集群不经过）。
+
+**CI 官方数字（bench.yml @ a38bb15，含 Phase 36 lean + Phase 37
+crc16）**：st c500 P64 2247k/1904k、c50 P16 1492k/1515k；mt4 c500
+P64 2083k/2597k（本轮 mt4 最强格，超 st）；uring 全栈 7777 c500
+P64 1550k/3124k。本轮 mt4 两个单元格 0/爬行（c50 GET、c500 P16）
+为已知 CI 抖病（2 次重启兜底），与本阶段改动无关（test_hashslot
+及全套 mt/集群测试绿；Windows CI 失败日志分支最新条目为 08-07
+旧 flake）。
