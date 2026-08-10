@@ -147,8 +147,9 @@ int cluster_nodes_parse_line(struct db *d, const char *line, size_t len);
 #define CLUSTER_BUS_MAGIC_V2 "RCM2"
 
 /* Build a PING/PONG/MEET frame from the myself node + up to 10 gossip
- * entries (other known nodes). */
-void cluster_bus_build_frame(struct db *d, int type, resp_buf *out);
+ * entries (other known nodes). Returns 0 on success, -1 without changing
+ * out->len on failure. */
+int cluster_bus_build_frame(struct db *d, int type, resp_buf *out);
 
 /* Parse one frame defensively: upsert the sender, merge gossip entries,
  * update last_seen (MEET additionally completes the handshake). On PING or
@@ -160,13 +161,14 @@ int cluster_bus_handle_frame(struct db *d, const char *frame, size_t len,
 /* Build a PUBLISH frame (shard channel fan-out): [RCM2][totlen u32le]
  * [type u16le=4][u32le chlen][channel][u32le msglen][message]. These
  * frames carry no node record; receivers deliver to local shard
- * subscribers and never feed them to cluster_bus_handle_frame. */
-void cluster_bus_build_publish(struct db *d, const char *ch, size_t chlen,
-                               const char *msg, size_t mlen, resp_buf *out);
+ * subscribers and never feed them to cluster_bus_handle_frame. Returns 0
+ * on success, -1 without changing out->len on failure. */
+int cluster_bus_build_publish(struct db *d, const char *ch, size_t chlen,
+                              const char *msg, size_t mlen, resp_buf *out);
 
 /* Build a FAIL frame: [RCM2][totlen=50][type u16le=5][subject id 40].
- * Receivers mark the subject FAIL immediately (Redis FAIL semantics). */
-void cluster_bus_build_fail(struct db *d, const char *subject_id,
-                            resp_buf *out);
+ * Receivers mark the subject FAIL immediately (Redis FAIL semantics).
+ * Returns 0 on success, -1 without changing out->len on failure. */
+int cluster_bus_build_fail(struct db *d, const char *subject_id, resp_buf *out);
 
 #endif /* DDUP_CLUSTER_H */

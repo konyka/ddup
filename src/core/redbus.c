@@ -183,7 +183,7 @@ static char *write_header(struct db *d, const cluster_node *sn, int type,
     return p + REDBUS_HDR_LEN;
 }
 
-void redbus_build_frame(struct db *d, int type, resp_buf *out)
+int redbus_build_frame(struct db *d, int type, resp_buf *out)
 {
     const cluster_node *sn = find_sender(d);
     size_t start, total;
@@ -192,11 +192,13 @@ void redbus_build_frame(struct db *d, int type, resp_buf *out)
     int i;
 
     if (sn == NULL)
-        return;
+        return -1;
 
     start = out->len;
-    resp_buf_reserve(out, REDBUS_HDR_LEN +
-                             REDBUS_GOSSIP_MAX * REDBUS_GOSSIP_LEN + 16);
+    if (resp_buf_reserve(out, REDBUS_HDR_LEN +
+                              REDBUS_GOSSIP_MAX * REDBUS_GOSSIP_LEN + 16) !=
+        0)
+        return -1;
     p = out->data + out->len;
     cp = write_header(d, sn, type, p);
 
@@ -214,23 +216,35 @@ void redbus_build_frame(struct db *d, int type, resp_buf *out)
     put16be(p + 14, gc);
 
     total = (size_t)(cp - p);
+    if (total > SIZE_MAX - start)
+        return -1;
     out->len = start + total;
     put32be(out->data + start + 4, (uint32_t)total);
+    return 0;
 }
 
-void redbus_build_publish(struct db *d, int type, const char *ch,
-                          size_t chlen, const char *msg, size_t mlen,
-                          resp_buf *out)
+int redbus_build_publish(struct db *d, int type, const char *ch,
+                         size_t chlen, const char *msg, size_t mlen,
+                         resp_buf *out)
 {
     const cluster_node *sn = find_sender(d);
     size_t start, total;
     char *p, *cp;
 
     if (sn == NULL)
-        return;
+        return -1;
 
     start = out->len;
-    resp_buf_reserve(out, REDBUS_HDR_LEN + 8 + chlen + mlen);
+    if (chlen > SIZE_MAX - 8 || mlen > SIZE_MAX - 8 - chlen)
+        return -1;
+    if (chlen > SIZE_MAX - REDBUS_HDR_LEN - 8 ||
+        mlen > SIZE_MAX - REDBUS_HDR_LEN - 8 - chlen)
+        return -1;
+    total = REDBUS_HDR_LEN + 8 + chlen + mlen;
+    if (start > SIZE_MAX - total)
+        return -1;
+    if (total < REDBUS_HDR_LEN || resp_buf_reserve(out, total) != 0)
+        return -1;
     p = out->data + out->len;
     cp = write_header(d, sn, type, p); /* count stays 0: no gossip */
     put32be(cp, (uint32_t)chlen);
@@ -240,29 +254,38 @@ void redbus_build_publish(struct db *d, int type, const char *ch,
     cp += 8 + chlen + mlen;
 
     total = (size_t)(cp - p);
+    if (total > SIZE_MAX - start)
+        return -1;
     out->len = start + total;
     put32be(out->data + start + 4, (uint32_t)total);
+    return 0;
 }
 
-void redbus_build_fail(struct db *d, const char *subject_id, resp_buf *out)
+int redbus_build_fail(struct db *d, const char *subject_id, resp_buf *out)
 {
     const cluster_node *sn = find_sender(d);
     size_t start, total;
     char *p, *cp;
 
     if (sn == NULL)
-        return;
+        return -1;
 
     start = out->len;
-    resp_buf_reserve(out, REDBUS_HDR_LEN + 40);
+    if (start > SIZE_MAX - REDBUS_HDR_LEN - 40)
+        return -1;
+    if (resp_buf_reserve(out, REDBUS_HDR_LEN + 40) != 0)
+        return -1;
     p = out->data + out->len;
     cp = write_header(d, sn, REDBUS_TYPE_FAIL, p); /* count stays 0 */
     put_name(cp, subject_id); /* clusterMsgDataFail: nodename[40] */
     cp += 40;
 
     total = (size_t)(cp - p);
+    if (total > SIZE_MAX - start)
+        return -1;
     out->len = start + total;
     put32be(out->data + start + 4, (uint32_t)total);
+    return 0;
 }
 
 /* ------------------------------------------------------------------ */
@@ -308,8 +331,8 @@ static cluster_node *apply_node(struct db *d, const char *id, const char *ip,
  * is a slave whose master is marked failed, and the claim's configEpoch
  * dominates every current slot owner. On grant: record last_vote_epoch and
  * append an AUTH_ACK frame to reply_out. */
-static void handle_auth_request(struct db *d, const char *frame,
-                                resp_buf *reply_out)
+static int handle_auth_request(struct db *d, const char *frame,
+                               resp_buf *reply_out)
 {
     cluster_node *me = cluster_myself(d);
     uint64_t req_cur = get64be(frame + 16);
@@ -319,30 +342,30 @@ static void handle_auth_request(struct db *d, const char *frame,
     uint32_t s;
 
     if (me == NULL || !(me->flags & CLUSTER_NODE_MASTER))
-        return;
+        return 0;
     for (s = 0; s < 16384; s++)
         if (cluster_slots_get(me->slots, s))
             break;
     if (s == 16384)
-        return; /* masters without slots have no vote */
+        return 0; /* masters without slots have no vote */
     if (req_cur > d->cluster_current_epoch)
         d->cluster_current_epoch = req_cur;
     if (req_cur < d->cluster_current_epoch)
-        return; /* stale election epoch */
+        return 0; /* stale election epoch */
     if (d->last_vote_epoch == d->cluster_current_epoch)
-        return; /* already voted in this epoch */
+        return 0; /* already voted in this epoch */
 
     memcpy(id, frame + 40, 40);
     id[40] = '\0';
     sender = cluster_node_find(d, id);
     if (sender == NULL || !(sender->flags & CLUSTER_NODE_SLAVE))
-        return;
+        return 0;
     if (sender->master_id[0] == '-' || sender->master_id[0] == '\0')
-        return;
+        return 0;
     master = cluster_node_find(d, sender->master_id);
     if (master == NULL || !(master->flags & CLUSTER_NODE_FAIL))
-        return; /* its master is not failing in our view (PFAIL is not
-                 * enough: the quorum-confirmed FAIL is required) */
+        return 0; /* its master is not failing in our view (PFAIL is not
+                   * enough: the quorum-confirmed FAIL is required) */
 
     /* the claimed slots must dominate their current owners' epochs */
     for (s = 0; s < 16384; s++) {
@@ -353,11 +376,13 @@ static void handle_auth_request(struct db *d, const char *frame,
             cluster_node *o = &d->nodes[j];
             if (o != sender && cluster_slots_get(o->slots, s) &&
                 o->epoch > req_cfg)
-                return; /* a live owner has a newer claim */
+                return 0; /* a live owner has a newer claim */
         }
     }
+    if (redbus_build_frame(d, REDBUS_TYPE_AUTH_ACK, reply_out) != 0)
+        return -1;
     d->last_vote_epoch = d->cluster_current_epoch;
-    redbus_build_frame(d, REDBUS_TYPE_AUTH_ACK, reply_out);
+    return 0;
 }
 
 static void handle_auth_ack(struct db *d, const char *frame)
@@ -385,17 +410,18 @@ static void handle_auth_ack(struct db *d, const char *frame)
     }
 }
 
-void redbus_build_auth_request(struct db *d, uint64_t election_epoch,
-                               resp_buf *out)
+int redbus_build_auth_request(struct db *d, uint64_t election_epoch,
+                              resp_buf *out)
 {
     size_t start = out->len;
     cluster_node *me = cluster_myself(d);
     cluster_node *m = (me != NULL && me->master_id[0] != '-')
                           ? cluster_node_find(d, me->master_id)
                           : NULL;
-    redbus_build_frame(d, REDBUS_TYPE_AUTH_REQUEST, out);
+    if (redbus_build_frame(d, REDBUS_TYPE_AUTH_REQUEST, out) != 0)
+        return -1;
     if (out->len == start)
-        return; /* no myself node: nothing was built */
+        return -1; /* no myself node: nothing was built */
     put64be(out->data + start + 16, election_epoch);
     if (m != NULL) {
         /* alias the dead master's claim (Redis: a slave announces its
@@ -403,6 +429,7 @@ void redbus_build_auth_request(struct db *d, uint64_t election_epoch,
         put64be(out->data + start + 24, m->epoch);
         memcpy(out->data + start + 80, m->slots, 2048);
     }
+    return 0;
 }
 
 int redbus_handle_frame(struct db *d, const char *frame, size_t len,
@@ -463,8 +490,7 @@ int redbus_handle_frame(struct db *d, const char *frame, size_t len,
     if (type == REDBUS_TYPE_AUTH_REQUEST) {
         if (len < REDBUS_HDR_LEN)
             return -1;
-        handle_auth_request(d, frame, reply_out);
-        return 0;
+        return handle_auth_request(d, frame, reply_out);
     }
     if (type == REDBUS_TYPE_AUTH_ACK) {
         if (len < REDBUS_HDR_LEN)
@@ -530,7 +556,8 @@ int redbus_handle_frame(struct db *d, const char *frame, size_t len,
     }
 
     if (type != REDBUS_TYPE_PONG)
-        redbus_build_frame(d, REDBUS_TYPE_PONG, reply_out);
+        if (redbus_build_frame(d, REDBUS_TYPE_PONG, reply_out) != 0)
+            return -1;
     d->cluster_changes++;
     d->slot_owner_dirty = 1;
     return 0;

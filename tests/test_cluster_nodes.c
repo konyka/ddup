@@ -1,5 +1,6 @@
 /* test_cluster_nodes.c - cluster node table: ops, bitmap, render/parse. */
 #include <string.h>
+#include <stdint.h>
 
 #include "core/cluster.h"
 #include "core/command.h"
@@ -148,11 +149,36 @@ static void test_render_parse_roundtrip(void)
     db_destroy(&d);
 }
 
+static void test_render_reserve_failure_leaves_output_unchanged(void)
+{
+    db d;
+    resp_buf out;
+    char byte = 'x';
+
+    db_init(&d);
+    cluster_nodes_init(&d);
+    (void)cluster_node_add(&d, ID1);
+    resp_buf_init(&out);
+    out.data = &byte;
+    out.len = SIZE_MAX;
+    out.cap = SIZE_MAX;
+
+    DD_CHECK_EQ_INT(-1, cluster_nodes_render(&d, &out));
+    DD_CHECK(out.len == SIZE_MAX);
+    DD_CHECK_EQ_INT('x', byte);
+
+    out.data = NULL;
+    out.len = 0;
+    out.cap = 0;
+    db_destroy(&d);
+}
+
 int main(void)
 {
     DD_RUN(test_node_add_find);
     DD_RUN(test_slot_bitmap);
     DD_RUN(test_slots_render);
     DD_RUN(test_render_parse_roundtrip);
+    DD_RUN(test_render_reserve_failure_leaves_output_unchanged);
     return DD_TEST_SUMMARY();
 }

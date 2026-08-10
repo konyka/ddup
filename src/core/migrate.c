@@ -29,6 +29,68 @@ static void migrate_pump(void)
         pal_sleep_ms(1);
 }
 
+static int size_add(size_t *total, size_t n)
+{
+    if (n > SIZE_MAX - *total)
+        return -1;
+    *total += n;
+    return 0;
+}
+
+static size_t decimal_len(size_t n)
+{
+    size_t len = 1;
+    while (n >= 10) {
+        n /= 10;
+        len++;
+    }
+    return len;
+}
+
+static int bulk_wire_size(size_t len, size_t *out)
+{
+    size_t total = decimal_len(len);
+    if (size_add(&total, len) != 0 || size_add(&total, 5) != 0)
+        return -1;
+    *out = total;
+    return 0;
+}
+
+static int migrate_append_restore(resp_buf *pipebuf, const char *key,
+                                  size_t klen, const char *ttl, size_t ttl_len,
+                                  const char *payload, size_t payload_len,
+                                  int replace)
+{
+    static const char asking[] = "*1\r\n$6\r\nASKING\r\n";
+    const char *restore = replace ? "*5\r\n$7\r\nRESTORE\r\n"
+                                  : "*4\r\n$7\r\nRESTORE\r\n";
+    size_t asking_len = sizeof(asking) - 1;
+    size_t restore_len = strlen(restore);
+    size_t key_wire, ttl_wire, payload_wire;
+    size_t need = asking_len;
+
+    if (bulk_wire_size(klen, &key_wire) != 0 ||
+        bulk_wire_size(ttl_len, &ttl_wire) != 0 ||
+        bulk_wire_size(payload_len, &payload_wire) != 0 ||
+        size_add(&need, restore_len) != 0 ||
+        size_add(&need, key_wire) != 0 || size_add(&need, ttl_wire) != 0 ||
+        size_add(&need, payload_wire) != 0 ||
+        (replace && size_add(&need, 13) != 0) ||
+        resp_buf_reserve(pipebuf, need) != 0)
+        return -1;
+
+    memcpy(pipebuf->data + pipebuf->len, asking, asking_len);
+    pipebuf->len += asking_len;
+    memcpy(pipebuf->data + pipebuf->len, restore, restore_len);
+    pipebuf->len += restore_len;
+    resp_write_bulk(pipebuf, key, klen);
+    resp_write_bulk(pipebuf, ttl, ttl_len);
+    resp_write_bulk(pipebuf, payload, payload_len);
+    if (replace)
+        resp_write_bulk(pipebuf, "REPLACE", 7);
+    return 0;
+}
+
 /* Blocking-with-deadline send of the whole buffer (non-blocking socket). */
 static int send_all(pal_socket_t fd, const char *buf, size_t len,
                     uint64_t deadline)
@@ -105,6 +167,8 @@ int migrate_run(db *d, const char *host, uint16_t port,
     uint64_t deadline;
     int rc = MIGRATE_IOERR;
 
+    if (nkeys > SIZE_MAX / sizeof(size_t))
+        return MIGRATE_IOERR;
     idx = (size_t *)malloc(nkeys * sizeof(size_t));
     if (idx == NULL)
         return MIGRATE_IOERR;
@@ -117,7 +181,7 @@ int migrate_run(db *d, const char *host, uint16_t port,
         size_t kl = keys[i].len;
         const char *v;
         size_t vl;
-        char hdr[64], ttl[24];
+        char ttl[24];
         size_t tl;
 
         db_expire_if_needed(d, k, kl, now_ms);
@@ -127,20 +191,11 @@ int migrate_run(db *d, const char *host, uint16_t port,
         if (snapshot_dump_key(d, k, kl, &payload) != 0)
             continue;
         tl = ttl_arg(d, k, kl, now_ms, ttl);
-        resp_buf_reserve(&pipebuf, sizeof(hdr) + kl + tl + payload.len + 48);
         /* ASKING first: the target may be importing this slot (cluster
          * migration); in non-cluster mode it is a harmless +OK. */
-        pipebuf.len += (size_t)snprintf(pipebuf.data + pipebuf.len,
-                                        sizeof(hdr), "*1\r\n$6\r\nASKING\r\n");
-        resp_buf_reserve(&pipebuf, sizeof(hdr));
-        pipebuf.len += (size_t)snprintf(
-            pipebuf.data + pipebuf.len, sizeof(hdr), "*%d\r\n$7\r\nRESTORE\r\n",
-            replace ? 5 : 4);
-        resp_write_bulk(&pipebuf, k, kl);
-        resp_write_bulk(&pipebuf, ttl, tl);
-        resp_write_bulk(&pipebuf, payload.data, payload.len);
-        if (replace)
-            resp_write_bulk(&pipebuf, "REPLACE", 7);
+        if (migrate_append_restore(&pipebuf, k, kl, ttl, tl, payload.data,
+                                   payload.len, replace) != 0)
+            goto out;
         idx[nkeys_live++] = i;
     }
     if (nkeys_live == 0) {
@@ -184,4 +239,21 @@ out:
     resp_buf_free(&pipebuf);
     free(idx);
     return rc;
+}
+
+int migrate_test_output_failures(void)
+{
+    resp_buf out;
+    char byte = 'x';
+    int rc;
+
+    resp_buf_init(&out);
+    out.data = &byte;
+    out.cap = 1;
+    rc = migrate_append_restore(&out, &byte, SIZE_MAX, &byte, 1, &byte, 1, 0);
+    if (rc != -1 || out.len != 0 || byte != 'x')
+        return -1;
+    out.data = NULL;
+    out.cap = 0;
+    return 0;
 }

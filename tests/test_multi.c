@@ -1,5 +1,6 @@
 /* test_multi.c - MULTI/EXEC/DISCARD/WATCH/UNWATCH with two sessions. */
 #include <stdarg.h>
+#include <stdint.h>
 #include <string.h>
 
 #include "core/session.h"
@@ -298,6 +299,47 @@ static void test_multi_with_objects(void)
     db_destroy(&d);
 }
 
+static void test_dirty_watch_reserve_failure_cleans_transaction(void)
+{
+    db d;
+    session *a, *b;
+    resp_buf out;
+    resp_value exec_arg;
+    char *data;
+    size_t cap;
+
+    db_init(&d);
+    resp_buf_init(&out);
+    a = session_create(&d);
+    b = session_create(&d);
+
+    exec_sess(a, T0, &out, 2, "WATCH", "k");
+    exec_sess(b, T0, &out, 3, "SET", "k", "v");
+    exec_sess(a, T0, &out, 1, "MULTI");
+    exec_sess(a, T0, &out, 1, "PING");
+
+    memset(&exec_arg, 0, sizeof(exec_arg));
+    exec_arg.type = RESP_BULK_STRING;
+    exec_arg.str = "EXEC";
+    exec_arg.len = 4;
+    data = out.data;
+    cap = out.cap;
+    out.len = SIZE_MAX;
+    session_execute_at(a, &exec_arg, 1, &out, T0);
+    DD_CHECK(out.len == SIZE_MAX);
+
+    out.data = data;
+    out.len = 0;
+    out.cap = cap;
+    exec_sess(a, T0, &out, 1, "EXEC");
+    EXPECT(out, "-ERR EXEC without MULTI\r\n");
+
+    session_free(b);
+    session_free(a);
+    resp_buf_free(&out);
+    db_destroy(&d);
+}
+
 int main(void)
 {
     DD_RUN(test_multi_exec_basic);
@@ -306,5 +348,6 @@ int main(void)
     DD_RUN(test_watch_dirty_by_other_session);
     DD_RUN(test_watch_variants);
     DD_RUN(test_multi_with_objects);
+    DD_RUN(test_dirty_watch_reserve_failure_cleans_transaction);
     return DD_TEST_SUMMARY();
 }

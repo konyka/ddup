@@ -47,8 +47,9 @@
 #define REDBUS_GOSSIP_MAX 10
 
 /* Build a PING/PONG/MEET frame from the myself node + up to 10 gossip
- * entries (other known nodes), Redis wire format. */
-void redbus_build_frame(struct db *d, int type, resp_buf *out);
+ * entries (other known nodes), Redis wire format. Returns 0 on success,
+ * -1 without changing out->len on failure. */
+int redbus_build_frame(struct db *d, int type, resp_buf *out);
 
 /* Parse one frame defensively: upsert the sender (slots via
  * cluster_merge_claims with configEpoch), merge gossip entries,
@@ -69,21 +70,22 @@ int redbus_handle_frame(struct db *d, const char *frame, size_t len,
 /* Build a FAILOVER_AUTH_REQUEST for an in-flight election: PING-like
  * frame whose slots/configEpoch alias the dead master (Redis
  * clusterRequestFailoverAuth semantics) and whose currentEpoch is the
- * election epoch. */
-void redbus_build_auth_request(struct db *d, uint64_t election_epoch,
-                               resp_buf *out);
+ * election epoch. Returns 0 on success, -1 on failure. */
+int redbus_build_auth_request(struct db *d, uint64_t election_epoch,
+                              resp_buf *out);
 
 /* Build a PUBLISH (type 4) or PUBLISHSHARD (type 10) frame: full header
  * with count=0 and no gossip entries, then the clusterMsgDataPublish
- * payload u32BE channel_len, u32BE message_len, channel, message. */
-void redbus_build_publish(struct db *d, int type, const char *ch,
-                          size_t chlen, const char *msg, size_t mlen,
-                          resp_buf *out);
+ * payload u32BE channel_len, u32BE message_len, channel, message. Returns
+ * 0 on success, -1 without changing out->len on failure. */
+int redbus_build_publish(struct db *d, int type, const char *ch,
+                         size_t chlen, const char *msg, size_t mlen,
+                         resp_buf *out);
 
 /* Build a FAIL frame: full header (count=0, no gossip) + the
  * clusterMsgDataFail payload nodename[40]. Receivers mark the subject
- * FAIL immediately. */
-void redbus_build_fail(struct db *d, const char *subject_id,
-                       resp_buf *out);
+ * FAIL immediately. Returns 0 on success, -1 without changing out->len on
+ * failure. */
+int redbus_build_fail(struct db *d, const char *subject_id, resp_buf *out);
 
 #endif /* DDUP_REDBUS_H */

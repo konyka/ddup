@@ -29,4 +29,7 @@ int migrate_run(db *d, const char *host, uint16_t port,
                 const resp_value *keys, size_t nkeys, uint64_t timeout_ms,
                 int copy, int replace, uint64_t now_ms);
 
+/* Exercises output-size failure paths without allocating large buffers. */
+int migrate_test_output_failures(void);
+
 #endif /* DDUP_MIGRATE_H */

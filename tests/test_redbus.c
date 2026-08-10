@@ -1,6 +1,7 @@
 /* test_redbus.c - Redis cluster bus wire codec: fixture decode, build/parse
  * roundtrip, UPDATE/FAIL handling, type tolerance. */
 #include <stdio.h>
+#include <stdint.h>
 #include <string.h>
 
 #include "core/cluster.h"
@@ -342,6 +343,40 @@ static void test_update_to_self_adopts(void)
     db_destroy(&d);
 }
 
+static void test_build_failures_leave_output_unchanged(void)
+{
+    db d;
+    resp_buf out;
+    char byte = 'x';
+
+    db_init(&d);
+    cluster_nodes_init(&d);
+    (void)cluster_node_add(&d, ID1);
+
+    resp_buf_init(&out);
+    out.data = &byte;
+    out.len = SIZE_MAX;
+    out.cap = SIZE_MAX;
+    DD_CHECK_EQ_INT(-1, redbus_build_frame(&d, REDBUS_TYPE_PING, &out));
+    DD_CHECK(out.len == SIZE_MAX);
+    DD_CHECK_EQ_INT('x', byte);
+    DD_CHECK_EQ_INT(-1, redbus_build_fail(&d, ID2, &out));
+    DD_CHECK(out.len == SIZE_MAX);
+    DD_CHECK_EQ_INT('x', byte);
+
+    out.len = 0;
+    out.cap = 1;
+    DD_CHECK_EQ_INT(-1, redbus_build_publish(&d, REDBUS_TYPE_PUBLISH,
+                                             &byte, SIZE_MAX, &byte, 1,
+                                             &out));
+    DD_CHECK_EQ_INT(0, out.len);
+    DD_CHECK_EQ_INT('x', byte);
+
+    out.data = NULL;
+    out.cap = 0;
+    db_destroy(&d);
+}
+
 int main(void)
 {
     DD_RUN(test_fixture_decode);
@@ -349,5 +384,6 @@ int main(void)
     DD_RUN(test_update_fail_and_tolerance);
     DD_RUN(test_update_to_self_adopts);
     DD_RUN(test_empty_myip_auto_discovery);
+    DD_RUN(test_build_failures_leave_output_unchanged);
     return DD_TEST_SUMMARY();
 }

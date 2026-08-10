@@ -2,6 +2,7 @@
 #include "resp/resp_writer.h"
 
 #include <math.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -30,14 +31,22 @@ void resp_buf_free(resp_buf *b)
     b->pool_size = 0;
 }
 
-void resp_buf_reserve(resp_buf *b, size_t n)
+int resp_buf_reserve(resp_buf *b, size_t n)
 {
-    size_t cap;
-    if (b->len + n <= b->cap)
-        return;
+    size_t cap, needed;
+    if (n > SIZE_MAX - b->len)
+        return -1;
+    needed = b->len + n;
+    if (needed <= b->cap)
+        return 0;
     cap = b->cap ? b->cap : 256;
-    while (cap < b->len + n)
+    while (cap < needed) {
+        if (cap > SIZE_MAX / 2) {
+            cap = needed;
+            break;
+        }
         cap *= 2;
+    }
     if (b->pool != NULL) {
         size_t actual;
         char *p = (char *)buf_pool_get(b->pool, cap, &actual);
@@ -61,13 +70,16 @@ void resp_buf_reserve(resp_buf *b, size_t n)
         b->data = p;
         b->cap = cap;
     }
+    return 0;
 }
 
-static void buf_append(resp_buf *b, const char *s, size_t n)
+static int buf_append(resp_buf *b, const char *s, size_t n)
 {
-    resp_buf_reserve(b, n);
+    if (resp_buf_reserve(b, n) != 0)
+        return -1;
     memcpy(b->data + b->len, s, n);
     b->len += n;
+    return 0;
 }
 
 /* Fast unsigned-to-decimal; returns number of bytes written (max 20). */
@@ -99,7 +111,8 @@ static size_t ll_to_str(char *out, long long v)
 
 static void write_typed_line(resp_buf *b, char type, const char *s, size_t len)
 {
-    resp_buf_reserve(b, len + 3);
+    if (len > SIZE_MAX - 3 || resp_buf_reserve(b, len + 3) != 0)
+        return;
     b->data[b->len++] = type;
     memcpy(b->data + b->len, s, len);
     b->len += len;
@@ -111,7 +124,8 @@ static void write_header(resp_buf *b, char type, size_t n)
 {
     char num[20];
     size_t len = u64_to_str(num, (unsigned long long)n);
-    resp_buf_reserve(b, 1 + len + 2);
+    if (resp_buf_reserve(b, 1 + len + 2) != 0)
+        return;
     b->data[b->len++] = type;
     memcpy(b->data + b->len, num, len);
     b->len += len;
@@ -144,7 +158,10 @@ void resp_write_bulk(resp_buf *b, const char *s, size_t len)
     }
     char num[20];
     size_t nl = u64_to_str(num, (unsigned long long)len);
-    resp_buf_reserve(b, 1 + nl + 2 + len + 2);
+    size_t overhead = 1 + nl + 2 + 2;
+    if (len > SIZE_MAX - overhead ||
+        resp_buf_reserve(b, overhead + len) != 0)
+        return;
     b->data[b->len++] = '$';
     memcpy(b->data + b->len, num, nl);
     b->len += nl;

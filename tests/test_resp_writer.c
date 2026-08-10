@@ -2,6 +2,7 @@
  * over randomly generated values (written before the implementation). */
 #include "test.h"
 
+#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -236,6 +237,24 @@ static void test_resp_buf_pool_growth(void)
     buf_pool_destroy(&pool);
 }
 
+static void test_resp_buf_reserve_overflow(void)
+{
+    resp_buf b;
+    char byte = 'x';
+
+    resp_buf_init(&b);
+    b.data = &byte;
+    b.len = SIZE_MAX;
+    b.cap = SIZE_MAX;
+    DD_CHECK_EQ_INT(-1, resp_buf_reserve(&b, 1));
+    DD_CHECK(b.data == &byte);
+    DD_CHECK(b.len == SIZE_MAX);
+    DD_CHECK(b.cap == SIZE_MAX);
+    b.data = NULL;
+    b.len = 0;
+    b.cap = 0;
+}
+
 int main(void)
 {
     DD_RUN(test_scalars);
@@ -244,5 +263,6 @@ int main(void)
     DD_RUN(test_roundtrip_nested_command);
     DD_RUN(test_resp_buf_pool_reuse);
     DD_RUN(test_resp_buf_pool_growth);
+    DD_RUN(test_resp_buf_reserve_overflow);
     return DD_TEST_SUMMARY();
 }

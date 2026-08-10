@@ -20,8 +20,9 @@ typedef struct resp_buf {
 
 void resp_buf_init(resp_buf *b);
 void resp_buf_free(resp_buf *b);
-/* Ensure room for n more bytes (internal, but useful for zero-copy appends). */
-void resp_buf_reserve(resp_buf *b, size_t n);
+/* Ensure room for n more bytes. Returns 0 on success, -1 when size arithmetic
+ * or capacity growth would overflow; the buffer is unchanged on failure. */
+int resp_buf_reserve(resp_buf *b, size_t n);
 
 void resp_write_simple_string(resp_buf *b, const char *s, size_t len);
 void resp_write_error(resp_buf *b, const char *s, size_t len);

@@ -434,7 +434,8 @@ int cluster_nodes_render(struct db *d, resp_buf *out)
         char flags[64], slots[256];
         size_t start;
         int w;
-        resp_buf_reserve(out, 512);
+        if (resp_buf_reserve(out, 512) != 0)
+            return -1;
         start = out->len;
         flags_render(n->flags, flags, sizeof(flags));
         cluster_slots_render(n->slots, slots, sizeof(slots));
@@ -613,7 +614,7 @@ static uint64_t get64(const char *p)
     return v;
 }
 
-void cluster_bus_build_frame(struct db *d, int type, resp_buf *out)
+int cluster_bus_build_frame(struct db *d, int type, resp_buf *out)
 {
     const cluster_node *sn = NULL;
     size_t start, ipl, total;
@@ -629,10 +630,11 @@ void cluster_bus_build_frame(struct db *d, int type, resp_buf *out)
     if (sn == NULL && d->nnodes > 0)
         sn = &d->nodes[0];
     if (sn == NULL)
-        return;
+        return -1;
 
     start = out->len;
-    resp_buf_reserve(out, 4096);
+    if (resp_buf_reserve(out, CLUSTER_MSG_MAX) != 0)
+        return -1;
     p = out->data + out->len;
     memcpy(p, CLUSTER_BUS_MAGIC_V2, 4);
     p += 4;
@@ -694,18 +696,27 @@ void cluster_bus_build_frame(struct db *d, int type, resp_buf *out)
     put16(gcp, gc);
 
     total = (size_t)(p - (out->data + start));
+    if (total > CLUSTER_MSG_MAX || total > SIZE_MAX - start)
+        return -1;
     out->len = start + total;
     put32(out->data + start + 4, (uint32_t)total);
+    return 0;
 }
 
-void cluster_bus_build_publish(struct db *d, const char *ch, size_t chlen,
-                               const char *msg, size_t mlen, resp_buf *out)
+int cluster_bus_build_publish(struct db *d, const char *ch, size_t chlen,
+                              const char *msg, size_t mlen, resp_buf *out)
 {
     size_t start = out->len;
-    size_t total = 10 + 4 + chlen + 4 + mlen;
+    size_t total;
     char *p;
     (void)d; /* publish frames carry no node record */
-    resp_buf_reserve(out, total);
+    if (chlen > SIZE_MAX - 18 || mlen > SIZE_MAX - 18 - chlen)
+        return -1;
+    total = 18 + chlen + mlen;
+    if (start > SIZE_MAX - total)
+        return -1;
+    if (resp_buf_reserve(out, total) != 0)
+        return -1;
     p = out->data + start;
     memcpy(p, CLUSTER_BUS_MAGIC_V2, 4);
     put32(p + 4, (uint32_t)total);
@@ -715,21 +726,25 @@ void cluster_bus_build_publish(struct db *d, const char *ch, size_t chlen,
     put32(p + 14 + chlen, (uint32_t)mlen);
     memcpy(p + 18 + chlen, msg, mlen);
     out->len = start + total;
+    return 0;
 }
 
-void cluster_bus_build_fail(struct db *d, const char *subject_id,
-                            resp_buf *out)
+int cluster_bus_build_fail(struct db *d, const char *subject_id, resp_buf *out)
 {
     size_t start = out->len;
     char *p;
     (void)d; /* FAIL frames carry no node record */
-    resp_buf_reserve(out, 50);
+    if (start > SIZE_MAX - 50)
+        return -1;
+    if (resp_buf_reserve(out, 50) != 0)
+        return -1;
     p = out->data + start;
     memcpy(p, CLUSTER_BUS_MAGIC_V2, 4);
     put32(p + 4, 50);
     put16(p + 8, (uint16_t)CLUSTER_MSG_FAIL);
     memcpy(p + 10, subject_id, 40);
     out->len = start + 50;
+    return 0;
 }
 
 int cluster_bus_handle_frame(struct db *d, const char *frame, size_t len,
@@ -903,7 +918,8 @@ int cluster_bus_handle_frame(struct db *d, const char *frame, size_t len,
     }
 
     if (type != CLUSTER_MSG_PONG)
-        cluster_bus_build_frame(d, CLUSTER_MSG_PONG, reply_out);
+        if (cluster_bus_build_frame(d, CLUSTER_MSG_PONG, reply_out) != 0)
+            return -1;
     d->cluster_changes++;
     d->slot_owner_dirty = 1;
     return 0;

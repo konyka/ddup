@@ -381,6 +381,7 @@ static void test_migrate_keys_form(void)
 
 int main(void)
 {
+    DD_CHECK_EQ_INT(0, migrate_test_output_failures());
     DD_RUN(test_migrate_string);
     DD_RUN(test_migrate_hash_and_zset);
     DD_RUN(test_migrate_nokey_and_dbid);

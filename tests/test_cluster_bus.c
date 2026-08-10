@@ -1,6 +1,7 @@
 /* test_cluster_bus.c - ddup cluster bus protocol v1: frames, handler,
  * multi-server gossip convergence and failure detection. */
 #include <stdio.h>
+#include <stdint.h>
 #include <string.h>
 
 #include "core/cluster.h"
@@ -85,6 +86,40 @@ static void test_frame_roundtrip(void)
     db_destroy(&d);
 }
 
+static void test_build_failures_leave_output_unchanged(void)
+{
+    db d;
+    resp_buf out;
+    char byte = 'x';
+
+    db_init(&d);
+    cluster_nodes_init(&d);
+    make_node(&d, ID1, "127.0.0.1", 7001,
+              CLUSTER_NODE_MYSELF | CLUSTER_NODE_MASTER, 1);
+
+    resp_buf_init(&out);
+    out.data = &byte;
+    out.len = SIZE_MAX;
+    out.cap = SIZE_MAX;
+    DD_CHECK_EQ_INT(-1, cluster_bus_build_frame(&d, CLUSTER_MSG_PING, &out));
+    DD_CHECK(out.len == SIZE_MAX);
+    DD_CHECK_EQ_INT('x', byte);
+    DD_CHECK_EQ_INT(-1, cluster_bus_build_fail(&d, ID2, &out));
+    DD_CHECK(out.len == SIZE_MAX);
+    DD_CHECK_EQ_INT('x', byte);
+
+    out.len = 0;
+    out.cap = 1;
+    DD_CHECK_EQ_INT(-1, cluster_bus_build_publish(&d, &byte, SIZE_MAX,
+                                                  &byte, 1, &out));
+    DD_CHECK_EQ_INT(0, out.len);
+    DD_CHECK_EQ_INT('x', byte);
+
+    out.data = NULL;
+    out.cap = 0;
+    db_destroy(&d);
+}
+
 static void test_meet_convergence(void);
 static void test_gossip_carry(void);
 static void test_fail_detect(void);
@@ -93,6 +128,7 @@ static void test_moved_wire(void);
 int main(void)
 {
     DD_RUN(test_frame_roundtrip);
+    DD_RUN(test_build_failures_leave_output_unchanged);
     DD_RUN(test_meet_convergence);
     DD_RUN(test_gossip_carry);
     DD_RUN(test_fail_detect);
