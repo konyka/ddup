@@ -108,10 +108,13 @@ int obj_hash_set(obj_hash *h, const char *f, size_t flen, const char *v,
 {
     const char *old;
     size_t oldl;
+    if (flen > UINT32_MAX || vlen > UINT32_MAX || flen > SIZE_MAX - vlen)
+        return -1;
     int is_new = !rh_get(&h->fields, f, flen, &old, &oldl);
+    if (rh_set(&h->fields, f, flen, v, vlen) < 0)
+        return -1;
     if (!is_new)
         h->mem -= field_bytes(flen, oldl);
-    rh_set(&h->fields, f, flen, v, vlen);
     h->mem += field_bytes(flen, vlen);
     return is_new;
 }
@@ -145,7 +148,10 @@ static uint64_t node_bytes(size_t elen)
 
 static list_node *node_new(const char *data, size_t len)
 {
-    list_node *n = (list_node *)malloc(sizeof(list_node) + len);
+    list_node *n;
+    if (len > UINT32_MAX || len > SIZE_MAX - sizeof(list_node))
+        return NULL;
+    n = (list_node *)malloc(sizeof(list_node) + len);
     if (n == NULL) {
         fprintf(stderr, "ddup: out of memory\n");
         exit(1);
@@ -190,9 +196,11 @@ uint64_t obj_list_mem(const obj_list *l)
     return l->mem;
 }
 
-void obj_list_push(obj_list *l, int left, const char *data, size_t len)
+int obj_list_push(obj_list *l, int left, const char *data, size_t len)
 {
     list_node *n = node_new(data, len);
+    if (n == NULL)
+        return -1;
     if (left) {
         n->next = l->head;
         if (l->head != NULL)
@@ -210,6 +218,67 @@ void obj_list_push(obj_list *l, int left, const char *data, size_t len)
     }
     l->len++;
     l->mem += node_bytes(len);
+    return 0;
+}
+
+int obj_list_push_many(obj_list *l, int left, const char *const *data,
+                       const size_t *lens, size_t count)
+{
+    list_node *first = NULL;
+    list_node *last = NULL;
+    size_t i;
+
+    for (i = 0; i < count; i++) {
+        list_node *n = node_new(data[i], lens[i]);
+        if (n == NULL) {
+            while (first != NULL) {
+                list_node *next = first->next;
+                free(first);
+                first = next;
+            }
+            return -1;
+        }
+        n->prev = last;
+        if (last != NULL)
+            last->next = n;
+        else
+            first = n;
+        last = n;
+    }
+    if (count == 0)
+        return 0;
+    if (left) {
+        list_node *q = first;
+        while (q != NULL) {
+            list_node *next = q->next;
+            q->next = q->prev;
+            q->prev = next;
+            q = next;
+        }
+        {
+            list_node *tmp = first;
+            first = last;
+            last = tmp;
+        }
+        last->next = l->head;
+        if (l->head != NULL)
+            l->head->prev = last;
+        else
+            l->tail = last;
+        l->head = first;
+    } else {
+        first->prev = l->tail;
+        if (l->tail != NULL)
+            l->tail->next = first;
+        else
+            l->head = first;
+        l->tail = last;
+    }
+    for (i = 0; i < count; i++) {
+        l->len++;
+        l->mem += node_bytes(lens[i]);
+    }
+    return 0;
 }
 
 int obj_list_pop(obj_list *l, int left, char **data, size_t *len)
@@ -263,6 +332,8 @@ int obj_list_set_at(obj_list *l, size_t idx, const char *data, size_t len)
     if (old == NULL)
         return 0;
     n = node_new(data, len);
+    if (n == NULL)
+        return -1;
     n->prev = old->prev;
     n->next = old->next;
     if (old->prev != NULL)
@@ -312,9 +383,12 @@ int obj_set_add(obj_set *s, const char *m, size_t mlen)
 {
     const char *old;
     size_t oldl;
+    if (mlen > UINT32_MAX)
+        return -1;
     if (rh_get(&s->members, m, mlen, &old, &oldl))
         return 0;
-    rh_set(&s->members, m, mlen, "", 0);
+    if (rh_set(&s->members, m, mlen, "", 0) < 0)
+        return -1;
     s->mem += field_bytes(mlen, 0);
     return 1;
 }
@@ -383,18 +457,22 @@ int obj_zset_add(obj_zset *z, const char *m, size_t mlen, double score)
     const char *old;
     size_t oldl;
     char b[8];
+    if (mlen > UINT32_MAX)
+        return -1;
     if (rh_get(&z->dict, m, mlen, &old, &oldl) && oldl == 8) {
         double oldscore = get_score(old);
         if (oldscore == score)
             return 0;
+        put_score(b, score);
+        if (rh_set(&z->dict, m, mlen, b, 8) < 0)
+            return -1;
         zsl_delete(z->sl, oldscore, m, mlen);
         zsl_insert(z->sl, score, m, mlen);
-        put_score(b, score);
-        rh_set(&z->dict, m, mlen, b, 8); /* same size: dict_mem unchanged */
         return 0;
     }
     put_score(b, score);
-    rh_set(&z->dict, m, mlen, b, 8);
+    if (rh_set(&z->dict, m, mlen, b, 8) < 0)
+        return -1;
     z->dict_mem += field_bytes(mlen, 8);
     zsl_insert(z->sl, score, m, mlen);
     return 1;

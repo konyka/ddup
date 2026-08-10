@@ -34,6 +34,19 @@ static uint64_t eb(size_t klen, size_t vlen)
     return (uint64_t)sizeof(rh_entry) + 16 + klen + vlen;
 }
 
+static void test_zset_rejects_unrepresentable_member(void)
+{
+    obj_zset *z = obj_zset_new();
+    const char byte = 'x';
+    uint64_t before = obj_zset_mem(z);
+
+    DD_CHECK_EQ_INT(-1, obj_zset_add(z, &byte, SIZE_MAX, 1.0));
+    DD_CHECK_EQ_INT(0, rh_size(&z->dict));
+    DD_CHECK_EQ_INT(0, z->sl->length);
+    DD_CHECK(obj_zset_mem(z) == before);
+    obj_zset_free(z);
+}
+
 static void fill_abc(db *d, resp_buf *out)
 {
     exec_cmd(d, T0, out, 8, "ZADD", "z", "1", "a", "2.5", "b", "3", "c");
@@ -334,6 +347,7 @@ static void test_zset_ttl_and_memory(void)
 
 int main(void)
 {
+    DD_RUN(test_zset_rejects_unrepresentable_member);
     DD_RUN(test_zadd_zscore_zcard);
     DD_RUN(test_zincrby_zrem);
     DD_RUN(test_zrange_rank);

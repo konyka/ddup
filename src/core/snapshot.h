@@ -26,11 +26,14 @@
 
 #include "core/command.h"
 
-/* Write the whole db to path. Returns 0 on success, -1 on IO error. */
+/* Write the whole db to path. Returns 0 on success, -1 on serialization or
+ * IO error. Serialization failure leaves an existing target untouched. */
 int snapshot_save(db *d, const char *path);
 
-/* Serialize the whole db (magic + all entries) into out. Same format. */
-void snapshot_serialize(db *d, resp_buf *out);
+/* Serialize the whole db (magic + all entries) into out. Same format.
+ * Returns 0 on success or -1 when a format length is unrepresentable; out is
+ * restored to its original length on failure. */
+int snapshot_serialize(db *d, resp_buf *out);
 
 /* Load path into d. now_ms decides which expiries are already dead.
  * Returns 0 on success, -1 on unreadable/corrupt file (d untouched). */
@@ -58,8 +61,8 @@ int snapshot_load_mem(db *d, const char *buf, size_t len, uint64_t now_ms);
 /* Accessor for db by index (matches the session selection hook). */
 typedef db *(*snapshot_db_get)(void *ctx, int idx);
 
-void snapshot_serialize_multi(void *ctx, snapshot_db_get get, int ndbs,
-                              resp_buf *out);
+int snapshot_serialize_multi(void *ctx, snapshot_db_get get, int ndbs,
+                             resp_buf *out);
 int snapshot_save_multi(void *ctx, snapshot_db_get get, int ndbs,
                         const char *path);
 int snapshot_load_multi(void *ctx, snapshot_db_get get, int ndbs,
@@ -80,8 +83,9 @@ int snapshot_load_mem_multi(void *ctx, snapshot_db_get get, int ndbs,
 #define SNAPSHOT_DUMP_VERSION 1
 
 /* Serialize one live key, appending the payload to out.
- * Returns 0 on success, -1 when the key does not exist. Callers expire
- * lazily first (db_expire_if_needed) so dead keys report -1. */
+ * Returns 0 on success, -1 when the key does not exist or its payload has an
+ * unrepresentable format length. On failure out keeps its original length.
+ * Callers expire lazily first (db_expire_if_needed) so dead keys report -1. */
 int snapshot_dump_key(db *d, const char *key, size_t klen, resp_buf *out);
 
 /* Install a key from a payload produced by snapshot_dump_key.
@@ -90,6 +94,10 @@ int snapshot_dump_key(db *d, const char *key, size_t klen, resp_buf *out);
  * -1 on a malformed payload or crc mismatch (db untouched). */
 int snapshot_restore_key(db *d, const char *key, size_t klen,
                          const char *payload, size_t plen,
-                         uint64_t expire_ms, int replace, uint64_t now_ms);
+                          uint64_t expire_ms, int replace, uint64_t now_ms);
+
+/* Internal bounds regression seam; returns 0 when extreme reader offsets are
+ * rejected without pointer arithmetic. */
+int snapshot_test_reader_bounds(void);
 
 #endif /* DDUP_SNAPSHOT_H */

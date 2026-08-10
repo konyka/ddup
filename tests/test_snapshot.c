@@ -6,6 +6,7 @@
 
 #include "core/session.h"
 #include "core/snapshot.h"
+#include "ds/obj.h"
 #include "test.h"
 
 #define TMP_SNAP "test_snapshot_tmp.ddr"
@@ -236,6 +237,20 @@ static db *snap_get(void *ctx, int idx)
     return &((snap_dbset *)ctx)->dbs[idx];
 }
 
+static db *unreachable_get(void *ctx, int idx)
+{
+    (void)ctx;
+    (void)idx;
+    DD_CHECK(0);
+    return NULL;
+}
+
+static db *single_get(void *ctx, int idx)
+{
+    DD_CHECK_EQ_INT(0, idx);
+    return (db *)ctx;
+}
+
 /* db structs are huge (cluster tables): always heap-allocate sets of them */
 static snap_dbset *snap_dbset_new(void)
 {
@@ -279,7 +294,7 @@ static void test_multidb_roundtrip(void)
     exec_sess(s, T0, &out, 4, "SADD", "st", "x", "y");
     session_free(s);
 
-    snapshot_serialize_multi(ds, snap_get, 3, &snap);
+    DD_CHECK_EQ_INT(0, snapshot_serialize_multi(ds, snap_get, 3, &snap));
     DD_CHECK(snap.len > 8);
     DD_CHECK_MEM("DDUP0002", 8, snap.data, 8);
 
@@ -329,7 +344,7 @@ static void test_multidb_v1_compat(void)
     s = session_create(&d);
     exec_sess(s, T0, &out, 3, "SET", "k", "v1");
     session_free(s);
-    snapshot_serialize(&d, &snap);
+    DD_CHECK_EQ_INT(0, snapshot_serialize(&d, &snap));
     DD_CHECK_MEM("DDUP0001", 8, snap.data, 8);
     db_destroy(&d);
 
@@ -348,6 +363,166 @@ static void test_multidb_v1_compat(void)
     resp_buf_free(&out);
 }
 
+static void test_serialize_rejects_unrepresentable_sizes(void)
+{
+    db d;
+    session *s;
+    resp_buf out, snap;
+    const char *blob;
+    size_t bloblen;
+    obj_list *list;
+
+    db_init(&d);
+    resp_buf_init(&out);
+    resp_buf_init(&snap);
+    s = session_create(&d);
+    exec_sess(s, T0, &out, 3, "RPUSH", "list", "item");
+    DD_CHECK(rh_get(&d.table, "list", 4, &blob, &bloblen) == 1);
+    list = (obj_list *)obj_unpack_ptr(blob, bloblen);
+    list->len = (uint64_t)UINT32_MAX + 1;
+
+    resp_buf_reserve(&snap, 4);
+    memcpy(snap.data, "keep", 4);
+    snap.len = 4;
+    DD_CHECK_EQ_INT(-1, snapshot_serialize(&d, &snap));
+    DD_CHECK_MEM("keep", 4, snap.data, snap.len);
+    DD_CHECK_EQ_INT(-1,
+                    snapshot_serialize_multi(NULL, unreachable_get,
+                                             (int)UINT16_MAX + 1, &snap));
+    DD_CHECK_MEM("keep", 4, snap.data, snap.len);
+#if SIZE_MAX > UINT32_MAX
+    d.table.size = (size_t)UINT32_MAX + 1;
+    DD_CHECK_EQ_INT(-1, snapshot_serialize_multi(&d, single_get, 1, &snap));
+    DD_CHECK_MEM("keep", 4, snap.data, snap.len);
+    d.table.size = 1;
+#endif
+
+    snap.len = SIZE_MAX;
+    snap.cap = SIZE_MAX;
+    DD_CHECK_EQ_INT(-1, snapshot_serialize(&d, &snap));
+    DD_CHECK(snap.len == SIZE_MAX);
+    snap.len = 4;
+    snap.cap = 256;
+
+    list->len = 1;
+    session_free(s);
+    db_destroy(&d);
+    resp_buf_free(&out);
+    resp_buf_free(&snap);
+}
+
+static void test_save_failure_preserves_existing_snapshot(void)
+{
+    db d;
+    session *s;
+    resp_buf out;
+    const char *blob;
+    size_t bloblen;
+    obj_list *list;
+    FILE *f;
+    char disk[8];
+
+    f = fopen(TMP_SNAP, "wb");
+    DD_CHECK(f != NULL);
+    if (f != NULL) {
+        DD_CHECK_EQ_INT(8, (long long)fwrite("existing", 1, 8, f));
+        DD_CHECK_EQ_INT(0, fclose(f));
+    }
+    (void)remove(TMP_SNAP ".tmp");
+
+    db_init(&d);
+    resp_buf_init(&out);
+    s = session_create(&d);
+    exec_sess(s, T0, &out, 3, "RPUSH", "list", "item");
+    DD_CHECK(rh_get(&d.table, "list", 4, &blob, &bloblen) == 1);
+    list = (obj_list *)obj_unpack_ptr(blob, bloblen);
+    list->len = (uint64_t)UINT32_MAX + 1;
+    DD_CHECK_EQ_INT(-1, snapshot_save(&d, TMP_SNAP));
+    list->len = 1;
+
+    f = fopen(TMP_SNAP, "rb");
+    DD_CHECK(f != NULL);
+    if (f != NULL) {
+        DD_CHECK_EQ_INT(8, (long long)fread(disk, 1, sizeof(disk), f));
+        DD_CHECK_EQ_INT(0, fclose(f));
+        DD_CHECK_MEM("existing", 8, disk, sizeof(disk));
+    }
+    DD_CHECK(remove(TMP_SNAP ".tmp") != 0);
+    remove(TMP_SNAP);
+    session_free(s);
+    db_destroy(&d);
+    resp_buf_free(&out);
+}
+
+static void test_multidb_count_has_no_eof_sentinel(void)
+{
+    snap_dbset *ds = snap_dbset_new();
+    const char malformed[] = {
+        'D', 'D', 'U', 'P', '0', '0', '0', '2',
+        1, 0,
+        0, 0,
+        (char)0xff, (char)0xff, (char)0xff, (char)0xff
+    };
+
+    DD_CHECK_EQ_INT(-1, snapshot_load_mem_multi(ds, snap_get, 3, malformed,
+                                                sizeof(malformed), T0));
+    snap_dbset_free(ds);
+}
+
+static void test_reader_extreme_offsets_are_rejected(void)
+{
+    DD_CHECK_EQ_INT(0, snapshot_test_reader_bounds());
+}
+
+static void test_failed_install_and_restore_are_transactional(void)
+{
+    db src, dst;
+    session *s;
+    resp_buf out, payload;
+    const char byte = 'x';
+    const char *v;
+    size_t vl;
+    uint64_t used, dirty;
+
+    db_init(&src);
+    db_init(&dst);
+    resp_buf_init(&out);
+    resp_buf_init(&payload);
+    s = session_create(&src);
+    exec_sess(s, T0, &out, 3, "SET", "source", "value");
+    DD_CHECK_EQ_INT(0, snapshot_dump_key(&src, "source", 6, &payload));
+    session_free(s);
+
+    {
+        const char old[] = {(char)DDUP_OBJ_STRING, 'o', 'l', 'd'};
+        DD_CHECK_EQ_INT(0, db_install_blob(&dst, "k", 1, old, sizeof(old), T0));
+        DD_CHECK_EQ_INT(0, db_install_expiry(&dst, "k", 1, T0 + 10000));
+    }
+    dst.watch_refs = 1;
+    used = dst.used_memory;
+    dirty = dst.dirty;
+
+    DD_CHECK_EQ_INT(-1,
+                    db_install_blob(&dst, "k", 1, &byte, SIZE_MAX, T0));
+    DD_CHECK_EQ_INT(-1,
+                    db_install_expiry(&dst, &byte, SIZE_MAX, T0 + 20000));
+    DD_CHECK_EQ_INT(-1,
+                    snapshot_restore_key(&dst, &byte, SIZE_MAX, payload.data,
+                                         payload.len, T0 + 30000, 1, T0));
+    DD_CHECK(dst.used_memory == used);
+    DD_CHECK(dst.dirty == dirty);
+    DD_CHECK_EQ_INT(1, rh_size(&dst.table));
+    DD_CHECK_EQ_INT(1, rh_size(&dst.expires));
+    DD_CHECK(rh_get(&dst.table, "k", 1, &v, &vl) == 1);
+    DD_CHECK_MEM("old", 3, v + 1, vl - 1);
+
+    dst.watch_refs = 0;
+    db_destroy(&src);
+    db_destroy(&dst);
+    resp_buf_free(&out);
+    resp_buf_free(&payload);
+}
+
 int main(void)
 {
     DD_RUN(test_roundtrip_all_types);
@@ -356,5 +531,10 @@ int main(void)
     DD_RUN(test_save_lastsave_command);
     DD_RUN(test_multidb_roundtrip);
     DD_RUN(test_multidb_v1_compat);
+    DD_RUN(test_serialize_rejects_unrepresentable_sizes);
+    DD_RUN(test_save_failure_preserves_existing_snapshot);
+    DD_RUN(test_multidb_count_has_no_eof_sentinel);
+    DD_RUN(test_reader_extreme_offsets_are_rejected);
+    DD_RUN(test_failed_install_and_restore_are_transactional);
     return DD_TEST_SUMMARY();
 }

@@ -73,7 +73,11 @@ int script_load(db *d, const char *src, size_t len, char out_sha1[41],
     }
     ref = luaL_ref(L, LUA_REGISTRYINDEX);
     memcpy(b, &ref, 4);
-    rh_set(&d->scripts, out_sha1, 40, b, 4);
+    if (rh_set(&d->scripts, out_sha1, 40, b, 4) < 0) {
+        luaL_unref(L, LUA_REGISTRYINDEX, ref);
+        snprintf(errbuf, errcap, "%s", "script cache insertion failed");
+        return -1;
+    }
     return 0;
 }
 

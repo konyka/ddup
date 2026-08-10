@@ -34,6 +34,52 @@ static uint64_t eb(size_t klen, size_t vlen)
     return (uint64_t)sizeof(rh_entry) + 16 + klen + vlen;
 }
 
+static void test_set_rejects_unrepresentable_member(void)
+{
+    obj_set *s = obj_set_new();
+    const char byte = 'x';
+    uint64_t before = obj_set_mem(s);
+
+    DD_CHECK_EQ_INT(-1, obj_set_add(s, &byte, SIZE_MAX));
+    DD_CHECK_EQ_INT(0, rh_size(&s->members));
+    DD_CHECK(obj_set_mem(s) == before);
+    obj_set_free(s);
+}
+
+static void test_smove_rejection_preserves_both_sets(void)
+{
+    db d;
+    resp_buf out;
+    resp_value argv[4];
+    const char byte = 'x';
+    uint64_t used, dirty, version;
+    const char *v;
+    size_t vl;
+
+    db_init(&d);
+    resp_buf_init(&out);
+    exec_cmd(&d, 1000000, &out, 3, "SADD", "src", "member");
+    d.watch_refs = 1;
+    used = d.used_memory;
+    dirty = d.dirty;
+    version = db_key_version(&d, "src", 3);
+    memset(argv, 0, sizeof(argv));
+    argv[0].type = RESP_BULK_STRING; argv[0].str = "SMOVE"; argv[0].len = 5;
+    argv[1].type = RESP_BULK_STRING; argv[1].str = "src"; argv[1].len = 3;
+    argv[2].type = RESP_BULK_STRING; argv[2].str = &byte; argv[2].len = SIZE_MAX;
+    argv[3].type = RESP_BULK_STRING; argv[3].str = "member"; argv[3].len = 6;
+    out.len = 0;
+    command_execute_at(&d, argv, 4, &out, 1000000);
+    DD_CHECK(out.len > 0 && out.data[0] == '-');
+    DD_CHECK(d.used_memory == used && d.dirty == dirty);
+    DD_CHECK(db_key_version(&d, "src", 3) == version);
+    DD_CHECK(rh_get(&d.table, "src", 3, &v, &vl) == 1);
+    DD_CHECK(obj_set_has((obj_set *)obj_unpack_ptr(v, vl), "member", 6));
+    d.watch_refs = 0;
+    resp_buf_free(&out);
+    db_destroy(&d);
+}
+
 static void check_contains(const resp_buf *out, const char *bulk)
 {
     char nul[1024];
@@ -379,6 +425,8 @@ static void test_set_ttl_and_memory(void)
 
 int main(void)
 {
+    DD_RUN(test_set_rejects_unrepresentable_member);
+    DD_RUN(test_smove_rejection_preserves_both_sets);
     DD_RUN(test_sadd_basics);
     DD_RUN(test_srem_auto_delete);
     DD_RUN(test_spop);

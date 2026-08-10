@@ -249,9 +249,11 @@ int rh_get_touch(rh_table *t, const char *key, size_t klen,
     return 1;
 }
 
-void rh_set(rh_table *t, const char *key, size_t klen,
-            const char *val, size_t vlen)
+int rh_set(rh_table *t, const char *key, size_t klen,
+           const char *val, size_t vlen)
 {
+    if (klen > UINT32_MAX || vlen > UINT32_MAX || klen > SIZE_MAX - vlen)
+        return -1;
     rh_migrate_some(t);
     uint64_t h = rh_hash(key, klen);
 
@@ -277,7 +279,7 @@ void rh_set(rh_table *t, const char *key, size_t klen,
         free(target->kv);
         target->kv = kv;
         target->vlen = (uint32_t)vlen;
-        return;
+        return 1;
     }
 
     rh_maybe_grow(t);
@@ -296,13 +298,21 @@ void rh_set(rh_table *t, const char *key, size_t klen,
     e.meta = 0;
     rh_insert_entry(t->slots, t->cap, e);
     t->size++;
+    return 0;
 }
 
 int rh_set_ex2(rh_table *t, const char *key, size_t klen, const char *v1,
                size_t n1, const char *v2, size_t n2, uint32_t meta,
                char **old_kv, size_t *old_vlen)
 {
-    size_t vlen = n1 + n2;
+    size_t vlen;
+
+    if (klen > UINT32_MAX || n1 > UINT32_MAX || n2 > UINT32_MAX ||
+        n1 > SIZE_MAX - n2)
+        return -1;
+    vlen = n1 + n2;
+    if (vlen > UINT32_MAX || klen > SIZE_MAX - vlen)
+        return -1;
 
     rh_migrate_some(t);
     uint64_t h = rh_hash(key, klen);

@@ -48,14 +48,16 @@ int rh_get(rh_table *t, const char *key, size_t klen,
 int rh_get_touch(rh_table *t, const char *key, size_t klen,
                  const char **val, size_t *vlen, uint32_t meta);
 
-/* Insert or overwrite. The table copies key and value. */
-void rh_set(rh_table *t, const char *key, size_t klen,
-            const char *val, size_t vlen);
+/* Insert or overwrite. The table copies key and value. Returns 0 on insert,
+ * 1 on overwrite, or -1 when lengths cannot be represented safely. */
+int rh_set(rh_table *t, const char *key, size_t klen,
+           const char *val, size_t vlen);
 
 /* Insert-or-overwrite in a single probe (Phase 27): on overwrite the old
  * kv block is handed back UNFREED through old_kv/old_vlen (caller does
  * object teardown + free) and 1 is returned; on plain insert 0. meta is
- * set on the entry either way. */
+ * set on the entry either way. Returns -1 when lengths cannot be represented
+ * safely. */
 int rh_set_ex(rh_table *t, const char *key, size_t klen, const char *val,
               size_t vlen, uint32_t meta, char **old_kv, size_t *old_vlen);
 

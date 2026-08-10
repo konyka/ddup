@@ -114,20 +114,26 @@ static uint64_t get_u64(const char *buf)
     return v;
 }
 
-void db_touch_key(db *d, const char *key, size_t klen)
+int db_touch_key(db *d, const char *key, size_t klen)
 {
     const char *v;
     size_t vl;
     uint64_t ver = 0;
     char b[8];
-    d->dirty++;
+    if (klen > UINT32_MAX)
+        return -1;
     /* version bumps are only needed while at least one WATCH is active */
-    if (d->watch_refs == 0)
-        return;
+    if (d->watch_refs == 0) {
+        d->dirty++;
+        return 0;
+    }
     if (rh_get(&d->keyvers, key, klen, &v, &vl) && vl == 8)
         ver = get_u64(v);
     put_u64(b, ver + 1);
-    rh_set(&d->keyvers, key, klen, b, 8);
+    if (rh_set(&d->keyvers, key, klen, b, 8) < 0)
+        return -1;
+    d->dirty++;
+    return 0;
 }
 
 uint64_t db_key_version(db *d, const char *key, size_t klen)
@@ -155,6 +161,8 @@ int db_expire_if_needed(db *d, const char *key, size_t klen, uint64_t now_ms)
 {
     const char *v;
     size_t vl;
+    if (klen > UINT32_MAX)
+        return 0;
     /* fast path: nothing has a TTL (O(1), skips the expires-table lookup) */
     if (rh_size(&d->expires) == 0)
         return 0;
@@ -184,11 +192,18 @@ static int db_get(db *d, const char *key, size_t klen, const char **val,
 
 /* Overwrite a value blob (tagged; see ds/obj.h); clears any expiry;
  * refreshes the LRU clock; frees/adjusts a replaced object. */
-static void db_set_kv(db *d, const char *key, size_t klen, const char *val,
-                      size_t vlen, uint64_t now_ms)
+static int db_set_kv(db *d, const char *key, size_t klen, const char *val,
+                     size_t vlen, uint64_t now_ms)
 {
     char *old_kv;
     size_t old_vlen;
+    int set_rc;
+    if (klen > UINT32_MAX)
+        return -1;
+    set_rc = rh_set_ex(&d->table, key, klen, val, vlen, lru_clock(now_ms),
+                       &old_kv, &old_vlen);
+    if (set_rc < 0)
+        return -1;
     /* expires probe only when the table is non-empty (common case: no
      * TTLs at all, skip the hash+probe entirely) */
     if (rh_size(&d->expires) > 0) {
@@ -199,9 +214,7 @@ static void db_set_kv(db *d, const char *key, size_t klen, const char *val,
             d->used_memory -= entry_bytes(klen, 8);
         }
     }
-    /* single hash+probe for lookup-old + insert + LRU meta (Phase 27) */
-    if (rh_set_ex(&d->table, key, klen, val, vlen, lru_clock(now_ms),
-                  &old_kv, &old_vlen)) {
+    if (set_rc == 1) {
         const char *oldv = old_kv + klen;
         d->used_memory -=
             entry_bytes(klen, old_vlen) + obj_extra_mem(oldv, old_vlen);
@@ -209,18 +222,26 @@ static void db_set_kv(db *d, const char *key, size_t klen, const char *val,
         free(old_kv);
     }
     d->used_memory += entry_bytes(klen, vlen) + obj_extra_mem(val, vlen);
-    db_touch_key(d, key, klen);
+    (void)db_touch_key(d, key, klen);
+    return 0;
 }
 
 /* String store with the tag built into the kv block directly (Phase 28):
  * one allocation, no temporary concatenation. Strings have no extra
  * object memory, so accounting skips obj_extra_mem. */
-static void db_set_kv_string(db *d, const char *key, size_t klen,
-                             const char *val, size_t vlen, uint64_t now_ms)
+static int db_set_kv_string(db *d, const char *key, size_t klen,
+                            const char *val, size_t vlen, uint64_t now_ms)
 {
     char *old_kv;
     size_t old_vlen;
     const char tag = (char)DDUP_OBJ_STRING;
+    int set_rc;
+    if (klen > UINT32_MAX)
+        return -1;
+    set_rc = rh_set_ex2(&d->table, key, klen, &tag, 1, val, vlen,
+                        lru_clock(now_ms), &old_kv, &old_vlen);
+    if (set_rc < 0)
+        return -1;
     if (rh_size(&d->expires) > 0) {
         const char *old;
         size_t oldl;
@@ -229,8 +250,7 @@ static void db_set_kv_string(db *d, const char *key, size_t klen,
             d->used_memory -= entry_bytes(klen, 8);
         }
     }
-    if (rh_set_ex2(&d->table, key, klen, &tag, 1, val, vlen,
-                   lru_clock(now_ms), &old_kv, &old_vlen)) {
+    if (set_rc == 1) {
         const char *oldv = old_kv + klen;
         d->used_memory -=
             entry_bytes(klen, old_vlen) + obj_extra_mem(oldv, old_vlen);
@@ -238,14 +258,15 @@ static void db_set_kv_string(db *d, const char *key, size_t klen,
         free(old_kv);
     }
     d->used_memory += entry_bytes(klen, vlen + 1);
-    db_touch_key(d, key, klen);
+    (void)db_touch_key(d, key, klen);
+    return 0;
 }
 
 /* Store a string payload (fused tag+value write, no temporary blob). */
-static void db_set_string(db *d, const char *key, size_t klen,
-                          const char *val, size_t vlen, uint64_t now_ms)
+static int db_set_string(db *d, const char *key, size_t klen,
+                         const char *val, size_t vlen, uint64_t now_ms)
 {
-    db_set_kv_string(d, key, klen, val, vlen, now_ms);
+    return db_set_kv_string(d, key, klen, val, vlen, now_ms);
 }
 
 /* Delete key and expiry (and any owned object). Returns 1 if existed. */
@@ -254,6 +275,8 @@ int db_del_kv(db *d, const char *key, size_t klen)
     const char *old;
     size_t oldl;
     int existed;
+    if (klen > UINT32_MAX)
+        return 0;
     if (rh_get(&d->expires, key, klen, &old, &oldl)) {
         rh_del(&d->expires, key, klen);
         d->used_memory -= entry_bytes(klen, 8);
@@ -268,26 +291,31 @@ int db_del_kv(db *d, const char *key, size_t klen)
     return existed;
 }
 
-static void db_set_expiry(db *d, const char *key, size_t klen, uint64_t when_ms)
+static int db_set_expiry(db *d, const char *key, size_t klen, uint64_t when_ms)
 {
     char b[8];
     const char *old;
     size_t oldl;
+    if (klen > UINT32_MAX)
+        return -1;
     put_u64(b, when_ms);
-    if (!rh_get(&d->expires, key, klen, &old, &oldl))
+    int is_new = !rh_get(&d->expires, key, klen, &old, &oldl);
+    if (rh_set(&d->expires, key, klen, b, 8) < 0)
+        return -1;
+    if (is_new)
         d->used_memory += entry_bytes(klen, 8);
-    rh_set(&d->expires, key, klen, b, 8);
+    return 0;
 }
 
-void db_install_blob(db *d, const char *key, size_t klen, const char *blob,
-                     size_t bloblen, uint64_t now_ms)
+int db_install_blob(db *d, const char *key, size_t klen, const char *blob,
+                    size_t bloblen, uint64_t now_ms)
 {
-    db_set_kv(d, key, klen, blob, bloblen, now_ms);
+    return db_set_kv(d, key, klen, blob, bloblen, now_ms);
 }
 
-void db_install_expiry(db *d, const char *key, size_t klen, uint64_t when_ms)
+int db_install_expiry(db *d, const char *key, size_t klen, uint64_t when_ms)
 {
-    db_set_expiry(d, key, klen, when_ms);
+    return db_set_expiry(d, key, klen, when_ms);
 }
 
 /* rh_each callback: free any owned object value (FLUSHDB teardown). */
@@ -473,6 +501,22 @@ static void slot_scan_cb(const char *key, size_t klen, const char *v,
     }
 }
 
+static void storage_length_error(resp_buf *out)
+{
+    static const char E[] = "ERR key or value length is not representable";
+    resp_write_error(out, E, sizeof(E) - 1);
+}
+
+static int storage_key_ok(size_t klen)
+{
+    return klen <= UINT32_MAX;
+}
+
+static int storage_string_ok(size_t klen, size_t vlen)
+{
+    return storage_key_ok(klen) && vlen < UINT32_MAX;
+}
+
 /* Fetch the hash object for key; create when missing && create != 0.
  * Returns 1 (*h set), 0 missing, -1 WRONGTYPE (reply written). */
 static int get_hash(db *d, resp_buf *out, const char *k, size_t kl, int create,
@@ -487,7 +531,11 @@ static int get_hash(db *d, resp_buf *out, const char *k, size_t kl, int create,
             return 0;
         nh = obj_hash_new();
         obj_pack_ptr(blob, DDUP_OBJ_HASH, nh);
-        db_set_kv(d, k, kl, blob, 9, now);
+        if (db_set_kv(d, k, kl, blob, 9, now) != 0) {
+            obj_hash_free(nh);
+            storage_length_error(out);
+            return -1;
+        }
         *h = nh;
         return 1;
     }
@@ -513,7 +561,11 @@ static int get_list(db *d, resp_buf *out, const char *k, size_t kl, int create,
             return 0;
         nl = obj_list_new();
         obj_pack_ptr(blob, DDUP_OBJ_LIST, nl);
-        db_set_kv(d, k, kl, blob, 9, now);
+        if (db_set_kv(d, k, kl, blob, 9, now) != 0) {
+            obj_list_free(nl);
+            storage_length_error(out);
+            return -1;
+        }
         *l = nl;
         return 1;
     }
@@ -539,7 +591,11 @@ static int get_set(db *d, resp_buf *out, const char *k, size_t kl, int create,
             return 0;
         ns = obj_set_new();
         obj_pack_ptr(blob, DDUP_OBJ_SET, ns);
-        db_set_kv(d, k, kl, blob, 9, now);
+        if (db_set_kv(d, k, kl, blob, 9, now) != 0) {
+            obj_set_free(ns);
+            storage_length_error(out);
+            return -1;
+        }
         *s = ns;
         return 1;
     }
@@ -565,7 +621,11 @@ static int get_zset(db *d, resp_buf *out, const char *k, size_t kl, int create,
             return 0;
         nz = obj_zset_new();
         obj_pack_ptr(blob, DDUP_OBJ_ZSET, nz);
-        db_set_kv(d, k, kl, blob, 9, now);
+        if (db_set_kv(d, k, kl, blob, 9, now) != 0) {
+            obj_zset_free(nz);
+            storage_length_error(out);
+            return -1;
+        }
         *z = nz;
         return 1;
     }
@@ -1128,6 +1188,10 @@ static void cmd_expire(db *d, const resp_value *argv, resp_buf *out,
         resp_write_error(out, "ERR invalid argument type", 24);
         return;
     }
+    if (!storage_key_ok(kl)) {
+        storage_length_error(out);
+        return;
+    }
     if (!parse_i64(t, tl, &tv)) {
         resp_write_error(out, ERR_NOT_INT, sizeof(ERR_NOT_INT) - 1);
         return;
@@ -1151,7 +1215,10 @@ static void cmd_expire(db *d, const resp_value *argv, resp_buf *out,
         resp_write_integer(out, 1);
         return;
     }
-    db_set_expiry(d, k, kl, (uint64_t)exp);
+    if (db_set_expiry(d, k, kl, (uint64_t)exp) != 0) {
+        storage_length_error(out);
+        return;
+    }
     resp_write_integer(out, 1);
 }
 
@@ -1665,6 +1732,10 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
         size_t kl, vl;
         if (!arg_str(&argv[1], &k, &kl) || !arg_str(&argv[2], &v, &vl))
             goto bad_type;
+        if (!storage_string_ok(kl, vl)) {
+            storage_length_error(out);
+            return;
+        }
         int nx = 0, xx = 0, has_ttl = 0;
         uint64_t ttl_ms = 0;
         for (size_t i = 3; i < argc; i++) {
@@ -1719,9 +1790,14 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
         }
         if (oom_blocked(d, out))
             return;
-        db_set_string(d, k, kl, v, vl, now_ms);
-        if (has_ttl)
-            db_set_expiry(d, k, kl, now_ms + ttl_ms);
+        if (db_set_string(d, k, kl, v, vl, now_ms) != 0) {
+            storage_length_error(out);
+            return;
+        }
+        if (has_ttl && db_set_expiry(d, k, kl, now_ms + ttl_ms) != 0) {
+            storage_length_error(out);
+            return;
+        }
         resp_write_simple_string(out, "OK", 2);
         return;
     }
@@ -2070,6 +2146,10 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
         size_t kl;
         if (!arg_str(&argv[1], &k, &kl))
             goto bad_type;
+        if (!storage_key_ok(kl)) {
+            storage_length_error(out);
+            return;
+        }
         long long delta = cmd_id == CMD_INCR ? 1 : -1;
         long long cur = 0;
         const char *v;
@@ -2094,7 +2174,10 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
         int nl = snprintf(num, sizeof(num), "%lld", cur);
         if (oom_blocked(d, out))
             return;
-        db_set_string(d, k, kl, num, (size_t)nl, now_ms);
+        if (db_set_string(d, k, kl, num, (size_t)nl, now_ms) != 0) {
+            storage_length_error(out);
+            return;
+        }
         resp_write_integer(out, cur);
         return;
     }
@@ -2108,6 +2191,10 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
         size_t kl, vl;
         if (!arg_str(&argv[1], &k, &kl) || !arg_str(&argv[2], &v, &vl))
             goto bad_type;
+        if (!storage_string_ok(kl, vl)) {
+            storage_length_error(out);
+            return;
+        }
         const char *old;
         size_t oldl;
         if (oom_blocked(d, out))
@@ -2119,15 +2206,27 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
             if (!as_string(out, old, oldl, &os, &osl))
                 return;
             resp_buf_init(&tmp);
-            resp_buf_reserve(&tmp, osl + vl);
+            if (vl > SIZE_MAX - osl || osl + vl >= UINT32_MAX ||
+                resp_buf_reserve(&tmp, osl + vl) != 0) {
+                resp_buf_free(&tmp);
+                storage_length_error(out);
+                return;
+            }
             memcpy(tmp.data, os, osl);
             memcpy(tmp.data + osl, v, vl);
             tmp.len = osl + vl;
-            db_set_string(d, k, kl, tmp.data, tmp.len, now_ms);
+            if (db_set_string(d, k, kl, tmp.data, tmp.len, now_ms) != 0) {
+                resp_buf_free(&tmp);
+                storage_length_error(out);
+                return;
+            }
             resp_write_integer(out, (long long)tmp.len);
             resp_buf_free(&tmp);
         } else {
-            db_set_string(d, k, kl, v, vl, now_ms);
+            if (db_set_string(d, k, kl, v, vl, now_ms) != 0) {
+                storage_length_error(out);
+                return;
+            }
             resp_write_integer(out, (long long)vl);
         }
         return;
@@ -2211,9 +2310,23 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
         for (size_t i = 1; i + 1 < argc; i += 2) {
             const char *k, *v;
             size_t kl, vl;
+            if (!arg_str(&argv[i], &k, &kl) ||
+                !arg_str(&argv[i + 1], &v, &vl))
+                goto bad_type;
+            if (!storage_string_ok(kl, vl)) {
+                storage_length_error(out);
+                return;
+            }
+        }
+        for (size_t i = 1; i + 1 < argc; i += 2) {
+            const char *k, *v;
+            size_t kl, vl;
             if (!arg_str(&argv[i], &k, &kl) || !arg_str(&argv[i + 1], &v, &vl))
                 goto bad_type;
-            db_set_string(d, k, kl, v, vl, now_ms);
+            if (db_set_string(d, k, kl, v, vl, now_ms) != 0) {
+                storage_length_error(out);
+                return;
+            }
         }
         resp_write_simple_string(out, "OK", 2);
         return;
@@ -2440,8 +2553,23 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
         size_t kl;
         if (!arg_str(&argv[1], &k, &kl))
             goto bad_type;
+        if (!storage_key_ok(kl)) {
+            storage_length_error(out);
+            return;
+        }
         if (oom_blocked(d, out))
             return;
+        for (size_t i = 2; i + 1 < argc; i += 2) {
+            const char *f, *v;
+            size_t fl, vl;
+            if (!arg_str(&argv[i], &f, &fl) ||
+                !arg_str(&argv[i + 1], &v, &vl))
+                goto bad_type;
+            if (!storage_string_ok(fl, vl)) {
+                storage_length_error(out);
+                return;
+            }
+        }
         obj_hash *h;
         if (get_hash(d, out, k, kl, 1, now_ms, &h) <= 0)
             return;
@@ -2452,7 +2580,14 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
             size_t fl, vl;
             if (!arg_str(&argv[i], &f, &fl) || !arg_str(&argv[i + 1], &v, &vl))
                 goto bad_type;
-            added += obj_hash_set(h, f, fl, v, vl);
+            {
+                int set_rc = obj_hash_set(h, f, fl, v, vl);
+                if (set_rc < 0) {
+                    storage_length_error(out);
+                    return;
+                }
+                added += set_rc;
+            }
         }
         mem_sync(d, k, kl, before, obj_hash_mem(h));
         if (mset)
@@ -2623,6 +2758,10 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
         if (!arg_str(&argv[1], &k, &kl) || !arg_str(&argv[2], &f, &fl) ||
             !arg_str(&argv[3], &iv, &ivl))
             goto bad_type;
+        if (!storage_key_ok(kl) || !storage_string_ok(fl, 24)) {
+            storage_length_error(out);
+            return;
+        }
         if (!parse_i64(iv, ivl, &inc)) {
             resp_write_error(out, ERR_NOT_INT, sizeof(ERR_NOT_INT) - 1);
             return;
@@ -2650,7 +2789,10 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
             char num[24];
             int nl = snprintf(num, sizeof(num), "%lld", cur);
             uint64_t before = obj_hash_mem(h);
-            obj_hash_set(h, f, fl, num, (size_t)nl);
+            if (obj_hash_set(h, f, fl, num, (size_t)nl) < 0) {
+                storage_length_error(out);
+                return;
+            }
             mem_sync(d, k, kl, before, obj_hash_mem(h));
         }
         resp_write_integer(out, cur);
@@ -2667,6 +2809,10 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
         if (!arg_str(&argv[1], &k, &kl) || !arg_str(&argv[2], &f, &fl) ||
             !arg_str(&argv[3], &v, &vl))
             goto bad_type;
+        if (!storage_key_ok(kl) || !storage_string_ok(fl, vl)) {
+            storage_length_error(out);
+            return;
+        }
         if (oom_blocked(d, out))
             return;
         obj_hash *h;
@@ -2682,7 +2828,10 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
         }
         {
             uint64_t before = obj_hash_mem(h);
-            obj_hash_set(h, f, fl, v, vl);
+            if (obj_hash_set(h, f, fl, v, vl) < 0) {
+                storage_length_error(out);
+                return;
+            }
             mem_sync(d, k, kl, before, obj_hash_mem(h));
         }
         resp_write_integer(out, 1);
@@ -2705,29 +2854,47 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
         size_t kl;
         if (!arg_str(&argv[1], &k, &kl))
             goto bad_type;
-        if (oom_blocked(d, out))
-            return;
-        obj_list *l;
-        int rc = get_list(d, out, k, kl, !only_if_exists, now_ms, &l);
-        if (rc < 0)
-            return;
-        if (rc == 0) { /* LPUSHX/RPUSHX on missing key */
-            resp_write_integer(out, 0);
+        if (!storage_key_ok(kl)) {
+            storage_length_error(out);
             return;
         }
         {
-            uint64_t before = obj_list_mem(l);
-            for (size_t i = 2; i < argc; i++) {
-                const char *v;
-                size_t vl;
-                if (!arg_str(&argv[i], &v, &vl))
+            size_t count = argc - 2;
+            const char *vals[count];
+            size_t lens[count];
+            size_t i;
+            for (i = 0; i < count; i++) {
+                if (!arg_str(&argv[i + 2], &vals[i], &lens[i]))
                     goto bad_type;
-                obj_list_push(l, left, v, vl);
+                if (lens[i] > UINT32_MAX ||
+                    lens[i] > SIZE_MAX - sizeof(list_node)) {
+                    storage_length_error(out);
+                    return;
+                }
             }
-            mem_sync(d, k, kl, before, obj_list_mem(l));
+            if (oom_blocked(d, out))
+                return;
+            {
+                obj_list *l;
+                int rc = get_list(d, out, k, kl, !only_if_exists, now_ms, &l);
+                if (rc < 0)
+                    return;
+                if (rc == 0) {
+                    resp_write_integer(out, 0);
+                    return;
+                }
+                {
+                    uint64_t before = obj_list_mem(l);
+                    if (obj_list_push_many(l, left, vals, lens, count) != 0) {
+                        storage_length_error(out);
+                        return;
+                    }
+                    mem_sync(d, k, kl, before, obj_list_mem(l));
+                }
+                resp_write_integer(out, (long long)l->len);
+                return;
+            }
         }
-        resp_write_integer(out, (long long)l->len);
-        return;
     }
 
     if (cmd_id == CMD_LPOP || cmd_id == CMD_RPOP) {
@@ -2875,6 +3042,11 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
         if (!arg_str(&argv[1], &k, &kl) || !arg_str(&argv[2], &iv, &ivl) ||
             !arg_str(&argv[3], &v, &vl))
             goto bad_type;
+        if (!storage_key_ok(kl) || vl > UINT32_MAX ||
+            vl > SIZE_MAX - sizeof(list_node)) {
+            storage_length_error(out);
+            return;
+        }
         if (!parse_i64(iv, ivl, &idx)) {
             resp_write_error(out, ERR_NOT_INT, sizeof(ERR_NOT_INT) - 1);
             return;
@@ -2899,7 +3071,12 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
         }
         {
             uint64_t before = obj_list_mem(l);
-            if (!obj_list_set_at(l, (size_t)idx, v, vl)) {
+            int set_rc = obj_list_set_at(l, (size_t)idx, v, vl);
+            if (set_rc < 0) {
+                storage_length_error(out);
+                return;
+            }
+            if (set_rc == 0) {
                 static const char E_RANGE[] = "ERR index out of range";
                 resp_write_error(out, E_RANGE, sizeof(E_RANGE) - 1);
                 return;
@@ -2921,8 +3098,22 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
         size_t kl;
         if (!arg_str(&argv[1], &k, &kl))
             goto bad_type;
+        if (!storage_key_ok(kl)) {
+            storage_length_error(out);
+            return;
+        }
         if (oom_blocked(d, out))
             return;
+        for (size_t i = 2; i < argc; i++) {
+            const char *m;
+            size_t ml;
+            if (!arg_str(&argv[i], &m, &ml))
+                goto bad_type;
+            if (!storage_key_ok(ml)) {
+                storage_length_error(out);
+                return;
+            }
+        }
         obj_set *s;
         if (get_set(d, out, k, kl, 1, now_ms, &s) <= 0)
             return;
@@ -2933,7 +3124,14 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
             size_t ml;
             if (!arg_str(&argv[i], &m, &ml))
                 goto bad_type;
-            added += obj_set_add(s, m, ml);
+            {
+                int add_rc = obj_set_add(s, m, ml);
+                if (add_rc < 0) {
+                    storage_length_error(out);
+                    return;
+                }
+                added += add_rc;
+            }
         }
         mem_sync(d, k, kl, before, obj_set_mem(s));
         resp_write_integer(out, added);
@@ -3170,6 +3368,11 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
         if (!arg_str(&argv[1], &sk, &skl) || !arg_str(&argv[2], &dk, &dkl) ||
             !arg_str(&argv[3], &m, &ml))
             goto bad_type;
+        if (!storage_key_ok(skl) || !storage_key_ok(dkl) ||
+            !storage_key_ok(ml)) {
+            storage_length_error(out);
+            return;
+        }
         obj_set *src, *dst;
         int rcs = get_set(d, out, sk, skl, 0, now_ms, &src);
         if (rcs < 0)
@@ -3183,13 +3386,31 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
             return;
         }
         /* type-check dst before mutating src */
+        int rcd;
+        int created_dst = 0;
         {
-            int rcd = get_set(d, out, dk, dkl, 0, now_ms, &dst);
+            rcd = get_set(d, out, dk, dkl, 0, now_ms, &dst);
             if (rcd < 0)
                 return;
         }
         if (oom_blocked(d, out))
             return;
+        if (rcd == 0) {
+            rcd = get_set(d, out, dk, dkl, 1, now_ms, &dst);
+            if (rcd < 0)
+                return;
+            created_dst = 1;
+        }
+        {
+            uint64_t before = obj_set_mem(dst);
+            if (obj_set_add(dst, m, ml) < 0) {
+                if (created_dst)
+                    db_del_kv(d, dk, dkl);
+                storage_length_error(out);
+                return;
+            }
+            mem_sync(d, dk, dkl, before, obj_set_mem(dst));
+        }
         {
             uint64_t before = obj_set_mem(src);
             obj_set_rem(src, m, ml);
@@ -3197,12 +3418,6 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
         }
         if (rh_size(&src->members) == 0)
             db_del_kv(d, sk, skl);
-        get_set(d, out, dk, dkl, 1, now_ms, &dst);
-        {
-            uint64_t before = obj_set_mem(dst);
-            obj_set_add(dst, m, ml);
-            mem_sync(d, dk, dkl, before, obj_set_mem(dst));
-        }
         resp_write_integer(out, 1);
         return;
     }
@@ -3276,10 +3491,15 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
         const char *k;
         size_t kl;
         size_t pairs = (argc - 2) / 2;
-        double *scores = (double *)malloc(pairs * sizeof(double));
+        double *scores;
         size_t j;
         if (!arg_str(&argv[1], &k, &kl))
             goto bad_type;
+        if (!storage_key_ok(kl)) {
+            storage_length_error(out);
+            return;
+        }
+        scores = (double *)malloc(pairs * sizeof(double));
         for (j = 0; j < pairs; j++) {
             const char *sv;
             size_t svl;
@@ -3295,6 +3515,19 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
             free(scores);
             return;
         }
+        for (j = 0; j < pairs; j++) {
+            const char *m;
+            size_t ml;
+            if (!arg_str(&argv[3 + 2 * j], &m, &ml)) {
+                free(scores);
+                goto bad_type;
+            }
+            if (!storage_key_ok(ml)) {
+                free(scores);
+                storage_length_error(out);
+                return;
+            }
+        }
         {
             obj_zset *z;
             long long added = 0;
@@ -3309,7 +3542,15 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
                 size_t ml;
                 if (!arg_str(&argv[3 + 2 * j], &m, &ml))
                     goto bad_type;
-                added += obj_zset_add(z, m, ml, scores[j]);
+                {
+                    int add_rc = obj_zset_add(z, m, ml, scores[j]);
+                    if (add_rc < 0) {
+                        free(scores);
+                        storage_length_error(out);
+                        return;
+                    }
+                    added += add_rc;
+                }
             }
             mem_sync(d, k, kl, before, obj_zset_mem(z));
             free(scores);
@@ -3370,6 +3611,10 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
         if (!arg_str(&argv[1], &k, &kl) || !arg_str(&argv[2], &dv, &dvl) ||
             !arg_str(&argv[3], &m, &ml))
             goto bad_type;
+        if (!storage_key_ok(kl) || !storage_key_ok(ml)) {
+            storage_length_error(out);
+            return;
+        }
         if (!parse_double(dv, dvl, &delta)) {
             resp_write_error(out, ERR_NOT_FLOAT, sizeof(ERR_NOT_FLOAT) - 1);
             return;
@@ -3390,7 +3635,10 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
             uint64_t before = obj_zset_mem(z);
             char num[40];
             int nl;
-            obj_zset_add(z, m, ml, cur);
+            if (obj_zset_add(z, m, ml, cur) < 0) {
+                storage_length_error(out);
+                return;
+            }
             mem_sync(d, k, kl, before, obj_zset_mem(z));
             nl = fmt_score(num, sizeof(num), cur);
             resp_write_bulk(out, num, (size_t)nl);
@@ -3735,14 +3983,43 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
             size_t cl;
             if (!arg_str(&argv[i], &ch, &cl))
                 goto bad_type;
-            if (s->subscribe != NULL) {
-                write_sub_reply(out, "subscribe", 9, ch, cl,
-                                (long long)s->subscribe(s->ps_ctx, s, ch, cl));
-            } else {
-                s->nsub++; /* no registry (stack session) */
-                write_sub_reply(out, "subscribe", 9, ch, cl,
-                                (long long)s->nsub);
+        }
+        {
+            size_t old_nsub = s->nsub;
+            size_t staged = 0;
+            ptrdiff_t counts[argc - 1];
+            unsigned char added[argc - 1];
+            for (i = 1; i < argc; i++) {
+                const char *ch;
+                size_t cl;
+                if (!arg_str(&argv[i], &ch, &cl)) goto bad_type;
+                ptrdiff_t before = (ptrdiff_t)s->nsub;
+                counts[i - 1] = s->subscribe != NULL
+                                    ? s->subscribe(s->ps_ctx, s, ch, cl)
+                                    : (ptrdiff_t)(++s->nsub);
+                added[i - 1] = (unsigned char)(counts[i - 1] > before);
+                if (counts[i - 1] < 0) {
+                    while (staged-- > 0) {
+                        const char *undo = argv[i - staged - 1].str;
+                        if (added[i - staged - 1])
+                            s->unsubscribe(s->ps_ctx, s, undo, argv[i - staged - 1].len);
+                    }
+                    s->nsub = old_nsub;
+                    storage_length_error(out);
+                    return;
+                }
+                staged++;
             }
+            for (i = 1; i < argc; i++) {
+                const char *ch = argv[i].str;
+                write_sub_reply(out, "subscribe", 9, ch, argv[i].len,
+                                (long long)counts[i - 1]);
+            }
+            if (s->subscribe != NULL)
+                s->nsub = old_nsub;
+            for (i = 1; i < argc; i++)
+                if (added[i - 1])
+                    s->nsub++;
         }
         return;
     }
@@ -3814,15 +4091,41 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
             size_t cl;
             if (!arg_str(&argv[i], &ch, &cl))
                 goto bad_type;
-            if (s->ssubscribe != NULL) {
-                write_sub_reply(out, "ssubscribe", 10, ch, cl,
-                                (long long)s->ssubscribe(s->ps_ctx, s, ch,
-                                                         cl));
-            } else {
-                s->nssub++; /* no registry (stack session) */
-                write_sub_reply(out, "ssubscribe", 10, ch, cl,
-                                (long long)s->nssub);
+        }
+        {
+            size_t old_nssub = s->nssub;
+            size_t staged = 0;
+            ptrdiff_t counts[argc - 1];
+            unsigned char added[argc - 1];
+            for (i = 1; i < argc; i++) {
+                const char *ch;
+                size_t cl;
+                if (!arg_str(&argv[i], &ch, &cl)) goto bad_type;
+                ptrdiff_t before = (ptrdiff_t)s->nssub;
+                counts[i - 1] = s->ssubscribe != NULL
+                                    ? s->ssubscribe(s->ps_ctx, s, ch, cl)
+                                    : (ptrdiff_t)(++s->nssub);
+                added[i - 1] = (unsigned char)(counts[i - 1] > before);
+                if (counts[i - 1] < 0) {
+                    while (staged-- > 0)
+                        if (added[i - staged - 1])
+                            s->sunsubscribe(s->ps_ctx, s, argv[i - staged - 1].str,
+                                            argv[i - staged - 1].len);
+                    s->nssub = old_nssub;
+                    storage_length_error(out);
+                    return;
+                }
+                staged++;
             }
+            for (i = 1; i < argc; i++) {
+                write_sub_reply(out, "ssubscribe", 10, argv[i].str,
+                                argv[i].len, (long long)counts[i - 1]);
+            }
+            if (s->ssubscribe != NULL)
+                s->nssub = old_nssub;
+            for (i = 1; i < argc; i++)
+                if (added[i - 1])
+                    s->nssub++;
         }
         return;
     }
@@ -4042,7 +4345,13 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
                              42);
             return;
         }
-        s->psync_hook(s->psync_ctx, s, rid, rl, poff);
+        {
+            int rc = s->psync_hook(s->psync_ctx, s, rid, rl, poff);
+            if (rc == -1)
+                resp_write_error(out, "ERR partial resync output failed", 32);
+            else if (rc == -2)
+                resp_write_error(out, "ERR snapshot serialization failed", 33);
+        }
         return;
     }
 
@@ -4848,11 +5157,15 @@ static void exec_transaction(session *s, resp_buf *out, uint64_t now_ms)
     if (!s->multi_error) {
         for (i = 0; i < s->nwatch; i++) {
             watch_entry *w = &s->watches[i];
-            if (w->epoch != s->d->flush_epoch ||
-                w->version != db_key_version(s->d, w->key, w->klen)) {
+            db *wd = s->d;
+            if (s->sel_fn != NULL)
+                wd = s->sel_fn(s->sel_ctx, w->db_index);
+            if (wd == NULL || w->epoch != wd->flush_epoch ||
+                w->version != db_key_version(wd, w->key, w->klen)) {
                 /* dirty watch: null array, nothing applied */
                 static const char null_arr[] = "*-1\r\n";
-                resp_buf_reserve(out, sizeof(null_arr) - 1);
+                if (resp_buf_reserve(out, sizeof(null_arr) - 1) != 0)
+                    goto done;
                 memcpy(out->data + out->len, null_arr, sizeof(null_arr) - 1);
                 out->len += sizeof(null_arr) - 1;
                 goto done;
@@ -4978,6 +5291,10 @@ void session_execute_at(session *s, const resp_value *argv, size_t argc,
         size_t kl, vl;
         if (!arg_str(&argv[1], &k, &kl) || !arg_str(&argv[2], &v, &vl))
             goto bad_type;
+        if (!storage_string_ok(kl, vl)) {
+            storage_length_error(out);
+            return;
+        }
         {
             const char *old;
             size_t oldl;
@@ -4989,7 +5306,10 @@ void session_execute_at(session *s, const resp_value *argv, size_t argc,
         }
         if (oom_blocked(s->d, out))
             return;
-        db_set_string(s->d, k, kl, v, vl, now_ms);
+        if (db_set_string(s->d, k, kl, v, vl, now_ms) != 0) {
+            storage_length_error(out);
+            return;
+        }
         resp_write_simple_string(out, "OK", 2);
         s->d->cmd_calls[CMD_SET]++;
         if (s->d->dirty != dirty_before && s->aof_log != NULL &&
@@ -5104,8 +5424,8 @@ void session_execute_at(session *s, const resp_value *argv, size_t argc,
             size_t kl;
             if (!arg_str(&argv[i], &k, &kl))
                 goto bad_type;
-            session_watch_add(s, k, kl, db_key_version(s->d, k, kl),
-                              s->d->flush_epoch);
+        session_watch_add(s, k, kl, db_key_version(s->d, k, kl),
+                          s->d->flush_epoch, s->db_index);
         }
         resp_write_simple_string(out, "OK", 2);
         return;

@@ -136,6 +136,43 @@ static void test_empty_argv(void)
     EXPECT_REPLY("-ERR empty command\r\n");
 }
 
+static void test_set_rejection_is_transactional(void)
+{
+    const char byte = 'x';
+    const char *v;
+    size_t vl;
+    uint64_t used, dirty, version;
+
+    cmd(3, "SET", "guarded", "old");
+    cmd(3, "PEXPIRE", "guarded", "100000");
+    g_db.watch_refs = 1;
+    used = g_db.used_memory;
+    dirty = g_db.dirty;
+    version = db_key_version(&g_db, "guarded", 7);
+
+    memset(g_argv, 0, sizeof(g_argv));
+    g_argv[0].type = RESP_BULK_STRING;
+    g_argv[0].str = "SET";
+    g_argv[0].len = 3;
+    g_argv[1].type = RESP_BULK_STRING;
+    g_argv[1].str = "guarded";
+    g_argv[1].len = 7;
+    g_argv[2].type = RESP_BULK_STRING;
+    g_argv[2].str = &byte;
+    g_argv[2].len = SIZE_MAX;
+    g_out.len = 0;
+    command_execute(&g_db, g_argv, 3, &g_out);
+
+    DD_CHECK(g_out.len > 1 && g_out.data[0] == '-');
+    DD_CHECK(g_db.used_memory == used);
+    DD_CHECK(g_db.dirty == dirty);
+    DD_CHECK(db_key_version(&g_db, "guarded", 7) == version);
+    DD_CHECK(rh_get(&g_db.table, "guarded", 7, &v, &vl) == 1);
+    DD_CHECK_MEM("old", 3, v + 1, vl - 1);
+    DD_CHECK(rh_get(&g_db.expires, "guarded", 7, &v, &vl) == 1);
+    g_db.watch_refs = 0;
+}
+
 int main(void)
 {
     db_init(&g_db);
@@ -148,6 +185,7 @@ int main(void)
     DD_RUN(test_mget_mset);
     DD_RUN(test_unknown_command);
     DD_RUN(test_empty_argv);
+    DD_RUN(test_set_rejection_is_transactional);
     resp_buf_free(&g_out);
     db_destroy(&g_db);
     return DD_TEST_SUMMARY();

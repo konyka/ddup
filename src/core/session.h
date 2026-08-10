@@ -29,6 +29,7 @@ typedef struct watch_entry {
     size_t klen;
     uint64_t version;
     uint64_t epoch;
+    int db_index;
 } watch_entry;
 
 /* replication roles (session.repl->role and server role) */
@@ -75,8 +76,8 @@ typedef struct session {
     /* pub/sub hooks; ps_ctx/owner are registry- and delivery-side contexts
      * (server-owned). NULL hooks = no pub/sub (stack sessions in tests). */
     void *ps_ctx;
-    size_t (*subscribe)(void *ctx, struct session *s, const char *ch,
-                        size_t len);
+    ptrdiff_t (*subscribe)(void *ctx, struct session *s, const char *ch,
+                           size_t len);
     size_t (*unsubscribe)(void *ctx, struct session *s, const char *ch,
                           size_t len);
     void (*each_channel)(void *ctx, struct session *s,
@@ -91,8 +92,8 @@ typedef struct session {
     /* shard pub/sub (Redis 7 sharded channels): parallel registry hooks,
      * same ownership model; deliver_shard writes "smessage" pushes;
      * spublish_bus propagates a SPUBLISH onto the cluster bus (server) */
-    size_t (*ssubscribe)(void *ctx, struct session *s, const char *ch,
-                         size_t len);
+    ptrdiff_t (*ssubscribe)(void *ctx, struct session *s, const char *ch,
+                            size_t len);
     size_t (*sunsubscribe)(void *ctx, struct session *s, const char *ch,
                            size_t len);
     void (*each_schannel)(void *ctx, struct session *s,
@@ -140,8 +141,8 @@ typedef struct session {
     void (*sync_hook)(void *ctx, struct session *s);
     void *sync_ctx;
     /* PSYNC: partial-or-full resync handshake (server-owned). */
-    void (*psync_hook)(void *ctx, struct session *s, const char *replid,
-                       size_t replid_len, long long offset);
+    int (*psync_hook)(void *ctx, struct session *s, const char *replid,
+                      size_t replid_len, long long offset);
     void *psync_ctx;
     int (*replicaof_hook)(void *ctx, const char *host, uint16_t port);
     void *replicaof_ctx;
@@ -158,7 +159,7 @@ void session_queue_push(session *s, const resp_value *argv, size_t argc);
 void session_queue_clear(session *s);
 
 void session_watch_add(session *s, const char *key, size_t klen,
-                       uint64_t version, uint64_t epoch);
+                       uint64_t version, uint64_t epoch, int db_index);
 void session_watch_clear(session *s);
 
 /* Execute one command in this session (MULTI queueing, subscribed-mode

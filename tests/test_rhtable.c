@@ -72,6 +72,43 @@ static void test_set_ex(void)
     rh_destroy(&t);
 }
 
+static void test_reject_unrepresentable_lengths(void)
+{
+    rh_table t;
+    const char byte = 'x';
+    const char *v;
+    size_t vl;
+    char *old_kv = (char *)&byte;
+    size_t old_vlen = 123;
+
+    rh_init(&t);
+    DD_CHECK_EQ_INT(0, rh_set(&t, "k", 1, "old", 3));
+
+#if SIZE_MAX > UINT32_MAX
+    DD_CHECK_EQ_INT(-1,
+                    rh_set(&t, &byte, (size_t)UINT32_MAX + 1, &byte, 1));
+    DD_CHECK_EQ_INT(-1,
+                    rh_set(&t, &byte, 1, &byte, (size_t)UINT32_MAX + 1));
+    DD_CHECK_EQ_INT(-1,
+                    rh_set_ex(&t, &byte, (size_t)UINT32_MAX + 1, &byte, 1,
+                              0, &old_kv, &old_vlen));
+#endif
+    DD_CHECK_EQ_INT(-1,
+                    rh_set_ex2(&t, &byte, 1, &byte, SIZE_MAX, &byte, 1, 0,
+                               &old_kv, &old_vlen));
+    DD_CHECK_EQ_INT(-1,
+                    rh_set_ex2(&t, &byte, 1, &byte, UINT32_MAX, &byte, 1, 0,
+                               &old_kv, &old_vlen));
+    DD_CHECK_EQ_INT(-1, rh_set(&t, &byte, SIZE_MAX, &byte, 1));
+
+    DD_CHECK(old_kv == &byte);
+    DD_CHECK_EQ_INT(123, (long long)old_vlen);
+    DD_CHECK_EQ_INT(1, rh_size(&t));
+    DD_CHECK(rh_get(&t, "k", 1, &v, &vl) == 1);
+    DD_CHECK_MEM("old", 3, v, vl);
+    rh_destroy(&t);
+}
+
 static void test_delete(void)
 {
     rh_table t;
@@ -255,6 +292,7 @@ int main(void)
     DD_RUN(test_set_get);
     DD_RUN(test_overwrite);
     DD_RUN(test_set_ex);
+    DD_RUN(test_reject_unrepresentable_lengths);
     DD_RUN(test_delete);
     DD_RUN(test_binary_keys_values);
     DD_RUN(test_many_keys_growth);

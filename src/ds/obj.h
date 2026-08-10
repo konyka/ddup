@@ -58,7 +58,7 @@ obj_hash *obj_hash_new(void);
 void obj_hash_free(obj_hash *h);
 uint64_t obj_hash_mem(const obj_hash *h);
 
-/* Returns 1 if the field is new. */
+/* Returns 1 if the field is new, 0 on overwrite, -1 on invalid length. */
 int obj_hash_set(obj_hash *h, const char *f, size_t flen, const char *v,
                  size_t vlen);
 int obj_hash_get(obj_hash *h, const char *f, size_t flen, const char **v,
@@ -87,13 +87,20 @@ obj_list *obj_list_new(void);
 void obj_list_free(obj_list *l);
 uint64_t obj_list_mem(const obj_list *l);
 
-void obj_list_push(obj_list *l, int left, const char *data, size_t len);
+/* Returns 0 on success, -1 when len cannot be represented or allocated
+ * without size_t overflow. */
+int obj_list_push(obj_list *l, int left, const char *data, size_t len);
+/* Stage and commit all elements atomically. Returns 0 on success, -1 when
+ * any element length is invalid. */
+int obj_list_push_many(obj_list *l, int left, const char *const *data,
+                       const size_t *lens, size_t count);
 /* Returns 1 and hands the caller a malloc'd copy of the element
  * (free with free()), 0 when the list is empty. */
 int obj_list_pop(obj_list *l, int left, char **data, size_t *len);
 /* Walks from the nearer end; NULL when idx >= len. */
 list_node *obj_list_at(obj_list *l, size_t idx);
-/* Replace element data at idx. Returns 0 when idx >= len. */
+/* Replace element data at idx. Returns 1 on success, 0 when idx >= list
+ * length, -1 when the replacement length is invalid. */
 int obj_list_set_at(obj_list *l, size_t idx, const char *data, size_t len);
 
 /* ------------------------------------------------------------------ */
@@ -108,7 +115,7 @@ obj_set *obj_set_new(void);
 void obj_set_free(obj_set *s);
 uint64_t obj_set_mem(const obj_set *s);
 
-/* Returns 1 if the member is new. */
+/* Returns 1 if the member is new, 0 if present, -1 on invalid length. */
 int obj_set_add(obj_set *s, const char *m, size_t mlen);
 int obj_set_has(obj_set *s, const char *m, size_t mlen);
 int obj_set_rem(obj_set *s, const char *m, size_t mlen);
@@ -126,7 +133,8 @@ obj_zset *obj_zset_new(void);
 void obj_zset_free(obj_zset *z);
 uint64_t obj_zset_mem(const obj_zset *z);
 
-/* Insert or update score. Returns 1 if the member is new. */
+/* Insert or update score. Returns 1 if new, 0 if updated, -1 on invalid
+ * member length. */
 int obj_zset_add(obj_zset *z, const char *m, size_t mlen, double score);
 /* Returns 1 and the score when present. */
 int obj_zset_score(obj_zset *z, const char *m, size_t mlen, double *score);

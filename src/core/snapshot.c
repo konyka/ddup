@@ -6,6 +6,7 @@
 #include <string.h>
 
 #include "ds/obj.h"
+#include "core/script.h"
 #include "core/crc64.h"
 #include "pal/pal_file.h"
 #include "resp/resp_writer.h"
@@ -14,48 +15,65 @@
 /* little-endian write helpers (resp_buf append)                      */
 /* ------------------------------------------------------------------ */
 
-static void buf_u8(resp_buf *b, uint8_t v)
+static int buf_reserve(resp_buf *b, size_t n)
 {
-    resp_buf_reserve(b, 1);
-    b->data[b->len++] = (char)v;
+    if (n > SIZE_MAX - b->len)
+        return -1;
+    return resp_buf_reserve(b, n);
 }
 
-static void buf_u16le(resp_buf *b, uint16_t v)
+static int buf_u8(resp_buf *b, uint8_t v)
+{
+    if (buf_reserve(b, 1) != 0)
+        return -1;
+    b->data[b->len++] = (char)v;
+    return 0;
+}
+
+static int buf_u16le(resp_buf *b, uint16_t v)
 {
     int i;
-    resp_buf_reserve(b, 2);
+    if (buf_reserve(b, 2) != 0)
+        return -1;
     for (i = 0; i < 2; i++)
         b->data[b->len++] = (char)((v >> (8 * i)) & 0xFFu);
+    return 0;
 }
 
-static void buf_u32le(resp_buf *b, uint32_t v)
+static int buf_u32le(resp_buf *b, uint32_t v)
 {
     int i;
-    resp_buf_reserve(b, 4);
+    if (buf_reserve(b, 4) != 0)
+        return -1;
     for (i = 0; i < 4; i++)
         b->data[b->len++] = (char)((v >> (8 * i)) & 0xFFu);
+    return 0;
 }
 
-static void buf_u64le(resp_buf *b, uint64_t v)
+static int buf_u64le(resp_buf *b, uint64_t v)
 {
     int i;
-    resp_buf_reserve(b, 8);
+    if (buf_reserve(b, 8) != 0)
+        return -1;
     for (i = 0; i < 8; i++)
         b->data[b->len++] = (char)((v >> (8 * i)) & 0xFFu);
+    return 0;
 }
 
-static void buf_f64le(resp_buf *b, double v)
+static int buf_f64le(resp_buf *b, double v)
 {
     uint64_t u;
     memcpy(&u, &v, 8);
-    buf_u64le(b, u);
+    return buf_u64le(b, u);
 }
 
-static void buf_bytes(resp_buf *b, const char *p, size_t n)
+static int buf_bytes(resp_buf *b, const char *p, size_t n)
 {
-    resp_buf_reserve(b, n);
+    if (buf_reserve(b, n) != 0)
+        return -1;
     memcpy(b->data + b->len, p, n);
     b->len += n;
+    return 0;
 }
 
 /* ------------------------------------------------------------------ */
@@ -65,72 +83,127 @@ static void buf_bytes(resp_buf *b, const char *p, size_t n)
 typedef struct save_ctx {
     db *d;
     resp_buf *buf;
+    int ok;
 } save_ctx;
 
 /* append a raw rh entry (field/member) list item: u32 len + bytes */
 static void dump_pair_cb(const char *f, size_t flen, const char *v,
                          size_t vlen, void *c)
 {
-    resp_buf *buf = (resp_buf *)c;
-    buf_u32le(buf, (uint32_t)flen);
-    buf_bytes(buf, f, flen);
-    buf_u32le(buf, (uint32_t)vlen);
-    buf_bytes(buf, v, vlen);
+    save_ctx *ctx = (save_ctx *)c;
+    if (!ctx->ok)
+        return;
+    if (flen > UINT32_MAX || vlen > UINT32_MAX) {
+        ctx->ok = 0;
+        return;
+    }
+    if (buf_u32le(ctx->buf, (uint32_t)flen) != 0 ||
+        buf_bytes(ctx->buf, f, flen) != 0 ||
+        buf_u32le(ctx->buf, (uint32_t)vlen) != 0 ||
+        buf_bytes(ctx->buf, v, vlen) != 0)
+        ctx->ok = 0;
 }
 
 static void dump_member_cb(const char *m, size_t mlen, const char *v,
                            size_t vlen, void *c)
 {
-    resp_buf *buf = (resp_buf *)c;
+    save_ctx *ctx = (save_ctx *)c;
     (void)v;
     (void)vlen;
-    buf_u32le(buf, (uint32_t)mlen);
-    buf_bytes(buf, m, mlen);
+    if (!ctx->ok)
+        return;
+    if (mlen > UINT32_MAX) {
+        ctx->ok = 0;
+        return;
+    }
+    if (buf_u32le(ctx->buf, (uint32_t)mlen) != 0 ||
+        buf_bytes(ctx->buf, m, mlen) != 0)
+        ctx->ok = 0;
 }
 
 /* append a value's payload (no key/expiry) in the per-type encoding */
-static void write_value_payload(resp_buf *buf, int tag, const char *val,
+static void write_value_payload(save_ctx *ctx, int tag, const char *val,
                                 size_t vlen)
 {
+    resp_buf *buf = ctx->buf;
     switch (tag) {
     case DDUP_OBJ_STRING: {
         const char *s;
         size_t sl;
         obj_str(val, vlen, &s, &sl);
-        buf_u32le(buf, (uint32_t)sl);
-        buf_bytes(buf, s, sl);
+        if (sl > UINT32_MAX) {
+            ctx->ok = 0;
+            return;
+        }
+        if (buf_u32le(buf, (uint32_t)sl) != 0 ||
+            buf_bytes(buf, s, sl) != 0)
+            ctx->ok = 0;
         break;
     }
     case DDUP_OBJ_HASH: {
         obj_hash *h = (obj_hash *)obj_unpack_ptr(val, vlen);
-        buf_u32le(buf, (uint32_t)rh_size(&h->fields));
-        rh_each(&h->fields, dump_pair_cb, buf);
+        if (rh_size(&h->fields) > UINT32_MAX) {
+            ctx->ok = 0;
+            return;
+        }
+        if (buf_u32le(buf, (uint32_t)rh_size(&h->fields)) != 0) {
+            ctx->ok = 0;
+            return;
+        }
+        rh_each(&h->fields, dump_pair_cb, ctx);
         break;
     }
     case DDUP_OBJ_LIST: {
         obj_list *l = (obj_list *)obj_unpack_ptr(val, vlen);
         list_node *n;
-        buf_u32le(buf, (uint32_t)l->len);
+        if (l->len > UINT32_MAX) {
+            ctx->ok = 0;
+            return;
+        }
+        if (buf_u32le(buf, (uint32_t)l->len) != 0) {
+            ctx->ok = 0;
+            return;
+        }
         for (n = l->head; n != NULL; n = n->next) {
-            buf_u32le(buf, n->len);
-            buf_bytes(buf, n->data, n->len);
+            if (buf_u32le(buf, n->len) != 0 ||
+                buf_bytes(buf, n->data, n->len) != 0) {
+                ctx->ok = 0;
+                return;
+            }
         }
         break;
     }
     case DDUP_OBJ_SET: {
         obj_set *st = (obj_set *)obj_unpack_ptr(val, vlen);
-        buf_u32le(buf, (uint32_t)rh_size(&st->members));
-        rh_each(&st->members, dump_member_cb, buf);
+        if (rh_size(&st->members) > UINT32_MAX) {
+            ctx->ok = 0;
+            return;
+        }
+        if (buf_u32le(buf, (uint32_t)rh_size(&st->members)) != 0) {
+            ctx->ok = 0;
+            return;
+        }
+        rh_each(&st->members, dump_member_cb, ctx);
         break;
     }
     case DDUP_OBJ_ZSET: {
         obj_zset *z = (obj_zset *)obj_unpack_ptr(val, vlen);
         zsl_node *n;
-        buf_u32le(buf, (uint32_t)rh_size(&z->dict));
+        if (rh_size(&z->dict) > UINT32_MAX) {
+            ctx->ok = 0;
+            return;
+        }
+        if (buf_u32le(buf, (uint32_t)rh_size(&z->dict)) != 0) {
+            ctx->ok = 0;
+            return;
+        }
         for (n = z->sl->header->level[0].forward; n != NULL; n = n->level[0].forward) {
-            buf_u32le(buf, n->mlen);
-            buf_bytes(buf, n->member, n->mlen);
-            buf_f64le(buf, n->score);
+            if (buf_u32le(buf, n->mlen) != 0 ||
+                buf_bytes(buf, n->member, n->mlen) != 0 ||
+                buf_f64le(buf, n->score) != 0) {
+                ctx->ok = 0;
+                return;
+            }
         }
         break;
     }
@@ -149,25 +222,42 @@ static void save_entry_cb(const char *key, size_t klen, const char *val,
     size_t evl;
     int64_t expire = -1;
 
+    if (!ctx->ok)
+        return;
+    if (klen > UINT32_MAX) {
+        ctx->ok = 0;
+        return;
+    }
     if (rh_get(&ctx->d->expires, key, klen, &ev, &evl) && evl == 8) {
         uint64_t u;
         memcpy(&u, ev, 8);
         expire = (int64_t)u;
     }
-    buf_u8(buf, (uint8_t)tag);
-    buf_u32le(buf, (uint32_t)klen);
-    buf_bytes(buf, key, klen);
-    buf_u64le(buf, (uint64_t)expire);
-    write_value_payload(buf, tag, val, vlen);
+    if (buf_u8(buf, (uint8_t)tag) != 0 ||
+        buf_u32le(buf, (uint32_t)klen) != 0 ||
+        buf_bytes(buf, key, klen) != 0 ||
+        buf_u64le(buf, (uint64_t)expire) != 0) {
+        ctx->ok = 0;
+        return;
+    }
+    write_value_payload(ctx, tag, val, vlen);
 }
 
-void snapshot_serialize(db *d, resp_buf *out)
+int snapshot_serialize(db *d, resp_buf *out)
 {
     save_ctx ctx;
-    buf_bytes(out, "DDUP0001", 8);
+    size_t start = out->len;
+    if (buf_bytes(out, "DDUP0001", 8) != 0)
+        return -1;
     ctx.d = d;
     ctx.buf = out;
+    ctx.ok = 1;
     rh_each(&d->table, save_entry_cb, &ctx);
+    if (!ctx.ok) {
+        out->len = start;
+        return -1;
+    }
+    return 0;
 }
 
 int snapshot_save(db *d, const char *path)
@@ -178,7 +268,10 @@ int snapshot_save(db *d, const char *path)
     int rc = -1;
 
     resp_buf_init(&buf);
-    snapshot_serialize(d, &buf);
+    if (snapshot_serialize(d, &buf) != 0) {
+        resp_buf_free(&buf);
+        return -1;
+    }
 
     if (strlen(path) + 5 < sizeof(tmp)) {
         snprintf(tmp, sizeof(tmp), "%s.tmp", path);
@@ -221,7 +314,7 @@ static void free_val_cb(const char *key, size_t klen, const char *val,
 
 static uint8_t rd_u8(reader *r)
 {
-    if (r->off + 1 > r->len) {
+    if (r->off > r->len || 1 > r->len - r->off) {
         r->ok = 0;
         return 0;
     }
@@ -232,7 +325,7 @@ static uint16_t rd_u16le(reader *r)
 {
     uint16_t v = 0;
     int i;
-    if (r->off + 2 > r->len) {
+    if (r->off > r->len || 2 > r->len - r->off) {
         r->ok = 0;
         r->off = r->len;
         return 0;
@@ -246,7 +339,7 @@ static uint32_t rd_u32le(reader *r)
 {
     uint32_t v = 0;
     int i;
-    if (r->off + 4 > r->len) {
+    if (r->off > r->len || 4 > r->len - r->off) {
         r->ok = 0;
         r->off = r->len;
         return 0;
@@ -260,7 +353,7 @@ static uint64_t rd_u64le(reader *r)
 {
     uint64_t v = 0;
     int i;
-    if (r->off + 8 > r->len) {
+    if (r->off > r->len || 8 > r->len - r->off) {
         r->ok = 0;
         r->off = r->len;
         return 0;
@@ -281,13 +374,30 @@ static double rd_f64le(reader *r)
 static const char *rd_bytes(reader *r, size_t n)
 {
     const char *p;
-    if (!r->ok || r->off + n > r->len) {
+    if (!r->ok || r->off > r->len || n > r->len - r->off) {
         r->ok = 0;
         return NULL;
     }
     p = r->p + r->off;
     r->off += n;
     return p;
+}
+
+int snapshot_test_reader_bounds(void)
+{
+    reader r;
+    char byte = 'x';
+    r.p = &byte;
+    r.len = SIZE_MAX;
+    r.off = SIZE_MAX;
+    r.ok = 1;
+    (void)rd_u8(&r);
+    if (r.ok)
+        return -1;
+    r.ok = 1;
+    r.off = SIZE_MAX - 1;
+    (void)rd_bytes(&r, 2);
+    return r.ok ? -1 : 0;
 }
 
 /* Parse one entry's payload into a value blob. For STRINGs a fresh tagged
@@ -322,8 +432,8 @@ static char *load_payload(reader *r, int tag, char blob[9], size_t *out_len)
             const char *f = rd_bytes(r, fl);
             uint32_t vl = rd_u32le(r);
             const char *v = rd_bytes(r, vl);
-            if (r->ok)
-                obj_hash_set(h, f, fl, v, vl);
+            if (r->ok && obj_hash_set(h, f, fl, v, vl) < 0)
+                r->ok = 0;
         }
         if (!r->ok) {
             obj_hash_free(h);
@@ -339,8 +449,8 @@ static char *load_payload(reader *r, int tag, char blob[9], size_t *out_len)
         for (i = 0; i < n && r->ok; i++) {
             uint32_t el = rd_u32le(r);
             const char *e = rd_bytes(r, el);
-            if (r->ok)
-                obj_list_push(l, 0, e, el);
+            if (r->ok && obj_list_push(l, 0, e, el) < 0)
+                r->ok = 0;
         }
         if (!r->ok) {
             obj_list_free(l);
@@ -356,8 +466,8 @@ static char *load_payload(reader *r, int tag, char blob[9], size_t *out_len)
         for (i = 0; i < n && r->ok; i++) {
             uint32_t ml = rd_u32le(r);
             const char *m = rd_bytes(r, ml);
-            if (r->ok)
-                obj_set_add(st, m, ml);
+            if (r->ok && obj_set_add(st, m, ml) < 0)
+                r->ok = 0;
         }
         if (!r->ok) {
             obj_set_free(st);
@@ -374,8 +484,8 @@ static char *load_payload(reader *r, int tag, char blob[9], size_t *out_len)
             uint32_t ml = rd_u32le(r);
             const char *m = rd_bytes(r, ml);
             double sc = rd_f64le(r);
-            if (r->ok)
-                obj_zset_add(z, m, ml, sc);
+            if (r->ok && (sc != sc || obj_zset_add(z, m, ml, sc) < 0))
+                r->ok = 0;
         }
         if (!r->ok) {
             obj_zset_free(z);
@@ -391,14 +501,14 @@ static char *load_payload(reader *r, int tag, char blob[9], size_t *out_len)
     }
 }
 
-/* Parse `count` entries into tmp (count == UINT32_MAX = until EOF).
- * Returns 1 when all entries parsed cleanly (and, for the counted form,
- * the exact count was consumed). */
-static int load_entries(reader *r, db *tmp, uint32_t count, uint64_t now_ms)
+/* Parse entries into tmp. An unbounded stream is used only by DDUP0001;
+ * DDUP0002 segments are always explicitly counted, including UINT32_MAX. */
+static int load_entries(reader *r, db *tmp, uint32_t count, int unbounded,
+                        uint64_t now_ms)
 {
     uint32_t i = 0;
     while (r->ok && r->off < r->len &&
-           (count == UINT32_MAX || i < count)) {
+           (unbounded || i < count)) {
         int tag = rd_u8(r);
         uint32_t klen = rd_u32le(r);
         const char *key = rd_bytes(r, klen);
@@ -423,14 +533,25 @@ static int load_entries(reader *r, db *tmp, uint32_t count, uint64_t now_ms)
             i++;
             continue;
         }
-        db_install_blob(tmp, key, klen, vblob, vbloblen, now_ms);
-        if (expire >= 0)
-            db_install_expiry(tmp, key, klen, (uint64_t)expire);
+        if (db_install_blob(tmp, key, klen, vblob, vbloblen, now_ms) != 0) {
+            if (owned != NULL)
+                free(owned);
+            else
+                obj_free_value(vblob, vbloblen);
+            return 0;
+        }
+        if (expire >= 0 &&
+            db_install_expiry(tmp, key, klen, (uint64_t)expire) != 0) {
+            db_del_kv(tmp, key, klen);
+            if (owned != NULL)
+                free(owned);
+            return 0;
+        }
         if (owned != NULL)
             free(owned);
         i++;
     }
-    return r->ok && (count == UINT32_MAX || i == count);
+    return r->ok && (unbounded || i == count);
 }
 
 /* Data-only swap: tmp's contents move into d (configuration, cluster
@@ -443,7 +564,20 @@ static void swap_db_data(db *d, db *tmp)
     d->table = tmp->table;
     d->expires = tmp->expires;
     d->used_memory = tmp->used_memory;
+    d->flush_epoch++;
     rh_destroy(&tmp->keyvers); /* tmp's unused empty table */
+    memset(&tmp->table, 0, sizeof(tmp->table));
+    memset(&tmp->expires, 0, sizeof(tmp->expires));
+    memset(&tmp->keyvers, 0, sizeof(tmp->keyvers));
+}
+
+static void destroy_temp_db(db *d)
+{
+    script_cleanup(d);
+    rh_destroy(&d->table);
+    rh_destroy(&d->expires);
+    rh_destroy(&d->keyvers);
+    rh_destroy(&d->scripts);
 }
 
 int snapshot_load_mem(db *d, const char *buf, size_t len, uint64_t now_ms)
@@ -461,7 +595,7 @@ int snapshot_load_mem(db *d, const char *buf, size_t len, uint64_t now_ms)
 
     /* parse into a temporary db: all-or-nothing */
     db_init(&tmp);
-    ok = load_entries(&r, &tmp, UINT32_MAX, now_ms) && r.off == r.len;
+    ok = load_entries(&r, &tmp, 0, 1, now_ms) && r.off == r.len;
 
     if (!ok) {
         db_destroy(&tmp);
@@ -475,27 +609,48 @@ int snapshot_load_mem(db *d, const char *buf, size_t len, uint64_t now_ms)
 /* multi-database snapshots (DDUP0002)                                 */
 /* ------------------------------------------------------------------ */
 
-void snapshot_serialize_multi(void *ctx, snapshot_db_get get, int ndbs,
-                              resp_buf *out)
+int snapshot_serialize_multi(void *ctx, snapshot_db_get get, int ndbs,
+                             resp_buf *out)
 {
     int i;
-    buf_bytes(out, "DDUP0002", 8);
-    buf_u16le(out, (uint16_t)ndbs);
+    size_t start = out->len;
+    if (ndbs < 0 || ndbs > UINT16_MAX)
+        return -1;
+    if (buf_bytes(out, "DDUP0002", 8) != 0 ||
+        buf_u16le(out, (uint16_t)ndbs) != 0) {
+        out->len = start;
+        return -1;
+    }
     for (i = 0; i < ndbs; i++) {
         db *d = get(ctx, i);
         save_ctx sctx;
         size_t n;
-        if (d == NULL)
-            continue;
+        if (d == NULL) {
+            out->len = start;
+            return -1;
+        }
         n = rh_size(&d->table);
         if (n == 0)
             continue;
-        buf_u16le(out, (uint16_t)i);
-        buf_u32le(out, (uint32_t)n);
+        if (n > UINT32_MAX) {
+            out->len = start;
+            return -1;
+        }
+        if (buf_u16le(out, (uint16_t)i) != 0 ||
+            buf_u32le(out, (uint32_t)n) != 0) {
+            out->len = start;
+            return -1;
+        }
         sctx.d = d;
         sctx.buf = out;
+        sctx.ok = 1;
         rh_each(&d->table, save_entry_cb, &sctx);
+        if (!sctx.ok) {
+            out->len = start;
+            return -1;
+        }
     }
+    return 0;
 }
 
 int snapshot_save_multi(void *ctx, snapshot_db_get get, int ndbs,
@@ -507,7 +662,10 @@ int snapshot_save_multi(void *ctx, snapshot_db_get get, int ndbs,
     int rc = -1;
 
     resp_buf_init(&buf);
-    snapshot_serialize_multi(ctx, get, ndbs, &buf);
+    if (snapshot_serialize_multi(ctx, get, ndbs, &buf) != 0) {
+        resp_buf_free(&buf);
+        return -1;
+    }
 
     if (strlen(path) + 5 < sizeof(tmp)) {
         snprintf(tmp, sizeof(tmp), "%s.tmp", path);
@@ -539,10 +697,33 @@ int snapshot_load_mem_multi(void *ctx, snapshot_db_get get, int ndbs,
     if (len < 8)
         return -1;
     if (memcmp(buf, "DDUP0001", 8) == 0) {
-        db *d0 = get(ctx, 0);
-        if (d0 == NULL)
+        db *tmps;
+        char *segs;
+        int i;
+        int ok;
+        if (ndbs <= 0)
             return -1;
-        return snapshot_load_mem(d0, buf, len, now_ms);
+        tmps = (db *)calloc((size_t)ndbs, sizeof(*tmps));
+        segs = (char *)calloc((size_t)ndbs, 1);
+        if (tmps == NULL || segs == NULL) {
+            free(tmps); free(segs); return -1;
+        }
+        for (i = 0; i < ndbs; i++) db_init(&tmps[i]);
+        r.p = buf; r.len = len; r.off = 8; r.ok = 1;
+        ok = load_entries(&r, &tmps[0], 0, 1, now_ms) && r.off == r.len;
+        if (ok) {
+            db *d;
+            for (i = 0; i < ndbs; i++) {
+                d = get(ctx, i);
+                if (d == NULL) { ok = 0; break; }
+            }
+            if (ok)
+                for (i = 0; i < ndbs; i++)
+                    swap_db_data(get(ctx, i), &tmps[i]);
+        }
+        for (i = 0; i < ndbs; i++) destroy_temp_db(&tmps[i]);
+        free(tmps); free(segs);
+        return ok ? 0 : -1;
     }
     if (memcmp(buf, "DDUP0002", 8) != 0)
         return -1;
@@ -561,15 +742,20 @@ int snapshot_load_mem_multi(void *ctx, snapshot_db_get get, int ndbs,
         return -1;
     }
 
+    for (i = 0; i < ndbs; i++)
+        db_init(&tmps[i]);
     /* parse every segment into temporaries (all-or-nothing) */
     while (r.ok && r.off < r.len) {
         uint16_t idx = rd_u16le(&r);
         uint32_t count = rd_u32le(&r);
         if (!r.ok || idx >= ndbs)
             break;
-        db_init(&tmps[idx]);
+        if (segs[idx]) {
+            ok = 0;
+            break;
+        }
         segs[idx] = 1;
-        if (!load_entries(&r, &tmps[idx], count, now_ms)) {
+        if (!load_entries(&r, &tmps[idx], count, 0, now_ms)) {
             ok = 0;
             break;
         }
@@ -577,20 +763,28 @@ int snapshot_load_mem_multi(void *ctx, snapshot_db_get get, int ndbs,
     ok = ok && r.ok && r.off == r.len;
 
     if (ok) {
+        for (i = 0; i < ndbs; i++) {
+            if (get(ctx, i) == NULL) {
+                ok = 0;
+                break;
+            }
+        }
+    }
+    if (ok) {
         /* swap every db: segments replace, missing dbs are emptied */
         for (i = 0; i < ndbs; i++) {
             db *d = get(ctx, i);
             if (d == NULL)
                 continue;
-            if (!segs[i])
-                db_init(&tmps[i]); /* empty temp for the swap */
             swap_db_data(d, &tmps[i]);
         }
     } else {
         for (i = 0; i < ndbs; i++)
-            if (segs[i])
-                db_destroy(&tmps[i]);
+            destroy_temp_db(&tmps[i]);
     }
+    if (ok)
+        for (i = 0; i < ndbs; i++)
+            destroy_temp_db(&tmps[i]);
     free(tmps);
     free(segs);
     return ok ? 0 : -1;
@@ -609,7 +803,18 @@ int snapshot_load_multi(void *ctx, snapshot_db_get get, int ndbs,
     for (;;) {
         ptrdiff_t n;
         if (len == cap) {
-            size_t ncap = cap == 0 ? 65536 : cap * 2;
+            size_t ncap;
+            if (cap == 0)
+                ncap = 65536;
+            else if (cap > SIZE_MAX / 2)
+                ncap = SIZE_MAX;
+            else
+                ncap = cap * 2;
+            if (ncap <= cap) {
+                free(buf);
+                pal_file_close(f);
+                return -1;
+            }
             char *nb = (char *)realloc(buf, ncap);
             if (nb == NULL) {
                 free(buf);
@@ -683,14 +888,28 @@ int snapshot_dump_key(db *d, const char *key, size_t klen, resp_buf *out)
 {
     const char *v;
     size_t vl, start;
+    save_ctx ctx;
 
     if (!rh_get(&d->table, key, klen, &v, &vl))
         return -1;
     start = out->len;
-    buf_u16le(out, SNAPSHOT_DUMP_VERSION);
-    buf_u8(out, (uint8_t)obj_tag_of(v, vl));
-    write_value_payload(out, obj_tag_of(v, vl), v, vl);
-    buf_u64le(out, crc64(0, out->data + start, out->len - start));
+    ctx.d = d;
+    ctx.buf = out;
+    ctx.ok = 1;
+    if (buf_u16le(out, SNAPSHOT_DUMP_VERSION) != 0 ||
+        buf_u8(out, (uint8_t)obj_tag_of(v, vl)) != 0) {
+        out->len = start;
+        return -1;
+    }
+    write_value_payload(&ctx, obj_tag_of(v, vl), v, vl);
+    if (!ctx.ok) {
+        out->len = start;
+        return -1;
+    }
+    if (buf_u64le(out, crc64(0, out->data + start, out->len - start)) != 0) {
+        out->len = start;
+        return -1;
+    }
     return 0;
 }
 
@@ -708,6 +927,8 @@ int snapshot_restore_key(db *d, const char *key, size_t klen,
     uint64_t stored = 0;
     int i;
 
+    if (klen > UINT32_MAX)
+        return -1;
     db_expire_if_needed(d, key, klen, now_ms);
     if (!replace && rh_get(&d->table, key, klen, &vblob, &vbloblen))
         return 1;
@@ -739,9 +960,19 @@ int snapshot_restore_key(db *d, const char *key, size_t klen,
         return -1;
     }
     vblob = owned != NULL ? owned : blob;
-    db_install_blob(d, key, klen, vblob, vbloblen, now_ms);
-    if (expire_ms != 0)
-        db_install_expiry(d, key, klen, expire_ms);
+    if (db_install_blob(d, key, klen, vblob, vbloblen, now_ms) != 0) {
+        if (owned != NULL)
+            free(owned);
+        else
+            obj_free_value(vblob, vbloblen);
+        return -1;
+    }
+    if (expire_ms != 0 && db_install_expiry(d, key, klen, expire_ms) != 0) {
+        db_del_kv(d, key, klen);
+        if (owned != NULL)
+            free(owned);
+        return -1;
+    }
     if (owned != NULL)
         free(owned);
     return 0;

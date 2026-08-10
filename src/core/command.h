@@ -109,15 +109,16 @@ void command_info_render(const db *home, const struct repl_info *repl,
 void db_flush(db *d);
 
 /* WATCH support: bump/read the modification version of a key. Versions are
- * monotonic per key name (never reused, even across delete/recreate). */
-void db_touch_key(db *d, const char *key, size_t klen);
+ * monotonic per key name (never reused, even across delete/recreate).
+ * db_touch_key returns -1 when the key length cannot be represented. */
+int db_touch_key(db *d, const char *key, size_t klen);
 uint64_t db_key_version(db *d, const char *key, size_t klen);
 
 /* Persistence loaders: install a pre-built value blob (with accounting and
- * LRU/version bookkeeping). Load paths only. */
-void db_install_blob(db *d, const char *key, size_t klen, const char *blob,
-                     size_t bloblen, uint64_t now_ms);
-void db_install_expiry(db *d, const char *key, size_t klen, uint64_t when_ms);
+ * LRU/version bookkeeping). Return 0 on success, -1 on rejected length. */
+int db_install_blob(db *d, const char *key, size_t klen, const char *blob,
+                    size_t bloblen, uint64_t now_ms);
+int db_install_expiry(db *d, const char *key, size_t klen, uint64_t when_ms);
 
 /* Lazy expiration: if key has an expiry <= now_ms, delete it (and its
  * expiry entry) and return 1. Otherwise return 0. */

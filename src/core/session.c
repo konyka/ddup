@@ -32,8 +32,15 @@ void session_watch_clear(session *s)
     size_t i;
     for (i = 0; i < s->nwatch; i++)
         free(s->watches[i].key);
-    if (s->d != NULL && s->d->watch_refs >= s->nwatch)
-        s->d->watch_refs -= s->nwatch;
+    if (s->d != NULL) {
+        for (i = 0; i < s->nwatch; i++) {
+            db *d = s->d;
+            if (s->sel_fn != NULL)
+                d = s->sel_fn(s->sel_ctx, s->watches[i].db_index);
+            if (d != NULL && d->watch_refs > 0)
+                d->watch_refs--;
+        }
+    }
     s->nwatch = 0;
 }
 
@@ -105,7 +112,7 @@ void session_queue_push(session *s, const resp_value *argv, size_t argc)
 }
 
 void session_watch_add(session *s, const char *key, size_t klen,
-                       uint64_t version, uint64_t epoch)
+                       uint64_t version, uint64_t epoch, int db_index)
 {
     watch_entry *w;
     if (s->nwatch == s->watch_cap) {
@@ -125,6 +132,7 @@ void session_watch_add(session *s, const char *key, size_t klen,
     w->klen = klen;
     w->version = version;
     w->epoch = epoch;
+    w->db_index = db_index;
     if (s->d != NULL)
         s->d->watch_refs++;
 }

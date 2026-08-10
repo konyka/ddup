@@ -39,6 +39,85 @@ static uint64_t node_bytes(size_t elen)
     return (uint64_t)sizeof(list_node) + 16 + elen;
 }
 
+static void test_list_rejects_unrepresentable_elements(void)
+{
+    obj_list *l = obj_list_new();
+    const char byte = 'x';
+    list_node *head;
+    uint64_t before;
+
+    DD_CHECK_EQ_INT(0, obj_list_push(l, 0, "old", 3));
+    head = l->head;
+    before = obj_list_mem(l);
+    DD_CHECK_EQ_INT(-1, obj_list_push(l, 1, &byte, SIZE_MAX));
+    DD_CHECK_EQ_INT(-1, obj_list_set_at(l, 0, &byte, SIZE_MAX));
+    DD_CHECK(l->head == head && l->tail == head);
+    DD_CHECK_EQ_INT(1, l->len);
+    DD_CHECK(obj_list_mem(l) == before);
+    DD_CHECK_MEM("old", 3, head->data, head->len);
+    obj_list_free(l);
+}
+
+static void test_list_commands_reject_transactionally(void)
+{
+    db d;
+    resp_buf out;
+    resp_value argv[4];
+    const char byte = 'x';
+    const char *blob;
+    size_t bloblen;
+    obj_list *l;
+    uint64_t used, dirty, version, list_mem;
+
+    db_init(&d);
+    resp_buf_init(&out);
+    exec_cmd(&d, T0, &out, 4, "RPUSH", "l", "old", "tail");
+    d.watch_refs = 1;
+    used = d.used_memory;
+    dirty = d.dirty;
+    version = db_key_version(&d, "l", 1);
+    DD_CHECK(rh_get(&d.table, "l", 1, &blob, &bloblen) == 1);
+    l = (obj_list *)obj_unpack_ptr(blob, bloblen);
+    list_mem = obj_list_mem(l);
+
+    memset(argv, 0, sizeof(argv));
+    argv[0].type = RESP_BULK_STRING;
+    argv[0].str = "LPUSH";
+    argv[0].len = 5;
+    argv[1].type = RESP_BULK_STRING;
+    argv[1].str = "l";
+    argv[1].len = 1;
+    argv[2].type = RESP_BULK_STRING;
+    argv[2].str = "valid";
+    argv[2].len = 5;
+    argv[3].type = RESP_BULK_STRING;
+    argv[3].str = &byte;
+    argv[3].len = SIZE_MAX;
+    out.len = 0;
+    command_execute_at(&d, argv, 4, &out, T0);
+    DD_CHECK(out.len > 0 && out.data[0] == '-');
+
+    argv[0].str = "LSET";
+    argv[0].len = 4;
+    argv[2].str = "0";
+    argv[2].len = 1;
+    out.len = 0;
+    command_execute_at(&d, argv, 4, &out, T0);
+    DD_CHECK(out.len > 0 && out.data[0] == '-');
+
+    DD_CHECK_EQ_INT(2, l->len);
+    DD_CHECK(obj_list_mem(l) == list_mem);
+    DD_CHECK(d.used_memory == used);
+    DD_CHECK(d.dirty == dirty);
+    DD_CHECK(db_key_version(&d, "l", 1) == version);
+    DD_CHECK_MEM("old", 3, l->head->data, l->head->len);
+    DD_CHECK_MEM("tail", 4, l->tail->data, l->tail->len);
+
+    d.watch_refs = 0;
+    resp_buf_free(&out);
+    db_destroy(&d);
+}
+
 static void fill_abcd(db *d, resp_buf *out)
 {
     /* list: c b a (LPUSH order), then c b a d */
@@ -294,6 +373,8 @@ static void test_list_ttl_and_memory(void)
 
 int main(void)
 {
+    DD_RUN(test_list_rejects_unrepresentable_elements);
+    DD_RUN(test_list_commands_reject_transactionally);
     DD_RUN(test_push_len_range);
     DD_RUN(test_lrange_index_math);
     DD_RUN(test_lindex_lset);

@@ -34,6 +34,19 @@ static uint64_t eb(size_t klen, size_t vlen)
     return (uint64_t)sizeof(rh_entry) + 16 + klen + vlen;
 }
 
+static void test_hash_rejects_unrepresentable_lengths(void)
+{
+    obj_hash *h = obj_hash_new();
+    const char byte = 'x';
+    uint64_t before = obj_hash_mem(h);
+
+    DD_CHECK_EQ_INT(-1, obj_hash_set(h, &byte, 1, &byte, SIZE_MAX));
+    DD_CHECK_EQ_INT(-1, obj_hash_set(h, &byte, SIZE_MAX, &byte, 1));
+    DD_CHECK_EQ_INT(0, rh_size(&h->fields));
+    DD_CHECK(obj_hash_mem(h) == before);
+    obj_hash_free(h);
+}
+
 static void test_hset_hget(void)
 {
     db d;
@@ -340,6 +353,7 @@ static void test_hash_ttl_and_memory(void)
 
 int main(void)
 {
+    DD_RUN(test_hash_rejects_unrepresentable_lengths);
     DD_RUN(test_hset_hget);
     DD_RUN(test_hdel_auto_delete);
     DD_RUN(test_hexists_hlen_hsetnx);
