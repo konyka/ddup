@@ -211,8 +211,8 @@ static conn *conn_create(server *srv, pal_socket_t fd);
 static db *srv_select_db(void *ctx, int idx);
 static void srv_aof_log(server *srv, int db_index, const resp_value *argv,
                         size_t argc);
-static void srv_psync(void *ctx, session *sess, const char *replid,
-                      size_t replid_len, long long offset);
+static int srv_psync(void *ctx, session *sess, const char *replid,
+                     size_t replid_len, long long offset);
 static void repl_link_close(server *srv);
 static int repl_link_connect(server *srv);
 static int server_run_once_proactor(server *s, int timeout_ms);
@@ -294,41 +294,54 @@ static chan_node *chan_get(rh_table *tab, const char *ch, size_t len)
     return head;
 }
 
-static void chan_put(rh_table *tab, const char *ch, size_t len,
-                     chan_node *head)
+static int chan_put(rh_table *tab, const char *ch, size_t len,
+                    chan_node *head)
 {
     char b[8];
     if (head == NULL) {
         rh_del(tab, ch, len);
-        return;
+        return 0;
     }
     memcpy(b, &head, 8);
-    rh_set(tab, ch, len, b, 8);
+    return rh_set(tab, ch, len, b, 8) < 0 ? -1 : 0;
 }
 
 /* shared subscribe/unsubscribe body over (registry table, per-conn list,
  * session counter) triples */
-static size_t chan_subscribe(rh_table *tab, conn_sub **listp, session *sess,
-                             const char *ch, size_t len, size_t *counter)
+static ptrdiff_t chan_subscribe(rh_table *tab, conn_sub **listp, session *sess,
+                                const char *ch, size_t len, size_t *counter)
 {
     conn *c = (conn *)sess->owner;
-    chan_node *head = chan_get(tab, ch, len);
+    chan_node *head;
     chan_node *n;
     conn_sub *cs;
+    if (len > UINT32_MAX)
+        return -1;
+    head = chan_get(tab, ch, len);
     for (n = head; n != NULL; n = n->next)
         if (n->c == c)
             return *counter; /* already subscribed */
     n = (chan_node *)malloc(sizeof(*n));
     if (n == NULL)
-        return *counter;
+        return -1;
+    cs = (conn_sub *)malloc(sizeof(*cs));
+    if (cs == NULL) {
+        free(n);
+        return -1;
+    }
+    cs->ch = (char *)malloc(len > 0 ? len : 1);
+    if (cs->ch == NULL) {
+        free(cs);
+        free(n);
+        return -1;
+    }
     n->c = c;
     n->next = head;
-    chan_put(tab, ch, len, n);
-    cs = (conn_sub *)malloc(sizeof(*cs));
-    cs->ch = (char *)malloc(len);
-    if (cs == NULL || cs->ch == NULL) {
-        fprintf(stderr, "ddup: out of memory\n");
-        exit(1);
+    if (chan_put(tab, ch, len, n) != 0) {
+        free(cs->ch);
+        free(cs);
+        free(n);
+        return -1;
     }
     memcpy(cs->ch, ch, len);
     cs->chlen = len;
@@ -352,9 +365,12 @@ static size_t chan_unsubscribe(rh_table *tab, conn_sub **listp, session *sess,
     {
         chan_node *dead = *pp;
         *pp = dead->next;
+        if (chan_put(tab, ch, len, head) != 0) {
+            *pp = dead;
+            return *counter;
+        }
         free(dead);
     }
-    chan_put(tab, ch, len, head);
     for (csp = listp; *csp != NULL; csp = &(*csp)->next) {
         if ((*csp)->chlen == len && memcmp((*csp)->ch, ch, len) == 0) {
             conn_sub *dead = *csp;
@@ -369,8 +385,8 @@ static size_t chan_unsubscribe(rh_table *tab, conn_sub **listp, session *sess,
     return *counter;
 }
 
-static size_t srv_subscribe(void *ctx, session *sess, const char *ch,
-                            size_t len)
+static ptrdiff_t srv_subscribe(void *ctx, session *sess, const char *ch,
+                               size_t len)
 {
     server *srv = (server *)ctx;
     return chan_subscribe(&srv->channels, &((conn *)sess->owner)->subs,
@@ -425,12 +441,38 @@ static void srv_deliver(void *owner, const char *ch, size_t chlen,
 /* shard channel hooks (Redis 7 sharded pub/sub)                       */
 /* ------------------------------------------------------------------ */
 
-static size_t srv_ssubscribe(void *ctx, session *sess, const char *ch,
-                             size_t len)
+static ptrdiff_t srv_ssubscribe(void *ctx, session *sess, const char *ch,
+                                size_t len)
 {
     server *srv = (server *)ctx;
     return chan_subscribe(&srv->schannels, &((conn *)sess->owner)->ssubs,
                           sess, ch, len, &sess->nssub);
+}
+
+int server_test_pubsub_rejected_subscribe(void)
+{
+#if SIZE_MAX > UINT32_MAX
+    rh_table tab;
+    conn c;
+    session sess;
+    conn_sub *list = NULL;
+    const char byte = 'x';
+    size_t count = 0;
+    ptrdiff_t rc;
+
+    memset(&c, 0, sizeof(c));
+    session_init(&sess, NULL);
+    sess.owner = &c;
+    rh_init(&tab);
+    rc = chan_subscribe(&tab, &list, &sess, &byte,
+                        (size_t)UINT32_MAX + 1, &count);
+    if (rc != -1 || list != NULL || count != 0 || rh_size(&tab) != 0) {
+        rh_destroy(&tab);
+        return -1;
+    }
+    rh_destroy(&tab);
+#endif
+    return 0;
 }
 
 static size_t srv_sunsubscribe(void *ctx, session *sess, const char *ch,
@@ -579,7 +621,10 @@ static void srv_propagate(void *ctx, int db_index, const resp_value *argv,
         for (i = 0; i < srv->nconns; i++) {
             conn *rc = srv->conns[i];
             if (rc->is_replica) {
-                resp_buf_reserve(&rc->out, raw_len);
+                if (resp_buf_reserve(&rc->out, raw_len) != 0) {
+                    rc->close_after_send = 1;
+                    continue;
+                }
                 memcpy(rc->out.data + rc->out.len, raw, raw_len);
                 rc->out.len += raw_len;
             }
@@ -603,7 +648,10 @@ static void srv_propagate(void *ctx, int db_index, const resp_value *argv,
     for (i = 0; i < srv->nconns; i++) {
         conn *rc = srv->conns[i];
         if (rc->is_replica) {
-            resp_buf_reserve(&rc->out, srv->prop_buf.len);
+            if (resp_buf_reserve(&rc->out, srv->prop_buf.len) != 0) {
+                rc->close_after_send = 1;
+                continue;
+            }
             memcpy(rc->out.data + rc->out.len, srv->prop_buf.data,
                    srv->prop_buf.len);
             rc->out.len += srv->prop_buf.len;
@@ -660,26 +708,59 @@ int server_set_backlog_size(server *s, size_t bytes)
     return 0;
 }
 
-/* SYNC: write the $<len>\r\n<snapshot> full-resync frame into the conn's
- * out buffer, then mark it as a downstream replica. */
+/* Append an optional prefix and $<len>\r\n<snapshot> only after serialization
+ * succeeds, so callers never expose a partial full-resync response. */
+static int srv_write_snapshot(server *srv, resp_buf *out, const char *prefix,
+                              size_t prefix_len)
+{
+    resp_buf snap;
+    char hdr[32];
+    int hl;
+    size_t frame_len;
+
+    resp_buf_init(&snap);
+    if (snapshot_serialize_multi(srv, srv_select_db, srv->ndbs, &snap) != 0) {
+        resp_buf_free(&snap);
+        return -1;
+    }
+    hl = snprintf(hdr, sizeof(hdr), "$%llu\r\n",
+                  (unsigned long long)snap.len);
+    if (prefix_len > SIZE_MAX - (size_t)hl ||
+        snap.len > SIZE_MAX - prefix_len - (size_t)hl) {
+        resp_buf_free(&snap);
+        return -1;
+    }
+    frame_len = prefix_len + (size_t)hl + snap.len;
+    if (frame_len > SIZE_MAX - out->len) {
+        resp_buf_free(&snap);
+        return -1;
+    }
+    if (resp_buf_reserve(out, frame_len) != 0) {
+        resp_buf_free(&snap);
+        return -1;
+    }
+    if (prefix_len > 0) {
+        memcpy(out->data + out->len, prefix, prefix_len);
+        out->len += prefix_len;
+    }
+    memcpy(out->data + out->len, hdr, (size_t)hl);
+    out->len += (size_t)hl;
+    memcpy(out->data + out->len, snap.data, snap.len);
+    out->len += snap.len;
+    resp_buf_free(&snap);
+    return 0;
+}
+
+/* SYNC: write the snapshot frame, then mark the client as a replica. */
 static void srv_sync(void *ctx, session *sess)
 {
     server *srv = (server *)ctx;
     conn *c = (conn *)sess->owner;
-    resp_buf snap;
-    char hdr[32];
-    int hl;
 
-    resp_buf_init(&snap);
-    snapshot_serialize_multi(srv, srv_select_db, srv->ndbs, &snap);
-    hl = snprintf(hdr, sizeof(hdr), "$%llu\r\n",
-                  (unsigned long long)snap.len);
-    resp_buf_reserve(&c->out, (size_t)hl + snap.len);
-    memcpy(c->out.data + c->out.len, hdr, (size_t)hl);
-    c->out.len += (size_t)hl;
-    memcpy(c->out.data + c->out.len, snap.data, snap.len);
-    c->out.len += snap.len;
-    resp_buf_free(&snap);
+    if (srv_write_snapshot(srv, &c->out, NULL, 0) != 0) {
+        resp_write_error(&c->out, "ERR snapshot serialization failed", 33);
+        return;
+    }
     if (!c->is_replica) {
         c->is_replica = 1;
         srv->repl.connected_slaves++;
@@ -687,11 +768,106 @@ static void srv_sync(void *ctx, session *sess)
     }
 }
 
+static int srv_write_continue(server *srv, resp_buf *out, uint64_t offset,
+                              int force_reserve_failure)
+{
+    char hdr[96];
+    size_t backlog_len, frame_len, copied = 0, start = out->len;
+    int hl = snprintf(hdr, sizeof(hdr), "+CONTINUE %s\r\n", srv->repl.replid);
+
+    if (offset > srv->backlog.offset)
+        return -1;
+    backlog_len = (size_t)(srv->backlog.offset - offset);
+    if ((uint64_t)backlog_len != srv->backlog.offset - offset ||
+        (size_t)hl > SIZE_MAX - backlog_len)
+        return -1;
+    frame_len = (size_t)hl + backlog_len;
+    if (force_reserve_failure || resp_buf_reserve(out, frame_len) != 0)
+        return -1;
+
+    memcpy(out->data + start, hdr, (size_t)hl);
+    while (copied < backlog_len) {
+        size_t got = repl_backlog_read_from(
+            &srv->backlog, offset + copied, out->data + start + (size_t)hl + copied,
+            backlog_len - copied);
+        if (got == 0)
+            return -1;
+        copied += got;
+    }
+    out->len = start + frame_len;
+    return 0;
+}
+
 /* PSYNC: partial resync when the caller's replid matches and the offset is
  * still inside the backlog (+CONTINUE), otherwise full resync
  * (+FULLRESYNC + snapshot frame). */
-static void srv_psync(void *ctx, session *sess, const char *replid,
-                      size_t replid_len, long long offset)
+static int srv_psync_continue(server *srv, conn *c, uint64_t offset,
+                              int force_reserve_failure)
+{
+    if (srv_write_continue(srv, &c->out, offset, force_reserve_failure) != 0)
+        return -1;
+    if (!c->is_replica) {
+        c->is_replica = 1;
+        srv->repl.connected_slaves++;
+        srv->backlog_used = 1;
+    }
+    return 0;
+}
+
+int server_test_psync_continue_reserve_failure(void)
+{
+    server *srv = (server *)calloc(1, sizeof(*srv));
+    conn c;
+    char byte = 'x';
+    int rc;
+
+    if (srv == NULL)
+        return -1;
+    if (repl_backlog_init(&srv->backlog, 16) != 0) {
+        free(srv);
+        return -1;
+    }
+    memcpy(srv->repl.replid, "0123456789abcdef0123456789abcdef01234567", 41);
+    repl_backlog_append(&srv->backlog, "abc", 3);
+    srv->repl.offset = srv->backlog.offset;
+    memset(&c, 0, sizeof(c));
+    c.out.data = &byte;
+    c.out.len = SIZE_MAX;
+    c.out.cap = SIZE_MAX;
+
+    rc = srv_psync_continue(srv, &c, srv->backlog.offset - 3, 0);
+    if (rc != -1 || c.out.data != &byte || c.out.len != SIZE_MAX ||
+        c.out.cap != SIZE_MAX || c.is_replica != 0 ||
+        srv->repl.connected_slaves != 0 || srv->backlog_used != 0) {
+        repl_backlog_free(&srv->backlog);
+        free(srv);
+        return -1;
+    }
+    resp_buf_init(&c.out);
+    rc = srv_psync_continue(srv, &c, srv->backlog.offset - 3, 1);
+    if (rc != -1 || c.out.len != 0 || c.is_replica != 0 ||
+        srv->repl.connected_slaves != 0 || srv->backlog_used != 0) {
+        resp_buf_free(&c.out);
+        repl_backlog_free(&srv->backlog);
+        free(srv);
+        return -1;
+    }
+    resp_write_error(&c.out, "ERR partial resync output failed", 32);
+    if (c.out.len != 35 ||
+        memcmp(c.out.data, "-ERR partial resync output failed\r\n", 35) != 0) {
+        resp_buf_free(&c.out);
+        repl_backlog_free(&srv->backlog);
+        free(srv);
+        return -1;
+    }
+    resp_buf_free(&c.out);
+    repl_backlog_free(&srv->backlog);
+    free(srv);
+    return 0;
+}
+
+static int srv_psync(void *ctx, session *sess, const char *replid,
+                     size_t replid_len, long long offset)
 {
     server *srv = (server *)ctx;
     conn *c = (conn *)sess->owner;
@@ -704,39 +880,21 @@ static void srv_psync(void *ctx, session *sess, const char *replid,
         offset >= 0 &&
         (uint64_t)offset >= srv->backlog.offset - srv->backlog.len &&
         (uint64_t)offset <= srv->backlog.offset) {
-        char chunk[64 * 1024];
-        uint64_t pos = (uint64_t)offset;
-        hl = snprintf(hdr, sizeof(hdr), "+CONTINUE %s\r\n", srv->repl.replid);
-        resp_buf_reserve(&c->out, (size_t)hl);
-        memcpy(c->out.data + c->out.len, hdr, (size_t)hl);
-        c->out.len += (size_t)hl;
-        while (pos < srv->backlog.offset) {
-            size_t want = (size_t)(srv->backlog.offset - pos);
-            size_t got;
-            if (want > sizeof(chunk))
-                want = sizeof(chunk);
-            got = repl_backlog_read_from(&srv->backlog, pos, chunk, want);
-            if (got == 0)
-                break;
-            resp_buf_reserve(&c->out, got);
-            memcpy(c->out.data + c->out.len, chunk, got);
-            c->out.len += got;
-            pos += got;
-        }
-        if (!c->is_replica) {
-            c->is_replica = 1;
-            srv->repl.connected_slaves++;
-            srv->backlog_used = 1; /* PSYNC resumes need appends from now on */
-        }
-        return;
+        return srv_psync_continue(srv, c, (uint64_t)offset, 0);
     }
 
     hl = snprintf(hdr, sizeof(hdr), "+FULLRESYNC %s %llu\r\n",
-                  srv->repl.replid, (unsigned long long)srv->repl.offset);
-    resp_buf_reserve(&c->out, (size_t)hl);
-    memcpy(c->out.data + c->out.len, hdr, (size_t)hl);
-    c->out.len += (size_t)hl;
-    srv_sync(ctx, sess);
+                  srv->repl.replid,
+                  (unsigned long long)srv->repl.offset);
+    if (srv_write_snapshot(srv, &c->out, hdr, (size_t)hl) != 0) {
+        return -2;
+    }
+    if (!c->is_replica) {
+        c->is_replica = 1;
+        srv->repl.connected_slaves++;
+        srv->backlog_used = 1;
+    }
+    return 0;
 }
 
 static conn *conn_create(server *srv, pal_socket_t fd)
@@ -926,7 +1084,7 @@ static ptrdiff_t conn_write(conn *c, const void *buf, size_t n)
 
 /* queue the PSYNC handshake (resume attempt when we have a cached master
  * id/offset, full resync otherwise) into the link's out buffer */
-static void repl_link_queue_psync(server *srv, conn *c)
+static int repl_link_queue_psync(server *srv, conn *c)
 {
     char psync[160];
     int pl;
@@ -941,10 +1099,13 @@ static void repl_link_queue_psync(server *srv, conn *c)
         pl = snprintf(psync, sizeof(psync),
                       "*3\r\n$5\r\nPSYNC\r\n$1\r\n?\r\n$2\r\n-1\r\n");
     }
-    resp_buf_reserve(&c->out, (size_t)pl);
+    if (pl < 0 || (size_t)pl > SIZE_MAX - c->out.len ||
+        resp_buf_reserve(&c->out, (size_t)pl) != 0)
+        return -1;
     memcpy(c->out.data, psync, (size_t)pl);
     c->out.len = (size_t)pl;
     c->link_state = LINK_SYNC_SENT;
+    return 0;
 }
 
 static int repl_link_connect(server *srv)
@@ -1003,7 +1164,10 @@ static int repl_link_connect(server *srv)
     }
     srv->master_link = c;
     if (cr == 1) {
-        repl_link_queue_psync(srv, c);
+        if (repl_link_queue_psync(srv, c) != 0) {
+            repl_link_close(srv);
+            return -1;
+        }
         if (srv_proactor(srv))
             kick_flush(srv, c); /* ship the PSYNC via the proactor */
     } else {
@@ -1336,6 +1500,11 @@ int server_backend(const server *s)
     return s->backend;
 }
 
+int server_is_proactor(const server *s)
+{
+    return srv_proactor(s);
+}
+
 const buf_pool *server_buf_pool(const server *s)
 {
     return &s->pool;
@@ -1597,7 +1766,6 @@ void server_graceful_stop(server *s)
 
 void server_destroy(server *s)
 {
-    size_t i;
     if (s == NULL)
         return;
     if (s->db.cluster_enabled) {
@@ -1618,12 +1786,7 @@ void server_destroy(server *s)
     pal_iouring_free(s->iou);
     s->iocp = NULL;
     s->iou = NULL;
-    for (i = 0; i < s->nconns; i++)
-        conn_free(s->conns[i]);
-    free(s->conns);
-    for (i = 0; i < s->nzombies; i++)
-        conn_free(s->zombies[i]);
-    free(s->zombies);
+    server_free_connections(s);
     if (s->loop != NULL && s->listen_fd != PAL_SOCKET_INVALID &&
         !srv_proactor(s))
         pal_loop_del(s->loop, s->listen_fd);
@@ -1649,6 +1812,23 @@ void server_destroy(server *s)
     }
     buf_pool_destroy(&s->pool);
     free(s);
+}
+
+void server_free_connections(server *s)
+{
+    size_t i;
+    if (s == NULL)
+        return;
+    for (i = 0; i < s->nconns; i++)
+        conn_free(s->conns[i]);
+    free(s->conns);
+    s->conns = NULL;
+    s->nconns = 0;
+    for (i = 0; i < s->nzombies; i++)
+        conn_free(s->zombies[i]);
+    free(s->zombies);
+    s->zombies = NULL;
+    s->nzombies = 0;
 }
 
 /* ------------------------------------------------------------------ */
@@ -1885,14 +2065,18 @@ int server_conn_adopt(server *s, void *conn_ptr)
     return 0;
 }
 
-void server_conn_out_append(server *s, void *conn_ptr, const char *data,
-                            size_t len)
+int server_conn_out_append(server *s, void *conn_ptr, const char *data,
+                           size_t len)
 {
     conn *c = (conn *)conn_ptr;
     (void)s;
-    resp_buf_reserve(&c->out, len);
+    if (resp_buf_reserve(&c->out, len) != 0) {
+        c->close_after_send = 1;
+        return -1;
+    }
     memcpy(c->out.data + c->out.len, data, len);
     c->out.len += len;
+    return 0;
 }
 
 int server_conn_flush(server *s, void *conn_ptr)
@@ -2134,9 +2318,11 @@ static void bus_queue_frame(server *s, bus_conn *bc, int type)
         /* RCM2 type constants (PING=1/PONG=2/MEET=3) -> redbus (0/1/2) */
         static const int rmap[4] = {-1, REDBUS_TYPE_PING, REDBUS_TYPE_PONG,
                                     REDBUS_TYPE_MEET};
-        redbus_build_frame(&s->db, rmap[type], &bc->out);
+        if (redbus_build_frame(&s->db, rmap[type], &bc->out) != 0)
+            return;
     } else {
-        cluster_bus_build_frame(&s->db, type, &bc->out);
+        if (cluster_bus_build_frame(&s->db, type, &bc->out) != 0)
+            return;
     }
     bus_flush(s, bc);
 }
@@ -2192,14 +2378,19 @@ static void srv_spublish_bus(void *ctx, const char *ch, size_t chlen,
      * within the channel's shard; ddup broadcasts to all peers instead
      * (documented divergence). Frames that would exceed the bus size cap
      * are dropped (local delivery already happened regardless). */
-    if (chlen + mlen + REDBUS_HDR_LEN + 8 > CLUSTER_MSG_MAX)
+    if (chlen > SIZE_MAX - 8 || mlen > SIZE_MAX - 8 - chlen ||
+        chlen + mlen + 8 > CLUSTER_MSG_MAX - REDBUS_HDR_LEN)
         return;
     for (bc = s->bus; bc != NULL; bc = bc->next) {
+        int rc;
         if (s->bus_protocol == SERVER_BUS_PROTOCOL_REDIS)
-            redbus_build_publish(&s->db, REDBUS_TYPE_PUBLISHSHARD, ch, chlen,
-                                 msg, mlen, &bc->out);
+            rc = redbus_build_publish(&s->db, REDBUS_TYPE_PUBLISHSHARD, ch,
+                                      chlen, msg, mlen, &bc->out);
         else
-            cluster_bus_build_publish(&s->db, ch, chlen, msg, mlen, &bc->out);
+            rc = cluster_bus_build_publish(&s->db, ch, chlen, msg, mlen,
+                                           &bc->out);
+        if (rc != 0)
+            continue;
         bus_flush(s, bc);
     }
 }
@@ -2354,11 +2545,14 @@ static void cluster_broadcast_fail(server *s)
 {
     bus_conn *bc;
     for (bc = s->bus; bc != NULL; bc = bc->next) {
+        int rc;
         if (s->bus_protocol == SERVER_BUS_PROTOCOL_REDIS)
-            redbus_build_fail(&s->db, s->db.fail_broadcast_id, &bc->out);
+            rc = redbus_build_fail(&s->db, s->db.fail_broadcast_id, &bc->out);
         else
-            cluster_bus_build_fail(&s->db, s->db.fail_broadcast_id,
-                                   &bc->out);
+            rc = cluster_bus_build_fail(&s->db, s->db.fail_broadcast_id,
+                                        &bc->out);
+        if (rc != 0)
+            continue;
         bus_flush(s, bc);
     }
     s->db.fail_broadcast_id[0] = '\0';
@@ -2414,8 +2608,9 @@ static void cluster_request_votes(server *s)
 {
     bus_conn *bc;
     for (bc = s->bus; bc != NULL; bc = bc->next) {
-        redbus_build_auth_request(&s->db, s->db.failover_req_epoch,
-                                  &bc->out);
+        if (redbus_build_auth_request(&s->db, s->db.failover_req_epoch,
+                                      &bc->out) != 0)
+            continue;
         bus_flush(s, bc);
     }
 }
@@ -3088,7 +3283,10 @@ int server_run_once(server *s, int timeout_ms)
                         conn_close(s, idx); /* retry timer reconnects */
                         continue;
                     }
-                    repl_link_queue_psync(s, c);
+                    if (repl_link_queue_psync(s, c) != 0) {
+                        conn_close(s, idx);
+                        continue;
+                    }
                     pal_loop_mod(s->loop, c->fd, 1, 0, c);
                     (void)conn_flush(s, c); /* ship the PSYNC */
                     continue;

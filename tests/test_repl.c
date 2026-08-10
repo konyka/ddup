@@ -4,6 +4,7 @@
 
 #include "pal/pal_iocp.h"
 #include "server/repl.h"
+#include "server/server.h"
 #include "test.h"
 
 static void test_backlog_basic(void)
@@ -124,6 +125,7 @@ static void test_replica_full_cycle(void);
 static void test_replica_full_cycle_iocp(void);
 static void test_replica_reconnect_resync(void);
 static void test_replica_reconnect_resync_iocp(void);
+static void test_psync_continue_reserve_failure(void);
 
 int main(void)
 {
@@ -143,7 +145,13 @@ int main(void)
     DD_RUN(test_replica_full_cycle_iocp);
     DD_RUN(test_replica_reconnect_resync);
     DD_RUN(test_replica_reconnect_resync_iocp);
+    DD_RUN(test_psync_continue_reserve_failure);
     return DD_TEST_SUMMARY();
+}
+
+static void test_psync_continue_reserve_failure(void)
+{
+    DD_CHECK_EQ_INT(0, server_test_psync_continue_reserve_failure());
 }
 
 /* ------------------------------------------------------------------ */

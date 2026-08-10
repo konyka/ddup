@@ -76,6 +76,16 @@ typedef struct mt_watch_entry {
     int db_index; /* the db the key was watched in (SELECT-aware) */
 } mt_watch_entry;
 
+typedef struct mt_deferred_cmd {
+    struct mt_deferred_cmd *next;
+    char *raw;
+    size_t rawlen;
+    int db_index;
+    uint16_t cmd;
+    uint64_t seq;
+    int authed;
+} mt_deferred_cmd;
+
 /* One subscribed channel on a connection (home-side bookkeeping). */
 typedef struct mt_conn_sub {
     struct mt_conn_sub *next;
@@ -104,6 +114,8 @@ typedef struct mt_sub_entry {
 #define MT_TASK_PUBLISH 6 /* PUBLISH: fan-out + receiver count reply */
 #define MT_TASK_PUSH 7   /* pub/sub delivery to a subscriber's home */
 #define MT_TASK_MIGRATE 8 /* connection migration to another worker */
+#define MT_TASK_WATCH_CLEANUP 9 /* reuse WATCH task to release owner refs */
+#define MT_MAX_LOGICAL_DBS 16
 
 typedef struct mt_task {
     struct mt_task *next; /* reorder-buffer link (queue nodes wrap tasks) */
@@ -116,10 +128,14 @@ typedef struct mt_task {
     resp_buf reply;       /* filled by the executing worker */
     mt_agg *agg;          /* broadcast group this task is a part of (or NULL) */
     int kind;             /* MT_TASK_* */
+    int pending_owned;    /* home pending count held by this task */
     int db_index;         /* logical db the task executes against (SELECT) */
     /* WATCH result: 2 slots per key (version, epoch), filled on the owner */
     uint64_t *watch_out;
     size_t nwatch_out;
+    size_t watch_cleanup_first;
+    size_t watch_home_start;
+    int watch_failed;
     /* EXEC input: watch entries transferred from the home conn state */
     mt_watch_entry *exec_watches;
     size_t nexec_watches;
@@ -151,6 +167,7 @@ struct worker {
     mt_spsc *inbox;
     mt_spsc *completions;
     mt_spsc *migrate;     /* MT_TASK_MIGRATE conns from other workers */
+    mt_task *failed_tasks; /* producer-reported failed pushes */
     arena exec_arena;     /* re-parse scratch for routed commands */
     uint64_t tasks_executed; /* routed tasks executed (test/observability) */
     /* task object pool (Phase 31): recycled single-command tasks; the
@@ -170,6 +187,7 @@ struct worker {
     /* Guards mt_conn_state.pending/closing of every conn homed on this
      * worker (increments can come from other workers' delivery paths). */
     pal_mutex pending_mu;
+    uint64_t watch_release_pending[MT_MAX_LOGICAL_DBS];
     /* Conns closed with pending work: freed when it drains (or at destroy). */
     void **zombies;
     size_t nzombies;
@@ -200,6 +218,14 @@ struct mt_server {
     worker *workers;
     pal_thread acceptor;
     volatile int running;
+    int destroying;
+    mt_agg **abandoned_aggs;
+    size_t nabandoned_aggs;
+    size_t abandoned_agg_cap;
+    pal_mutex abandoned_agg_mu;
+    int fail_completion_pushes;
+    int fail_completion_worker;
+    int fail_completion_consumed;
 };
 
 /* Broadcast group for aggregate commands (DBSIZE/FLUSHDB): the home worker
@@ -216,7 +242,12 @@ struct mt_agg {
     int err;        /* any part replied with an error */
     int db_index;   /* logical db for DBSIZE/FLUSHDB (SELECT-aware) */
     info_stats *stats; /* INFO: summed machine-format parts (or NULL) */
+    int fanout_done;
+    int abandoned;
+    int finished;
 };
+
+static void mt_untrack_abandoned_agg(mt_server *ms, mt_agg *agg);
 
 /* Per-conn routing state (stored via server_conn_set_mt_state). */
 typedef struct mt_conn_state {
@@ -243,6 +274,10 @@ typedef struct mt_conn_state {
     mt_watch_entry *watches;
     size_t nwatch;
     size_t watch_cap;
+    int replaying_deferred;
+    size_t watch_pending;
+    mt_deferred_cmd *deferred_head;
+    mt_deferred_cmd *deferred_tail;
     /* Lifetime: guarded by the home worker's pending_mu. closing is set
      * under the mutex before any free path, so producers can safely test
      * it; pending counts tasks/deliveries in flight for this conn. */
@@ -259,6 +294,14 @@ typedef struct mt_conn_state {
      * (0 = not queued) */
     uint64_t flush_epoch;
 } mt_conn_state;
+
+static int mt_route_txn(worker *, void *, mt_conn_state *,
+                        const resp_value *, size_t, const char *, size_t,
+                        uint16_t, int, uint64_t, resp_buf *);
+static void mt_replay_deferred(worker *, void *, mt_conn_state *);
+static void mt_exec_task(worker *, mt_task *);
+static int mt_route(void *, void *, session *, const resp_value *, size_t,
+                    const char *, size_t, resp_buf *);
 
 static void mt_blobs_free(mt_cmd_blob *blobs, size_t n)
 {
@@ -370,12 +413,168 @@ static int mt_watch_add(mt_conn_state *st, const char *key, size_t klen,
 }
 
 static void mt_kick(worker *w);
-static void mt_push_task(worker *self, mt_spsc *q, mt_task *t,
-                         worker *target);
+static int mt_push_task(worker *self, mt_spsc *q, mt_task *t,
+                        worker *target);
 static mt_cmd_blob *mt_blob_one(const char *raw, size_t len);
+static void mt_watch_release_task_refs_direct(mt_server *ms, mt_task *t);
+static void mt_pending_dec(worker *home, void *conn, mt_conn_state *st);
+static void mt_worker_sub_remove(worker *w, void *conn, const char *ch,
+                                 size_t chlen);
+static void mt_dispose_failed_task(worker *home, mt_task *t);
+
+static void mt_agg_free(mt_agg *agg)
+{
+    if (agg == NULL || agg->finished)
+        return;
+    mt_untrack_abandoned_agg(agg->home->ms, agg);
+    agg->finished = 1;
+    free(agg->stats);
+    free(agg);
+}
+
+/* Drop one remote part. The final free is delayed until fanout has stopped so
+ * a failed push cannot invalidate the aggregate while the loop still uses it. */
+/* Account for exactly one aggregate part. The caller owns finalization after
+ * the decrement; this helper never frees agg. */
+static int mt_agg_drop_part(mt_agg *agg)
+{
+    if (agg == NULL || agg->finished)
+        return 0;
+    if (agg->pending > 0)
+        agg->pending--;
+    return agg->pending == 0 && agg->fanout_done;
+}
+
+static void mt_track_abandoned_agg(mt_server *ms, mt_agg *agg)
+{
+    size_t i;
+    if (agg == NULL)
+        return;
+    pal_mutex_lock(&ms->abandoned_agg_mu);
+    for (i = 0; i < ms->nabandoned_aggs; i++)
+        if (ms->abandoned_aggs[i] == agg)
+        {
+            pal_mutex_unlock(&ms->abandoned_agg_mu);
+            return;
+        }
+    if (ms->nabandoned_aggs == ms->abandoned_agg_cap) {
+        size_t ncap = ms->abandoned_agg_cap == 0
+                          ? 8 : ms->abandoned_agg_cap * 2;
+        mt_agg **na = (mt_agg **)realloc(ms->abandoned_aggs,
+                                         ncap * sizeof(*na));
+        if (na == NULL) {
+            fprintf(stderr, "ddup: out of memory\n");
+            exit(1);
+        }
+        ms->abandoned_aggs = na;
+        ms->abandoned_agg_cap = ncap;
+    }
+    agg->abandoned = 1;
+    ms->abandoned_aggs[ms->nabandoned_aggs++] = agg;
+    pal_mutex_unlock(&ms->abandoned_agg_mu);
+}
+
+static void mt_untrack_abandoned_agg(mt_server *ms, mt_agg *agg)
+{
+    size_t i;
+    pal_mutex_lock(&ms->abandoned_agg_mu);
+    for (i = 0; i < ms->nabandoned_aggs; i++) {
+        if (ms->abandoned_aggs[i] == agg) {
+            ms->abandoned_aggs[i] =
+                ms->abandoned_aggs[--ms->nabandoned_aggs];
+            break;
+        }
+    }
+    pal_mutex_unlock(&ms->abandoned_agg_mu);
+}
+
+static void mt_drain_failed_tasks(worker *w)
+{
+    for (;;) {
+        mt_task *t;
+        pal_mutex_lock(&w->pending_mu);
+        t = w->failed_tasks;
+        if (t != NULL)
+            w->failed_tasks = t->next;
+        pal_mutex_unlock(&w->pending_mu);
+        if (t == NULL)
+            break;
+        if (t->agg != NULL) {
+            mt_agg *agg = t->agg;
+            int terminal = agg->pending == 1 && agg->fanout_done;
+            mt_dispose_failed_task(w, t);
+            if (terminal && !agg->finished)
+                mt_agg_free(agg);
+        } else {
+            mt_dispose_failed_task(w, t);
+        }
+        pal_mutex_lock(&w->ms->abandoned_agg_mu);
+        w->ms->fail_completion_consumed++;
+        pal_mutex_unlock(&w->ms->abandoned_agg_mu);
+    }
+}
+
+static void mt_task_drop_after_push_failure(worker *self, mt_task *t)
+{
+    worker *home = t->home != NULL ? t->home : self;
+    pal_mutex_lock(&home->pending_mu);
+    t->next = home->failed_tasks;
+    home->failed_tasks = t;
+    pal_mutex_unlock(&home->pending_mu);
+    mt_kick(home);
+}
+
+static void mt_dispose_failed_task(worker *home, mt_task *t)
+{
+    if (t->pending_owned) {
+        mt_conn_state *st = (mt_conn_state *)
+            server_conn_mt_state(t->conn);
+        t->pending_owned = 0;
+        if (st != NULL)
+            mt_pending_dec(home, t->conn, st);
+    }
+    if (t->agg != NULL) {
+        mt_agg *agg = t->agg;
+        mt_agg_drop_part(agg);
+        mt_track_abandoned_agg(home->ms, agg);
+        /* The aggregate is home-owned. The fanout loop may still inspect it
+         * after this producer reports a failed push, so only the home thread
+         * may finalize/free it. */
+        t->agg = NULL;
+    }
+    if (t->kind == MT_TASK_WATCH) {
+        mt_watch_release_task_refs_direct(home->ms, t);
+    } else if (t->kind == MT_TASK_WATCH_CLEANUP) {
+        mt_watch_release_task_refs_direct(home->ms, t);
+    } else if (t->kind == MT_TASK_UNSUB &&
+               t->cmds != NULL && t->cmds[0].raw != NULL) {
+        int owner = (int)(hash_slot(t->cmds[0].raw, t->cmds[0].len) %
+                          (uint32_t)home->ms->nworkers);
+        mt_worker_sub_remove(&home->ms->workers[owner], t->conn,
+                             t->cmds[0].raw, t->cmds[0].len);
+    } else if (t->kind == MT_TASK_MIGRATE && t->conn != NULL) {
+        server_conn_free_now(home->srv, t->conn);
+    }
+    mt_task_free(t);
+}
+
+static void mt_watch_release_pending(worker *w)
+{
+    int i;
+    pal_mutex_lock(&w->pending_mu);
+    for (i = 0; i < MT_MAX_LOGICAL_DBS; i++) {
+        uint64_t n = w->watch_release_pending[i];
+        w->watch_release_pending[i] = 0;
+        if (n != 0) {
+            db *d = server_db_at(w->srv, i);
+            d->watch_refs = d->watch_refs > n ? d->watch_refs - n : 0;
+        }
+    }
+    pal_mutex_unlock(&w->pending_mu);
+}
 
 /* Fire-and-forget watch_refs release on the owning worker. */
-static mt_task *mt_unwatch_task(const char *key, size_t klen)
+static mt_task *mt_unwatch_task(const char *key, size_t klen, int db_index)
 {
     mt_cmd_blob *b = (mt_cmd_blob *)malloc(sizeof(*b));
     mt_task *t;
@@ -394,6 +593,7 @@ static mt_task *mt_unwatch_task(const char *key, size_t klen)
         return NULL;
     }
     t->kind = MT_TASK_UNWATCH;
+    t->db_index = db_index;
     return t;
 }
 
@@ -402,17 +602,32 @@ static void mt_watch_release_one(worker *home, const mt_watch_entry *e)
 {
     int owner = (int)(hash_slot(e->key, e->klen) %
                       (uint32_t)home->ms->nworkers);
+    if (home->ms->destroying) {
+        db *d = server_db_at(home->ms->workers[owner].srv, e->db_index);
+        if (d->watch_refs > 0)
+            d->watch_refs--;
+        return;
+    }
     if (owner == home->id) {
-        db *d = server_db(home->srv);
+        db *d = server_db_at(home->srv, e->db_index);
         if (d->watch_refs > 0)
             d->watch_refs--;
         return;
     }
     {
-        mt_task *t = mt_unwatch_task(e->key, e->klen);
-        if (t != NULL)
-            mt_push_task(home, &home->ms->workers[owner].inbox[home->id], t,
-                         &home->ms->workers[owner]);
+        mt_task *t = mt_unwatch_task(e->key, e->klen, e->db_index);
+        if (t != NULL && mt_push_task(home,
+                                      &home->ms->workers[owner].inbox[home->id],
+                                      t, &home->ms->workers[owner]) == 0)
+            return;
+        {
+            worker *ow = &home->ms->workers[owner];
+            pal_mutex_lock(&ow->pending_mu);
+            if (e->db_index >= 0 && e->db_index < MT_MAX_LOGICAL_DBS)
+                ow->watch_release_pending[e->db_index]++;
+            pal_mutex_unlock(&ow->pending_mu);
+            mt_kick(ow);
+        }
     }
 }
 
@@ -429,9 +644,111 @@ static void mt_watches_clear(worker *home, mt_conn_state *st)
     st->watch_cap = 0;
 }
 
+static void mt_watches_release_suffix(worker *home, mt_conn_state *st,
+                                      size_t start)
+{
+    while (st->nwatch > start) {
+        mt_watch_entry *e = &st->watches[st->nwatch - 1];
+        mt_watch_release_one(home, e);
+        free(e->key);
+        st->nwatch--;
+    }
+}
+
+static void mt_watches_free_suffix(mt_conn_state *st, size_t start)
+{
+    while (st->nwatch > start) {
+        st->nwatch--;
+        free(st->watches[st->nwatch].key);
+    }
+}
+
+static void mt_deferred_free(mt_deferred_cmd *d)
+{
+    while (d != NULL) {
+        mt_deferred_cmd *next = d->next;
+        free(d->raw);
+        free(d);
+        d = next;
+    }
+}
+
+static int mt_watch_requeue_cleanup(worker *home, mt_task *t)
+{
+    if (t->nwatch_out == 0 || t->cmds == NULL)
+    {
+        mt_task_free(t);
+        return 1;
+    }
+    t->kind = MT_TASK_WATCH_CLEANUP;
+    {
+        resp_value v;
+        ptrdiff_t used;
+        int owner;
+        arena_reset(&home->exec_arena);
+        used = resp_parse(t->cmds[0].raw, t->cmds[0].len, &v,
+                          &home->exec_arena);
+        if (used != (ptrdiff_t)t->cmds[0].len || v.type != RESP_ARRAY ||
+            v.count < 2 || v.items[1].str == NULL) {
+            mt_task_free(t);
+            return 1;
+        }
+        owner = (int)(hash_slot(v.items[1].str, v.items[1].len) %
+                      (uint32_t)home->ms->nworkers);
+        if (owner == home->id)
+            mt_exec_task(home, t);
+        else
+            (void)mt_push_task(home,
+                               &home->ms->workers[owner].inbox[home->id], t,
+                               &home->ms->workers[owner]);
+        return 1; /* helper or push owns/frees t on every path */
+    }
+}
+
+static int mt_watch_release_task_refs_from(worker *home, mt_task *t,
+                                           size_t first)
+{
+    t->watch_cleanup_first = first;
+    return mt_watch_requeue_cleanup(home, t);
+}
+
+static int mt_watch_release_task_refs(worker *home, mt_task *t)
+{
+    return mt_watch_release_task_refs_from(home, t, 0);
+}
+
+static void mt_watch_release_task_refs_direct(mt_server *ms, mt_task *t)
+{
+    resp_value v;
+    arena ar;
+    ptrdiff_t used;
+    size_t i;
+    int first = (int)t->watch_cleanup_first + 1;
+    arena_init(&ar, 256);
+    used = resp_parse(t->cmds[0].raw, t->cmds[0].len, &v, &ar);
+    if (used == (ptrdiff_t)t->cmds[0].len && v.type == RESP_ARRAY) {
+        for (i = (size_t)first; i < v.count &&
+             i - 1 < t->nwatch_out; i++) {
+            resp_value *key = &v.items[i];
+            int owner;
+            if (key->str == NULL)
+                continue;
+            owner = (int)(hash_slot(key->str, key->len) %
+                          (uint32_t)ms->nworkers);
+            {
+                db *d = server_db_at(ms->workers[owner].srv,
+                                     t->db_index);
+                if (d->watch_refs > 0)
+                    d->watch_refs--;
+            }
+        }
+    }
+    arena_destroy(&ar);
+}
+
 /* A routed WATCH drained in pipeline order: record the versions it brought
  * back (keys re-parsed from the task blob). */
-static void mt_watch_apply(mt_conn_state *st, mt_task *t, arena *ar)
+static size_t mt_watch_apply(mt_conn_state *st, mt_task *t, arena *ar)
 {
     resp_value v;
     ptrdiff_t used;
@@ -439,16 +756,27 @@ static void mt_watch_apply(mt_conn_state *st, mt_task *t, arena *ar)
     arena_reset(ar);
     used = resp_parse(t->cmds[0].raw, t->cmds[0].len, &v, ar);
     if (used != (ptrdiff_t)t->cmds[0].len || v.type != RESP_ARRAY ||
-        t->watch_out == NULL)
-        return;
-    for (i = 1; i < v.count && i - 1 < t->nwatch_out; i++) {
+        t->watch_out == NULL) {
+        t->watch_failed = 1;
+        return 0;
+    }
+    {
+        size_t applied = 0;
+        for (i = 1;
+             i < v.count && i - 1 < t->nwatch_out; i++) {
         if (v.items[i].str == NULL)
             continue;
         if (mt_watch_add(st, v.items[i].str, v.items[i].len,
                          t->watch_out[2 * (i - 1)],
                          t->watch_out[2 * (i - 1) + 1],
-                         t->db_index) != 0)
+                         t->db_index) != 0) {
+            mt_watches_free_suffix(st, t->watch_home_start);
+            t->watch_failed = 1;
             break;
+        }
+        applied++;
+        }
+        return applied;
     }
 }
 
@@ -463,6 +791,8 @@ static void mt_pending_inc(worker *home, mt_conn_state *st)
     pal_mutex_unlock(&home->pending_mu);
 }
 
+static void mt_zombie_remove(worker *home, void *conn);
+
 /* Decrement; frees the conn when it was closing and nothing is left. */
 static void mt_pending_dec(worker *home, void *conn, mt_conn_state *st)
 {
@@ -473,8 +803,10 @@ static void mt_pending_dec(worker *home, void *conn, mt_conn_state *st)
     if (st->closing && st->pending == 0)
         free_now = 1;
     pal_mutex_unlock(&home->pending_mu);
-    if (free_now)
+    if (free_now) {
+        mt_zombie_remove(home, conn);
         server_conn_free_now(home->srv, conn);
+    }
 }
 
 /* Producer from another worker: only count the delivery when the conn is
@@ -554,6 +886,33 @@ static void mt_conn_subs_free(mt_conn_state *st)
     st->nsub = 0;
 }
 
+static void mt_worker_subs_free(worker *w)
+{
+    while (w->subs != NULL) {
+        mt_sub_entry *e = w->subs;
+        w->subs = e->next;
+        free(e->ch);
+        free(e);
+    }
+}
+
+static void mt_worker_sub_remove(worker *w, void *conn, const char *ch,
+                                 size_t chlen)
+{
+    mt_sub_entry **pp = &w->subs;
+    while (*pp != NULL) {
+        mt_sub_entry *e = *pp;
+        if (e->conn == conn && e->chlen == chlen &&
+            memcmp(e->ch, ch, chlen) == 0) {
+            *pp = e->next;
+            free(e->ch);
+            free(e);
+            return;
+        }
+        pp = &e->next;
+    }
+}
+
 static void mt_zombie_push(worker *home, void *conn)
 {
     if (home->nzombies == home->zombie_cap) {
@@ -567,6 +926,17 @@ static void mt_zombie_push(worker *home, void *conn)
         home->zombie_cap = ncap;
     }
     home->zombies[home->nzombies++] = conn;
+}
+
+static void mt_zombie_remove(worker *home, void *conn)
+{
+    size_t i;
+    for (i = 0; i < home->nzombies; i++) {
+        if (home->zombies[i] == conn) {
+            home->zombies[i] = home->zombies[--home->nzombies];
+            return;
+        }
+    }
 }
 
 /* server_mt_close_fn: runs on the home thread inside conn_close. */
@@ -610,10 +980,34 @@ static void mt_drain_ready(server *srv, arena *ar, void *conn,
     while (st->reorder != NULL && st->reorder->seq == st->seq_write) {
         mt_task *t = st->reorder;
         st->reorder = t->next;
-        if (t->kind == MT_TASK_WATCH && append)
-            mt_watch_apply(st, t, ar);
+        if (t->kind == MT_TASK_WATCH) {
+            int cleanup_queued = 0;
+            if (append && !st->closing) {
+                size_t applied = mt_watch_apply(st, t, ar);
+                if (applied < t->nwatch_out) {
+                    static const char oom[] = "-ERR out of memory\r\n";
+                    if (resp_buf_reserve(&t->reply, sizeof(oom) - 1) == 0) {
+                        memcpy(t->reply.data, oom, sizeof(oom) - 1);
+                        t->reply.len = sizeof(oom) - 1;
+                    }
+                    cleanup_queued = mt_watch_release_task_refs_from(
+                        t->home, t, 0);
+                }
+            } else {
+                cleanup_queued = mt_watch_release_task_refs(t->home, t);
+            }
+            if (st->watch_pending > 0)
+                st->watch_pending--;
+            if (append)
+                (void)server_conn_out_append(srv, conn, t->reply.data,
+                                             t->reply.len);
+            st->seq_write += t->span;
+            if (!cleanup_queued)
+                mt_task_free(t);
+            continue;
+        }
         if (append)
-            server_conn_out_append(srv, conn, t->reply.data, t->reply.len);
+            (void)server_conn_out_append(srv, conn, t->reply.data, t->reply.len);
         st->seq_write += t->span;
         mt_task_free(t);
     }
@@ -628,7 +1022,12 @@ static void mt_state_free_cb(void *ctx, void *ptr)
     while (st->reorder != NULL) {
         mt_task *t = st->reorder;
         st->reorder = t->next;
-        mt_task_free(t);
+        if (t->kind == MT_TASK_WATCH) {
+            if (!mt_watch_release_task_refs(t->home, t))
+                mt_task_free(t);
+        } else {
+            mt_task_free(t);
+        }
     }
     /* drop an unflushed merge batch (conn closed mid-pipeline); the first
      * blob's bytes may live in st->batch_inline (never heap) */
@@ -641,6 +1040,7 @@ static void mt_state_free_cb(void *ctx, void *ptr)
     }
     /* drop transaction state */
     mt_blobs_free(st->mq, st->mq_n);
+    mt_deferred_free(st->deferred_head);
     mt_watches_clear((worker *)ctx, st);
     /* drop pub/sub bookkeeping (registry cleanup was fanned out at close) */
     mt_conn_subs_free(st);
@@ -778,8 +1178,7 @@ static void mt_agg_finish(server *srv, void *conn, mt_conn_state *st,
             (void)server_conn_flush(srv, conn);
         }
     }
-    free(agg->stats);
-    free(agg);
+    mt_agg_free(agg);
 }
 
 /* ------------------------------------------------------------------ */
@@ -887,6 +1286,12 @@ static int mt_is_keyless(uint16_t cmd)
     default:
         return 0;
     }
+}
+
+static int mt_is_aggregate(uint16_t cmd)
+{
+    return cmd == CMD_DBSIZE || cmd == CMD_FLUSHDB || cmd == CMD_SAVE ||
+           cmd == CMD_LASTSAVE || cmd == CMD_SWAPDB || cmd == CMD_INFO;
 }
 
 /* Multi-key commands: every key must map to the same worker (same rule as
@@ -1080,7 +1485,7 @@ static int mt_route_aggregate(worker *home, void *conn,
         resp_buf_init(&local);
         command_execute_at(server_db_at(home->srv, db_index), argv, argc,
                            &local, pal_wall_ms());
-        server_conn_out_append(home->srv, conn, local.data, local.len);
+        (void)server_conn_out_append(home->srv, conn, local.data, local.len);
         resp_buf_free(&local);
         st->seq_write++;
         return 1;
@@ -1129,16 +1534,22 @@ static int mt_route_aggregate(worker *home, void *conn,
             t->agg = agg;
             t->db_index = db_index;
             mt_pending_inc(home, st);
+            t->pending_owned = 1;
             mt_push_task(home, &home->ms->workers[i].inbox[home->id], t,
                          &home->ms->workers[i]);
         } else {
             if (blob != NULL)
                 mt_blobs_free(blob, 1);
-            agg->pending--;
+            (void)mt_agg_drop_part(agg);
         }
     }
-    if (agg->pending == 0)
-        mt_agg_finish(home->srv, conn, st, agg);
+    agg->fanout_done = 1;
+    if (agg->pending == 0) {
+        if (agg->abandoned)
+            mt_agg_free(agg);
+        else
+            mt_agg_finish(home->srv, conn, st, agg);
+    }
     return 1;
 }
 
@@ -1160,6 +1571,7 @@ static mt_task *mt_pool_task_new(worker *home)
     t->next = NULL;
     t->agg = NULL;
     t->kind = MT_TASK_CMD;
+    t->pending_owned = 0;
     t->db_index = 0;
     t->watch_out = NULL;
     t->nwatch_out = 0;
@@ -1193,6 +1605,7 @@ static void mt_batch_flush(worker *home, void *conn, mt_conn_state *st)
             t->inline_cmd.raw = t->inline_buf;
             t->inline_cmd.len = st->batch[0].len;
             mt_pending_inc(home, st);
+            t->pending_owned = 1;
             mt_push_task(home, &home->ms->workers[target].inbox[home->id],
                          t, &home->ms->workers[target]);
             goto flushed;
@@ -1216,6 +1629,7 @@ static void mt_batch_flush(worker *home, void *conn, mt_conn_state *st)
     } else {
         t->db_index = st->batch_db;
         mt_pending_inc(home, st);
+        t->pending_owned = 1;
         mt_push_task(home, &home->ms->workers[target].inbox[home->id], t,
                      &home->ms->workers[target]);
     }
@@ -1286,7 +1700,9 @@ static void mt_reply_local(worker *home, void *conn, mt_conn_state *st,
                            resp_buf *out)
 {
     if (seq == st->seq_write) {
-        resp_buf_reserve(out, len);
+        if (resp_buf_reserve(out, len) != 0) {
+            return;
+        }
         memcpy(out->data + out->len, data, len);
         out->len += len;
         st->seq_write++;
@@ -1295,19 +1711,26 @@ static void mt_reply_local(worker *home, void *conn, mt_conn_state *st,
     {
         mt_task *t = mt_task_new(conn, home, seq, 1, 0, NULL);
         if (t == NULL) {
-            resp_buf_reserve(out, len);
+            if (resp_buf_reserve(out, len) != 0) {
+                return;
+            }
             memcpy(out->data + out->len, data, len);
             out->len += len;
             st->seq_write++;
             return;
         }
-        resp_buf_reserve(&t->reply, len);
+        if (resp_buf_reserve(&t->reply, len) != 0) {
+            if (!t->watch_failed)
+                mt_task_free(t);
+            return;
+        }
         memcpy(t->reply.data + t->reply.len, data, len);
         t->reply.len += len;
         mt_reorder_insert(st, t);
         mt_drain_ready(home->srv, &home->exec_arena, conn, st, 1);
     }
 }
+
 
 static int mt_mq_push(mt_conn_state *st, const char *raw, size_t rawlen)
 {
@@ -1357,12 +1780,11 @@ static void mt_exec_on_db(server *srv, mt_task *t, arena *ar)
         /* release the reference on the entry's own db */
         if (wd->watch_refs > 0)
             wd->watch_refs--;
-        if (aborted)
-            break;
     }
     if (aborted) {
         static const char nullarr[] = "*-1\r\n";
-        resp_buf_reserve(&t->reply, sizeof(nullarr) - 1);
+        if (resp_buf_reserve(&t->reply, sizeof(nullarr) - 1) != 0)
+            return;
         memcpy(t->reply.data + t->reply.len, nullarr, sizeof(nullarr) - 1);
         t->reply.len += sizeof(nullarr) - 1;
         return;
@@ -1421,13 +1843,19 @@ static int mt_txn_watch(worker *home, void *conn, mt_conn_state *st,
         /* versions are read on the home worker right now */
         db *d = server_db_at(home->srv, db_index);
         size_t i;
+        size_t start = st->nwatch;
         for (i = 1; i < argc; i++) {
             if (argv[i].str == NULL)
                 continue;
             if (mt_watch_add(st, argv[i].str, argv[i].len,
                              db_key_version(d, argv[i].str, argv[i].len),
                              d->flush_epoch, db_index) != 0)
-                break;
+            {
+                mt_watches_release_suffix(home, st, start);
+                mt_reply_local(home, conn, st, seq, err_oom,
+                               sizeof(err_oom) - 1, out);
+                return 1;
+            }
             d->watch_refs++; /* writes to this key now bump its version */
         }
         mt_reply_local(home, conn, st, seq, ok, sizeof(ok) - 1, out);
@@ -1446,7 +1874,10 @@ static int mt_txn_watch(worker *home, void *conn, mt_conn_state *st,
         }
         t->kind = MT_TASK_WATCH;
         t->db_index = db_index;
+        t->watch_home_start = st->nwatch;
+        st->watch_pending++;
         mt_pending_inc(home, st);
+        t->pending_owned = 1;
         mt_push_task(home, &home->ms->workers[target].inbox[home->id], t,
                      &home->ms->workers[target]);
         return 1;
@@ -1489,6 +1920,10 @@ static int mt_txn_exec(worker *home, void *conn, mt_conn_state *st,
             break;
         }
         c = cmd_resolve(v.items[0].str, v.items[0].len);
+        if (mt_is_aggregate(c)) {
+            bad = 1;
+            break;
+        }
         tg = mt_classify(home->ms->nworkers, c, v.items, v.count);
         if (tg == MT_BLOCKED || tg == MT_PASS || tg == MT_CROSSSLOT) {
             bad = 1;
@@ -1552,6 +1987,7 @@ static int mt_txn_exec(worker *home, void *conn, mt_conn_state *st,
         return 1;
     }
     mt_pending_inc(home, st);
+    t->pending_owned = 1;
     mt_push_task(home, &home->ms->workers[target].inbox[home->id], t,
                  &home->ms->workers[target]);
     return 1;
@@ -1560,7 +1996,7 @@ static int mt_txn_exec(worker *home, void *conn, mt_conn_state *st,
 static int mt_route_txn(worker *home, void *conn, mt_conn_state *st,
                         const resp_value *argv, size_t argc, const char *raw,
                         size_t rawlen, uint16_t cmd, int db_index,
-                        resp_buf *out)
+                        uint64_t seq, resp_buf *out)
 {
     static const char queued[] = "+QUEUED\r\n";
     static const char ok[] = "+OK\r\n";
@@ -1568,8 +2004,34 @@ static int mt_route_txn(worker *home, void *conn, mt_conn_state *st,
     static const char err_no_exec[] = "-ERR EXEC without MULTI\r\n";
     static const char err_no_discard[] = "-ERR DISCARD without MULTI\r\n";
     static const char err_oom[] = "-ERR out of memory\r\n";
-    uint64_t seq = st->seq_next++;
 
+    if (st->watch_pending != 0) {
+        mt_deferred_cmd *d = (mt_deferred_cmd *)calloc(1, sizeof(*d));
+        if (d == NULL) {
+            mt_reply_local(home, conn, st, seq, err_oom,
+                           sizeof(err_oom) - 1, out);
+            return 1;
+        }
+        d->raw = (char *)malloc(rawlen);
+        if (d->raw == NULL) {
+            free(d);
+            mt_reply_local(home, conn, st, seq, err_oom,
+                           sizeof(err_oom) - 1, out);
+            return 1;
+        }
+        memcpy(d->raw, raw, rawlen);
+        d->rawlen = rawlen;
+        d->db_index = db_index;
+        d->cmd = cmd;
+        d->seq = seq;
+        d->authed = 1;
+        if (st->deferred_tail != NULL)
+            st->deferred_tail->next = d;
+        else
+            st->deferred_head = d;
+        st->deferred_tail = d;
+        return 1;
+    }
     switch (cmd) {
     case CMD_MULTI:
         if (st->in_multi) {
@@ -1619,6 +2081,47 @@ static int mt_route_txn(worker *home, void *conn, mt_conn_state *st,
     return 1;
 }
 
+static void mt_replay_deferred(worker *home, void *conn, mt_conn_state *st)
+{
+    while (st->watch_pending == 0 && st->deferred_head != NULL &&
+           !st->closing) {
+        mt_deferred_cmd *d = st->deferred_head;
+        resp_value v;
+        arena ar;
+        resp_buf out;
+        session sess;
+        ptrdiff_t used;
+        st->deferred_head = d->next;
+        if (st->deferred_head == NULL)
+            st->deferred_tail = NULL;
+        arena_init(&ar, 1024);
+        resp_buf_init(&out);
+        st->replaying_deferred = 1;
+        used = resp_parse(d->raw, d->rawlen, &v, &ar);
+        if (used == (ptrdiff_t)d->rawlen && v.type == RESP_ARRAY) {
+            uint64_t saved_next = st->seq_next;
+            memset(&sess, 0, sizeof(sess));
+            sess.authed = d->authed;
+            sess.db_index = d->db_index;
+            st->seq_next = d->seq;
+            (void)mt_route(home, conn, &sess, v.items, v.count, d->raw,
+                           d->rawlen, &out);
+            mt_batch_flush(home, conn, st);
+            st->seq_next = saved_next;
+        }
+        else
+            mt_reply_local(home, conn, st, d->seq, "-ERR Protocol error\r\n",
+                           20, &out);
+        st->replaying_deferred = 0;
+        if (out.len != 0)
+            (void)server_conn_out_append(home->srv, conn, out.data, out.len);
+        resp_buf_free(&out);
+        arena_destroy(&ar);
+        free(d->raw);
+        free(d);
+    }
+}
+
 /* ------------------------------------------------------------------ */
 /* pub/sub routing (channel owner = hash_slot(channel) % nworkers)      */
 /* ------------------------------------------------------------------ */
@@ -1647,6 +2150,7 @@ static void mt_pubsub_register(worker *home, void *conn, mt_conn_state *st,
     }
     t->kind = MT_TASK_SUB;
     mt_pending_inc(home, st);
+    t->pending_owned = 1;
     mt_push_task(home, &home->ms->workers[owner].inbox[home->id], t,
                  &home->ms->workers[owner]);
 }
@@ -1782,6 +2286,7 @@ static void mt_publish_execute(worker *owner_w, mt_task *t)
             continue;
         }
         d->kind = MT_TASK_PUSH;
+        d->pending_owned = 1;
         resp_write_array_header(&d->reply, 3);
         resp_write_bulk(&d->reply, "message", 7);
         resp_write_bulk(&d->reply, v.items[1].str, v.items[1].len);
@@ -1827,6 +2332,7 @@ static int mt_route_publish(worker *home, void *conn, mt_conn_state *st,
         return 1;
     }
     mt_pending_inc(home, st);
+    t->pending_owned = 1;
     mt_push_task(home, &home->ms->workers[owner].inbox[home->id], t,
                  &home->ms->workers[owner]);
     return 1;
@@ -1881,10 +2387,12 @@ static int mt_route(void *ctx, void *conn, session *sess,
     }
 
     if (cmd == CMD_MULTI || cmd == CMD_EXEC || cmd == CMD_DISCARD ||
-        cmd == CMD_WATCH || cmd == CMD_UNWATCH || st->in_multi) {
+        cmd == CMD_WATCH || cmd == CMD_UNWATCH || st->in_multi ||
+        st->watch_pending != 0 || (st->deferred_head != NULL &&
+                                   !st->replaying_deferred)) {
         mt_batch_flush(home, conn, st);
         return mt_route_txn(home, conn, st, argv, argc, raw, rawlen, cmd,
-                            sess->db_index, out);
+                            sess->db_index, st->seq_next++, out);
     }
 
     if (cmd == CMD_SUBSCRIBE || cmd == CMD_UNSUBSCRIBE ||
@@ -1926,6 +2434,7 @@ static int mt_route(void *ctx, void *conn, session *sess,
          * flight, so the conn cannot move between completion ports safely;
          * plain task routing still applies. */
         if (server_backend(home->srv) != SERVER_BACKEND_IOCP &&
+            server_backend(home->srv) != SERVER_BACKEND_IOURING_OP &&
             !st->migrated && st->pending == 0 && st->reorder == NULL &&
             st->batch_n == 0 && !st->in_multi && st->nwatch == 0 &&
             st->subs == NULL && !st->closing) {
@@ -2039,17 +2548,18 @@ static void mt_kick(worker *w)
  * CPU. During shutdown (self->running cleared by mt_server_stop) the
  * target may never drain: drop the task -- in-flight replies are moot
  * when the process is exiting, and spinning here would hang the stop
- * path's thread joins, leaving the process up but permanently mute. */
-static void mt_push_task(worker *self, mt_spsc *q, mt_task *t,
-                         worker *target)
+ * path's thread joins, leaving the process up but permanently mute. The
+ * function consumes and frees t when it returns failure. */
+static int mt_push_task(worker *self, mt_spsc *q, mt_task *t,
+                        worker *target)
 {
     int spins = 0;
     int pr = mt_spsc_push(q, t);
     while (pr < 0) {
         if (self != NULL) {
             if (!self->running) {
-                mt_task_free(t);
-                return;
+                mt_task_drop_after_push_failure(self, t);
+                return -1;
             }
             mt_drain_completions(self);
             mt_drain_inbox(self);
@@ -2065,6 +2575,7 @@ static void mt_push_task(worker *self, mt_spsc *q, mt_task *t,
     }
     if (pr == 1)
         mt_kick(target);
+    return 0;
 }
 
 static void mt_exec_task(worker *w, mt_task *t)
@@ -2075,6 +2586,24 @@ static void mt_exec_task(worker *w, mt_task *t)
         db *d = server_db_at(w->srv, t->db_index);
         if (d->watch_refs > 0)
             d->watch_refs--;
+        mt_task_free(t);
+        return;
+    }
+    if (t->kind == MT_TASK_WATCH_CLEANUP) {
+        resp_value v;
+        ptrdiff_t used;
+        size_t i;
+        arena_reset(&w->exec_arena);
+        used = resp_parse(t->cmds[0].raw, t->cmds[0].len, &v,
+                          &w->exec_arena);
+        if (used == (ptrdiff_t)t->cmds[0].len && v.type == RESP_ARRAY) {
+            for (i = t->watch_cleanup_first + 1;
+                 i < v.count && i - 1 < t->nwatch_out; i++) {
+                db *d = server_db_at(w->srv, t->db_index);
+                if (v.items[i].str != NULL && d->watch_refs > 0)
+                    d->watch_refs--;
+            }
+        }
         mt_task_free(t);
         return;
     }
@@ -2100,6 +2629,15 @@ static void mt_exec_task(worker *w, mt_task *t)
         /* register (conn, channel) and report back (round trip so
          * the subscriber conn stays alive until registered) */
         mt_sub_entry *e = (mt_sub_entry *)calloc(1, sizeof(*e));
+        worker *home = t->home;
+        void *conn = t->conn;
+        mt_conn_state *st = (mt_conn_state *)server_conn_mt_state(conn);
+        if (st == NULL || st->closing) {
+            mt_task_free(t);
+            if (st != NULL)
+                mt_pending_dec(home, conn, st);
+            return;
+        }
         if (e != NULL) {
             e->ch = (char *)malloc(t->cmds[0].len);
             if (e->ch != NULL) {
@@ -2141,9 +2679,12 @@ static void mt_exec_task(worker *w, mt_task *t)
                 d->watch_refs += (uint64_t)t->nwatch_out;
             } else {
                 t->nwatch_out = 0;
+                t->watch_failed = 1;
+                resp_write_error(&t->reply, "ERR out of memory", 18);
             }
         }
-        resp_write_simple_string(&t->reply, "OK", 2);
+        if (!t->watch_failed)
+            resp_write_simple_string(&t->reply, "OK", 2);
     } else if (t->kind == MT_TASK_EXEC) {
         mt_exec_on_db(w->srv, t, &w->exec_arena);
     } else {
@@ -2189,7 +2730,16 @@ static void mt_exec_task(worker *w, mt_task *t)
         }
     }
     w->tasks_executed++;
-    mt_push_task(w, &t->home->completions[w->id], t, t->home);
+    pal_mutex_lock(&t->home->ms->abandoned_agg_mu);
+    if (t->home->ms->fail_completion_pushes > 0 &&
+        w->id == t->home->ms->fail_completion_worker) {
+        t->home->ms->fail_completion_pushes--;
+        pal_mutex_unlock(&t->home->ms->abandoned_agg_mu);
+        mt_task_drop_after_push_failure(w, t);
+    } else {
+        pal_mutex_unlock(&t->home->ms->abandoned_agg_mu);
+        (void)mt_push_task(w, &t->home->completions[w->id], t, t->home);
+    }
 }
 
 /* Max items popped per ring per drain call: unbounded drains can livelock
@@ -2200,6 +2750,7 @@ static void mt_exec_task(worker *w, mt_task *t)
 static void mt_drain_inbox(worker *w)
 {
     int pi;
+    mt_watch_release_pending(w);
     for (pi = 0; pi < w->ms->nworkers; pi++) {
         int n = 0;
         while (n < MT_DRAIN_MAX) {
@@ -2240,6 +2791,7 @@ static void mt_drain_completions(worker *w)
     } while (0)
 
     w->drain_epoch++;
+    mt_drain_failed_tasks(w);
     for (pi = 0; pi < w->ms->nworkers; pi++) {
         int n = 0;
         while (n < MT_DRAIN_MAX) {
@@ -2267,8 +2819,7 @@ static void mt_drain_completions(worker *w)
                                   mt_conn_sub_find(st, t->cmds[0].raw,
                                                    t->cmds[0].len) != NULL;
                     if (deliver) {
-                        server_conn_out_append(w->srv, conn, t->reply.data,
-                                               t->reply.len);
+    (void)server_conn_out_append(w->srv, conn, t->reply.data, t->reply.len);
                         mt_mark_flush(conn, st);
                     }
                     mt_pending_dec(w, conn, st);
@@ -2281,13 +2832,13 @@ static void mt_drain_completions(worker *w)
                 mt_agg *agg = t->agg;
                 mt_agg_accumulate(agg, &t->reply);
                 mt_task_free(t);
-                agg->pending--;
-                if (agg->pending == 0) {
-                    if (st != NULL)
+                if (mt_agg_drop_part(agg) && !agg->finished) {
+            if (agg->abandoned) {
+                mt_agg_free(agg);
+                    } else if (st != NULL) {
                         mt_agg_finish(w->srv, conn, st, agg);
-                    else {
-                        free(agg->stats);
-                        free(agg);
+                    } else {
+                        mt_agg_free(agg);
                     }
                 }
                 if (st != NULL)
@@ -2300,6 +2851,8 @@ static void mt_drain_completions(worker *w)
                     mt_drain_ready(w->srv, &w->exec_arena, conn, st, 0);
                 } else {
                     mt_drain_ready(w->srv, &w->exec_arena, conn, st, 1);
+                    if (st->watch_pending == 0 && st->deferred_head != NULL)
+                        mt_replay_deferred(w, conn, st);
                     mt_mark_flush(conn, st);
                 }
                 mt_pending_dec(w, conn, st);
@@ -2496,6 +3049,11 @@ mt_server *mt_server_create_ex(const char *host, uint16_t port, int nworkers,
     ms->tls_port = 0;
     ms->nworkers = nworkers;
     ms->worker_backend = worker_backend;
+    if (pal_mutex_init(&ms->abandoned_agg_mu) != 0) {
+        pal_close(ms->listen_fd);
+        free(ms);
+        return NULL;
+    }
     ms->workers = (worker *)calloc((size_t)nworkers, sizeof(worker));
     if (ms->workers == NULL) {
         pal_close(ms->listen_fd);
@@ -2599,6 +3157,39 @@ uint64_t mt_server_pool_hits(const mt_server *ms)
     return total;
 }
 
+void mt_server_fail_next_completion_pushes(mt_server *ms, int n)
+{
+    if (ms != NULL) {
+        pal_mutex_lock(&ms->abandoned_agg_mu);
+        ms->fail_completion_pushes = n > 0 ? n : 0;
+        ms->fail_completion_worker = ms->nworkers - 1;
+        ms->fail_completion_consumed = 0;
+        pal_mutex_unlock(&ms->abandoned_agg_mu);
+    }
+}
+
+int mt_server_completion_pushes_consumed(const mt_server *ms)
+{
+    int n;
+    if (ms == NULL)
+        return 0;
+    pal_mutex_lock((pal_mutex *)&ms->abandoned_agg_mu);
+    n = ms->fail_completion_consumed;
+    pal_mutex_unlock((pal_mutex *)&ms->abandoned_agg_mu);
+    return n;
+}
+
+int mt_server_abandoned_aggregate_count(const mt_server *ms)
+{
+    int n;
+    if (ms == NULL)
+        return 0;
+    pal_mutex_lock((pal_mutex *)&ms->abandoned_agg_mu);
+    n = (int)ms->nabandoned_aggs;
+    pal_mutex_unlock((pal_mutex *)&ms->abandoned_agg_mu);
+    return n;
+}
+
 int mt_server_enable_aof(mt_server *ms, const char *dir,
                          const char *appendfilename)
 {
@@ -2692,6 +3283,7 @@ void mt_server_destroy(mt_server *ms)
     int i;
     if (ms == NULL)
         return;
+    ms->destroying = 1;
     pal_close(ms->listen_fd);
     if (ms->tls_listen_fd != PAL_SOCKET_INVALID)
         pal_close(ms->tls_listen_fd);
@@ -2700,22 +3292,55 @@ void mt_server_destroy(mt_server *ms)
      * time a later worker's drain runs */
     for (i = 0; i < ms->nworkers; i++)
         ms->workers[i].pool_off = 1;
+    /* Phase one: every connection state is freed while every worker DB and
+     * every task ring remains alive. This makes cross-worker WATCH cleanup
+     * independent of destruction order. */
+    for (i = 0; i < ms->nworkers; i++) {
+        mt_drain_failed_tasks(&ms->workers[i]);
+    }
+    for (i = 0; i < ms->nworkers; i++) {
+        if (ms->workers[i].srv != NULL &&
+            !server_is_proactor(ms->workers[i].srv)) {
+            server_free_connections(ms->workers[i].srv);
+        }
+    }
     for (i = 0; i < ms->nworkers; i++) {
         worker *w = &ms->workers[i];
         if (w->srv == NULL)
             continue;
+        mt_drain_failed_tasks(w);
         if (w->inbox != NULL) {
             int j;
             void *p;
             for (j = 0; j < ms->nworkers; j++) {
-                while ((p = mt_spsc_pop(&w->inbox[j])) != NULL)
-                    mt_task_free(p);
+        while ((p = mt_spsc_pop(&w->inbox[j])) != NULL)
+                {
+                    mt_task *t = (mt_task *)p;
+                    if (t->kind == MT_TASK_WATCH_CLEANUP)
+                        mt_watch_release_task_refs_direct(ms, t);
+                    if (t->agg != NULL) {
+                        mt_track_abandoned_agg(ms, t->agg);
+                    }
+                    mt_task_free(t);
+                }
                 mt_spsc_destroy(&w->inbox[j]);
                 while ((p = mt_spsc_pop(&w->completions[j])) != NULL)
-                    mt_task_free(p);
+                {
+                    mt_task *t = (mt_task *)p;
+                    if (t->kind == MT_TASK_WATCH ||
+                        t->kind == MT_TASK_WATCH_CLEANUP)
+                        mt_watch_release_task_refs_direct(ms, t);
+                    if (t->agg != NULL) {
+                        mt_track_abandoned_agg(ms, t->agg);
+                    }
+                    mt_task_free(t);
+                }
                 mt_spsc_destroy(&w->completions[j]);
                 while ((p = mt_spsc_pop(&w->migrate[j])) != NULL)
-                    mt_task_free(p);
+                {
+                    mt_task *t = (mt_task *)p;
+                    mt_task_free(t);
+                }
                 mt_spsc_destroy(&w->migrate[j]);
             }
             free(w->inbox);
@@ -2724,23 +3349,31 @@ void mt_server_destroy(mt_server *ms)
         }
         {
             void *p;
-            size_t zi;
             while ((p = mt_spsc_pop(&w->accepts)) != NULL)
                 pal_close((pal_socket_t)(uintptr_t)p);
             mt_spsc_destroy(&w->accepts);
             while ((p = mt_spsc_pop(&w->accepts_tls)) != NULL)
                 pal_close((pal_socket_t)(uintptr_t)p);
             mt_spsc_destroy(&w->accepts_tls);
-            /* conns that were still draining at shutdown */
-            for (zi = 0; zi < w->nzombies; zi++)
-                server_conn_free_now(w->srv, w->zombies[zi]);
+            /* Worker zombies are only a non-owning pending-work index. The
+             * server owns final connection destruction, especially for
+             * proactor operations that can still reference conn buffers. */
+            while (w->nzombies > 0) {
+                void *zombie = w->zombies[--w->nzombies];
+                server_conn_free_now(w->srv, zombie);
+            }
             free(w->zombies);
+            w->zombies = NULL;
+            w->zombie_cap = 0;
             free(w->flush_list);
         }
+        mt_watch_release_pending(w);
+        mt_worker_subs_free(w);
         pal_mutex_destroy(&w->pending_mu);
         pal_wakeup_destroy(&w->wakeup);
         arena_destroy(&w->exec_arena);
         server_destroy(w->srv);
+        w->srv = NULL;
         /* drain the task pool: recycled tasks still own their reply bufs */
         {
             mt_task *tp;
@@ -2758,6 +3391,10 @@ void mt_server_destroy(mt_server *ms)
         }
         pal_mutex_destroy(&w->task_pool_mu);
     }
+    while (ms->nabandoned_aggs > 0)
+        mt_agg_free(ms->abandoned_aggs[ms->nabandoned_aggs - 1]);
+    free(ms->abandoned_aggs);
+    pal_mutex_destroy(&ms->abandoned_agg_mu);
     free(ms->workers);
     free(ms);
 }

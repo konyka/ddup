@@ -3,6 +3,7 @@
 #include <string.h>
 
 #include "core/session.h"
+#include "server/server.h"
 #include "test.h"
 
 /* ------------------------------------------------------------------ */
@@ -43,7 +44,7 @@ static test_chan *chan_find(test_registry *r, const char *ch, size_t len,
     }
 }
 
-static size_t t_subscribe(void *ctx, session *s, const char *ch, size_t len)
+static ptrdiff_t t_subscribe(void *ctx, session *s, const char *ch, size_t len)
 {
     test_registry *r = (test_registry *)ctx;
     test_chan *c = chan_find(r, ch, len, 1);
@@ -54,6 +55,16 @@ static size_t t_subscribe(void *ctx, session *s, const char *ch, size_t len)
     DD_CHECK(c->nsubs < MAX_SESS);
     c->subs[c->nsubs++] = s;
     return ++s->nsub;
+}
+
+static ptrdiff_t t_reject_subscribe(void *ctx, session *s, const char *ch,
+                                    size_t len)
+{
+    (void)ctx;
+    (void)s;
+    (void)ch;
+    (void)len;
+    return -1;
 }
 
 static size_t t_unsubscribe(void *ctx, session *s, const char *ch, size_t len)
@@ -252,9 +263,29 @@ static void test_subscribed_mode_restriction(void)
     db_destroy(&d);
 }
 
+static void test_server_registry_rejection_is_transactional(void)
+{
+    db d;
+    session *s;
+    resp_buf out;
+
+    DD_CHECK_EQ_INT(0, server_test_pubsub_rejected_subscribe());
+    db_init(&d);
+    resp_buf_init(&out);
+    s = session_create(&d);
+    s->subscribe = t_reject_subscribe;
+    exec_sess(s, T0, &out, 2, "SUBSCRIBE", "rejected");
+    EXPECT(out, "-ERR key or value length is not representable\r\n");
+    DD_CHECK_EQ_INT(0, s->nsub);
+    session_free(s);
+    resp_buf_free(&out);
+    db_destroy(&d);
+}
+
 int main(void)
 {
     DD_RUN(test_subscribe_publish);
     DD_RUN(test_subscribed_mode_restriction);
+    DD_RUN(test_server_registry_rejection_is_transactional);
     return DD_TEST_SUMMARY();
 }

@@ -330,6 +330,26 @@ static void test_readiness_complete_at_limit(void)
     server_destroy(s);
 }
 
+static void test_proactor_destroy_with_open_connection(void)
+{
+    server *s;
+    pal_socket_t c;
+    int i;
+    if (g_backend != SERVER_BACKEND_IOCP &&
+        g_backend != SERVER_BACKEND_IOURING_OP)
+        return;
+    s = make_server();
+    DD_CHECK(s != NULL);
+    if (s == NULL)
+        return;
+    c = connect_client(s);
+    (void)pal_send(c, "*1\r\n$4\r\nPING\r\n", 14);
+    for (i = 0; i < 4; i++)
+        (void)server_run_once(s, 1);
+    pal_close(c);
+    server_destroy(s);
+}
+
 static void test_pubsub_over_socket(void)
 {
     server *s = make_server();
@@ -685,6 +705,7 @@ static void run_all_tests(void)
     DD_RUN(test_request_limit_fragmentation);
     DD_RUN(test_iouring_multishot_complete_at_limit);
     DD_RUN(test_readiness_complete_at_limit);
+    DD_RUN(test_proactor_destroy_with_open_connection);
     DD_RUN(test_pubsub_over_socket);
     DD_RUN(test_auth_over_socket);
     DD_RUN(test_shutdown_command);

@@ -37,6 +37,9 @@ uint16_t server_port(const server *s);
 
 /* SERVER_BACKEND_* this server runs on (after fallback resolution). */
 int server_backend(const server *s);
+/* Non-zero when the selected backend owns in-flight operations outside the
+ * readiness loop (IOCP or io_uring op mode). */
+int server_is_proactor(const server *s);
 
 /* Start a TLS listener alongside the plain one (port 0 = ephemeral).
  * Returns 0 on success; -1 when TLS is unavailable (stub build) or the
@@ -148,6 +151,8 @@ void server_set_mt_close(server *s, server_mt_close_fn fn);
 void *server_conn_mt_state(void *conn);
 void server_conn_set_mt_state(void *conn, void *st);
 void server_conn_free_now(server *s, void *conn);
+/* Free all connections while the server and its callbacks remain usable. */
+void server_free_connections(server *s);
 /* Connection migration (mt connection-key affinity): detach removes the
  * conn from this server's loop and connection table; rehome rewires the
  * session hook contexts to the new server; adopt registers the conn on
@@ -155,8 +160,8 @@ void server_conn_free_now(server *s, void *conn);
 int server_conn_detach(server *s, void *conn);
 void server_conn_rehome(server *s, void *conn);
 int server_conn_adopt(server *s, void *conn);
-void server_conn_out_append(server *s, void *conn, const char *data,
-                            size_t len);
+int server_conn_out_append(server *s, void *conn, const char *data,
+                           size_t len);
 int server_conn_flush(server *s, void *conn);
 
 /* Buffer-pool introspection (used by integration tests). */
@@ -180,6 +185,10 @@ int server_ndbs(const server *s);
 /* Always-on IO counters (Phase 27); pointer owned by the server, used by
  * the mt INFO __STATS__ stack session. */
 const io_counters *server_io_counters(server *s);
+
+/* Focused invariant seams used by length-integrity tests. */
+int server_test_pubsub_rejected_subscribe(void);
+int server_test_psync_continue_reserve_failure(void);
 
 /* Append a mutating command to the worker's AOF with the multi-db SELECT
  * prefix rule (no-op when AOF is off; used by the mt routed-task path). */

@@ -31,6 +31,11 @@ uint16_t mt_server_port(const mt_server *ms);
 uint64_t mt_server_tasks_executed(const mt_server *ms);
 /* pooled-task freelist hits across workers (Phase 31 observability) */
 uint64_t mt_server_pool_hits(const mt_server *ms);
+/* Test seam: force the next n executed-task completion pushes to fail. */
+void mt_server_fail_next_completion_pushes(mt_server *ms, int n);
+int mt_server_completion_pushes_consumed(const mt_server *ms);
+int mt_server_abandoned_aggregate_count(const mt_server *ms);
+
 
 /* Per-worker persistence: each worker owns
  * "<dir>/worker-<id>-<filename>". enable_aof replays the file when it

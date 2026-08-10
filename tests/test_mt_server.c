@@ -112,6 +112,33 @@ static size_t request_full(pal_socket_t c, const char *req, char *buf,
     return got;
 }
 
+static void pipeline_roundtrip(pal_socket_t c, const char *req,
+                               const char *expected)
+{
+    size_t rlen = strlen(req), elen = strlen(expected), sent = 0, got = 0;
+    char buf[2048];
+    uint64_t deadline = pal_now_ms() + 5000;
+    while (sent < rlen && pal_now_ms() < deadline) {
+        ptrdiff_t n = pal_send(c, req + sent, rlen - sent);
+        if (n > 0)
+            sent += (size_t)n;
+        else
+            pal_sleep_ms(1);
+    }
+    DD_CHECK_EQ_INT((long long)rlen, (long long)sent);
+    while (got < elen && pal_now_ms() < deadline) {
+        ptrdiff_t n = pal_recv(c, buf + got, sizeof(buf) - got);
+        if (n > 0)
+            got += (size_t)n;
+        else
+            pal_sleep_ms(1);
+    }
+    DD_CHECK_EQ_INT((long long)elen, (long long)got);
+    if (got != elen)
+        fprintf(stderr, "pipeline got(%zu): %.*s\n", got, (int)got, buf);
+    DD_CHECK_MEM(expected, elen, buf, got);
+}
+
 static void test_two_workers_shared_keyspace(void)
 {
     mt_server *ms;
@@ -454,6 +481,61 @@ static void test_info_aggregation(void)
     pal_socket_cleanup();
 }
 
+static void test_three_worker_aggregate_completion(void)
+{
+    mt_server *ms;
+    pal_socket_t a;
+    char key[32], req[160], buf[8192];
+    size_t got;
+    DD_CHECK_EQ_INT(0, pal_socket_init());
+    ms = mt_server_create("127.0.0.1", 0, 2);
+    DD_CHECK(ms != NULL);
+    DD_CHECK_EQ_INT(0, mt_server_start(ms));
+    a = connect_client(mt_server_port(ms));
+    pick_key_for_worker(0, 3, key, sizeof(key));
+    snprintf(req, sizeof(req), "*3\r\n$3\r\nSET\r\n$%zu\r\n%s\r\n$1\r\nx\r\n",
+             strlen(key), key);
+    roundtrip(a, req, "+OK\r\n");
+    got = request_full(a, "*1\r\n$6\r\nDBSIZE\r\n", buf, sizeof(buf));
+    DD_CHECK_EQ_INT(4, (long long)got);
+    DD_CHECK_MEM(":1\r\n", 4, buf, got);
+    got = request_full(a, "*1\r\n$4\r\nINFO\r\n", buf, sizeof(buf));
+    DD_CHECK(got > 0);
+    DD_CHECK(strstr(buf, "dbsize:1\r\n") != NULL);
+    pal_close(a);
+    mt_server_stop(ms);
+    mt_server_destroy(ms);
+    pal_socket_cleanup();
+}
+
+static void test_two_worker_aggregate_completion_push_failure(void)
+{
+    mt_server *ms;
+    pal_socket_t a;
+    char buf[256];
+    size_t got;
+    DD_CHECK_EQ_INT(0, pal_socket_init());
+    ms = mt_server_create("127.0.0.1", 0, 2);
+    DD_CHECK(ms != NULL);
+    DD_CHECK_EQ_INT(0, mt_server_start(ms));
+    a = connect_client(mt_server_port(ms));
+    mt_server_fail_next_completion_pushes(ms, 1);
+    got = request_full(a, "*1\r\n$6\r\nDBSIZE\r\n", buf, sizeof(buf));
+    DD_CHECK_EQ_INT(0, (long long)got);
+    {
+        uint64_t deadline = pal_now_ms() + 5000;
+        while (mt_server_completion_pushes_consumed(ms) < 1 &&
+               pal_now_ms() < deadline)
+            pal_sleep_ms(1);
+    }
+    DD_CHECK_EQ_INT(1, mt_server_completion_pushes_consumed(ms));
+    DD_CHECK_EQ_INT(0, mt_server_abandoned_aggregate_count(ms));
+    mt_server_stop(ms);
+    pal_close(a);
+    mt_server_destroy(ms);
+    pal_socket_cleanup();
+}
+
 static void test_aggregate_dbsize_and_flushdb(void)
 {
     mt_server *ms;
@@ -759,6 +841,131 @@ static void test_watch_routed_and_unwatch(void)
     pal_close(a);
     pal_close(b);
     mt_server_stop(ms);
+    mt_server_destroy(ms);
+    pal_socket_cleanup();
+}
+
+static void test_watch_pipeline_controls_are_ordered(void)
+{
+    mt_server *ms;
+    pal_socket_t a;
+    char key[32], req[512];
+    DD_CHECK_EQ_INT(0, pal_socket_init());
+    pick_key_for_worker(1, 2, key, sizeof(key));
+    ms = mt_server_create("127.0.0.1", 0, 2);
+    DD_CHECK(ms != NULL);
+    DD_CHECK_EQ_INT(0, mt_server_start(ms));
+    a = connect_client(mt_server_port(ms));
+    snprintf(req, sizeof(req),
+             "*2\r\n$5\r\nWATCH\r\n$%zu\r\n%s\r\n"
+             "*1\r\n$5\r\nMULTI\r\n"
+             "*2\r\n$3\r\nGET\r\n$%zu\r\n%s\r\n"
+             "*1\r\n$4\r\nEXEC\r\n", strlen(key), key,
+             strlen(key), key);
+    pipeline_roundtrip(a, req, "+OK\r\n+OK\r\n+QUEUED\r\n*1\r\n$-1\r\n");
+    pal_close(a);
+    mt_server_stop(ms);
+    mt_server_destroy(ms);
+    pal_socket_cleanup();
+}
+
+static void test_watch_pipeline_remote_get_is_not_queued(void)
+{
+    mt_server *ms;
+    pal_socket_t a;
+    char key[32], req[256];
+    DD_CHECK_EQ_INT(0, pal_socket_init());
+    pick_key_for_worker(1, 2, key, sizeof(key));
+    ms = mt_server_create("127.0.0.1", 0, 2);
+    DD_CHECK(ms != NULL);
+    DD_CHECK_EQ_INT(0, mt_server_start(ms));
+    a = connect_client(mt_server_port(ms));
+    snprintf(req, sizeof(req), "*2\r\n$5\r\nWATCH\r\n$%zu\r\n%s\r\n"
+             "*2\r\n$3\r\nGET\r\n$%zu\r\n%s\r\n", strlen(key), key,
+             strlen(key), key);
+    pipeline_roundtrip(a, req, "+OK\r\n$-1\r\n");
+    pal_close(a);
+    mt_server_stop(ms);
+    mt_server_destroy(ms);
+    pal_socket_cleanup();
+}
+
+static void test_watch_pipeline_two_remote_gets_are_not_queued(void)
+{
+    mt_server *ms;
+    pal_socket_t a;
+    char key[32], req[384];
+    DD_CHECK_EQ_INT(0, pal_socket_init());
+    pick_key_for_worker(1, 2, key, sizeof(key));
+    ms = mt_server_create("127.0.0.1", 0, 2);
+    DD_CHECK(ms != NULL);
+    DD_CHECK_EQ_INT(0, mt_server_start(ms));
+    a = connect_client(mt_server_port(ms));
+    snprintf(req, sizeof(req), "*2\r\n$5\r\nWATCH\r\n$%zu\r\n%s\r\n"
+             "*2\r\n$3\r\nGET\r\n$%zu\r\n%s\r\n"
+             "*2\r\n$3\r\nGET\r\n$%zu\r\n%s\r\n", strlen(key), key,
+             strlen(key), key, strlen(key), key);
+    pipeline_roundtrip(a, req, "+OK\r\n$-1\r\n$-1\r\n");
+    pal_close(a);
+    mt_server_stop(ms);
+    mt_server_destroy(ms);
+    pal_socket_cleanup();
+}
+
+static void test_watch_pipeline_unwatch_is_ordered_and_disconnect_safe(void)
+{
+    mt_server *ms;
+    pal_socket_t a, b;
+    char key[32], req[256];
+    DD_CHECK_EQ_INT(0, pal_socket_init());
+    pick_key_for_worker(1, 2, key, sizeof(key));
+    ms = mt_server_create("127.0.0.1", 0, 2);
+    DD_CHECK(ms != NULL);
+    DD_CHECK_EQ_INT(0, mt_server_start(ms));
+    a = connect_client(mt_server_port(ms));
+    snprintf(req, sizeof(req), "*2\r\n$5\r\nWATCH\r\n$%zu\r\n%s\r\n"
+             "*1\r\n$7\r\nUNWATCH\r\n", strlen(key), key);
+    pipeline_roundtrip(a, req, "+OK\r\n+OK\r\n");
+    pal_close(a);
+
+    a = connect_client(mt_server_port(ms));
+    snprintf(req, sizeof(req), "*2\r\n$5\r\nWATCH\r\n$%zu\r\n%s\r\n",
+             strlen(key), key);
+    (void)pal_send(a, req, strlen(req));
+    pal_close(a);
+    pal_sleep_ms(100);
+    b = connect_client(mt_server_port(ms));
+    roundtrip(b, "*1\r\n$5\r\nMULTI\r\n", "+OK\r\n");
+    snprintf(req, sizeof(req), "*2\r\n$3\r\nGET\r\n$%zu\r\n%s\r\n",
+             strlen(key), key);
+    roundtrip(b, req, "+QUEUED\r\n");
+    roundtrip(b, "*1\r\n$4\r\nEXEC\r\n", "*1\r\n$-1\r\n");
+    pal_close(b);
+    mt_server_stop(ms);
+    mt_server_destroy(ms);
+    pal_socket_cleanup();
+}
+
+static void test_watch_shutdown_releases_remote_owner(void)
+{
+    mt_server *ms;
+    pal_socket_t a, home0;
+    char key[32], req[160];
+    DD_CHECK_EQ_INT(0, pal_socket_init());
+    pick_key_for_worker(1, 2, key, sizeof(key));
+    ms = mt_server_create("127.0.0.1", 0, 2);
+    DD_CHECK(ms != NULL);
+    DD_CHECK_EQ_INT(0, mt_server_start(ms));
+    /* Accept round-robin: consume home worker 0, then home worker 1. */
+    home0 = connect_client(mt_server_port(ms));
+    a = connect_client(mt_server_port(ms));
+    pick_key_for_worker(0, 2, key, sizeof(key));
+    snprintf(req, sizeof(req), "*2\r\n$5\r\nWATCH\r\n$%zu\r\n%s\r\n",
+             strlen(key), key);
+    roundtrip(a, req, "+OK\r\n");
+    mt_server_stop(ms);
+    pal_close(home0);
+    pal_close(a);
     mt_server_destroy(ms);
     pal_socket_cleanup();
 }
@@ -1219,6 +1426,48 @@ static void test_iocp_workers_basic(void)
     pal_socket_cleanup();
 }
 
+static void test_aggregate_shutdown_drops_queued_parts(void)
+{
+    int i;
+    DD_CHECK_EQ_INT(0, pal_socket_init());
+    for (i = 0; i < 8; i++) {
+        mt_server *ms = mt_server_create("127.0.0.1", 0, 2);
+        pal_socket_t c;
+        const char req[] = "*1\r\n$6\r\nDBSIZE\r\n";
+        DD_CHECK(ms != NULL);
+        if (ms == NULL)
+            continue;
+        DD_CHECK_EQ_INT(0, mt_server_start(ms));
+        c = connect_client(mt_server_port(ms));
+        (void)pal_send(c, req, sizeof(req) - 1);
+        mt_server_stop(ms);
+        pal_close(c);
+        mt_server_destroy(ms);
+    }
+    pal_socket_cleanup();
+}
+
+static void test_subscription_shutdown_drops_queued_registration(void)
+{
+    int i;
+    DD_CHECK_EQ_INT(0, pal_socket_init());
+    for (i = 0; i < 8; i++) {
+        mt_server *ms = mt_server_create("127.0.0.1", 0, 2);
+        pal_socket_t c;
+        const char req[] = "*2\r\n$9\r\nSUBSCRIBE\r\n$2\r\nch\r\n";
+        DD_CHECK(ms != NULL);
+        if (ms == NULL)
+            continue;
+        DD_CHECK_EQ_INT(0, mt_server_start(ms));
+        c = connect_client(mt_server_port(ms));
+        (void)pal_send(c, req, sizeof(req) - 1);
+        pal_close(c);
+        mt_server_stop(ms);
+        mt_server_destroy(ms);
+    }
+    pal_socket_cleanup();
+}
+
 static void test_many_connections_across_workers(void)
 {
     mt_server *ms;
@@ -1254,6 +1503,8 @@ int main(void)
     DD_RUN(test_smove_same_worker);
     DD_RUN(test_aggregate_dbsize_and_flushdb);
     DD_RUN(test_info_aggregation);
+    DD_RUN(test_three_worker_aggregate_completion);
+    DD_RUN(test_two_worker_aggregate_completion_push_failure);
     DD_RUN(test_tls_enable_failure_is_clean);
     DD_RUN(test_set_algebra_same_slot_routing);
     DD_RUN(test_multi_exec_routed);
@@ -1261,6 +1512,11 @@ int main(void)
     DD_RUN(test_discard);
     DD_RUN(test_watch_aborts_exec_on_change);
     DD_RUN(test_watch_routed_and_unwatch);
+    DD_RUN(test_watch_pipeline_controls_are_ordered);
+    DD_RUN(test_watch_pipeline_remote_get_is_not_queued);
+    DD_RUN(test_watch_pipeline_two_remote_gets_are_not_queued);
+    DD_RUN(test_watch_pipeline_unwatch_is_ordered_and_disconnect_safe);
+    DD_RUN(test_watch_shutdown_releases_remote_owner);
     DD_RUN(test_aof_persistence_mt);
     DD_RUN(test_snapshot_mt);
     DD_RUN(test_connection_migration_to_key_owner);
@@ -1268,5 +1524,7 @@ int main(void)
     DD_RUN(test_same_target_pipeline_merges_into_one_task);
     DD_RUN(test_many_connections_across_workers);
     DD_RUN(test_iocp_workers_basic);
+    DD_RUN(test_aggregate_shutdown_drops_queued_parts);
+    DD_RUN(test_subscription_shutdown_drops_queued_registration);
     return DD_TEST_SUMMARY();
 }
