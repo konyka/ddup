@@ -38,7 +38,10 @@
    复制快照接收默认上限同为 1 GiB（`repl-max-snapshot-bytes`）；两者在
    缓冲扩容或快照分配前检查，避免不受控的资源消耗。
 5. **主存哈希表**：Robin Hood 开放寻址 + 增量 rehash，缓存友好。
-6. **C 标准自适应**：构建期探测 C23→C17→C11→C99，取最高可用标准；
+6. **快照完整性**：哈希表插入在分配前拒绝不能存入 `uint32_t` 或会导致
+   `size_t` 溢出的长度；快照序列化对所有编码长度和追加操作做检查，失败时
+   回滚输出缓冲区，原子保存不会创建临时文件或替换已有快照。
+7. **C 标准自适应**：构建期探测 C23→C17→C11→C99，取最高可用标准；
    原子操作优先 C11 `<stdatomic.h>`，缺失时降级平台原生 API。
 
 ### C 标准能力矩阵（Phase 8）
@@ -136,10 +139,16 @@
   conn->out，保证流水线回复顺序与请求一致。队列全部为**按生产者拆分
   的无锁 SPSC 环**（C11 acquire/release 原子操作；强制 C99 构建降级为
   互斥环），仅在队列由空变非空时 kick wakeup。
-- **生命周期**：conn 的 pending/closing 由 home worker 的 `pending_mu`
+ - **生命周期**：conn 的 pending/closing 由 home worker 的 `pending_mu`
   保护（跨线程投递可安全 test-and-increment）；连接关闭时有未决工作
   则成为 zombie（摘出事件循环、关 fd，保留 conn/session/mt_state），
-  最后一项工作回收时由 mt 层释放（per-worker zombie 清单兜底）。
+   最后一项工作回收时由 mt 层释放（per-worker zombie 清单兜底）。
+ - **io_uring provided buffers**：pbuf storage is page-aligned and sized for
+   the ring header plus every descriptor. Registration is published only after
+   initialization. Before teardown, the PAL submits a raw cancel-all request
+   and waits for its CQE, then unregisters with a zeroed `io_uring_buf_reg`
+   containing only `bgid`; pbuf storage is released only after successful
+   unregister. The owner stops and joins all PAL users before freeing a ring.
 - **任务对象池（Phase 31）**：单命令路由任务的对象经 home worker 的
   自由列表回收复用（互斥锁保护；跨线程回收仅限 UNWATCH/UNSUB 等
   少数路径），命令字节两级内联（conn 态 batch_inline 暂存 + 任务态
