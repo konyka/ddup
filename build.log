@@ -30,7 +30,7 @@
 -- Performing Test CMAKE_HAVE_LIBC_PTHREAD - Success
 -- Found Threads: TRUE
 -- ddup: TLS enabled (OpenSSL 3.0.13)
--- Configuring done (9.7s)
+-- Configuring done (10.0s)
 -- Generating done (0.1s)
 -- Build files have been written to: /home/runner/work/ddup/ddup/build
 [  1%] Building C object CMakeFiles/ddup_lua.dir/deps/lua/lapi.c.o
@@ -92,6 +92,16 @@
 [ 30%] Building C object CMakeFiles/ddup_core.dir/src/resp/resp_parser.c.o
 [ 30%] Building C object CMakeFiles/ddup_core.dir/src/resp/resp_writer.c.o
 [ 31%] Building C object CMakeFiles/ddup_core.dir/src/server/server.c.o
+/home/runner/work/ddup/ddup/src/server/server.c: In function ‘conn_create’:
+/home/runner/work/ddup/ddup/src/server/server.c:779:24: warning: assignment to ‘ptrdiff_t (*)(void *, struct session *, const char *, size_t)’ {aka ‘long int (*)(void *, struct session *, const char *, long unsigned int)’} from incompatible pointer type ‘size_t (*)(void *, session *, const char *, size_t)’ {aka ‘long unsigned int (*)(void *, session *, const char *, long unsigned int)’} [-Wincompatible-pointer-types]
+  779 |     c->sess->subscribe = srv_subscribe;
+      |                        ^
+/home/runner/work/ddup/ddup/src/server/server.c:783:25: warning: assignment to ‘ptrdiff_t (*)(void *, struct session *, const char *, size_t)’ {aka ‘long int (*)(void *, struct session *, const char *, long unsigned int)’} from incompatible pointer type ‘size_t (*)(void *, session *, const char *, size_t)’ {aka ‘long unsigned int (*)(void *, session *, const char *, long unsigned int)’} [-Wincompatible-pointer-types]
+  783 |     c->sess->ssubscribe = srv_ssubscribe;
+      |                         ^
+/home/runner/work/ddup/ddup/src/server/server.c:800:25: warning: assignment to ‘int (*)(void *, struct session *, const char *, size_t,  long long int)’ {aka ‘int (*)(void *, struct session *, const char *, long unsigned int,  long long int)’} from incompatible pointer type ‘void (*)(void *, session *, const char *, size_t,  long long int)’ {aka ‘void (*)(void *, session *, const char *, long unsigned int,  long long int)’} [-Wincompatible-pointer-types]
+  800 |     c->sess->psync_hook = srv_psync;
+      |                         ^
 [ 31%] Building C object CMakeFiles/ddup_core.dir/src/server/mt_server.c.o
 [ 32%] Building C object CMakeFiles/ddup_core.dir/src/server/aof.c.o
 [ 33%] Building C object CMakeFiles/ddup_core.dir/src/server/repl.c.o
@@ -193,6 +203,10 @@
 [ 68%] Linking C executable test_multi
 [ 68%] Built target test_multi
 [ 68%] Building C object CMakeFiles/test_pubsub.dir/tests/test_pubsub.c.o
+/home/runner/work/ddup/ddup/tests/test_pubsub.c: In function ‘hooked_session’:
+/home/runner/work/ddup/ddup/tests/test_pubsub.c:123:18: warning: assignment to ‘ptrdiff_t (*)(void *, struct session *, const char *, size_t)’ {aka ‘long int (*)(void *, struct session *, const char *, long unsigned int)’} from incompatible pointer type ‘size_t (*)(void *, session *, const char *, size_t)’ {aka ‘long unsigned int (*)(void *, session *, const char *, long unsigned int)’} [-Wincompatible-pointer-types]
+  123 |     s->subscribe = t_subscribe;
+      |                  ^
 [ 69%] Linking C executable test_pubsub
 [ 69%] Built target test_pubsub
 [ 69%] Building C object CMakeFiles/test_pubsub_shard.dir/tests/test_pubsub_shard.c.o
@@ -337,7 +351,7 @@ Get:17 http://azure.archive.ubuntu.com/ubuntu noble/main amd64 libsource-highlig
 Get:18 http://azure.archive.ubuntu.com/ubuntu noble-updates/main amd64 gdb amd64 15.1-1ubuntu1~24.04.1 [4083 kB]
 Get:19 http://azure.archive.ubuntu.com/ubuntu noble-updates/main amd64 libc6-dbg amd64 2.39-0ubuntu8.8 [7461 kB]
 Preconfiguring packages ...
-Fetched 26.7 MB in 0s (65.2 MB/s)
+Fetched 26.7 MB in 4s (7418 kB/s)
 (Reading database ... (Reading database ... 5%(Reading database ... 10%(Reading database ... 15%(Reading database ... 20%(Reading database ... 25%(Reading database ... 30%(Reading database ... 35%(Reading database ... 40%(Reading database ... 45%(Reading database ... 50%(Reading database ... 55%(Reading database ... 60%(Reading database ... 65%(Reading database ... 70%(Reading database ... 75%(Reading database ... 80%(Reading database ... 85%(Reading database ... 90%(Reading database ... 95%(Reading database ... 100%(Reading database ... 202954 files and directories currently installed.)
 Preparing to unpack .../libc6-dev_2.39-0ubuntu8.8_amd64.deb ...
 Unpacking libc6-dev:amd64 (2.39-0ubuntu8.8) over (2.39-0ubuntu8.7) ...
@@ -435,6 +449,6 @@ Service restarts being deferred:
 No containers need to be restarted.
 
 User sessions running outdated binaries:
- runner @ user manager service: systemd[1114]
+ runner @ user manager service: systemd[1203]
 
 No VM guests are running outdated hypervisor (qemu) binaries on this host.
