@@ -12,6 +12,7 @@
 #if DDUP_OS_LINUX
 
 #include <errno.h>
+#include <limits.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
@@ -34,6 +35,18 @@
 #ifndef IORING_RECV_MULTISHOT
 #define IORING_RECV_MULTISHOT (1U << 1)
 #endif
+#ifndef IORING_UNREGISTER_PBUF_RING
+#define IORING_UNREGISTER_PBUF_RING 23
+#endif
+#ifndef IORING_OP_ASYNC_CANCEL
+#define IORING_OP_ASYNC_CANCEL 14
+#endif
+#ifndef IORING_ASYNC_CANCEL_ALL
+#define IORING_ASYNC_CANCEL_ALL (1U << 0)
+#endif
+#ifndef IORING_ASYNC_CANCEL_ANY
+#define IORING_ASYNC_CANCEL_ANY (1U << 2)
+#endif
 /* CMake probes the complete registered-pbuf UAPI. Default off for builds
  * that compile this source outside the project configuration. */
 #ifndef DDUP_HAVE_IOURING_PBUF_UAPI
@@ -53,6 +66,14 @@
 
 #define UD_TAG_MASK 0x7ull /* low 3 bits carry the op kind */
 #define UD_TAG_TIMEOUT 0x5ull
+#define UD_TAG_CANCEL 0x6ull
+
+static struct io_uring_sqe *iou_reserve_sqe(pal_iouring *r,
+                                             unsigned *tail_out);
+static int iou_publish_sqe(pal_iouring *r, unsigned tail);
+static int iou_flush(pal_iouring *r);
+static int iou_cancel_all_locked(pal_iouring *r);
+static void iou_dispose_teardown_cqe(const struct io_uring_cqe *cqe);
 
 typedef struct iou_timeout {
     struct __kernel_timespec ts;
@@ -88,6 +109,7 @@ struct pal_iouring {
     size_t pbuf_size;
     iou_timeout *timeout_pool;
     iou_timeout *timeout_free;
+    int pbuf_registered;
     int test_fail_wake_once;
 };
 
@@ -194,19 +216,105 @@ pal_iouring *pal_iouring_create(void)
 
 void pal_iouring_free(pal_iouring *r)
 {
+    int keep_pbuf = 0;
     if (r == NULL)
         return;
-    /* closing the ring fd first: the kernel cancels every in-flight
-     * request synchronously on release, so no completion can touch
-     * caller buffers after this returns; then drop the mappings */
+    /* The owner must have stopped submitters/reapers before teardown. Keep
+     * this lock held while unregistering and closing so no local PAL caller
+     * can publish work against mappings being released. */
+    pal_mutex_lock(&r->lock);
+#if PAL_IOU_HAVE_PBUF
+    if (r->pbuf_registered) {
+        struct io_uring_buf_reg reg;
+        if (iou_cancel_all_locked(r) != 0) {
+            keep_pbuf = 1;
+        } else {
+            /* The unregister UAPI consumes only bgid. Passing registration
+             * fields here is rejected by newer kernels. */
+            memset(&reg, 0, sizeof(reg));
+            reg.bgid = 0;
+            if (syscall(__NR_io_uring_register, r->ring_fd,
+                        IORING_UNREGISTER_PBUF_RING, &reg, 1) != 0)
+                keep_pbuf = 1;
+            else
+                r->pbuf_registered = 0;
+        }
+    }
+#endif
+    /* The cancel completion is observed before the ring and its registered
+     * memory are released. This is required for multishot pbuf receives. */
     close(r->ring_fd);
     munmap(r->sqes, r->sq_entries * sizeof(struct io_uring_sqe));
     munmap(r->ring, r->ring_sz);
-    free(r->pbuf_ring);
-    free(r->pbuf_data);
+    if (!keep_pbuf) {
+        free(r->pbuf_ring);
+        free(r->pbuf_data);
+    }
     free(r->timeout_pool);
+    pal_mutex_unlock(&r->lock);
     pal_mutex_destroy(&r->lock);
     free(r);
+}
+
+/* Cancel every request currently owned by the ring and wait for the cancel
+ * request's CQE. The kernel posts that CQE only after the targeted requests
+ * have been quiesced, so registered pbuf memory is no longer referenced. */
+static int iou_cancel_all_locked(pal_iouring *r)
+{
+    struct io_uring_sqe *sqe;
+    unsigned tail;
+    unsigned head;
+    int rc;
+    int seen = 0;
+    int cancel_res = 0;
+
+    sqe = iou_reserve_sqe(r, &tail);
+    if (sqe == NULL)
+        return -1;
+    sqe->opcode = IORING_OP_ASYNC_CANCEL;
+    sqe->addr = 0;
+    sqe->cancel_flags = IORING_ASYNC_CANCEL_ANY | IORING_ASYNC_CANCEL_ALL;
+    sqe->user_data = UD_TAG_CANCEL;
+    (void)iou_publish_sqe(r, tail);
+    if (iou_flush(r) < 0)
+        return -1;
+
+    do {
+        do {
+            rc = iou_sys_enter(r->ring_fd, 0, seen ? 0 : 1,
+                               IORING_ENTER_GETEVENTS);
+        } while (rc < 0 && errno == EINTR);
+        if (rc < 0)
+            return -1;
+        head = __atomic_load_n(r->cq_head, __ATOMIC_RELAXED);
+        while (head != __atomic_load_n(r->cq_tail, __ATOMIC_ACQUIRE)) {
+            struct io_uring_cqe *cqe = &r->cqes[head & *r->cq_ring_mask];
+            if (cqe->user_data == UD_TAG_CANCEL) {
+                cancel_res = cqe->res;
+                seen = 1;
+            } else
+                iou_dispose_teardown_cqe(cqe);
+            head++;
+        }
+        __atomic_store_n(r->cq_head, head, __ATOMIC_RELEASE);
+    } while (!seen ||
+             (__atomic_load_n(r->sq_flags, __ATOMIC_ACQUIRE) &
+              IORING_SQ_CQ_OVERFLOW) != 0 ||
+             __atomic_load_n(r->cq_head, __ATOMIC_RELAXED) !=
+                 __atomic_load_n(r->cq_tail, __ATOMIC_ACQUIRE));
+    if (cancel_res < 0 && cancel_res != -ENOENT) {
+        errno = -cancel_res;
+        return -1;
+    }
+    return 0;
+}
+
+static void iou_dispose_teardown_cqe(const struct io_uring_cqe *cqe)
+{
+    unsigned long long ud = cqe->user_data;
+
+    if ((ud & UD_TAG_MASK) == PAL_IOURING_ACCEPT && cqe->res >= 0)
+        (void)close(cqe->res);
 }
 
 /* Submit all published normal-mode entries. Caller holds r->lock. */
@@ -412,56 +520,74 @@ int pal_iouring_enable_pbuf(pal_iouring *r, unsigned count, size_t size)
 #if PAL_IOU_HAVE_PBUF
     struct io_uring_buf_reg reg;
     void *ring_mem = NULL;
+    struct io_uring_buf_ring *ring;
+    char *data;
+    size_t ring_bytes;
+    size_t alloc_bytes;
     long page_size;
     unsigned i;
 
-    if (r->pbuf_ring != NULL)
+    pal_mutex_lock(&r->lock);
+    if (r->pbuf_ring != NULL) {
+        pal_mutex_unlock(&r->lock);
         return 0; /* already enabled */
-    if (count == 0 || (count & (count - 1)) != 0)
-        return -1; /* ring entries must be a power of two */
-    page_size = sysconf(_SC_PAGESIZE);
-    if (page_size <= 0 ||
-        posix_memalign(&ring_mem, (size_t)page_size,
-                       (size_t)count * sizeof(struct io_uring_buf)) != 0)
-        return -1;
-    memset(ring_mem, 0, (size_t)count * sizeof(struct io_uring_buf));
-    r->pbuf_ring = (struct io_uring_buf_ring *)ring_mem;
-    r->pbuf_data = (char *)malloc((size_t)count * size);
-    if (r->pbuf_ring == NULL || r->pbuf_data == NULL) {
-        free(r->pbuf_ring);
-        free(r->pbuf_data);
-        r->pbuf_ring = NULL;
-        r->pbuf_data = NULL;
-        return -1;
     }
-    r->pbuf_count = count;
-    r->pbuf_mask = count - 1;
-    r->pbuf_size = size;
-    /* the ring tail aliases bufs[0].resv (UAPI layout): slot array is
-     * fully usable, only the reserved halfword is shared */
+    if (size == 0 || size > UINT_MAX || count > UINT16_MAX)
+        goto invalid;
+    if (count == 0 || (count & (count - 1)) != 0)
+        goto invalid; /* ring entries must be a power of two */
+    if (size > SIZE_MAX / (size_t)count)
+        goto invalid;
+    {
+        volatile size_t count_size = (size_t)count;
+        if (count_size > SIZE_MAX / sizeof(struct io_uring_buf))
+            goto invalid;
+    }
+    page_size = sysconf(_SC_PAGESIZE);
+    if (page_size <= 0)
+        goto invalid;
+    ring_bytes = sizeof(struct io_uring_buf_ring) +
+                 (size_t)count * sizeof(struct io_uring_buf);
+    if (ring_bytes > SIZE_MAX - ((size_t)page_size - 1))
+        goto invalid;
+    alloc_bytes = (ring_bytes + (size_t)page_size - 1) /
+                  (size_t)page_size * (size_t)page_size;
+    if (posix_memalign(&ring_mem, (size_t)page_size, alloc_bytes) != 0)
+        goto invalid;
+    memset(ring_mem, 0, alloc_bytes);
+    ring = (struct io_uring_buf_ring *)ring_mem;
+    data = (char *)malloc((size_t)count * size);
+    if (data == NULL)
+        goto alloc_fail;
     for (i = 0; i < count; i++) {
-        struct io_uring_buf *b = &r->pbuf_ring->bufs[i];
-        b->addr = (unsigned long long)(uintptr_t)(r->pbuf_data +
-                                                  (size_t)i * size);
+        struct io_uring_buf *b = &ring->bufs[i];
+        b->addr = (unsigned long long)(uintptr_t)(data + (size_t)i * size);
         b->len = (unsigned int)size;
         b->bid = (unsigned short)i;
         b->resv = 0;
     }
     memset(&reg, 0, sizeof(reg));
-    reg.ring_addr = (unsigned long long)(uintptr_t)r->pbuf_ring;
+    reg.ring_addr = (unsigned long long)(uintptr_t)ring;
     reg.ring_entries = count;
     reg.bgid = 0;
-    __atomic_store_n(&r->pbuf_ring->tail, (unsigned short)count,
-                     __ATOMIC_RELEASE);
+    __atomic_store_n(&ring->tail, (unsigned short)count, __ATOMIC_RELEASE);
     if ((int)syscall(__NR_io_uring_register, r->ring_fd,
-                     IORING_REGISTER_PBUF_RING, &reg, 1) != 0) {
-        free(r->pbuf_ring);
-        free(r->pbuf_data);
-        r->pbuf_ring = NULL;
-        r->pbuf_data = NULL;
-        return -1; /* kernel too old: caller falls back to reposts */
-    }
+                     IORING_REGISTER_PBUF_RING, &reg, 1) != 0)
+        goto alloc_fail;
+    r->pbuf_ring = ring;
+    r->pbuf_data = data;
+    r->pbuf_count = count;
+    r->pbuf_mask = count - 1;
+    r->pbuf_size = size;
+    r->pbuf_registered = 1;
+    pal_mutex_unlock(&r->lock);
     return 0;
+alloc_fail:
+    free(data);
+    free(ring_mem);
+invalid:
+    pal_mutex_unlock(&r->lock);
+    return -1;
 #else
     (void)r; (void)count; (void)size;
     return -1; /* headers predate pbuf support */
@@ -470,7 +596,11 @@ int pal_iouring_enable_pbuf(pal_iouring *r, unsigned count, size_t size)
 
 int pal_iouring_pbuf_active(const pal_iouring *r)
 {
-    return r->pbuf_ring != NULL;
+    int active;
+    pal_mutex_lock((pal_mutex *)&r->lock);
+    active = r->pbuf_ring != NULL;
+    pal_mutex_unlock((pal_mutex *)&r->lock);
+    return active;
 }
 
 int pal_iouring_sqpoll_active(const pal_iouring *r)
@@ -491,9 +621,11 @@ int pal_iouring_recv_ms(pal_iouring *r, pal_socket_t fd, void *userdata)
     struct io_uring_sqe *sqe;
     unsigned tail;
     int rc;
-    if (r->pbuf_ring == NULL)
-        return -1;
     pal_mutex_lock(&r->lock);
+    if (r->pbuf_ring == NULL) {
+        pal_mutex_unlock(&r->lock);
+        return -1;
+    }
     sqe = iou_reserve_sqe(r, &tail);
     if (sqe == NULL) {
         pal_mutex_unlock(&r->lock);
@@ -519,18 +651,33 @@ int pal_iouring_recv_ms(pal_iouring *r, pal_socket_t fd, void *userdata)
 
 const void *pal_iouring_buf(const pal_iouring *r, int bid)
 {
-    if (r->pbuf_ring == NULL || bid < 0 || (unsigned)bid >= r->pbuf_count)
+    const void *buf;
+    pal_mutex_lock((pal_mutex *)&r->lock);
+    if (r->pbuf_ring == NULL || bid < 0 || (unsigned)bid >= r->pbuf_count) {
+        pal_mutex_unlock((pal_mutex *)&r->lock);
         return NULL;
-    return r->pbuf_data + (size_t)bid * r->pbuf_size;
+    }
+    buf = r->pbuf_data + (size_t)bid * r->pbuf_size;
+    pal_mutex_unlock((pal_mutex *)&r->lock);
+    return buf;
 }
 
 void pal_iouring_recycle(pal_iouring *r, int bid)
 {
 #if PAL_IOU_HAVE_PBUF
     /* single consumer (the reap thread): read tail, fill, release-store */
-    unsigned short tail = __atomic_load_n(&r->pbuf_ring->tail,
-                                          __ATOMIC_RELAXED);
-    struct io_uring_buf *b = &r->pbuf_ring->bufs[tail & r->pbuf_mask];
+    unsigned short tail;
+    struct io_uring_buf *b;
+    if (r->pbuf_ring == NULL || bid < 0 || (unsigned)bid >= r->pbuf_count)
+        return;
+    pal_mutex_lock(&r->lock);
+    if (r->pbuf_ring == NULL || (unsigned)bid >= r->pbuf_count) {
+        pal_mutex_unlock(&r->lock);
+        return;
+    }
+    tail = __atomic_load_n(&r->pbuf_ring->tail,
+                                           __ATOMIC_RELAXED);
+    b = &r->pbuf_ring->bufs[tail & r->pbuf_mask];
     b->addr = (unsigned long long)(uintptr_t)(r->pbuf_data +
                                                (size_t)bid * r->pbuf_size);
     b->len = (unsigned int)r->pbuf_size;
@@ -538,6 +685,7 @@ void pal_iouring_recycle(pal_iouring *r, int bid)
     /* bufs[0].resv aliases the shared ring tail; never write resv. */
     __atomic_store_n(&r->pbuf_ring->tail, (unsigned short)(tail + 1),
                      __ATOMIC_RELEASE);
+    pal_mutex_unlock(&r->lock);
 #else
     (void)r; (void)bid;
 #endif

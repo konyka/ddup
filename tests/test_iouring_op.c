@@ -1,5 +1,6 @@
 /* test_iouring_op.c - Linux io_uring proactor correctness coverage. */
 #include <errno.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <string.h>
 #include <unistd.h>
@@ -13,6 +14,39 @@
 #define PBUF_COUNT 1
 #define PBUF_SIZE 4096
 #define PBUF_ROUNDS 8
+#define PBUF_PAGE_BOUNDARY_COUNT 256
+
+static void test_pbuf_validation_and_recycle(void)
+{
+    pal_iouring *p = pal_iouring_create();
+
+    DD_CHECK(p != NULL);
+    if (p == NULL)
+        return;
+    DD_CHECK_EQ_INT(-1, pal_iouring_enable_pbuf(p, 65536, 4096));
+    DD_CHECK_EQ_INT(0, pal_iouring_pbuf_active(p));
+    DD_CHECK_EQ_INT(-1, pal_iouring_enable_pbuf(p, 2, (size_t)UINT32_MAX + 1));
+    DD_CHECK_EQ_INT(-1, pal_iouring_enable_pbuf(p, 2, SIZE_MAX));
+    pal_iouring_recycle(p, -1);
+    pal_iouring_recycle(p, 0);
+    pal_iouring_free(p);
+}
+
+static void test_pbuf_header_allocation(void)
+{
+    pal_iouring *p = pal_iouring_create();
+
+    DD_CHECK(p != NULL);
+    if (p == NULL)
+        return;
+    if (pal_iouring_enable_pbuf(p, PBUF_PAGE_BOUNDARY_COUNT, 1) != 0) {
+        printf("provided-buffer ring unsupported; skipping pbuf allocation\n");
+        pal_iouring_free(p);
+        return;
+    }
+    DD_CHECK_EQ_INT(1, pal_iouring_pbuf_active(p));
+    pal_iouring_free(p);
+}
 
 static void test_wakeup_publication(void)
 {
@@ -300,6 +334,52 @@ cleanup:
     pal_iouring_free(p);
 }
 
+static void test_pbuf_free_with_armed_recv(void)
+{
+    pal_iouring *p = pal_iouring_create();
+    pal_iouring_event ev;
+    pal_socket_t listener = PAL_SOCKET_INVALID;
+    pal_socket_t client = PAL_SOCKET_INVALID;
+    pal_socket_t server = PAL_SOCKET_INVALID;
+    uint16_t port = 0;
+    static long long tag;
+    int rc;
+
+    DD_CHECK(p != NULL);
+    if (p == NULL)
+        return;
+    if (pal_iouring_enable_pbuf(p, PBUF_COUNT, PBUF_SIZE) != 0) {
+        printf("provided-buffer ring unsupported; skipping armed pbuf free\n");
+        pal_iouring_free(p);
+        return;
+    }
+    listener = pal_iouring_listen(p, "127.0.0.1", 0, &port, NULL);
+    DD_CHECK(listener != PAL_SOCKET_INVALID);
+    if (listener == PAL_SOCKET_INVALID)
+        goto cleanup;
+    client = pal_tcp_connect("127.0.0.1", port);
+    DD_CHECK(client != PAL_SOCKET_INVALID);
+    if (client == PAL_SOCKET_INVALID)
+        goto cleanup;
+    rc = wait_for_accept(p, listener, &ev);
+    DD_CHECK_EQ_INT(1, rc);
+    if (rc != 1)
+        goto cleanup;
+    server = ev.fd;
+    DD_CHECK_EQ_INT(0, pal_iouring_recv_ms(p, server, &tag));
+    pal_iouring_free(p);
+    p = NULL;
+
+cleanup:
+    if (server != PAL_SOCKET_INVALID)
+        pal_close(server);
+    if (client != PAL_SOCKET_INVALID)
+        pal_close(client);
+    if (listener != PAL_SOCKET_INVALID)
+        pal_close(listener);
+    pal_iouring_free(p);
+}
+
 int main(void)
 {
     pal_iouring *probe;
@@ -319,6 +399,9 @@ int main(void)
     DD_RUN(test_timeout_operand_lifetime);
     DD_RUN(test_defer_taskrun_or_fallback);
     DD_RUN(test_multishot_provided_buffer);
+    DD_RUN(test_pbuf_free_with_armed_recv);
+    DD_RUN(test_pbuf_header_allocation);
+    DD_RUN(test_pbuf_validation_and_recycle);
     pal_socket_cleanup();
     return DD_TEST_SUMMARY();
 }

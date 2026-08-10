@@ -127,7 +127,11 @@ int pal_iouring_wait(pal_iouring *p, pal_iouring_event *evs, int max,
  * publication result as recv/send. */
 int pal_iouring_post(pal_iouring *p, void *userdata);
 
-/* Shutdown + close the socket; in-flight ops complete (0/-1) afterwards. */
+/* Shutdown + close the socket; in-flight ops complete (0/-1) afterwards.
+ * The owner must stop/join all callers of this PAL object before
+ * pal_iouring_free; free submits a raw cancel-all request and waits for its
+ * completion before unregistering pbuf memory. It is not a concurrent-call
+ * primitive, and callers must not submit after free starts. */
 void pal_iouring_close(pal_iouring *p, pal_socket_t fd);
 
 #endif /* DDUP_PAL_IOURING_OP_H */
