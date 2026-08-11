@@ -180,8 +180,8 @@ struct worker {
     int pool_off;            /* set at destroy: free, never recycle */
 #if DDUP_HAS_C_ATOMICS
     /* Kick dedup (Phase 27): 1 while a wakeup byte/completion is queued
-     * but not yet consumed; producers skip redundant kicks. Reset at the
-     * top of every wakeup drain, before any queue is read. */
+     * but not yet consumed; producers skip redundant kicks. Reset after
+     * draining the notification and before reading any queue. */
     _Atomic int kick_pending;
 #endif
     /* Guards mt_conn_state.pending/closing of every conn homed on this
@@ -217,6 +217,8 @@ struct mt_server {
     int worker_backend; /* SERVER_BACKEND_* the workers run on */
     worker *workers;
     pal_thread acceptor;
+    int started_workers;
+    int acceptor_started;
     volatile int running;
     int destroying;
     mt_agg **abandoned_aggs;
@@ -2525,9 +2527,8 @@ static void mt_drain_completions(worker *w);
 /* Drain every producer's inbox ring (execution side). */
 static void mt_drain_inbox(worker *w);
 
-/* Wake a worker whose queues may have just become non-empty: IOCP workers
- * get a WAKEUP completion posted to their port, readiness workers a pipe
- * kick. */
+/* Wake a worker whose queues received work: proactor workers get a WAKEUP
+ * completion posted to their port, readiness workers a pipe kick. */
 static void mt_kick(worker *w)
 {
 #if DDUP_HAS_C_ATOMICS
@@ -2536,7 +2537,7 @@ static void mt_kick(worker *w)
                                  memory_order_acq_rel) != 0)
         return;
 #endif
-    if (server_backend(w->srv) == SERVER_BACKEND_IOCP)
+    if (server_is_proactor(w->srv))
         server_wakeup_kick(w->srv);
     else
         (void)pal_wakeup_kick(&w->wakeup);
@@ -2573,8 +2574,7 @@ static int mt_push_task(worker *self, mt_spsc *q, mt_task *t,
         }
         pr = mt_spsc_push(q, t);
     }
-    if (pr == 1)
-        mt_kick(target);
+    mt_kick(target);
     return 0;
 }
 
@@ -2872,13 +2872,13 @@ static void worker_on_wakeup(void *ctx)
 {
     worker *w = (worker *)ctx;
     int pi;
-#if DDUP_HAS_C_ATOMICS
-    /* re-arm kicks before touching any queue: a producer that pushed
-     * before this store is covered by the drain below; one that pushes
-     * after it will post a fresh wakeup */
-    atomic_store_explicit(&w->kick_pending, 0, memory_order_release);
-#endif
     (void)pal_wakeup_drain(&w->wakeup);
+#if DDUP_HAS_C_ATOMICS
+    /* Drain the notification before re-arming the latch. This prevents a
+     * producer's wake byte from being consumed by this callback's drain. */
+    (void)atomic_exchange_explicit(&w->kick_pending, 0,
+                                   memory_order_acq_rel);
+#endif
 
     /* 1. adopt accepted fds */
     for (;;) {
@@ -2919,7 +2919,8 @@ static void worker_on_wakeup(void *ctx)
 
     /* bounded drains: anything left behind gets an immediate re-kick so the
      * loop comes straight back instead of sleeping on leftover work */
-    if (mt_spsc_nonempty(&w->accepts)) {
+    if (mt_spsc_nonempty(&w->accepts) ||
+        mt_spsc_nonempty(&w->accepts_tls)) {
         mt_kick(w);
         return;
     }
@@ -2936,8 +2937,20 @@ static void worker_on_wakeup(void *ctx)
 static void *worker_main(void *arg)
 {
     worker *w = (worker *)arg;
-    while (w->running)
-        (void)server_run_once(w->srv, 50);
+    while (w->running) {
+        if (server_run_once(w->srv, 50) < 0) {
+            int i;
+            /* A worker-local AOF failure is process-wide: stop every worker
+             * and wake them so no loop can spin or remain blocked in poll. */
+            for (i = 0; i < w->ms->nworkers; i++) {
+                w->ms->workers[i].running = 0;
+                if (i != w->id)
+                    mt_kick(&w->ms->workers[i]);
+            }
+            w->ms->running = 0;
+            break;
+        }
+    }
     return NULL;
 }
 
@@ -2970,8 +2983,7 @@ static void *acceptor_main(void *arg)
             mt_spsc *ring = held_tls ? &w->accepts_tls : &w->accepts;
             int pr = mt_spsc_push(ring, (void *)(uintptr_t)held);
             if (pr >= 0) {
-                if (pr == 1)
-                    mt_kick(w);
+                mt_kick(w);
                 rr++;
                 held = PAL_SOCKET_INVALID;
             }
@@ -3013,8 +3025,7 @@ static void *acceptor_main(void *arg)
                         break;
                     }
                     rr++;
-                    if (pr == 1)
-                        mt_kick(w);
+                    mt_kick(w);
                 }
             }
         }
@@ -3065,6 +3076,9 @@ mt_server *mt_server_create_ex(const char *host, uint16_t port, int nworkers,
         int j;
         w->id = i;
         w->ms = ms;
+#if DDUP_HAS_C_ATOMICS
+        atomic_init(&w->kick_pending, 0);
+#endif
         w->srv = server_create_ex("127.0.0.1", 0, worker_backend);
         w->inbox = (mt_spsc *)calloc((size_t)nworkers, sizeof(mt_spsc));
         w->completions =
@@ -3190,6 +3204,27 @@ int mt_server_abandoned_aggregate_count(const mt_server *ms)
     return n;
 }
 
+void mt_server_test_set_aof_write_fn(
+    mt_server *ms, int worker_id,
+    ptrdiff_t (*write_fn)(pal_file *f, const void *buf, size_t n))
+{
+    if (ms == NULL || worker_id < 0 || worker_id >= ms->nworkers)
+        return;
+    server_test_set_aof_write_fn(ms->workers[worker_id].srv, write_fn);
+}
+
+int mt_server_test_running(const mt_server *ms)
+{
+    return ms != NULL ? ms->running : 0;
+}
+
+uint64_t mt_server_test_worker_loops(const mt_server *ms, int worker_id)
+{
+    if (ms == NULL || worker_id < 0 || worker_id >= ms->nworkers)
+        return 0;
+    return server_io_counters(ms->workers[worker_id].srv)->loops;
+}
+
 int mt_server_enable_aof(mt_server *ms, const char *dir,
                          const char *appendfilename)
 {
@@ -3248,34 +3283,51 @@ uint16_t mt_server_tls_port(const mt_server *ms)
 int mt_server_start(mt_server *ms)
 {
     int i;
+    int started_workers = 0;
+
     ms->running = 1;
     for (i = 0; i < ms->nworkers; i++) {
         worker *w = &ms->workers[i];
         w->running = 1;
         if (pal_thread_create(&w->thread, worker_main, w) != 0) {
             w->running = 0;
-            ms->running = 0;
-            return -1;
+            goto fail;
         }
+        started_workers++;
     }
     if (pal_thread_create(&ms->acceptor, acceptor_main, ms) != 0) {
-        ms->running = 0;
-        return -1;
+        goto fail;
     }
+    ms->started_workers = started_workers;
+    ms->acceptor_started = 1;
     return 0;
+
+fail:
+    ms->running = 0;
+    for (i = 0; i < started_workers; i++) {
+        ms->workers[i].running = 0;
+        mt_kick(&ms->workers[i]);
+    }
+    for (i = 0; i < started_workers; i++)
+        (void)pal_thread_join(&ms->workers[i].thread, NULL);
+    return -1;
 }
 
 void mt_server_stop(mt_server *ms)
 {
     int i;
     ms->running = 0;
-    for (i = 0; i < ms->nworkers; i++) {
+    for (i = 0; i < ms->started_workers; i++) {
         ms->workers[i].running = 0;
         mt_kick(&ms->workers[i]);
     }
-    (void)pal_thread_join(&ms->acceptor, NULL);
-    for (i = 0; i < ms->nworkers; i++)
+    if (ms->acceptor_started) {
+        (void)pal_thread_join(&ms->acceptor, NULL);
+        ms->acceptor_started = 0;
+    }
+    for (i = 0; i < ms->started_workers; i++)
         (void)pal_thread_join(&ms->workers[i].thread, NULL);
+    ms->started_workers = 0;
 }
 
 void mt_server_destroy(mt_server *ms)

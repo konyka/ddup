@@ -8,6 +8,26 @@
 
 #include "pal/pal_platform.h"
 
+#ifdef DDUP_TESTING
+static int pal_thread_fail_create_after = -1;
+
+void pal_thread_test_fail_create_after(int n)
+{
+    pal_thread_fail_create_after = n;
+}
+
+static int pal_thread_test_should_fail_create(void)
+{
+    if (pal_thread_fail_create_after == 0) {
+        pal_thread_fail_create_after = -1;
+        return 1;
+    }
+    if (pal_thread_fail_create_after > 0)
+        pal_thread_fail_create_after--;
+    return 0;
+}
+#endif
+
 #if DDUP_OS_WINDOWS
 
 #include <process.h>
@@ -29,8 +49,13 @@ static unsigned __stdcall win_thread_main(void *arg)
 
 int pal_thread_create(pal_thread *t, pal_thread_fn fn, void *arg)
 {
-    win_thread *wt = (win_thread *)calloc(1, sizeof(*wt));
+    win_thread *wt;
     uintptr_t h;
+#ifdef DDUP_TESTING
+    if (pal_thread_test_should_fail_create())
+        return -1;
+#endif
+    wt = (win_thread *)calloc(1, sizeof(*wt));
     if (wt == NULL)
         return -1;
     wt->fn = fn;
@@ -140,7 +165,12 @@ typedef struct posix_thread {
 
 int pal_thread_create(pal_thread *t, pal_thread_fn fn, void *arg)
 {
-    posix_thread *pt = (posix_thread *)malloc(sizeof(*pt));
+    posix_thread *pt;
+#ifdef DDUP_TESTING
+    if (pal_thread_test_should_fail_create())
+        return -1;
+#endif
+    pt = (posix_thread *)malloc(sizeof(*pt));
     if (pt == NULL)
         return -1;
     if (pthread_create(&pt->tid, NULL, fn, arg) != 0) {

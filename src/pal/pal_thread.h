@@ -28,6 +28,11 @@ int pal_thread_create(pal_thread *t, pal_thread_fn fn, void *arg);
 /* Wait for completion; optionally receive fn's return value. */
 int pal_thread_join(pal_thread *t, void **ret);
 
+#ifdef DDUP_TESTING
+/* Test seam: fail one create after n successful calls; n < 0 disables it. */
+void pal_thread_test_fail_create_after(int n);
+#endif
+
 int pal_mutex_init(pal_mutex *m);
 void pal_mutex_lock(pal_mutex *m);
 void pal_mutex_unlock(pal_mutex *m);

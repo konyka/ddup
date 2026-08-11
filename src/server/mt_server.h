@@ -11,6 +11,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "pal/pal_file.h"
+
 typedef struct mt_server mt_server;
 
 /* Create the listener and worker pool (does not start any thread).
@@ -35,6 +37,13 @@ uint64_t mt_server_pool_hits(const mt_server *ms);
 void mt_server_fail_next_completion_pushes(mt_server *ms, int n);
 int mt_server_completion_pushes_consumed(const mt_server *ms);
 int mt_server_abandoned_aggregate_count(const mt_server *ms);
+
+/* Test seams for coordinated AOF-failure shutdown. */
+void mt_server_test_set_aof_write_fn(
+    mt_server *ms, int worker_id,
+    ptrdiff_t (*write_fn)(pal_file *f, const void *buf, size_t n));
+int mt_server_test_running(const mt_server *ms);
+uint64_t mt_server_test_worker_loops(const mt_server *ms, int worker_id);
 
 
 /* Per-worker persistence: each worker owns

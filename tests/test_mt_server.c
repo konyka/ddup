@@ -12,9 +12,18 @@
 #include "core/hashslot.h"
 #include "pal/pal_file.h"
 #include "pal/pal_socket.h"
+#include "pal/pal_thread.h"
 #include "pal/pal_time.h"
 #include "server/mt_server.h"
 #include "server/server.h"
+
+static ptrdiff_t fail_aof_write(pal_file *f, const void *buf, size_t n)
+{
+    (void)f;
+    (void)buf;
+    (void)n;
+    return -1;
+}
 
 static pal_socket_t connect_client(uint16_t port)
 {
@@ -1022,6 +1031,11 @@ static void test_unsubscribe_stops_delivery(void)
     mt_server *ms;
     pal_socket_t a, b;
     char buf[64];
+    const char *unsub_publish =
+        "*2\r\n$11\r\nUNSUBSCRIBE\r\n$2\r\nch\r\n"
+        "*3\r\n$7\r\nPUBLISH\r\n$2\r\nch\r\n$5\r\nhello\r\n";
+    const char *unsub_publish_reply =
+        "*3\r\n$11\r\nunsubscribe\r\n$2\r\nch\r\n:0\r\n:0\r\n";
 
     DD_CHECK_EQ_INT(0, pal_socket_init());
     ms = mt_server_create("127.0.0.1", 0, 2);
@@ -1036,6 +1050,10 @@ static void test_unsubscribe_stops_delivery(void)
               "*3\r\n$11\r\nunsubscribe\r\n$2\r\nch\r\n:0\r\n");
     roundtrip(b, "*3\r\n$7\r\nPUBLISH\r\n$2\r\nch\r\n$5\r\nhello\r\n",
               ":0\r\n");
+
+    roundtrip(a, "*2\r\n$9\r\nSUBSCRIBE\r\n$2\r\nch\r\n",
+              "*3\r\n$9\r\nsubscribe\r\n$2\r\nch\r\n:1\r\n");
+    pipeline_roundtrip(a, unsub_publish, unsub_publish_reply);
 
     /* nothing should arrive on a */
     DD_CHECK_EQ_INT(0, (long long)recv_deadline(a, buf, sizeof(buf), 300));
@@ -1126,6 +1144,50 @@ static void test_aof_persistence_mt(void)
     mt_server_destroy(ms);
     (void)pal_file_unlink("./worker-0-mttest.aof");
     (void)pal_file_unlink("./worker-1-mttest.aof");
+    pal_socket_cleanup();
+}
+
+static void test_aof_failure_stops_mt_workers_without_spin(void)
+{
+    mt_server *ms;
+    pal_socket_t c;
+    char key[32];
+    char req[192];
+    uint64_t deadline;
+    uint64_t loops0, loops1;
+
+    DD_CHECK_EQ_INT(0, pal_socket_init());
+    pick_key_for_worker(0, 2, key, sizeof(key));
+    (void)pal_file_unlink("./worker-0-mtfail.aof");
+    (void)pal_file_unlink("./worker-1-mtfail.aof");
+    ms = mt_server_create("127.0.0.1", 0, 2);
+    DD_CHECK(ms != NULL);
+    DD_CHECK_EQ_INT(0, mt_server_enable_aof(ms, ".", "mtfail.aof"));
+    mt_server_test_set_aof_write_fn(ms, 0, fail_aof_write);
+    DD_CHECK_EQ_INT(0, mt_server_start(ms));
+    c = connect_client(mt_server_port(ms));
+    snprintf(req, sizeof(req),
+             "*3\r\n$3\r\nSET\r\n$%zu\r\n%s\r\n$1\r\nx\r\n",
+             strlen(key), key);
+    roundtrip(c, req, "+OK\r\n");
+
+    deadline = pal_now_ms() + 2000;
+    while (mt_server_test_running(ms) && pal_now_ms() < deadline)
+        pal_sleep_ms(1);
+    DD_CHECK(!mt_server_test_running(ms));
+    loops0 = mt_server_test_worker_loops(ms, 0);
+    loops1 = mt_server_test_worker_loops(ms, 1);
+    pal_sleep_ms(100);
+    DD_CHECK_EQ_INT((long long)loops0,
+                    (long long)mt_server_test_worker_loops(ms, 0));
+    DD_CHECK_EQ_INT((long long)loops1,
+                    (long long)mt_server_test_worker_loops(ms, 1));
+
+    pal_close(c);
+    mt_server_stop(ms);
+    mt_server_destroy(ms);
+    (void)pal_file_unlink("./worker-0-mtfail.aof");
+    (void)pal_file_unlink("./worker-1-mtfail.aof");
     pal_socket_cleanup();
 }
 
@@ -1426,6 +1488,61 @@ static void test_iocp_workers_basic(void)
     pal_socket_cleanup();
 }
 
+/* Repeated routed GET and EXEC commands make a stranded task or completion
+ * observable through the public RESP socket instead of internal counters. */
+static void run_routed_wakeup_stress(int backend)
+{
+    mt_server *ms;
+    pal_socket_t a, b;
+    char k0[32];
+    char req[256];
+    int i;
+
+    DD_CHECK_EQ_INT(0, pal_socket_init());
+    pick_key_for_worker(0, 2, k0, sizeof(k0));
+
+    ms = mt_server_create_ex("127.0.0.1", 0, 2, backend);
+    DD_CHECK(ms != NULL);
+    DD_CHECK_EQ_INT(0, mt_server_start(ms));
+    a = connect_client(mt_server_port(ms));
+    b = connect_client(mt_server_port(ms));
+
+    snprintf(req, sizeof(req), "*3\r\n$3\r\nSET\r\n$%zu\r\n%s\r\n$1\r\n0\r\n",
+             strlen(k0), k0);
+    roundtrip(a, req, "+OK\r\n");
+
+    for (i = 0; i < 256; i++) {
+        snprintf(req, sizeof(req), "*2\r\n$3\r\nGET\r\n$%zu\r\n%s\r\n",
+                 strlen(k0), k0);
+        roundtrip(b, req, "$1\r\n0\r\n");
+
+        snprintf(req, sizeof(req),
+                 "*1\r\n$5\r\nMULTI\r\n"
+                 "*2\r\n$3\r\nGET\r\n$%zu\r\n%s\r\n"
+                 "*1\r\n$4\r\nEXEC\r\n",
+                 strlen(k0), k0);
+        pipeline_roundtrip(b, req,
+                           "+OK\r\n+QUEUED\r\n*1\r\n$1\r\n0\r\n");
+    }
+
+    pal_close(a);
+    pal_close(b);
+    mt_server_stop(ms);
+    mt_server_destroy(ms);
+    pal_socket_cleanup();
+}
+
+static void test_readiness_routed_wakeup_stress(void)
+{
+    run_routed_wakeup_stress(SERVER_BACKEND_SELECT);
+}
+
+/* io_uring op workers use completion-based wakeups just like IOCP workers. */
+static void test_iouring_op_routed_completion_stress(void)
+{
+    run_routed_wakeup_stress(SERVER_BACKEND_IOURING_OP);
+}
+
 static void test_aggregate_shutdown_drops_queued_parts(void)
 {
     int i;
@@ -1489,6 +1606,42 @@ static void test_many_connections_across_workers(void)
     pal_socket_cleanup();
 }
 
+static void test_start_rolls_back_partial_worker_startup(void)
+{
+    mt_server *ms;
+
+    DD_CHECK_EQ_INT(0, pal_socket_init());
+    ms = mt_server_create("127.0.0.1", 0, 2);
+    DD_CHECK(ms != NULL);
+    if (ms != NULL) {
+        pal_thread_test_fail_create_after(1);
+        DD_CHECK_EQ_INT(-1, mt_server_start(ms));
+        DD_CHECK_EQ_INT(0, mt_server_start(ms));
+        mt_server_stop(ms);
+        mt_server_destroy(ms);
+    }
+    pal_thread_test_fail_create_after(-1);
+    pal_socket_cleanup();
+}
+
+static void test_start_rolls_back_worker_startup_on_acceptor_failure(void)
+{
+    mt_server *ms;
+
+    DD_CHECK_EQ_INT(0, pal_socket_init());
+    ms = mt_server_create("127.0.0.1", 0, 2);
+    DD_CHECK(ms != NULL);
+    if (ms != NULL) {
+        pal_thread_test_fail_create_after(2);
+        DD_CHECK_EQ_INT(-1, mt_server_start(ms));
+        DD_CHECK_EQ_INT(0, mt_server_start(ms));
+        mt_server_stop(ms);
+        mt_server_destroy(ms);
+    }
+    pal_thread_test_fail_create_after(-1);
+    pal_socket_cleanup();
+}
+
 int main(void)
 {
     DD_RUN(test_two_workers_shared_keyspace);
@@ -1518,12 +1671,17 @@ int main(void)
     DD_RUN(test_watch_pipeline_unwatch_is_ordered_and_disconnect_safe);
     DD_RUN(test_watch_shutdown_releases_remote_owner);
     DD_RUN(test_aof_persistence_mt);
+    DD_RUN(test_aof_failure_stops_mt_workers_without_spin);
     DD_RUN(test_snapshot_mt);
     DD_RUN(test_connection_migration_to_key_owner);
     DD_RUN(test_mt_multidb_select_and_swapdb);
     DD_RUN(test_same_target_pipeline_merges_into_one_task);
     DD_RUN(test_many_connections_across_workers);
+    DD_RUN(test_start_rolls_back_partial_worker_startup);
+    DD_RUN(test_start_rolls_back_worker_startup_on_acceptor_failure);
     DD_RUN(test_iocp_workers_basic);
+    DD_RUN(test_readiness_routed_wakeup_stress);
+    DD_RUN(test_iouring_op_routed_completion_stress);
     DD_RUN(test_aggregate_shutdown_drops_queued_parts);
     DD_RUN(test_subscription_shutdown_drops_queued_registration);
     return DD_TEST_SUMMARY();
