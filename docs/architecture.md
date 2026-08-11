@@ -121,9 +121,10 @@
 - **跨线程基础设施**（PAL）：`pal_thread`（Win32 `_beginthreadex` +
   CRITICAL_SECTION + CONDITION_VARIABLE / POSIX pthread）、`pal_wakeup`
   （POSIX socketpair / Windows loopback TCP 对的 self-pipe）。worker 的
-  wakeup fd 注册进自己的事件循环（`server_set_wakeup`），回调里统一
-  drain accept/inbox/completion 三个队列。队列为互斥保护的单链表；
-  **仅在队列由空变非空时 kick**，避免每命令一次 wakeup 写。
+   wakeup fd 注册进自己的事件循环（`server_set_wakeup`），回调里统一
+   drain accept/inbox/completion 三个队列。队列为互斥保护的单链表；
+   生产者在成功入队后都尝试 kick，由 pending 原子标志合并重复唤醒，避免
+   丢失并发入队的通知。
 - **key 路由**：命令经 `server_set_route` 安装的钩子拦截
   （conn_process_input 内）。worker = `hash_slot(key) % nworkers`（复用
   集群 crc16/hashtag）。单 key 命令（字符串/过期/hash/list/set/zset 全部
@@ -137,8 +138,8 @@
   的 completion 队列返回；每个 conn 维护 seq 序号 + reorder 缓冲，本地
   命令在有未决路由回复时也算好答案暂存，完成回复按 seq 追加到
   conn->out，保证流水线回复顺序与请求一致。队列全部为**按生产者拆分
-  的无锁 SPSC 环**（C11 acquire/release 原子操作；强制 C99 构建降级为
-  互斥环），仅在队列由空变非空时 kick wakeup。
+   的无锁 SPSC 环**（C11 acquire/release 原子操作；强制 C99 构建降级为
+   互斥环），每次成功入队都尝试 kick，由 pending 标志去重。
  - **生命周期**：conn 的 pending/closing 由 home worker 的 `pending_mu`
   保护（跨线程投递可安全 test-and-increment）；连接关闭时有未决工作
   则成为 zombie（摘出事件循环、关 fd，保留 conn/session/mt_state），
@@ -156,8 +157,8 @@
   保持堆路径。池空回退 malloc、池满回退 free。销毁顺序（记录在案
   的修复）：先对全部 worker 置 pool_off 再排空环与池——否则后排
   空把任务回收到互斥锁已销毁的 worker 池里。
-- **背压与唤醒（Phase 27/29/30）**：kick 去重（pending 原子标志，
-  空→非空才真踢）；SPSC head/tail 分缓存行；环满退避为自排干 +
+- **背压与唤醒（Phase 27/29/30）**：kick 去重（pending 原子标志合并
+  重复 kick）；SPSC head/tail 分缓存行；环满退避为自排干 +
   sched_yield（且必须检查 running——否则关停 join 永远等不到退出
   的 worker，进程活而不哑的 CI wedge 根因）。inbox/completion 环
   8192 槽。
@@ -488,8 +489,10 @@ DBSIZE 为 O(1)，可能计入尚未回收的过期 key。
   命令前后的 `db.dirty` 计数（db_touch_key/FLUSHDB 递增），发生变更就把
   **原始 argv** 重序列化为 RESP 数组追加到缓冲；每个 server 循环刷盘一次
   （appendfsync everysec 式简化，stdio 缓冲，无 fsync——记录为后续优化）。
-  EXEC 按逐条命令记录（不写 MULTI 包装）。启动时 `appendonly yes` 且文件
-  存在则先重放（容忍截断尾部）。
+   EXEC 按逐条命令记录（不写 MULTI 包装）。启动时 `appendonly yes` 且文件
+   存在则先重放（容忍截断尾部）；损坏或无效命令帧会 fail closed，且重放
+   先在临时 db 上完成，失败时不修改现有数据。运行中 AOF 写入/flush 失败
+   会冻结失败缓冲、拒绝后续写命令并停止服务循环，避免确认不可持久化变更。
 - **快照（src/core/snapshot.c）**：自有二进制格式 `DDUP0001`，逐 key 存
   {类型标签、key、绝对过期毫秒、按类型的 payload}，显式小端编码。保存
   原子化（写 `<path>.tmp` 后 rename 覆盖）。加载**全有或全无**：先解析
