@@ -8,6 +8,7 @@
 #include "core/arena.h"
 #include "core/session.h"
 #include "core/sha1.h"
+#include "pal/pal_time.h"
 #include "lua.h"
 #include "lauxlib.h"
 #include "lualib.h"
@@ -15,6 +16,32 @@
 
 static int lua_redis_call(lua_State *L);
 static int lua_redis_pcall(lua_State *L);
+
+#define SCRIPT_HOOK_INSTRUCTIONS 1000
+#define SCRIPT_INSTRUCTION_BUDGET 1000000U
+#define SCRIPT_TIME_BUDGET_MS 5000U
+
+static void lua_script_limit_hook(lua_State *L, lua_Debug *ar)
+{
+    uint64_t deadline;
+    (void)ar;
+
+    lua_getfield(L, LUA_REGISTRYINDEX, "ddup_script_budget");
+    if (lua_tonumber(L, -1) <= 0) {
+        lua_pop(L, 1);
+        luaL_error(L, "script exceeded instruction limit");
+        return;
+    }
+    lua_pushnumber(L, lua_tonumber(L, -1) - SCRIPT_HOOK_INSTRUCTIONS);
+    lua_setfield(L, LUA_REGISTRYINDEX, "ddup_script_budget");
+    lua_pop(L, 1);
+
+    lua_getfield(L, LUA_REGISTRYINDEX, "ddup_script_deadline_ms");
+    deadline = (uint64_t)lua_tonumber(L, -1);
+    lua_pop(L, 1);
+    if (pal_now_ms() >= deadline)
+        luaL_error(L, "script exceeded execution time limit");
+}
 
 void *script_state(db *d)
 {
@@ -411,7 +438,14 @@ void script_exec(session *s, const char *sha1, const resp_value *argv,
     }
     lua_setglobal(L, "ARGV");
 
+    lua_pushnumber(L, (lua_Number)SCRIPT_INSTRUCTION_BUDGET);
+    lua_setfield(L, LUA_REGISTRYINDEX, "ddup_script_budget");
+    lua_pushnumber(L, (lua_Number)(pal_now_ms() + SCRIPT_TIME_BUDGET_MS));
+    lua_setfield(L, LUA_REGISTRYINDEX, "ddup_script_deadline_ms");
+    lua_sethook(L, lua_script_limit_hook, LUA_MASKCOUNT,
+                SCRIPT_HOOK_INSTRUCTIONS);
     rc = lua_pcall(L, 0, 1, 0);
+    lua_sethook(L, NULL, 0, 0);
     if (rc != 0) {
         const char *msg = lua_tostring(L, -1);
         char sha_lc[41];

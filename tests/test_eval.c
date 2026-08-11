@@ -116,6 +116,31 @@ static void test_redis_call_and_bindings(void)
     db_destroy(&d);
 }
 
+static void test_script_execution_limits(void)
+{
+    db d;
+    session *s;
+    resp_buf out;
+
+    db_init(&d);
+    resp_buf_init(&out);
+    s = session_create(&d);
+
+    exec_sess(s, T0, &out, 3, "EVAL", "while true do end", "0");
+    DD_CHECK(out.len > 0);
+    DD_CHECK_MEM("-ERR Error running script", strlen("-ERR Error running script"),
+                 out.data, strlen("-ERR Error running script"));
+
+    exec_sess(s, T0, &out, 5, "EVAL",
+               "redis.call('SET', KEYS[1], ARGV[1]) "
+               "return redis.call('GET', KEYS[1])", "1", "limited", "ok");
+    EXPECT(out, "$2\r\nok\r\n");
+
+    session_free(s);
+    resp_buf_free(&out);
+    db_destroy(&d);
+}
+
 static void test_evalsha_and_script_family(void)
 {
     db d;
@@ -384,6 +409,7 @@ int main(void)
     setvbuf(stdout, NULL, _IONBF, 0);
     DD_RUN(test_return_matrix);
     DD_RUN(test_redis_call_and_bindings);
+    DD_RUN(test_script_execution_limits);
     DD_RUN(test_evalsha_and_script_family);
     DD_RUN(test_error_texts);
     DD_RUN(test_pcall_captures);

@@ -134,7 +134,8 @@ per-worker 输出合并，记录在案。
 
 ## 对比压测 (CI, Phase 7.6)
 
-每周 CI（.github/workflows/bench.yml，ubuntu-latest 4 vCPU，loopback）对
+每周 CI（.github/workflows/bench.yml，ubuntu-latest，loopback；CPU 数量以运行时
+的 `nproc` 记录为准）对
 ddup / Garnet / Redis 用同一 redis-benchmark（-t set|get -n 200000
 -c 50 -P 16，三次取中位数）压测，结果发布在 `bench-results` 分支
 （bench-latest.md + 按日期归档）。首次实测（2026-08-04，Redis 7.0.15）：
@@ -470,8 +471,8 @@ mt_push_task 的环满退避循环里——该循环从不检查 running。一�
 的优雅停止（SIGTERM 触发 g_stop）因此永远无法完成：acceptor 与其他
 worker 退出、卡住的 worker 不退、join 永远等待——进程活着、监听
 开着、无人服务，即"活着但哑"的 wedge。停止的触发源有二：bench 的
-restart 兜底 pkill（且计数器因 cell() 在 $() 子壳中执行而静默丢失，
-restarts=0 是假象）；更早无 pkill 的运行里的触发源未最终定位
+restart 兜底 pkill（计数器写入文件，因此 cell() 在 $() 子壳中执行时
+仍会保留）；更早无 pkill 的运行里的触发源未最终定位
 （疑似 runner 侧信号），修复后即使触发也只是干净退出+被重启。
 修复（cf2b4ef）：退避循环检查 running，停止时丢弃在途任务（将死
 进程的未发回复无意义）让 join 完成。

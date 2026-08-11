@@ -407,6 +407,8 @@ static struct io_uring_sqe *iou_reserve_sqe(pal_iouring *r, unsigned *tail_out)
 static int iou_publish_sqe(pal_iouring *r, unsigned tail)
 {
     __atomic_store_n(r->sq_tail, tail + 1, __ATOMIC_RELEASE);
+    /* The kernel requires a full barrier before observing SQPOLL flags. */
+    __sync_synchronize();
     return iou_wake_sqpoll_locked(r) == 0
                ? PAL_IOURING_PUBLISHED
                : PAL_IOURING_PUBLISHED_RETRY;
@@ -532,7 +534,8 @@ int pal_iouring_enable_pbuf(pal_iouring *r, unsigned count, size_t size)
         pal_mutex_unlock(&r->lock);
         return 0; /* already enabled */
     }
-    if (size == 0 || size > UINT_MAX || count > UINT16_MAX)
+    /* ring->tail is 16-bit; 65536 would wrap to zero when published. */
+    if (size == 0 || size > UINT_MAX || count >= 65536U)
         goto invalid;
     if (count == 0 || (count & (count - 1)) != 0)
         goto invalid; /* ring entries must be a power of two */

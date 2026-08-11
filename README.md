@@ -18,7 +18,7 @@ redis c 的另一种实现 —— 参考微软 [Garnet](https://github.com/micro
   （原子写、定时自动保存）
 - 复制：master/replica 全量同步 + PSYNC 部分重同步、只读副本、
   断线自动重连重同步、链式复制
-- TLS：可选 OpenSSL 支持（独立 tls-port，与明文端口并行；四平台 CI 验证）
+- TLS：可选 OpenSSL 支持（独立 tls-port，与明文端口并行；Linux/macOS TLS CI 验证）
 - 多节点集群模式：Redis cluster 风格（16384 槽、gossip 节点发现、
   ADDSLOTS/SETSLOT、-MOVED/-ASK 重定向、MIGRATE 在线迁移、
   config epoch 冲突裁决、副本自动故障转移、ddup-reshard 运维工具、
