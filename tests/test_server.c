@@ -3,6 +3,7 @@
  * Single-threaded: the test acts as the client and interleaves
  * server_run_once() calls with client send/recv.
  */
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -22,6 +23,14 @@ static int g_backend = SERVER_BACKEND_SELECT;
 static server *make_server(void)
 {
     return server_create_ex("127.0.0.1", 0, g_backend);
+}
+
+static ptrdiff_t fail_aof_write(pal_file *f, const void *buf, size_t len)
+{
+    (void)f;
+    (void)buf;
+    (void)len;
+    return -1;
 }
 
 /* Send req, pump the server, and read exactly strlen(expected) reply bytes;
@@ -97,6 +106,91 @@ static void test_pipeline(void)
 
     pal_close(c);
     server_destroy(s);
+}
+
+static void test_aof_failure_rejects_writes(void)
+{
+    static const char path[] = "test_server_aof_failure.aof";
+    static const char misconf[] =
+        "-MISCONF Errors writing to the AOF file\r\n";
+    server *s;
+    pal_socket_t c;
+    pal_socket_t tx;
+    size_t pending;
+    int i;
+
+    remove(path);
+    s = make_server();
+    DD_CHECK(s != NULL);
+    if (s == NULL)
+        return;
+    DD_CHECK_EQ_INT(0, server_enable_aof(s, path));
+    server_test_set_aof_write_fn(s, fail_aof_write);
+    c = connect_client(s);
+    tx = connect_client(s);
+
+    roundtrip(s, tx, "*1\r\n$5\r\nMULTI\r\n", "+OK\r\n");
+    roundtrip(s, tx,
+              "*3\r\n$3\r\nSET\r\n$6\r\nqueued\r\n$1\r\nx\r\n",
+              "+QUEUED\r\n");
+
+    /* This loop applies SET, then discovers the buffered AOF write failure. */
+    roundtrip(s, c, "*3\r\n$3\r\nSET\r\n$1\r\nk\r\n$1\r\nv\r\n",
+              "+OK\r\n");
+    DD_CHECK(server_test_aof_failed(s));
+    DD_CHECK(server_shutdown_requested(s));
+    pending = server_test_aof_pending_bytes(s);
+    DD_CHECK(pending > 0);
+
+    roundtrip(s, c, "*2\r\n$3\r\nGET\r\n$1\r\nk\r\n", "$1\r\nv\r\n");
+    for (i = 0; i < 32; i++)
+        roundtrip(s, c,
+                  "*3\r\n$3\r\nSET\r\n$5\r\nother\r\n$1\r\nx\r\n",
+                  misconf);
+    DD_CHECK_EQ_INT((long long)pending,
+                    (long long)server_test_aof_pending_bytes(s));
+    roundtrip(s, c, "*2\r\n$3\r\nGET\r\n$5\r\nother\r\n", "$-1\r\n");
+    roundtrip(s, tx, "*1\r\n$4\r\nEXEC\r\n", misconf);
+    roundtrip(s, tx, "*1\r\n$7\r\nDISCARD\r\n", "+OK\r\n");
+    roundtrip(s, c, "*2\r\n$3\r\nGET\r\n$6\r\nqueued\r\n", "$-1\r\n");
+
+    pal_close(tx);
+    pal_close(c);
+    server_destroy(s);
+    remove(path);
+}
+
+static void test_eventless_loop_flushes_aof(void)
+{
+    static const char path[] = "test_server_aof_eventless.aof";
+    server *s;
+    resp_value argv[3];
+
+    remove(path);
+    s = make_server();
+    DD_CHECK(s != NULL);
+    if (s == NULL)
+        return;
+    DD_CHECK_EQ_INT(0, server_enable_aof(s, path));
+    server_test_set_aof_write_fn(s, fail_aof_write);
+    memset(argv, 0, sizeof(argv));
+    argv[0].type = RESP_BULK_STRING;
+    argv[0].str = "SET";
+    argv[0].len = 3;
+    argv[1].type = RESP_BULK_STRING;
+    argv[1].str = "k";
+    argv[1].len = 1;
+    argv[2].type = RESP_BULK_STRING;
+    argv[2].str = "v";
+    argv[2].len = 1;
+    server_aof_log_cmd(s, 0, argv, 3);
+
+    (void)server_run_once(s, 0);
+    DD_CHECK(server_test_aof_failed(s));
+    DD_CHECK(server_shutdown_requested(s));
+
+    server_destroy(s);
+    remove(path);
 }
 
 static void test_mget_missing_key(void)
@@ -697,6 +791,8 @@ static void run_all_tests(void)
 {
     DD_RUN(test_ping_set_get);
     DD_RUN(test_pipeline);
+    DD_RUN(test_aof_failure_rejects_writes);
+    DD_RUN(test_eventless_loop_flushes_aof);
     DD_RUN(test_mget_missing_key);
     DD_RUN(test_unknown_command);
     DD_RUN(test_split_delivery);

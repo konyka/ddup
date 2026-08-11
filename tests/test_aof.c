@@ -6,6 +6,7 @@
 
 #include "core/session.h"
 #include "server/aof.h"
+#include "server/server.h"
 #include "test.h"
 
 #define TMP_AOF "test_aof_tmp.aof"
@@ -66,6 +67,17 @@ static char *read_file(const char *path, size_t *len)
     buf[n] = '\0';
     *len = (size_t)n;
     return buf;
+}
+
+static void write_file(const char *path, const char *bytes)
+{
+    FILE *f = fopen(path, "wb");
+    size_t len = strlen(bytes);
+    DD_CHECK(f != NULL);
+    if (f == NULL)
+        return;
+    DD_CHECK(fwrite(bytes, 1, len, f) == len);
+    DD_CHECK(fclose(f) == 0);
 }
 
 static void test_aof_serialization(void)
@@ -153,7 +165,7 @@ static void test_aof_replay(void)
     remove(TMP_AOF);
 }
 
-static void test_aof_corrupt_tail(void)
+static void test_aof_incomplete_tail(void)
 {
     db d;
     resp_buf out;
@@ -175,6 +187,260 @@ static void test_aof_corrupt_tail(void)
     }
     resp_buf_free(&out);
     db_destroy(&d);
+    remove(TMP_AOF);
+}
+
+static void test_aof_malformed_replay_fails(void)
+{
+    db d;
+    db_init(&d);
+    write_file(TMP_AOF,
+               "*3\r\n$3\r\nSET\r\n$1\r\nk\r\n$1\r\nv\r\n"
+               "*x\r\n");
+
+    DD_CHECK_EQ_INT(-1, aof_replay(&d, TMP_AOF));
+
+    db_destroy(&d);
+    remove(TMP_AOF);
+}
+
+static void check_late_corruption_does_not_mutate(int through_session)
+{
+    db d;
+    session *s;
+    resp_buf out;
+
+    db_init(&d);
+    resp_buf_init(&out);
+    s = session_create(&d);
+    DD_CHECK(s != NULL);
+    exec_sess(s, T0, &out, 3, "SET", "seed", "before");
+    EXPECT(out, "+OK\r\n");
+    write_file(TMP_AOF,
+               "*3\r\n$3\r\nSET\r\n$3\r\nnew\r\n$5\r\nvalue\r\n"
+               "*2\r\n$3\r\nSET\r\n:1\r\n");
+
+    if (through_session)
+        DD_CHECK_EQ_INT(-1, aof_replay_session(s, TMP_AOF));
+    else
+        DD_CHECK_EQ_INT(-1, aof_replay(&d, TMP_AOF));
+    exec_sess(s, T0, &out, 2, "GET", "seed");
+    EXPECT(out, "$6\r\nbefore\r\n");
+    exec_sess(s, T0, &out, 2, "GET", "new");
+    EXPECT(out, "$-1\r\n");
+
+    session_free(s);
+    resp_buf_free(&out);
+    db_destroy(&d);
+    remove(TMP_AOF);
+}
+
+static void test_aof_late_corruption_does_not_mutate_db(void)
+{
+    check_late_corruption_does_not_mutate(0);
+}
+
+static void test_aof_session_late_corruption_does_not_mutate_db(void)
+{
+    check_late_corruption_does_not_mutate(1);
+}
+
+static void test_aof_invalid_command_frames_fail(void)
+{
+    static const char *frames[] = {
+        "+PING\r\n",
+        "*0\r\n",
+        "*2\r\n$3\r\nSET\r\n:1\r\n",
+        "*1\r\n$7\r\nUNKNOWN\r\n",
+    };
+    size_t i;
+
+    for (i = 0; i < sizeof(frames) / sizeof(frames[0]); i++) {
+        db d;
+        db_init(&d);
+        write_file(TMP_AOF, frames[i]);
+        DD_CHECK_EQ_INT(-1, aof_replay(&d, TMP_AOF));
+        db_destroy(&d);
+        remove(TMP_AOF);
+    }
+}
+
+static void test_server_rejects_invalid_aof(void)
+{
+    server *s;
+    write_file(TMP_AOF, "*x\r\n");
+    s = server_create("127.0.0.1", 0);
+    DD_CHECK(s != NULL);
+    if (s != NULL) {
+        DD_CHECK_EQ_INT(-1, server_enable_aof(s, TMP_AOF));
+        server_destroy(s);
+    }
+    remove(TMP_AOF);
+}
+
+static size_t write_limit;
+static int write_calls;
+static int write_fail_call;
+static int write_zero_call;
+
+static ptrdiff_t limited_write(pal_file *f, const void *buf, size_t len)
+{
+    write_calls++;
+    if (write_calls == write_fail_call)
+        return -1;
+    if (write_calls == write_zero_call)
+        return 0;
+    if (len > write_limit)
+        len = write_limit;
+    return pal_file_write(f, buf, len);
+}
+
+static void log_set(aof *a)
+{
+    resp_value argv[3];
+    memset(argv, 0, sizeof(argv));
+    argv[0].type = RESP_BULK_STRING;
+    argv[0].str = "SET";
+    argv[0].len = 3;
+    argv[1].type = RESP_BULK_STRING;
+    argv[1].str = "key";
+    argv[1].len = 3;
+    argv[2].type = RESP_BULK_STRING;
+    argv[2].str = "value";
+    argv[2].len = 5;
+    aof_log_cmd(a, argv, 3);
+}
+
+static void test_aof_flush_completes_short_writes(void)
+{
+    aof *a = aof_open(TMP_AOF);
+    char *want;
+    char *bytes;
+    size_t want_len;
+    size_t bytes_len;
+    DD_CHECK(a != NULL);
+    if (a == NULL)
+        return;
+    log_set(a);
+    want_len = a->pending.len;
+    want = (char *)malloc(want_len);
+    DD_CHECK(want != NULL);
+    if (want == NULL) {
+        aof_close(a);
+        remove(TMP_AOF);
+        return;
+    }
+    memcpy(want, a->pending.data, want_len);
+    write_limit = 5;
+    write_calls = 0;
+    write_fail_call = -1;
+    write_zero_call = -1;
+    aof_test_set_write_fn(a, limited_write);
+
+    DD_CHECK_EQ_INT(0, aof_flush(a));
+    DD_CHECK(a->pending.len == 0);
+    DD_CHECK(write_calls > 1);
+    aof_close(a);
+
+    bytes = read_file(TMP_AOF, &bytes_len);
+    DD_CHECK_MEM(want, want_len, bytes, bytes_len);
+    free(bytes);
+    free(want);
+    remove(TMP_AOF);
+}
+
+static void test_aof_flush_preserves_suffix_on_error(void)
+{
+    aof *a = aof_open(TMP_AOF);
+    char *want;
+    size_t want_len;
+    int calls_after_failure;
+    DD_CHECK(a != NULL);
+    if (a == NULL)
+        return;
+    log_set(a);
+    want_len = a->pending.len;
+    want = (char *)malloc(want_len);
+    DD_CHECK(want != NULL);
+    if (want == NULL) {
+        aof_close(a);
+        remove(TMP_AOF);
+        return;
+    }
+    memcpy(want, a->pending.data, want_len);
+    write_limit = 7;
+    write_calls = 0;
+    write_fail_call = 2;
+    write_zero_call = -1;
+    aof_test_set_write_fn(a, limited_write);
+
+    DD_CHECK_EQ_INT(-1, aof_flush(a));
+    DD_CHECK_EQ_INT((long long)(want_len - 7),
+                    (long long)a->pending.len);
+    DD_CHECK_MEM(want + 7, want_len - 7, a->pending.data, a->pending.len);
+    calls_after_failure = write_calls;
+    DD_CHECK_EQ_INT(-1, aof_flush(a));
+    DD_CHECK_EQ_INT(calls_after_failure, write_calls);
+
+    free(want);
+    aof_close(a);
+    remove(TMP_AOF);
+}
+
+static void test_aof_flush_latches_zero_progress(void)
+{
+    aof *a = aof_open(TMP_AOF);
+    size_t pending_len;
+    int calls_after_failure;
+    DD_CHECK(a != NULL);
+    if (a == NULL)
+        return;
+    log_set(a);
+    pending_len = a->pending.len;
+    write_limit = pending_len;
+    write_calls = 0;
+    write_fail_call = -1;
+    write_zero_call = 1;
+    aof_test_set_write_fn(a, limited_write);
+
+    DD_CHECK_EQ_INT(-1, aof_flush(a));
+    DD_CHECK_EQ_INT((long long)pending_len, (long long)a->pending.len);
+    calls_after_failure = write_calls;
+    DD_CHECK_EQ_INT(-1, aof_flush(a));
+    DD_CHECK_EQ_INT(calls_after_failure, write_calls);
+
+    aof_close(a);
+    remove(TMP_AOF);
+}
+
+static void test_aof_flush_preserves_pending_on_flush_failure(void)
+{
+    aof *a = aof_open(TMP_AOF);
+    char *want;
+    size_t want_len;
+
+    DD_CHECK(a != NULL);
+    if (a == NULL)
+        return;
+    log_set(a);
+    want_len = a->pending.len;
+    want = (char *)malloc(want_len);
+    DD_CHECK(want != NULL);
+    if (want == NULL) {
+        aof_close(a);
+        remove(TMP_AOF);
+        return;
+    }
+    memcpy(want, a->pending.data, want_len);
+    pal_file_test_fail_next_flush();
+
+    DD_CHECK_EQ_INT(-1, aof_flush(a));
+    DD_CHECK_EQ_INT((long long)want_len, (long long)a->pending.len);
+    DD_CHECK_MEM(want, want_len, a->pending.data, a->pending.len);
+    DD_CHECK_EQ_INT(-1, aof_flush(a));
+
+    free(want);
+    aof_close(a);
     remove(TMP_AOF);
 }
 
@@ -285,12 +551,69 @@ static void test_aof_multidb_replay(void)
     remove(TMP_AOF);
 }
 
+static void test_aof_session_late_corruption_does_not_mutate_dbs(void)
+{
+    dbset *ds;
+    session *s;
+    resp_buf out;
+    int i;
+
+    ds = (dbset *)calloc(1, sizeof(*ds));
+    DD_CHECK(ds != NULL);
+    for (i = 0; i < 4; i++)
+        db_init(&ds->dbs[i]);
+    resp_buf_init(&out);
+    s = session_create(&ds->dbs[0]);
+    DD_CHECK(s != NULL);
+    s->sel_ctx = ds;
+    s->sel_fn = mds_select;
+    s->sel_ndbs = 4;
+    exec_sess(s, T0, &out, 3, "SET", "zero", "before0");
+    exec_sess(s, T0, &out, 2, "SELECT", "1");
+    exec_sess(s, T0, &out, 3, "SET", "one", "before1");
+    exec_sess(s, T0, &out, 2, "SELECT", "0");
+    write_file(TMP_AOF,
+               "*3\r\n$3\r\nSET\r\n$4\r\nnew0\r\n$2\r\nv0\r\n"
+               "*2\r\n$6\r\nSELECT\r\n$1\r\n1\r\n"
+               "*3\r\n$3\r\nSET\r\n$4\r\nnew1\r\n$2\r\nv1\r\n"
+               "*2\r\n$3\r\nSET\r\n:1\r\n");
+
+    DD_CHECK_EQ_INT(-1, aof_replay_session(s, TMP_AOF));
+    DD_CHECK_EQ_INT(0, s->db_index);
+    exec_sess(s, T0, &out, 2, "GET", "zero");
+    EXPECT(out, "$7\r\nbefore0\r\n");
+    exec_sess(s, T0, &out, 2, "GET", "new0");
+    EXPECT(out, "$-1\r\n");
+    exec_sess(s, T0, &out, 2, "SELECT", "1");
+    exec_sess(s, T0, &out, 2, "GET", "one");
+    EXPECT(out, "$7\r\nbefore1\r\n");
+    exec_sess(s, T0, &out, 2, "GET", "new1");
+    EXPECT(out, "$-1\r\n");
+
+    session_free(s);
+    resp_buf_free(&out);
+    for (i = 0; i < 4; i++)
+        db_destroy(&ds->dbs[i]);
+    free(ds);
+    remove(TMP_AOF);
+}
+
 int main(void)
 {
     DD_RUN(test_aof_serialization);
     DD_RUN(test_aof_replay);
-    DD_RUN(test_aof_corrupt_tail);
+    DD_RUN(test_aof_incomplete_tail);
+    DD_RUN(test_aof_malformed_replay_fails);
+    DD_RUN(test_aof_late_corruption_does_not_mutate_db);
+    DD_RUN(test_aof_session_late_corruption_does_not_mutate_db);
+    DD_RUN(test_aof_invalid_command_frames_fail);
+    DD_RUN(test_server_rejects_invalid_aof);
+    DD_RUN(test_aof_flush_completes_short_writes);
+    DD_RUN(test_aof_flush_preserves_suffix_on_error);
+    DD_RUN(test_aof_flush_latches_zero_progress);
+    DD_RUN(test_aof_flush_preserves_pending_on_flush_failure);
     DD_RUN(test_aof_flushdb_logged);
     DD_RUN(test_aof_multidb_replay);
+    DD_RUN(test_aof_session_late_corruption_does_not_mutate_dbs);
     return DD_TEST_SUMMARY();
 }

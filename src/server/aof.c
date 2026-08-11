@@ -5,7 +5,61 @@
 #include <string.h>
 
 #include "core/arena.h"
+#include "core/snapshot.h"
+#include "ds/obj.h"
+#include "pal/pal_time.h"
 #include "resp/resp_parser.h"
+
+static void aof_free_value_cb(const char *key, size_t klen, const char *val,
+                              size_t vlen, void *ctx)
+{
+    (void)key;
+    (void)klen;
+    (void)ctx;
+    obj_free_value(val, vlen);
+}
+
+/* Transfer only replayed key data. Configuration, WATCH state, and command
+ * statistics remain owned by the caller's database. */
+static void aof_swap_db_data(db *d, db *tmp)
+{
+    rh_each(&d->table, aof_free_value_cb, NULL);
+    rh_destroy(&d->table);
+    rh_destroy(&d->expires);
+    d->table = tmp->table;
+    d->expires = tmp->expires;
+    d->used_memory = tmp->used_memory;
+    d->dirty += tmp->dirty;
+    d->flush_epoch++;
+    memset(&tmp->table, 0, sizeof(tmp->table));
+    memset(&tmp->expires, 0, sizeof(tmp->expires));
+}
+
+typedef struct aof_replay_dbs {
+    db *dbs;
+    int ndbs;
+} aof_replay_dbs;
+
+static db *aof_replay_select(void *ctx, int idx)
+{
+    aof_replay_dbs *set = (aof_replay_dbs *)ctx;
+    if (idx < 0 || idx >= set->ndbs)
+        return NULL;
+    return &set->dbs[idx];
+}
+
+static int aof_clone_db_data(db *dst, db *src)
+{
+    resp_buf snapshot;
+    int rc;
+
+    resp_buf_init(&snapshot);
+    rc = snapshot_serialize(src, &snapshot);
+    if (rc == 0)
+        rc = snapshot_load_mem(dst, snapshot.data, snapshot.len, pal_wall_ms());
+    resp_buf_free(&snapshot);
+    return rc;
+}
 
 aof *aof_open(const char *path)
 {
@@ -18,12 +72,15 @@ aof *aof_open(const char *path)
         return NULL;
     }
     resp_buf_init(&a->pending);
+    a->write_fn = pal_file_write;
     return a;
 }
 
 void aof_log_cmd(aof *a, const resp_value *argv, size_t argc)
 {
     size_t i;
+    if (a->failed)
+        return;
     resp_write_array_header(&a->pending, argc);
     for (i = 0; i < argc; i++) {
         if (argv[i].type == RESP_BULK_STRING ||
@@ -37,12 +94,35 @@ void aof_log_cmd(aof *a, const resp_value *argv, size_t argc)
 
 int aof_flush(aof *a)
 {
-    if (a->pending.len > 0) {
-        if (pal_file_write(a->f, a->pending.data, a->pending.len) < 0)
+    size_t written = 0;
+    if (a->failed)
+        return -1;
+    while (written < a->pending.len) {
+        ptrdiff_t n = a->write_fn(a->f, a->pending.data + written,
+                                  a->pending.len - written);
+        if (n <= 0) {
+            if (written > 0) {
+                memmove(a->pending.data, a->pending.data + written,
+                        a->pending.len - written);
+                a->pending.len -= written;
+            }
+            a->failed = 1;
             return -1;
-        a->pending.len = 0;
+        }
+        written += (size_t)n;
     }
-    return pal_file_flush(a->f);
+    if (pal_file_flush(a->f) != 0) {
+        a->failed = 1;
+        return -1;
+    }
+    a->pending.len = 0;
+    return 0;
+}
+
+void aof_test_set_write_fn(
+    aof *a, ptrdiff_t (*write_fn)(pal_file *f, const void *buf, size_t n))
+{
+    a->write_fn = write_fn != NULL ? write_fn : pal_file_write;
 }
 
 void aof_close(aof *a)
@@ -62,6 +142,11 @@ static int aof_replay_impl(session *s, db *d, const char *path)
     size_t len = 0, cap = 0;
     arena ar;
     resp_buf out;
+    session replay;
+    aof_replay_dbs replay_dbs;
+    db *tmp_dbs = NULL;
+    db **target_dbs = NULL;
+    int ndbs = 1;
     size_t off = 0;
     int rc = 0;
 
@@ -93,25 +178,125 @@ static int aof_replay_impl(session *s, db *d, const char *path)
     }
     pal_file_close(f);
 
+    if (s != NULL && s->sel_fn != NULL)
+        ndbs = s->sel_ndbs;
+    if (ndbs < 1) {
+        free(buf);
+        return -1;
+    }
+    tmp_dbs = (db *)calloc((size_t)ndbs, sizeof(*tmp_dbs));
+    target_dbs = (db **)calloc((size_t)ndbs, sizeof(*target_dbs));
+    if (tmp_dbs == NULL || target_dbs == NULL) {
+        free(target_dbs);
+        free(tmp_dbs);
+        free(buf);
+        return -1;
+    }
+    {
+        int i;
+        for (i = 0; i < ndbs; i++)
+            db_init(&tmp_dbs[i]);
+        for (i = 0; i < ndbs; i++) {
+            target_dbs[i] = s != NULL ? s->d : d;
+            if (s != NULL && s->sel_fn != NULL)
+                target_dbs[i] = s->sel_fn(s->sel_ctx, i);
+            if (target_dbs[i] == NULL) {
+                rc = -1;
+                break;
+            }
+            if (aof_clone_db_data(&tmp_dbs[i], target_dbs[i]) != 0) {
+                rc = -1;
+                break;
+            }
+            tmp_dbs[i].maxmemory = target_dbs[i]->maxmemory;
+            tmp_dbs[i].maxmemory_policy = target_dbs[i]->maxmemory_policy;
+        }
+        if (rc != 0) {
+            int j;
+            for (j = 0; j < ndbs; j++)
+                db_destroy(&tmp_dbs[j]);
+            free(target_dbs);
+            free(tmp_dbs);
+            free(buf);
+            return -1;
+        }
+    }
+    replay_dbs.dbs = tmp_dbs;
+    replay_dbs.ndbs = ndbs;
+    session_init(&replay, &tmp_dbs[0]);
+    if (s != NULL) {
+        replay.authed = s->authed;
+        replay.requirepass = s->requirepass;
+        replay.db_index = s->db_index;
+        if (s->sel_fn != NULL) {
+            if (replay.db_index < 0 || replay.db_index >= ndbs) {
+                session_release(&replay);
+                {
+                    int i;
+                    for (i = 0; i < ndbs; i++)
+                        db_destroy(&tmp_dbs[i]);
+                }
+                free(target_dbs);
+                free(tmp_dbs);
+                free(buf);
+                return -1;
+            }
+            replay.sel_ctx = &replay_dbs;
+            replay.sel_fn = aof_replay_select;
+            replay.sel_ndbs = ndbs;
+            replay.d = &tmp_dbs[replay.db_index];
+        }
+    }
     arena_init(&ar, 4096);
     resp_buf_init(&out);
     while (off < len) {
         resp_value v;
+        size_t i;
         ptrdiff_t used = resp_parse(buf + off, len - off, &v, &ar);
-        if (used <= 0)
-            break; /* truncated tail (0) or corrupt bytes (-1): stop here */
-        if (v.type == RESP_ARRAY && !v.is_null && v.count > 0) {
-            out.len = 0;
-            if (s != NULL)
-                session_execute(s, v.items, v.count, &out);
-            else
-                command_execute(d, v.items, v.count, &out);
+        if (used == 0)
+            break; /* an incomplete final command is the tolerated EOF tail */
+        if (used < 0 || v.type != RESP_ARRAY || v.is_null || v.count == 0) {
+            rc = -1;
+            break;
+        }
+        for (i = 0; i < v.count; i++) {
+            if ((v.items[i].type != RESP_BULK_STRING &&
+                 v.items[i].type != RESP_SIMPLE_STRING) ||
+                v.items[i].str == NULL) {
+                rc = -1;
+                break;
+            }
+        }
+        if (rc != 0)
+            break;
+        out.len = 0;
+        session_execute(&replay, v.items, v.count, &out);
+        if (out.len > 0 && out.data[0] == '-') {
+            rc = -1;
+            break;
         }
         arena_reset(&ar);
         off += (size_t)used;
     }
+    if (rc == 0) {
+        int i;
+        for (i = 0; i < ndbs; i++)
+            aof_swap_db_data(target_dbs[i], &tmp_dbs[i]);
+        if (s != NULL) {
+            s->db_index = replay.db_index;
+            s->d = target_dbs[replay.db_index];
+        }
+    }
+    session_release(&replay);
     resp_buf_free(&out);
     arena_destroy(&ar);
+    {
+        int i;
+        for (i = 0; i < ndbs; i++)
+            db_destroy(&tmp_dbs[i]);
+    }
+    free(target_dbs);
+    free(tmp_dbs);
     free(buf);
     return rc;
 }

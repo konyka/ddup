@@ -11,6 +11,7 @@
 #include <stdint.h>
 
 #include "core/session.h"
+#include "pal/pal_file.h"
 #include "pal/pal_socket.h"
 
 typedef struct server server;
@@ -88,7 +89,7 @@ void server_set_bus_protocol(server *s, int proto);
 
 /* Automatic snapshot interval in seconds (0 = off). */
 void server_set_save_interval(server *s, int sec);
-/* Nonzero after a SHUTDOWN command was processed. */
+/* Nonzero after SHUTDOWN or a fatal persistence failure. */
 int server_shutdown_requested(const server *s);
 /* Final persistence steps before server_destroy: flush AOF (via destroy)
  * and, if a save interval was configured and AOF is off, save a snapshot. */
@@ -189,6 +190,11 @@ const io_counters *server_io_counters(server *s);
 /* Focused invariant seams used by length-integrity tests. */
 int server_test_pubsub_rejected_subscribe(void);
 int server_test_psync_continue_reserve_failure(void);
+void server_test_set_aof_write_fn(
+    server *s,
+    ptrdiff_t (*write_fn)(pal_file *f, const void *buf, size_t n));
+int server_test_aof_failed(const server *s);
+size_t server_test_aof_pending_bytes(const server *s);
 
 /* Append a mutating command to the worker's AOF with the multi-db SELECT
  * prefix rule (no-op when AOF is off; used by the mt routed-task path). */

@@ -161,6 +161,7 @@ struct server {
     rh_table channels; /* pub/sub: channel -> chan_node list head (8-byte ptr) */
     rh_table schannels; /* shard channels (Redis 7 sharded pub/sub) */
     aof *aof;          /* NULL when appendonly=no */
+    int aof_failed;    /* flush failed: reject writes and stop AOF growth */
     int aof_db_index;  /* last db index written to the AOF (SELECT prefix) */
     const char *requirepass; /* AUTH password (not owned); NULL/"" = off */
     int shutdown_flag;
@@ -211,6 +212,9 @@ static conn *conn_create(server *srv, pal_socket_t fd);
 static db *srv_select_db(void *ctx, int idx);
 static void srv_aof_log(server *srv, int db_index, const resp_value *argv,
                         size_t argc);
+static int srv_aof_reject(const server *srv, const session *sess,
+                          const resp_value *argv, size_t argc, resp_buf *out);
+static void srv_aof_flush(server *srv);
 static int srv_psync(void *ctx, session *sess, const char *replid,
                      size_t replid_len, long long offset);
 static void repl_link_close(server *srv);
@@ -601,7 +605,7 @@ static void srv_propagate(void *ctx, int db_index, const resp_value *argv,
 {
     server *srv = (server *)ctx;
     size_t i;
-    if (srv->aof != NULL)
+    if (srv->aof != NULL && !srv->aof_failed)
         srv_aof_log(srv, db_index, argv, argc);
 
     /* no replication sinks: with zero downstream replicas and no replica
@@ -1209,6 +1213,10 @@ static void repl_link_close_transport(server *srv, conn *c)
  * the readiness and IOCP paths; reads nothing from the socket itself). */
 static void repl_link_feed(server *srv, conn *c)
 {
+    if (srv->aof_failed) {
+        repl_link_close_fatal(srv);
+        return;
+    }
     if (c->link_state == LINK_SYNC_SENT) {
         size_t pos = 0;
         while (pos < c->rlen && c->rbuf[pos] != '\n')
@@ -1350,6 +1358,13 @@ static void repl_link_feed(server *srv, conn *c)
             c->out.len = 0; /* replies are discarded */
             session_execute(c->sess, v.items, v.count, &c->out);
             c->out.len = 0;
+            /* Replication batches may contain many mutations in one recv.
+             * Detect persistence failure before applying the next frame. */
+            srv_aof_flush(srv);
+            if (srv->aof_failed) {
+                repl_link_close_fatal(srv);
+                return;
+            }
             arena_reset(&c->arena);
             off += (size_t)used;
             srv->repl.master_offset += (uint64_t)used; /* PSYNC resume */
@@ -1557,6 +1572,8 @@ const io_counters *server_io_counters(server *s)
 static void srv_aof_log(server *srv, int db_index, const resp_value *argv,
                         size_t argc)
 {
+    if (srv->aof == NULL || srv->aof_failed)
+        return;
     if (db_index != srv->aof_db_index) {
         resp_value sel[2];
         char nbuf[16];
@@ -1574,11 +1591,73 @@ static void srv_aof_log(server *srv, int db_index, const resp_value *argv,
     aof_log_cmd(srv->aof, argv, argc);
 }
 
+static int srv_aof_reject(const server *srv, const session *sess,
+                          const resp_value *argv, size_t argc, resp_buf *out)
+{
+    static const char msg[] = "MISCONF Errors writing to the AOF file";
+    const char *name;
+    size_t nlen;
+    uint16_t id;
+    size_t i;
+    if (!srv->aof_failed || argc == 0 ||
+        (argv[0].type != RESP_BULK_STRING &&
+         argv[0].type != RESP_SIMPLE_STRING))
+        return 0;
+    name = argv[0].str;
+    nlen = argv[0].len;
+    id = cmd_resolve(name, nlen);
+    if (!cmd_is_write(id)) {
+        if (id != CMD_EXEC)
+            return 0;
+        for (i = 0; i < sess->queue_len; i++) {
+            const queued_cmd *q = &sess->queue[i];
+            if (q->argc > 0 &&
+                (q->argv[0].type == RESP_BULK_STRING ||
+                 q->argv[0].type == RESP_SIMPLE_STRING) &&
+                cmd_is_write(cmd_resolve(q->argv[0].str, q->argv[0].len)))
+                break;
+        }
+        if (i == sess->queue_len)
+            return 0;
+    }
+    resp_write_error(out, msg, sizeof(msg) - 1);
+    return 1;
+}
+
+static void srv_aof_flush(server *srv)
+{
+    /* A failed append makes acknowledged mutations non-durable. Stop the
+     * normal run loop, reject writes if an embedding keeps pumping it, and
+     * leave the failed AOF buffer frozen for diagnosis/shutdown. */
+    if (srv->aof != NULL && !srv->aof_failed && aof_flush(srv->aof) != 0) {
+        srv->aof_failed = 1;
+        srv->shutdown_flag = 1;
+    }
+}
+
 void server_aof_log_cmd(server *s, int db_index, const resp_value *argv,
                         size_t argc)
 {
-    if (s->aof != NULL)
+    if (s->aof != NULL && !s->aof_failed)
         srv_aof_log(s, db_index, argv, argc);
+}
+
+void server_test_set_aof_write_fn(
+    server *s,
+    ptrdiff_t (*write_fn)(pal_file *f, const void *buf, size_t n))
+{
+    if (s->aof != NULL)
+        aof_test_set_write_fn(s->aof, write_fn);
+}
+
+int server_test_aof_failed(const server *s)
+{
+    return s->aof_failed;
+}
+
+size_t server_test_aof_pending_bytes(const server *s)
+{
+    return s->aof != NULL ? s->aof->pending.len : 0;
 }
 
 /* Start a TLS listener alongside the plain one (port 0 = ephemeral).
@@ -1624,16 +1703,19 @@ uint16_t server_tls_port(const server *s)
 int server_enable_aof(server *s, const char *path)
 {
     if (pal_file_exists(path)) {
+        int rc;
         /* replay through a session with the selection hook so embedded
          * SELECT commands land on the right db */
         session *rs = session_create(&s->db);
-        if (rs != NULL) {
-            rs->sel_ctx = s;
-            rs->sel_fn = srv_select_db;
-            rs->sel_ndbs = s->ndbs;
-            (void)aof_replay_session(rs, path);
-            session_free(rs);
-        }
+        if (rs == NULL)
+            return -1;
+        rs->sel_ctx = s;
+        rs->sel_fn = srv_select_db;
+        rs->sel_ndbs = s->ndbs;
+        rc = aof_replay_session(rs, path);
+        session_free(rs);
+        if (rc != 0)
+            return -1;
     }
     s->aof = aof_open(path);
     return s->aof != NULL ? 0 : -1;
@@ -2721,7 +2803,6 @@ static void cluster_nodes_save(server *s)
 static int conn_process_input(server *s, conn *c)
 {
     size_t off = 0;
-    (void)s;
     while (off < c->rlen) {
         resp_value v;
         ptrdiff_t used =
@@ -2730,6 +2811,11 @@ static int conn_process_input(server *s, conn *c)
             break; /* incomplete command */
         if (used < 0 || v.type != RESP_ARRAY || v.is_null)
             return -1;
+        if (srv_aof_reject(s, c->sess, v.items, v.count, &c->out)) {
+            arena_reset(&c->arena);
+            off += (size_t)used;
+            continue;
+        }
         if (s->route_fn != NULL) {
             int rr = s->route_fn(s->route_ctx, c, c->sess, v.items, v.count,
                                  c->rbuf + off, (size_t)used, &c->out);
@@ -2905,8 +2991,10 @@ static int server_run_once_proactor(server *s, int timeout_ms)
             evs[i].op_done = raw[i].op_done;
         }
     }
-    if (nev <= 0)
+    if (nev <= 0) {
+        srv_aof_flush(s);
         return nev;
+    }
     s->io.events += (uint64_t)nev;
 
     for (i = 0; i < nev; i++) {
@@ -3159,8 +3247,7 @@ static int server_run_once_proactor(server *s, int timeout_ms)
             kick_flush(s, c);
         }
     }
-    if (s->aof != NULL)
-        aof_flush(s->aof);
+    srv_aof_flush(s);
     return nev;
 }
 
@@ -3171,6 +3258,11 @@ int server_run_once(server *s, int timeout_ms)
     int i;
 
     s->io.loops++;
+    if (s->aof_failed) {
+        if (s->route_fn != NULL)
+            return -1;
+        goto service_io;
+    }
     /* active expiration: at most one cycle per 100 ms of monotonic time;
      * every logical db gets a pass (empty expires tables exit in O(1)) */
     {
@@ -3218,12 +3310,15 @@ int server_run_once(server *s, int timeout_ms)
         }
     }
 
+service_io:
     if (srv_proactor(s))
         return server_run_once_proactor(s, timeout_ms);
 
     nev = pal_loop_wait(s->loop, evs, SERVER_MAX_EVENTS, timeout_ms);
-    if (nev <= 0)
+    if (nev <= 0) {
+        srv_aof_flush(s);
         return nev;
+    }
     s->io.events += (uint64_t)nev;
 
     for (i = 0; i < nev; i++) {
@@ -3403,7 +3498,6 @@ int server_run_once(server *s, int timeout_ms)
         }
     }
     /* flush the AOF buffer once per loop iteration */
-    if (s->aof != NULL)
-        aof_flush(s->aof);
+    srv_aof_flush(s);
     return nev;
 }
