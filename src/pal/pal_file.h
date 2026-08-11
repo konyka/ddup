@@ -24,11 +24,21 @@ ptrdiff_t pal_file_write(pal_file *f, const void *buf, size_t n);
 ptrdiff_t pal_file_read(pal_file *f, void *buf, size_t n);
 /* Flush the stdio buffer. 0 on success. */
 int pal_file_flush(pal_file *f);
-void pal_file_close(pal_file *f);
+/* Close the file, returning 0 on success or -1 if the close fails. */
+int pal_file_close(pal_file *f);
 
 int pal_file_exists(const char *path);
 /* Rename, replacing the target if it exists. 0 on success. */
 int pal_file_rename(const char *from, const char *to);
 int pal_file_unlink(const char *path);
+
+#ifdef DDUP_TESTING
+/* Test seams for save failure and dynamic temporary-path coverage. */
+void pal_file_test_fail_next_rename(void);
+void pal_file_test_fail_next_flush(void);
+void pal_file_test_fail_next_close(void);
+int pal_file_test_open_write_attempts(void);
+void pal_file_test_reset(void);
+#endif
 
 #endif /* DDUP_PAL_FILE_H */

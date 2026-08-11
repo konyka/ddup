@@ -57,7 +57,7 @@ endif()
 # ---------------------------------------------------------------------------
 # Core library: everything except the server entry point.
 # ---------------------------------------------------------------------------
-add_library(ddup_core STATIC
+set(DDUP_CORE_SOURCES
     src/pal/pal_time.c
     src/pal/pal_socket.c
     src/pal/pal_event.c
@@ -90,16 +90,22 @@ add_library(ddup_core STATIC
     src/server/aof.c
     src/server/repl.c
 )
-target_include_directories(ddup_core PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/src"
-    "${CMAKE_CURRENT_SOURCE_DIR}/deps/wyhash")
-ddup_apply_options(ddup_core)
-target_link_libraries(ddup_core PUBLIC ddup_lua)
-target_compile_definitions(ddup_core PUBLIC
-    DDUP_VERSION_MAJOR=${PROJECT_VERSION_MAJOR}
-    DDUP_VERSION_MINOR=${PROJECT_VERSION_MINOR}
-    DDUP_VERSION_PATCH=${PROJECT_VERSION_PATCH}
-    DDUP_HAVE_IOURING_PBUF_UAPI=${DDUP_HAVE_IOURING_PBUF_UAPI}
-)
+
+function(ddup_configure_core target)
+    target_include_directories(${target} PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/src"
+        "${CMAKE_CURRENT_SOURCE_DIR}/deps/wyhash")
+    ddup_apply_options(${target})
+    target_link_libraries(${target} PUBLIC ddup_lua)
+    target_compile_definitions(${target} PUBLIC
+        DDUP_VERSION_MAJOR=${PROJECT_VERSION_MAJOR}
+        DDUP_VERSION_MINOR=${PROJECT_VERSION_MINOR}
+        DDUP_VERSION_PATCH=${PROJECT_VERSION_PATCH}
+        DDUP_HAVE_IOURING_PBUF_UAPI=${DDUP_HAVE_IOURING_PBUF_UAPI}
+    )
+endfunction()
+
+add_library(ddup_core STATIC ${DDUP_CORE_SOURCES})
+ddup_configure_core(ddup_core)
 
 if(WIN32)
     target_link_libraries(ddup_core PUBLIC ws2_32)
@@ -173,12 +179,30 @@ enable_testing()
 
 function(ddup_add_test name source)
     add_executable(${name} ${source})
-    target_link_libraries(${name} PRIVATE ddup_core)
+    target_link_libraries(${name} PRIVATE ddup_core_test)
     target_include_directories(${name} PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/tests")
+    target_compile_definitions(${name} PRIVATE DDUP_TESTING=1)
     ddup_apply_options(${name})
     add_test(NAME ${name} COMMAND ${name})
     set_tests_properties(${name} PROPERTIES TIMEOUT 180)
 endfunction()
+
+# Test-only PAL seams must not add mutable state to the production library.
+add_library(ddup_core_test STATIC ${DDUP_CORE_SOURCES})
+ddup_configure_core(ddup_core_test)
+target_compile_definitions(ddup_core_test PRIVATE DDUP_TESTING=1)
+target_compile_definitions(ddup_core_test PUBLIC DDUP_HAS_TLS=${DDUP_HAS_TLS})
+if(DDUP_HAS_TLS)
+    target_link_libraries(ddup_core_test PUBLIC OpenSSL::SSL OpenSSL::Crypto)
+endif()
+if(WIN32)
+    target_link_libraries(ddup_core_test PUBLIC ws2_32)
+else()
+    target_link_libraries(ddup_core_test PUBLIC Threads::Threads)
+endif()
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    target_compile_definitions(ddup_core_test PUBLIC _GNU_SOURCE)
+endif()
 
 ddup_add_test(test_pal tests/test_pal.c)
 ddup_add_test(test_pal_thread tests/test_pal_thread.c)

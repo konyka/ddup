@@ -7,6 +7,7 @@
 #include "core/session.h"
 #include "core/snapshot.h"
 #include "ds/obj.h"
+#include "pal/pal_file.h"
 #include "test.h"
 
 #define TMP_SNAP "test_snapshot_tmp.ddr"
@@ -454,6 +455,126 @@ static void test_save_failure_preserves_existing_snapshot(void)
     resp_buf_free(&out);
 }
 
+static void test_save_rename_failure_removes_temporary_file(void)
+{
+    db d;
+
+    (void)remove(TMP_SNAP);
+    (void)remove(TMP_SNAP ".tmp");
+    db_init(&d);
+    pal_file_test_reset();
+    pal_file_test_fail_next_rename();
+    DD_CHECK_EQ_INT(-1, snapshot_save(&d, TMP_SNAP));
+    DD_CHECK(!pal_file_exists(TMP_SNAP ".tmp"));
+    db_destroy(&d);
+    (void)remove(TMP_SNAP);
+}
+
+static void test_save_close_failure_preserves_existing_snapshot(void)
+{
+    db d;
+    FILE *f;
+    char disk[8];
+
+    f = fopen(TMP_SNAP, "wb");
+    DD_CHECK(f != NULL);
+    if (f != NULL) {
+        DD_CHECK_EQ_INT(8, (long long)fwrite("existing", 1, 8, f));
+        DD_CHECK_EQ_INT(0, fclose(f));
+    }
+    (void)remove(TMP_SNAP ".tmp");
+
+    db_init(&d);
+    pal_file_test_reset();
+    pal_file_test_fail_next_close();
+    DD_CHECK_EQ_INT(-1, snapshot_save(&d, TMP_SNAP));
+    DD_CHECK(!pal_file_exists(TMP_SNAP ".tmp"));
+
+    f = fopen(TMP_SNAP, "rb");
+    DD_CHECK(f != NULL);
+    if (f != NULL) {
+        DD_CHECK_EQ_INT(8, (long long)fread(disk, 1, sizeof(disk), f));
+        DD_CHECK_EQ_INT(0, fclose(f));
+        DD_CHECK_MEM("existing", 8, disk, sizeof(disk));
+    }
+    db_destroy(&d);
+    (void)remove(TMP_SNAP);
+}
+
+static void test_save_replacement_failure_preserves_existing_snapshot(void)
+{
+    db d;
+    FILE *f;
+    char disk[8];
+
+    f = fopen(TMP_SNAP, "wb");
+    DD_CHECK(f != NULL);
+    if (f != NULL) {
+        DD_CHECK_EQ_INT(8, (long long)fwrite("existing", 1, 8, f));
+        DD_CHECK_EQ_INT(0, fclose(f));
+    }
+    (void)remove(TMP_SNAP ".tmp");
+
+    db_init(&d);
+    pal_file_test_reset();
+    pal_file_test_fail_next_rename();
+    DD_CHECK_EQ_INT(-1, snapshot_save(&d, TMP_SNAP));
+    DD_CHECK(!pal_file_exists(TMP_SNAP ".tmp"));
+
+    f = fopen(TMP_SNAP, "rb");
+    DD_CHECK(f != NULL);
+    if (f != NULL) {
+        DD_CHECK_EQ_INT(8, (long long)fread(disk, 1, sizeof(disk), f));
+        DD_CHECK_EQ_INT(0, fclose(f));
+        DD_CHECK_MEM("existing", 8, disk, sizeof(disk));
+    }
+    db_destroy(&d);
+    (void)remove(TMP_SNAP);
+}
+
+static void test_multi_save_rename_failure_removes_temporary_file(void)
+{
+    snap_dbset *ds = snap_dbset_new();
+
+    (void)remove(TMP_SNAP);
+    (void)remove(TMP_SNAP ".tmp");
+    pal_file_test_reset();
+    pal_file_test_fail_next_rename();
+    DD_CHECK_EQ_INT(-1, snapshot_save_multi(ds, snap_get, 3, TMP_SNAP));
+    DD_CHECK(!pal_file_exists(TMP_SNAP ".tmp"));
+    snap_dbset_free(ds);
+    (void)remove(TMP_SNAP);
+}
+
+static void test_save_uses_dynamic_temporary_path(void)
+{
+    db d;
+    char path[1100];
+
+    memset(path, 'x', sizeof(path) - 1);
+    path[sizeof(path) - 1] = '\0';
+    db_init(&d);
+    pal_file_test_reset();
+    DD_CHECK_EQ_INT(-1, snapshot_save(&d, path));
+    DD_CHECK_EQ_INT(1, pal_file_test_open_write_attempts());
+    pal_file_test_reset();
+    db_destroy(&d);
+}
+
+static void test_multi_save_uses_dynamic_temporary_path(void)
+{
+    snap_dbset *ds = snap_dbset_new();
+    char path[1100];
+
+    memset(path, 'x', sizeof(path) - 1);
+    path[sizeof(path) - 1] = '\0';
+    pal_file_test_reset();
+    DD_CHECK_EQ_INT(-1, snapshot_save_multi(ds, snap_get, 3, path));
+    DD_CHECK_EQ_INT(1, pal_file_test_open_write_attempts());
+    pal_file_test_reset();
+    snap_dbset_free(ds);
+}
+
 static void test_multidb_count_has_no_eof_sentinel(void)
 {
     snap_dbset *ds = snap_dbset_new();
@@ -533,6 +654,12 @@ int main(void)
     DD_RUN(test_multidb_v1_compat);
     DD_RUN(test_serialize_rejects_unrepresentable_sizes);
     DD_RUN(test_save_failure_preserves_existing_snapshot);
+    DD_RUN(test_save_rename_failure_removes_temporary_file);
+    DD_RUN(test_save_close_failure_preserves_existing_snapshot);
+    DD_RUN(test_save_replacement_failure_preserves_existing_snapshot);
+    DD_RUN(test_multi_save_rename_failure_removes_temporary_file);
+    DD_RUN(test_save_uses_dynamic_temporary_path);
+    DD_RUN(test_multi_save_uses_dynamic_temporary_path);
     DD_RUN(test_multidb_count_has_no_eof_sentinel);
     DD_RUN(test_reader_extreme_offsets_are_rejected);
     DD_RUN(test_failed_install_and_restore_are_transactional);

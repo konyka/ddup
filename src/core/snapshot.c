@@ -263,9 +263,10 @@ int snapshot_serialize(db *d, resp_buf *out)
 int snapshot_save(db *d, const char *path)
 {
     resp_buf buf;
-    char tmp[1024];
+    char *tmp;
     pal_file *f;
     int rc = -1;
+    size_t path_len;
 
     resp_buf_init(&buf);
     if (snapshot_serialize(d, &buf) != 0) {
@@ -273,20 +274,28 @@ int snapshot_save(db *d, const char *path)
         return -1;
     }
 
-    if (strlen(path) + 5 < sizeof(tmp)) {
-        snprintf(tmp, sizeof(tmp), "%s.tmp", path);
-        f = pal_file_open_write(tmp);
-        if (f != NULL) {
-            if (pal_file_write(f, buf.data, buf.len) == (ptrdiff_t)buf.len &&
-                pal_file_flush(f) == 0) {
-                pal_file_close(f);
+    path_len = strlen(path);
+    if (path_len > SIZE_MAX - sizeof(".tmp"))
+        goto done;
+    tmp = (char *)malloc(path_len + sizeof(".tmp"));
+    if (tmp == NULL)
+        goto done;
+    memcpy(tmp, path, path_len);
+    memcpy(tmp + path_len, ".tmp", sizeof(".tmp"));
+    f = pal_file_open_write(tmp);
+    if (f != NULL) {
+        if (pal_file_write(f, buf.data, buf.len) == (ptrdiff_t)buf.len &&
+            pal_file_flush(f) == 0) {
+            if (pal_file_close(f) == 0)
                 rc = pal_file_rename(tmp, path);
-            } else {
-                pal_file_close(f);
-                pal_file_unlink(tmp);
-            }
+        } else {
+            pal_file_close(f);
         }
+        if (rc != 0)
+            (void)pal_file_unlink(tmp);
     }
+    free(tmp);
+done:
     resp_buf_free(&buf);
     return rc;
 }
@@ -657,9 +666,10 @@ int snapshot_save_multi(void *ctx, snapshot_db_get get, int ndbs,
                         const char *path)
 {
     resp_buf buf;
-    char tmp[1024];
+    char *tmp;
     pal_file *f;
     int rc = -1;
+    size_t path_len;
 
     resp_buf_init(&buf);
     if (snapshot_serialize_multi(ctx, get, ndbs, &buf) != 0) {
@@ -667,20 +677,28 @@ int snapshot_save_multi(void *ctx, snapshot_db_get get, int ndbs,
         return -1;
     }
 
-    if (strlen(path) + 5 < sizeof(tmp)) {
-        snprintf(tmp, sizeof(tmp), "%s.tmp", path);
-        f = pal_file_open_write(tmp);
-        if (f != NULL) {
-            if (pal_file_write(f, buf.data, buf.len) == (ptrdiff_t)buf.len &&
-                pal_file_flush(f) == 0) {
-                pal_file_close(f);
+    path_len = strlen(path);
+    if (path_len > SIZE_MAX - sizeof(".tmp"))
+        goto done;
+    tmp = (char *)malloc(path_len + sizeof(".tmp"));
+    if (tmp == NULL)
+        goto done;
+    memcpy(tmp, path, path_len);
+    memcpy(tmp + path_len, ".tmp", sizeof(".tmp"));
+    f = pal_file_open_write(tmp);
+    if (f != NULL) {
+        if (pal_file_write(f, buf.data, buf.len) == (ptrdiff_t)buf.len &&
+            pal_file_flush(f) == 0) {
+            if (pal_file_close(f) == 0)
                 rc = pal_file_rename(tmp, path);
-            } else {
-                pal_file_close(f);
-                pal_file_unlink(tmp);
-            }
+        } else {
+            pal_file_close(f);
         }
+        if (rc != 0)
+            (void)pal_file_unlink(tmp);
     }
+    free(tmp);
+done:
     resp_buf_free(&buf);
     return rc;
 }
