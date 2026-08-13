@@ -397,14 +397,19 @@ INCRBYFLOAT APPEND STRLEN MGET MSET GETDEL GETEX SETEX PSETEX GETSET
 SETRANGE GETRANGE ｜ EXPIRE PEXPIRE EXPIREAT PEXPIREAT TTL PTTL PERSIST
 EXPIRETIME PEXPIRETIME ｜ TYPE KEYS SCAN RENAME RENAMENX TOUCH RANDOMKEY ｜
 DBSIZE FLUSHDB CONFIG(GET/SET maxmemory, maxmemory-policy) INFO ｜
-HSET HGET HDEL HEXISTS HLEN HGETALL HKEYS HVALS HMSET HMGET HINCRBY HSETNX ｜
-LPUSH RPUSH LPUSHX RPUSHX LPOP RPOP LLEN LRANGE LINDEX LSET ｜
+HSET HGET HDEL HEXISTS HLEN HGETALL HKEYS HVALS HMSET HMGET HINCRBY HSETNX
+HSTRLEN HRANDFIELD ｜
+LPUSH RPUSH LPUSHX RPUSHX LPOP(count) RPOP(count) LLEN LRANGE LINDEX LSET
+LPOS LREM LTRIM RPOPLPUSH ｜
 SADD SREM SISMEMBER SMISMEMBER SCARD SMEMBERS SPOP SRANDMEMBER SMOVE
-SINTER SUNION SDIFF ｜
+SINTER SUNION SDIFF SINTERCARD SINTERSTORE SUNIONSTORE SDIFFSTORE ｜
 ZADD ZSCORE ZCARD ZINCRBY ZREM ZRANGE ZREVRANGE ZRANK ZREVRANK ZCOUNT
-ZRANGEBYSCORE ZREMRANGEBYSCORE ｜
+ZRANGEBYSCORE ZREMRANGEBYSCORE ZPOPMIN ZPOPMAX ZREMRANGEBYRANK ZMSCORE
+ZRANDMEMBER ZRANGEBYLEX ZREVRANGEBYLEX ZREMRANGEBYLEX ｜
 MULTI EXEC DISCARD WATCH UNWATCH ｜ SUBSCRIBE UNSUBSCRIBE PUBLISH
-SSUBSCRIBE SUNSUBSCRIBE SPUBLISH PUBSUB(SHARDCHANNELS/SHARDNUMSUB) QUIT ｜
+PSUBSCRIBE PUNSUBSCRIBE
+SSUBSCRIBE SUNSUBSCRIBE SPUBLISH
+PUBSUB(CHANNELS/NUMSUB/NUMPAT/SHARDCHANNELS/SHARDNUMSUB) QUIT ｜
 AUTH SELECT SWAPDB ｜ SAVE LASTSAVE SHUTDOWN ｜ SYNC REPLICAOF ｜
 DUMP RESTORE MIGRATE ASKING ｜ EVAL EVALSHA SCRIPT(LOAD/EXISTS/FLUSH) ｜
 INFO（内部变体 INFO __STATS__ 供 mt 聚合）
@@ -481,6 +486,18 @@ DBSIZE 为 O(1)，可能计入尚未回收的过期 key。
   server_run_once 末尾统一 flush 所有连接（单线程保证安全）。连接关闭
   自动退订。订阅态仅允许 (P)SUBSCRIBE/(P)UNSUBSCRIBE/PING/QUIT/SHUTDOWN。
   QUIT 当前只回 +OK 不断连（简化，后续补）。
+- **模式订阅（Phase 43）**：PSUBSCRIBE/PUNSUBSCRIBE 与第三张注册表
+  `rh_table patterns`（pattern -> 连接链表）+ conn `psubs` + session
+  `npsub`，订阅/退订主体与普通频道共用 chan_subscribe/chan_unsubscribe。
+  PUBLISH 在普通投递后线性扫 patterns 表、按 `ddup_glob_match` 匹配频道，
+  每个匹配的 (conn, pattern) 对收一条 pmessage，返回值 = message 接收者数
+  + pmessage (conn,pattern) 对数（Redis 语义；pattern 总量小，线性扫
+  可接受，记录于此）。PUBSUB CHANNELS/NUMSUB/NUMPAT 走 session 钩子
+  （pubsub_channels/channel_nsub/numpat；无钩子的栈 session 回空/0），
+  NUMPAT 由 server 侧 numpats 计数器维护。订阅确认帧计数为
+  nsub+nssub+npsub 总和。mt 模式不支持模式订阅（PSUBSCRIBE/
+  PUNSUBSCRIBE 进 mt_is_blocked）；PUBSUB 自查子命令在 mt 下与
+  SHARDCHANNELS 一致走 MT_PASS 本地执行（数据为本 worker 视角，记录在案）。
 
 ## 持久化（Phase 6）
 
@@ -953,6 +970,28 @@ hazard pointer/延迟回收、索引桶 CAS、检查点与恢复的并发协议�
   会被接受，Redis 拒绝，记录在案）。覆盖写（GETSET/SETEX/INCRBY 族）
   清 TTL，与既有 INCR/APPEND 的有意行为一致；SETEX/GETSET 对非
   string 旧值回 WRONGTYPE（跟随本实现 SET 的收紧语义）。
+
+## 容器命令补齐（Phase 41/42）
+
+- **统计槽位扩容**：命令 id 总数越过 128，`db.cmd_calls/cmd_usecs`
+  与 `info_stats` 的 `[128]` 统一改为 `CMD_STATS_SLOTS`（192）；
+  mt INFO __STATS__ 按 id 文本传输不受影响。**硬约束**：CMD_TABLE
+  条目与枚举必须同步追加在末尾——`cmd_table_entry` 按
+  `CMD_TABLE[id-1]` 位置索引，插中间会使后续命令 id 全部错位。
+- **List**：LREM/LTRIM/RPOPLPUSH 共用新 ds 助手 `obj_list_remove()`
+  （unlink + len/mem 记账）；LPOS 两遍扫描零分配流出；LPOP/RPOP
+  count 形式对缺失 key 回 null array（RESP2 `*-1`，Redis 行为）。
+- **Set**：SINTER/SUNION/SDIFF 求值抽取为 `setop_eval()`，STORE 族
+  物化结果覆盖 dst（任意旧类型允许、空结果删 dst）；SINTERCARD 经
+  `rh_scan` 提前停（LIMIT 达到即返回，不物化交集）。
+- **ZSet**：skiplist 新增 member 字典序范围定位
+  `zsl_first_in_lex_range()/zsl_last_in_lex_range()`（与 score range
+  同构的逐层 span 定位；"全元素同分"假定与 Redis 一致不校验）；
+  ZPOPMIN/MAX 先写回复再删节点（无悬垂）；ZREMRANGEBYRANK/BYLEX
+  共用 `zset_rem_node_span` 沿 level-0 删除，dict/skiplist 两侧一致。
+- **语义取舍（记录在案）**：ZPOPMIN/MAX 无 count 也回数组（Redis
+  6.2+）；SINTERCARD numkeys≤0 按 "Number of keys can't be greater
+  than number of args" 报错。
 
 ## 目录结构
 

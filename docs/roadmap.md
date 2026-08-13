@@ -215,6 +215,19 @@
     路径（溢出判定通用化）；SETRANGE 512MB 上限 + 补零写；
     GETRANGE Redis 归一化语义；INCRBYFLOAT strtold + %.17Lg
     （Phase 40）
+  - [x] Hash/List/Set 补齐：HSTRLEN/HRANDFIELD、LPOS(RANK/COUNT/
+    MAXLEN)/LREM/LTRIM/RPOPLPUSH、LPOP/RPOP count 扩展（缺失 key 回
+    null array）、SINTERCARD/SINTERSTORE/SUNIONSTORE/SDIFFSTORE
+    （setop_eval 共用求值）；命令统计槽位 [128]→CMD_STATS_SLOTS 192
+    （Phase 41）
+  - [x] ZSet 补齐：ZPOPMIN/ZPOPMAX/ZREMRANGEBYRANK/ZMSCORE/
+    ZRANDMEMBER/ZRANGEBYLEX/ZREVRANGEBYLEX/ZREMRANGEBYLEX；skiplist
+    新增 member 字典序范围定位 zsl_first/last_in_lex_range（span
+    逐层定位，同分假定与 Redis 一致不校验）（Phase 42）
+  - [x] 模式订阅：PSUBSCRIBE/PUNSUBSCRIBE + PUBSUB CHANNELS/NUMSUB/
+    NUMPAT；第三张注册表 rh_table patterns，PUBLISH 线性扫 pattern
+    表 glob 匹配投递 pmessage（记录在案）；mt 模式不支持模式订阅
+    （进 mt_is_blocked，记录在案）（Phase 43）
   - [ ] 范围化排除（记录在案，不实施）：
     - 分层存储（热/冷数据落盘）：超出"内存缓存存储"定位
     - mt 模式的复制/集群适配：见 Phase 15 说明
