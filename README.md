@@ -7,7 +7,7 @@ redis c 的另一种实现 —— 参考微软 [Garnet](https://github.com/micro
 
 - RESP2/RESP3 协议兼容，可被未修改的 Redis 客户端直接使用
 - 性能优先：thread-per-core 无共享模型、平台最优 IO 多路复用
-  （Linux: io_uring/epoll，macOS/FreeBSD: kqueue，Windows: IOCP）、
+  （Linux: epoll/io_uring；macOS/FreeBSD: kqueue；Windows: IOCP）、
   零拷贝解析、arena/对象池内存管理
 - 数据类型：String/Hash/List/Set/ZSet（跳表）；事务 MULTI/EXEC/WATCH；
   发布订阅（含 Redis 7 分片频道 SSUBSCRIBE/SPUBLISH）；过期与
@@ -18,14 +18,16 @@ redis c 的另一种实现 —— 参考微软 [Garnet](https://github.com/micro
   （原子写、定时自动保存）
 - 复制：master/replica 全量同步 + PSYNC 部分重同步、只读副本、
   断线自动重连重同步、链式复制
-- TLS：可选 OpenSSL 支持（独立 tls-port，与明文端口并行；Linux/macOS TLS CI 验证）
+- TLS：可选 OpenSSL 支持（独立 tls-port，与明文端口并行；Linux/macOS CI
+  安装 OpenSSL 并运行 TLS 测试；FreeBSD CI 不安装 OpenSSL）
 - 多节点集群模式：Redis cluster 风格（16384 槽、gossip 节点发现、
   ADDSLOTS/SETSLOT、-MOVED/-ASK 重定向、MIGRATE 在线迁移、
   config epoch 冲突裁决、副本自动故障转移、ddup-reshard 运维工具、
   真实 Redis 总线协议互操作 cluster-bus-protocol redis）
 - 多数据库与安全：16 逻辑库（SELECT/SWAPDB）、requirepass/AUTH、
   commandstats 统计
-- 多线程：thread-per-core mt 模式（--io-threads N，槽路由 shared-nothing）
+- 多线程：thread-per-core mt 模式（--io-threads N，槽路由 shared-nothing；
+  集群和复制仅支持单线程，io_uring op 模式仅支持单线程 Linux）
 - 跨平台：Windows / Linux / macOS / FreeBSD（其他 POSIX 系统走通用路径）
 - TDD 开发：每个模块先写测试，全部测试通过后才提交
 

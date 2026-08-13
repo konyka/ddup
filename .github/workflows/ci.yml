@@ -81,7 +81,7 @@ jobs:
           git push -f origin "${{ matrix.logbranch }}"
 
   freebsd:
-    name: freebsd / clang
+    name: freebsd / cmake build + ctest (no OpenSSL provisioning)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

@@ -4,7 +4,8 @@
 
 - [x] **Phase 0 — 脚手架**
   CMake 工程、C 标准探测（C23→C99）、自研测试框架、PAL 骨架（时间/平台宏）、
-  四平台 CI（Windows/Linux/macOS/FreeBSD）、文档骨架
+  Windows/Linux/macOS/FreeBSD 的 CMake 构建与 CTest CI（FreeBSD job 不安装
+  OpenSSL）、文档骨架
 - [x] **Phase 1 — RESP 协议**
   RESP2 解析器（含流式/分包边界）、写出器、解析-回写一致性随机测试、RESP3 类型
 - [x] **Phase 2 — 内存 KV 核心**
@@ -89,8 +90,9 @@
   集群模式、TLS、io_uring 优化落地、SIMD 解析优化、与 Garnet/Redis 基准对比
   - [x] 主从复制：全量同步（SYNC 快照帧 + 命令推流）、REPLICAOF/NO ONE、
     只读副本、断线全量重同步（无 PSYNC，backlog 预留）（Phase 7.1）
-  - [x] TLS：可选 OpenSSL（独立 tls-port、阻塞握手、DDUP_HAS_TLS 门控）（Phase 7.2）；
-    Windows test_tls 修复并全平台启用（Phase 18：测试阻塞 socket 根因）
+   - [x] TLS：可选 OpenSSL（独立 tls-port、非阻塞握手、DDUP_HAS_TLS 门控）（Phase 7.2）；
+     Windows test_tls 修复；测试仅在构建时找到 OpenSSL 时注册（Phase 18：测试
+     阻塞 socket 根因）
   - [x] 剖析驱动优化：bench_core 进程内基准 + expires 空表早退、无 WATCH 免
     keyvers 写入、get+touch 单探测、传播 fan-out O(1)（CPU 侧 SET +71%/
     GET +24%，端到端 +8–11%）（Phase 7.3）
@@ -189,6 +191,18 @@
     （c500 P16 mt4 +5~8%，保留）；回复直写/批路由 v2/完成合批经分析
     或实测否决（竞态、分配搅动、排序契约、噪声下不可测），
     parsed-forward 实测负收益回退——否定结论全部入档（Phase 37）
+  - [x] 全库健壮性加固（大小/溢出与失败路径审计）：arena 对齐与块
+    分配溢出安全且失败不留半状态、rhtable 容量翻倍/槽位字节溢出
+    检查与溢出安全负载计算、resp 聚合分配字节检查（先写本地聚合
+    再一次性提交 out）、session MULTI 队列增长溢出检查
+    （session_queue_push 返回错误，分发回 -ERR 不入队）、skiplist
+    zsl_insert 错误返回 + 节点字节 uint64 溢出检查、obj_str 空
+    payload 下溢防护、脚本缓存 sha1 长度/字符集校验 + registry
+    ref 有效性复核（畸形条目重编译/flush 忽略）、io_uring
+    readiness 后端 SQ 预留/部分提交推进/EINTR 重试、timeout 参数
+    生命周期由栈改为环持有、TLS 库初始化改线程安全 once + fd 与
+    读写字节 INT 上限、nodes.conf 落盘 close/rename 失败保留脏态
+    并清理临时文件（Phase 38）
   - [ ] 范围化排除（记录在案，不实施）：
     - 分层存储（热/冷数据落盘）：超出"内存缓存存储"定位
     - mt 模式的复制/集群适配：见 Phase 15 说明

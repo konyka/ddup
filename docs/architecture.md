@@ -559,7 +559,9 @@ DBSIZE 为 O(1)，可能计入尚未回收的过期 key。
   在服务器处理前永久阻塞（Windows 上稳定复现，POSIX 靠时序侥幸通过），
   另有 PING 回复字节数断言笔误（6 应为 7）。修复后 test_tls 全平台
   启用；所有轮询循环带 15s 墙钟上限，回归时快速报 FAIL 而非 CI 超时。
-  本地无 OpenSSL 开发包时的验证方法（记录在案）：取 Git for Windows
+  找到 OpenSSL 的构建才会注册 test_tls；当前 Linux/macOS CI job 会安装并
+  运行该测试，FreeBSD CI 仅安装 CMake，因此构建 TLS stub 且不注册 test_tls。本地无 OpenSSL
+   开发包时的验证方法（记录在案）：取 Git for Windows
   自带的 mingw OpenSSL 3.5.6 DLL，用源码包 + 仓库内 perl 桩模块跑
   OpenSSL Configure + dofile.pl 生成头文件，llvm-objdump/dlltool 生成
   COFF 导入库，再 `-DOPENSSL_*` 显式指向即可（build/openssl-dev，
@@ -890,6 +892,34 @@ hazard pointer/延迟回收、索引桶 CAS、检查点与恢复的并发协议�
 （GET 免路由，写仍路由）——读多写少负载可吃掉大部分共享存储优势，
 复杂度集中在桶级版本计数与读重试；Dragonfly（分片）与 Garnet（共享）
 并立证明两条路线都是 SOTA，ddup 当前路线无需更换。
+
+## 健壮性加固（Phase 38）
+
+全库大小/溢出与失败路径审计，统一约定：**容量与字节计算先验算、失败
+不留半状态、错误沿返回值上抛**。
+
+- **分配尺寸验算**：rhtable 槽位字节与容量翻倍、resp 聚合 items 字节、
+  session MULTI 队列增长、skiplist 节点字节（uint64）都在乘法前检查
+  上界；不可表示的请求返回错误（分发层回 `-ERR`，如超长 MULTI 入队
+  被拒）而不是回绕成小分配。rhtable 负载阈值计算改为先除后乘，
+  `cap * RH_MAX_LOAD_NUM` 不再可能溢出。
+- **arena**：对齐上调与块尺寸（`sizeof(block) + cap + 对齐余量`）全程
+  验算，溢出返回 NULL 且不触碰 arena 状态（事务性）；对齐 padding
+  计入 `used`，大块请求同样保证 16 字节对齐。
+- **失败原子性**：resp 解析先填本地聚合再一次性提交 `*out`；
+  `session_queue_push`/`zsl_insert` 改为返回错误码，调用方失败即报错
+  且不产生副作用；nodes.conf 落盘在 close/rename 失败时保留
+  nodes_dirty（后续周期自动重试）并删除 `.tmp` 残留。
+- **脚本缓存**：sha1 按"恰好 40 字节 hex"校验（不再需要 NUL 结尾），
+  缓存命中额外复核 registry ref 仍是函数——畸形条目视为未命中并
+  重编译，flush 忽略。
+- **io_uring readiness 后端**：SQ 操作前统一 `uring_reserve`（满则先
+  提交腾空），enter 支持部分提交（按返回数推进游标）与 EINTR 重试；
+  TIMEOUT 的 `__kernel_timespec` 从栈上移到环持有存储，以完成事件
+  复位 active 标志，消除悬垂指针窗口。
+- **TLS**：OpenSSL 库初始化改为线程安全 once（pthread_once /
+  InitOnceExecuteOnce，mt 多 worker 并发建 ctx 安全）；fd 超 int
+  范围或 `SSL_set_fd` 失败即拒绝；读写超过 INT_MAX 直接报错。
 
 ## 目录结构
 
