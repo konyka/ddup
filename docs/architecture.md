@@ -392,10 +392,11 @@ proactor——提交 IORING_OP_RECV/SEND/ACCEPT 操作本身，完成携带结�
 
 ## 命令清单
 
-PING ECHO GET SET(NX/XX/EX/PX) DEL UNLINK EXISTS INCR DECR INCRBY DECRBY
+PING ECHO GET SET(NX/XX/EX/PX/KEEPTTL/GET) DEL UNLINK EXISTS INCR DECR INCRBY DECRBY
 INCRBYFLOAT APPEND STRLEN MGET MSET GETDEL GETEX SETEX PSETEX GETSET
 SETRANGE GETRANGE ｜ EXPIRE PEXPIRE EXPIREAT PEXPIREAT TTL PTTL PERSIST
-EXPIRETIME PEXPIRETIME ｜ TYPE KEYS SCAN RENAME RENAMENX TOUCH RANDOMKEY ｜
+EXPIRETIME PEXPIRETIME ｜ TYPE KEYS SCAN RENAME RENAMENX TOUCH RANDOMKEY
+COPY ｜
 DBSIZE FLUSHDB CONFIG(GET/SET maxmemory, maxmemory-policy) INFO ｜
 HSET HGET HDEL HEXISTS HLEN HGETALL HKEYS HVALS HMSET HMGET HINCRBY HSETNX
 HSTRLEN HRANDFIELD ｜
@@ -485,7 +486,10 @@ DBSIZE 为 O(1)，可能计入尚未回收的过期 key。
   publish/deliver）回调 server；推送直接写入订阅者 conn->out，
   server_run_once 末尾统一 flush 所有连接（单线程保证安全）。连接关闭
   自动退订。订阅态仅允许 (P)SUBSCRIBE/(P)UNSUBSCRIBE/PING/QUIT/SHUTDOWN。
-  QUIT 当前只回 +OK 不断连（简化，后续补）。
+  QUIT 回 `+OK` 后置 session.quit，conn_process_input 停止消费后续
+  字节并标记 close_after_send——out 缓冲排空后经既有 send-then-close
+  路径关闭连接（readiness/proactor 双后端、mt 本地路径同款语义，
+  Phase 44；QUIT 之后的 pipelined 字节丢弃）。
 - **模式订阅（Phase 43）**：PSUBSCRIBE/PUNSUBSCRIBE 与第三张注册表
   `rh_table patterns`（pattern -> 连接链表）+ conn `psubs` + session
   `npsub`，订阅/退订主体与普通频道共用 chan_subscribe/chan_unsubscribe。
@@ -507,7 +511,13 @@ DBSIZE 为 O(1)，可能计入尚未回收的过期 key。
 - **AOF（src/server/aof.c）**：格式即 RESP 命令流。session 分发钩子对比
   命令前后的 `db.dirty` 计数（db_touch_key/FLUSHDB 递增），发生变更就把
   **原始 argv** 重序列化为 RESP 数组追加到缓冲；每个 server 循环刷盘一次
-  （appendfsync everysec 式简化，stdio 缓冲，无 fsync——记录为后续优化）。
+  （stdio 缓冲）。`appendfsync always|everysec|no`（默认 everysec，
+  Phase 44）：always 每次落盘后 `pal_file_sync`（POSIX fsync /
+  Windows FlushFileBuffers）；everysec 单线程 wall-ms 节流、每秒至多
+  一次且仅在有实际落盘字节时（不用 Redis 的 bio 线程，记录在案）；
+  优雅退出在非 no 模式下保底最后 sync 一次。sync 失败与写/flush
+  失败共用 fail-closed 闩锁。CONFIG GET/SET 未接 appendfsync
+  （在 server/aof 层而非 db 层，需新跨层 hook，记录在案）。
    EXEC 按逐条命令记录（不写 MULTI 包装）。启动时 `appendonly yes` 且文件
    存在则先重放（容忍截断尾部）；损坏或无效命令帧会 fail closed，且重放
    先在临时 db 上完成，失败时不修改现有数据。运行中 AOF 写入/flush 失败
@@ -992,6 +1002,20 @@ hazard pointer/延迟回收、索引桶 CAS、检查点与恢复的并发协议�
 - **语义取舍（记录在案）**：ZPOPMIN/MAX 无 count 也回数组（Redis
   6.2+）；SINTERCARD numkeys≤0 按 "Number of keys can't be greater
   than number of args" 报错。
+
+## 收尾命令与耐久性（Phase 44）
+
+- **SET KEEPTTL/GET**：KEEPTTL 覆盖前读出绝对过期时刻、覆盖后恢复
+  （与 EX/PX 互斥，与 NX/XX 自由组合）；GET 先把旧值拷入回复再覆盖，
+  旧值非 string 回 WRONGTYPE 且不执行（Redis 行为）。带选项 SET 走
+  通用 dispatch，lean SET 快路径（仅无选项）不受影响。
+- **COPY src dst [DB n] [REPLACE]**：统一走 DUMP/RESTORE 序列化深
+  拷贝——裸 blob 拷贝对 hash/list/set/zset 的指针对象会造成跨 key
+  别名（double-free/UAF），记录在案。TTL 以绝对时刻语义搬迁；AOF/
+  复制自包含（argv 自带 DB 选项，重放经 SELECT 前缀恢复）。集群
+  两 key 同槽；mt 下拒绝跨库（任务栈 session 无多库钩子，AOF
+  dirty 检查只覆盖源库，`-ERR COPY across databases is not
+  supported in mt mode`，记录在案）。
 
 ## 目录结构
 

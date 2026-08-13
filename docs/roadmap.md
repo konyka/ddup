@@ -228,6 +228,12 @@
     NUMPAT；第三张注册表 rh_table patterns，PUBLISH 线性扫 pattern
     表 glob 匹配投递 pmessage（记录在案）；mt 模式不支持模式订阅
     （进 mt_is_blocked，记录在案）（Phase 43）
+  - [x] 收尾与耐久性：QUIT 回 +OK 后经 send-then-close 断连（双后端
+    + mt）；AOF appendfsync always|everysec|no（pal_file_sync：
+    fsync/FlushFileBuffers；everysec 单线程节流；sync 失败并入
+    fail-closed 闩锁）；SET KEEPTTL/GET 选项；COPY 命令（DUMP/
+    RESTORE 序列化深拷贝——裸 blob 对指针对象有别名风险，记录在案；
+    mt 拒绝跨库）（Phase 44）
   - [ ] 范围化排除（记录在案，不实施）：
     - 分层存储（热/冷数据落盘）：超出"内存缓存存储"定位
     - mt 模式的复制/集群适配：见 Phase 15 说明
