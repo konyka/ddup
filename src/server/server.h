@@ -79,6 +79,10 @@ void server_enable_cluster(server *s, const char *node_id);
 void server_set_nodes_path(server *s, const char *path);
 /* Reload persisted nodes.conf into the node table (best-effort). */
 void server_load_nodes(server *s, const char *path);
+#ifdef DDUP_TESTING
+/* Invoke the nodes.conf save path without waiting for its periodic timer. */
+void server_test_cluster_nodes_save(server *s);
+#endif
 /* Node failure timeout in ms (default 15000; tests can shrink it). */
 void server_set_node_timeout(server *s, uint64_t ms);
 

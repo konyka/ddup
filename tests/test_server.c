@@ -9,6 +9,7 @@
 
 #include "core/buf_pool.h"
 #include "pal/pal_event.h"
+#include "pal/pal_file.h"
 #include "pal/pal_iocp.h"
 #include "pal/pal_iouring_op.h"
 #include "pal/pal_socket.h"
@@ -70,6 +71,52 @@ static pal_socket_t connect_client(server *s)
     DD_CHECK(c != PAL_SOCKET_INVALID);
     DD_CHECK_EQ_INT(0, pal_set_nonblocking(c, 1));
     return c;
+}
+
+static void test_cluster_save_close_failure_preserves_state(void)
+{
+    static const char path[] = "test_server_nodes.conf";
+    static const char node_id[] = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+    FILE *f;
+    char disk[8];
+    server *s;
+
+    (void)remove(path);
+    (void)remove("test_server_nodes.conf.tmp");
+    f = fopen(path, "wb");
+    DD_CHECK(f != NULL);
+    if (f != NULL) {
+        DD_CHECK_EQ_INT(8, (long long)fwrite("existing", 1, 8, f));
+        DD_CHECK_EQ_INT(0, fclose(f));
+    }
+
+    s = make_server();
+    DD_CHECK(s != NULL);
+    if (s != NULL) {
+        server_enable_cluster(s, node_id);
+        server_set_nodes_path(s, path);
+        pal_file_test_reset();
+        pal_file_test_fail_next_close();
+        server_test_cluster_nodes_save(s);
+
+        f = fopen(path, "rb");
+        DD_CHECK(f != NULL);
+        if (f != NULL) {
+            DD_CHECK_EQ_INT(8, (long long)fread(disk, 1, sizeof(disk), f));
+            DD_CHECK_EQ_INT(0, fclose(f));
+            DD_CHECK_MEM("existing", 8, disk, sizeof(disk));
+        }
+        DD_CHECK(!pal_file_exists("test_server_nodes.conf.tmp"));
+        DD_CHECK_EQ_INT(1, pal_file_test_open_write_attempts());
+
+        /* The failed close must leave the state dirty so a later save retries. */
+        server_test_cluster_nodes_save(s);
+        DD_CHECK_EQ_INT(2, pal_file_test_open_write_attempts());
+        server_set_nodes_path(s, "");
+        server_destroy(s);
+    }
+    (void)remove(path);
+    (void)remove("test_server_nodes.conf.tmp");
 }
 
 static void test_ping_set_get(void)
@@ -789,6 +836,7 @@ static void test_info_io_counters(void)
 
 static void run_all_tests(void)
 {
+    DD_RUN(test_cluster_save_close_failure_preserves_state);
     DD_RUN(test_ping_set_get);
     DD_RUN(test_pipeline);
     DD_RUN(test_aof_failure_rejects_writes);

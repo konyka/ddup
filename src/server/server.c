@@ -2783,10 +2783,11 @@ static void cluster_nodes_save(server *s)
     if (f != NULL) {
         if (pal_file_write(f, buf.data, buf.len) == (ptrdiff_t)buf.len &&
             pal_file_flush(f) == 0) {
-            pal_file_close(f);
-            if (pal_file_rename(tmp, s->nodes_path) == 0) {
+            if (pal_file_close(f) == 0 && pal_file_rename(tmp, s->nodes_path) == 0) {
                 s->nodes_dirty = 0;
                 s->last_cluster_changes = s->db.cluster_changes;
+            } else {
+                pal_file_unlink(tmp);
             }
         } else {
             pal_file_close(f);
@@ -2795,6 +2796,13 @@ static void cluster_nodes_save(server *s)
     }
     resp_buf_free(&buf);
 }
+
+#ifdef DDUP_TESTING
+void server_test_cluster_nodes_save(server *s)
+{
+    cluster_nodes_save(s);
+}
+#endif
 
 /* Parse and execute all complete commands in the conn recv buffer and
  * compact consumed bytes. Returns 0 ok, -1 protocol error (caller closes),
