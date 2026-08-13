@@ -155,21 +155,25 @@ static void write_value_payload(save_ctx *ctx, int tag, const char *val,
     }
     case DDUP_OBJ_LIST: {
         obj_list *l = (obj_list *)obj_unpack_ptr(val, vlen);
-        list_node *n;
-        if (l->len > UINT32_MAX) {
+        obj_list_iter it;
+        if (obj_list_len(l) > UINT32_MAX) {
             ctx->ok = 0;
             return;
         }
-        if (buf_u32le(buf, (uint32_t)l->len) != 0) {
+        if (buf_u32le(buf, (uint32_t)obj_list_len(l)) != 0) {
             ctx->ok = 0;
             return;
         }
-        for (n = l->head; n != NULL; n = n->next) {
-            if (buf_u32le(buf, n->len) != 0 ||
-                buf_bytes(buf, n->data, n->len) != 0) {
-                ctx->ok = 0;
-                return;
-            }
+        if (obj_list_first(l, &it)) {
+            do {
+                size_t el = 0;
+                const char *e = obj_list_iter_value(&it, &el);
+                if (buf_u32le(buf, (uint32_t)el) != 0 ||
+                    buf_bytes(buf, e, el) != 0) {
+                    ctx->ok = 0;
+                    return;
+                }
+            } while (obj_list_iter_next(&it));
         }
         break;
     }

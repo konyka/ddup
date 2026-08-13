@@ -41,6 +41,10 @@ typedef struct ql_iter {
     unsigned char buf[24]; /* materialized decimal for int entries */
 } ql_iter;
 
+/* ql_new/ql_free manage a heap quicklist; ql_init/ql_release serve an
+ * embedded quicklist (ql_release frees the nodes, not the struct). */
+void ql_init(quicklist *ql);
+void ql_release(quicklist *ql);
 quicklist *ql_new(void);
 void ql_free(quicklist *ql);
 uint64_t ql_mem(const quicklist *ql);

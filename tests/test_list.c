@@ -5,6 +5,7 @@
 
 #include "core/command.h"
 #include "ds/obj.h"
+#include "ds/quicklist.h"
 #include "test.h"
 
 static void exec_cmd(db *d, uint64_t now, resp_buf *out, int argc, ...)
@@ -34,27 +35,36 @@ static uint64_t eb(size_t klen, size_t vlen)
     return (uint64_t)sizeof(rh_entry) + 16 + klen + vlen;
 }
 
-static uint64_t node_bytes(size_t elen)
+/* quicklist node cost: node struct + 16B malloc estimate + the listpack
+ * (7-byte empty frame + one 6-bit-string entry per element) */
+static uint64_t ql_cost(const size_t *lens, size_t n)
 {
-    return (uint64_t)sizeof(list_node) + 16 + elen;
+    uint64_t c = (uint64_t)sizeof(ql_node) + 16 + 7;
+    size_t i;
+    for (i = 0; i < n; i++)
+        c += 1 + lens[i] + 1; /* 6-bit str header + payload + backlen */
+    return c;
 }
 
 static void test_list_rejects_unrepresentable_elements(void)
 {
     obj_list *l = obj_list_new();
     const char byte = 'x';
-    list_node *head;
+    obj_list_iter it;
     uint64_t before;
 
     DD_CHECK_EQ_INT(0, obj_list_push(l, 0, "old", 3));
-    head = l->head;
     before = obj_list_mem(l);
     DD_CHECK_EQ_INT(-1, obj_list_push(l, 1, &byte, SIZE_MAX));
     DD_CHECK_EQ_INT(-1, obj_list_set_at(l, 0, &byte, SIZE_MAX));
-    DD_CHECK(l->head == head && l->tail == head);
-    DD_CHECK_EQ_INT(1, l->len);
+    DD_CHECK_EQ_INT(1, (long long)obj_list_len(l));
     DD_CHECK(obj_list_mem(l) == before);
-    DD_CHECK_MEM("old", 3, head->data, head->len);
+    DD_CHECK_EQ_INT(1, obj_list_first(l, &it));
+    {
+        size_t vl = 0;
+        const char *v = obj_list_iter_value(&it, &vl);
+        DD_CHECK_MEM("old", 3, v, vl);
+    }
     obj_list_free(l);
 }
 
@@ -105,13 +115,22 @@ static void test_list_commands_reject_transactionally(void)
     command_execute_at(&d, argv, 4, &out, T0);
     DD_CHECK(out.len > 0 && out.data[0] == '-');
 
-    DD_CHECK_EQ_INT(2, l->len);
+    DD_CHECK_EQ_INT(2, (long long)obj_list_len(l));
     DD_CHECK(obj_list_mem(l) == list_mem);
     DD_CHECK(d.used_memory == used);
     DD_CHECK(d.dirty == dirty);
     DD_CHECK(db_key_version(&d, "l", 1) == version);
-    DD_CHECK_MEM("old", 3, l->head->data, l->head->len);
-    DD_CHECK_MEM("tail", 4, l->tail->data, l->tail->len);
+    {
+        obj_list_iter it;
+        size_t vl = 0;
+        const char *v;
+        DD_CHECK_EQ_INT(1, obj_list_first(l, &it));
+        v = obj_list_iter_value(&it, &vl);
+        DD_CHECK_MEM("old", 3, v, vl);
+        DD_CHECK_EQ_INT(1, obj_list_last(l, &it));
+        v = obj_list_iter_value(&it, &vl);
+        DD_CHECK_MEM("tail", 4, v, vl);
+    }
 
     d.watch_refs = 0;
     resp_buf_free(&out);
@@ -336,23 +355,26 @@ static void test_list_ttl_and_memory(void)
     db d;
     resp_buf out;
     uint64_t before;
+    const size_t lens_a[] = {1};
+    const size_t lens_abc[] = {1, 2, 3};
+    const size_t lens_bc[] = {2, 3};
     db_init(&d);
     resp_buf_init(&out);
 
-    /* accounting: entry + list struct + per-node cost */
+    /* accounting: entry + list struct + quicklist node cost */
     exec_cmd(&d, T0, &out, 3, "LPUSH", "l", "a");
     EXPECT(out, ":1\r\n");
-    DD_CHECK(d.used_memory == eb(1, 9) + sizeof(obj_list) + node_bytes(1));
+    DD_CHECK(d.used_memory == eb(1, 9) + sizeof(obj_list) + ql_cost(lens_a, 1));
 
     exec_cmd(&d, T0, &out, 4, "RPUSH", "l", "bb", "ccc");
     EXPECT(out, ":3\r\n");
-    DD_CHECK(d.used_memory == eb(1, 9) + sizeof(obj_list) + node_bytes(1) +
-                                 node_bytes(2) + node_bytes(3));
+    DD_CHECK(d.used_memory ==
+             eb(1, 9) + sizeof(obj_list) + ql_cost(lens_abc, 3));
 
     exec_cmd(&d, T0, &out, 2, "LPOP", "l");
     EXPECT(out, "$1\r\na\r\n");
     DD_CHECK(d.used_memory ==
-             eb(1, 9) + sizeof(obj_list) + node_bytes(2) + node_bytes(3));
+             eb(1, 9) + sizeof(obj_list) + ql_cost(lens_bc, 2));
 
     /* TTL works on list keys; expiry frees the whole object */
     exec_cmd(&d, T0, &out, 3, "EXPIRE", "l", "10");
@@ -363,8 +385,8 @@ static void test_list_ttl_and_memory(void)
     exec_cmd(&d, T0 + 10000, &out, 2, "LLEN", "l");
     EXPECT(out, ":0\r\n");
     DD_CHECK(d.used_memory ==
-             before - (eb(1, 9) + sizeof(obj_list) + node_bytes(2) +
-                       node_bytes(3) + eb(1, 8)));
+             before - (eb(1, 9) + sizeof(obj_list) + ql_cost(lens_bc, 2) +
+                       eb(1, 8)));
     DD_CHECK_EQ_INT(1, (long long)d.expired_keys);
 
     resp_buf_free(&out);

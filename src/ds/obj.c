@@ -142,31 +142,8 @@ int obj_hash_del(obj_hash *h, const char *f, size_t flen)
 }
 
 /* ------------------------------------------------------------------ */
-/* list object                                                        */
+/* list object: quicklist of listpack nodes                            */
 /* ------------------------------------------------------------------ */
-
-/* Same per-allocation estimate as the db layer (16 bytes malloc overhead). */
-static uint64_t node_bytes(size_t elen)
-{
-    return (uint64_t)sizeof(list_node) + 16 + elen;
-}
-
-static list_node *node_new(const char *data, size_t len)
-{
-    list_node *n;
-    if (len > UINT32_MAX || len > SIZE_MAX - sizeof(list_node))
-        return NULL;
-    n = (list_node *)malloc(sizeof(list_node) + len);
-    if (n == NULL) {
-        fprintf(stderr, "ddup: out of memory\n");
-        exit(1);
-    }
-    n->prev = NULL;
-    n->next = NULL;
-    n->len = (uint32_t)len;
-    memcpy(n->data, data, len);
-    return n;
-}
 
 obj_list *obj_list_new(void)
 {
@@ -175,199 +152,98 @@ obj_list *obj_list_new(void)
         fprintf(stderr, "ddup: out of memory\n");
         exit(1);
     }
-    l->head = NULL;
-    l->tail = NULL;
-    l->len = 0;
-    l->mem = (uint64_t)sizeof(*l);
+    ql_init(&l->ql);
     return l;
 }
 
 void obj_list_free(obj_list *l)
 {
-    list_node *n;
     if (l == NULL)
         return;
-    n = l->head;
-    while (n != NULL) {
-        list_node *next = n->next;
-        free(n);
-        n = next;
-    }
+    ql_release(&l->ql);
     free(l);
 }
 
 uint64_t obj_list_mem(const obj_list *l)
 {
-    return l->mem;
+    return ql_mem(&l->ql);
+}
+
+uint64_t obj_list_len(const obj_list *l)
+{
+    return l->ql.len;
 }
 
 int obj_list_push(obj_list *l, int left, const char *data, size_t len)
 {
-    list_node *n = node_new(data, len);
-    if (n == NULL)
-        return -1;
-    if (left) {
-        n->next = l->head;
-        if (l->head != NULL)
-            l->head->prev = n;
-        else
-            l->tail = n;
-        l->head = n;
-    } else {
-        n->prev = l->tail;
-        if (l->tail != NULL)
-            l->tail->next = n;
-        else
-            l->head = n;
-        l->tail = n;
-    }
-    l->len++;
-    l->mem += node_bytes(len);
-    return 0;
+    return ql_push(&l->ql, left, data, len);
 }
 
 int obj_list_push_many(obj_list *l, int left, const char *const *data,
                        const size_t *lens, size_t count)
 {
-    list_node *first = NULL;
-    list_node *last = NULL;
     size_t i;
-
+    /* prevalidate so a length error commits nothing */
     for (i = 0; i < count; i++) {
-        list_node *n = node_new(data[i], lens[i]);
-        if (n == NULL) {
-            while (first != NULL) {
-                list_node *next = first->next;
-                free(first);
-                first = next;
-            }
+        if (lens[i] > UINT32_MAX)
             return -1;
-        }
-        n->prev = last;
-        if (last != NULL)
-            last->next = n;
-        else
-            first = n;
-        last = n;
-    }
-    if (count == 0)
-        return 0;
-    if (left) {
-        list_node *q = first;
-        while (q != NULL) {
-            list_node *next = q->next;
-            q->next = q->prev;
-            q->prev = next;
-            q = next;
-        }
-        {
-            list_node *tmp = first;
-            first = last;
-            last = tmp;
-        }
-        last->next = l->head;
-        if (l->head != NULL)
-            l->head->prev = last;
-        else
-            l->tail = last;
-        l->head = first;
-    } else {
-        first->prev = l->tail;
-        if (l->tail != NULL)
-            l->tail->next = first;
-        else
-            l->head = first;
-        l->tail = last;
     }
     for (i = 0; i < count; i++) {
-        l->len++;
-        l->mem += node_bytes(lens[i]);
+        if (ql_push(&l->ql, left, data[i], lens[i]) != 0)
+            return -1; /* unreachable after prevalidation */
     }
     return 0;
 }
 
 int obj_list_pop(obj_list *l, int left, char **data, size_t *len)
 {
-    list_node *n = left ? l->head : l->tail;
-    if (n == NULL)
-        return 0;
-    *data = (char *)malloc(n->len);
-    if (*data == NULL) {
-        fprintf(stderr, "ddup: out of memory\n");
-        exit(1);
-    }
-    memcpy(*data, n->data, n->len);
-    *len = n->len;
-    if (n->prev != NULL)
-        n->prev->next = n->next;
-    else
-        l->head = n->next;
-    if (n->next != NULL)
-        n->next->prev = n->prev;
-    else
-        l->tail = n->prev;
-    l->len--;
-    l->mem -= node_bytes(n->len);
-    free(n);
-    return 1;
+    return ql_pop(&l->ql, left, data, len);
 }
 
-list_node *obj_list_at(obj_list *l, size_t idx)
+int obj_list_seek(obj_list *l, size_t idx, obj_list_iter *it)
 {
-    size_t i;
-    list_node *n;
-    if (idx >= l->len)
-        return NULL;
-    if (idx < l->len / 2) {
-        n = l->head;
-        for (i = 0; i < idx; i++)
-            n = n->next;
-    } else {
-        n = l->tail;
-        for (i = l->len - 1; i > idx; i--)
-            n = n->prev;
-    }
-    return n;
+    return ql_seek(&l->ql, idx, it);
+}
+
+int obj_list_first(obj_list *l, obj_list_iter *it)
+{
+    return ql_first(&l->ql, it);
+}
+
+int obj_list_last(obj_list *l, obj_list_iter *it)
+{
+    return ql_last(&l->ql, it);
+}
+
+int obj_list_iter_next(obj_list_iter *it)
+{
+    return ql_iter_next(it);
+}
+
+int obj_list_iter_prev(obj_list_iter *it)
+{
+    return ql_iter_prev(it);
+}
+
+const char *obj_list_iter_value(obj_list_iter *it, size_t *len)
+{
+    return ql_iter_value(it, len);
 }
 
 int obj_list_set_at(obj_list *l, size_t idx, const char *data, size_t len)
 {
-    list_node *old = obj_list_at(l, idx);
-    list_node *n;
-    if (old == NULL)
-        return 0;
-    n = node_new(data, len);
-    if (n == NULL)
+    obj_list_iter it;
+    if (len > UINT32_MAX)
         return -1;
-    n->prev = old->prev;
-    n->next = old->next;
-    if (old->prev != NULL)
-        old->prev->next = n;
-    else
-        l->head = n;
-    if (old->next != NULL)
-        old->next->prev = n;
-    else
-        l->tail = n;
-    l->mem -= node_bytes(old->len);
-    l->mem += node_bytes(len);
-    free(old);
-    return 1;
+    if (!ql_seek(&l->ql, idx, &it))
+        return 0;
+    return ql_set(&it, data, len) == 1 ? 1 : -1;
 }
 
-void obj_list_remove(obj_list *l, list_node *n)
+int obj_list_remove_at(obj_list_iter *it)
 {
-    if (n->prev != NULL)
-        n->prev->next = n->next;
-    else
-        l->head = n->next;
-    if (n->next != NULL)
-        n->next->prev = n->prev;
-    else
-        l->tail = n->prev;
-    l->len--;
-    l->mem -= node_bytes(n->len);
-    free(n);
+    ql_remove(it);
+    return it->entry != NULL;
 }
 
 /* ------------------------------------------------------------------ */

@@ -380,7 +380,7 @@ static void test_serialize_rejects_unrepresentable_sizes(void)
     exec_sess(s, T0, &out, 3, "RPUSH", "list", "item");
     DD_CHECK(rh_get(&d.table, "list", 4, &blob, &bloblen) == 1);
     list = (obj_list *)obj_unpack_ptr(blob, bloblen);
-    list->len = (uint64_t)UINT32_MAX + 1;
+    list->ql.len = (uint64_t)UINT32_MAX + 1;
 
     resp_buf_reserve(&snap, 4);
     memcpy(snap.data, "keep", 4);
@@ -405,7 +405,7 @@ static void test_serialize_rejects_unrepresentable_sizes(void)
     snap.len = 4;
     snap.cap = 256;
 
-    list->len = 1;
+    list->ql.len = 1;
     session_free(s);
     db_destroy(&d);
     resp_buf_free(&out);
@@ -437,9 +437,9 @@ static void test_save_failure_preserves_existing_snapshot(void)
     exec_sess(s, T0, &out, 3, "RPUSH", "list", "item");
     DD_CHECK(rh_get(&d.table, "list", 4, &blob, &bloblen) == 1);
     list = (obj_list *)obj_unpack_ptr(blob, bloblen);
-    list->len = (uint64_t)UINT32_MAX + 1;
+    list->ql.len = (uint64_t)UINT32_MAX + 1;
     DD_CHECK_EQ_INT(-1, snapshot_save(&d, TMP_SNAP));
-    list->len = 1;
+    list->ql.len = 1;
 
     f = fopen(TMP_SNAP, "rb");
     DD_CHECK(f != NULL);

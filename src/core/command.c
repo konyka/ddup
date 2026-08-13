@@ -4154,8 +4154,7 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
             for (i = 0; i < count; i++) {
                 if (!arg_str(&argv[i + 2], &vals[i], &lens[i]))
                     goto bad_type;
-                if (lens[i] > UINT32_MAX ||
-                    lens[i] > SIZE_MAX - sizeof(list_node)) {
+                if (lens[i] > UINT32_MAX) {
                     storage_length_error(out);
                     return;
                 }
@@ -4179,7 +4178,7 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
                     }
                     mem_sync(d, k, kl, before, obj_list_mem(l));
                 }
-                resp_write_integer(out, (long long)l->len);
+                resp_write_integer(out, (long long)obj_list_len(l));
                 return;
             }
         }
@@ -4225,8 +4224,9 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
                 write_null_array(out);
                 return;
             }
-            n = (unsigned long long)count < l->len ? (size_t)count
-                                                   : (size_t)l->len;
+            n = (unsigned long long)count < obj_list_len(l)
+                    ? (size_t)count
+                    : (size_t)obj_list_len(l);
             before = obj_list_mem(l);
             resp_write_array_header(out, n);
             for (i = 0; i < n; i++) {
@@ -4238,7 +4238,7 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
                 free(data);
             }
             mem_sync(d, k, kl, before, obj_list_mem(l));
-            if (l->len == 0)
+            if (obj_list_len(l) == 0)
                 db_del_kv(d, k, kl); /* empty list: the key goes away */
             return;
         }
@@ -4255,7 +4255,7 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
                 return;
             }
             mem_sync(d, k, kl, before, obj_list_mem(l));
-            if (l->len == 0)
+            if (obj_list_len(l) == 0)
                 db_del_kv(d, k, kl); /* empty list: the key goes away */
             resp_write_bulk(out, data, dlen);
             free(data);
@@ -4276,7 +4276,7 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
         int rc = get_list(d, out, k, kl, 0, now_ms, &l);
         if (rc < 0)
             return;
-        resp_write_integer(out, rc == 1 ? (long long)l->len : 0);
+        resp_write_integer(out, rc == 1 ? (long long)obj_list_len(l) : 0);
         return;
     }
 
@@ -4304,9 +4304,9 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
             return;
         }
         {
-            long long len = (long long)l->len;
+            long long len = (long long)obj_list_len(l);
             long long i;
-            list_node *n;
+            obj_list_iter it;
             if (start < 0)
                 start += len;
             if (start < 0)
@@ -4320,9 +4320,15 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
                 return;
             }
             resp_write_array_header(out, (size_t)(stop - start + 1));
-            n = obj_list_at(l, (size_t)start);
-            for (i = start; i <= stop && n != NULL; i++, n = n->next)
-                resp_write_bulk(out, n->data, n->len);
+            if (obj_list_seek(l, (size_t)start, &it)) {
+                for (i = start; i <= stop; i++) {
+                    size_t vl = 0;
+                    const char *v = obj_list_iter_value(&it, &vl);
+                    resp_write_bulk(out, v, vl);
+                    if (i < stop)
+                        obj_list_iter_next(&it);
+                }
+            }
         }
         return;
     }
@@ -4350,14 +4356,16 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
             return;
         }
         if (idx < 0)
-            idx += (long long)l->len;
+            idx += (long long)obj_list_len(l);
         {
-            list_node *n =
-                idx >= 0 ? obj_list_at(l, (size_t)idx) : NULL;
-            if (n != NULL)
-                resp_write_bulk(out, n->data, n->len);
-            else
+            obj_list_iter it;
+            if (idx >= 0 && obj_list_seek(l, (size_t)idx, &it)) {
+                size_t vl = 0;
+                const char *v = obj_list_iter_value(&it, &vl);
+                resp_write_bulk(out, v, vl);
+            } else {
                 resp_write_bulk(out, NULL, 0);
+            }
         }
         return;
     }
@@ -4373,8 +4381,7 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
         if (!arg_str(&argv[1], &k, &kl) || !arg_str(&argv[2], &iv, &ivl) ||
             !arg_str(&argv[3], &v, &vl))
             goto bad_type;
-        if (!storage_key_ok(kl) || vl > UINT32_MAX ||
-            vl > SIZE_MAX - sizeof(list_node)) {
+        if (!storage_key_ok(kl) || vl > UINT32_MAX) {
             storage_length_error(out);
             return;
         }
@@ -4394,7 +4401,7 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
             return;
         }
         if (idx < 0)
-            idx += (long long)l->len;
+            idx += (long long)obj_list_len(l);
         if (idx < 0) {
             static const char E_RANGE[] = "ERR index out of range";
             resp_write_error(out, E_RANGE, sizeof(E_RANGE) - 1);
@@ -4495,15 +4502,21 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
             long long want = rank > 0 ? rank : -rank;
             long long from_head = rank > 0;
             long long matches = 0, seen = 0, compared = 0;
-            long long idx = from_head ? 0 : (long long)l->len - 1;
+            long long idx = from_head ? 0 : (long long)obj_list_len(l) - 1;
             long long first_idx = 0;
-            list_node *n;
-            for (n = from_head ? l->head : l->tail; n != NULL;
-                 n = from_head ? n->next : n->prev) {
+            obj_list_iter it;
+            int valid = from_head ? obj_list_first(l, &it)
+                                  : obj_list_last(l, &it);
+            for (; valid;
+                 valid = from_head ? obj_list_iter_next(&it)
+                                   : obj_list_iter_prev(&it)) {
+                size_t vl = 0;
+                const char *v;
                 if (maxlen > 0 && compared >= maxlen)
                     break;
                 compared++;
-                if (n->len == elel && memcmp(n->data, ele, elel) == 0) {
+                v = obj_list_iter_value(&it, &vl);
+                if (vl == elel && memcmp(v, ele, elel) == 0) {
                     seen++;
                     if (seen >= want) {
                         if (matches == 0)
@@ -4525,16 +4538,21 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
             resp_write_array_header(out, (size_t)matches);
             {
                 long long emitted = 0;
-                long long idx = from_head ? 0 : (long long)l->len - 1;
+                long long idx = from_head ? 0 : (long long)obj_list_len(l) - 1;
                 seen = 0;
                 compared = 0;
-                for (n = from_head ? l->head : l->tail;
-                     n != NULL && emitted < matches;
-                     n = from_head ? n->next : n->prev) {
+                valid = from_head ? obj_list_first(l, &it)
+                                  : obj_list_last(l, &it);
+                for (; valid && emitted < matches;
+                     valid = from_head ? obj_list_iter_next(&it)
+                                       : obj_list_iter_prev(&it)) {
+                    size_t vl = 0;
+                    const char *v;
                     if (maxlen > 0 && compared >= maxlen)
                         break;
                     compared++;
-                    if (n->len == elel && memcmp(n->data, ele, elel) == 0) {
+                    v = obj_list_iter_value(&it, &vl);
+                    if (vl == elel && memcmp(v, ele, elel) == 0) {
                         seen++;
                         if (seen >= want) {
                             resp_write_integer(out, idx);
@@ -4578,19 +4596,31 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
                           : (unsigned long long)count;
             long long removed = 0;
             uint64_t before = obj_list_mem(l);
-            list_node *n = count >= 0 ? l->head : l->tail;
-            while (n != NULL && (limit == 0 ||
-                                 (unsigned long long)removed < limit)) {
-                list_node *next = count >= 0 ? n->next : n->prev;
-                if (n->len == elel && memcmp(n->data, ele, elel) == 0) {
-                    obj_list_remove(l, n);
+            obj_list_iter it;
+            int from_head = count >= 0;
+            int valid = from_head ? obj_list_first(l, &it)
+                                  : obj_list_last(l, &it);
+            while (valid &&
+                   (limit == 0 || (unsigned long long)removed < limit)) {
+                size_t vl = 0;
+                const char *v = obj_list_iter_value(&it, &vl);
+                if (vl == elel && memcmp(v, ele, elel) == 0) {
                     removed++;
+                    valid = obj_list_remove_at(&it); /* lands on successor */
+                    if (!from_head) {
+                        /* backward scan: continue at the element before the
+                         * removed one (predecessor of the successor) */
+                        valid = valid ? obj_list_iter_prev(&it)
+                                      : obj_list_last(l, &it);
+                    }
+                } else {
+                    valid = from_head ? obj_list_iter_next(&it)
+                                      : obj_list_iter_prev(&it);
                 }
-                n = next;
             }
             if (removed > 0) {
                 mem_sync(d, k, kl, before, obj_list_mem(l));
-                if (l->len == 0)
+                if (obj_list_len(l) == 0)
                     db_del_kv(d, k, kl); /* empty list: the key goes away */
             }
             resp_write_integer(out, removed);
@@ -4619,7 +4649,7 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
             return;
         if (rc == 1) {
             /* same index math as LRANGE */
-            long long len = (long long)l->len;
+            long long len = (long long)obj_list_len(l);
             if (start < 0)
                 start += len;
             if (start < 0)
@@ -4632,14 +4662,15 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
                 db_del_kv(d, k, kl); /* nothing in range: drop the key */
             } else if (start > 0 || stop < len - 1) {
                 long long idx = 0;
-                list_node *n = l->head;
+                obj_list_iter it;
                 uint64_t before = obj_list_mem(l);
-                while (n != NULL) {
-                    list_node *next = n->next;
+                int valid = obj_list_first(l, &it);
+                while (valid) {
                     if (idx < start || idx > stop)
-                        obj_list_remove(l, n);
+                        valid = obj_list_remove_at(&it); /* next successor */
+                    else
+                        valid = obj_list_iter_next(&it);
                     idx++;
-                    n = next;
                 }
                 mem_sync(d, k, kl, before, obj_list_mem(l));
             }
@@ -4689,12 +4720,16 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
                 dst = src;
             }
             /* push a copy of the tail element to dst's head first, then
-             * unlink the source node (SMOVE ordering: a failed push leaves
+             * remove the source tail (SMOVE ordering: a failed push leaves
              * src untouched) */
             {
+                obj_list_iter sit;
+                size_t tvl = 0;
+                const char *tv;
                 uint64_t dbefore = obj_list_mem(dst);
-                if (obj_list_push(dst, 1, src->tail->data, src->tail->len) !=
-                    0) {
+                obj_list_last(src, &sit); /* src is non-empty (rcs == 1) */
+                tv = obj_list_iter_value(&sit, &tvl);
+                if (obj_list_push(dst, 1, tv, tvl) != 0) {
                     if (created_dst)
                         db_del_kv(d, dk, dkl);
                     storage_length_error(out);
@@ -4703,13 +4738,22 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
                 mem_sync(d, dk, dkl, dbefore, obj_list_mem(dst));
             }
             {
+                obj_list_iter rit;
                 uint64_t sbefore = obj_list_mem(src);
-                obj_list_remove(src, src->tail);
+                obj_list_last(src, &rit);
+                obj_list_remove_at(&rit);
                 mem_sync(d, sk, skl, sbefore, obj_list_mem(src));
             }
-            if (src->len == 0)
+            if (obj_list_len(src) == 0)
                 db_del_kv(d, sk, skl); /* empty list: the key goes away */
-            resp_write_bulk(out, dst->head->data, dst->head->len);
+            {
+                obj_list_iter hit;
+                size_t hvl = 0;
+                const char *hv;
+                obj_list_first(dst, &hit); /* the just-pushed element */
+                hv = obj_list_iter_value(&hit, &hvl);
+                resp_write_bulk(out, hv, hvl);
+            }
         }
         return;
     }

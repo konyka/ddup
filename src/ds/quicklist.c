@@ -76,19 +76,24 @@ static void ql_node_mem_sync(quicklist *ql, uint64_t old_bytes,
     ql->mem += n->bytes;
 }
 
+void ql_init(quicklist *ql)
+{
+    ql->head = NULL;
+    ql->tail = NULL;
+    ql->len = 0;
+    ql->mem = (uint64_t)sizeof(*ql);
+}
+
 quicklist *ql_new(void)
 {
     quicklist *ql = (quicklist *)malloc(sizeof(*ql));
     if (ql == NULL)
         ql_die_oom();
-    ql->head = NULL;
-    ql->tail = NULL;
-    ql->len = 0;
-    ql->mem = (uint64_t)sizeof(*ql);
+    ql_init(ql);
     return ql;
 }
 
-void ql_free(quicklist *ql)
+void ql_release(quicklist *ql)
 {
     ql_node *n;
     if (ql == NULL)
@@ -100,6 +105,17 @@ void ql_free(quicklist *ql)
         free(n);
         n = next;
     }
+    ql->head = NULL;
+    ql->tail = NULL;
+    ql->len = 0;
+    ql->mem = (uint64_t)sizeof(*ql);
+}
+
+void ql_free(quicklist *ql)
+{
+    if (ql == NULL)
+        return;
+    ql_release(ql);
     free(ql);
 }
 

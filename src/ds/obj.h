@@ -19,6 +19,7 @@
 #include <stdint.h>
 
 #include "core/rhtable.h"
+#include "ds/quicklist.h"
 #include "ds/skiplist.h"
 
 enum {
@@ -66,26 +67,18 @@ int obj_hash_get(obj_hash *h, const char *f, size_t flen, const char **v,
 int obj_hash_del(obj_hash *h, const char *f, size_t flen);
 
 /* ------------------------------------------------------------------ */
-/* list object: doubly-linked list, one node per element              */
-/* (quicklist/block deque is a documented future optimization)        */
+/* list object: quicklist of listpack nodes (Phase 6)                  */
 /* ------------------------------------------------------------------ */
-typedef struct list_node {
-    struct list_node *prev;
-    struct list_node *next;
-    uint32_t len;
-    char data[]; /* element bytes */
-} list_node;
-
 typedef struct obj_list {
-    list_node *head;
-    list_node *tail;
-    uint64_t len; /* element count */
-    uint64_t mem; /* sizeof(obj_list) + per-node cost, incremental */
+    quicklist ql; /* embedded; obj_list_mem() reports ql.mem */
 } obj_list;
+
+typedef ql_iter obj_list_iter;
 
 obj_list *obj_list_new(void);
 void obj_list_free(obj_list *l);
 uint64_t obj_list_mem(const obj_list *l);
+uint64_t obj_list_len(const obj_list *l);
 
 /* Returns 0 on success, -1 when len cannot be represented or allocated
  * without size_t overflow. */
@@ -97,13 +90,24 @@ int obj_list_push_many(obj_list *l, int left, const char *const *data,
 /* Returns 1 and hands the caller a malloc'd copy of the element
  * (free with free()), 0 when the list is empty. */
 int obj_list_pop(obj_list *l, int left, char **data, size_t *len);
-/* Walks from the nearer end; NULL when idx >= len. */
-list_node *obj_list_at(obj_list *l, size_t idx);
+
+/* Iterator access. Positioning returns 1 on success, 0 when out of
+ * range/empty. obj_list_iter_value() returns bytes valid until the
+ * iterator moves or the list mutates. */
+int obj_list_seek(obj_list *l, size_t idx, obj_list_iter *it);
+int obj_list_first(obj_list *l, obj_list_iter *it);
+int obj_list_last(obj_list *l, obj_list_iter *it);
+int obj_list_iter_next(obj_list_iter *it);
+int obj_list_iter_prev(obj_list_iter *it);
+const char *obj_list_iter_value(obj_list_iter *it, size_t *len);
+
 /* Replace element data at idx. Returns 1 on success, 0 when idx >= list
  * length, -1 when the replacement length is invalid. */
 int obj_list_set_at(obj_list *l, size_t idx, const char *data, size_t len);
-/* Unlink and free node n (must belong to l); updates len/mem. */
-void obj_list_remove(obj_list *l, list_node *n);
+/* Remove the element under the iterator; the iterator lands on its
+ * successor. Returns 1 when the successor is valid, 0 when the removed
+ * element was the tail (iterator invalid). */
+int obj_list_remove_at(obj_list_iter *it);
 
 /* ------------------------------------------------------------------ */
 /* set object: rh_table member -> empty value (uniqueness via table)  */
