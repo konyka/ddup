@@ -203,6 +203,18 @@
     生命周期由栈改为环持有、TLS 库初始化改线程安全 once + fd 与
     读写字节 INT 上限、nodes.conf 落盘 close/rename 失败保留脏态
     并清理临时文件（Phase 38）
+  - [x] 通用键命令补齐：TYPE/KEYS/SCAN/RENAME/RENAMENX/TOUCH/
+    RANDOMKEY/EXPIRETIME/PEXPIRETIME；Redis 风格 glob 匹配器
+    （src/ds/glob）、rhtable 游标迭代 rh_scan（主表+rehash 旧表
+    虚拟桶下标，回调可删除——字段逐轮重读）；RENAME 对象所有权
+    转移经 db_del_kv_keep_obj（免 obj_free 悬垂）；集群同槽/
+    所有权与 mt 路由分类同步（KEYS/SCAN/RANDOMKEY mt 模式不支持，
+    记录在案）（Phase 39）
+  - [x] 字符串扩展命令：GETDEL/GETEX/SETEX/PSETEX/GETSET/SETRANGE/
+    GETRANGE/INCRBY/DECRBY/INCRBYFLOAT；INCR/DECR 重构为共用 delta
+    路径（溢出判定通用化）；SETRANGE 512MB 上限 + 补零写；
+    GETRANGE Redis 归一化语义；INCRBYFLOAT strtold + %.17Lg
+    （Phase 40）
   - [ ] 范围化排除（记录在案，不实施）：
     - 分层存储（热/冷数据落盘）：超出"内存缓存存储"定位
     - mt 模式的复制/集群适配：见 Phase 15 说明

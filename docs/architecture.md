@@ -392,8 +392,10 @@ proactor——提交 IORING_OP_RECV/SEND/ACCEPT 操作本身，完成携带结�
 
 ## 命令清单
 
-PING ECHO GET SET(NX/XX/EX/PX) DEL UNLINK EXISTS INCR DECR APPEND STRLEN
-MGET MSET ｜ EXPIRE PEXPIRE EXPIREAT PEXPIREAT TTL PTTL PERSIST ｜
+PING ECHO GET SET(NX/XX/EX/PX) DEL UNLINK EXISTS INCR DECR INCRBY DECRBY
+INCRBYFLOAT APPEND STRLEN MGET MSET GETDEL GETEX SETEX PSETEX GETSET
+SETRANGE GETRANGE ｜ EXPIRE PEXPIRE EXPIREAT PEXPIREAT TTL PTTL PERSIST
+EXPIRETIME PEXPIRETIME ｜ TYPE KEYS SCAN RENAME RENAMENX TOUCH RANDOMKEY ｜
 DBSIZE FLUSHDB CONFIG(GET/SET maxmemory, maxmemory-policy) INFO ｜
 HSET HGET HDEL HEXISTS HLEN HGETALL HKEYS HVALS HMSET HMGET HINCRBY HSETNX ｜
 LPUSH RPUSH LPUSHX RPUSHX LPOP RPOP LLEN LRANGE LINDEX LSET ｜
@@ -920,6 +922,37 @@ hazard pointer/延迟回收、索引桶 CAS、检查点与恢复的并发协议�
 - **TLS**：OpenSSL 库初始化改为线程安全 once（pthread_once /
   InitOnceExecuteOnce，mt 多 worker 并发建 ctx 安全）；fd 超 int
   范围或 `SSL_set_fd` 失败即拒绝；读写超过 INT_MAX 直接报错。
+
+## 通用键与字符串扩展命令（Phase 39/40）
+
+- **glob 匹配器**（src/ds/glob.{h,c}）：Redis stringmatchlen 语义
+  （`*`、`?`、`[...]` 含范围与 `[^...]` 取反、`\x` 转义），供 KEYS 与
+  SCAN MATCH 使用。记录在案的偏离：未终结的 `[` 按字面字符处理
+  （Redis 几乎必然不匹配），取反只支持 `^`（Redis 7 行为）。
+- **rh_scan 游标迭代**（src/core/rhtable）：游标 = 虚拟桶下标，主表
+  `[0, cap)` + rehash 在飞时旧表 `[cap, cap+old_cap)`；返回 0 表示
+  迭代完。回调可删除条目（惰性过期）——每轮重读表字段，旧表被迁移
+  释放也不会 UAF；删除/迁移中途可能跳过或重复 key（Redis SCAN 同
+  为弱保证，记录在案）。空桶不占 COUNT 额度。SCAN 游标只接受纯数字
+  非负整数（不容忍前导 `+`/空白，记录在案）。
+- **RENAME/RENAMENX**：值 blob 复制到目标 key 后经
+  `db_del_kv_keep_obj()` 删源——对象所有权随 blob 副本转移，普通
+  `db_del_kv` 会 obj_free 造成悬垂（TDD 用 HSET+RENAME+HGET 抓到）。
+  TTL 随 blob 搬迁；两 key 的 WATCH 版本都 bump。集群模式两 key 须
+  同槽（-CROSSSLOT），mt 按两 key 同 worker 路由（同 SMOVE）。
+- **KEYS/SCAN/RANDOMKEY 的作用域**：集群模式只覆盖本节点本地数据
+  （Redis 行为）；**mt 模式不支持**（`-ERR command not supported in
+  mt mode`，记录在案——全库扫描与 shared-nothing 分片语义冲突）。
+  RANDOMKEY 为占用桶随机探测（≤100 次）+ 顺序兜底，不保证均匀分布。
+- **字符串扩展**：GETDEL/GETSET 先把旧值拷入回复再删除/覆盖（零
+  额外分配）；INCR/DECR 重构为共用 delta 路径（INCRBY/DECRBY 加入，
+  溢出判定通用化，DECRBY 对 LLONG_MIN 归 overflow 错误）；SETRANGE
+  512MB 上限（`STRING_MAX_BYTES`）+ 空洞补 `\0`，空 value 不建缺
+  失 key；GETRANGE 严格 Redis 归一化（负下标、钳位、反向区间→空）；
+  INCRBYFLOAT 用 strtold + `%.17Lg`（已知边缘差异：十六进制浮点串
+  会被接受，Redis 拒绝，记录在案）。覆盖写（GETSET/SETEX/INCRBY 族）
+  清 TTL，与既有 INCR/APPEND 的有意行为一致；SETEX/GETSET 对非
+  string 旧值回 WRONGTYPE（跟随本实现 SET 的收紧语义）。
 
 ## 目录结构
 
