@@ -2011,7 +2011,7 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
         if (!arg_str(&argv[1], &kv, &kvl))
             goto bad_type;
         if (is_sha) {
-            if (kvl != 40 || script_ref(d, kv) < 0) {
+            if (script_ref(d, kv, kvl) < 0) {
                 static const char E[] =
                     "NOSCRIPT No matching script. Please use EVAL.";
                 resp_write_error(out, E, sizeof(E) - 1);
@@ -2076,7 +2076,7 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
                 if (!arg_str(&argv[i], &k, &kl))
                     goto bad_type;
                 resp_write_integer(out,
-                                   kl == 40 && script_cached(d, k) ? 1 : 0);
+                        script_cached(d, k, kl) ? 1 : 0);
             }
             return;
         }
@@ -5435,7 +5435,11 @@ void session_execute_at(session *s, const resp_value *argv, size_t argc,
         /* inside MULTI: validate and queue (UNWATCH queues like any cmd) */
         if (queue_validate(s, argv, argc, out) != 0)
             return;
-        session_queue_push(s, argv, argc);
+        if (session_queue_push(s, argv, argc) != 0) {
+            static const char err[] = "ERR command is too large";
+            resp_write_error(out, err, sizeof(err) - 1);
+            return;
+        }
         resp_write_simple_string(out, "QUEUED", 6);
         return;
     }

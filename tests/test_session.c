@@ -27,6 +27,18 @@ static void exec_sess(session *s, uint64_t now, resp_buf *out, int argc, ...)
 
 #define T0 1000000ULL
 
+static void test_queue_allocation_size_overflow(void)
+{
+    size_t bytes = 123;
+    size_t cap = 123;
+    DD_CHECK(session_test_queue_bytes(SIZE_MAX, &bytes) == -1);
+    DD_CHECK_EQ_INT(123, (long long)bytes);
+    DD_CHECK(session_test_queue_growth(SIZE_MAX, &cap) == -1);
+    DD_CHECK_EQ_INT(123, (long long)cap);
+    DD_CHECK(session_test_queue_growth(0, &cap) == 0);
+    DD_CHECK_EQ_INT(8, (long long)cap);
+}
+
 static void test_session_basic(void)
 {
     db d;
@@ -149,6 +161,7 @@ static void test_auth_without_password_configured(void)
 
 int main(void)
 {
+    DD_RUN(test_queue_allocation_size_overflow);
     DD_RUN(test_session_basic);
     DD_RUN(test_auth_flow);
     DD_RUN(test_auth_username_form);

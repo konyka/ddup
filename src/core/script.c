@@ -68,28 +68,58 @@ void *script_state(db *d)
     return d->lua_state;
 }
 
-/* normalize 40-hex to lowercase in place-ish (dst may equal src) */
-static void sha_lower(char dst[41], const char *src)
+/* Validate and normalize an exact 40-character SHA-1 string. */
+static int sha_normalize(char dst[41], const char *src, size_t src_len)
 {
     int i;
+    if (src == NULL || src_len != 40)
+        return 0;
     for (i = 0; i < 40; i++) {
         char ch = src[i];
+        if (!((ch >= '0' && ch <= '9') || (ch >= 'a' && ch <= 'f') ||
+              (ch >= 'A' && ch <= 'F')))
+            return 0;
         dst[i] = (ch >= 'A' && ch <= 'F') ? (char)(ch + 32) : ch;
     }
     dst[40] = '\0';
+    return 1;
+}
+
+static int script_registry_ref_valid(lua_State *L, int ref)
+{
+    int valid;
+    if (L == NULL || ref <= 0)
+        return 0;
+    lua_rawgeti(L, LUA_REGISTRYINDEX, ref);
+    valid = lua_isfunction(L, -1);
+    lua_pop(L, 1);
+    return valid;
+}
+
+static int script_cache_ref(db *d, const char *sha, int *ref_out)
+{
+    const char *v;
+    size_t vl;
+    int ref;
+
+    if (!rh_get(&d->scripts, sha, 40, &v, &vl) || vl != sizeof(ref))
+        return 0;
+    memcpy(&ref, v, sizeof(ref));
+    if (!script_registry_ref_valid((lua_State *)d->lua_state, ref))
+        return 0;
+    *ref_out = ref;
+    return 1;
 }
 
 int script_load(db *d, const char *src, size_t len, char out_sha1[41],
                 char *errbuf, size_t errcap)
 {
     lua_State *L = (lua_State *)script_state(d);
-    const char *v;
-    size_t vl;
     int ref;
-    char b[4];
+    char b[sizeof(ref)];
 
     sha1_hex(src, len, out_sha1);
-    if (rh_get(&d->scripts, out_sha1, 40, &v, &vl))
+    if (script_cache_ref(d, out_sha1, &ref))
         return 0; /* cache hit: no recompile */
 
     if (luaL_loadbuffer(L, src, len, "=script") != 0) {
@@ -99,8 +129,8 @@ int script_load(db *d, const char *src, size_t len, char out_sha1[41],
         return -1;
     }
     ref = luaL_ref(L, LUA_REGISTRYINDEX);
-    memcpy(b, &ref, 4);
-    if (rh_set(&d->scripts, out_sha1, 40, b, 4) < 0) {
+    memcpy(b, &ref, sizeof(ref));
+    if (rh_set(&d->scripts, out_sha1, 40, b, sizeof(ref)) < 0) {
         luaL_unref(L, LUA_REGISTRYINDEX, ref);
         snprintf(errbuf, errcap, "%s", "script cache insertion failed");
         return -1;
@@ -108,45 +138,45 @@ int script_load(db *d, const char *src, size_t len, char out_sha1[41],
     return 0;
 }
 
-int script_cached(db *d, const char *sha1)
+int script_cached(db *d, const char *sha1, size_t sha1_len)
 {
     char sha[41];
-    const char *v;
-    size_t vl;
-    sha_lower(sha, sha1);
-    return rh_get(&d->scripts, sha, 40, &v, &vl);
+    int ref;
+    if (!sha_normalize(sha, sha1, sha1_len))
+        return 0;
+    return script_cache_ref(d, sha, &ref);
 }
 
-int script_ref(db *d, const char *sha1)
+int script_ref(db *d, const char *sha1, size_t sha1_len)
 {
     char sha[41];
-    const char *v;
-    size_t vl;
     int ref;
-    sha_lower(sha, sha1);
-    if (!rh_get(&d->scripts, sha, 40, &v, &vl) || vl != 4)
-        return -1; /* LUA_NOREF is -1 in 5.1, but we return our own code */
-    memcpy(&ref, v, 4);
+    if (!sha_normalize(sha, sha1, sha1_len) ||
+        !script_cache_ref(d, sha, &ref))
+        return -1;
     return ref;
 }
 
 /* unref one cached chunk during flush/cleanup */
 static void unref_cb(const char *key, size_t klen, const char *val,
-                     size_t vlen, void *ctx)
+                      size_t vlen, void *ctx)
 {
+    db *d = ctx;
     int ref;
     (void)key;
     (void)klen;
-    if (vlen == 4) {
-        memcpy(&ref, val, 4);
-        luaL_unref((lua_State *)ctx, LUA_REGISTRYINDEX, ref);
+    if (vlen == sizeof(ref)) {
+        memcpy(&ref, val, sizeof(ref));
+        if (!script_registry_ref_valid((lua_State *)d->lua_state, ref))
+            return;
+        luaL_unref((lua_State *)d->lua_state, LUA_REGISTRYINDEX, ref);
     }
 }
 
 void script_flush(db *d)
 {
     if (d->lua_state != NULL)
-        rh_each(&d->scripts, unref_cb, d->lua_state);
+        rh_each(&d->scripts, unref_cb, d);
     rh_destroy(&d->scripts);
     rh_init(&d->scripts);
 }
@@ -408,7 +438,7 @@ void script_exec(session *s, const char *sha1, const resp_value *argv,
 {
     db *d = s->d;
     lua_State *L = (lua_State *)script_state(d);
-    int ref = script_ref(d, sha1);
+    int ref = script_ref(d, sha1, 40);
     size_t i;
     int rc;
 
@@ -451,7 +481,8 @@ void script_exec(session *s, const char *sha1, const resp_value *argv,
         char sha_lc[41];
         char ebuf[512];
         int n;
-        sha_lower(sha_lc, sha1);
+        if (!sha_normalize(sha_lc, sha1, 40))
+            strcpy(sha_lc, "unknown");
         n = snprintf(ebuf, sizeof(ebuf),
                      "ERR Error running script (call to f_%s): %s", sha_lc,
                      msg != NULL ? msg : "unknown error");

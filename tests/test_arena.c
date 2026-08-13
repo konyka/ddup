@@ -31,6 +31,26 @@ static void test_big_request_gets_dedicated_block(void)
     arena_destroy(&a);
 }
 
+static void test_big_request_is_aligned(void)
+{
+    arena a;
+    arena_init(&a, 64);
+    void *p = arena_alloc(&a, 4096);
+    DD_CHECK(p != NULL);
+    DD_CHECK(((uintptr_t)p & 15) == 0);
+    arena_destroy(&a);
+}
+
+static void test_size_overflow_is_transactional(void)
+{
+    arena a;
+    arena_init(&a, 64);
+    DD_CHECK(arena_alloc(&a, SIZE_MAX) == NULL);
+    DD_CHECK(a.head == NULL);
+    DD_CHECK(arena_alloc(&a, 1) != NULL);
+    arena_destroy(&a);
+}
+
 static void test_reset_allows_reuse(void)
 {
     arena a;
@@ -70,6 +90,8 @@ int main(void)
 {
     DD_RUN(test_alloc_returns_aligned_distinct);
     DD_RUN(test_big_request_gets_dedicated_block);
+    DD_RUN(test_big_request_is_aligned);
+    DD_RUN(test_size_overflow_is_transactional);
     DD_RUN(test_reset_allows_reuse);
     DD_RUN(test_many_allocs);
     DD_RUN(test_zero_size_alloc);

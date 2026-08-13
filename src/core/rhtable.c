@@ -10,6 +10,26 @@
 #define RH_MAX_LOAD_DEN 100
 #define RH_MIGRATE_BATCH 16 /* occupied buckets migrated per operation */
 
+static int rh_slot_bytes(size_t cap, size_t *bytes)
+{
+    if (cap > SIZE_MAX / sizeof(rh_entry))
+        return -1;
+    *bytes = cap * sizeof(rh_entry);
+    return 0;
+}
+
+static int rh_grow_capacity(size_t cap, size_t *new_cap)
+{
+    size_t doubled;
+    if (cap > SIZE_MAX / 2)
+        return -1;
+    doubled = cap * 2;
+    if (doubled > SIZE_MAX / sizeof(rh_entry))
+        return -1;
+    *new_cap = doubled;
+    return 0;
+}
+
 /* ------------------------------------------------------------------ */
 /* hash: wyhash (final v4, vendored in deps/wyhash) on platforms with  */
 /* a 128-bit multiply; FNV-1a 64 + fmix64 fallback elsewhere.          */
@@ -40,7 +60,12 @@ static uint64_t rh_hash(const char *key, size_t len)
 
 static rh_entry *rh_alloc_slots(size_t cap)
 {
-    rh_entry *s = malloc(cap * sizeof(rh_entry));
+    size_t bytes;
+    if (rh_slot_bytes(cap, &bytes) != 0) {
+        fprintf(stderr, "ddup: hash table capacity overflow\n");
+        exit(1);
+    }
+    rh_entry *s = malloc(bytes);
     if (!s) {
         fprintf(stderr, "ddup: out of memory\n");
         exit(1);
@@ -172,11 +197,19 @@ static inline void rh_migrate_some(rh_table *t)
 
 static void rh_maybe_grow(rh_table *t)
 {
+    size_t load_limit;
     if (t->old_slots)
         return; /* already migrating; new cap has headroom */
-    if ((t->size + 1) * RH_MAX_LOAD_DEN <= t->cap * RH_MAX_LOAD_NUM)
+    load_limit = (t->cap / RH_MAX_LOAD_DEN) * RH_MAX_LOAD_NUM +
+                 ((t->cap % RH_MAX_LOAD_DEN) * RH_MAX_LOAD_NUM) /
+                     RH_MAX_LOAD_DEN;
+    if (t->size < SIZE_MAX && t->size + 1 <= load_limit)
         return;
-    size_t new_cap = t->cap * 2;
+    size_t new_cap;
+    if (rh_grow_capacity(t->cap, &new_cap) != 0) {
+        fprintf(stderr, "ddup: hash table capacity overflow\n");
+        exit(1);
+    }
     rh_entry *new_slots = rh_alloc_slots(new_cap);
     t->old_slots = t->slots;
     t->old_cap = t->cap;
@@ -185,6 +218,18 @@ static void rh_maybe_grow(rh_table *t)
     t->slots = new_slots;
     t->cap = new_cap;
 }
+
+#ifdef DDUP_TESTING
+int rh_test_slot_bytes(size_t cap, size_t *bytes)
+{
+    return rh_slot_bytes(cap, bytes);
+}
+
+int rh_test_grow_capacity(size_t cap, size_t *new_cap)
+{
+    return rh_grow_capacity(cap, new_cap);
+}
+#endif
 
 size_t rh_size(const rh_table *t)
 {

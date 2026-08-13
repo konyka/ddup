@@ -50,7 +50,8 @@ void zsl_free(zskiplist *z);
 
 /* Insert a NEW (score, member); the caller guarantees the member is not
  * present (the zset dict enforces this). */
-void zsl_insert(zskiplist *z, double score, const char *member, size_t mlen);
+/* Returns 0 on success or -1 when mlen cannot be represented safely. */
+int zsl_insert(zskiplist *z, double score, const char *member, size_t mlen);
 
 /* Delete by exact (score, member). Returns 1 if found. */
 int zsl_delete(zskiplist *z, double score, const char *member, size_t mlen);

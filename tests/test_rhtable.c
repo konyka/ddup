@@ -109,6 +109,18 @@ static void test_reject_unrepresentable_lengths(void)
     rh_destroy(&t);
 }
 
+static void test_capacity_arithmetic_overflow(void)
+{
+    size_t bytes = 123;
+    size_t cap = 123;
+    DD_CHECK(rh_test_slot_bytes(SIZE_MAX, &bytes) == -1);
+    DD_CHECK_EQ_INT(123, (long long)bytes);
+    DD_CHECK(rh_test_grow_capacity(SIZE_MAX, &cap) == -1);
+    DD_CHECK_EQ_INT(123, (long long)cap);
+    DD_CHECK(rh_test_grow_capacity(16, &cap) == 0);
+    DD_CHECK_EQ_INT(32, (long long)cap);
+}
+
 static void test_delete(void)
 {
     rh_table t;
@@ -289,6 +301,7 @@ static void bench_throughput(void)
 
 int main(void)
 {
+    DD_RUN(test_capacity_arithmetic_overflow);
     DD_RUN(test_set_get);
     DD_RUN(test_overwrite);
     DD_RUN(test_set_ex);

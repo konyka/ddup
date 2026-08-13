@@ -45,6 +45,23 @@ static void test_insert_order(void)
     zsl_free(z);
 }
 
+static void test_reject_unrepresentable_member_length(void)
+{
+#if SIZE_MAX > UINT32_MAX
+    zskiplist *z = zsl_create();
+    const char byte = 'x';
+    uint64_t mem = z->mem;
+    uint32_t rng_state = z->rng_state;
+    DD_CHECK_EQ_INT(-1,
+                    zsl_insert(z, 1.0, &byte, (size_t)UINT32_MAX + 1));
+    DD_CHECK_EQ_INT(0, (long long)z->length);
+    DD_CHECK(z->header->level[0].forward == NULL);
+    DD_CHECK(z->mem == mem);
+    DD_CHECK(z->rng_state == rng_state);
+    zsl_free(z);
+#endif
+}
+
 static void test_duplicate_score_tiebreak(void)
 {
     zskiplist *z = zsl_create();
@@ -245,6 +262,7 @@ static void test_differential(void)
 int main(void)
 {
     DD_RUN(test_insert_order);
+    DD_RUN(test_reject_unrepresentable_member_length);
     DD_RUN(test_duplicate_score_tiebreak);
     DD_RUN(test_delete_and_rank);
     DD_RUN(test_ranges);

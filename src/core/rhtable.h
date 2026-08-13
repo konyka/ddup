@@ -39,6 +39,11 @@ typedef struct rh_table {
 void rh_init(rh_table *t);
 void rh_destroy(rh_table *t);
 
+#ifdef DDUP_TESTING
+int rh_test_slot_bytes(size_t cap, size_t *bytes);
+int rh_test_grow_capacity(size_t cap, size_t *new_cap);
+#endif
+
 /* Returns 1 and sets val/vlen out-params (view valid until next mutation). */
 int rh_get(rh_table *t, const char *key, size_t klen,
            const char **val, size_t *vlen);

@@ -14,6 +14,11 @@ int obj_tag_of(const char *val, size_t vlen)
 
 void obj_str(const char *val, size_t vlen, const char **s, size_t *len)
 {
+    if (vlen == 0) {
+        *s = val;
+        *len = 0;
+        return;
+    }
     *s = val + 1;
     *len = vlen - 1;
 }

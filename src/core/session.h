@@ -155,7 +155,12 @@ session *session_create(db *d);
 void session_free(session *s);
 
 /* Deep-copy argv onto the MULTI queue. */
-void session_queue_push(session *s, const resp_value *argv, size_t argc);
+int session_queue_push(session *s, const resp_value *argv, size_t argc);
+
+#ifdef DDUP_TESTING
+int session_test_queue_bytes(size_t cap, size_t *bytes);
+int session_test_queue_growth(size_t cap, size_t *new_cap);
+#endif
 void session_queue_clear(session *s);
 
 void session_watch_add(session *s, const char *key, size_t klen,

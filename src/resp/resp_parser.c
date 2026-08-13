@@ -8,6 +8,7 @@
 
 #include <limits.h>
 #include <math.h>
+#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -15,6 +16,21 @@
 
 #define RESP_MAX_DEPTH 512
 #define RESP_MAX_ARRAY_LEN (1024LL * 1024LL * 1024LL) /* protocol sanity cap */
+
+static int resp_aggregate_bytes(size_t slots, size_t *bytes)
+{
+    if (slots > SIZE_MAX / sizeof(resp_value))
+        return -1;
+    *bytes = slots * sizeof(resp_value);
+    return 0;
+}
+
+#ifdef DDUP_TESTING
+int resp_test_aggregate_bytes(size_t slots, size_t *bytes)
+{
+    return resp_aggregate_bytes(slots, bytes);
+}
+#endif
 
 /* Parse a signed decimal integer in [p, end). Strict: optional '-', at least
  * one digit, digits only, no overflow. Returns 0 on success. */
@@ -199,17 +215,21 @@ static int parse_at(const char *start, const char *end, const char **pos,
         if (type == '%' && n > (size_t)RESP_MAX_ARRAY_LEN / 2)
             return -1;
 
-        out->type = (type == '*')  ? RESP_ARRAY
+        resp_value aggregate;
+        memset(&aggregate, 0, sizeof(aggregate));
+        aggregate.type = (type == '*')  ? RESP_ARRAY
                     : (type == '%') ? RESP_MAP
                     : (type == '~') ? RESP_SET
                                     : RESP_PUSH;
-        out->count = slots;
-        out->items = NULL;
+        aggregate.count = slots;
         const char *cur = crlf + 2;
         if (slots > 0) {
             size_t i = 0;
-            out->items = arena_alloc(a, slots * sizeof(resp_value));
-            if (!out->items)
+            size_t bytes;
+            if (resp_aggregate_bytes(slots, &bytes) != 0)
+                return -1;
+            aggregate.items = arena_alloc(a, bytes);
+            if (!aggregate.items)
                 return -1;
             /* Fast path (Phase 36): command traffic is overwhelmingly
              * *N arrays of $ bulks; parse bulk children inline instead of
@@ -218,7 +238,7 @@ static int parse_at(const char *start, const char *end, const char **pos,
              * non-bulk child falls back to the general recursion. */
             if (type == '*') {
                 while (i < slots && cur < end && *cur == '$') {
-                    resp_value *it = &out->items[i];
+                    resp_value *it = &aggregate.items[i];
                     const char *bp = cur + 1;
                     const char *bcrlf = ddup_find_crlf(bp, end);
                     long long blen;
@@ -251,12 +271,14 @@ static int parse_at(const char *start, const char *end, const char **pos,
                 }
             }
             for (; i < slots; i++) {
-                int r = parse_at(start, end, &cur, &out->items[i], a, depth + 1);
+                int r = parse_at(start, end, &cur, &aggregate.items[i], a,
+                                 depth + 1);
                 if (r <= 0)
                     return r;
             }
         }
         *pos = cur;
+        *out = aggregate;
         return 1;
     }
 

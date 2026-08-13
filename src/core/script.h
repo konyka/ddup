@@ -21,13 +21,14 @@ void *script_state(db *d);
 int script_load(db *d, const char *src, size_t len, char out_sha1[41],
                 char *errbuf, size_t errcap);
 
-/* 1 when sha1 (40 hex, either case) names a cached script, else 0. */
-int script_cached(db *d, const char *sha1);
+/* 1 when the exact 40-byte sha1 (hex, either case) names a cached script,
+ * else 0. sha1 need not be NUL-terminated. */
+int script_cached(db *d, const char *sha1, size_t sha1_len);
 
 /* Push the cached chunk's registry reference for script_exec; returns the
  * ref or LUA_NOREF when missing (script.c internal, declared for the
  * dispatch layer). */
-int script_ref(db *d, const char *sha1);
+int script_ref(db *d, const char *sha1, size_t sha1_len);
 
 /* Drop every cached script (SCRIPT FLUSH semantics). */
 void script_flush(db *d);

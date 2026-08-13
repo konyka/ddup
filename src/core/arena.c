@@ -8,6 +8,8 @@
 
 static size_t align_up(size_t n)
 {
+    if (n > SIZE_MAX - (ARENA_ALIGN - 1))
+        return 0;
     return (n + (ARENA_ALIGN - 1)) & ~(size_t)(ARENA_ALIGN - 1);
 }
 
@@ -20,6 +22,10 @@ void arena_init(arena *a, size_t block_size)
 static arena_block *arena_new_block(arena *a, size_t min_cap)
 {
     size_t cap = a->block_size > min_cap ? a->block_size : min_cap;
+    if (cap > SIZE_MAX - (ARENA_ALIGN - 1) ||
+        sizeof(arena_block) > SIZE_MAX - cap - (ARENA_ALIGN - 1))
+        return NULL;
+    cap += ARENA_ALIGN - 1;
     arena_block *b = malloc(sizeof(arena_block) + cap);
     if (!b)
         return NULL;
@@ -32,24 +38,30 @@ static arena_block *arena_new_block(arena *a, size_t min_cap)
 
 void *arena_alloc(arena *a, size_t n)
 {
-    n = align_up(n);
+    size_t aligned = align_up(n);
+    if (aligned == 0 && n != 0)
+        return NULL;
+    n = aligned;
     arena_block *b = a->head;
-    if (!b || n > b->cap - b->used) {
-        b = arena_new_block(a, n);
+    size_t padding = 0;
+    if (b) {
+        uintptr_t raw = (uintptr_t)((char *)b + sizeof(arena_block) + b->used);
+        padding = (size_t)((ARENA_ALIGN - (raw & (ARENA_ALIGN - 1))) &
+                           (ARENA_ALIGN - 1));
+    }
+    if (!b || padding > SIZE_MAX - n || padding + n > b->cap - b->used) {
+        if (padding > SIZE_MAX - n)
+            return NULL;
+        b = arena_new_block(a, padding + n);
         if (!b)
             return NULL;
+        padding = (size_t)((ARENA_ALIGN -
+                            ((uintptr_t)((char *)b + sizeof(arena_block)) &
+                             (ARENA_ALIGN - 1))) &
+                           (ARENA_ALIGN - 1));
     }
-    void *p = (char *)b + sizeof(arena_block) + b->used;
-    b->used += n;
-    /* arena_block is malloc-aligned (max_align); keep the invariant that
-     * data starts 16-byte aligned even on platforms where it is not. */
-    if ((uintptr_t)p & (ARENA_ALIGN - 1)) {
-        size_t fix = ARENA_ALIGN - ((uintptr_t)p & (ARENA_ALIGN - 1));
-        if (fix <= b->cap - b->used) {
-            p = (char *)p + fix;
-            b->used += fix;
-        }
-    }
+    void *p = (char *)b + sizeof(arena_block) + b->used + padding;
+    b->used += padding + n;
     return p;
 }
 

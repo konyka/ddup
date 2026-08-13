@@ -83,12 +83,60 @@ static void *xmalloc(size_t n)
     return p;
 }
 
-void session_queue_push(session *s, const resp_value *argv, size_t argc)
+static int session_queue_bytes(size_t count, size_t *bytes)
+{
+    if (count > SIZE_MAX / sizeof(resp_value))
+        return -1;
+    *bytes = count * sizeof(resp_value);
+    return 0;
+}
+
+static int session_queue_growth(size_t cap, size_t *new_cap)
+{
+    if (cap == 0) {
+        *new_cap = 8;
+        return 0;
+    }
+    if (cap > SIZE_MAX / 2)
+        return -1;
+    *new_cap = cap * 2;
+    return 0;
+}
+
+#ifdef DDUP_TESTING
+int session_test_queue_bytes(size_t count, size_t *bytes)
+{
+    return session_queue_bytes(count, bytes);
+}
+
+int session_test_queue_growth(size_t cap, size_t *new_cap)
+{
+    return session_queue_growth(cap, new_cap);
+}
+#endif
+
+int session_queue_push(session *s, const resp_value *argv, size_t argc)
 {
     queued_cmd *qc;
+    resp_value *copy_argv;
+    size_t argv_bytes;
+    size_t ncap = s->queue_cap;
     size_t i;
+    if (session_queue_bytes(argc, &argv_bytes) != 0)
+        return -1;
+    if (s->queue_len == s->queue_cap &&
+        (session_queue_growth(s->queue_cap, &ncap) != 0 ||
+         ncap > SIZE_MAX / sizeof(*s->queue)))
+        return -1;
+    copy_argv = (resp_value *)xmalloc(argv_bytes);
+    for (i = 0; i < argc; i++) {
+        char *copy = (char *)xmalloc(argv[i].len);
+        memcpy(copy, argv[i].str, argv[i].len);
+        copy_argv[i] = argv[i];
+        copy_argv[i].str = copy;
+        copy_argv[i].items = NULL;
+    }
     if (s->queue_len == s->queue_cap) {
-        size_t ncap = s->queue_cap == 0 ? 8 : s->queue_cap * 2;
         queued_cmd *nq =
             (queued_cmd *)realloc(s->queue, ncap * sizeof(*nq));
         if (nq == NULL) {
@@ -101,14 +149,8 @@ void session_queue_push(session *s, const resp_value *argv, size_t argc)
     qc = &s->queue[s->queue_len++];
     qc->argc = argc;
     qc->skip_log = 0;
-    qc->argv = (resp_value *)xmalloc(argc * sizeof(resp_value));
-    for (i = 0; i < argc; i++) {
-        char *copy = (char *)xmalloc(argv[i].len);
-        memcpy(copy, argv[i].str, argv[i].len);
-        qc->argv[i] = argv[i];
-        qc->argv[i].str = copy;
-        qc->argv[i].items = NULL;
-    }
+    qc->argv = copy_argv;
+    return 0;
 }
 
 void session_watch_add(session *s, const char *key, size_t klen,

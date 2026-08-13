@@ -1,5 +1,4 @@
 /* test_script.c - SHA1 (RFC 3174 vectors) and the Lua script cache. */
-#include <stdio.h>
 #include <string.h>
 
 #include "core/script.h"
@@ -42,13 +41,14 @@ static void test_cache_load_hit_miss(void)
     DD_CHECK_EQ_INT(0, script_load(&d, "return 1", 8, sha, err, sizeof(err)));
     sha1_hex("return 1", 8, err);
     DD_CHECK_STR(err, sha);
-    DD_CHECK_EQ_INT(1, script_cached(&d, sha));
+    DD_CHECK_EQ_INT(1, script_cached(&d, sha, 40));
 
     /* reload is a hit (same sha, no recompile) */
     DD_CHECK_EQ_INT(0, script_load(&d, "return 1", 8, sha, err, sizeof(err)));
-    DD_CHECK_EQ_INT(1, script_cached(&d, sha));
+    DD_CHECK_EQ_INT(1, script_cached(&d, sha, 40));
 
-    DD_CHECK_EQ_INT(0, script_cached(&d, "ffffffffffffffffffffffffffffffffffffffff"));
+    DD_CHECK_EQ_INT(0, script_cached(
+                          &d, "ffffffffffffffffffffffffffffffffffffffff", 40));
     /* uppercase hex also matches */
     {
         char up[41];
@@ -57,8 +57,68 @@ static void test_cache_load_hit_miss(void)
             up[i] = (sha[i] >= 'a' && sha[i] <= 'f') ? (char)(sha[i] - 32)
                                                     : sha[i];
         up[40] = '\0';
-        DD_CHECK_EQ_INT(1, script_cached(&d, up));
+        DD_CHECK_EQ_INT(1, script_cached(&d, up, 40));
     }
+    db_destroy(&d);
+}
+
+static void test_cache_sha_validation(void)
+{
+    db d;
+    char sha[41], err[128];
+
+    db_init(&d);
+    DD_CHECK_EQ_INT(0, script_load(&d, "return 1", 8, sha, err, sizeof(err)));
+    DD_CHECK_EQ_INT(0, script_cached(&d, "not-a-sha", 9));
+    DD_CHECK_EQ_INT(-1, script_ref(&d, "not-a-sha", 9));
+    DD_CHECK_EQ_INT(0, script_cached(
+                          &d, "000000000000000000000000000000000000000g", 40));
+    DD_CHECK_EQ_INT(-1, script_ref(
+                           &d, "000000000000000000000000000000000000000g", 40));
+    DD_CHECK_EQ_INT(0, script_cached(
+                          &d, "00000000000000000000000000000000000000000", 41));
+    DD_CHECK_EQ_INT(-1, script_ref(
+                           &d, "00000000000000000000000000000000000000000", 41));
+    {
+        char raw_sha[40];
+        memcpy(raw_sha, sha, sizeof(raw_sha));
+        DD_CHECK_EQ_INT(1, script_cached(&d, raw_sha, sizeof(raw_sha)));
+        DD_CHECK(script_ref(&d, raw_sha, sizeof(raw_sha)) > 0);
+    }
+    db_destroy(&d);
+}
+
+static void test_cache_malformed_reference_recompiled(void)
+{
+    db d;
+    char sha[41], err[128];
+    int bad_ref = 1;
+
+    db_init(&d);
+    sha1_hex("return 1", 8, sha);
+    DD_CHECK_EQ_INT(0, rh_set(&d.scripts, sha, 40,
+                              (const char *)&bad_ref, sizeof(bad_ref)));
+    DD_CHECK_EQ_INT(0, script_cached(&d, sha, 40));
+    DD_CHECK_EQ_INT(-1, script_ref(&d, sha, 40));
+    DD_CHECK_EQ_INT(0, script_load(&d, "return 1", 8, sha, err, sizeof(err)));
+    DD_CHECK_EQ_INT(1, script_cached(&d, sha, 40));
+    DD_CHECK(script_ref(&d, sha, 40) > 0);
+    db_destroy(&d);
+}
+
+static void test_flush_ignores_malformed_reference(void)
+{
+    db d;
+    char sha[41];
+    int bad_ref = 1;
+
+    db_init(&d);
+    (void)script_state(&d);
+    sha1_hex("return 1", 8, sha);
+    DD_CHECK_EQ_INT(0, rh_set(&d.scripts, sha, 40,
+                              (const char *)&bad_ref, sizeof(bad_ref)));
+    script_flush(&d);
+    DD_CHECK_EQ_INT(0, script_cached(&d, sha, 40));
     db_destroy(&d);
 }
 
@@ -71,7 +131,7 @@ static void test_compile_error(void)
                                     sizeof(err)));
     DD_CHECK(strlen(err) > 0);
     DD_CHECK_EQ_INT(0, script_cached(
-                          &d, "0000000000000000000000000000000000000000"));
+                          &d, "0000000000000000000000000000000000000000", 40));
     db_destroy(&d);
 }
 
@@ -81,12 +141,12 @@ static void test_flush(void)
     char sha[41], err[128];
     db_init(&d);
     DD_CHECK_EQ_INT(0, script_load(&d, "return 1", 8, sha, err, sizeof(err)));
-    DD_CHECK_EQ_INT(1, script_cached(&d, sha));
+    DD_CHECK_EQ_INT(1, script_cached(&d, sha, 40));
     script_flush(&d);
-    DD_CHECK_EQ_INT(0, script_cached(&d, sha));
+    DD_CHECK_EQ_INT(0, script_cached(&d, sha, 40));
     /* cache usable again after a flush */
     DD_CHECK_EQ_INT(0, script_load(&d, "return 2", 8, sha, err, sizeof(err)));
-    DD_CHECK_EQ_INT(1, script_cached(&d, sha));
+    DD_CHECK_EQ_INT(1, script_cached(&d, sha, 40));
     db_destroy(&d);
 }
 
@@ -94,6 +154,9 @@ int main(void)
 {
     DD_RUN(test_sha1_vectors);
     DD_RUN(test_cache_load_hit_miss);
+    DD_RUN(test_cache_sha_validation);
+    DD_RUN(test_cache_malformed_reference_recompiled);
+    DD_RUN(test_flush_ignores_malformed_reference);
     DD_RUN(test_compile_error);
     DD_RUN(test_flush);
     return DD_TEST_SUMMARY();

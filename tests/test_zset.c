@@ -345,8 +345,19 @@ static void test_zset_ttl_and_memory(void)
     db_destroy(&d);
 }
 
+static void test_obj_str_zero_length_blob(void)
+{
+    const char byte = 'x';
+    const char *s = &byte;
+    size_t len = 123;
+    obj_str(&byte, 0, &s, &len);
+    DD_CHECK(s == &byte);
+    DD_CHECK_EQ_INT(0, (long long)len);
+}
+
 int main(void)
 {
+    DD_RUN(test_obj_str_zero_length_blob);
     DD_RUN(test_zset_rejects_unrepresentable_member);
     DD_RUN(test_zadd_zscore_zcard);
     DD_RUN(test_zincrby_zrem);

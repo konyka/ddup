@@ -57,21 +57,32 @@ static int zsl_random_level(zskiplist *z)
 static zsl_node *zsl_node_new(int level, double score, const char *member,
                               size_t mlen)
 {
-    zsl_node *n = (zsl_node *)zsl_xmalloc(sizeof(zsl_node) +
-                                          (size_t)level *
-                                              sizeof(struct zsl_level));
+    size_t level_bytes;
+    if (mlen > UINT32_MAX ||
+        (size_t)level > (SIZE_MAX - sizeof(zsl_node)) /
+                             sizeof(struct zsl_level))
+        return NULL;
+    level_bytes = (size_t)level * sizeof(struct zsl_level);
+    zsl_node *n = (zsl_node *)zsl_xmalloc(sizeof(zsl_node) + level_bytes);
     n->score = score;
     n->backward = NULL;
     n->mlen = (uint32_t)mlen;
-    n->member = (char *)zsl_xmalloc(mlen);
+    n->member = (char *)zsl_xmalloc(mlen ? mlen : 1);
     memcpy(n->member, member, mlen);
     return n;
 }
 
-static uint64_t zsl_node_bytes(int level, size_t mlen)
+static int zsl_node_bytes(int level, size_t mlen, uint64_t *bytes)
 {
-    return (uint64_t)sizeof(zsl_node) +
-           (uint64_t)level * sizeof(struct zsl_level) + 16 + mlen + 16;
+    uint64_t total = sizeof(zsl_node);
+    if (mlen > UINT32_MAX || level < 0 ||
+        (uint64_t)level > (UINT64_MAX - total) / sizeof(struct zsl_level))
+        return -1;
+    total += (uint64_t)level * sizeof(struct zsl_level);
+    if (total > UINT64_MAX - 32 - (uint64_t)mlen)
+        return -1;
+    *bytes = total + 32 + (uint64_t)mlen;
+    return 0;
 }
 
 zskiplist *zsl_create(void)
@@ -86,7 +97,12 @@ zskiplist *zsl_create(void)
     z->tail = NULL;
     z->length = 0;
     z->level = 1;
-    z->mem = (uint64_t)sizeof(*z) + zsl_node_bytes(ZSL_MAX_LEVEL, 0);
+    {
+        uint64_t header_bytes;
+        if (zsl_node_bytes(ZSL_MAX_LEVEL, 0, &header_bytes) != 0)
+            abort();
+        z->mem = (uint64_t)sizeof(*z) + header_bytes;
+    }
     z->rng_state = 0x2545F491u;
     return z;
 }
@@ -108,7 +124,7 @@ void zsl_free(zskiplist *z)
     free(z);
 }
 
-void zsl_insert(zskiplist *z, double score, const char *member, size_t mlen)
+int zsl_insert(zskiplist *z, double score, const char *member, size_t mlen)
 {
     zsl_node *update[ZSL_MAX_LEVEL];
     uint32_t rank[ZSL_MAX_LEVEL];
@@ -117,6 +133,8 @@ void zsl_insert(zskiplist *z, double score, const char *member, size_t mlen)
     int level;
     int i;
 
+    if (mlen > UINT32_MAX)
+        return -1;
     x = z->header;
     for (i = z->level - 1; i >= 0; i--) {
         rank[i] = (i == z->level - 1) ? 0 : rank[i + 1];
@@ -139,6 +157,8 @@ void zsl_insert(zskiplist *z, double score, const char *member, size_t mlen)
         z->level = level;
     }
     n = zsl_node_new(level, score, member, mlen);
+    if (n == NULL)
+        return -1;
     for (i = 0; i < level; i++) {
         n->level[i].forward = update[i]->level[i].forward;
         update[i]->level[i].forward = n;
@@ -155,7 +175,13 @@ void zsl_insert(zskiplist *z, double score, const char *member, size_t mlen)
     else
         z->tail = n;
     z->length++;
-    z->mem += zsl_node_bytes(level, mlen);
+    {
+        uint64_t node_bytes;
+        if (zsl_node_bytes(level, mlen, &node_bytes) != 0)
+            abort();
+        z->mem += node_bytes;
+    }
+    return 0;
 }
 
 int zsl_delete(zskiplist *z, double score, const char *member, size_t mlen)
@@ -194,7 +220,12 @@ int zsl_delete(zskiplist *z, double score, const char *member, size_t mlen)
     while (z->level > 1 && z->header->level[z->level - 1].forward == NULL)
         z->level--;
     z->length--;
-    z->mem -= zsl_node_bytes(level, x->mlen);
+    {
+        uint64_t node_bytes;
+        if (zsl_node_bytes(level, x->mlen, &node_bytes) != 0)
+            abort();
+        z->mem -= node_bytes;
+    }
     free(x->member);
     free(x);
     return 1;

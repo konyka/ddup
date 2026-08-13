@@ -1,6 +1,7 @@
 /* test_resp_parser.c - RESP2 parser tests (written before the implementation). */
 #include "test.h"
 
+#include <stdint.h>
 #include <string.h>
 
 #include "core/arena.h"
@@ -78,6 +79,15 @@ static void test_array(void)
     DD_CHECK_MEM("SET", 3, g_v.items[0].str, g_v.items[0].len);
     DD_CHECK_MEM("foo", 3, g_v.items[1].str, g_v.items[1].len);
     DD_CHECK_MEM("bar", 3, g_v.items[2].str, g_v.items[2].len);
+}
+
+static void test_aggregate_allocation_size_overflow(void)
+{
+    size_t bytes = 123;
+    DD_CHECK(resp_test_aggregate_bytes(SIZE_MAX, &bytes) == -1);
+    DD_CHECK_EQ_INT(123, (long long)bytes);
+    DD_CHECK(resp_test_aggregate_bytes(2, &bytes) == 0);
+    DD_CHECK(bytes == 2 * sizeof(resp_value));
 }
 
 static void test_nested_array(void)
@@ -174,6 +184,7 @@ int main(void)
     DD_RUN(test_bulk_string);
     DD_RUN(test_null_bulk_string);
     DD_RUN(test_array);
+    DD_RUN(test_aggregate_allocation_size_overflow);
     DD_RUN(test_nested_array);
     DD_RUN(test_null_and_empty_array);
     DD_RUN(test_incomplete_returns_zero);
