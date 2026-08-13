@@ -234,6 +234,11 @@
     fail-closed 闩锁）；SET KEEPTTL/GET 选项；COPY 命令（DUMP/
     RESTORE 序列化深拷贝——裸 blob 对指针对象有别名风险，记录在案；
     mt 拒绝跨库）（Phase 44）
+  - [x] 紧凑编码：Redis 7 兼容 listpack（src/ds/listpack）+ quicklist
+    重写 list 存储（每节点 ≤128 条目 listpack，端点分裂/空节点摘除，
+    迭代器访问）；hash/zset 小对象 listpack 双编码（128 条目 / 64 字节
+    阈值，单向转换不降级）；记账模型 128 条目小对象内存 list/hash/
+    zset 分别 -78%/-67%/-92%（Phase 45）
   - [ ] 范围化排除（记录在案，不实施）：
     - 分层存储（热/冷数据落盘）：超出"内存缓存存储"定位
     - mt 模式的复制/集群适配：见 Phase 15 说明

@@ -426,24 +426,50 @@ DBSIZE 为 O(1)，可能计入尚未回收的过期 key。
 ```
 {1 字节类型标签}{payload}
   DDUP_OBJ_STRING: payload = 原始字符串字节
-  DDUP_OBJ_HASH:   payload = 8 字节指针 -> obj_hash（嵌套 rh_table：field -> 值）
-  DDUP_OBJ_LIST:   payload = 8 字节指针 -> obj_list（双链表，每元素一个节点）
+  DDUP_OBJ_HASH:   payload = 8 字节指针 -> obj_hash（小对象 listpack，
+                   超阈值转嵌套 rh_table，见"紧凑编码"一节）
+  DDUP_OBJ_LIST:   payload = 8 字节指针 -> obj_list（quicklist：
+                   listpack 节点的双链表）
   DDUP_OBJ_SET:    payload = 8 字节指针 -> obj_set（rh_table：member -> 空值）
-  DDUP_OBJ_ZSET:   payload = 8 字节指针 -> obj_zset（dict + skiplist）
+  DDUP_OBJ_ZSET:   payload = 8 字节指针 -> obj_zset（小对象 listpack，
+                   超阈值转 dict + skiplist）
 ```
 
 - **所有权**：db 层拥有指针对象。任何覆盖/删除/过期/淘汰/FLUSHDB 路径
   经 `obj_free_value()` 释放对象；`obj_extra_mem()` 返回对象占用用于
-  内存记账（hash：sizeof(obj_hash) + 每字段 entry 成本；list：
-  sizeof(obj_list) + 每节点 sizeof(list_node)+16+元素字节；均为近似值，
-  不含嵌套表的 slot 数组）。
+  内存记账（均为近似值，每次 malloc 计 16 字节开销，不含嵌套表的
+  slot 数组；各编码的具体布局见"紧凑编码"一节）。
 - **类型错误**：字符串命令作用于 hash/list key（或反向）回复
   `-WRONGTYPE Operation against a key holding the wrong kind of value`。
   注：SET 覆盖其它类型在 Redis 中是允许的，本实现按 WRONGTYPE 处理
   （有意收紧）；MGET 对非字符串 key 先校验后统一报错（Redis 返回 null）。
 - **空对象自动删除**：hash 字段清空 / list 弹空时 key 一并删除。
-- **quicklist**：list 当前为逐节点双链表；块式 quicklist 列为后续优化。
 - 过期、淘汰、LRU touch 对对象值透明生效（共用 db 层路径）。
+
+## 紧凑编码：listpack 与 quicklist（Phase 45）
+
+- **listpack（src/ds/listpack）**：Redis 7 兼容的紧凑字节布局
+  （4B 总长 + 2B 条目数 + 条目序列 + 0xFF）。条目编码：7-bit uint、
+  13/16/24/32/64-bit int、6/12/32-bit 长度字符串，尾随变长 backlen
+  支持反向遍历。规范形式的整数字符串（无前导零、无 "-0"、在
+  int64 范围内）自动按整数存储；条目数达 0xFFFF 后计数转为
+  "unknown"，`lp_length()` 退化为扫描。所有 mutator 可能 realloc，
+  调用方须重新定位（与 Redis 同约定）。
+- **quicklist（src/ds/quicklist）**：listpack 节点的双链表，每节点至多
+  `DDUP_QL_FILL`（128）个元素；端点节点满则push 分裂新节点，空节点
+  即摘除；稀疏中间节点不做合并（Redis 靠压缩遍历处理，此处有意简化，
+  记录在案）。list 元素访问走迭代器（seek 从近端跳块、双向遍历、
+  remove 后迭代器落在后继）。
+- **小对象双编码**：hash 与 zset 默认使用单个 listpack——
+  hash 存 field/value 交替；zset 存 member/score（`%.17g` 十进制）
+  交替并按 (score, member) 保序。阈值与 Redis 默认一致：
+  128 条目、单值 64 字节（`OBJ_HASH_MAX_LISTPACK_*` /
+  `OBJ_ZSET_MAX_LISTPACK_*`，编译期常量，未接配置项）。写入超阈值时
+  一次性转换为全功能结构（rh_table / dict+skiplist），只单向转换
+  不降回（同 Redis）。listpack 模式下范围/RANK/LEX 等操作为 ≤128
+  条目的线性扫描。
+- **内存收益**（记账模型实测，128 条目小对象）：list -78%、
+  hash -67%、zset -92%（数字见 docs/performance.md Phase 45）。
 
 ## Set / ZSet 设计（Phase 5.2）
 
@@ -452,7 +478,8 @@ DBSIZE 为 O(1)，可能计入尚未回收的过期 key。
   部分 Fisher-Yates 后取前 k 个（SPOP 删除选中的）；count<0 时有放回抽样。
   SINTER/SUNION/SDIFF 结果为临时 rh_table（天然去重），SINTER/SDIFF 遇
   缺失 key 结果为空，SUNION 忽略缺失 key。
-- **ZSet**：Redis 风格 dict + skiplist。dict（rh_table）member -> 8 字节
+- **ZSet**：小 zset 为 listpack 编码（见"紧凑编码"一节）；转换后为
+  Redis 风格 dict + skiplist。dict（rh_table）member -> 8 字节
   double，ZSCORE/ZINCRBY/ZREM 均 O(log N)；skiplist（src/ds/skiplist.c）
   维护 (score, member 字节序) 排序：分数升序，同分按 member 字典序
   （与 Redis 一致）。跳表带**逐层 span**（Redis zsl 同构，Phase 21）：
