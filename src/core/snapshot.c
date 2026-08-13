@@ -192,22 +192,26 @@ static void write_value_payload(save_ctx *ctx, int tag, const char *val,
     }
     case DDUP_OBJ_ZSET: {
         obj_zset *z = (obj_zset *)obj_unpack_ptr(val, vlen);
-        zsl_node *n;
-        if (rh_size(&z->dict) > UINT32_MAX) {
+        obj_zset_iter it;
+        if (obj_zset_len(z) > UINT32_MAX) {
             ctx->ok = 0;
             return;
         }
-        if (buf_u32le(buf, (uint32_t)rh_size(&z->dict)) != 0) {
+        if (buf_u32le(buf, (uint32_t)obj_zset_len(z)) != 0) {
             ctx->ok = 0;
             return;
         }
-        for (n = z->sl->header->level[0].forward; n != NULL; n = n->level[0].forward) {
-            if (buf_u32le(buf, n->mlen) != 0 ||
-                buf_bytes(buf, n->member, n->mlen) != 0 ||
-                buf_f64le(buf, n->score) != 0) {
-                ctx->ok = 0;
-                return;
-            }
+        if (obj_zset_first(z, &it)) {
+            do {
+                size_t ml = 0;
+                const char *mv = obj_zset_iter_member(&it, &ml);
+                if (buf_u32le(buf, (uint32_t)ml) != 0 ||
+                    buf_bytes(buf, mv, ml) != 0 ||
+                    buf_f64le(buf, obj_zset_iter_score(&it)) != 0) {
+                    ctx->ok = 0;
+                    return;
+                }
+            } while (obj_zset_iter_next(&it));
         }
         break;
     }

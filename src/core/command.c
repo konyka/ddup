@@ -763,21 +763,17 @@ static int parse_lex_bound(const char *s, size_t len, zlexbound *b)
     return 0;
 }
 
-/* Delete the inclusive level-0 node span [first, last] from both sides
- * of the zset (dict + skiplist); returns the number removed. Each node's
- * forward link is captured before it is freed. */
-static long long zset_rem_node_span(obj_zset *z, zsl_node *first,
-                                    zsl_node *last)
+/* Write one member (and optionally its score) from a zset iterator. */
+static void zset_emit_member(resp_buf *out, obj_zset_iter *it, int withscores)
 {
-    long long removed = 0;
-    while (first != NULL) {
-        zsl_node *next = first->level[0].forward;
-        removed += obj_zset_rem(z, first->member, first->mlen);
-        if (first == last)
-            break;
-        first = next;
+    size_t ml = 0;
+    const char *mv = obj_zset_iter_member(it, &ml);
+    resp_write_bulk(out, mv, ml);
+    if (withscores) {
+        char num[40];
+        int nl = fmt_score(num, sizeof(num), obj_zset_iter_score(it));
+        resp_write_bulk(out, num, (size_t)nl);
     }
-    return removed;
 }
 
 /* Fold an object's mem delta (mutations done in place) into used_memory,
@@ -5438,7 +5434,7 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
         int rc = get_zset(d, out, k, kl, 0, now_ms, &z);
         if (rc < 0)
             return;
-        resp_write_integer(out, rc == 1 ? (long long)rh_size(&z->dict) : 0);
+        resp_write_integer(out, rc == 1 ? (long long)obj_zset_len(z) : 0);
         return;
     }
 
@@ -5515,7 +5511,7 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
             removed += obj_zset_rem(z, m, ml);
         }
         mem_sync(d, k, kl, before, obj_zset_mem(z));
-        if (rh_size(&z->dict) == 0)
+        if (obj_zset_len(z) == 0)
             db_del_kv(d, k, kl); /* empty zset: the key goes away */
         resp_write_integer(out, removed);
         return;
@@ -5558,9 +5554,9 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
             return;
         }
         {
-            long long len = (long long)z->sl->length;
+            long long len = (long long)obj_zset_len(z);
             long long i;
-            zsl_node *n;
+            obj_zset_iter it;
             if (start < 0)
                 start += len;
             if (start < 0)
@@ -5577,26 +5573,20 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
                                     (size_t)(stop - start + 1) *
                                         (withscores ? 2u : 1u));
             if (!rev) {
-                n = zsl_at(z->sl, (size_t)start);
-                for (i = start; i <= stop && n != NULL;
-                     i++, n = n->level[0].forward) {
-                    resp_write_bulk(out, n->member, n->mlen);
-                    if (withscores) {
-                        char num[40];
-                        int nl = fmt_score(num, sizeof(num), n->score);
-                        resp_write_bulk(out, num, (size_t)nl);
+                if (obj_zset_seek(z, (size_t)start, &it)) {
+                    for (i = start; i <= stop; i++) {
+                        zset_emit_member(out, &it, withscores);
+                        if (i != stop && !obj_zset_iter_next(&it))
+                            break;
                     }
                 }
             } else {
                 /* reversed index p == forward index len-1-p */
-                n = zsl_at(z->sl, (size_t)(len - 1 - start));
-                for (i = start; i <= stop && n != NULL;
-                     i++, n = n->backward) {
-                    resp_write_bulk(out, n->member, n->mlen);
-                    if (withscores) {
-                        char num[40];
-                        int nl = fmt_score(num, sizeof(num), n->score);
-                        resp_write_bulk(out, num, (size_t)nl);
+                if (obj_zset_seek(z, (size_t)(len - 1 - start), &it)) {
+                    for (i = start; i <= stop; i++) {
+                        zset_emit_member(out, &it, withscores);
+                        if (i != stop && !obj_zset_iter_prev(&it))
+                            break;
                     }
                 }
             }
@@ -5624,12 +5614,12 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
             return;
         }
         {
-            long rank = zsl_rank(z->sl, sc, m, ml);
+            long rank = obj_zset_rank(z, sc, m, ml);
             if (rank < 0) {
                 resp_write_bulk(out, NULL, 0);
                 return;
             }
-            resp_write_integer(out, rev ? (long long)z->sl->length - 1 - rank
+            resp_write_integer(out, rev ? (long long)obj_zset_len(z) - 1 - rank
                                         : rank);
         }
         return;
@@ -5657,7 +5647,7 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
             return;
         resp_write_integer(out,
                            rc == 1
-                               ? (long long)zsl_count_in_range(z->sl, &spec)
+                               ? (long long)obj_zset_count_in_range(z, &spec)
                                : 0);
         return;
     }
@@ -5719,34 +5709,36 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
             /* two passes over the range: count, then emit */
             long long emitted = 0;
             long long c;
-            zsl_node *n;
+            obj_zset_iter it;
             c = 0;
-            n = zsl_first_in_range(z->sl, &spec);
-            while (n != NULL && (spec.maxex ? n->score < spec.max
-                                            : n->score <= spec.max)) {
-                if (c >= off)
-                    emitted++;
-                c++;
-                n = n->level[0].forward;
+            if (obj_zset_first_in_range(z, &spec, &it)) {
+                for (;;) {
+                    double sc = obj_zset_iter_score(&it);
+                    if (spec.maxex ? !(sc < spec.max) : !(sc <= spec.max))
+                        break;
+                    if (c >= off)
+                        emitted++;
+                    c++;
+                    if (!obj_zset_iter_next(&it))
+                        break;
+                }
             }
             if (cnt >= 0 && emitted > cnt)
                 emitted = cnt;
             resp_write_array_header(out,
                                     (size_t)emitted * (withscores ? 2u : 1u));
             c = 0;
-            n = zsl_first_in_range(z->sl, &spec);
-            while (n != NULL && (spec.maxex ? n->score < spec.max
-                                            : n->score <= spec.max)) {
-                if (c >= off && (cnt < 0 || c - off < cnt)) {
-                    resp_write_bulk(out, n->member, n->mlen);
-                    if (withscores) {
-                        char num[40];
-                        int nl = fmt_score(num, sizeof(num), n->score);
-                        resp_write_bulk(out, num, (size_t)nl);
-                    }
+            if (obj_zset_first_in_range(z, &spec, &it)) {
+                for (;;) {
+                    double sc = obj_zset_iter_score(&it);
+                    if (spec.maxex ? !(sc < spec.max) : !(sc <= spec.max))
+                        break;
+                    if (c >= off && (cnt < 0 || c - off < cnt))
+                        zset_emit_member(out, &it, withscores);
+                    c++;
+                    if (!obj_zset_iter_next(&it))
+                        break;
                 }
-                c++;
-                n = n->level[0].forward;
             }
         }
         return;
@@ -5777,37 +5769,13 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
             return;
         }
         {
-            /* collect node views first, then delete (views stay valid:
-             * deleting a node frees only that node) */
-            zsl_node **nodes = NULL;
-            size_t nn = 0, cap = 0;
-            zsl_node *n = zsl_first_in_range(z->sl, &spec);
-            long long removed = 0;
+            /* bulk removal happens at the obj layer: collecting member
+             * views first would dangle under listpack realloc */
+            long long removed;
             uint64_t before = obj_zset_mem(z);
-            size_t i;
-            while (n != NULL &&
-                   (spec.maxex ? n->score < spec.max
-                               : n->score <= spec.max)) {
-                if (nn == cap) {
-                    size_t ncap = cap == 0 ? 16 : cap * 2;
-                    zsl_node **nn2 = (zsl_node **)realloc(
-                        nodes, ncap * sizeof(*nn2));
-                    if (nn2 == NULL) {
-                        free(nodes);
-                        fprintf(stderr, "ddup: out of memory\n");
-                        exit(1);
-                    }
-                    nodes = nn2;
-                    cap = ncap;
-                }
-                nodes[nn++] = n;
-                n = n->level[0].forward;
-            }
-            for (i = 0; i < nn; i++)
-                removed += obj_zset_rem(z, nodes[i]->member, nodes[i]->mlen);
-            free(nodes);
+            removed = (long long)obj_zset_rem_range_by_score(z, &spec);
             mem_sync(d, k, kl, before, obj_zset_mem(z));
-            if (rh_size(&z->dict) == 0)
+            if (obj_zset_len(z) == 0)
                 db_del_kv(d, k, kl);
             resp_write_integer(out, removed);
         }
@@ -5851,23 +5819,27 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
         }
         {
             /* flat member/score pairs (Redis 6.2+ also without count) */
-            size_t avail = z->sl->length;
+            size_t avail = (size_t)obj_zset_len(z);
             size_t n = (uint64_t)count < (uint64_t)avail ? (size_t)count
                                                          : avail;
             uint64_t before = obj_zset_mem(z);
             size_t i;
             resp_write_array_header(out, n * 2);
             for (i = 0; i < n; i++) {
-                zsl_node *node = min_side ? z->sl->header->level[0].forward
-                                          : z->sl->tail;
+                char *mv = NULL;
+                size_t ml = 0;
+                double sc = 0;
                 char num[40];
-                int nl = fmt_score(num, sizeof(num), node->score);
-                resp_write_bulk(out, node->member, node->mlen);
+                int nl;
+                if (!obj_zset_pop(z, min_side, &mv, &ml, &sc))
+                    break;
+                nl = fmt_score(num, sizeof(num), sc);
+                resp_write_bulk(out, mv, ml);
                 resp_write_bulk(out, num, (size_t)nl);
-                obj_zset_rem(z, node->member, node->mlen);
+                free(mv);
             }
             mem_sync(d, k, kl, before, obj_zset_mem(z));
-            if (rh_size(&z->dict) == 0)
+            if (obj_zset_len(z) == 0)
                 db_del_kv(d, k, kl); /* empty zset: the key goes away */
         }
         return;
@@ -5898,7 +5870,7 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
         }
         {
             /* same negative-index/clamp rules as ZRANGE */
-            long long len = (long long)z->sl->length;
+            long long len = (long long)obj_zset_len(z);
             long long removed = 0;
             uint64_t before = obj_zset_mem(z);
             if (start < 0)
@@ -5909,13 +5881,11 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
                 stop += len;
             if (stop >= len)
                 stop = len - 1;
-            if (start <= stop && start < len && stop >= 0) {
-                zsl_node *first = zsl_at(z->sl, (size_t)start);
-                zsl_node *last = zsl_at(z->sl, (size_t)stop);
-                removed = zset_rem_node_span(z, first, last);
-            }
+            if (start <= stop && start < len && stop >= 0)
+                removed = (long long)obj_zset_rem_range_by_rank(
+                    z, (size_t)start, (size_t)stop);
             mem_sync(d, k, kl, before, obj_zset_mem(z));
-            if (rh_size(&z->dict) == 0)
+            if (obj_zset_len(z) == 0)
                 db_del_kv(d, k, kl);
             resp_write_integer(out, removed);
         }
@@ -5991,20 +5961,66 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
         if (rc < 0)
             return;
         if (argc == 2) {
-            /* single member form: bulk reply, O(log N) via span walk */
-            zsl_node *n;
+            /* single member form: bulk reply, random index seek */
+            obj_zset_iter it;
             if (rc == 0) {
                 resp_write_bulk(out, NULL, 0);
                 return;
             }
-            n = zsl_at(z->sl,
-                       (size_t)(db_rand(d) % (uint32_t)z->sl->length));
-            resp_write_bulk(out, n->member, n->mlen);
+            if (obj_zset_seek(
+                    z, (size_t)(db_rand(d) % (uint32_t)obj_zset_len(z)),
+                    &it)) {
+                size_t ml = 0;
+                const char *mv = obj_zset_iter_member(&it, &ml);
+                resp_write_bulk(out, mv, ml);
+            }
             return;
         }
         /* count form: array reply */
         if (rc == 0 || count == 0) {
             resp_write_array_header(out, 0);
+            return;
+        }
+        if (obj_zset_is_listpack(z)) {
+            /* small zset: random pair indices, no collection pass */
+            size_t n = (size_t)obj_zset_len(z);
+            size_t i;
+            if (count < 0) {
+                /* with repeats */
+                size_t total = (size_t)-count;
+                resp_write_array_header(out, withscores ? total * 2 : total);
+                for (i = 0; i < total; i++) {
+                    obj_zset_iter it;
+                    uint64_t idx = db_rand(d) % (uint32_t)n;
+                    if (!obj_zset_seek(z, (size_t)idx, &it))
+                        continue;
+                    zset_emit_member(out, &it, withscores);
+                }
+            } else {
+                /* distinct: partial Fisher-Yates over pair indices */
+                size_t k2 = (size_t)count < n ? (size_t)count : n;
+                uint32_t *idxs = (uint32_t *)malloc(n * sizeof(*idxs));
+                if (idxs == NULL) {
+                    fprintf(stderr, "ddup: out of memory\n");
+                    exit(1);
+                }
+                for (i = 0; i < n; i++)
+                    idxs[i] = (uint32_t)i;
+                for (i = 0; i < k2; i++) {
+                    size_t j = i + (size_t)(db_rand(d) % (uint32_t)(n - i));
+                    uint32_t tmp = idxs[i];
+                    idxs[i] = idxs[j];
+                    idxs[j] = tmp;
+                }
+                resp_write_array_header(out, withscores ? k2 * 2 : k2);
+                for (i = 0; i < k2; i++) {
+                    obj_zset_iter it;
+                    if (!obj_zset_seek(z, (size_t)idxs[i], &it))
+                        continue;
+                    zset_emit_member(out, &it, withscores);
+                }
+                free(idxs);
+            }
             return;
         }
         {
@@ -6110,43 +6126,48 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
             return;
         }
         {
-            /* walk the [first, last] node span; two passes for the header */
-            zsl_node *first = zsl_first_in_lex_range(z->sl, &spec);
-            zsl_node *last = zsl_last_in_lex_range(z->sl, &spec);
+            /* walk the [first, last] span; two passes for the header */
+            obj_zset_iter first, last, it;
             long long emitted = 0;
             long long c;
-            zsl_node *n;
-            if (first == NULL || last == NULL) {
+            if (!obj_zset_first_in_lex_range(z, &spec, &first) ||
+                !obj_zset_last_in_lex_range(z, &spec, &last)) {
                 resp_write_array_header(out, 0);
                 return;
             }
             c = 0;
-            for (n = first;; n = n->level[0].forward) {
+            it = first;
+            for (;;) {
                 if (c >= off)
                     emitted++;
                 c++;
-                if (n == last)
+                if (obj_zset_iter_eq(&it, &last))
                     break;
+                obj_zset_iter_next(&it);
             }
             if (cnt >= 0 && emitted > cnt)
                 emitted = cnt;
             resp_write_array_header(out, (size_t)emitted);
             c = 0;
             if (!rev) {
-                for (n = first;; n = n->level[0].forward) {
+                it = first;
+                for (;;) {
                     if (c >= off && (cnt < 0 || c - off < cnt))
-                        resp_write_bulk(out, n->member, n->mlen);
+                        zset_emit_member(out, &it, 0);
                     c++;
-                    if (n == last)
+                    if (obj_zset_iter_eq(&it, &last))
                         break;
+                    obj_zset_iter_next(&it);
                 }
             } else {
-                for (n = last;; n = n->backward) {
+                it = last;
+                for (;;) {
                     if (c >= off && (cnt < 0 || c - off < cnt))
-                        resp_write_bulk(out, n->member, n->mlen);
+                        zset_emit_member(out, &it, 0);
                     c++;
-                    if (n == first)
+                    if (obj_zset_iter_eq(&it, &first))
                         break;
+                    obj_zset_iter_prev(&it);
                 }
             }
         }
@@ -6180,14 +6201,11 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
             return;
         }
         {
-            zsl_node *first = zsl_first_in_lex_range(z->sl, &spec);
-            zsl_node *last = zsl_last_in_lex_range(z->sl, &spec);
-            long long removed = 0;
+            long long removed;
             uint64_t before = obj_zset_mem(z);
-            if (first != NULL && last != NULL)
-                removed = zset_rem_node_span(z, first, last);
+            removed = (long long)obj_zset_rem_range_by_lex(z, &spec);
             mem_sync(d, k, kl, before, obj_zset_mem(z));
-            if (rh_size(&z->dict) == 0)
+            if (obj_zset_len(z) == 0)
                 db_del_kv(d, k, kl);
             resp_write_integer(out, removed);
         }

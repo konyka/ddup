@@ -41,8 +41,8 @@ static void test_zset_rejects_unrepresentable_member(void)
     uint64_t before = obj_zset_mem(z);
 
     DD_CHECK_EQ_INT(-1, obj_zset_add(z, &byte, SIZE_MAX, 1.0));
-    DD_CHECK_EQ_INT(0, rh_size(&z->dict));
-    DD_CHECK_EQ_INT(0, z->sl->length);
+    DD_CHECK_EQ_INT(0, (long long)obj_zset_len(z));
+    DD_CHECK(obj_zset_is_listpack(z));
     DD_CHECK(obj_zset_mem(z) == before);
     obj_zset_free(z);
 }
@@ -671,6 +671,148 @@ static void test_obj_str_zero_length_blob(void)
     DD_CHECK_EQ_INT(0, (long long)len);
 }
 
+static obj_zset *zset_of(db *d, const char *k, size_t kl)
+{
+    const char *blob;
+    size_t bloblen;
+    if (rh_get(&d->table, k, kl, &blob, &bloblen) != 1)
+        return NULL;
+    return (obj_zset *)obj_unpack_ptr(blob, bloblen);
+}
+
+static void test_zset_listpack_encoding(void)
+{
+    db d;
+    resp_buf out;
+    char big[70];
+    int i;
+    db_init(&d);
+    resp_buf_init(&out);
+
+    /* small zset starts as listpack */
+    exec_cmd(&d, T0, &out, 4, "ZADD", "z", "1.5", "m");
+    EXPECT(out, ":1\r\n");
+    DD_CHECK(obj_zset_is_listpack(zset_of(&d, "z", 1)));
+
+    /* int-looking member round-trips through an int-encoded entry; equal
+     * scores order by member bytes ("123" < "m") */
+    exec_cmd(&d, T0, &out, 4, "ZADD", "z", "1.5", "123");
+    EXPECT(out, ":1\r\n");
+    exec_cmd(&d, T0, &out, 3, "ZSCORE", "z", "123");
+    EXPECT(out, "$3\r\n1.5\r\n");
+    exec_cmd(&d, T0, &out, 5, "ZRANGE", "z", "0", "-1", "WITHSCORES");
+    EXPECT(out,
+           "*4\r\n$3\r\n123\r\n$3\r\n1.5\r\n$1\r\nm\r\n$3\r\n1.5\r\n");
+
+    /* score formatting round-trips: 17 significant digits, -0, huge and
+     * tiny magnitudes */
+    exec_cmd(&d, T0, &out, 4, "ZADD", "z", "3.1415926535897931", "pi");
+    EXPECT(out, ":1\r\n");
+    exec_cmd(&d, T0, &out, 3, "ZSCORE", "z", "pi");
+    EXPECT(out, "$18\r\n3.1415926535897931\r\n");
+    exec_cmd(&d, T0, &out, 4, "ZADD", "z", "-0", "neg");
+    EXPECT(out, ":1\r\n");
+    exec_cmd(&d, T0, &out, 3, "ZSCORE", "z", "neg");
+    EXPECT(out, "$2\r\n-0\r\n");
+    exec_cmd(&d, T0, &out, 4, "ZADD", "z", "1e300", "huge");
+    EXPECT(out, ":1\r\n");
+    exec_cmd(&d, T0, &out, 4, "ZADD", "z", "-1e-300", "tiny");
+    EXPECT(out, ":1\r\n");
+    {
+        obj_zset *z = zset_of(&d, "z", 1);
+        double sc = 0;
+        DD_CHECK(obj_zset_is_listpack(z));
+        DD_CHECK(obj_zset_score(z, "huge", 4, &sc) && sc == 1e300);
+        DD_CHECK(obj_zset_score(z, "tiny", 4, &sc) && sc == -1e-300);
+    }
+    /* extremes sort first/last */
+    exec_cmd(&d, T0, &out, 4, "ZRANGE", "z", "0", "0");
+    EXPECT(out, "*1\r\n$4\r\ntiny\r\n");
+    exec_cmd(&d, T0, &out, 4, "ZRANGE", "z", "-1", "-1");
+    EXPECT(out, "*1\r\n$4\r\nhuge\r\n");
+
+    /* LP-mode commands on the same small zset */
+    exec_cmd(&d, T0, &out, 4, "ZREMRANGEBYSCORE", "z", "(1.5", "+inf");
+    EXPECT(out, ":2\r\n"); /* pi, huge */
+    exec_cmd(&d, T0, &out, 3, "ZPOPMIN", "z", "1");
+    EXPECT(out, "*2\r\n$4\r\ntiny\r\n$7\r\n-1e-300\r\n");
+    DD_CHECK(obj_zset_is_listpack(zset_of(&d, "z", 1)));
+    exec_cmd(&d, T0, &out, 4, "ZREMRANGEBYRANK", "z", "0", "0");
+    EXPECT(out, ":1\r\n"); /* neg (score -0) */
+    exec_cmd(&d, T0, &out, 2, "ZCARD", "z");
+    EXPECT(out, ":2\r\n");
+
+    /* lex ranges need equal scores; rebuild as all-zero */
+    exec_cmd(&d, T0, &out, 6, "ZADD", "z2", "0", "a", "0", "b");
+    EXPECT(out, ":2\r\n");
+    exec_cmd(&d, T0, &out, 6, "ZADD", "z2", "0", "c", "0", "d");
+    EXPECT(out, ":2\r\n");
+    DD_CHECK(obj_zset_is_listpack(zset_of(&d, "z2", 2)));
+    exec_cmd(&d, T0, &out, 4, "ZRANGEBYLEX", "z2", "[b", "+");
+    EXPECT(out, "*3\r\n$1\r\nb\r\n$1\r\nc\r\n$1\r\nd\r\n");
+    exec_cmd(&d, T0, &out, 4, "ZREMRANGEBYLEX", "z2", "(a", "(d");
+    EXPECT(out, ":2\r\n"); /* b,c */
+    exec_cmd(&d, T0, &out, 4, "ZRANGE", "z2", "0", "-1");
+    EXPECT(out, "*2\r\n$1\r\na\r\n$1\r\nd\r\n");
+    exec_cmd(&d, T0, &out, 4, "ZRANDMEMBER", "z2", "-3", "WITHSCORES");
+    DD_CHECK(out.len >= 4 && memcmp(out.data, "*6\r\n", 4) == 0);
+    DD_CHECK(out_contains(&out, "$1\r\na\r\n$1\r\n0\r\n") ||
+             out_contains(&out, "$1\r\nd\r\n$1\r\n0\r\n"));
+    DD_CHECK(obj_zset_is_listpack(zset_of(&d, "z2", 2)));
+
+    /* a 64-byte member still fits; 65 bytes converts to dict+skiplist */
+    memset(big, 'x', sizeof(big) - 1);
+    big[sizeof(big) - 1] = '\0';
+    big[64] = '\0'; /* 64-byte member */
+    exec_cmd(&d, T0, &out, 4, "ZADD", "z3", "2", big);
+    EXPECT(out, ":1\r\n");
+    DD_CHECK(obj_zset_is_listpack(zset_of(&d, "z3", 2)));
+    big[64] = 'y';
+    big[65] = '\0'; /* 65-byte member */
+    exec_cmd(&d, T0, &out, 4, "ZADD", "z3", "3", big);
+    EXPECT(out, ":1\r\n");
+    DD_CHECK(!obj_zset_is_listpack(zset_of(&d, "z3", 2)));
+    /* data survives the conversion */
+    big[64] = '\0';
+    exec_cmd(&d, T0, &out, 3, "ZSCORE", "z3", big);
+    EXPECT(out, "$1\r\n2\r\n");
+    exec_cmd(&d, T0, &out, 2, "ZCARD", "z3");
+    EXPECT(out, ":2\r\n");
+
+    /* no demotion back to listpack */
+    exec_cmd(&d, T0, &out, 3, "ZREM", "z3", big);
+    EXPECT(out, ":1\r\n");
+    DD_CHECK(!obj_zset_is_listpack(zset_of(&d, "z3", 2)));
+
+    /* 128 members stay listpack, the 129th converts */
+    for (i = 0; i < 128; i++) {
+        char m[16];
+        snprintf(m, sizeof(m), "m%d", i);
+        exec_cmd(&d, T0, &out, 4, "ZADD", "z4", "1", m);
+        EXPECT(out, ":1\r\n");
+    }
+    DD_CHECK(obj_zset_is_listpack(zset_of(&d, "z4", 2)));
+    exec_cmd(&d, T0, &out, 4, "ZADD", "z4", "1", "overflow");
+    EXPECT(out, ":1\r\n");
+    DD_CHECK(!obj_zset_is_listpack(zset_of(&d, "z4", 2)));
+    /* spot-check data after conversion */
+    exec_cmd(&d, T0, &out, 2, "ZCARD", "z4");
+    EXPECT(out, ":129\r\n");
+    exec_cmd(&d, T0, &out, 3, "ZSCORE", "z4", "m0");
+    EXPECT(out, "$1\r\n1\r\n");
+    exec_cmd(&d, T0, &out, 3, "ZSCORE", "z4", "m127");
+    EXPECT(out, "$1\r\n1\r\n");
+    exec_cmd(&d, T0, &out, 4, "ZRANGE", "z4", "0", "0");
+    EXPECT(out, "*1\r\n$2\r\nm0\r\n"); /* lex smallest at equal score */
+    exec_cmd(&d, T0, &out, 3, "ZRANK", "z4", "overflow");
+    EXPECT(out, ":128\r\n"); /* 'o' > 'm': sorts last */
+    exec_cmd(&d, T0, &out, 5, "ZRANGE", "z4", "-1", "-1", "WITHSCORES");
+    EXPECT(out, "*2\r\n$8\r\noverflow\r\n$1\r\n1\r\n");
+
+    resp_buf_free(&out);
+    db_destroy(&d);
+}
+
 int main(void)
 {
     DD_RUN(test_obj_str_zero_length_blob);
@@ -689,5 +831,6 @@ int main(void)
     DD_RUN(test_zremrangebylex);
     DD_RUN(test_zset_wrongtype);
     DD_RUN(test_zset_ttl_and_memory);
+    DD_RUN(test_zset_listpack_encoding);
     return DD_TEST_SUMMARY();
 }

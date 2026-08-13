@@ -153,17 +153,48 @@ int obj_set_has(obj_set *s, const char *m, size_t mlen);
 int obj_set_rem(obj_set *s, const char *m, size_t mlen);
 
 /* ------------------------------------------------------------------ */
-/* zset object: dict (member -> 8-byte score) + skiplist, Redis-style */
+/* zset object: listpack for small zsets, dict + skiplist beyond       */
+/*                                                                     */
+/* OBJ_ZSET_LP: member/score pairs alternate in one listpack, kept in  */
+/* (score, member) order (score ascending, member bytes tiebreak, same */
+/* rule as the skiplist); scores are stored as %.17g decimal strings   */
+/* (strtod round-trips doubles exactly). Exceeding either threshold    */
+/* converts once to OBJ_ZSET_HT (rh_table dict member -> 8-byte score  */
+/* + zskiplist); there is no way back, matching Redis.                 */
 /* ------------------------------------------------------------------ */
+#define OBJ_ZSET_MAX_LISTPACK_ENTRIES 128
+#define OBJ_ZSET_MAX_LISTPACK_VALUE 64
+
+enum { OBJ_ZSET_LP = 0, OBJ_ZSET_HT = 1 };
+
 typedef struct obj_zset {
-    rh_table dict;    /* member -> raw double (8 bytes) */
-    zskiplist *sl;    /* (score, member) ordering */
+    int encoding;      /* OBJ_ZSET_LP / OBJ_ZSET_HT */
+    unsigned char *lp; /* LP payload; NULL in HT mode */
+    rh_table dict;     /* HT payload; uninitialized in LP mode */
+    zskiplist *sl;     /* HT payload; NULL in LP mode */
     uint64_t dict_mem;
 } obj_zset;
+
+/* Ordered cursor over a zset ((score, member) ascending). Valid until
+ * the zset mutates (listpack mutations realloc; skiplist deletions free
+ * nodes). obj_zset_iter_member() bytes borrow iterator-internal storage
+ * and stay valid until the iterator moves. */
+typedef struct obj_zset_iter {
+    obj_zset *z;
+    union {
+        struct {
+            unsigned char *p;     /* current member entry */
+            unsigned char mbuf[24]; /* int-member materialization */
+        } lp;
+        zsl_node *node;
+    } u;
+} obj_zset_iter;
 
 obj_zset *obj_zset_new(void);
 void obj_zset_free(obj_zset *z);
 uint64_t obj_zset_mem(const obj_zset *z);
+uint64_t obj_zset_len(const obj_zset *z);
+int obj_zset_is_listpack(const obj_zset *z);
 
 /* Insert or update score. Returns 1 if new, 0 if updated, -1 on invalid
  * member length. */
@@ -171,5 +202,47 @@ int obj_zset_add(obj_zset *z, const char *m, size_t mlen, double score);
 /* Returns 1 and the score when present. */
 int obj_zset_score(obj_zset *z, const char *m, size_t mlen, double *score);
 int obj_zset_rem(obj_zset *z, const char *m, size_t mlen);
+
+/* Iterator access. Positioning returns 1 on success, 0 when out of
+ * range/empty. */
+int obj_zset_seek(obj_zset *z, size_t idx, obj_zset_iter *it);
+int obj_zset_first(obj_zset *z, obj_zset_iter *it);
+int obj_zset_last(obj_zset *z, obj_zset_iter *it);
+int obj_zset_iter_next(obj_zset_iter *it);
+int obj_zset_iter_prev(obj_zset_iter *it);
+/* 1 when both iterators sit on the same member of the same zset. */
+int obj_zset_iter_eq(const obj_zset_iter *a, const obj_zset_iter *b);
+const char *obj_zset_iter_member(obj_zset_iter *it, size_t *mlen);
+double obj_zset_iter_score(obj_zset_iter *it);
+
+/* Range queries (score and lex variants; lex ranges are only defined
+ * when all scores are equal, same caveat as the skiplist). first/last
+ * return 1 and position it, or 0 when the range is empty. */
+int obj_zset_first_in_range(obj_zset *z, const zrangespec *r,
+                            obj_zset_iter *it);
+int obj_zset_last_in_range(obj_zset *z, const zrangespec *r,
+                           obj_zset_iter *it);
+size_t obj_zset_count_in_range(obj_zset *z, const zrangespec *r);
+int obj_zset_first_in_lex_range(obj_zset *z, const zlexrangespec *r,
+                                obj_zset_iter *it);
+int obj_zset_last_in_lex_range(obj_zset *z, const zlexrangespec *r,
+                               obj_zset_iter *it);
+
+/* 0-based rank of (score, member); -1 when the member is absent. */
+long obj_zset_rank(obj_zset *z, double score, const char *m, size_t mlen);
+
+/* Bulk removals, done in one pass at the obj layer (collecting member
+ * pointers first would dangle under listpack realloc). Return the
+ * number removed. start/stop are inclusive 0-based ranks with
+ * start <= stop. */
+uint64_t obj_zset_rem_range_by_rank(obj_zset *z, size_t start, size_t stop);
+uint64_t obj_zset_rem_range_by_score(obj_zset *z, const zrangespec *r);
+uint64_t obj_zset_rem_range_by_lex(obj_zset *z, const zlexrangespec *r);
+
+/* Pop the lowest/highest (min != 0) member. Returns 1 and hands the
+ * caller a malloc'd copy of the member (free with free()), 0 when the
+ * zset is empty. */
+int obj_zset_pop(obj_zset *z, int min, char **member, size_t *mlen,
+                 double *score);
 
 #endif /* DDUP_OBJ_H */
