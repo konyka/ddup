@@ -34,6 +34,19 @@ static uint64_t eb(size_t klen, size_t vlen)
     return (uint64_t)sizeof(rh_entry) + 16 + klen + vlen;
 }
 
+/* small-hash listpack payload: 7B empty frame + per-pair 6-bit-string
+ * entries (1B header + payload + 1B backlen) */
+static uint64_t hlp_cost(size_t flen, size_t vlen, size_t pairs)
+{
+    return 7 + pairs * ((1 + flen + 1) + (1 + vlen + 1));
+}
+
+/* obj_hash memory in listpack mode: struct + one malloc (16B estimate) */
+static uint64_t hlp_mem(size_t flen, size_t vlen, size_t pairs)
+{
+    return sizeof(obj_hash) + 16 + hlp_cost(flen, vlen, pairs);
+}
+
 static void test_hash_rejects_unrepresentable_lengths(void)
 {
     obj_hash *h = obj_hash_new();
@@ -42,7 +55,7 @@ static void test_hash_rejects_unrepresentable_lengths(void)
 
     DD_CHECK_EQ_INT(-1, obj_hash_set(h, &byte, 1, &byte, SIZE_MAX));
     DD_CHECK_EQ_INT(-1, obj_hash_set(h, &byte, SIZE_MAX, &byte, 1));
-    DD_CHECK_EQ_INT(0, rh_size(&h->fields));
+    DD_CHECK_EQ_INT(0, (long long)obj_hash_len(h));
     DD_CHECK(obj_hash_mem(h) == before);
     obj_hash_free(h);
 }
@@ -304,20 +317,19 @@ static void test_hash_ttl_and_memory(void)
     db_init(&d);
     resp_buf_init(&out);
 
-    /* accounting: entry + object struct + field entries */
+    /* accounting: entry + object struct + listpack payload */
     exec_cmd(&d, T0, &out, 4, "HSET", "h", "f1", "v1");
     EXPECT(out, ":1\r\n");
-    DD_CHECK(d.used_memory == eb(1, 9) + sizeof(obj_hash) + eb(2, 2));
+    DD_CHECK(d.used_memory == eb(1, 9) + hlp_mem(2, 2, 1));
 
     exec_cmd(&d, T0, &out, 4, "HSET", "h", "f2", "v2");
     EXPECT(out, ":1\r\n");
-    DD_CHECK(d.used_memory ==
-             eb(1, 9) + sizeof(obj_hash) + eb(2, 2) + eb(2, 2));
+    DD_CHECK(d.used_memory == eb(1, 9) + hlp_mem(2, 2, 2));
 
     /* deleting a field reclaims its entry bytes */
     exec_cmd(&d, T0, &out, 3, "HDEL", "h", "f2");
     EXPECT(out, ":1\r\n");
-    DD_CHECK(d.used_memory == eb(1, 9) + sizeof(obj_hash) + eb(2, 2));
+    DD_CHECK(d.used_memory == eb(1, 9) + hlp_mem(2, 2, 1));
 
     /* TTL works on hash keys; expiry frees the whole object */
     exec_cmd(&d, T0, &out, 3, "EXPIRE", "h", "10");
@@ -327,8 +339,8 @@ static void test_hash_ttl_and_memory(void)
     before = d.used_memory;
     exec_cmd(&d, T0 + 10000, &out, 3, "HGET", "h", "f1");
     EXPECT(out, "$-1\r\n");
-    DD_CHECK(d.used_memory == before - (eb(1, 9) + sizeof(obj_hash) +
-                                        eb(2, 2) + eb(1, 8)));
+    DD_CHECK(d.used_memory ==
+             before - (eb(1, 9) + hlp_mem(2, 2, 1) + eb(1, 8)));
     DD_CHECK_EQ_INT(1, (long long)d.expired_keys);
 
     /* eviction accounts object memory too */
@@ -338,7 +350,7 @@ static void test_hash_ttl_and_memory(void)
     {
         char maxmem[32];
         snprintf(maxmem, sizeof(maxmem), "%llu",
-                 (unsigned long long)(eb(1, 9) + sizeof(obj_hash) + eb(2, 2)));
+                 (unsigned long long)(eb(1, 9) + hlp_mem(2, 2, 1)));
         exec_cmd(&d, T0, &out, 6, "HSET", "big", "f1", "v1", "f2", "v2");
         EXPECT(out, ":2\r\n");
         exec_cmd(&d, T0, &out, 4, "CONFIG", "SET", "maxmemory", maxmem);
@@ -473,6 +485,97 @@ static void test_hrandfield(void)
     db_destroy(&d);
 }
 
+static obj_hash *hash_of(db *d, const char *k, size_t kl)
+{
+    const char *blob;
+    size_t bloblen;
+    if (rh_get(&d->table, k, kl, &blob, &bloblen) != 1)
+        return NULL;
+    return (obj_hash *)obj_unpack_ptr(blob, bloblen);
+}
+
+static void test_hash_listpack_encoding(void)
+{
+    db d;
+    resp_buf out;
+    char big[70];
+    int i;
+    db_init(&d);
+    resp_buf_init(&out);
+
+    /* small hash starts as listpack */
+    exec_cmd(&d, T0, &out, 4, "HSET", "h", "f1", "v1");
+    EXPECT(out, ":1\r\n");
+    DD_CHECK(obj_hash_is_listpack(hash_of(&d, "h", 1)));
+
+    /* int-looking fields/values roundtrip through int entries */
+    exec_cmd(&d, T0, &out, 4, "HSET", "h", "123", "456");
+    EXPECT(out, ":1\r\n");
+    exec_cmd(&d, T0, &out, 3, "HGET", "h", "123");
+    EXPECT(out, "$3\r\n456\r\n");
+    exec_cmd(&d, T0, &out, 3, "HSTRLEN", "h", "123");
+    EXPECT(out, ":3\r\n");
+    exec_cmd(&d, T0, &out, 2, "HGETALL", "h");
+    check_contains(&out, "$3\r\n123\r\n");
+    check_contains(&out, "$3\r\n456\r\n");
+    exec_cmd(&d, T0, &out, 3, "HDEL", "h", "123");
+    EXPECT(out, ":1\r\n");
+    DD_CHECK(obj_hash_is_listpack(hash_of(&d, "h", 1)));
+
+    /* a 64-byte value still fits; 65 bytes converts to the hashtable */
+    memset(big, 'x', sizeof(big) - 1);
+    big[sizeof(big) - 1] = '\0';
+    big[64] = '\0'; /* 64-byte value */
+    exec_cmd(&d, T0, &out, 4, "HSET", "h", "f64", big);
+    EXPECT(out, ":1\r\n");
+    DD_CHECK(obj_hash_is_listpack(hash_of(&d, "h", 1)));
+    big[64] = 'y';
+    big[65] = '\0'; /* 65-byte value */
+    exec_cmd(&d, T0, &out, 4, "HSET", "h", "f65", big);
+    EXPECT(out, ":1\r\n");
+    DD_CHECK(!obj_hash_is_listpack(hash_of(&d, "h", 1)));
+    /* data survives the conversion */
+    exec_cmd(&d, T0, &out, 3, "HGET", "h", "f1");
+    EXPECT(out, "$2\r\nv1\r\n");
+    exec_cmd(&d, T0, &out, 3, "HGET", "h", "f65");
+    DD_CHECK(out.len == 72 && memcmp(out.data, "$65\r\n", 5) == 0);
+    exec_cmd(&d, T0, &out, 2, "HLEN", "h");
+    EXPECT(out, ":3\r\n");
+
+    /* no demotion back to listpack */
+    exec_cmd(&d, T0, &out, 3, "HDEL", "h", "f65");
+    EXPECT(out, ":1\r\n");
+    exec_cmd(&d, T0, &out, 3, "HDEL", "h", "f64");
+    EXPECT(out, ":1\r\n");
+    DD_CHECK(!obj_hash_is_listpack(hash_of(&d, "h", 1)));
+
+    /* 128 fields stay listpack, the 129th converts */
+    exec_cmd(&d, T0, &out, 2, "DEL", "h");
+    EXPECT(out, ":1\r\n");
+    for (i = 0; i < 128; i++) {
+        char f[16], v[16];
+        snprintf(f, sizeof(f), "f%d", i);
+        snprintf(v, sizeof(v), "v%d", i);
+        exec_cmd(&d, T0, &out, 4, "HSET", "h", f, v);
+    }
+    DD_CHECK(obj_hash_is_listpack(hash_of(&d, "h", 1)));
+    exec_cmd(&d, T0, &out, 4, "HSET", "h", "overflow", "v");
+    EXPECT(out, ":1\r\n");
+    DD_CHECK(!obj_hash_is_listpack(hash_of(&d, "h", 1)));
+    exec_cmd(&d, T0, &out, 2, "HLEN", "h");
+    EXPECT(out, ":129\r\n");
+    /* spot-check data after conversion */
+    exec_cmd(&d, T0, &out, 3, "HGET", "h", "f0");
+    EXPECT(out, "$2\r\nv0\r\n");
+    exec_cmd(&d, T0, &out, 3, "HGET", "h", "f127");
+    EXPECT(out, "$4\r\nv127\r\n");
+    exec_cmd(&d, T0, &out, 3, "HGET", "h", "overflow");
+    EXPECT(out, "$1\r\nv\r\n");
+
+    resp_buf_free(&out);
+    db_destroy(&d);
+}
+
 int main(void)
 {
     DD_RUN(test_hash_rejects_unrepresentable_lengths);
@@ -486,5 +589,6 @@ int main(void)
     DD_RUN(test_hash_ttl_and_memory);
     DD_RUN(test_hstrlen);
     DD_RUN(test_hrandfield);
+    DD_RUN(test_hash_listpack_encoding);
     return DD_TEST_SUMMARY();
 }

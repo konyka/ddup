@@ -142,15 +142,15 @@ static void write_value_payload(save_ctx *ctx, int tag, const char *val,
     }
     case DDUP_OBJ_HASH: {
         obj_hash *h = (obj_hash *)obj_unpack_ptr(val, vlen);
-        if (rh_size(&h->fields) > UINT32_MAX) {
+        if (obj_hash_len(h) > UINT32_MAX) {
             ctx->ok = 0;
             return;
         }
-        if (buf_u32le(buf, (uint32_t)rh_size(&h->fields)) != 0) {
+        if (buf_u32le(buf, (uint32_t)obj_hash_len(h)) != 0) {
             ctx->ok = 0;
             return;
         }
-        rh_each(&h->fields, dump_pair_cb, ctx);
+        obj_hash_each(h, dump_pair_cb, ctx);
         break;
     }
     case DDUP_OBJ_LIST: {

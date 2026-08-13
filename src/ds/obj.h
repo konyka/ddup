@@ -48,23 +48,49 @@ uint64_t obj_extra_mem(const char *val, size_t vlen);
 void obj_free_value(const char *val, size_t vlen);
 
 /* ------------------------------------------------------------------ */
-/* hash object: nested rh_table of field -> raw string (untagged)     */
+/* hash object: listpack for small hashes, rh_table beyond (Phase 6)   */
+/*                                                                     */
+/* OBJ_HASH_LP: field/value pairs alternate in one listpack. Exceeding */
+/* either threshold converts once to OBJ_HASH_HT (rh_table); there is  */
+/* no way back, matching Redis.                                        */
 /* ------------------------------------------------------------------ */
+#define OBJ_HASH_MAX_LISTPACK_ENTRIES 128
+#define OBJ_HASH_MAX_LISTPACK_VALUE 64
+
+enum { OBJ_HASH_LP = 0, OBJ_HASH_HT = 1 };
+
 typedef struct obj_hash {
-    rh_table fields;
-    uint64_t mem; /* sizeof(obj_hash) + per-field entry cost, incremental */
+    int encoding;        /* OBJ_HASH_LP / OBJ_HASH_HT */
+    unsigned char *lp;   /* LP payload; NULL in HT mode */
+    rh_table fields;     /* HT payload; uninitialized in LP mode */
+    uint64_t mem;        /* sizeof(obj_hash) + payload cost, incremental */
+    unsigned char ftmp[24]; /* scratch for int-encoded field materialization */
+    unsigned char vtmp[24]; /* scratch for int-encoded value materialization */
 } obj_hash;
 
 obj_hash *obj_hash_new(void);
 void obj_hash_free(obj_hash *h);
 uint64_t obj_hash_mem(const obj_hash *h);
+uint64_t obj_hash_len(const obj_hash *h);
+int obj_hash_is_listpack(const obj_hash *h);
 
 /* Returns 1 if the field is new, 0 on overwrite, -1 on invalid length. */
 int obj_hash_set(obj_hash *h, const char *f, size_t flen, const char *v,
                  size_t vlen);
+/* The returned value pointer borrows internal storage: valid until the
+ * next obj_hash_* call on h (int-encoded values are materialized). */
 int obj_hash_get(obj_hash *h, const char *f, size_t flen, const char **v,
                  size_t *vlen);
 int obj_hash_del(obj_hash *h, const char *f, size_t flen);
+
+/* Visit every field/value pair. Callback arguments borrow internal
+ * storage and are valid only for the duration of the callback. */
+void obj_hash_each(obj_hash *h, rh_iter_fn fn, void *ctx);
+/* Fetch the idx-th pair (insertion order). LP mode only; returns 0 in HT
+ * mode or when idx >= obj_hash_len. v/vlen may be NULL. Same borrowing
+ * rules as obj_hash_get. */
+int obj_hash_pair_at(obj_hash *h, uint64_t idx, const char **f, size_t *flen,
+                     const char **v, size_t *vlen);
 
 /* ------------------------------------------------------------------ */
 /* list object: quicklist of listpack nodes (Phase 6)                  */

@@ -1,4 +1,5 @@
 /* obj.c - typed value objects; see obj.h. */
+#include "ds/listpack.h"
 #include "ds/obj.h"
 
 #include <stdlib.h>
@@ -74,13 +75,19 @@ void obj_free_value(const char *val, size_t vlen)
 }
 
 /* ------------------------------------------------------------------ */
-/* hash object                                                        */
+/* hash object: listpack for small hashes, rh_table beyond             */
 /* ------------------------------------------------------------------ */
 
 /* Same per-entry estimate as the db layer uses for the main table. */
 static uint64_t field_bytes(size_t flen, size_t vlen)
 {
     return (uint64_t)sizeof(rh_entry) + 16 + flen + vlen;
+}
+
+/* LP mode: struct + one malloc for the flat listpack. */
+static uint64_t hash_lp_mem(const obj_hash *h)
+{
+    return (uint64_t)sizeof(*h) + 16 + lp_bytes(h->lp);
 }
 
 obj_hash *obj_hash_new(void)
@@ -90,8 +97,9 @@ obj_hash *obj_hash_new(void)
         fprintf(stderr, "ddup: out of memory\n");
         exit(1);
     }
-    rh_init(&h->fields);
-    h->mem = (uint64_t)sizeof(*h);
+    h->encoding = OBJ_HASH_LP;
+    h->lp = lp_new();
+    h->mem = hash_lp_mem(h);
     return h;
 }
 
@@ -99,7 +107,10 @@ void obj_hash_free(obj_hash *h)
 {
     if (h == NULL)
         return;
-    rh_destroy(&h->fields);
+    if (h->encoding == OBJ_HASH_LP)
+        lp_free(h->lp);
+    else
+        rh_destroy(&h->fields);
     free(h);
 }
 
@@ -108,36 +119,174 @@ uint64_t obj_hash_mem(const obj_hash *h)
     return h->mem;
 }
 
+uint64_t obj_hash_len(const obj_hash *h)
+{
+    if (h->encoding == OBJ_HASH_LP)
+        return lp_length(h->lp) / 2;
+    return rh_size(&h->fields);
+}
+
+int obj_hash_is_listpack(const obj_hash *h)
+{
+    return h->encoding == OBJ_HASH_LP;
+}
+
+/* One-way conversion LP -> HT. */
+static void obj_hash_convert(obj_hash *h)
+{
+    unsigned char *p;
+    rh_init(&h->fields);
+    h->mem = (uint64_t)sizeof(*h);
+    p = lp_first(h->lp);
+    while (p != NULL) {
+        unsigned char fb[24], vb[24];
+        uint32_t fl = 0, vl = 0;
+        const unsigned char *f = lp_get_str(p, fb, &fl);
+        const unsigned char *v;
+        p = lp_next(h->lp, p); /* the value entry */
+        v = lp_get_str(p, vb, &vl);
+        if (rh_set(&h->fields, (const char *)f, fl, (const char *)v, vl) == 0)
+            h->mem += field_bytes(fl, vl);
+        p = lp_next(h->lp, p);
+    }
+    lp_free(h->lp);
+    h->lp = NULL;
+    h->encoding = OBJ_HASH_HT;
+}
+
 int obj_hash_set(obj_hash *h, const char *f, size_t flen, const char *v,
                  size_t vlen)
 {
-    const char *old;
-    size_t oldl;
     if (flen > UINT32_MAX || vlen > UINT32_MAX || flen > SIZE_MAX - vlen)
         return -1;
-    int is_new = !rh_get(&h->fields, f, flen, &old, &oldl);
-    if (rh_set(&h->fields, f, flen, v, vlen) < 0)
-        return -1;
-    if (!is_new)
-        h->mem -= field_bytes(flen, oldl);
-    h->mem += field_bytes(flen, vlen);
-    return is_new;
+    if (h->encoding == OBJ_HASH_LP) {
+        unsigned char *fp = NULL;
+        int fits = flen <= OBJ_HASH_MAX_LISTPACK_VALUE &&
+                   vlen <= OBJ_HASH_MAX_LISTPACK_VALUE;
+        if (fits)
+            fp = lp_find(h->lp, NULL, (const unsigned char *)f,
+                         (uint32_t)flen);
+        if (!fits ||
+            (fp == NULL &&
+             lp_length(h->lp) / 2 >= OBJ_HASH_MAX_LISTPACK_ENTRIES)) {
+            obj_hash_convert(h);
+            /* fall through to the HT path below */
+        } else if (fp != NULL) {
+            unsigned char *vp = lp_next(h->lp, fp);
+            h->lp = lp_replace(h->lp, vp, (const unsigned char *)v,
+                               (uint32_t)vlen);
+            h->mem = hash_lp_mem(h);
+            return 0;
+        } else {
+            h->lp = lp_append(h->lp, (const unsigned char *)f, (uint32_t)flen);
+            h->lp = lp_append(h->lp, (const unsigned char *)v, (uint32_t)vlen);
+            h->mem = hash_lp_mem(h);
+            return 1;
+        }
+    }
+    {
+        const char *old;
+        size_t oldl;
+        int is_new = !rh_get(&h->fields, f, flen, &old, &oldl);
+        if (rh_set(&h->fields, f, flen, v, vlen) < 0)
+            return -1;
+        if (!is_new)
+            h->mem -= field_bytes(flen, oldl);
+        h->mem += field_bytes(flen, vlen);
+        return is_new;
+    }
 }
 
 int obj_hash_get(obj_hash *h, const char *f, size_t flen, const char **v,
                  size_t *vlen)
 {
+    if (h->encoding == OBJ_HASH_LP) {
+        unsigned char *fp;
+        unsigned char *vp;
+        uint32_t vl = 0;
+        const unsigned char *vv;
+        if (flen > UINT32_MAX)
+            return 0;
+        fp = lp_find(h->lp, NULL, (const unsigned char *)f, (uint32_t)flen);
+        if (fp == NULL)
+            return 0;
+        vp = lp_next(h->lp, fp);
+        vv = lp_get_str(vp, h->vtmp, &vl);
+        *v = (const char *)vv;
+        *vlen = vl;
+        return 1;
+    }
     return rh_get(&h->fields, f, flen, v, vlen);
 }
 
 int obj_hash_del(obj_hash *h, const char *f, size_t flen)
 {
-    const char *old;
-    size_t oldl;
-    if (!rh_get(&h->fields, f, flen, &old, &oldl))
+    if (h->encoding == OBJ_HASH_LP) {
+        unsigned char *fp;
+        size_t foff, voff;
+        if (flen > UINT32_MAX)
+            return 0;
+        fp = lp_find(h->lp, NULL, (const unsigned char *)f, (uint32_t)flen);
+        if (fp == NULL)
+            return 0;
+        /* delete by offset, higher first so the lower offset stays valid */
+        foff = (size_t)(fp - h->lp);
+        voff = (size_t)(lp_next(h->lp, fp) - h->lp);
+        h->lp = lp_delete(h->lp, h->lp + voff, NULL);
+        h->lp = lp_delete(h->lp, h->lp + foff, NULL);
+        h->mem = hash_lp_mem(h);
+        return 1;
+    }
+    {
+        const char *old;
+        size_t oldl;
+        if (!rh_get(&h->fields, f, flen, &old, &oldl))
+            return 0;
+        h->mem -= field_bytes(flen, oldl);
+        rh_del(&h->fields, f, flen);
+        return 1;
+    }
+}
+
+void obj_hash_each(obj_hash *h, rh_iter_fn fn, void *ctx)
+{
+    if (h->encoding == OBJ_HASH_LP) {
+        unsigned char *p = lp_first(h->lp);
+        while (p != NULL) {
+            unsigned char fb[24];
+            uint32_t fl = 0, vl = 0;
+            const unsigned char *f = lp_get_str(p, fb, &fl);
+            const unsigned char *v;
+            p = lp_next(h->lp, p); /* the value entry */
+            v = lp_get_str(p, h->vtmp, &vl);
+            fn((const char *)f, fl, (const char *)v, vl, ctx);
+            p = lp_next(h->lp, p);
+        }
+        return;
+    }
+    rh_each(&h->fields, fn, ctx);
+}
+
+int obj_hash_pair_at(obj_hash *h, uint64_t idx, const char **f, size_t *flen,
+                     const char **v, size_t *vlen)
+{
+    unsigned char *p;
+    uint32_t fl = 0;
+    const unsigned char *fv;
+    if (h->encoding != OBJ_HASH_LP || idx >= lp_length(h->lp) / 2)
         return 0;
-    h->mem -= field_bytes(flen, oldl);
-    rh_del(&h->fields, f, flen);
+    p = lp_seek(h->lp, (long)(idx * 2));
+    if (p == NULL)
+        return 0;
+    fv = lp_get_str(p, h->ftmp, &fl);
+    *f = (const char *)fv;
+    *flen = fl;
+    if (v != NULL) {
+        uint32_t vl = 0;
+        const unsigned char *vv = lp_get_str(lp_next(h->lp, p), h->vtmp, &vl);
+        *v = (const char *)vv;
+        *vlen = vl;
+    }
     return 1;
 }
 

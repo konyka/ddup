@@ -3817,7 +3817,7 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
             deleted += obj_hash_del(h, f, fl);
         }
         mem_sync(d, k, kl, before, obj_hash_mem(h));
-        if (rh_size(&h->fields) == 0)
+        if (obj_hash_len(h) == 0)
             db_del_kv(d, k, kl); /* empty hash: the key goes away */
         resp_write_integer(out, deleted);
         return;
@@ -3856,7 +3856,7 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
         int rc = get_hash(d, out, k, kl, 0, now_ms, &h);
         if (rc < 0)
             return;
-        resp_write_integer(out, rc == 1 ? (long long)rh_size(&h->fields) : 0);
+        resp_write_integer(out, rc == 1 ? (long long)obj_hash_len(h) : 0);
         return;
     }
 
@@ -3885,9 +3885,9 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
         ctx.keys = cmd_id != CMD_HVALS;
         ctx.vals = cmd_id != CMD_HKEYS;
         resp_write_array_header(out, cmd_id == CMD_HGETALL
-                                        ? rh_size(&h->fields) * 2
-                                        : rh_size(&h->fields));
-        rh_each(&h->fields, hdump_cb, &ctx);
+                                        ? obj_hash_len(h) * 2
+                                        : obj_hash_len(h));
+        obj_hash_each(h, hdump_cb, &ctx);
         return;
     }
 
@@ -4068,22 +4068,82 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
             return;
         if (argc == 2) {
             /* single field form: bulk reply */
-            collect_ctx cc = {0};
-            size_t idx;
             if (rc == 0) {
                 resp_write_bulk(out, NULL, 0);
                 return;
             }
-            rh_each(&h->fields, collect_cb, &cc);
-            idx = (size_t)(db_rand(d) % (uint32_t)cc.n);
-            resp_write_bulk(out, cc.keys[idx], cc.lens[idx]);
-            free(cc.keys);
-            free(cc.lens);
-            return;
+            if (obj_hash_is_listpack(h)) {
+                /* small hash: pick a random pair index directly */
+                const char *f;
+                size_t fl;
+                uint64_t idx = db_rand(d) % (uint32_t)obj_hash_len(h);
+                if (obj_hash_pair_at(h, idx, &f, &fl, NULL, NULL))
+                    resp_write_bulk(out, f, fl);
+                return;
+            }
+            {
+                collect_ctx cc = {0};
+                size_t idx;
+                rh_each(&h->fields, collect_cb, &cc);
+                idx = (size_t)(db_rand(d) % (uint32_t)cc.n);
+                resp_write_bulk(out, cc.keys[idx], cc.lens[idx]);
+                free(cc.keys);
+                free(cc.lens);
+                return;
+            }
         }
         /* count form: array reply */
         if (rc == 0 || count == 0) {
             resp_write_array_header(out, 0);
+            return;
+        }
+        if (obj_hash_is_listpack(h)) {
+            /* small hash: random pair indices, no collection pass */
+            size_t n = (size_t)obj_hash_len(h);
+            size_t i;
+            if (count < 0) {
+                /* with repeats */
+                size_t total = (size_t)-count;
+                resp_write_array_header(out, withvalues ? total * 2 : total);
+                for (i = 0; i < total; i++) {
+                    const char *f, *v;
+                    size_t fl, vl;
+                    uint64_t idx = db_rand(d) % (uint32_t)n;
+                    if (!obj_hash_pair_at(h, idx, &f, &fl, &v, &vl))
+                        continue;
+                    resp_write_bulk(out, f, fl);
+                    if (withvalues)
+                        resp_write_bulk(out, v, vl);
+                }
+            } else {
+                /* distinct: partial Fisher-Yates over pair indices */
+                size_t k2 = (size_t)count < n ? (size_t)count : n;
+                uint32_t *idxs =
+                    (uint32_t *)malloc(n * sizeof(*idxs));
+                if (idxs == NULL) {
+                    fprintf(stderr, "ddup: out of memory\n");
+                    exit(1);
+                }
+                for (i = 0; i < n; i++)
+                    idxs[i] = (uint32_t)i;
+                for (i = 0; i < k2; i++) {
+                    size_t j = i + (size_t)(db_rand(d) % (uint32_t)(n - i));
+                    uint32_t tmp = idxs[i];
+                    idxs[i] = idxs[j];
+                    idxs[j] = tmp;
+                }
+                resp_write_array_header(out, withvalues ? k2 * 2 : k2);
+                for (i = 0; i < k2; i++) {
+                    const char *f, *v;
+                    size_t fl, vl;
+                    if (!obj_hash_pair_at(h, idxs[i], &f, &fl, &v, &vl))
+                        continue;
+                    resp_write_bulk(out, f, fl);
+                    if (withvalues)
+                        resp_write_bulk(out, v, vl);
+                }
+                free(idxs);
+            }
             return;
         }
         {
