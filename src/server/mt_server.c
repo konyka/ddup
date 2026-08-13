@@ -1201,6 +1201,9 @@ static int mt_is_blocked(uint16_t cmd)
     case CMD_CLUSTER:
     case CMD_MIGRATE:
     case CMD_ASKING:
+    case CMD_KEYS:      /* whole-db scans have no mt routing target */
+    case CMD_SCAN:
+    case CMD_RANDOMKEY:
         return 1;
     default:
         return 0;
@@ -1218,6 +1221,16 @@ static int mt_is_single_key(uint16_t cmd)
     case CMD_DECR:
     case CMD_APPEND:
     case CMD_STRLEN:
+    case CMD_GETDEL:
+    case CMD_GETEX:
+    case CMD_SETEX:
+    case CMD_PSETEX:
+    case CMD_GETSET:
+    case CMD_SETRANGE:
+    case CMD_GETRANGE:
+    case CMD_INCRBY:
+    case CMD_DECRBY:
+    case CMD_INCRBYFLOAT:
     case CMD_EXPIRE:
     case CMD_PEXPIRE:
     case CMD_EXPIREAT:
@@ -1225,6 +1238,9 @@ static int mt_is_single_key(uint16_t cmd)
     case CMD_TTL:
     case CMD_PTTL:
     case CMD_PERSIST:
+    case CMD_TYPE:
+    case CMD_EXPIRETIME:
+    case CMD_PEXPIRETIME:
     case CMD_HSET:
     case CMD_HMSET:
     case CMD_HGET:
@@ -1298,9 +1314,9 @@ static int mt_is_aggregate(uint16_t cmd)
 
 /* Multi-key commands: every key must map to the same worker (same rule as
  * cluster CROSSSLOT). Key positions by command:
- *   MGET/DEL/UNLINK/EXISTS -> argv[1..]
- *   MSET                   -> argv[1], argv[3], ... (key/value pairs)
- *   SMOVE                  -> argv[1], argv[2] (source, destination) */
+ *   MGET/DEL/UNLINK/EXISTS/TOUCH -> argv[1..]
+ *   MSET                         -> argv[1], argv[3], ... (key/value pairs)
+ *   SMOVE/RENAME/RENAMENX        -> argv[1], argv[2] (source, destination) */
 static int mt_multikey_target(int nworkers, uint16_t cmd,
                               const resp_value *argv, size_t argc)
 {
@@ -1314,7 +1330,8 @@ static int mt_multikey_target(int nworkers, uint16_t cmd,
         int w;
         if (cmd == CMD_MSET && (i % 2) == 0)
             continue; /* value position */
-        if (cmd == CMD_SMOVE && i > 2)
+        if ((cmd == CMD_SMOVE || cmd == CMD_RENAME ||
+             cmd == CMD_RENAMENX) && i > 2)
             break; /* only source and destination are keys */
         if (argv[i].str == NULL)
             return MT_LOCAL;
@@ -1347,7 +1364,10 @@ static int mt_classify(int nworkers, uint16_t cmd, const resp_value *argv,
     case CMD_DEL:
     case CMD_UNLINK:
     case CMD_EXISTS:
+    case CMD_TOUCH:
     case CMD_SMOVE:
+    case CMD_RENAME:
+    case CMD_RENAMENX:
     case CMD_SINTER:
     case CMD_SUNION:
     case CMD_SDIFF:

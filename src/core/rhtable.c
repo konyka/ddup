@@ -251,6 +251,41 @@ void rh_each(const rh_table *t, rh_iter_fn fn, void *ctx)
     }
 }
 
+size_t rh_scan(rh_table *t, size_t cursor, size_t count, rh_scan_cb cb,
+               void *ctx)
+{
+    size_t visited = 0;
+    while (visited < count) {
+        rh_entry *e;
+        if (cursor < t->cap) {
+            e = &t->slots[cursor];
+        } else if (t->old_slots != NULL && cursor - t->cap < t->old_cap) {
+            e = &t->old_slots[cursor - t->cap];
+        } else {
+            return 0; /* past both tables: iteration complete */
+        }
+        cursor++;
+        if (e->psl < 0)
+            continue;
+        /* The callback may delete entries (freeing kv) and advance the
+         * incremental rehash (freeing old_slots), so copy the entry views
+         * out first, never touch e afterwards, and re-read all table
+         * fields on the next loop iteration. */
+        {
+            const char *key = e->kv;
+            size_t klen = e->klen;
+            const char *val = e->kv + e->klen;
+            size_t vlen = e->vlen;
+            if (cb(key, klen, val, vlen, ctx))
+                break;
+        }
+        visited++;
+    }
+    if (cursor >= t->cap + t->old_cap)
+        return 0;
+    return cursor;
+}
+
 int rh_get(rh_table *t, const char *key, size_t klen,
            const char **val, size_t *vlen)
 {

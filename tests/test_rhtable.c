@@ -267,6 +267,166 @@ static void test_randomized_vs_model(void)
     rh_destroy(&t);
 }
 
+/* ------------------------------------------------------------------ */
+/* rh_scan: cursor-based iteration over both tables                    */
+/* ------------------------------------------------------------------ */
+
+typedef struct {
+    int seen[512];
+    size_t visited;
+    int stop_after_first;
+} scan_ctx;
+
+static int scan_cb(const char *key, size_t klen, const char *val, size_t vlen,
+                   void *ctx)
+{
+    scan_ctx *c = (scan_ctx *)ctx;
+    int idx;
+    (void)val;
+    (void)vlen;
+    c->visited++;
+    if (klen >= 2 && key[0] == 's') {
+        idx = atoi(key + 1);
+        if (idx >= 0 && idx < 512)
+            c->seen[idx]++;
+    }
+    return c->stop_after_first;
+}
+
+static int scan_all(rh_table *t, size_t count_hint, scan_ctx *c)
+{
+    size_t cursor = 0;
+    int rounds = 0;
+    memset(c, 0, sizeof(*c));
+    do {
+        cursor = rh_scan(t, cursor, count_hint, scan_cb, c);
+        if (++rounds > 100000)
+            return -1; /* no convergence */
+    } while (cursor != 0);
+    return rounds;
+}
+
+static void test_scan_basic(void)
+{
+    rh_table t;
+    scan_ctx c;
+    char key[32];
+    int i;
+
+    rh_init(&t);
+    for (i = 0; i < 100; i++) {
+        int kl = snprintf(key, sizeof(key), "s%d", i);
+        rh_set(&t, key, (size_t)kl, "v", 1);
+    }
+    /* count >= size: a single call covers the table and reports done */
+    c.stop_after_first = 0;
+    memset(&c, 0, sizeof(c));
+    DD_CHECK_EQ_INT(0, (long long)rh_scan(&t, 0, 1000, scan_cb, &c));
+    DD_CHECK_EQ_INT(100, (long long)c.visited);
+    for (i = 0; i < 100; i++)
+        DD_CHECK_EQ_INT(1, c.seen[i]);
+    rh_destroy(&t);
+}
+
+static void test_scan_batches(void)
+{
+    rh_table t;
+    scan_ctx c;
+    char key[32];
+    int i;
+
+    rh_init(&t);
+    for (i = 0; i < 100; i++) {
+        int kl = snprintf(key, sizeof(key), "s%d", i);
+        rh_set(&t, key, (size_t)kl, "v", 1);
+    }
+    /* small batches: converges, no mutation -> every key exactly once */
+    DD_CHECK(scan_all(&t, 7, &c) > 1);
+    DD_CHECK_EQ_INT(100, (long long)c.visited);
+    for (i = 0; i < 100; i++)
+        DD_CHECK_EQ_INT(1, c.seen[i]);
+
+    /* early stop via callback return value */
+    memset(&c, 0, sizeof(c));
+    c.stop_after_first = 1;
+    DD_CHECK(rh_scan(&t, 0, 1000, scan_cb, &c) != 0);
+    DD_CHECK_EQ_INT(1, (long long)c.visited);
+    rh_destroy(&t);
+}
+
+static void test_scan_empty_table(void)
+{
+    rh_table t;
+    scan_ctx c;
+    rh_init(&t);
+    memset(&c, 0, sizeof(c));
+    DD_CHECK_EQ_INT(0, (long long)rh_scan(&t, 0, 10, scan_cb, &c));
+    DD_CHECK_EQ_INT(0, (long long)c.visited);
+    rh_destroy(&t);
+}
+
+static void test_scan_covers_both_tables_mid_rehash(void)
+{
+    /* Insert until an incremental rehash is in flight (old table live),
+     * then verify a full scan sees every key exactly once. */
+    rh_table t;
+    scan_ctx c;
+    char key[32];
+    int n = 0;
+    int i;
+
+    rh_init(&t);
+    for (i = 0; i < 400; i++) {
+        int kl = snprintf(key, sizeof(key), "s%d", i);
+        rh_set(&t, key, (size_t)kl, "v", 1);
+        n++;
+        if (t.old_slots != NULL && t.old_live > 0)
+            break;
+    }
+    DD_CHECK(t.old_slots != NULL); /* rehash really in flight */
+    DD_CHECK(n < 400);
+    memset(&c, 0, sizeof(c));
+    DD_CHECK_EQ_INT(0, (long long)rh_scan(&t, 0, 100000, scan_cb, &c));
+    DD_CHECK_EQ_INT(n, (long long)c.visited);
+    for (i = 0; i < n; i++)
+        DD_CHECK_EQ_INT(1, c.seen[i]);
+    rh_destroy(&t);
+}
+
+static int scan_del_cb(const char *key, size_t klen, const char *val,
+                       size_t vlen, void *ctx)
+{
+    rh_table *t = (rh_table *)ctx;
+    (void)val;
+    (void)vlen;
+    rh_del(t, key, klen); /* mutating callback: must stay memory-safe */
+    return 0;
+}
+
+static void test_scan_with_deleting_callback(void)
+{
+    rh_table t;
+    char key[32];
+    int i;
+
+    rh_init(&t);
+    for (i = 0; i < 200; i++) {
+        int kl = snprintf(key, sizeof(key), "s%d", i);
+        rh_set(&t, key, (size_t)kl, "v", 1);
+    }
+    /* Deleting the visited entry backward-shifts neighbours, so some keys
+     * are skipped; repeated full passes must converge to an empty table
+     * without crashing or corrupting it. */
+    for (int pass = 0; pass < 1000 && rh_size(&t) > 0; pass++) {
+        size_t cursor = 0;
+        do {
+            cursor = rh_scan(&t, cursor, 8, scan_del_cb, &t);
+        } while (cursor != 0);
+    }
+    DD_CHECK_EQ_INT(0, (long long)rh_size(&t));
+    rh_destroy(&t);
+}
+
 static void bench_throughput(void)
 {
     /* Not an assertion: prints ops/sec for docs/performance.md. */
@@ -311,6 +471,11 @@ int main(void)
     DD_RUN(test_many_keys_growth);
     DD_RUN(test_delete_half_then_verify);
     DD_RUN(test_randomized_vs_model);
+    DD_RUN(test_scan_basic);
+    DD_RUN(test_scan_batches);
+    DD_RUN(test_scan_empty_table);
+    DD_RUN(test_scan_covers_both_tables_mid_rehash);
+    DD_RUN(test_scan_with_deleting_callback);
     DD_RUN(bench_throughput);
     return DD_TEST_SUMMARY();
 }

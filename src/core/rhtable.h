@@ -97,4 +97,19 @@ typedef void (*rh_iter_fn)(const char *key, size_t klen, const char *val,
                            size_t vlen, void *ctx);
 void rh_each(const rh_table *t, rh_iter_fn fn, void *ctx);
 
+/* Cursor-based incremental iteration (SCAN). The cursor is a virtual
+ * bucket index: [0, cap) walks the main table, [cap, cap+old_cap) the old
+ * table while a rehash is in flight. cursor 0 starts a fresh iteration; a
+ * return value of 0 means the iteration is complete, anything else is the
+ * resume cursor. At most count occupied buckets are visited per call.
+ * The callback may delete entries (lazy expiration) — table pointers are
+ * re-read after every callback — but deletes/migration mid-scan may skip
+ * or repeat other entries; callers must tolerate that (Redis SCAN offers
+ * the same weak guarantee). A non-zero callback return stops the call
+ * early. */
+typedef int (*rh_scan_cb)(const char *key, size_t klen, const char *val,
+                          size_t vlen, void *ctx);
+size_t rh_scan(rh_table *t, size_t cursor, size_t count, rh_scan_cb cb,
+               void *ctx);
+
 #endif /* DDUP_RHTABLE_H */

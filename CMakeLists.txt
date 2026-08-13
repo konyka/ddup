@@ -72,6 +72,7 @@ set(DDUP_CORE_SOURCES
     src/core/command.c
     src/core/buf_pool.c
     src/ds/obj.c
+    src/ds/glob.c
     src/ds/skiplist.c
     src/core/session.c
     src/core/config.c
@@ -224,6 +225,9 @@ ddup_add_test(test_resp_writer tests/test_resp_writer.c)
 ddup_add_test(test_resp3 tests/test_resp3.c)
 ddup_add_test(test_rhtable tests/test_rhtable.c)
 ddup_add_test(test_command tests/test_command.c)
+ddup_add_test(test_glob tests/test_glob.c)
+ddup_add_test(test_keys tests/test_keys.c)
+ddup_add_test(test_stringx tests/test_stringx.c)
 ddup_add_test(test_expire tests/test_expire.c)
 ddup_add_test(test_eviction tests/test_eviction.c)
 ddup_add_test(test_hash tests/test_hash.c)
@@ -281,7 +285,7 @@ if(DDUP_HAS_TLS)
     set_tests_properties(test_tls PROPERTIES TIMEOUT 600)
 endif()
 
-set(DDUP_CHECK_DEPS test_pal test_pal_thread test_pal_wakeup test_spsc test_mt_server test_cstd test_cmdid test_buf_pool test_socket test_event test_server test_arena test_resp_parser test_resp_writer test_resp3 test_rhtable test_command test_expire test_eviction test_hash test_list test_skiplist test_set test_zset test_session test_multidb test_multi test_pubsub test_pubsub_shard test_config test_aof test_snapshot test_repl test_hashslot test_cluster_id test_cluster_cmds test_cluster_nodes test_cluster_bus test_cluster_slots test_dump test_migrate test_cluster_migrate test_cluster_replica test_cluster_epoch test_cluster_failover test_cluster_pfail test_reshard test_lua_smoke test_script test_eval test_redbus test_redbus_bus test_redbus_failover test_redbus_elect ddup-reshard)
+set(DDUP_CHECK_DEPS test_pal test_pal_thread test_pal_wakeup test_spsc test_mt_server test_cstd test_cmdid test_buf_pool test_socket test_event test_server test_arena test_resp_parser test_resp_writer test_resp3 test_rhtable test_command test_glob test_keys test_stringx test_expire test_eviction test_hash test_list test_skiplist test_set test_zset test_session test_multidb test_multi test_pubsub test_pubsub_shard test_config test_aof test_snapshot test_repl test_hashslot test_cluster_id test_cluster_cmds test_cluster_nodes test_cluster_bus test_cluster_slots test_dump test_migrate test_cluster_migrate test_cluster_replica test_cluster_epoch test_cluster_failover test_cluster_pfail test_reshard test_lua_smoke test_script test_eval test_redbus test_redbus_bus test_redbus_failover test_redbus_elect ddup-reshard)
 if(DDUP_HAS_TLS)
     list(APPEND DDUP_CHECK_DEPS test_tls)
 endif()

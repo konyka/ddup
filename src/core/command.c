@@ -13,6 +13,7 @@
 #include <string.h>
 
 #include "ds/obj.h"
+#include "ds/glob.h"
 #include "pal/pal_time.h"
 
 #include <math.h>
@@ -285,6 +286,32 @@ int db_del_kv(db *d, const char *key, size_t klen)
     if (existed) {
         d->used_memory -= entry_bytes(klen, oldl) + obj_extra_mem(old, oldl);
         obj_free_value(old, oldl);
+        rh_del(&d->table, key, klen);
+        db_touch_key(d, key, klen);
+    }
+    return existed;
+}
+
+/* Delete key and expiry WITHOUT freeing the owned object: RENAME/RENAMENX
+ * move the value blob to the destination key first, and for pointer-backed
+ * types (hash/list/set/zset) the blob copy shares the object pointer, so
+ * the source teardown must not free it. Object extra memory stays
+ * accounted once, under the dst entry added by db_set_kv. Returns 1 if
+ * the key existed. */
+static int db_del_kv_keep_obj(db *d, const char *key, size_t klen)
+{
+    const char *old;
+    size_t oldl;
+    int existed;
+    if (klen > UINT32_MAX)
+        return 0;
+    if (rh_get(&d->expires, key, klen, &old, &oldl)) {
+        rh_del(&d->expires, key, klen);
+        d->used_memory -= entry_bytes(klen, 8);
+    }
+    existed = rh_get(&d->table, key, klen, &old, &oldl);
+    if (existed) {
+        d->used_memory -= entry_bytes(klen, oldl);
         rh_del(&d->table, key, klen);
         db_touch_key(d, key, klen);
     }
@@ -660,6 +687,24 @@ static int fmt_score(char *buf, size_t cap, double v)
     return snprintf(buf, cap, "%.17g", v);
 }
 
+/* Strict long double parse (strtold, full consumption; NaN/Inf and a
+ * leading '+' rejected, matching the observable side of Redis string2ld). */
+static int parse_ld(const char *s, size_t len, long double *out)
+{
+    char buf[5120];
+    char *end;
+    long double v;
+    if (len == 0 || len >= sizeof(buf) || s[0] == ' ' || s[0] == '+')
+        return 0;
+    memcpy(buf, s, len);
+    buf[len] = '\0';
+    v = strtold(buf, &end);
+    if (end != buf + len || v != v || isinf(v))
+        return 0;
+    *out = v;
+    return 1;
+}
+
 /* Range bound: optional '(' exclusive prefix, inf/+inf/-inf, or a double. */
 static int parse_bound(const char *s, size_t len, double *v, int *ex)
 {
@@ -950,6 +995,9 @@ static const char ERR_NOT_INT[] = "ERR value is not an integer or out of range";
 static const char ERR_OVERFLOW[] = "ERR increment or decrement would overflow";
 static const char ERR_SYNTAX[] = "ERR syntax error";
 static const char ERR_NOT_FLOAT[] = "ERR value is not a valid float";
+
+/* Resulting-string ceiling for SETRANGE (Redis proto-max-bulk-len, 512MB). */
+#define STRING_MAX_BYTES (512ULL * 1024ULL * 1024ULL)
 
 static const char *policy_name(int policy)
 {
@@ -1251,6 +1299,133 @@ static void cmd_ttl(db *d, const resp_value *argv, resp_buf *out, uint64_t now,
 }
 
 /* ------------------------------------------------------------------ */
+/* generic key command helpers (TYPE/KEYS/SCAN/RANDOMKEY)             */
+/* ------------------------------------------------------------------ */
+
+/* Redis type name for a value blob tag. */
+static const char *obj_type_name(int tag)
+{
+    switch (tag) {
+    case DDUP_OBJ_STRING: return "string";
+    case DDUP_OBJ_HASH:   return "hash";
+    case DDUP_OBJ_LIST:   return "list";
+    case DDUP_OBJ_SET:    return "set";
+    case DDUP_OBJ_ZSET:   return "zset";
+    default:              return "none";
+    }
+}
+
+/* SCAN cursor: decimal non-negative integer, digits only. */
+static int parse_cursor(const char *s, size_t len, size_t *out)
+{
+    size_t v = 0;
+    size_t i;
+    if (len == 0)
+        return 0;
+    for (i = 0; i < len; i++) {
+        unsigned digit;
+        if (s[i] < '0' || s[i] > '9')
+            return 0;
+        digit = (unsigned)(s[i] - '0');
+        if (v > (SIZE_MAX - digit) / 10)
+            return 0;
+        v = v * 10 + digit;
+    }
+    *out = v;
+    return 1;
+}
+
+/* Insert a "*N\r\n" array header at byte position pos (KEYS appends its
+ * elements first; the count is only known at the end). */
+static void resp_insert_array_header(resp_buf *b, size_t pos, size_t n)
+{
+    char hdr[24];
+    int hl = snprintf(hdr, sizeof(hdr), "*%llu\r\n", (unsigned long long)n);
+    size_t tail = b->len - pos;
+    if (hl <= 0 || resp_buf_reserve(b, (size_t)hl) != 0)
+        return;
+    memmove(b->data + pos + (size_t)hl, b->data + pos, tail);
+    memcpy(b->data + pos, hdr, (size_t)hl);
+    b->len += (size_t)hl;
+}
+
+typedef struct keys_ctx {
+    db *d;
+    uint64_t now_ms;
+    const char *pat;
+    size_t plen;
+    resp_buf *out;
+    size_t nmatch;
+} keys_ctx;
+
+/* KEYS visitor: expired keys are lazily collected, survivors glob-filtered
+ * and appended straight into the reply (no intermediate container). */
+static int keys_cb(const char *key, size_t klen, const char *val,
+                   size_t vlen, void *ctx)
+{
+    keys_ctx *c = (keys_ctx *)ctx;
+    (void)val;
+    (void)vlen;
+    if (db_expire_if_needed(c->d, key, klen, c->now_ms))
+        return 0;
+    if (!ddup_glob_match(c->pat, c->plen, key, klen))
+        return 0;
+    resp_write_bulk(c->out, key, klen);
+    c->nmatch++;
+    return 0;
+}
+
+#define SCAN_BATCH 32 /* matching keys collected per rh_scan call */
+
+typedef struct scan_ctx {
+    db *d;
+    uint64_t now_ms;
+    const char *pat; /* NULL = no MATCH filter */
+    size_t plen;
+    const char *keys[SCAN_BATCH]; /* entry views; valid until the batch is
+                                   * flushed (no mutation in between) */
+    size_t klens[SCAN_BATCH];
+    size_t n;
+} scan_ctx;
+
+static int scan_cb(const char *key, size_t klen, const char *val,
+                   size_t vlen, void *ctx)
+{
+    scan_ctx *c = (scan_ctx *)ctx;
+    (void)val;
+    (void)vlen;
+    if (db_expire_if_needed(c->d, key, klen, c->now_ms))
+        return 0;
+    if (c->pat != NULL && !ddup_glob_match(c->pat, c->plen, key, klen))
+        return 0;
+    c->keys[c->n] = key;
+    c->klens[c->n] = klen;
+    c->n++;
+    return c->n == SCAN_BATCH; /* batch full: stop early */
+}
+
+typedef struct randomkey_ctx {
+    db *d;
+    uint64_t now_ms;
+    const char *key;
+    size_t klen;
+} randomkey_ctx;
+
+/* RANDOMKEY fallback: first live key in bucket order. */
+static int randomkey_cb(const char *key, size_t klen, const char *val,
+                        size_t vlen, void *ctx)
+{
+    randomkey_ctx *c = (randomkey_ctx *)ctx;
+    (void)val;
+    (void)vlen;
+    if (db_expire_if_needed(c->d, key, klen, c->now_ms))
+        return 0;
+    c->key = key;
+    c->klen = klen;
+    return 1;
+}
+
+/* ------------------------------------------------------------------ */
 /* dispatch                                                           */
 /* ------------------------------------------------------------------ */
 
@@ -1287,6 +1462,7 @@ static int cmd_keys_accum(const resp_value *argv, size_t argc, int *have,
     cmd_id = cmd_resolve(name, nlen);
     if (cmd_id == CMD_MGET || cmd_id == CMD_DEL ||
         cmd_id == CMD_UNLINK || cmd_id == CMD_EXISTS ||
+        cmd_id == CMD_TOUCH ||
         cmd_id == CMD_SINTER || cmd_id == CMD_SUNION ||
         cmd_id == CMD_SDIFF || cmd_id == CMD_WATCH) {
         for (i = 1; i < argc; i++) {
@@ -1308,7 +1484,8 @@ static int cmd_keys_accum(const resp_value *argv, size_t argc, int *have,
         }
         return 1;
     }
-    if (cmd_id == CMD_SMOVE) {
+    if (cmd_id == CMD_SMOVE || cmd_id == CMD_RENAME ||
+        cmd_id == CMD_RENAMENX) {
         for (i = 1; i < argc && i < 3; i++) {
             const char *k;
             size_t kl;
@@ -1445,6 +1622,7 @@ static int cluster_keyless_id(uint16_t cmd_id)
     case CMD_DISCARD:    case CMD_UNWATCH:    case CMD_DBSIZE:
     case CMD_FLUSHDB:    case CMD_CLUSTER:    case CMD_PERSIST:
     case CMD_MIGRATE:    case CMD_ASKING:    case CMD_SCRIPT:
+    case CMD_KEYS:       case CMD_SCAN:       case CMD_RANDOMKEY:
         return 1;
     default:
         return 0;
@@ -1478,6 +1656,7 @@ static int cluster_check_ownership(session *s, const resp_value *argv,
         return 1;
     if (cmd_id == CMD_MGET || cmd_id == CMD_DEL ||
         cmd_id == CMD_UNLINK || cmd_id == CMD_EXISTS ||
+        cmd_id == CMD_TOUCH ||
         cmd_id == CMD_SINTER || cmd_id == CMD_SUNION ||
         cmd_id == CMD_SDIFF || cmd_id == CMD_WATCH) {
         for (i = 1; i < argc; i++) {
@@ -1499,7 +1678,8 @@ static int cluster_check_ownership(session *s, const resp_value *argv,
         }
         return 1;
     }
-    if (cmd_id == CMD_SMOVE) {
+    if (cmd_id == CMD_SMOVE || cmd_id == CMD_RENAME ||
+        cmd_id == CMD_RENAMENX) {
         for (i = 1; i < argc && i < 3; i++) {
             const char *k;
             size_t kl;
@@ -2137,9 +2317,14 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
         return;
     }
 
-    if (cmd_id == CMD_INCR || cmd_id == CMD_DECR) {
-        if (argc != 2) {
-            wrong_args(out, cmd_id == CMD_INCR ? "incr" : "decr");
+    if (cmd_id == CMD_INCR || cmd_id == CMD_DECR ||
+        cmd_id == CMD_INCRBY || cmd_id == CMD_DECRBY) {
+        int by = cmd_id == CMD_INCRBY || cmd_id == CMD_DECRBY;
+        if (argc != (by ? 3 : 2)) {
+            wrong_args(out, cmd_id == CMD_INCR    ? "incr"
+                            : cmd_id == CMD_DECR  ? "decr"
+                            : cmd_id == CMD_INCRBY ? "incrby"
+                                                   : "decrby");
             return;
         }
         const char *k;
@@ -2150,7 +2335,29 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
             storage_length_error(out);
             return;
         }
-        long long delta = cmd_id == CMD_INCR ? 1 : -1;
+        long long delta;
+        if (cmd_id == CMD_INCR) {
+            delta = 1;
+        } else if (cmd_id == CMD_DECR) {
+            delta = -1;
+        } else {
+            const char *dv;
+            size_t dvl;
+            if (!arg_str(&argv[2], &dv, &dvl))
+                goto bad_type;
+            if (!parse_i64(dv, dvl, &delta)) {
+                resp_write_error(out, ERR_NOT_INT, sizeof(ERR_NOT_INT) - 1);
+                return;
+            }
+            if (cmd_id == CMD_DECRBY) {
+                if (delta == LLONG_MIN) {
+                    resp_write_error(out, ERR_OVERFLOW,
+                                     sizeof(ERR_OVERFLOW) - 1);
+                    return;
+                }
+                delta = -delta;
+            }
+        }
         long long cur = 0;
         const char *v;
         size_t vl;
@@ -2164,8 +2371,8 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
                 return;
             }
         }
-        if ((delta > 0 && cur == LLONG_MAX) ||
-            (delta < 0 && cur == LLONG_MIN)) {
+        if ((delta > 0 && cur > LLONG_MAX - delta) ||
+            (delta < 0 && cur < LLONG_MIN - delta)) {
             resp_write_error(out, ERR_OVERFLOW, sizeof(ERR_OVERFLOW) - 1);
             return;
         }
@@ -2254,6 +2461,418 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
                 return;
             resp_write_integer(out, (long long)sl2);
         }
+        return;
+    }
+
+    if (cmd_id == CMD_GETDEL) {
+        if (argc != 2) {
+            wrong_args(out, "getdel");
+            return;
+        }
+        const char *k;
+        size_t kl;
+        if (!arg_str(&argv[1], &k, &kl))
+            goto bad_type;
+        const char *v;
+        size_t vl;
+        if (!db_get(d, k, kl, &v, &vl, now_ms)) {
+            resp_write_bulk(out, NULL, 0);
+            return;
+        }
+        {
+            const char *s;
+            size_t sl2;
+            if (!as_string(out, v, vl, &s, &sl2))
+                return;
+            /* the reply copies the payload, so the delete may free it */
+            resp_write_bulk(out, s, sl2);
+        }
+        db_del_kv(d, k, kl);
+        return;
+    }
+
+    if (cmd_id == CMD_GETEX) {
+        if (argc < 2) {
+            wrong_args(out, "getex");
+            return;
+        }
+        const char *k;
+        size_t kl;
+        if (!arg_str(&argv[1], &k, &kl))
+            goto bad_type;
+        if (!storage_key_ok(kl)) {
+            storage_length_error(out);
+            return;
+        }
+        int has_opt = 0, persist = 0;
+        uint64_t when = 0; /* absolute expiry ms (has_opt && !persist) */
+        for (size_t i = 2; i < argc; i++) {
+            const char *o;
+            size_t ol;
+            if (!arg_str(&argv[i], &o, &ol))
+                goto bad_type;
+            if (ci_equal(o, ol, "PERSIST") && !has_opt) {
+                has_opt = 1;
+                persist = 1;
+            } else if ((ci_equal(o, ol, "EX") || ci_equal(o, ol, "PX") ||
+                        ci_equal(o, ol, "EXAT") || ci_equal(o, ol, "PXAT")) &&
+                       !has_opt && i + 1 < argc) {
+                const char *t;
+                size_t tl;
+                long long tv;
+                int secs = ci_equal(o, ol, "EX") || ci_equal(o, ol, "EXAT");
+                int absolute = ci_equal(o, ol, "EXAT") ||
+                               ci_equal(o, ol, "PXAT");
+                if (!arg_str(&argv[i + 1], &t, &tl))
+                    goto bad_type;
+                if (!parse_i64(t, tl, &tv)) {
+                    resp_write_error(out, ERR_NOT_INT, sizeof(ERR_NOT_INT) - 1);
+                    return;
+                }
+                if (tv <= 0 || (secs && tv > LLONG_MAX / 1000)) {
+                    static const char E[] =
+                        "ERR invalid expire time in 'getex' command";
+                    resp_write_error(out, E, sizeof(E) - 1);
+                    return;
+                }
+                when = (absolute ? 0 : now_ms) +
+                       (uint64_t)tv * (secs ? 1000ULL : 1ULL);
+                has_opt = 1;
+                i++;
+            } else {
+                resp_write_error(out, ERR_SYNTAX, sizeof(ERR_SYNTAX) - 1);
+                return;
+            }
+        }
+        const char *v;
+        size_t vl;
+        if (!db_get(d, k, kl, &v, &vl, now_ms)) {
+            resp_write_bulk(out, NULL, 0);
+            return;
+        }
+        {
+            const char *s;
+            size_t sl2;
+            if (!as_string(out, v, vl, &s, &sl2))
+                return;
+            /* replied before any mutation: the payload is safely copied */
+            resp_write_bulk(out, s, sl2);
+        }
+        if (!has_opt)
+            return;
+        if (persist) {
+            const char *e;
+            size_t el;
+            if (rh_get(&d->expires, k, kl, &e, &el)) {
+                rh_del(&d->expires, k, kl);
+                d->used_memory -= entry_bytes(kl, 8);
+                db_touch_key(d, k, kl);
+            }
+        } else if (when <= now_ms) {
+            /* past expiry: immediate-delete semantics (see cmd_expire) */
+            db_del_kv(d, k, kl);
+        } else {
+            (void)db_set_expiry(d, k, kl, when); /* klen pre-checked */
+            db_touch_key(d, k, kl);
+        }
+        return;
+    }
+
+    if (cmd_id == CMD_SETEX || cmd_id == CMD_PSETEX) {
+        if (argc != 4) {
+            wrong_args(out, cmd_id == CMD_SETEX ? "setex" : "psetex");
+            return;
+        }
+        const char *k, *t, *v;
+        size_t kl, tl, vl;
+        long long tv;
+        int secs = cmd_id == CMD_SETEX;
+        if (!arg_str(&argv[1], &k, &kl) || !arg_str(&argv[2], &t, &tl) ||
+            !arg_str(&argv[3], &v, &vl))
+            goto bad_type;
+        if (!storage_string_ok(kl, vl)) {
+            storage_length_error(out);
+            return;
+        }
+        if (!parse_i64(t, tl, &tv)) {
+            resp_write_error(out, ERR_NOT_INT, sizeof(ERR_NOT_INT) - 1);
+            return;
+        }
+        if (tv <= 0 || (secs && tv > LLONG_MAX / 1000)) {
+            char msg[96];
+            int n = snprintf(msg, sizeof(msg),
+                             "ERR invalid expire time in '%s' command",
+                             secs ? "setex" : "psetex");
+            resp_write_error(out, msg, (size_t)n);
+            return;
+        }
+        {
+            const char *old;
+            size_t oldl;
+            int exists = db_get(d, k, kl, &old, &oldl, now_ms);
+            if (exists && obj_tag_of(old, oldl) != DDUP_OBJ_STRING) {
+                wrongtype(out);
+                return;
+            }
+        }
+        if (oom_blocked(d, out))
+            return;
+        if (db_set_string(d, k, kl, v, vl, now_ms) != 0) {
+            storage_length_error(out);
+            return;
+        }
+        if (db_set_expiry(d, k, kl,
+                          now_ms + (uint64_t)tv * (secs ? 1000ULL : 1ULL)) !=
+            0) {
+            storage_length_error(out);
+            return;
+        }
+        resp_write_simple_string(out, "OK", 2);
+        return;
+    }
+
+    if (cmd_id == CMD_GETSET) {
+        if (argc != 3) {
+            wrong_args(out, "getset");
+            return;
+        }
+        const char *k, *v;
+        size_t kl, vl;
+        if (!arg_str(&argv[1], &k, &kl) || !arg_str(&argv[2], &v, &vl))
+            goto bad_type;
+        if (!storage_string_ok(kl, vl)) {
+            storage_length_error(out);
+            return;
+        }
+        if (oom_blocked(d, out))
+            return;
+        {
+            const char *old;
+            size_t oldl;
+            if (db_get(d, k, kl, &old, &oldl, now_ms)) {
+                const char *s;
+                size_t sl2;
+                if (!as_string(out, old, oldl, &s, &sl2))
+                    return;
+                /* replied before the overwrite frees the old payload */
+                resp_write_bulk(out, s, sl2);
+            } else {
+                resp_write_bulk(out, NULL, 0);
+            }
+        }
+        /* db_set_string discards any TTL (SET semantics) */
+        if (db_set_string(d, k, kl, v, vl, now_ms) != 0) {
+            storage_length_error(out);
+            return;
+        }
+        return;
+    }
+
+    if (cmd_id == CMD_SETRANGE) {
+        if (argc != 4) {
+            wrong_args(out, "setrange");
+            return;
+        }
+        const char *k, *v;
+        size_t kl, vl;
+        long long off;
+        if (!arg_str(&argv[1], &k, &kl) || !arg_str(&argv[3], &v, &vl))
+            goto bad_type;
+        {
+            const char *ov;
+            size_t ovl;
+            if (!arg_str(&argv[2], &ov, &ovl))
+                goto bad_type;
+            if (!parse_i64(ov, ovl, &off)) {
+                resp_write_error(out, ERR_NOT_INT, sizeof(ERR_NOT_INT) - 1);
+                return;
+            }
+        }
+        if (off < 0) {
+            static const char E[] = "ERR offset is out of range";
+            resp_write_error(out, E, sizeof(E) - 1);
+            return;
+        }
+        if (!storage_key_ok(kl)) {
+            storage_length_error(out);
+            return;
+        }
+        if ((uint64_t)off + vl > STRING_MAX_BYTES) {
+            static const char E[] = "ERR string exceeds maximum allowed size";
+            resp_write_error(out, E, sizeof(E) - 1);
+            return;
+        }
+        const char *old;
+        size_t oldl;
+        if (!db_get(d, k, kl, &old, &oldl, now_ms)) {
+            if (vl == 0) {
+                /* empty write on a missing key: no-op, length 0 */
+                resp_write_integer(out, 0);
+                return;
+            }
+            if (oom_blocked(d, out))
+                return;
+            size_t nl = (size_t)off + vl;
+            resp_buf tmp;
+            resp_buf_init(&tmp);
+            if (nl >= UINT32_MAX || resp_buf_reserve(&tmp, nl) != 0) {
+                resp_buf_free(&tmp);
+                storage_length_error(out);
+                return;
+            }
+            memset(tmp.data, 0, (size_t)off);
+            memcpy(tmp.data + (size_t)off, v, vl);
+            tmp.len = nl;
+            if (db_set_string(d, k, kl, tmp.data, tmp.len, now_ms) != 0) {
+                resp_buf_free(&tmp);
+                storage_length_error(out);
+                return;
+            }
+            resp_write_integer(out, (long long)tmp.len);
+            resp_buf_free(&tmp);
+            return;
+        }
+        {
+            const char *s;
+            size_t sl2;
+            size_t nl;
+            resp_buf tmp;
+            if (!as_string(out, old, oldl, &s, &sl2))
+                return;
+            nl = (size_t)off + vl;
+            if (vl == 0 && nl <= sl2) {
+                /* nothing changes; report the current length */
+                resp_write_integer(out, (long long)sl2);
+                return;
+            }
+            if (nl < sl2)
+                nl = sl2;
+            if (oom_blocked(d, out))
+                return;
+            resp_buf_init(&tmp);
+            if (nl >= UINT32_MAX || resp_buf_reserve(&tmp, nl) != 0) {
+                resp_buf_free(&tmp);
+                storage_length_error(out);
+                return;
+            }
+            memcpy(tmp.data, s, sl2);
+            if ((size_t)off > sl2)
+                memset(tmp.data + sl2, 0, (size_t)off - sl2);
+            memcpy(tmp.data + (size_t)off, v, vl);
+            tmp.len = nl;
+            if (db_set_string(d, k, kl, tmp.data, tmp.len, now_ms) != 0) {
+                resp_buf_free(&tmp);
+                storage_length_error(out);
+                return;
+            }
+            resp_write_integer(out, (long long)tmp.len);
+            resp_buf_free(&tmp);
+        }
+        return;
+    }
+
+    if (cmd_id == CMD_GETRANGE) {
+        if (argc != 4) {
+            wrong_args(out, "getrange");
+            return;
+        }
+        const char *k;
+        size_t kl;
+        long long start, end;
+        if (!arg_str(&argv[1], &k, &kl))
+            goto bad_type;
+        {
+            const char *sv, *ev;
+            size_t svl, evl;
+            if (!arg_str(&argv[2], &sv, &svl) || !arg_str(&argv[3], &ev, &evl))
+                goto bad_type;
+            if (!parse_i64(sv, svl, &start) || !parse_i64(ev, evl, &end)) {
+                resp_write_error(out, ERR_NOT_INT, sizeof(ERR_NOT_INT) - 1);
+                return;
+            }
+        }
+        const char *v;
+        size_t vl;
+        if (!db_get(d, k, kl, &v, &vl, now_ms)) {
+            resp_write_bulk(out, "", 0);
+            return;
+        }
+        {
+            const char *s;
+            size_t sl2;
+            long long len;
+            if (!as_string(out, v, vl, &s, &sl2))
+                return;
+            len = (long long)sl2;
+            /* Redis bound normalization: negatives from the tail, then clamp */
+            if (start < 0 && end < 0 && start > end) {
+                resp_write_bulk(out, "", 0);
+                return;
+            }
+            if (start < 0) start += len;
+            if (end < 0) end += len;
+            if (start < 0) start = 0;
+            if (end < 0) end = 0;
+            if (end >= len) end = len - 1;
+            if (start > end || len == 0) {
+                resp_write_bulk(out, "", 0);
+                return;
+            }
+            resp_write_bulk(out, s + start, (size_t)(end - start + 1));
+        }
+        return;
+    }
+
+    if (cmd_id == CMD_INCRBYFLOAT) {
+        if (argc != 3) {
+            wrong_args(out, "incrbyfloat");
+            return;
+        }
+        const char *k, *dv;
+        size_t kl, dvl;
+        long double delta, cur = 0, res;
+        char buf[5120];
+        int nl;
+        if (!arg_str(&argv[1], &k, &kl) || !arg_str(&argv[2], &dv, &dvl))
+            goto bad_type;
+        if (!storage_key_ok(kl)) {
+            storage_length_error(out);
+            return;
+        }
+        if (!parse_ld(dv, dvl, &delta)) {
+            resp_write_error(out, ERR_NOT_FLOAT, sizeof(ERR_NOT_FLOAT) - 1);
+            return;
+        }
+        {
+            const char *v;
+            size_t vl;
+            if (db_get(d, k, kl, &v, &vl, now_ms)) {
+                const char *s;
+                size_t sl2;
+                if (!as_string(out, v, vl, &s, &sl2))
+                    return;
+                if (!parse_ld(s, sl2, &cur)) {
+                    resp_write_error(out, ERR_NOT_FLOAT,
+                                     sizeof(ERR_NOT_FLOAT) - 1);
+                    return;
+                }
+            }
+        }
+        res = cur + delta;
+        if (res != res || isinf(res)) {
+            static const char E[] =
+                "ERR increment would produce NaN or Infinity";
+            resp_write_error(out, E, sizeof(E) - 1);
+            return;
+        }
+        nl = snprintf(buf, sizeof(buf), "%.17Lg", res);
+        if (oom_blocked(d, out))
+            return;
+        if (db_set_string(d, k, kl, buf, (size_t)nl, now_ms) != 0) {
+            storage_length_error(out);
+            return;
+        }
+        resp_write_bulk(out, buf, (size_t)nl);
         return;
     }
 
@@ -2375,6 +2994,241 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
             } else {
                 resp_write_integer(out, 0);
             }
+        }
+        return;
+    }
+
+    if (cmd_id == CMD_TYPE) {
+        const char *k, *v;
+        size_t kl, vl;
+        if (argc != 2) {
+            wrong_args(out, "type");
+            return;
+        }
+        if (!arg_str(&argv[1], &k, &kl))
+            goto bad_type;
+        if (!db_get(d, k, kl, &v, &vl, now_ms)) {
+            resp_write_simple_string(out, "none", 4);
+            return;
+        }
+        {
+            const char *tn = obj_type_name(obj_tag_of(v, vl));
+            resp_write_simple_string(out, tn, strlen(tn));
+        }
+        return;
+    }
+
+    if (cmd_id == CMD_KEYS) {
+        const char *pat;
+        size_t plen;
+        keys_ctx kc;
+        size_t hdr_pos;
+        if (argc != 2) {
+            wrong_args(out, "keys");
+            return;
+        }
+        if (!arg_str(&argv[1], &pat, &plen))
+            goto bad_type;
+        kc.d = d;
+        kc.now_ms = now_ms;
+        kc.pat = pat;
+        kc.plen = plen;
+        kc.out = out;
+        kc.nmatch = 0;
+        hdr_pos = out->len;
+        rh_scan(&d->table, 0, SIZE_MAX, keys_cb, &kc);
+        resp_insert_array_header(out, hdr_pos, kc.nmatch);
+        return;
+    }
+
+    if (cmd_id == CMD_SCAN) {
+        const char *cur, *pat = NULL;
+        size_t curl, plen = 0;
+        size_t cursor = 0, i;
+        long long count = 10; /* COUNT is a hint, like Redis */
+        scan_ctx sc;
+        char next[24];
+        int nextlen;
+        if (argc < 2) {
+            wrong_args(out, "scan");
+            return;
+        }
+        if (!arg_str(&argv[1], &cur, &curl))
+            goto bad_type;
+        if (!parse_cursor(cur, curl, &cursor)) {
+            resp_write_error(out, "ERR invalid cursor", 18);
+            return;
+        }
+        for (i = 2; i < argc; i += 2) {
+            const char *opt, *ov;
+            size_t optl, ovl;
+            if (i + 1 >= argc)
+                goto scan_syntax;
+            if (!arg_str(&argv[i], &opt, &optl) ||
+                !arg_str(&argv[i + 1], &ov, &ovl))
+                goto bad_type;
+            if (ci_equal(opt, optl, "MATCH")) {
+                pat = ov;
+                plen = ovl;
+            } else if (ci_equal(opt, optl, "COUNT")) {
+                if (!parse_i64(ov, ovl, &count) || count <= 0)
+                    goto scan_syntax;
+            } else {
+                goto scan_syntax;
+            }
+        }
+        sc.d = d;
+        sc.now_ms = now_ms;
+        sc.pat = pat;
+        sc.plen = plen;
+        sc.n = 0;
+        cursor = rh_scan(&d->table, cursor, (size_t)count, scan_cb, &sc);
+        nextlen = snprintf(next, sizeof(next), "%llu",
+                           (unsigned long long)cursor);
+        resp_write_array_header(out, 2);
+        resp_write_bulk(out, next, (size_t)nextlen);
+        resp_write_array_header(out, sc.n);
+        for (i = 0; i < sc.n; i++)
+            resp_write_bulk(out, sc.keys[i], sc.klens[i]);
+        return;
+
+    scan_syntax:
+        resp_write_error(out, "ERR syntax error", 16);
+        return;
+    }
+
+    if (cmd_id == CMD_RENAME || cmd_id == CMD_RENAMENX) {
+        const char *sk, *dk, *v, *e;
+        size_t skl, dkl, vl, el;
+        int nx = cmd_id == CMD_RENAMENX;
+        if (argc != 3) {
+            wrong_args(out, nx ? "renamenx" : "rename");
+            return;
+        }
+        if (crossslot_reject(d, out, argv, argc))
+            return;
+        if (!arg_str(&argv[1], &sk, &skl) || !arg_str(&argv[2], &dk, &dkl))
+            goto bad_type;
+        if (!storage_key_ok(skl) || !storage_key_ok(dkl)) {
+            storage_length_error(out);
+            return;
+        }
+        db_expire_if_needed(d, sk, skl, now_ms);
+        if (skl != dkl || memcmp(sk, dk, skl) != 0)
+            db_expire_if_needed(d, dk, dkl, now_ms);
+        /* src existence is checked before the same-key check (Redis order) */
+        if (!rh_get(&d->table, sk, skl, &v, &vl)) {
+            resp_write_error(out, "ERR no such key", 15);
+            return;
+        }
+        if (skl == dkl && memcmp(sk, dk, skl) == 0) {
+            static const char E[] =
+                "ERR source and destination objects are the same";
+            resp_write_error(out, E, sizeof(E) - 1);
+            return;
+        }
+        if (nx && rh_get(&d->table, dk, dkl, &e, &el)) {
+            resp_write_integer(out, 0);
+            return;
+        }
+        if (oom_blocked(d, out))
+            return;
+        /* move value (db_set_kv copies the blob and clears any dst TTL),
+         * then carry over the src TTL, then drop src; the version/dirty
+         * bookkeeping for both keys comes from db_set_kv/db_del_kv_keep_obj */
+        if (db_set_kv(d, dk, dkl, v, vl, now_ms) != 0) {
+            storage_length_error(out);
+            return;
+        }
+        if (rh_get(&d->expires, sk, skl, &e, &el) && el == 8)
+            (void)db_set_expiry(d, dk, dkl, get_u64(e));
+        db_del_kv_keep_obj(d, sk, skl);
+        if (nx)
+            resp_write_integer(out, 1);
+        else
+            resp_write_simple_string(out, "OK", 2);
+        return;
+    }
+
+    if (cmd_id == CMD_TOUCH) {
+        long long found = 0;
+        size_t i;
+        if (argc < 2) {
+            wrong_args(out, "touch");
+            return;
+        }
+        if (crossslot_reject(d, out, argv, argc))
+            return;
+        for (i = 1; i < argc; i++) {
+            const char *k, *v;
+            size_t kl, vl;
+            if (!arg_str(&argv[i], &k, &kl))
+                goto bad_type;
+            found += db_get(d, k, kl, &v, &vl, now_ms);
+        }
+        resp_write_integer(out, found);
+        return;
+    }
+
+    if (cmd_id == CMD_RANDOMKEY) {
+        const char *k, *v;
+        size_t kl, vl;
+        int attempt;
+        if (argc != 1) {
+            wrong_args(out, "randomkey");
+            return;
+        }
+        /* random probes first; expired samples are collected on the spot */
+        for (attempt = 0; attempt < 100 && rh_size(&d->table) > 0;
+             attempt++) {
+            if (!rh_random_entry(&d->table, db_rand(d), &k, &kl, &v, &vl,
+                                 NULL))
+                break;
+            if (db_expire_if_needed(d, k, kl, now_ms))
+                continue;
+            resp_write_bulk(out, k, kl);
+            return;
+        }
+        /* deterministic fallback: first live key in bucket order */
+        if (rh_size(&d->table) > 0) {
+            randomkey_ctx rc;
+            rc.d = d;
+            rc.now_ms = now_ms;
+            rc.key = NULL;
+            rc.klen = 0;
+            rh_scan(&d->table, 0, SIZE_MAX, randomkey_cb, &rc);
+            if (rc.key != NULL) {
+                resp_write_bulk(out, rc.key, rc.klen);
+                return;
+            }
+        }
+        resp_write_bulk(out, NULL, 0);
+        return;
+    }
+
+    if (cmd_id == CMD_EXPIRETIME || cmd_id == CMD_PEXPIRETIME) {
+        const char *k, *v;
+        size_t kl, vl;
+        if (argc != 2) {
+            wrong_args(out, cmd_id == CMD_PEXPIRETIME ? "pexpiretime"
+                                                      : "expiretime");
+            return;
+        }
+        if (!arg_str(&argv[1], &k, &kl))
+            goto bad_type;
+        if (!db_get(d, k, kl, &v, &vl, now_ms)) {
+            resp_write_integer(out, -2); /* no such key */
+            return;
+        }
+        if (!rh_get(&d->expires, k, kl, &v, &vl) || vl != 8) {
+            resp_write_integer(out, -1); /* no expiry */
+            return;
+        }
+        {
+            uint64_t when = get_u64(v);
+            resp_write_integer(out, cmd_id == CMD_PEXPIRETIME
+                                        ? (long long)when
+                                        : (long long)(when / 1000));
         }
         return;
     }
@@ -5012,6 +5866,25 @@ static const cmd_entry CMD_TABLE[] = {
     {"sunsubscribe", CMD_SUNSUBSCRIBE, 1, -1, 0, 0},
     {"spublish", CMD_SPUBLISH, 3, 3, 0, 0},
     {"pubsub", CMD_PUBSUB, 2, -1, 0, 0},
+    {"type", CMD_TYPE, 2, 2, 0, 0},
+    {"keys", CMD_KEYS, 2, 2, 0, 0},
+    {"scan", CMD_SCAN, 2, -1, 0, 0},
+    {"rename", CMD_RENAME, 3, 3, 0, CMD_WRITE},
+    {"renamenx", CMD_RENAMENX, 3, 3, 0, CMD_WRITE},
+    {"touch", CMD_TOUCH, 2, -1, 0, 0},
+    {"randomkey", CMD_RANDOMKEY, 1, 1, 0, 0},
+    {"expiretime", CMD_EXPIRETIME, 2, 2, 0, 0},
+    {"pexpiretime", CMD_PEXPIRETIME, 2, 2, 0, 0},
+    {"getdel", CMD_GETDEL, 2, 2, 0, CMD_WRITE},
+    {"getex", CMD_GETEX, 2, -1, 0, CMD_WRITE},
+    {"setex", CMD_SETEX, 4, 4, 0, CMD_WRITE},
+    {"psetex", CMD_PSETEX, 4, 4, 0, CMD_WRITE},
+    {"getset", CMD_GETSET, 3, 3, 0, CMD_WRITE},
+    {"setrange", CMD_SETRANGE, 4, 4, 0, CMD_WRITE},
+    {"getrange", CMD_GETRANGE, 4, 4, 0, 0},
+    {"incrby", CMD_INCRBY, 3, 3, 0, CMD_WRITE},
+    {"decrby", CMD_DECRBY, 3, 3, 0, CMD_WRITE},
+    {"incrbyfloat", CMD_INCRBYFLOAT, 3, 3, 0, CMD_WRITE},
 };
 
 static const cmd_entry *cmd_table_entry(uint16_t id)

@@ -249,10 +249,29 @@ enum {
     CMD_SSUBSCRIBE,
     CMD_SUNSUBSCRIBE,
     CMD_SPUBLISH,
-    CMD_PUBSUB
+    CMD_PUBSUB,
+    CMD_TYPE,
+    CMD_KEYS,
+    CMD_SCAN,
+    CMD_RENAME,
+    CMD_RENAMENX,
+    CMD_TOUCH,
+    CMD_RANDOMKEY,
+    CMD_EXPIRETIME,
+    CMD_PEXPIRETIME,
+    CMD_GETDEL,
+    CMD_GETEX,
+    CMD_SETEX,
+    CMD_PSETEX,
+    CMD_GETSET,
+    CMD_SETRANGE,
+    CMD_GETRANGE,
+    CMD_INCRBY,
+    CMD_DECRBY,
+    CMD_INCRBYFLOAT
 };
 
-#define CMD_MAX CMD_PUBSUB
+#define CMD_MAX CMD_INCRBYFLOAT
 
 /* Resolve a command name to its stable ID; case-insensitive. */
 uint16_t cmd_resolve(const char *name, size_t len);
