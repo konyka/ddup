@@ -24,6 +24,7 @@
 #include "core/redbus.h"
 #include "core/session.h"
 #include "core/snapshot.h"
+#include "ds/glob.h"
 #include "server/aof.h"
 #include "pal/pal_cstd.h"
 #include "pal/pal_event.h"
@@ -102,6 +103,7 @@ struct conn {
     session *sess; /* per-connection command context (MULTI/WATCH/pubsub) */
     conn_sub *subs; /* channels this conn is subscribed to */
     conn_sub *ssubs; /* shard channels (Redis 7 sharded pub/sub) */
+    conn_sub *psubs; /* patterns this conn is subscribed to (PSUBSCRIBE) */
     struct server *srv;
     int is_replica;     /* downstream replica (we are the master) */
     int is_master_link; /* our outbound link to the master (we are replica) */
@@ -160,6 +162,8 @@ struct server {
     int ndbs;         /* total logical databases (default 16) */
     rh_table channels; /* pub/sub: channel -> chan_node list head (8-byte ptr) */
     rh_table schannels; /* shard channels (Redis 7 sharded pub/sub) */
+    rh_table patterns;  /* pattern pub/sub: pattern -> chan_node list head */
+    size_t numpats;     /* total (conn, pattern) subscriptions (PUBSUB NUMPAT) */
     aof *aof;          /* NULL when appendonly=no */
     int aof_failed;    /* flush failed: reject writes and stop AOF growth */
     int aof_db_index;  /* last db index written to the AOF (SELECT prefix) */
@@ -416,6 +420,145 @@ static void srv_each_channel(void *ctx, session *sess,
         cb(cs->ch, cs->chlen, arg);
 }
 
+/* ------------------------------------------------------------------ */
+/* pattern pub/sub hooks (Redis PSUBSCRIBE)                            */
+/* ------------------------------------------------------------------ */
+
+static ptrdiff_t srv_psubscribe(void *ctx, session *sess, const char *pat,
+                                size_t len)
+{
+    server *srv = (server *)ctx;
+    size_t before = sess->npsub;
+    ptrdiff_t rc = chan_subscribe(&srv->patterns,
+                                  &((conn *)sess->owner)->psubs, sess, pat,
+                                  len, &sess->npsub);
+    if (rc > (ptrdiff_t)before)
+        srv->numpats++;
+    return rc;
+}
+
+static size_t srv_punsubscribe(void *ctx, session *sess, const char *pat,
+                               size_t len)
+{
+    server *srv = (server *)ctx;
+    size_t before = sess->npsub;
+    size_t rc = chan_unsubscribe(&srv->patterns,
+                                 &((conn *)sess->owner)->psubs, sess, pat,
+                                 len, &sess->npsub);
+    if (rc < before)
+        srv->numpats--;
+    return rc;
+}
+
+static void srv_each_pattern(void *ctx, session *sess,
+                             void (*cb)(const char *pat, size_t len,
+                                        void *arg),
+                             void *arg)
+{
+    conn *c = (conn *)sess->owner;
+    conn_sub *cs;
+    (void)ctx;
+    for (cs = c->psubs; cs != NULL; cs = cs->next)
+        cb(cs->ch, cs->chlen, arg);
+}
+
+static void srv_deliver_pattern(void *owner, const char *pat, size_t patlen,
+                                const char *ch, size_t chlen, const char *msg,
+                                size_t mlen)
+{
+    conn *c = (conn *)owner;
+    resp_write_array_header(&c->out, 4);
+    resp_write_bulk(&c->out, "pmessage", 8);
+    resp_write_bulk(&c->out, pat, patlen);
+    resp_write_bulk(&c->out, ch, chlen);
+    resp_write_bulk(&c->out, msg, mlen);
+}
+
+/* PUBLISH fan-out over the pattern registry (see srv_publish). */
+typedef struct pat_pub_ctx {
+    const char *ch;
+    size_t chlen;
+    const char *msg;
+    size_t mlen;
+    long count;
+} pat_pub_ctx;
+
+static void pat_pub_cb(const char *pat, size_t plen, const char *v,
+                       size_t vlen, void *arg)
+{
+    pat_pub_ctx *pp = (pat_pub_ctx *)arg;
+    chan_node *head;
+    chan_node *n;
+    (void)vlen;
+    if (!ddup_glob_match(pat, plen, pp->ch, pp->chlen))
+        return;
+    memcpy(&head, v, 8);
+    for (n = head; n != NULL; n = n->next) {
+        conn *sc = n->c;
+        if (sc->sess->deliver_pattern != NULL)
+            sc->sess->deliver_pattern(sc->sess->owner, pat, plen, pp->ch,
+                                      pp->chlen, pp->msg, pp->mlen);
+        pp->count++;
+    }
+}
+
+static long srv_numpat(void *ctx)
+{
+    server *srv = (server *)ctx;
+    return (long)srv->numpats;
+}
+
+static long srv_channel_nsub(void *ctx, const char *ch, size_t len)
+{
+    server *srv = (server *)ctx;
+    chan_node *n = chan_get(&srv->channels, ch, len);
+    long count = 0;
+    for (; n != NULL; n = n->next)
+        count++;
+    return count;
+}
+
+/* PUBSUB CHANNELS: two-pass list over the regular channel registry with
+ * optional glob filtering (full ddup_glob_match semantics). */
+typedef struct chan_list_ctx {
+    resp_buf *out;
+    const char *pat;
+    size_t patlen;
+    size_t n;
+    int write; /* 0 = count pass, 1 = write pass */
+} chan_list_ctx;
+
+static void pubsub_chan_cb(const char *ch, size_t len, const char *v,
+                           size_t vlen, void *arg)
+{
+    chan_list_ctx *lc = (chan_list_ctx *)arg;
+    (void)v;
+    (void)vlen;
+    if (lc->pat != NULL && !ddup_glob_match(lc->pat, lc->patlen, ch, len))
+        return;
+    if (lc->write)
+        resp_write_bulk(lc->out, ch, len);
+    lc->n++;
+}
+
+static size_t srv_pubsub_channels(void *ctx, const char *pat, size_t patlen,
+                                  resp_buf *out)
+{
+    server *srv = (server *)ctx;
+    chan_list_ctx lc;
+    lc.out = out;
+    lc.pat = patlen ? pat : NULL;
+    lc.patlen = patlen;
+    lc.n = 0;
+    lc.write = 0;
+    rh_each(&srv->channels, pubsub_chan_cb, &lc);
+    resp_write_array_header(out, lc.n);
+    lc.n = 0;
+    lc.write = 1;
+    rh_each(&srv->channels, pubsub_chan_cb, &lc);
+    return lc.n;
+}
+
 static long srv_publish(void *ctx, const char *ch, size_t chlen,
                         const char *msg, size_t mlen)
 {
@@ -427,6 +570,19 @@ static long srv_publish(void *ctx, const char *ch, size_t chlen,
         if (sc->sess->deliver != NULL)
             sc->sess->deliver(sc->sess->owner, ch, chlen, msg, mlen);
         count++;
+    }
+    /* pattern subscribers: one "pmessage" per matching (conn, pattern)
+     * pair. The pattern set is small in practice, so a linear scan with
+     * glob matching per pattern is acceptable (documented). */
+    if (rh_size(&srv->patterns) > 0) {
+        pat_pub_ctx pp;
+        pp.ch = ch;
+        pp.chlen = chlen;
+        pp.msg = msg;
+        pp.mlen = mlen;
+        pp.count = 0;
+        rh_each(&srv->patterns, pat_pub_cb, &pp);
+        count += pp.count;
     }
     return count;
 }
@@ -951,6 +1107,13 @@ static conn *conn_create(server *srv, pal_socket_t fd)
     c->sess->deliver_shard = srv_deliver_shard;
     c->sess->spublish_bus = srv_spublish_bus;
     c->sess->deliver = srv_deliver;
+    c->sess->psubscribe = srv_psubscribe;
+    c->sess->punsubscribe = srv_punsubscribe;
+    c->sess->each_pattern = srv_each_pattern;
+    c->sess->deliver_pattern = srv_deliver_pattern;
+    c->sess->pubsub_channels = srv_pubsub_channels;
+    c->sess->channel_nsub = srv_channel_nsub;
+    c->sess->numpat = srv_numpat;
     c->sess->io = &srv->io;
     c->sess->shutdown_ctx = srv;
     c->sess->request_shutdown = srv_request_shutdown;
@@ -992,6 +1155,8 @@ static void conn_free(conn *c)
         srv_unsubscribe(c->srv, c->sess, c->subs->ch, c->subs->chlen);
     while (c->ssubs != NULL)
         srv_sunsubscribe(c->srv, c->sess, c->ssubs->ch, c->ssubs->chlen);
+    while (c->psubs != NULL)
+        srv_punsubscribe(c->srv, c->sess, c->psubs->ch, c->psubs->chlen);
     if (c->tls != NULL) {
         pal_tls_shutdown(c->tls);
         pal_tls_free(c->tls);
@@ -1478,6 +1643,7 @@ server *server_create_ex(const char *host, uint16_t port, int backend)
     }
     rh_init(&s->channels);
     rh_init(&s->schannels);
+    rh_init(&s->patterns);
     if (host != NULL)
         snprintf(s->db.cluster_ip, sizeof(s->db.cluster_ip), "%s", host);
     s->db.cluster_port = s->port;
@@ -1882,6 +2048,7 @@ void server_destroy(server *s)
         pal_loop_free(s->loop);
     rh_destroy(&s->channels);
     rh_destroy(&s->schannels);
+    rh_destroy(&s->patterns);
     aof_close(s->aof);
     repl_backlog_free(&s->backlog);
     resp_buf_free(&s->prop_buf);

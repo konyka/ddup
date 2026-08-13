@@ -319,3 +319,88 @@ size_t zsl_count_in_range(zskiplist *z, const zrangespec *r)
     }
     return count;
 }
+
+/* member bytes three-way compare (prefix rule, same as zsl_cmp ties) */
+static int zsl_lex_cmp(const char *m1, size_t l1, const char *m2, size_t l2)
+{
+    size_t minl = l1 < l2 ? l1 : l2;
+    int c = minl > 0 ? memcmp(m1, m2, minl) : 0;
+    if (c != 0)
+        return c < 0 ? -1 : 1;
+    if (l1 < l2)
+        return -1;
+    if (l1 > l2)
+        return 1;
+    return 0;
+}
+
+static int zsl_lex_gte_min(const char *m, size_t mlen, const zlexbound *min)
+{
+    if (min->inf != 0)
+        return min->inf < 0;
+    {
+        int c = zsl_lex_cmp(m, mlen, min->s, min->len);
+        return min->ex ? c > 0 : c >= 0;
+    }
+}
+
+static int zsl_lex_lte_max(const char *m, size_t mlen, const zlexbound *max)
+{
+    if (max->inf != 0)
+        return max->inf > 0;
+    {
+        int c = zsl_lex_cmp(m, mlen, max->s, max->len);
+        return max->ex ? c < 0 : c <= 0;
+    }
+}
+
+/* bound vs bound: -inf < finite < +inf */
+static int zsl_lex_bound_cmp(const zlexbound *a, const zlexbound *b)
+{
+    if (a->inf != 0 || b->inf != 0) {
+        if (a->inf == b->inf)
+            return 0;
+        return a->inf < b->inf ? -1 : 1;
+    }
+    return zsl_lex_cmp(a->s, a->len, b->s, b->len);
+}
+
+static int zsl_lex_range_empty(const zlexrangespec *r)
+{
+    int c = zsl_lex_bound_cmp(&r->min, &r->max);
+    return c > 0 || (c == 0 && (r->min.ex || r->max.ex));
+}
+
+zsl_node *zsl_first_in_lex_range(zskiplist *z, const zlexrangespec *r)
+{
+    zsl_node *x = z->header;
+    int i;
+    if (zsl_lex_range_empty(r))
+        return NULL;
+    for (i = z->level - 1; i >= 0; i--)
+        while (x->level[i].forward != NULL &&
+               !zsl_lex_gte_min(x->level[i].forward->member,
+                                x->level[i].forward->mlen, &r->min))
+            x = x->level[i].forward;
+    x = x->level[0].forward;
+    if (x == NULL || !zsl_lex_lte_max(x->member, x->mlen, &r->max))
+        return NULL;
+    return x;
+}
+
+zsl_node *zsl_last_in_lex_range(zskiplist *z, const zlexrangespec *r)
+{
+    zsl_node *x = z->header;
+    int i;
+    if (zsl_lex_range_empty(r))
+        return NULL;
+    for (i = z->level - 1; i >= 0; i--)
+        while (x->level[i].forward != NULL &&
+               zsl_lex_lte_max(x->level[i].forward->member,
+                               x->level[i].forward->mlen, &r->max))
+            x = x->level[i].forward;
+    if (x == z->header ||
+        !zsl_lex_gte_min(x->member, x->mlen, &r->min))
+        return NULL;
+    return x;
+}

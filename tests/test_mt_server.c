@@ -275,6 +275,11 @@ static void test_blocked_commands_in_mt_mode(void)
               "-ERR command not supported in mt mode\r\n");
     roundtrip(a, "*1\r\n$4\r\nSYNC\r\n",
               "-ERR command not supported in mt mode\r\n");
+    /* pattern subscriptions are not supported in mt mode (Phase 43) */
+    roundtrip(a, "*2\r\n$10\r\nPSUBSCRIBE\r\n$6\r\nnews.*\r\n",
+              "-ERR command not supported in mt mode\r\n");
+    roundtrip(a, "*1\r\n$12\r\nPUNSUBSCRIBE\r\n",
+              "-ERR command not supported in mt mode\r\n");
     /* The session still works for normal commands afterwards. */
     roundtrip(a, "*1\r\n$4\r\nPING\r\n", "+PONG\r\n");
 

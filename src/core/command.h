@@ -16,6 +16,10 @@
 #define DB_POLICY_ALLKEYS_LRU 0 /* default */
 #define DB_POLICY_NOEVICTION 1
 
+/* commandstats arrays are indexed by CMD_* id; sized with room to spare
+ * (CMD_MAX must stay below this). */
+#define CMD_STATS_SLOTS 192
+
 /* One logical database. Shared-nothing: each IO thread owns its own.
  * `expires` maps key -> 8-byte absolute wall-ms expiry (raw uint64).
  * used_memory is an incremental estimate: per live entry
@@ -57,8 +61,8 @@ typedef struct db {
     void *lua_state;       /* shared interpreter, lazy (script.c owns it) */
     /* commandstats: per-command-id call count and cumulative microseconds
      * (indexed by CMD_* id, room to spare) */
-    uint64_t cmd_calls[128];
-    uint64_t cmd_usecs[128];
+    uint64_t cmd_calls[CMD_STATS_SLOTS];
+    uint64_t cmd_usecs[CMD_STATS_SLOTS];
 } db;
 
 void db_init(db *d);
@@ -94,8 +98,8 @@ typedef struct info_stats {
     int ndbs;        /* logical dbs covered by db_keys/db_expires */
     uint64_t db_keys[INFO_STATS_MAX_DBS];
     uint64_t db_expires[INFO_STATS_MAX_DBS];
-    uint64_t cmd_calls[128];  /* indexed by CMD_* id */
-    uint64_t cmd_usecs[128];
+    uint64_t cmd_calls[CMD_STATS_SLOTS];  /* indexed by CMD_* id */
+    uint64_t cmd_usecs[CMD_STATS_SLOTS];
     io_counters io;
 } info_stats;
 
@@ -268,10 +272,30 @@ enum {
     CMD_GETRANGE,
     CMD_INCRBY,
     CMD_DECRBY,
-    CMD_INCRBYFLOAT
+    CMD_INCRBYFLOAT,
+    CMD_HSTRLEN,
+    CMD_HRANDFIELD,
+    CMD_LPOS,
+    CMD_LREM,
+    CMD_LTRIM,
+    CMD_RPOPLPUSH,
+    CMD_SINTERCARD,
+    CMD_SINTERSTORE,
+    CMD_SUNIONSTORE,
+    CMD_SDIFFSTORE,
+    CMD_ZPOPMIN,
+    CMD_ZPOPMAX,
+    CMD_ZREMRANGEBYRANK,
+    CMD_ZMSCORE,
+    CMD_ZRANDMEMBER,
+    CMD_ZRANGEBYLEX,
+    CMD_ZREVRANGEBYLEX,
+    CMD_ZREMRANGEBYLEX,
+    CMD_PSUBSCRIBE,
+    CMD_PUNSUBSCRIBE
 };
 
-#define CMD_MAX CMD_INCRBYFLOAT
+#define CMD_MAX CMD_PUNSUBSCRIBE
 
 /* Resolve a command name to its stable ID; case-insensitive. */
 uint16_t cmd_resolve(const char *name, size_t len);

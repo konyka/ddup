@@ -109,6 +109,25 @@ typedef struct session {
     void (*spublish_bus)(void *ctx, const char *ch, size_t chlen,
                          const char *msg, size_t mlen);
     size_t nssub; /* shard channels this session is subscribed to */
+    /* pattern pub/sub (Redis PSUBSCRIBE): parallel registry hooks, same
+     * ownership model; the session keeps only the count, the server owns
+     * the pattern registry. deliver_pattern writes "pmessage" pushes;
+     * pubsub_channels/channel_nsub/numpat back PUBSUB introspection */
+    ptrdiff_t (*psubscribe)(void *ctx, struct session *s, const char *pat,
+                            size_t len);
+    size_t (*punsubscribe)(void *ctx, struct session *s, const char *pat,
+                           size_t len);
+    void (*each_pattern)(void *ctx, struct session *s,
+                         void (*cb)(const char *pat, size_t len, void *arg),
+                         void *arg);
+    void (*deliver_pattern)(void *owner, const char *pat, size_t patlen,
+                            const char *ch, size_t chlen, const char *msg,
+                            size_t mlen);
+    size_t (*pubsub_channels)(void *ctx, const char *pat, size_t patlen,
+                              resp_buf *out);
+    long (*channel_nsub)(void *ctx, const char *ch, size_t len);
+    long (*numpat)(void *ctx);
+    size_t npsub; /* patterns this session is subscribed to */
     /* AOF hook (server-owned): called with the session's db index and the
      * original argv of every successful mutating command. NULL = no
      * persistence logging. raw/raw_len carry the exact client request

@@ -68,4 +68,26 @@ zsl_node *zsl_first_in_range(zskiplist *z, const zrangespec *r);
 zsl_node *zsl_last_in_range(zskiplist *z, const zrangespec *r);
 size_t zsl_count_in_range(zskiplist *z, const zrangespec *r);
 
+/* Lexicographic (member-only) range bound, as in Redis zlexrangespec.
+ * inf: -1 = "-" (negative infinity), +1 = "+" (positive infinity),
+ * 0 = finite member bytes s/len; ex marks an open interval "(x". */
+typedef struct zlexbound {
+    const char *s;
+    size_t len;
+    int ex;
+    int inf;
+} zlexbound;
+
+typedef struct zlexrangespec {
+    zlexbound min;
+    zlexbound max;
+} zlexrangespec;
+
+/* Lex range queries over the (score, member) order; only defined when
+ * all scores are equal, same caveat as Redis. first/last node inside
+ * spec (NULL if empty). Traverse from first to last (pointer equality)
+ * to enumerate the range. */
+zsl_node *zsl_first_in_lex_range(zskiplist *z, const zlexrangespec *r);
+zsl_node *zsl_last_in_lex_range(zskiplist *z, const zlexrangespec *r);
+
 #endif /* DDUP_SKIPLIST_H */

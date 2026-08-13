@@ -102,6 +102,8 @@ list_node *obj_list_at(obj_list *l, size_t idx);
 /* Replace element data at idx. Returns 1 on success, 0 when idx >= list
  * length, -1 when the replacement length is invalid. */
 int obj_list_set_at(obj_list *l, size_t idx, const char *data, size_t len);
+/* Unlink and free node n (must belong to l); updates len/mem. */
+void obj_list_remove(obj_list *l, list_node *n);
 
 /* ------------------------------------------------------------------ */
 /* set object: rh_table member -> empty value (uniqueness via table)  */

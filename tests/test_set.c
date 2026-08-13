@@ -423,6 +423,161 @@ static void test_set_ttl_and_memory(void)
     db_destroy(&d);
 }
 
+static void test_sintercard(void)
+{
+    db d;
+    resp_buf out;
+    db_init(&d);
+    resp_buf_init(&out);
+
+    exec_cmd(&d, T0, &out, 6, "SADD", "a", "1", "2", "3", "4");
+    EXPECT(out, ":4\r\n");
+    exec_cmd(&d, T0, &out, 5, "SADD", "b", "3", "4", "5");
+    EXPECT(out, ":3\r\n");
+    exec_cmd(&d, T0, &out, 4, "SADD", "c", "4", "5");
+    EXPECT(out, ":2\r\n");
+
+    exec_cmd(&d, T0, &out, 4, "SINTERCARD", "2", "a", "b");
+    EXPECT(out, ":2\r\n");
+    exec_cmd(&d, T0, &out, 5, "SINTERCARD", "3", "a", "b", "c");
+    EXPECT(out, ":1\r\n");
+    /* missing key empties the intersection */
+    exec_cmd(&d, T0, &out, 4, "SINTERCARD", "2", "a", "nokey");
+    EXPECT(out, ":0\r\n");
+    exec_cmd(&d, T0, &out, 3, "SINTERCARD", "1", "a");
+    EXPECT(out, ":4\r\n");
+
+    /* LIMIT: caps the result, 0 = no limit */
+    exec_cmd(&d, T0, &out, 6, "SINTERCARD", "2", "a", "b", "LIMIT", "1");
+    EXPECT(out, ":1\r\n");
+    exec_cmd(&d, T0, &out, 6, "SINTERCARD", "2", "a", "b", "LIMIT", "0");
+    EXPECT(out, ":2\r\n");
+    exec_cmd(&d, T0, &out, 6, "SINTERCARD", "2", "a", "b", "LIMIT", "100");
+    EXPECT(out, ":2\r\n");
+
+    /* operands are not modified */
+    exec_cmd(&d, T0, &out, 2, "SCARD", "a");
+    EXPECT(out, ":4\r\n");
+
+    /* errors */
+    exec_cmd(&d, T0, &out, 4, "SINTERCARD", "3", "a", "b");
+    EXPECT(out,
+           "-ERR Number of keys can't be greater than number of args\r\n");
+    exec_cmd(&d, T0, &out, 3, "SINTERCARD", "0", "a");
+    EXPECT(out,
+           "-ERR Number of keys can't be greater than number of args\r\n");
+    exec_cmd(&d, T0, &out, 3, "SINTERCARD", "x", "a");
+    EXPECT(out, "-ERR value is not an integer or out of range\r\n");
+    exec_cmd(&d, T0, &out, 6, "SINTERCARD", "2", "a", "b", "LIMIT", "x");
+    EXPECT(out, "-ERR value is not an integer or out of range\r\n");
+    exec_cmd(&d, T0, &out, 6, "SINTERCARD", "2", "a", "b", "LIMIT", "-1");
+    EXPECT(out, "-ERR LIMIT can't be negative\r\n");
+    exec_cmd(&d, T0, &out, 6, "SINTERCARD", "2", "a", "b", "BOGUS", "1");
+    EXPECT(out, "-ERR syntax error\r\n");
+    exec_cmd(&d, T0, &out, 4, "SINTERCARD", "1", "a", "LIMIT");
+    EXPECT(out, "-ERR syntax error\r\n");
+    exec_cmd(&d, T0, &out, 2, "SINTERCARD", "2");
+    EXPECT(out,
+           "-ERR wrong number of arguments for 'sintercard' command\r\n");
+
+    /* wrong type operand */
+    exec_cmd(&d, T0, &out, 3, "SET", "str", "v");
+    EXPECT(out, "+OK\r\n");
+    exec_cmd(&d, T0, &out, 4, "SINTERCARD", "2", "a", "str");
+    EXPECT(out,
+           "-WRONGTYPE Operation against a key holding the wrong kind of "
+           "value\r\n");
+
+    resp_buf_free(&out);
+    db_destroy(&d);
+}
+
+static void test_set_stores(void)
+{
+    db d;
+    resp_buf out;
+    db_init(&d);
+    resp_buf_init(&out);
+
+    exec_cmd(&d, T0, &out, 6, "SADD", "a", "1", "2", "3", "4");
+    EXPECT(out, ":4\r\n");
+    exec_cmd(&d, T0, &out, 5, "SADD", "b", "3", "4", "5");
+    EXPECT(out, ":3\r\n");
+
+    /* SINTERSTORE: returns cardinality, dst becomes the result set */
+    exec_cmd(&d, T0, &out, 4, "SINTERSTORE", "dst", "a", "b");
+    EXPECT(out, ":2\r\n");
+    exec_cmd(&d, T0, &out, 2, "SMEMBERS", "dst");
+    DD_CHECK(out.len >= 4 && memcmp(out.data, "*2\r\n", 4) == 0);
+    check_contains(&out, "$1\r\n3\r\n");
+    check_contains(&out, "$1\r\n4\r\n");
+
+    /* SUNIONSTORE / SDIFFSTORE */
+    exec_cmd(&d, T0, &out, 4, "SUNIONSTORE", "dst", "a", "b");
+    EXPECT(out, ":5\r\n");
+    exec_cmd(&d, T0, &out, 2, "SCARD", "dst");
+    EXPECT(out, ":5\r\n");
+    exec_cmd(&d, T0, &out, 4, "SDIFFSTORE", "dst", "a", "b");
+    EXPECT(out, ":2\r\n");
+    exec_cmd(&d, T0, &out, 2, "SMEMBERS", "dst");
+    check_contains(&out, "$1\r\n1\r\n");
+    check_contains(&out, "$1\r\n2\r\n");
+
+    /* dst may hold any old type: overwritten, TTL cleared */
+    exec_cmd(&d, T0, &out, 2, "DEL", "dst");
+    EXPECT(out, ":1\r\n");
+    exec_cmd(&d, T0, &out, 3, "SET", "dst", "str");
+    EXPECT(out, "+OK\r\n");
+    exec_cmd(&d, T0, &out, 3, "EXPIRE", "dst", "100");
+    EXPECT(out, ":1\r\n");
+    exec_cmd(&d, T0, &out, 4, "SINTERSTORE", "dst", "a", "b");
+    EXPECT(out, ":2\r\n");
+    exec_cmd(&d, T0, &out, 2, "TYPE", "dst");
+    EXPECT(out, "+set\r\n");
+    exec_cmd(&d, T0, &out, 2, "TTL", "dst");
+    EXPECT(out, ":-1\r\n");
+
+    /* empty result: dst deleted */
+    exec_cmd(&d, T0, &out, 3, "SADD", "e1", "x");
+    EXPECT(out, ":1\r\n");
+    exec_cmd(&d, T0, &out, 3, "SADD", "e2", "y");
+    EXPECT(out, ":1\r\n");
+    exec_cmd(&d, T0, &out, 4, "SINTERSTORE", "dst", "e1", "e2");
+    EXPECT(out, ":0\r\n");
+    exec_cmd(&d, T0, &out, 2, "EXISTS", "dst");
+    EXPECT(out, ":0\r\n");
+
+    /* dst may be one of the sources (evaluated before the store) */
+    exec_cmd(&d, T0, &out, 4, "SINTERSTORE", "a", "a", "b");
+    EXPECT(out, ":2\r\n");
+    exec_cmd(&d, T0, &out, 2, "SCARD", "a");
+    EXPECT(out, ":2\r\n");
+
+    /* wrong type source; dst untouched by the failure */
+    exec_cmd(&d, T0, &out, 3, "SET", "str", "v");
+    EXPECT(out, "+OK\r\n");
+    exec_cmd(&d, T0, &out, 4, "SUNIONSTORE", "dst", "b", "str");
+    EXPECT(out,
+           "-WRONGTYPE Operation against a key holding the wrong kind of "
+           "value\r\n");
+    exec_cmd(&d, T0, &out, 2, "EXISTS", "dst");
+    EXPECT(out, ":0\r\n");
+
+    /* arity */
+    exec_cmd(&d, T0, &out, 2, "SINTERSTORE", "dst");
+    EXPECT(out,
+           "-ERR wrong number of arguments for 'sinterstore' command\r\n");
+    exec_cmd(&d, T0, &out, 2, "SUNIONSTORE", "dst");
+    EXPECT(out,
+           "-ERR wrong number of arguments for 'sunionstore' command\r\n");
+    exec_cmd(&d, T0, &out, 2, "SDIFFSTORE", "dst");
+    EXPECT(out,
+           "-ERR wrong number of arguments for 'sdiffstore' command\r\n");
+
+    resp_buf_free(&out);
+    db_destroy(&d);
+}
+
 int main(void)
 {
     DD_RUN(test_set_rejects_unrepresentable_member);
@@ -435,5 +590,7 @@ int main(void)
     DD_RUN(test_set_ops);
     DD_RUN(test_set_wrongtype);
     DD_RUN(test_set_ttl_and_memory);
+    DD_RUN(test_sintercard);
+    DD_RUN(test_set_stores);
     return DD_TEST_SUMMARY();
 }

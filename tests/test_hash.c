@@ -351,6 +351,128 @@ static void test_hash_ttl_and_memory(void)
     db_destroy(&d);
 }
 
+static void test_hstrlen(void)
+{
+    db d;
+    resp_buf out;
+    db_init(&d);
+    resp_buf_init(&out);
+
+    /* missing key / missing field -> 0 */
+    exec_cmd(&d, T0, &out, 3, "HSTRLEN", "nokey", "f");
+    EXPECT(out, ":0\r\n");
+
+    exec_cmd(&d, T0, &out, 6, "HSET", "h", "f", "hello", "empty", "");
+    EXPECT(out, ":2\r\n");
+    exec_cmd(&d, T0, &out, 3, "HSTRLEN", "h", "f");
+    EXPECT(out, ":5\r\n");
+    exec_cmd(&d, T0, &out, 3, "HSTRLEN", "h", "empty");
+    EXPECT(out, ":0\r\n");
+    exec_cmd(&d, T0, &out, 3, "HSTRLEN", "h", "nofield");
+    EXPECT(out, ":0\r\n");
+
+    /* wrong arg counts */
+    exec_cmd(&d, T0, &out, 2, "HSTRLEN", "h");
+    EXPECT(out, "-ERR wrong number of arguments for 'hstrlen' command\r\n");
+    exec_cmd(&d, T0, &out, 4, "HSTRLEN", "h", "f", "x");
+    EXPECT(out, "-ERR wrong number of arguments for 'hstrlen' command\r\n");
+
+    /* wrong type */
+    exec_cmd(&d, T0, &out, 3, "SET", "s", "v");
+    EXPECT(out, "+OK\r\n");
+    exec_cmd(&d, T0, &out, 3, "HSTRLEN", "s", "f");
+    EXPECT(out,
+           "-WRONGTYPE Operation against a key holding the wrong kind of "
+           "value\r\n");
+
+    resp_buf_free(&out);
+    db_destroy(&d);
+}
+
+static void test_hrandfield(void)
+{
+    db d;
+    resp_buf out;
+    int i;
+    db_init(&d);
+    resp_buf_init(&out);
+
+    /* missing key: null bulk without count, empty array with count */
+    exec_cmd(&d, T0, &out, 2, "HRANDFIELD", "nokey");
+    EXPECT(out, "$-1\r\n");
+    exec_cmd(&d, T0, &out, 3, "HRANDFIELD", "nokey", "3");
+    EXPECT(out, "*0\r\n");
+    exec_cmd(&d, T0, &out, 4, "HRANDFIELD", "nokey", "-2", "WITHVALUES");
+    EXPECT(out, "*0\r\n");
+
+    exec_cmd(&d, T0, &out, 8, "HSET", "h", "a", "1", "b", "2", "c", "3");
+    EXPECT(out, ":3\r\n");
+
+    /* single field: one of the fields, hash untouched */
+    exec_cmd(&d, T0, &out, 2, "HRANDFIELD", "h");
+    DD_CHECK(out.len == 7 && out.data[0] == '$');
+    DD_CHECK(out.data[4] == 'a' || out.data[4] == 'b' || out.data[4] == 'c');
+    exec_cmd(&d, T0, &out, 2, "HLEN", "h");
+    EXPECT(out, ":3\r\n");
+
+    /* positive count: distinct fields, at most count */
+    exec_cmd(&d, T0, &out, 3, "HRANDFIELD", "h", "2");
+    DD_CHECK(out.len == 18 && memcmp(out.data, "*2\r\n", 4) == 0);
+    DD_CHECK(out.data[8] != out.data[16]);
+    /* count >= hlen: every field exactly once */
+    exec_cmd(&d, T0, &out, 3, "HRANDFIELD", "h", "10");
+    DD_CHECK(out.len >= 4 && memcmp(out.data, "*3\r\n", 4) == 0);
+    check_contains(&out, "$1\r\na\r\n");
+    check_contains(&out, "$1\r\nb\r\n");
+    check_contains(&out, "$1\r\nc\r\n");
+    /* count 0 -> empty array */
+    exec_cmd(&d, T0, &out, 3, "HRANDFIELD", "h", "0");
+    EXPECT(out, "*0\r\n");
+
+    /* negative count: exactly |count|, repeats allowed */
+    exec_cmd(&d, T0, &out, 3, "HRANDFIELD", "h", "-5");
+    DD_CHECK(out.len == 4 + 5 * 7 && memcmp(out.data, "*5\r\n", 4) == 0);
+    for (i = 0; i < 5; i++)
+        DD_CHECK(out.data[8 + i * 7] == 'a' || out.data[8 + i * 7] == 'b' ||
+                 out.data[8 + i * 7] == 'c');
+
+    /* WITHVALUES: flat field/value pairs (all fields when count >= hlen) */
+    exec_cmd(&d, T0, &out, 4, "HRANDFIELD", "h", "3", "WITHVALUES");
+    DD_CHECK(out.len >= 4 && memcmp(out.data, "*6\r\n", 4) == 0);
+    check_contains(&out, "$1\r\na\r\n$1\r\n1\r\n");
+    check_contains(&out, "$1\r\nb\r\n$1\r\n2\r\n");
+    check_contains(&out, "$1\r\nc\r\n$1\r\n3\r\n");
+    /* negative count with values: |count| pairs */
+    exec_cmd(&d, T0, &out, 4, "HRANDFIELD", "h", "-2", "WITHVALUES");
+    DD_CHECK(out.len >= 4 && memcmp(out.data, "*4\r\n", 4) == 0);
+    /* lowercase option accepted */
+    exec_cmd(&d, T0, &out, 4, "HRANDFIELD", "h", "1", "withvalues");
+    DD_CHECK(out.len >= 4 && memcmp(out.data, "*2\r\n", 4) == 0);
+
+    /* errors */
+    exec_cmd(&d, T0, &out, 3, "HRANDFIELD", "h", "x");
+    EXPECT(out, "-ERR value is not an integer or out of range\r\n");
+    exec_cmd(&d, T0, &out, 4, "HRANDFIELD", "h", "2", "BADOPT");
+    EXPECT(out, "-ERR syntax error\r\n");
+    exec_cmd(&d, T0, &out, 1, "HRANDFIELD");
+    EXPECT(out,
+           "-ERR wrong number of arguments for 'hrandfield' command\r\n");
+    exec_cmd(&d, T0, &out, 5, "HRANDFIELD", "h", "1", "WITHVALUES", "x");
+    EXPECT(out,
+           "-ERR wrong number of arguments for 'hrandfield' command\r\n");
+
+    /* wrong type */
+    exec_cmd(&d, T0, &out, 3, "SET", "s", "v");
+    EXPECT(out, "+OK\r\n");
+    exec_cmd(&d, T0, &out, 2, "HRANDFIELD", "s");
+    EXPECT(out,
+           "-WRONGTYPE Operation against a key holding the wrong kind of "
+           "value\r\n");
+
+    resp_buf_free(&out);
+    db_destroy(&d);
+}
+
 int main(void)
 {
     DD_RUN(test_hash_rejects_unrepresentable_lengths);
@@ -362,5 +484,7 @@ int main(void)
     DD_RUN(test_hincrby);
     DD_RUN(test_hash_wrongtype);
     DD_RUN(test_hash_ttl_and_memory);
+    DD_RUN(test_hstrlen);
+    DD_RUN(test_hrandfield);
     return DD_TEST_SUMMARY();
 }

@@ -259,6 +259,90 @@ static void test_differential(void)
     zsl_free(z);
 }
 
+static zlexbound lex_finite(const char *s, int ex)
+{
+    zlexbound b;
+    b.s = s;
+    b.len = strlen(s);
+    b.ex = ex;
+    b.inf = 0;
+    return b;
+}
+
+static zlexbound lex_inf(int sign)
+{
+    zlexbound b;
+    b.s = NULL;
+    b.len = 0;
+    b.ex = 0;
+    b.inf = sign;
+    return b;
+}
+
+static int mem_is(const zsl_node *n, const char *s)
+{
+    size_t l = strlen(s);
+    return n != NULL && n->mlen == l && memcmp(n->member, s, l) == 0;
+}
+
+static void test_lex_ranges(void)
+{
+    zskiplist *z = zsl_create();
+    const char *members[7] = {"a", "b", "c", "d", "e", "f", "g"};
+    int i;
+    for (i = 0; i < 7; i++)
+        zsl_insert(z, 0.0, members[i], 1);
+
+    {
+        zlexrangespec r = {lex_finite("a", 0), lex_finite("g", 0)};
+        DD_CHECK(mem_is(zsl_first_in_lex_range(z, &r), "a"));
+        DD_CHECK(mem_is(zsl_last_in_lex_range(z, &r), "g"));
+    }
+    {
+        zlexrangespec r = {lex_finite("a", 1), lex_finite("g", 1)};
+        DD_CHECK(mem_is(zsl_first_in_lex_range(z, &r), "b"));
+        DD_CHECK(mem_is(zsl_last_in_lex_range(z, &r), "f"));
+    }
+    {
+        zlexrangespec r = {lex_finite("b", 0), lex_finite("f", 1)};
+        DD_CHECK(mem_is(zsl_first_in_lex_range(z, &r), "b"));
+        DD_CHECK(mem_is(zsl_last_in_lex_range(z, &r), "e"));
+    }
+    {
+        zlexrangespec all = {lex_inf(-1), lex_inf(1)};
+        zlexrangespec lo = {lex_inf(-1), lex_finite("c", 0)};
+        zlexrangespec hi = {lex_finite("e", 0), lex_inf(1)};
+        DD_CHECK(mem_is(zsl_first_in_lex_range(z, &all), "a"));
+        DD_CHECK(mem_is(zsl_last_in_lex_range(z, &all), "g"));
+        DD_CHECK(mem_is(zsl_first_in_lex_range(z, &lo), "a"));
+        DD_CHECK(mem_is(zsl_last_in_lex_range(z, &lo), "c"));
+        DD_CHECK(mem_is(zsl_first_in_lex_range(z, &hi), "e"));
+        DD_CHECK(mem_is(zsl_last_in_lex_range(z, &hi), "g"));
+    }
+    /* empty ranges */
+    {
+        zlexrangespec exex = {lex_finite("c", 1), lex_finite("c", 1)};
+        zlexrangespec rev = {lex_finite("d", 0), lex_finite("b", 0)};
+        zlexrangespec out = {lex_finite("x", 0), lex_finite("z", 0)};
+        zlexrangespec past = {lex_finite("h", 0), lex_inf(1)};
+        DD_CHECK(zsl_first_in_lex_range(z, &exex) == NULL);
+        DD_CHECK(zsl_last_in_lex_range(z, &exex) == NULL);
+        DD_CHECK(zsl_first_in_lex_range(z, &rev) == NULL);
+        DD_CHECK(zsl_last_in_lex_range(z, &rev) == NULL);
+        DD_CHECK(zsl_first_in_lex_range(z, &out) == NULL);
+        DD_CHECK(zsl_last_in_lex_range(z, &out) == NULL);
+        DD_CHECK(zsl_first_in_lex_range(z, &past) == NULL);
+        DD_CHECK(zsl_last_in_lex_range(z, &past) == NULL);
+    }
+    /* empty member bound is a valid finite bound: "" < "a" */
+    {
+        zlexrangespec r = {lex_finite("", 0), lex_finite("b", 0)};
+        DD_CHECK(mem_is(zsl_first_in_lex_range(z, &r), "a"));
+        DD_CHECK(mem_is(zsl_last_in_lex_range(z, &r), "b"));
+    }
+    zsl_free(z);
+}
+
 int main(void)
 {
     DD_RUN(test_insert_order);
@@ -266,6 +350,7 @@ int main(void)
     DD_RUN(test_duplicate_score_tiebreak);
     DD_RUN(test_delete_and_rank);
     DD_RUN(test_ranges);
+    DD_RUN(test_lex_ranges);
     DD_RUN(test_differential);
     return DD_TEST_SUMMARY();
 }

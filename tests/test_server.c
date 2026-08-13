@@ -529,6 +529,151 @@ static void test_pubsub_over_socket(void)
     server_destroy(s);
 }
 
+/* Pump the server until exactly strlen(want) push bytes arrive on c. */
+static void expect_push(server *s, pal_socket_t c, const char *want)
+{
+    char buf[1024];
+    size_t wlen = strlen(want), got = 0;
+    int iter = 0;
+    DD_CHECK(wlen <= sizeof(buf));
+    while (got < wlen && iter < 10000) {
+        ptrdiff_t n;
+        iter++;
+        server_run_once(s, 50);
+        n = pal_recv(c, buf + got, sizeof(buf) - got);
+        if (n > 0)
+            got += (size_t)n;
+    }
+    DD_CHECK_EQ_INT((long long)wlen, (long long)got);
+    DD_CHECK_MEM(want, wlen, buf, got);
+}
+
+/* tiny local substring search (memmem is GNU-only) */
+static int buf_contains(const char *hay, size_t hlen, const char *needle,
+                        size_t nlen)
+{
+    size_t i;
+    if (nlen > hlen)
+        return 0;
+    for (i = 0; i + nlen <= hlen; i++)
+        if (memcmp(hay + i, needle, nlen) == 0)
+            return 1;
+    return 0;
+}
+
+/* Two pushes whose relative order depends on hash-table iteration: read
+ * both frames, then check each is present. */
+static void expect_push2(server *s, pal_socket_t c, const char *f1,
+                         const char *f2)
+{
+    char buf[1024];
+    size_t l1 = strlen(f1), l2 = strlen(f2), got = 0;
+    int iter = 0;
+    DD_CHECK(l1 + l2 <= sizeof(buf));
+    while (got < l1 + l2 && iter < 10000) {
+        ptrdiff_t n;
+        iter++;
+        server_run_once(s, 50);
+        n = pal_recv(c, buf + got, sizeof(buf) - got);
+        if (n > 0)
+            got += (size_t)n;
+    }
+    DD_CHECK_EQ_INT((long long)(l1 + l2), (long long)got);
+    DD_CHECK(buf_contains(buf, got, f1, l1));
+    DD_CHECK(buf_contains(buf, got, f2, l2));
+}
+
+static void test_psubscribe_over_socket(void)
+{
+    server *s = make_server();
+    pal_socket_t a, b, c;
+    DD_CHECK(s != NULL);
+    a = connect_client(s);
+    b = connect_client(s);
+    c = connect_client(s);
+
+    /* psubscribe confirm frames report the total subscription count;
+     * a duplicate pattern is acknowledged but not double-registered */
+    roundtrip(s, a, "*2\r\n$10\r\nPSUBSCRIBE\r\n$6\r\nnews.*\r\n",
+              "*3\r\n$10\r\npsubscribe\r\n$6\r\nnews.*\r\n:1\r\n");
+    roundtrip(s, a, "*2\r\n$10\r\nPSUBSCRIBE\r\n$6\r\nnews.*\r\n",
+              "*3\r\n$10\r\npsubscribe\r\n$6\r\nnews.*\r\n:1\r\n");
+    roundtrip(s, b, "*2\r\n$9\r\nSUBSCRIBE\r\n$9\r\nnews.tech\r\n",
+              "*3\r\n$9\r\nsubscribe\r\n$9\r\nnews.tech\r\n:1\r\n");
+
+    /* mixed delivery: channel subscriber gets "message", the pattern
+     * subscriber gets "pmessage"; PUBLISH counts both */
+    roundtrip(s, c, "*3\r\n$7\r\nPUBLISH\r\n$9\r\nnews.tech\r\n$5\r\nhello\r\n",
+              ":2\r\n");
+    expect_push(s, a, "*4\r\n$8\r\npmessage\r\n$6\r\nnews.*\r\n$9\r\nnews.tech"
+                      "\r\n$5\r\nhello\r\n");
+    expect_push(s, b, "*3\r\n$7\r\nmessage\r\n$9\r\nnews.tech\r\n$5\r\nhello"
+                      "\r\n");
+
+    /* a second matching pattern yields one pmessage per (conn, pattern) */
+    roundtrip(s, a, "*2\r\n$10\r\nPSUBSCRIBE\r\n$6\r\n*.tech\r\n",
+              "*3\r\n$10\r\npsubscribe\r\n$6\r\n*.tech\r\n:2\r\n");
+    roundtrip(s, c, "*3\r\n$7\r\nPUBLISH\r\n$9\r\nnews.tech\r\n$2\r\nyo\r\n",
+              ":3\r\n");
+    expect_push2(s, a,
+                 "*4\r\n$8\r\npmessage\r\n$6\r\nnews.*\r\n$9\r\nnews.tech"
+                 "\r\n$2\r\nyo\r\n",
+                 "*4\r\n$8\r\npmessage\r\n$6\r\n*.tech\r\n$9\r\nnews.tech"
+                 "\r\n$2\r\nyo\r\n");
+    expect_push(s, b, "*3\r\n$7\r\nmessage\r\n$9\r\nnews.tech\r\n$2\r\nyo\r\n");
+    roundtrip(s, c, "*3\r\n$7\r\nPUBLISH\r\n$5\r\nother\r\n$1\r\nx\r\n",
+              ":0\r\n");
+
+    /* PUBSUB introspection */
+    roundtrip(s, c, "*2\r\n$6\r\nPUBSUB\r\n$6\r\nNUMPAT\r\n", ":2\r\n");
+    roundtrip(s, c, "*2\r\n$6\r\nPUBSUB\r\n$8\r\nCHANNELS\r\n",
+              "*1\r\n$9\r\nnews.tech\r\n");
+    roundtrip(s, c, "*3\r\n$6\r\nPUBSUB\r\n$8\r\nCHANNELS\r\n$2\r\nn*\r\n",
+              "*1\r\n$9\r\nnews.tech\r\n");
+    roundtrip(s, c, "*3\r\n$6\r\nPUBSUB\r\n$8\r\nCHANNELS\r\n$2\r\nz*\r\n",
+              "*0\r\n");
+    roundtrip(s, c,
+              "*4\r\n$6\r\nPUBSUB\r\n$6\r\nNUMSUB\r\n$9\r\nnews.tech\r\n"
+              "$4\r\nnone\r\n",
+              "*4\r\n$9\r\nnews.tech\r\n:1\r\n$4\r\nnone\r\n:0\r\n");
+
+    /* subscribed mode: regular commands are rejected, PSUBSCRIBE allowed */
+    roundtrip(s, a, "*2\r\n$3\r\nGET\r\n$1\r\nk\r\n",
+              "-ERR Can't execute 'get': only (P)SUBSCRIBE / (P)UNSUBSCRIBE / "
+              "PING / QUIT / SHUTDOWN are allowed in this context\r\n");
+    roundtrip(s, a, "*1\r\n$4\r\nPING\r\n", "+PONG\r\n");
+
+    /* punsubscribe: unknown patterns are acknowledged with the count
+     * unchanged; the no-arg form drops every remaining pattern */
+    roundtrip(s, a, "*2\r\n$12\r\nPUNSUBSCRIBE\r\n$6\r\nnews.*\r\n",
+              "*3\r\n$12\r\npunsubscribe\r\n$6\r\nnews.*\r\n:1\r\n");
+    roundtrip(s, a, "*2\r\n$12\r\nPUNSUBSCRIBE\r\n$6\r\nnosuch\r\n",
+              "*3\r\n$12\r\npunsubscribe\r\n$6\r\nnosuch\r\n:1\r\n");
+    roundtrip(s, a, "*1\r\n$12\r\nPUNSUBSCRIBE\r\n",
+              "*3\r\n$12\r\npunsubscribe\r\n$6\r\n*.tech\r\n:0\r\n");
+    roundtrip(s, c, "*2\r\n$6\r\nPUBSUB\r\n$6\r\nNUMPAT\r\n", ":0\r\n");
+    roundtrip(s, a, "*3\r\n$3\r\nSET\r\n$1\r\nk\r\n$1\r\nv\r\n", "+OK\r\n");
+
+    /* the count mixes channel and pattern subscriptions */
+    roundtrip(s, b, "*2\r\n$10\r\nPSUBSCRIBE\r\n$1\r\nx\r\n",
+              "*3\r\n$10\r\npsubscribe\r\n$1\r\nx\r\n:2\r\n");
+    roundtrip(s, b, "*2\r\n$12\r\nPUNSUBSCRIBE\r\n$1\r\nx\r\n",
+              "*3\r\n$12\r\npunsubscribe\r\n$1\r\nx\r\n:1\r\n");
+
+    /* closing a pattern subscriber unregisters its patterns */
+    roundtrip(s, a, "*2\r\n$10\r\nPSUBSCRIBE\r\n$6\r\nnews.*\r\n",
+              "*3\r\n$10\r\npsubscribe\r\n$6\r\nnews.*\r\n:1\r\n");
+    pal_close(a);
+    server_run_once(s, 50);
+    roundtrip(s, c, "*2\r\n$6\r\nPUBSUB\r\n$6\r\nNUMPAT\r\n", ":0\r\n");
+    roundtrip(s, c, "*3\r\n$7\r\nPUBLISH\r\n$9\r\nnews.tech\r\n$5\r\nhello\r\n",
+              ":1\r\n");
+
+    pal_close(b);
+    pal_close(c);
+    server_destroy(s);
+}
+
 static void test_auth_over_socket(void)
 {
     server *s = make_server();
@@ -851,6 +996,7 @@ static void run_all_tests(void)
     DD_RUN(test_readiness_complete_at_limit);
     DD_RUN(test_proactor_destroy_with_open_connection);
     DD_RUN(test_pubsub_over_socket);
+    DD_RUN(test_psubscribe_over_socket);
     DD_RUN(test_auth_over_socket);
     DD_RUN(test_shutdown_command);
     DD_RUN(test_connection_buf_pool);

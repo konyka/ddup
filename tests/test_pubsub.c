@@ -282,10 +282,68 @@ static void test_server_registry_rejection_is_transactional(void)
     db_destroy(&d);
 }
 
+static void test_psubscribe_no_hooks(void)
+{
+    db d;
+    session *s;
+    resp_buf out;
+    db_init(&d);
+    resp_buf_init(&out);
+    s = session_create(&d);
+
+    /* registry-less session: the pattern counter moves, confirm frames
+     * report the total across nsub/nssub/npsub */
+    exec_sess(s, T0, &out, 2, "SUBSCRIBE", "ch");
+    EXPECT(out, "*3\r\n$9\r\nsubscribe\r\n$2\r\nch\r\n:1\r\n");
+    exec_sess(s, T0, &out, 2, "PSUBSCRIBE", "news.*");
+    EXPECT(out, "*3\r\n$10\r\npsubscribe\r\n$6\r\nnews.*\r\n:2\r\n");
+    exec_sess(s, T0, &out, 2, "PSUBSCRIBE", "news.*"); /* duplicate */
+    EXPECT(out, "*3\r\n$10\r\npsubscribe\r\n$6\r\nnews.*\r\n:3\r\n");
+
+    /* npsub enters subscribed mode too */
+    exec_sess(s, T0, &out, 2, "GET", "k");
+    EXPECT(out,
+           "-ERR Can't execute 'get': only (P)SUBSCRIBE / (P)UNSUBSCRIBE / "
+           "PING / QUIT / SHUTDOWN are allowed in this context\r\n");
+
+    /* PUBSUB introspection without server hooks: empty/zero (from a
+     * non-subscribed session; PUBSUB itself is not whitelisted) */
+    {
+        session *p = session_create(&d);
+        exec_sess(p, T0, &out, 2, "PUBSUB", "CHANNELS");
+        EXPECT(out, "*0\r\n");
+        exec_sess(p, T0, &out, 3, "PUBSUB", "NUMSUB", "ch");
+        EXPECT(out, "*2\r\n$2\r\nch\r\n:0\r\n");
+        exec_sess(p, T0, &out, 2, "PUBSUB", "NUMPAT");
+        EXPECT(out, ":0\r\n");
+        session_free(p);
+    }
+
+    /* punsubscribe one pattern, then the no-arg form */
+    exec_sess(s, T0, &out, 2, "PUNSUBSCRIBE", "news.*");
+    EXPECT(out, "*3\r\n$12\r\npunsubscribe\r\n$6\r\nnews.*\r\n:2\r\n");
+    exec_sess(s, T0, &out, 2, "PUNSUBSCRIBE", "news.*");
+    EXPECT(out, "*3\r\n$12\r\npunsubscribe\r\n$6\r\nnews.*\r\n:1\r\n");
+    exec_sess(s, T0, &out, 1, "PUNSUBSCRIBE");
+    EXPECT(out, "*3\r\n$12\r\npunsubscribe\r\n$-1\r\n:1\r\n");
+
+    /* fully unsubscribed: normal commands work again (registry-less
+     * no-arg UNSUBSCRIBE replies a single nil push) */
+    exec_sess(s, T0, &out, 1, "UNSUBSCRIBE");
+    EXPECT(out, "*3\r\n$11\r\nunsubscribe\r\n$-1\r\n:0\r\n");
+    exec_sess(s, T0, &out, 3, "SET", "k", "v");
+    EXPECT(out, "+OK\r\n");
+
+    session_free(s);
+    resp_buf_free(&out);
+    db_destroy(&d);
+}
+
 int main(void)
 {
     DD_RUN(test_subscribe_publish);
     DD_RUN(test_subscribed_mode_restriction);
     DD_RUN(test_server_registry_rejection_is_transactional);
+    DD_RUN(test_psubscribe_no_hooks);
     return DD_TEST_SUMMARY();
 }

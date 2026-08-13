@@ -15,6 +15,7 @@
  */
 #include "server/mt_server.h"
 
+#include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -49,6 +50,33 @@ static int mt_ci_equal(const char *a, size_t n, const char *b)
             return 0;
     }
     return b[n] == '\0';
+}
+
+/* Strict signed 64-bit parse for routing math (SINTERCARD numkeys). */
+static int mt_parse_ll(const char *s, size_t len, long long *out)
+{
+    size_t i = 0;
+    int neg = 0;
+    long long v = 0;
+    if (len == 0)
+        return 0;
+    if (s[0] == '-') {
+        neg = 1;
+        i = 1;
+        if (len == 1)
+            return 0;
+    }
+    for (; i < len; i++) {
+        unsigned digit;
+        if (s[i] < '0' || s[i] > '9')
+            return 0;
+        digit = (unsigned)(s[i] - '0');
+        if (v > (LLONG_MAX - (long long)digit) / 10)
+            return 0;
+        v = v * 10 + (long long)digit;
+    }
+    *out = neg ? -v : v;
+    return 1;
 }
 
 /* ------------------------------------------------------------------ */
@@ -1204,6 +1232,8 @@ static int mt_is_blocked(uint16_t cmd)
     case CMD_KEYS:      /* whole-db scans have no mt routing target */
     case CMD_SCAN:
     case CMD_RANDOMKEY:
+    case CMD_PSUBSCRIBE:   /* pattern pub/sub is not supported in mt mode */
+    case CMD_PUNSUBSCRIBE:
         return 1;
     default:
         return 0;
@@ -1253,6 +1283,8 @@ static int mt_is_single_key(uint16_t cmd)
     case CMD_HMGET:
     case CMD_HINCRBY:
     case CMD_HSETNX:
+    case CMD_HSTRLEN:
+    case CMD_HRANDFIELD:
     case CMD_LPUSH:
     case CMD_RPUSH:
     case CMD_LPUSHX:
@@ -1263,6 +1295,9 @@ static int mt_is_single_key(uint16_t cmd)
     case CMD_LRANGE:
     case CMD_LINDEX:
     case CMD_LSET:
+    case CMD_LPOS:
+    case CMD_LREM:
+    case CMD_LTRIM:
     case CMD_SADD:
     case CMD_SREM:
     case CMD_SISMEMBER:
@@ -1283,6 +1318,14 @@ static int mt_is_single_key(uint16_t cmd)
     case CMD_ZCOUNT:
     case CMD_ZRANGEBYSCORE:
     case CMD_ZREMRANGEBYSCORE:
+    case CMD_ZPOPMIN:
+    case CMD_ZPOPMAX:
+    case CMD_ZREMRANGEBYRANK:
+    case CMD_ZMSCORE:
+    case CMD_ZRANDMEMBER:
+    case CMD_ZRANGEBYLEX:
+    case CMD_ZREVRANGEBYLEX:
+    case CMD_ZREMRANGEBYLEX:
         return 1;
     default:
         return 0;
@@ -1315,23 +1358,39 @@ static int mt_is_aggregate(uint16_t cmd)
 /* Multi-key commands: every key must map to the same worker (same rule as
  * cluster CROSSSLOT). Key positions by command:
  *   MGET/DEL/UNLINK/EXISTS/TOUCH -> argv[1..]
+ *   SINTERSTORE/SUNIONSTORE/SDIFFSTORE -> argv[1..] (dst + sources)
  *   MSET                         -> argv[1], argv[3], ... (key/value pairs)
- *   SMOVE/RENAME/RENAMENX        -> argv[1], argv[2] (source, destination) */
+ *   SMOVE/RENAME/RENAMENX/RPOPLPUSH -> argv[1], argv[2] (source, destination)
+ *   SINTERCARD                   -> argv[2..2+numkeys) (numkeys at argv[1]) */
 static int mt_multikey_target(int nworkers, uint16_t cmd,
                               const resp_value *argv, size_t argc)
 {
     size_t i;
+    size_t kstart = 1, kend;
     int target = -2; /* unset */
 
     if (argc < 2)
         return MT_LOCAL; /* arity error: let the session report it */
 
-    for (i = 1; i < argc; i++) {
+    kend = argc;
+    if (cmd == CMD_SINTERCARD) {
+        long long nk = 0;
+        if (argv[1].str == NULL || !mt_parse_ll(argv[1].str, argv[1].len, &nk))
+            return MT_LOCAL; /* bad numkeys: let the session report it */
+        if (nk <= 0)
+            return MT_LOCAL;
+        kstart = 2;
+        kend = 2 + (size_t)nk;
+        if (kend > argc)
+            kend = argc;
+    }
+
+    for (i = kstart; i < kend; i++) {
         int w;
         if (cmd == CMD_MSET && (i % 2) == 0)
             continue; /* value position */
         if ((cmd == CMD_SMOVE || cmd == CMD_RENAME ||
-             cmd == CMD_RENAMENX) && i > 2)
+             cmd == CMD_RENAMENX || cmd == CMD_RPOPLPUSH) && i > 2)
             break; /* only source and destination are keys */
         if (argv[i].str == NULL)
             return MT_LOCAL;
@@ -1368,9 +1427,14 @@ static int mt_classify(int nworkers, uint16_t cmd, const resp_value *argv,
     case CMD_SMOVE:
     case CMD_RENAME:
     case CMD_RENAMENX:
+    case CMD_RPOPLPUSH:
     case CMD_SINTER:
     case CMD_SUNION:
     case CMD_SDIFF:
+    case CMD_SINTERCARD:
+    case CMD_SINTERSTORE:
+    case CMD_SUNIONSTORE:
+    case CMD_SDIFFSTORE:
         return mt_multikey_target(nworkers, cmd, argv, argc);
     default:
         break;

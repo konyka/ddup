@@ -371,6 +371,368 @@ static void test_list_ttl_and_memory(void)
     db_destroy(&d);
 }
 
+static void test_lpos(void)
+{
+    db d;
+    resp_buf out;
+    db_init(&d);
+    resp_buf_init(&out);
+
+    /* missing key: null without COUNT, empty array with COUNT */
+    exec_cmd(&d, T0, &out, 3, "LPOS", "nokey", "a");
+    EXPECT(out, "$-1\r\n");
+    exec_cmd(&d, T0, &out, 5, "LPOS", "nokey", "a", "COUNT", "0");
+    EXPECT(out, "*0\r\n");
+
+    exec_cmd(&d, T0, &out, 7, "RPUSH", "l", "a", "b", "c", "a", "b");
+    EXPECT(out, ":5\r\n");
+    exec_cmd(&d, T0, &out, 3, "RPUSH", "l", "a");
+    EXPECT(out, ":6\r\n"); /* a b c a b a */
+
+    /* plain form: first match from the head, integer or null */
+    exec_cmd(&d, T0, &out, 3, "LPOS", "l", "a");
+    EXPECT(out, ":0\r\n");
+    exec_cmd(&d, T0, &out, 3, "LPOS", "l", "c");
+    EXPECT(out, ":2\r\n");
+    exec_cmd(&d, T0, &out, 3, "LPOS", "l", "x");
+    EXPECT(out, "$-1\r\n");
+
+    /* RANK: positive from head, negative from tail */
+    exec_cmd(&d, T0, &out, 5, "LPOS", "l", "a", "RANK", "2");
+    EXPECT(out, ":3\r\n");
+    exec_cmd(&d, T0, &out, 5, "LPOS", "l", "a", "RANK", "-1");
+    EXPECT(out, ":5\r\n");
+    exec_cmd(&d, T0, &out, 5, "LPOS", "l", "a", "RANK", "-2");
+    EXPECT(out, ":3\r\n");
+    exec_cmd(&d, T0, &out, 5, "LPOS", "l", "a", "RANK", "4");
+    EXPECT(out, "$-1\r\n"); /* only 3 matches */
+
+    /* COUNT: array form; 0 = all matches, N = at most N */
+    exec_cmd(&d, T0, &out, 5, "LPOS", "l", "a", "COUNT", "0");
+    EXPECT(out, "*3\r\n:0\r\n:3\r\n:5\r\n");
+    exec_cmd(&d, T0, &out, 5, "LPOS", "l", "a", "COUNT", "2");
+    EXPECT(out, "*2\r\n:0\r\n:3\r\n");
+    exec_cmd(&d, T0, &out, 5, "LPOS", "l", "a", "COUNT", "1");
+    EXPECT(out, "*1\r\n:0\r\n");
+    exec_cmd(&d, T0, &out, 5, "LPOS", "l", "x", "COUNT", "0");
+    EXPECT(out, "*0\r\n");
+    exec_cmd(&d, T0, &out, 7, "LPOS", "l", "a", "RANK", "-1", "COUNT", "2");
+    EXPECT(out, "*2\r\n:5\r\n:3\r\n");
+
+    /* MAXLEN caps the number of comparisons */
+    exec_cmd(&d, T0, &out, 5, "LPOS", "l", "b", "MAXLEN", "1");
+    EXPECT(out, "$-1\r\n");
+    exec_cmd(&d, T0, &out, 5, "LPOS", "l", "b", "MAXLEN", "2");
+    EXPECT(out, ":1\r\n");
+    exec_cmd(&d, T0, &out, 7, "LPOS", "l", "a", "COUNT", "0", "MAXLEN", "4");
+    EXPECT(out, "*2\r\n:0\r\n:3\r\n");
+    exec_cmd(&d, T0, &out, 7, "LPOS", "l", "a", "RANK", "-1", "MAXLEN", "0");
+    EXPECT(out, ":5\r\n"); /* 0 = unlimited */
+
+    /* errors */
+    exec_cmd(&d, T0, &out, 5, "LPOS", "l", "a", "RANK", "0");
+    EXPECT(out, "-ERR RANK can't be zero\r\n");
+    exec_cmd(&d, T0, &out, 5, "LPOS", "l", "a", "COUNT", "-1");
+    EXPECT(out, "-ERR COUNT can't be negative\r\n");
+    exec_cmd(&d, T0, &out, 5, "LPOS", "l", "a", "MAXLEN", "-1");
+    EXPECT(out, "-ERR MAXLEN can't be negative\r\n");
+    exec_cmd(&d, T0, &out, 5, "LPOS", "l", "a", "RANK", "x");
+    EXPECT(out, "-ERR value is not an integer or out of range\r\n");
+    exec_cmd(&d, T0, &out, 5, "LPOS", "l", "a", "BOGUS", "1");
+    EXPECT(out, "-ERR syntax error\r\n");
+    exec_cmd(&d, T0, &out, 4, "LPOS", "l", "a", "RANK");
+    EXPECT(out, "-ERR syntax error\r\n");
+    exec_cmd(&d, T0, &out, 2, "LPOS", "l");
+    EXPECT(out, "-ERR wrong number of arguments for 'lpos' command\r\n");
+
+    /* wrong type */
+    exec_cmd(&d, T0, &out, 3, "SET", "s", "v");
+    EXPECT(out, "+OK\r\n");
+    exec_cmd(&d, T0, &out, 3, "LPOS", "s", "a");
+    EXPECT(out,
+           "-WRONGTYPE Operation against a key holding the wrong kind of "
+           "value\r\n");
+
+    resp_buf_free(&out);
+    db_destroy(&d);
+}
+
+static void test_lrem(void)
+{
+    db d;
+    resp_buf out;
+    db_init(&d);
+    resp_buf_init(&out);
+
+    exec_cmd(&d, T0, &out, 6, "RPUSH", "l", "a", "b", "a", "c");
+    EXPECT(out, ":4\r\n");
+    exec_cmd(&d, T0, &out, 3, "RPUSH", "l", "a");
+    EXPECT(out, ":5\r\n"); /* a b a c a */
+
+    /* count > 0: from the head, at most count */
+    exec_cmd(&d, T0, &out, 4, "LREM", "l", "1", "a");
+    EXPECT(out, ":1\r\n");
+    exec_cmd(&d, T0, &out, 4, "LRANGE", "l", "0", "-1");
+    EXPECT(out, "*4\r\n$1\r\nb\r\n$1\r\na\r\n$1\r\nc\r\n$1\r\na\r\n");
+    /* count < 0: from the tail */
+    exec_cmd(&d, T0, &out, 4, "LREM", "l", "-1", "a");
+    EXPECT(out, ":1\r\n");
+    exec_cmd(&d, T0, &out, 4, "LRANGE", "l", "0", "-1");
+    EXPECT(out, "*3\r\n$1\r\nb\r\n$1\r\na\r\n$1\r\nc\r\n");
+    /* count 0: all remaining matches */
+    exec_cmd(&d, T0, &out, 4, "LREM", "l", "0", "a");
+    EXPECT(out, ":1\r\n");
+    exec_cmd(&d, T0, &out, 4, "LRANGE", "l", "0", "-1");
+    EXPECT(out, "*2\r\n$1\r\nb\r\n$1\r\nc\r\n");
+    /* no match / missing key */
+    exec_cmd(&d, T0, &out, 4, "LREM", "l", "0", "x");
+    EXPECT(out, ":0\r\n");
+    exec_cmd(&d, T0, &out, 4, "LREM", "nokey", "0", "a");
+    EXPECT(out, ":0\r\n");
+
+    /* removing the last elements deletes the key */
+    exec_cmd(&d, T0, &out, 4, "LREM", "l", "2", "b");
+    EXPECT(out, ":1\r\n");
+    exec_cmd(&d, T0, &out, 4, "LREM", "l", "0", "c");
+    EXPECT(out, ":1\r\n");
+    exec_cmd(&d, T0, &out, 2, "EXISTS", "l");
+    EXPECT(out, ":0\r\n");
+
+    /* errors */
+    exec_cmd(&d, T0, &out, 4, "LREM", "l", "x", "a");
+    EXPECT(out, "-ERR value is not an integer or out of range\r\n");
+    exec_cmd(&d, T0, &out, 3, "LREM", "l", "1");
+    EXPECT(out, "-ERR wrong number of arguments for 'lrem' command\r\n");
+    exec_cmd(&d, T0, &out, 3, "SET", "s", "v");
+    EXPECT(out, "+OK\r\n");
+    exec_cmd(&d, T0, &out, 4, "LREM", "s", "0", "a");
+    EXPECT(out,
+           "-WRONGTYPE Operation against a key holding the wrong kind of "
+           "value\r\n");
+
+    resp_buf_free(&out);
+    db_destroy(&d);
+}
+
+static void test_ltrim(void)
+{
+    db d;
+    resp_buf out;
+    db_init(&d);
+    resp_buf_init(&out);
+
+    exec_cmd(&d, T0, &out, 6, "RPUSH", "l", "a", "b", "c", "d");
+    EXPECT(out, ":4\r\n");
+    exec_cmd(&d, T0, &out, 3, "RPUSH", "l", "e");
+    EXPECT(out, ":5\r\n"); /* a b c d e */
+
+    exec_cmd(&d, T0, &out, 4, "LTRIM", "l", "1", "3");
+    EXPECT(out, "+OK\r\n");
+    exec_cmd(&d, T0, &out, 4, "LRANGE", "l", "0", "-1");
+    EXPECT(out, "*3\r\n$1\r\nb\r\n$1\r\nc\r\n$1\r\nd\r\n");
+    /* negative indexes, same math as LRANGE */
+    exec_cmd(&d, T0, &out, 4, "LTRIM", "l", "-2", "-1");
+    EXPECT(out, "+OK\r\n");
+    exec_cmd(&d, T0, &out, 4, "LRANGE", "l", "0", "-1");
+    EXPECT(out, "*2\r\n$1\r\nc\r\n$1\r\nd\r\n");
+    /* whole range kept */
+    exec_cmd(&d, T0, &out, 4, "LTRIM", "l", "0", "-1");
+    EXPECT(out, "+OK\r\n");
+    exec_cmd(&d, T0, &out, 2, "LLEN", "l");
+    EXPECT(out, ":2\r\n");
+    /* inverted range: everything dropped, key deleted */
+    exec_cmd(&d, T0, &out, 4, "LTRIM", "l", "1", "0");
+    EXPECT(out, "+OK\r\n");
+    exec_cmd(&d, T0, &out, 2, "EXISTS", "l");
+    EXPECT(out, ":0\r\n");
+
+    /* out-of-range start: key deleted too; missing key is a no-op OK */
+    exec_cmd(&d, T0, &out, 4, "RPUSH", "m", "x", "y");
+    EXPECT(out, ":2\r\n");
+    exec_cmd(&d, T0, &out, 4, "LTRIM", "m", "5", "10");
+    EXPECT(out, "+OK\r\n");
+    exec_cmd(&d, T0, &out, 2, "EXISTS", "m");
+    EXPECT(out, ":0\r\n");
+    exec_cmd(&d, T0, &out, 4, "LTRIM", "nokey", "0", "-1");
+    EXPECT(out, "+OK\r\n");
+
+    /* errors */
+    exec_cmd(&d, T0, &out, 4, "LTRIM", "l", "x", "1");
+    EXPECT(out, "-ERR value is not an integer or out of range\r\n");
+    exec_cmd(&d, T0, &out, 3, "LTRIM", "l", "0");
+    EXPECT(out, "-ERR wrong number of arguments for 'ltrim' command\r\n");
+    exec_cmd(&d, T0, &out, 3, "SET", "s", "v");
+    EXPECT(out, "+OK\r\n");
+    exec_cmd(&d, T0, &out, 4, "LTRIM", "s", "0", "-1");
+    EXPECT(out,
+           "-WRONGTYPE Operation against a key holding the wrong kind of "
+           "value\r\n");
+
+    resp_buf_free(&out);
+    db_destroy(&d);
+}
+
+static void test_rpoplpush(void)
+{
+    db d;
+    resp_buf out;
+    db_init(&d);
+    resp_buf_init(&out);
+
+    exec_cmd(&d, T0, &out, 4, "RPUSH", "src", "a", "b");
+    EXPECT(out, ":2\r\n");
+    exec_cmd(&d, T0, &out, 3, "RPUSH", "src", "c");
+    EXPECT(out, ":3\r\n"); /* a b c */
+
+    /* tail of src -> head of dst (dst created) */
+    exec_cmd(&d, T0, &out, 3, "RPOPLPUSH", "src", "dst");
+    EXPECT(out, "$1\r\nc\r\n");
+    exec_cmd(&d, T0, &out, 4, "LRANGE", "src", "0", "-1");
+    EXPECT(out, "*2\r\n$1\r\na\r\n$1\r\nb\r\n");
+    exec_cmd(&d, T0, &out, 4, "LRANGE", "dst", "0", "-1");
+    EXPECT(out, "*1\r\n$1\r\nc\r\n");
+
+    /* src == dst: rotate (tail moves to head) */
+    exec_cmd(&d, T0, &out, 3, "RPOPLPUSH", "src", "src");
+    EXPECT(out, "$1\r\nb\r\n");
+    exec_cmd(&d, T0, &out, 4, "LRANGE", "src", "0", "-1");
+    EXPECT(out, "*2\r\n$1\r\nb\r\n$1\r\na\r\n");
+
+    /* draining the source deletes its key (src is b a after the rotate) */
+    exec_cmd(&d, T0, &out, 3, "RPOPLPUSH", "src", "dst");
+    EXPECT(out, "$1\r\na\r\n");
+    exec_cmd(&d, T0, &out, 3, "RPOPLPUSH", "src", "dst");
+    EXPECT(out, "$1\r\nb\r\n");
+    exec_cmd(&d, T0, &out, 2, "EXISTS", "src");
+    EXPECT(out, ":0\r\n");
+    exec_cmd(&d, T0, &out, 4, "LRANGE", "dst", "0", "-1");
+    EXPECT(out, "*3\r\n$1\r\nb\r\n$1\r\na\r\n$1\r\nc\r\n");
+
+    /* missing source: null bulk, dst untouched */
+    exec_cmd(&d, T0, &out, 3, "RPOPLPUSH", "src", "dst");
+    EXPECT(out, "$-1\r\n");
+    exec_cmd(&d, T0, &out, 2, "LLEN", "dst");
+    EXPECT(out, ":3\r\n");
+
+    /* wrong types: either side rejects, nothing mutated */
+    exec_cmd(&d, T0, &out, 3, "SET", "str", "v");
+    EXPECT(out, "+OK\r\n");
+    exec_cmd(&d, T0, &out, 3, "RPOPLPUSH", "dst", "str");
+    EXPECT(out,
+           "-WRONGTYPE Operation against a key holding the wrong kind of "
+           "value\r\n");
+    exec_cmd(&d, T0, &out, 2, "LLEN", "dst");
+    EXPECT(out, ":3\r\n");
+    exec_cmd(&d, T0, &out, 3, "RPOPLPUSH", "str", "dst");
+    EXPECT(out,
+           "-WRONGTYPE Operation against a key holding the wrong kind of "
+           "value\r\n");
+
+    /* arity */
+    exec_cmd(&d, T0, &out, 2, "RPOPLPUSH", "dst");
+    EXPECT(out,
+           "-ERR wrong number of arguments for 'rpoplpush' command\r\n");
+
+    resp_buf_free(&out);
+    db_destroy(&d);
+}
+
+static void test_rpoplpush_bumps_both_key_versions(void)
+{
+    db d;
+    resp_buf out;
+    uint64_t vsrc, vdst;
+    db_init(&d);
+    resp_buf_init(&out);
+
+    exec_cmd(&d, T0, &out, 3, "RPUSH", "src", "a");
+    EXPECT(out, ":1\r\n");
+    exec_cmd(&d, T0, &out, 3, "RPUSH", "dst", "z");
+    EXPECT(out, ":1\r\n");
+    d.watch_refs = 1;
+    vsrc = db_key_version(&d, "src", 3);
+    vdst = db_key_version(&d, "dst", 3);
+    exec_cmd(&d, T0, &out, 3, "RPOPLPUSH", "src", "dst");
+    EXPECT(out, "$1\r\na\r\n");
+    DD_CHECK(db_key_version(&d, "src", 3) > vsrc);
+    DD_CHECK(db_key_version(&d, "dst", 3) > vdst);
+    d.watch_refs = 0;
+
+    resp_buf_free(&out);
+    db_destroy(&d);
+}
+
+static void test_lpop_rpop_count(void)
+{
+    db d;
+    resp_buf out;
+    db_init(&d);
+    resp_buf_init(&out);
+
+    exec_cmd(&d, T0, &out, 5, "RPUSH", "l", "a", "b", "c");
+    EXPECT(out, ":3\r\n");
+    exec_cmd(&d, T0, &out, 3, "RPUSH", "l", "d");
+    EXPECT(out, ":4\r\n"); /* a b c d */
+
+    /* count form: array of min(count, llen) */
+    exec_cmd(&d, T0, &out, 3, "LPOP", "l", "2");
+    EXPECT(out, "*2\r\n$1\r\na\r\n$1\r\nb\r\n");
+    exec_cmd(&d, T0, &out, 3, "RPOP", "l", "2");
+    EXPECT(out, "*2\r\n$1\r\nd\r\n$1\r\nc\r\n");
+    /* list drained: key gone */
+    exec_cmd(&d, T0, &out, 2, "EXISTS", "l");
+    EXPECT(out, ":0\r\n");
+
+    /* missing key: null (not an empty array) */
+    exec_cmd(&d, T0, &out, 3, "LPOP", "l", "3");
+    EXPECT(out, "*-1\r\n");
+    exec_cmd(&d, T0, &out, 3, "RPOP", "l", "1");
+    EXPECT(out, "*-1\r\n");
+    exec_cmd(&d, T0, &out, 2, "LPOP", "l");
+    EXPECT(out, "$-1\r\n");
+
+    /* count > llen pops everything and deletes the key */
+    exec_cmd(&d, T0, &out, 4, "RPUSH", "m", "x", "y");
+    EXPECT(out, ":2\r\n");
+    exec_cmd(&d, T0, &out, 3, "LPOP", "m", "5");
+    EXPECT(out, "*2\r\n$1\r\nx\r\n$1\r\ny\r\n");
+    exec_cmd(&d, T0, &out, 2, "EXISTS", "m");
+    EXPECT(out, ":0\r\n");
+
+    /* count 1 still returns an array */
+    exec_cmd(&d, T0, &out, 3, "RPUSH", "n", "q");
+    EXPECT(out, ":1\r\n");
+    exec_cmd(&d, T0, &out, 3, "RPOP", "n", "1");
+    EXPECT(out, "*1\r\n$1\r\nq\r\n");
+    exec_cmd(&d, T0, &out, 2, "EXISTS", "n");
+    EXPECT(out, ":0\r\n");
+
+    /* count must be positive */
+    exec_cmd(&d, T0, &out, 4, "RPUSH", "p", "a", "b");
+    EXPECT(out, ":2\r\n");
+    exec_cmd(&d, T0, &out, 3, "LPOP", "p", "0");
+    EXPECT(out, "-ERR value is out of range, must be positive\r\n");
+    exec_cmd(&d, T0, &out, 3, "RPOP", "p", "-1");
+    EXPECT(out, "-ERR value is out of range, must be positive\r\n");
+    exec_cmd(&d, T0, &out, 3, "LPOP", "p", "x");
+    EXPECT(out, "-ERR value is not an integer or out of range\r\n");
+    exec_cmd(&d, T0, &out, 2, "LLEN", "p");
+    EXPECT(out, ":2\r\n"); /* untouched */
+
+    /* wrong type and arity */
+    exec_cmd(&d, T0, &out, 3, "SET", "s", "v");
+    EXPECT(out, "+OK\r\n");
+    exec_cmd(&d, T0, &out, 3, "LPOP", "s", "2");
+    EXPECT(out,
+           "-WRONGTYPE Operation against a key holding the wrong kind of "
+           "value\r\n");
+    exec_cmd(&d, T0, &out, 4, "LPOP", "p", "1", "x");
+    EXPECT(out, "-ERR wrong number of arguments for 'lpop' command\r\n");
+
+    resp_buf_free(&out);
+    db_destroy(&d);
+}
+
 int main(void)
 {
     DD_RUN(test_list_rejects_unrepresentable_elements);
@@ -382,5 +744,11 @@ int main(void)
     DD_RUN(test_pushx);
     DD_RUN(test_list_wrongtype);
     DD_RUN(test_list_ttl_and_memory);
+    DD_RUN(test_lpos);
+    DD_RUN(test_lrem);
+    DD_RUN(test_ltrim);
+    DD_RUN(test_rpoplpush);
+    DD_RUN(test_rpoplpush_bumps_both_key_versions);
+    DD_RUN(test_lpop_rpop_count);
     return DD_TEST_SUMMARY();
 }

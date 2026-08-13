@@ -355,6 +355,21 @@ int obj_list_set_at(obj_list *l, size_t idx, const char *data, size_t len)
     return 1;
 }
 
+void obj_list_remove(obj_list *l, list_node *n)
+{
+    if (n->prev != NULL)
+        n->prev->next = n->next;
+    else
+        l->head = n->next;
+    if (n->next != NULL)
+        n->next->prev = n->prev;
+    else
+        l->tail = n->prev;
+    l->len--;
+    l->mem -= node_bytes(n->len);
+    free(n);
+}
+
 /* ------------------------------------------------------------------ */
 /* set object                                                         */
 /* ------------------------------------------------------------------ */

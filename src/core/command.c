@@ -41,6 +41,9 @@ typedef struct cmd_entry {
 /* table row for a command id (defined next to CMD_TABLE at the bottom) */
 static const cmd_entry *cmd_table_entry(uint16_t id);
 
+/* string view of an argv item (defined with the reply helpers below) */
+static int arg_str(const resp_value *v, const char **s, size_t *len);
+
 static void command_dispatch(session *s, const resp_value *argv, size_t argc,
                              resp_buf *out, uint64_t now_ms);
 
@@ -730,6 +733,53 @@ static int parse_bound(const char *s, size_t len, double *v, int *ex)
     return parse_double(s, len, v);
 }
 
+/* Lex range bound (ZRANGEBYLEX family): "-" / "+" for the infinities,
+ * "[x" closed / "(x" open finite member. Returns 0 on anything else. */
+static int parse_lex_bound(const char *s, size_t len, zlexbound *b)
+{
+    b->s = NULL;
+    b->len = 0;
+    b->ex = 0;
+    b->inf = 0;
+    if (len == 1 && s[0] == '-') {
+        b->inf = -1;
+        return 1;
+    }
+    if (len == 1 && s[0] == '+') {
+        b->inf = 1;
+        return 1;
+    }
+    if (len >= 1 && s[0] == '[') {
+        b->s = s + 1;
+        b->len = len - 1;
+        return 1;
+    }
+    if (len >= 1 && s[0] == '(') {
+        b->s = s + 1;
+        b->len = len - 1;
+        b->ex = 1;
+        return 1;
+    }
+    return 0;
+}
+
+/* Delete the inclusive level-0 node span [first, last] from both sides
+ * of the zset (dict + skiplist); returns the number removed. Each node's
+ * forward link is captured before it is freed. */
+static long long zset_rem_node_span(obj_zset *z, zsl_node *first,
+                                    zsl_node *last)
+{
+    long long removed = 0;
+    while (first != NULL) {
+        zsl_node *next = first->level[0].forward;
+        removed += obj_zset_rem(z, first->member, first->mlen);
+        if (first == last)
+            break;
+        first = next;
+    }
+    return removed;
+}
+
 /* Fold an object's mem delta (mutations done in place) into used_memory,
  * and bump the key's WATCH version. */
 static void mem_sync(db *d, const char *key, size_t klen, uint64_t before,
@@ -745,6 +795,16 @@ typedef struct hdump_ctx {
     int keys;
     int vals;
 } hdump_ctx;
+
+/* RESP2 null array (*-1), e.g. LPOP/RPOP with count on a missing key. */
+static void write_null_array(resp_buf *out)
+{
+    static const char null_arr[] = "*-1\r\n";
+    if (resp_buf_reserve(out, sizeof(null_arr) - 1) != 0)
+        return;
+    memcpy(out->data + out->len, null_arr, sizeof(null_arr) - 1);
+    out->len += sizeof(null_arr) - 1;
+}
 
 static void hdump_cb(const char *f, size_t flen, const char *v, size_t vlen,
                      void *c)
@@ -843,6 +903,80 @@ static void set_union_cb(const char *m, size_t mlen, const char *v,
     (void)v;
     (void)vlen;
     rh_set((rh_table *)c, m, mlen, "", 0);
+}
+
+/* Resolve nkeys set operands (NULL view = missing key) and evaluate the
+ * SINTER/SUNION/SDIFF into result (caller rh_init/rh_destroy's it).
+ * Returns 0 on success, -1 when a reply was already written. */
+static int setop_eval(db *d, resp_buf *out, const resp_value *kargv,
+                      size_t nkeys, int inter, int sunion, uint64_t now_ms,
+                      rh_table *result)
+{
+    obj_set **sets = (obj_set **)malloc(nkeys * sizeof(*sets));
+    size_t i;
+    /* resolve operands with type checks first */
+    for (i = 0; i < nkeys; i++) {
+        const char *k;
+        size_t kl;
+        obj_set *s = NULL;
+        int rc;
+        if (!arg_str(&kargv[i], &k, &kl)) {
+            free(sets);
+            resp_write_error(out, "ERR invalid argument type", 24);
+            return -1;
+        }
+        rc = get_set(d, out, k, kl, 0, now_ms, &s);
+        if (rc < 0) {
+            free(sets);
+            return -1;
+        }
+        sets[i] = rc == 1 ? s : NULL;
+    }
+    if (sunion) {
+        for (i = 0; i < nkeys; i++)
+            if (sets[i] != NULL)
+                rh_each(&sets[i]->members, set_union_cb, result);
+    } else if (sets[0] != NULL) {
+        setop_ctx ctx;
+        ctx.sets = sets;
+        ctx.n = nkeys;
+        ctx.result = result;
+        ctx.inter = inter;
+        rh_each(&sets[0]->members, setop_cb, &ctx);
+    }
+    free(sets);
+    return 0;
+}
+
+/* SINTERCARD counter: membership in sets[1..n), early stop at limit. */
+typedef struct sintercard_ctx {
+    obj_set **sets;
+    size_t n;
+    long long count;
+    long long limit; /* 0 = unlimited */
+} sintercard_ctx;
+
+static int sintercard_cb(const char *m, size_t mlen, const char *v,
+                         size_t vlen, void *c)
+{
+    sintercard_ctx *ctx = (sintercard_ctx *)c;
+    size_t j;
+    (void)v;
+    (void)vlen;
+    for (j = 1; j < ctx->n; j++)
+        if (ctx->sets[j] == NULL || !obj_set_has(ctx->sets[j], m, mlen))
+            return 0;
+    ctx->count++;
+    return ctx->limit > 0 && ctx->count >= ctx->limit;
+}
+
+/* Copy one result member into a fresh obj_set (STORE materialization). */
+static void set_store_cb(const char *m, size_t mlen, const char *v,
+                         size_t vlen, void *c)
+{
+    (void)v;
+    (void)vlen;
+    (void)obj_set_add((obj_set *)c, m, mlen);
 }
 
 /* RESP2 push triple: [kind, channel-or-nil, count]. */
@@ -1464,7 +1598,9 @@ static int cmd_keys_accum(const resp_value *argv, size_t argc, int *have,
         cmd_id == CMD_UNLINK || cmd_id == CMD_EXISTS ||
         cmd_id == CMD_TOUCH ||
         cmd_id == CMD_SINTER || cmd_id == CMD_SUNION ||
-        cmd_id == CMD_SDIFF || cmd_id == CMD_WATCH) {
+        cmd_id == CMD_SDIFF || cmd_id == CMD_WATCH ||
+        cmd_id == CMD_SINTERSTORE || cmd_id == CMD_SUNIONSTORE ||
+        cmd_id == CMD_SDIFFSTORE) {
         for (i = 1; i < argc; i++) {
             const char *k;
             size_t kl;
@@ -1485,8 +1621,29 @@ static int cmd_keys_accum(const resp_value *argv, size_t argc, int *have,
         return 1;
     }
     if (cmd_id == CMD_SMOVE || cmd_id == CMD_RENAME ||
-        cmd_id == CMD_RENAMENX) {
+        cmd_id == CMD_RENAMENX || cmd_id == CMD_RPOPLPUSH) {
         for (i = 1; i < argc && i < 3; i++) {
+            const char *k;
+            size_t kl;
+            if (arg_str(&argv[i], &k, &kl) &&
+                !slot_accum(k, kl, have, slot))
+                return 0;
+        }
+        return 1;
+    }
+    if (cmd_id == CMD_SINTERCARD) {
+        /* keys are argv[2..2+numkeys); numkeys validated by the dispatch */
+        const char *nv;
+        size_t nvl;
+        long long nk = 0;
+        size_t end;
+        if (argc < 3 || !arg_str(&argv[1], &nv, &nvl) ||
+            !parse_i64(nv, nvl, &nk) || nk <= 0)
+            return 1;
+        end = 2 + (size_t)nk;
+        if (end > argc)
+            end = argc;
+        for (i = 2; i < end; i++) {
             const char *k;
             size_t kl;
             if (arg_str(&argv[i], &k, &kl) &&
@@ -1658,7 +1815,9 @@ static int cluster_check_ownership(session *s, const resp_value *argv,
         cmd_id == CMD_UNLINK || cmd_id == CMD_EXISTS ||
         cmd_id == CMD_TOUCH ||
         cmd_id == CMD_SINTER || cmd_id == CMD_SUNION ||
-        cmd_id == CMD_SDIFF || cmd_id == CMD_WATCH) {
+        cmd_id == CMD_SDIFF || cmd_id == CMD_WATCH ||
+        cmd_id == CMD_SINTERSTORE || cmd_id == CMD_SUNIONSTORE ||
+        cmd_id == CMD_SDIFFSTORE) {
         for (i = 1; i < argc; i++) {
             const char *k;
             size_t kl;
@@ -1679,8 +1838,29 @@ static int cluster_check_ownership(session *s, const resp_value *argv,
         return 1;
     }
     if (cmd_id == CMD_SMOVE || cmd_id == CMD_RENAME ||
-        cmd_id == CMD_RENAMENX) {
+        cmd_id == CMD_RENAMENX || cmd_id == CMD_RPOPLPUSH) {
         for (i = 1; i < argc && i < 3; i++) {
+            const char *k;
+            size_t kl;
+            if (arg_str(&argv[i], &k, &kl) &&
+                !db_key_served(d, k, kl, out, now_ms, asking))
+                return 0;
+        }
+        return 1;
+    }
+    if (cmd_id == CMD_SINTERCARD) {
+        /* keys are argv[2..2+numkeys); numkeys validated by the dispatch */
+        const char *nv;
+        size_t nvl;
+        long long nk = 0;
+        size_t end;
+        if (argc < 3 || !arg_str(&argv[1], &nv, &nvl) ||
+            !parse_i64(nv, nvl, &nk) || nk <= 0)
+            return 1;
+        end = 2 + (size_t)nk;
+        if (end > argc)
+            end = argc;
+        for (i = 2; i < end; i++) {
             const char *k;
             size_t kl;
             if (arg_str(&argv[i], &k, &kl) &&
@@ -3692,6 +3872,123 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
         return;
     }
 
+    if (cmd_id == CMD_HSTRLEN) {
+        if (argc != 3) {
+            wrong_args(out, "hstrlen");
+            return;
+        }
+        const char *k, *f;
+        size_t kl, fl;
+        if (!arg_str(&argv[1], &k, &kl) || !arg_str(&argv[2], &f, &fl))
+            goto bad_type;
+        obj_hash *h;
+        int rc = get_hash(d, out, k, kl, 0, now_ms, &h);
+        if (rc < 0)
+            return;
+        const char *v;
+        size_t vl;
+        resp_write_integer(out, rc == 1 && obj_hash_get(h, f, fl, &v, &vl)
+                                      ? (long long)vl
+                                      : 0);
+        return;
+    }
+
+    if (cmd_id == CMD_HRANDFIELD) {
+        if (argc < 2 || argc > 4) {
+            wrong_args(out, "hrandfield");
+            return;
+        }
+        const char *k;
+        size_t kl;
+        long long count = 0;
+        int withvalues = 0;
+        if (!arg_str(&argv[1], &k, &kl))
+            goto bad_type;
+        if (argc >= 3) {
+            const char *cv;
+            size_t cvl;
+            if (!arg_str(&argv[2], &cv, &cvl))
+                goto bad_type;
+            if (!parse_i64(cv, cvl, &count)) {
+                resp_write_error(out, ERR_NOT_INT, sizeof(ERR_NOT_INT) - 1);
+                return;
+            }
+        }
+        if (argc == 4) {
+            const char *ov;
+            size_t ovl;
+            if (!arg_str(&argv[3], &ov, &ovl))
+                goto bad_type;
+            if (!ci_equal(ov, ovl, "WITHVALUES")) {
+                resp_write_error(out, ERR_SYNTAX, sizeof(ERR_SYNTAX) - 1);
+                return;
+            }
+            withvalues = 1;
+        }
+        obj_hash *h;
+        int rc = get_hash(d, out, k, kl, 0, now_ms, &h);
+        if (rc < 0)
+            return;
+        if (argc == 2) {
+            /* single field form: bulk reply */
+            collect_ctx cc = {0};
+            size_t idx;
+            if (rc == 0) {
+                resp_write_bulk(out, NULL, 0);
+                return;
+            }
+            rh_each(&h->fields, collect_cb, &cc);
+            idx = (size_t)(db_rand(d) % (uint32_t)cc.n);
+            resp_write_bulk(out, cc.keys[idx], cc.lens[idx]);
+            free(cc.keys);
+            free(cc.lens);
+            return;
+        }
+        /* count form: array reply */
+        if (rc == 0 || count == 0) {
+            resp_write_array_header(out, 0);
+            return;
+        }
+        {
+            collect_ctx cc = {0};
+            size_t n, i, k2;
+            rh_each(&h->fields, collect_cb, &cc);
+            n = cc.n;
+            if (count < 0) {
+                /* with repeats */
+                size_t total = (size_t)-count;
+                resp_write_array_header(out, withvalues ? total * 2 : total);
+                for (i = 0; i < total; i++) {
+                    size_t idx = (size_t)(db_rand(d) % (uint32_t)n);
+                    resp_write_bulk(out, cc.keys[idx], cc.lens[idx]);
+                    if (withvalues) {
+                        const char *v;
+                        size_t vl;
+                        if (obj_hash_get(h, cc.keys[idx], cc.lens[idx], &v,
+                                         &vl))
+                            resp_write_bulk(out, v, vl);
+                    }
+                }
+            } else {
+                k2 = (size_t)count < n ? (size_t)count : n;
+                collect_shuffle(d, &cc, k2);
+                resp_write_array_header(out, withvalues ? k2 * 2 : k2);
+                for (i = 0; i < k2; i++) {
+                    resp_write_bulk(out, cc.keys[i], cc.lens[i]);
+                    if (withvalues) {
+                        const char *v;
+                        size_t vl;
+                        if (obj_hash_get(h, cc.keys[i], cc.lens[i], &v, &vl))
+                            resp_write_bulk(out, v, vl);
+                    }
+                }
+            }
+            free(cc.keys);
+            free(cc.lens);
+        }
+        return;
+    }
+
     /* ---------------- list commands ---------------- */
 
     if (cmd_id == CMD_LPUSH || cmd_id == CMD_RPUSH ||
@@ -3753,7 +4050,8 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
 
     if (cmd_id == CMD_LPOP || cmd_id == CMD_RPOP) {
         int left = cmd_id == CMD_LPOP;
-        if (argc != 2) {
+        long long count = 0;
+        if (argc != 2 && argc != 3) {
             wrong_args(out, left ? "lpop" : "rpop");
             return;
         }
@@ -3761,10 +4059,52 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
         size_t kl;
         if (!arg_str(&argv[1], &k, &kl))
             goto bad_type;
+        if (argc == 3) {
+            const char *cv;
+            size_t cvl;
+            if (!arg_str(&argv[2], &cv, &cvl))
+                goto bad_type;
+            if (!parse_i64(cv, cvl, &count)) {
+                resp_write_error(out, ERR_NOT_INT, sizeof(ERR_NOT_INT) - 1);
+                return;
+            }
+            if (count <= 0) {
+                static const char E[] =
+                    "ERR value is out of range, must be positive";
+                resp_write_error(out, E, sizeof(E) - 1);
+                return;
+            }
+        }
         obj_list *l;
         int rc = get_list(d, out, k, kl, 0, now_ms, &l);
         if (rc < 0)
             return;
+        if (argc == 3) {
+            /* count form: null when the key is missing (Redis), else an
+             * array of min(count, llen) elements */
+            size_t n, i;
+            uint64_t before;
+            if (rc == 0) {
+                write_null_array(out);
+                return;
+            }
+            n = (unsigned long long)count < l->len ? (size_t)count
+                                                   : (size_t)l->len;
+            before = obj_list_mem(l);
+            resp_write_array_header(out, n);
+            for (i = 0; i < n; i++) {
+                char *data = NULL;
+                size_t dlen = 0;
+                if (!obj_list_pop(l, left, &data, &dlen))
+                    break;
+                resp_write_bulk(out, data, dlen);
+                free(data);
+            }
+            mem_sync(d, k, kl, before, obj_list_mem(l));
+            if (l->len == 0)
+                db_del_kv(d, k, kl); /* empty list: the key goes away */
+            return;
+        }
         if (rc == 0) {
             resp_write_bulk(out, NULL, 0);
             return;
@@ -3938,6 +4278,302 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
             mem_sync(d, k, kl, before, obj_list_mem(l));
         }
         resp_write_simple_string(out, "OK", 2);
+        return;
+    }
+
+    if (cmd_id == CMD_LPOS) {
+        if (argc < 3) {
+            wrong_args(out, "lpos");
+            return;
+        }
+        const char *k, *ele;
+        size_t kl, elel;
+        long long rank = 1, count = 0, maxlen = 0;
+        int count_given = 0;
+        size_t i;
+        if (!arg_str(&argv[1], &k, &kl) || !arg_str(&argv[2], &ele, &elel))
+            goto bad_type;
+        if (((argc - 3) % 2) != 0) {
+            resp_write_error(out, ERR_SYNTAX, sizeof(ERR_SYNTAX) - 1);
+            return;
+        }
+        for (i = 3; i + 1 < argc; i += 2) {
+            const char *opt, *val;
+            size_t optl, vall;
+            if (!arg_str(&argv[i], &opt, &optl) ||
+                !arg_str(&argv[i + 1], &val, &vall))
+                goto bad_type;
+            if (ci_equal(opt, optl, "RANK")) {
+                if (!parse_i64(val, vall, &rank)) {
+                    resp_write_error(out, ERR_NOT_INT, sizeof(ERR_NOT_INT) - 1);
+                    return;
+                }
+                if (rank == 0) {
+                    static const char E[] = "ERR RANK can't be zero";
+                    resp_write_error(out, E, sizeof(E) - 1);
+                    return;
+                }
+            } else if (ci_equal(opt, optl, "COUNT")) {
+                if (!parse_i64(val, vall, &count)) {
+                    resp_write_error(out, ERR_NOT_INT, sizeof(ERR_NOT_INT) - 1);
+                    return;
+                }
+                if (count < 0) {
+                    static const char E[] = "ERR COUNT can't be negative";
+                    resp_write_error(out, E, sizeof(E) - 1);
+                    return;
+                }
+                count_given = 1;
+            } else if (ci_equal(opt, optl, "MAXLEN")) {
+                if (!parse_i64(val, vall, &maxlen)) {
+                    resp_write_error(out, ERR_NOT_INT, sizeof(ERR_NOT_INT) - 1);
+                    return;
+                }
+                if (maxlen < 0) {
+                    static const char E[] = "ERR MAXLEN can't be negative";
+                    resp_write_error(out, E, sizeof(E) - 1);
+                    return;
+                }
+            } else {
+                resp_write_error(out, ERR_SYNTAX, sizeof(ERR_SYNTAX) - 1);
+                return;
+            }
+        }
+        obj_list *l;
+        int rc = get_list(d, out, k, kl, 0, now_ms, &l);
+        if (rc < 0)
+            return;
+        if (rc == 0) {
+            if (count_given)
+                resp_write_array_header(out, 0);
+            else
+                resp_write_bulk(out, NULL, 0);
+            return;
+        }
+        /* Scan from the head (rank > 0) or the tail (rank < 0); maxlen caps
+         * the number of comparisons (0 = unlimited). Two passes over the
+         * match set: count first (array header), then emit -- no per-element
+         * allocation. */
+        {
+            long long want = rank > 0 ? rank : -rank;
+            long long from_head = rank > 0;
+            long long matches = 0, seen = 0, compared = 0;
+            long long idx = from_head ? 0 : (long long)l->len - 1;
+            long long first_idx = 0;
+            list_node *n;
+            for (n = from_head ? l->head : l->tail; n != NULL;
+                 n = from_head ? n->next : n->prev) {
+                if (maxlen > 0 && compared >= maxlen)
+                    break;
+                compared++;
+                if (n->len == elel && memcmp(n->data, ele, elel) == 0) {
+                    seen++;
+                    if (seen >= want) {
+                        if (matches == 0)
+                            first_idx = idx;
+                        matches++;
+                        if (count_given && count > 0 && matches >= count)
+                            break;
+                    }
+                }
+                idx += from_head ? 1 : -1;
+            }
+            if (!count_given) {
+                if (matches == 0)
+                    resp_write_bulk(out, NULL, 0);
+                else
+                    resp_write_integer(out, first_idx);
+                return;
+            }
+            resp_write_array_header(out, (size_t)matches);
+            {
+                long long emitted = 0;
+                long long idx = from_head ? 0 : (long long)l->len - 1;
+                seen = 0;
+                compared = 0;
+                for (n = from_head ? l->head : l->tail;
+                     n != NULL && emitted < matches;
+                     n = from_head ? n->next : n->prev) {
+                    if (maxlen > 0 && compared >= maxlen)
+                        break;
+                    compared++;
+                    if (n->len == elel && memcmp(n->data, ele, elel) == 0) {
+                        seen++;
+                        if (seen >= want) {
+                            resp_write_integer(out, idx);
+                            emitted++;
+                        }
+                    }
+                    idx += from_head ? 1 : -1;
+                }
+            }
+        }
+        return;
+    }
+
+    if (cmd_id == CMD_LREM) {
+        if (argc != 4) {
+            wrong_args(out, "lrem");
+            return;
+        }
+        const char *k, *cv, *ele;
+        size_t kl, cvl, elel;
+        long long count;
+        if (!arg_str(&argv[1], &k, &kl) || !arg_str(&argv[2], &cv, &cvl) ||
+            !arg_str(&argv[3], &ele, &elel))
+            goto bad_type;
+        if (!parse_i64(cv, cvl, &count)) {
+            resp_write_error(out, ERR_NOT_INT, sizeof(ERR_NOT_INT) - 1);
+            return;
+        }
+        obj_list *l;
+        int rc = get_list(d, out, k, kl, 0, now_ms, &l);
+        if (rc < 0)
+            return;
+        if (rc == 0) {
+            resp_write_integer(out, 0);
+            return;
+        }
+        {
+            /* count > 0 from the head, < 0 from the tail, 0 = all */
+            unsigned long long limit =
+                count < 0 ? (unsigned long long)(-(count + 1)) + 1ULL
+                          : (unsigned long long)count;
+            long long removed = 0;
+            uint64_t before = obj_list_mem(l);
+            list_node *n = count >= 0 ? l->head : l->tail;
+            while (n != NULL && (limit == 0 ||
+                                 (unsigned long long)removed < limit)) {
+                list_node *next = count >= 0 ? n->next : n->prev;
+                if (n->len == elel && memcmp(n->data, ele, elel) == 0) {
+                    obj_list_remove(l, n);
+                    removed++;
+                }
+                n = next;
+            }
+            if (removed > 0) {
+                mem_sync(d, k, kl, before, obj_list_mem(l));
+                if (l->len == 0)
+                    db_del_kv(d, k, kl); /* empty list: the key goes away */
+            }
+            resp_write_integer(out, removed);
+        }
+        return;
+    }
+
+    if (cmd_id == CMD_LTRIM) {
+        if (argc != 4) {
+            wrong_args(out, "ltrim");
+            return;
+        }
+        const char *k, *sv, *ev;
+        size_t kl, svl, evl;
+        long long start, stop;
+        if (!arg_str(&argv[1], &k, &kl) || !arg_str(&argv[2], &sv, &svl) ||
+            !arg_str(&argv[3], &ev, &evl))
+            goto bad_type;
+        if (!parse_i64(sv, svl, &start) || !parse_i64(ev, evl, &stop)) {
+            resp_write_error(out, ERR_NOT_INT, sizeof(ERR_NOT_INT) - 1);
+            return;
+        }
+        obj_list *l;
+        int rc = get_list(d, out, k, kl, 0, now_ms, &l);
+        if (rc < 0)
+            return;
+        if (rc == 1) {
+            /* same index math as LRANGE */
+            long long len = (long long)l->len;
+            if (start < 0)
+                start += len;
+            if (start < 0)
+                start = 0;
+            if (stop < 0)
+                stop += len;
+            if (stop >= len)
+                stop = len - 1;
+            if (start > stop || start >= len || stop < 0) {
+                db_del_kv(d, k, kl); /* nothing in range: drop the key */
+            } else if (start > 0 || stop < len - 1) {
+                long long idx = 0;
+                list_node *n = l->head;
+                uint64_t before = obj_list_mem(l);
+                while (n != NULL) {
+                    list_node *next = n->next;
+                    if (idx < start || idx > stop)
+                        obj_list_remove(l, n);
+                    idx++;
+                    n = next;
+                }
+                mem_sync(d, k, kl, before, obj_list_mem(l));
+            }
+        }
+        resp_write_simple_string(out, "OK", 2);
+        return;
+    }
+
+    if (cmd_id == CMD_RPOPLPUSH) {
+        if (argc != 3) {
+            wrong_args(out, "rpoplpush");
+            return;
+        }
+        const char *sk, *dk;
+        size_t skl, dkl;
+        if (!arg_str(&argv[1], &sk, &skl) || !arg_str(&argv[2], &dk, &dkl))
+            goto bad_type;
+        if (!storage_key_ok(skl) || !storage_key_ok(dkl)) {
+            storage_length_error(out);
+            return;
+        }
+        obj_list *src, *dst;
+        int rcs = get_list(d, out, sk, skl, 0, now_ms, &src);
+        if (rcs < 0)
+            return;
+        if (rcs == 0) {
+            resp_write_bulk(out, NULL, 0);
+            return;
+        }
+        {
+            int same = skl == dkl && memcmp(sk, dk, skl) == 0;
+            int created_dst = 0;
+            /* type-check dst before mutating src */
+            if (!same) {
+                int rcd = get_list(d, out, dk, dkl, 0, now_ms, &dst);
+                if (rcd < 0)
+                    return;
+                if (rcd == 0) {
+                    if (oom_blocked(d, out))
+                        return;
+                    rcd = get_list(d, out, dk, dkl, 1, now_ms, &dst);
+                    if (rcd < 0)
+                        return;
+                    created_dst = 1;
+                }
+            } else {
+                dst = src;
+            }
+            /* push a copy of the tail element to dst's head first, then
+             * unlink the source node (SMOVE ordering: a failed push leaves
+             * src untouched) */
+            {
+                uint64_t dbefore = obj_list_mem(dst);
+                if (obj_list_push(dst, 1, src->tail->data, src->tail->len) !=
+                    0) {
+                    if (created_dst)
+                        db_del_kv(d, dk, dkl);
+                    storage_length_error(out);
+                    return;
+                }
+                mem_sync(d, dk, dkl, dbefore, obj_list_mem(dst));
+            }
+            {
+                uint64_t sbefore = obj_list_mem(src);
+                obj_list_remove(src, src->tail);
+                mem_sync(d, sk, skl, sbefore, obj_list_mem(src));
+            }
+            if (src->len == 0)
+                db_del_kv(d, sk, skl); /* empty list: the key goes away */
+            resp_write_bulk(out, dst->head->data, dst->head->len);
+        }
         return;
     }
 
@@ -4287,39 +4923,12 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
         if (crossslot_reject(d, out, argv, argc))
             return;
         {
-            size_t nkeys = argc - 1;
-            obj_set **sets =
-                (obj_set **)malloc(nkeys * sizeof(*sets));
             rh_table result;
-            size_t i;
             rh_init(&result);
-            /* resolve operands with type checks first */
-            for (i = 0; i < nkeys; i++) {
-                const char *k;
-                size_t kl;
-                obj_set *s = NULL;
-                int rc;
-                if (!arg_str(&argv[i + 1], &k, &kl))
-                    goto bad_type;
-                rc = get_set(d, out, k, kl, 0, now_ms, &s);
-                if (rc < 0) {
-                    rh_destroy(&result);
-                    free(sets);
-                    return;
-                }
-                sets[i] = rc == 1 ? s : NULL;
-            }
-            if (sunion) {
-                for (i = 0; i < nkeys; i++)
-                    if (sets[i] != NULL)
-                        rh_each(&sets[i]->members, set_union_cb, &result);
-            } else if (sets[0] != NULL) {
-                setop_ctx ctx;
-                ctx.sets = sets;
-                ctx.n = nkeys;
-                ctx.result = &result;
-                ctx.inter = inter;
-                rh_each(&sets[0]->members, setop_cb, &ctx);
+            if (setop_eval(d, out, argv + 1, argc - 1, inter, sunion, now_ms,
+                           &result) != 0) {
+                rh_destroy(&result);
+                return;
             }
             {
                 hdump_ctx dctx;
@@ -4330,7 +4939,145 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
                 rh_each(&result, hdump_cb, &dctx);
             }
             rh_destroy(&result);
+        }
+        return;
+    }
+
+    if (cmd_id == CMD_SINTERCARD) {
+        if (argc < 3) {
+            wrong_args(out, "sintercard");
+            return;
+        }
+        if (crossslot_reject(d, out, argv, argc))
+            return;
+        {
+            const char *nv;
+            size_t nvl;
+            long long nk, limit = 0;
+            size_t nkeys, rest, i;
+            obj_set **sets;
+            long long card = 0;
+            if (!arg_str(&argv[1], &nv, &nvl))
+                goto bad_type;
+            if (!parse_i64(nv, nvl, &nk)) {
+                resp_write_error(out, ERR_NOT_INT, sizeof(ERR_NOT_INT) - 1);
+                return;
+            }
+            if (nk <= 0 || (unsigned long long)nk > argc - 2) {
+                static const char E[] =
+                    "ERR Number of keys can't be greater than number of args";
+                resp_write_error(out, E, sizeof(E) - 1);
+                return;
+            }
+            nkeys = (size_t)nk;
+            rest = argc - 2 - nkeys;
+            if (rest == 2) {
+                const char *opt, *lv;
+                size_t optl, lvl;
+                if (!arg_str(&argv[2 + nkeys], &opt, &optl) ||
+                    !arg_str(&argv[3 + nkeys], &lv, &lvl))
+                    goto bad_type;
+                if (!ci_equal(opt, optl, "LIMIT")) {
+                    resp_write_error(out, ERR_SYNTAX, sizeof(ERR_SYNTAX) - 1);
+                    return;
+                }
+                if (!parse_i64(lv, lvl, &limit)) {
+                    resp_write_error(out, ERR_NOT_INT, sizeof(ERR_NOT_INT) - 1);
+                    return;
+                }
+                if (limit < 0) {
+                    static const char E[] = "ERR LIMIT can't be negative";
+                    resp_write_error(out, E, sizeof(E) - 1);
+                    return;
+                }
+            } else if (rest != 0) {
+                resp_write_error(out, ERR_SYNTAX, sizeof(ERR_SYNTAX) - 1);
+                return;
+            }
+            sets = (obj_set **)malloc(nkeys * sizeof(*sets));
+            for (i = 0; i < nkeys; i++) {
+                const char *k;
+                size_t kl;
+                obj_set *s = NULL;
+                int rc;
+                if (!arg_str(&argv[2 + i], &k, &kl)) {
+                    free(sets);
+                    goto bad_type;
+                }
+                rc = get_set(d, out, k, kl, 0, now_ms, &s);
+                if (rc < 0) {
+                    free(sets);
+                    return;
+                }
+                sets[i] = rc == 1 ? s : NULL;
+            }
+            /* a missing operand empties the intersection */
+            for (i = 0; i < nkeys && sets[i] != NULL; i++)
+                ;
+            if (i == nkeys) {
+                sintercard_ctx ctx;
+                ctx.sets = sets;
+                ctx.n = nkeys;
+                ctx.count = 0;
+                ctx.limit = limit;
+                /* count matches against sets[1..n); LIMIT stops early */
+                (void)rh_scan(&sets[0]->members, 0, SIZE_MAX, sintercard_cb,
+                              &ctx);
+                card = ctx.count;
+            }
             free(sets);
+            resp_write_integer(out, card);
+        }
+        return;
+    }
+
+    if (cmd_id == CMD_SINTERSTORE || cmd_id == CMD_SUNIONSTORE ||
+        cmd_id == CMD_SDIFFSTORE) {
+        int inter = cmd_id == CMD_SINTERSTORE;
+        int sunion = cmd_id == CMD_SUNIONSTORE;
+        if (argc < 3) {
+            wrong_args(out, inter ? "sinterstore"
+                                  : sunion ? "sunionstore" : "sdiffstore");
+            return;
+        }
+        if (crossslot_reject(d, out, argv, argc))
+            return;
+        {
+            const char *dk;
+            size_t dkl;
+            rh_table result;
+            size_t card;
+            if (!arg_str(&argv[1], &dk, &dkl))
+                goto bad_type;
+            if (!storage_key_ok(dkl)) {
+                storage_length_error(out);
+                return;
+            }
+            rh_init(&result);
+            if (setop_eval(d, out, argv + 2, argc - 2, inter, sunion, now_ms,
+                           &result) != 0) {
+                rh_destroy(&result);
+                return;
+            }
+            card = rh_size(&result);
+            if (card == 0) {
+                db_del_kv(d, dk, dkl); /* empty result: dst goes away */
+            } else {
+                /* materialize the result as dst's set (any old type and
+                 * TTL are overwritten, per Redis STORE semantics) */
+                obj_set *ns = obj_set_new();
+                char blob[9];
+                rh_each(&result, set_store_cb, ns);
+                obj_pack_ptr(blob, DDUP_OBJ_SET, ns);
+                if (db_set_kv(d, dk, dkl, blob, 9, now_ms) != 0) {
+                    obj_set_free(ns);
+                    rh_destroy(&result);
+                    storage_length_error(out);
+                    return;
+                }
+            }
+            rh_destroy(&result);
+            resp_write_integer(out, (long long)card);
         }
         return;
     }
@@ -4826,6 +5573,386 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
         return;
     }
 
+    if (cmd_id == CMD_ZPOPMIN || cmd_id == CMD_ZPOPMAX) {
+        int min_side = cmd_id == CMD_ZPOPMIN;
+        if (argc != 2 && argc != 3) {
+            wrong_args(out, min_side ? "zpopmin" : "zpopmax");
+            return;
+        }
+        const char *k;
+        size_t kl;
+        long long count = 1;
+        if (!arg_str(&argv[1], &k, &kl))
+            goto bad_type;
+        if (argc == 3) {
+            const char *cv;
+            size_t cvl;
+            if (!arg_str(&argv[2], &cv, &cvl))
+                goto bad_type;
+            if (!parse_i64(cv, cvl, &count)) {
+                resp_write_error(out, ERR_NOT_INT, sizeof(ERR_NOT_INT) - 1);
+                return;
+            }
+            if (count <= 0) {
+                static const char range_err[] =
+                    "ERR value is out of range, must be positive";
+                resp_write_error(out, range_err, sizeof(range_err) - 1);
+                return;
+            }
+        }
+        obj_zset *z;
+        int rc = get_zset(d, out, k, kl, 0, now_ms, &z);
+        if (rc < 0)
+            return;
+        if (rc == 0) {
+            resp_write_array_header(out, 0);
+            return;
+        }
+        {
+            /* flat member/score pairs (Redis 6.2+ also without count) */
+            size_t avail = z->sl->length;
+            size_t n = (uint64_t)count < (uint64_t)avail ? (size_t)count
+                                                         : avail;
+            uint64_t before = obj_zset_mem(z);
+            size_t i;
+            resp_write_array_header(out, n * 2);
+            for (i = 0; i < n; i++) {
+                zsl_node *node = min_side ? z->sl->header->level[0].forward
+                                          : z->sl->tail;
+                char num[40];
+                int nl = fmt_score(num, sizeof(num), node->score);
+                resp_write_bulk(out, node->member, node->mlen);
+                resp_write_bulk(out, num, (size_t)nl);
+                obj_zset_rem(z, node->member, node->mlen);
+            }
+            mem_sync(d, k, kl, before, obj_zset_mem(z));
+            if (rh_size(&z->dict) == 0)
+                db_del_kv(d, k, kl); /* empty zset: the key goes away */
+        }
+        return;
+    }
+
+    if (cmd_id == CMD_ZREMRANGEBYRANK) {
+        if (argc != 4) {
+            wrong_args(out, "zremrangebyrank");
+            return;
+        }
+        const char *k, *sv, *ev;
+        size_t kl, svl, evl;
+        long long start, stop;
+        if (!arg_str(&argv[1], &k, &kl) || !arg_str(&argv[2], &sv, &svl) ||
+            !arg_str(&argv[3], &ev, &evl))
+            goto bad_type;
+        if (!parse_i64(sv, svl, &start) || !parse_i64(ev, evl, &stop)) {
+            resp_write_error(out, ERR_NOT_INT, sizeof(ERR_NOT_INT) - 1);
+            return;
+        }
+        obj_zset *z;
+        int rc = get_zset(d, out, k, kl, 0, now_ms, &z);
+        if (rc < 0)
+            return;
+        if (rc == 0) {
+            resp_write_integer(out, 0);
+            return;
+        }
+        {
+            /* same negative-index/clamp rules as ZRANGE */
+            long long len = (long long)z->sl->length;
+            long long removed = 0;
+            uint64_t before = obj_zset_mem(z);
+            if (start < 0)
+                start += len;
+            if (start < 0)
+                start = 0;
+            if (stop < 0)
+                stop += len;
+            if (stop >= len)
+                stop = len - 1;
+            if (start <= stop && start < len && stop >= 0) {
+                zsl_node *first = zsl_at(z->sl, (size_t)start);
+                zsl_node *last = zsl_at(z->sl, (size_t)stop);
+                removed = zset_rem_node_span(z, first, last);
+            }
+            mem_sync(d, k, kl, before, obj_zset_mem(z));
+            if (rh_size(&z->dict) == 0)
+                db_del_kv(d, k, kl);
+            resp_write_integer(out, removed);
+        }
+        return;
+    }
+
+    if (cmd_id == CMD_ZMSCORE) {
+        if (argc < 3) {
+            wrong_args(out, "zmscore");
+            return;
+        }
+        const char *k;
+        size_t kl;
+        size_t i;
+        if (!arg_str(&argv[1], &k, &kl))
+            goto bad_type;
+        obj_zset *z;
+        int rc = get_zset(d, out, k, kl, 0, now_ms, &z);
+        if (rc < 0)
+            return;
+        resp_write_array_header(out, argc - 2);
+        for (i = 2; i < argc; i++) {
+            const char *m;
+            size_t ml;
+            double sc;
+            if (!arg_str(&argv[i], &m, &ml))
+                goto bad_type;
+            if (rc == 1 && obj_zset_score(z, m, ml, &sc)) {
+                char num[40];
+                int nl = fmt_score(num, sizeof(num), sc);
+                resp_write_bulk(out, num, (size_t)nl);
+            } else {
+                resp_write_bulk(out, NULL, 0);
+            }
+        }
+        return;
+    }
+
+    if (cmd_id == CMD_ZRANDMEMBER) {
+        if (argc < 2 || argc > 4) {
+            wrong_args(out, "zrandmember");
+            return;
+        }
+        const char *k;
+        size_t kl;
+        long long count = 0;
+        int withscores = 0;
+        if (!arg_str(&argv[1], &k, &kl))
+            goto bad_type;
+        if (argc >= 3) {
+            const char *cv;
+            size_t cvl;
+            if (!arg_str(&argv[2], &cv, &cvl))
+                goto bad_type;
+            if (!parse_i64(cv, cvl, &count)) {
+                resp_write_error(out, ERR_NOT_INT, sizeof(ERR_NOT_INT) - 1);
+                return;
+            }
+        }
+        if (argc == 4) {
+            const char *ov;
+            size_t ovl;
+            if (!arg_str(&argv[3], &ov, &ovl))
+                goto bad_type;
+            if (!ci_equal(ov, ovl, "WITHSCORES")) {
+                resp_write_error(out, ERR_SYNTAX, sizeof(ERR_SYNTAX) - 1);
+                return;
+            }
+            withscores = 1;
+        }
+        obj_zset *z;
+        int rc = get_zset(d, out, k, kl, 0, now_ms, &z);
+        if (rc < 0)
+            return;
+        if (argc == 2) {
+            /* single member form: bulk reply, O(log N) via span walk */
+            zsl_node *n;
+            if (rc == 0) {
+                resp_write_bulk(out, NULL, 0);
+                return;
+            }
+            n = zsl_at(z->sl,
+                       (size_t)(db_rand(d) % (uint32_t)z->sl->length));
+            resp_write_bulk(out, n->member, n->mlen);
+            return;
+        }
+        /* count form: array reply */
+        if (rc == 0 || count == 0) {
+            resp_write_array_header(out, 0);
+            return;
+        }
+        {
+            collect_ctx cc = {0};
+            size_t n, i, k2;
+            rh_each(&z->dict, collect_cb, &cc);
+            n = cc.n;
+            if (count < 0) {
+                /* with repeats */
+                size_t total = (size_t)-count;
+                resp_write_array_header(out, withscores ? total * 2 : total);
+                for (i = 0; i < total; i++) {
+                    size_t idx = (size_t)(db_rand(d) % (uint32_t)n);
+                    resp_write_bulk(out, cc.keys[idx], cc.lens[idx]);
+                    if (withscores) {
+                        double sc;
+                        char num[40];
+                        int nl;
+                        if (obj_zset_score(z, cc.keys[idx], cc.lens[idx],
+                                           &sc)) {
+                            nl = fmt_score(num, sizeof(num), sc);
+                            resp_write_bulk(out, num, (size_t)nl);
+                        }
+                    }
+                }
+            } else {
+                k2 = (size_t)count < n ? (size_t)count : n;
+                collect_shuffle(d, &cc, k2);
+                resp_write_array_header(out, withscores ? k2 * 2 : k2);
+                for (i = 0; i < k2; i++) {
+                    resp_write_bulk(out, cc.keys[i], cc.lens[i]);
+                    if (withscores) {
+                        double sc;
+                        char num[40];
+                        int nl;
+                        if (obj_zset_score(z, cc.keys[i], cc.lens[i], &sc)) {
+                            nl = fmt_score(num, sizeof(num), sc);
+                            resp_write_bulk(out, num, (size_t)nl);
+                        }
+                    }
+                }
+            }
+            free(cc.keys);
+            free(cc.lens);
+        }
+        return;
+    }
+
+    if (cmd_id == CMD_ZRANGEBYLEX || cmd_id == CMD_ZREVRANGEBYLEX) {
+        int rev = cmd_id == CMD_ZREVRANGEBYLEX;
+        if (argc < 4) {
+            wrong_args(out, rev ? "zrevrangebylex" : "zrangebylex");
+            return;
+        }
+        const char *k, *minv, *maxv;
+        size_t kl, minvl, maxvl;
+        zlexrangespec spec;
+        long long off = 0, cnt = -1;
+        if (!arg_str(&argv[1], &k, &kl))
+            goto bad_type;
+        /* ZREVRANGEBYLEX takes max before min */
+        if (!arg_str(&argv[rev ? 3 : 2], &minv, &minvl) ||
+            !arg_str(&argv[rev ? 2 : 3], &maxv, &maxvl))
+            goto bad_type;
+        if (!parse_lex_bound(minv, minvl, &spec.min) ||
+            !parse_lex_bound(maxv, maxvl, &spec.max)) {
+            static const char lex_err[] =
+                "ERR min or max is not a valid string range item";
+            resp_write_error(out, lex_err, sizeof(lex_err) - 1);
+            return;
+        }
+        for (size_t i = 4; i < argc; i++) {
+            const char *o;
+            size_t ol;
+            if (!arg_str(&argv[i], &o, &ol))
+                goto bad_type;
+            if (ci_equal(o, ol, "LIMIT") && i + 2 < argc) {
+                const char *ov, *cv;
+                size_t ovl, cvl;
+                if (!arg_str(&argv[i + 1], &ov, &ovl) ||
+                    !arg_str(&argv[i + 2], &cv, &cvl))
+                    goto bad_type;
+                if (!parse_i64(ov, ovl, &off) ||
+                    !parse_i64(cv, cvl, &cnt)) {
+                    resp_write_error(out, ERR_NOT_INT,
+                                     sizeof(ERR_NOT_INT) - 1);
+                    return;
+                }
+                i += 2;
+            } else {
+                resp_write_error(out, ERR_SYNTAX, sizeof(ERR_SYNTAX) - 1);
+                return;
+            }
+        }
+        if (off < 0)
+            off = 0;
+        obj_zset *z;
+        int rc = get_zset(d, out, k, kl, 0, now_ms, &z);
+        if (rc < 0)
+            return;
+        if (rc == 0) {
+            resp_write_array_header(out, 0);
+            return;
+        }
+        {
+            /* walk the [first, last] node span; two passes for the header */
+            zsl_node *first = zsl_first_in_lex_range(z->sl, &spec);
+            zsl_node *last = zsl_last_in_lex_range(z->sl, &spec);
+            long long emitted = 0;
+            long long c;
+            zsl_node *n;
+            if (first == NULL || last == NULL) {
+                resp_write_array_header(out, 0);
+                return;
+            }
+            c = 0;
+            for (n = first;; n = n->level[0].forward) {
+                if (c >= off)
+                    emitted++;
+                c++;
+                if (n == last)
+                    break;
+            }
+            if (cnt >= 0 && emitted > cnt)
+                emitted = cnt;
+            resp_write_array_header(out, (size_t)emitted);
+            c = 0;
+            if (!rev) {
+                for (n = first;; n = n->level[0].forward) {
+                    if (c >= off && (cnt < 0 || c - off < cnt))
+                        resp_write_bulk(out, n->member, n->mlen);
+                    c++;
+                    if (n == last)
+                        break;
+                }
+            } else {
+                for (n = last;; n = n->backward) {
+                    if (c >= off && (cnt < 0 || c - off < cnt))
+                        resp_write_bulk(out, n->member, n->mlen);
+                    c++;
+                    if (n == first)
+                        break;
+                }
+            }
+        }
+        return;
+    }
+
+    if (cmd_id == CMD_ZREMRANGEBYLEX) {
+        if (argc != 4) {
+            wrong_args(out, "zremrangebylex");
+            return;
+        }
+        const char *k, *minv, *maxv;
+        size_t kl, minvl, maxvl;
+        zlexrangespec spec;
+        if (!arg_str(&argv[1], &k, &kl) || !arg_str(&argv[2], &minv, &minvl) ||
+            !arg_str(&argv[3], &maxv, &maxvl))
+            goto bad_type;
+        if (!parse_lex_bound(minv, minvl, &spec.min) ||
+            !parse_lex_bound(maxv, maxvl, &spec.max)) {
+            static const char lex_err[] =
+                "ERR min or max is not a valid string range item";
+            resp_write_error(out, lex_err, sizeof(lex_err) - 1);
+            return;
+        }
+        obj_zset *z;
+        int rc = get_zset(d, out, k, kl, 0, now_ms, &z);
+        if (rc < 0)
+            return;
+        if (rc == 0) {
+            resp_write_integer(out, 0);
+            return;
+        }
+        {
+            zsl_node *first = zsl_first_in_lex_range(z->sl, &spec);
+            zsl_node *last = zsl_last_in_lex_range(z->sl, &spec);
+            long long removed = 0;
+            uint64_t before = obj_zset_mem(z);
+            if (first != NULL && last != NULL)
+                removed = zset_rem_node_span(z, first, last);
+            mem_sync(d, k, kl, before, obj_zset_mem(z));
+            if (rh_size(&z->dict) == 0)
+                db_del_kv(d, k, kl);
+            resp_write_integer(out, removed);
+        }
+        return;
+    }
+
     if (cmd_id == CMD_SUBSCRIBE) {
         size_t i;
         if (argc < 2) {
@@ -4869,11 +5996,14 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
                 write_sub_reply(out, "subscribe", 9, ch, argv[i].len,
                                 (long long)counts[i - 1]);
             }
-            if (s->subscribe != NULL)
+            /* hook sessions: the hook moved nsub already; rebuild it from
+             * the staged adds. hook-less sessions counted in the loop. */
+            if (s->subscribe != NULL) {
                 s->nsub = old_nsub;
-            for (i = 1; i < argc; i++)
-                if (added[i - 1])
-                    s->nsub++;
+                for (i = 1; i < argc; i++)
+                    if (added[i - 1])
+                        s->nsub++;
+            }
         }
         return;
     }
@@ -4911,6 +6041,107 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
                                             u.lens[i]);
                 write_sub_reply(out, "unsubscribe", 11, u.names[i], u.lens[i],
                                 (long long)cnt);
+                free(u.names[i]);
+            }
+            free(u.names);
+            free(u.lens);
+        }
+        return;
+    }
+
+    if (cmd_id == CMD_PSUBSCRIBE) {
+        size_t i;
+        if (argc < 2) {
+            wrong_args(out, "psubscribe");
+            return;
+        }
+        for (i = 1; i < argc; i++) {
+            const char *ch;
+            size_t cl;
+            if (!arg_str(&argv[i], &ch, &cl))
+                goto bad_type;
+        }
+        {
+            size_t old_npsub = s->npsub;
+            size_t staged = 0;
+            ptrdiff_t counts[argc - 1];
+            unsigned char added[argc - 1];
+            for (i = 1; i < argc; i++) {
+                const char *ch;
+                size_t cl;
+                if (!arg_str(&argv[i], &ch, &cl)) goto bad_type;
+                ptrdiff_t before = (ptrdiff_t)s->npsub;
+                counts[i - 1] = s->psubscribe != NULL
+                                    ? s->psubscribe(s->ps_ctx, s, ch, cl)
+                                    : (ptrdiff_t)(++s->npsub);
+                added[i - 1] = (unsigned char)(counts[i - 1] > before);
+                if (counts[i - 1] < 0) {
+                    while (staged-- > 0) {
+                        const char *undo = argv[i - staged - 1].str;
+                        if (added[i - staged - 1])
+                            s->punsubscribe(s->ps_ctx, s, undo,
+                                            argv[i - staged - 1].len);
+                    }
+                    s->npsub = old_npsub;
+                    storage_length_error(out);
+                    return;
+                }
+                staged++;
+            }
+            /* the reported count spans channels + shard channels + patterns */
+            for (i = 1; i < argc; i++) {
+                const char *ch = argv[i].str;
+                write_sub_reply(out, "psubscribe", 10, ch, argv[i].len,
+                                (long long)(s->nsub + s->nssub) +
+                                    (long long)counts[i - 1]);
+            }
+            /* hook sessions: the hook moved npsub already; rebuild it from
+             * the staged adds. hook-less sessions counted in the loop. */
+            if (s->psubscribe != NULL) {
+                s->npsub = old_npsub;
+                for (i = 1; i < argc; i++)
+                    if (added[i - 1])
+                        s->npsub++;
+            }
+        }
+        return;
+    }
+
+    if (cmd_id == CMD_PUNSUBSCRIBE) {
+        if (argc > 1) {
+            size_t i;
+            for (i = 1; i < argc; i++) {
+                const char *ch;
+                size_t cl;
+                size_t cnt = 0;
+                if (!arg_str(&argv[i], &ch, &cl))
+                    goto bad_type;
+                if (s->punsubscribe != NULL)
+                    cnt = s->punsubscribe(s->ps_ctx, s, ch, cl);
+                else if (s->npsub > 0)
+                    cnt = --s->npsub;
+                write_sub_reply(out, "punsubscribe", 12, ch, cl,
+                                (long long)(s->nsub + s->nssub + cnt));
+            }
+            return;
+        }
+        /* no args: unsubscribe every pattern, one push per pattern */
+        if (s->npsub == 0 || s->each_pattern == NULL) {
+            size_t rest = s->nsub + s->nssub;
+            s->npsub = 0; /* registry-less session: just clear */
+            write_sub_reply(out, "punsubscribe", 12, NULL, 0,
+                            (long long)rest);
+            return;
+        }
+        {
+            unsub_ctx u = {0};
+            size_t i;
+            s->each_pattern(s->ps_ctx, s, unsub_collect_cb, &u);
+            for (i = 0; i < u.n; i++) {
+                size_t cnt = s->punsubscribe(s->ps_ctx, s, u.names[i],
+                                             u.lens[i]);
+                write_sub_reply(out, "punsubscribe", 12, u.names[i], u.lens[i],
+                                (long long)(s->nsub + s->nssub + cnt));
                 free(u.names[i]);
             }
             free(u.names);
@@ -4975,11 +6206,12 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
                 write_sub_reply(out, "ssubscribe", 10, argv[i].str,
                                 argv[i].len, (long long)counts[i - 1]);
             }
-            if (s->ssubscribe != NULL)
+            if (s->ssubscribe != NULL) {
                 s->nssub = old_nssub;
-            for (i = 1; i < argc; i++)
-                if (added[i - 1])
-                    s->nssub++;
+                for (i = 1; i < argc; i++)
+                    if (added[i - 1])
+                        s->nssub++;
+            }
         }
         return;
     }
@@ -5052,6 +6284,38 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
         size_t sl;
         if (argc < 2 || !arg_str(&argv[1], &sub, &sl))
             goto bad_type;
+        if (ci_equal(sub, sl, "CHANNELS") && (argc == 2 || argc == 3)) {
+            const char *pat = NULL;
+            size_t pl = 0;
+            if (argc == 3 && !arg_str(&argv[2], &pat, &pl))
+                goto bad_type;
+            if (s->pubsub_channels != NULL)
+                s->pubsub_channels(s->ps_ctx, pat, pl, out);
+            else
+                resp_write_array_header(out, 0);
+            return;
+        }
+        if (ci_equal(sub, sl, "NUMSUB") && argc >= 2) {
+            size_t i;
+            resp_write_array_header(out, (argc - 2) * 2);
+            for (i = 2; i < argc; i++) {
+                const char *ch;
+                size_t cl;
+                if (!arg_str(&argv[i], &ch, &cl))
+                    goto bad_type;
+                resp_write_bulk(out, ch, cl);
+                resp_write_integer(out,
+                                   s->channel_nsub != NULL
+                                       ? s->channel_nsub(s->ps_ctx, ch, cl)
+                                       : 0);
+            }
+            return;
+        }
+        if (ci_equal(sub, sl, "NUMPAT") && argc == 2) {
+            resp_write_integer(out,
+                               s->numpat != NULL ? s->numpat(s->ps_ctx) : 0);
+            return;
+        }
         if (ci_equal(sub, sl, "SHARDNUMSUB") && argc >= 2) {
             size_t i;
             resp_write_array_header(out, (argc - 2) * 2);
@@ -5810,8 +7074,8 @@ static const cmd_entry CMD_TABLE[] = {
     {"rpush", CMD_RPUSH, 3, -1, 0, CMD_WRITE},
     {"lpushx", CMD_LPUSHX, 3, -1, 0, CMD_WRITE},
     {"rpushx", CMD_RPUSHX, 3, -1, 0, CMD_WRITE},
-    {"lpop", CMD_LPOP, 2, 2, 0, CMD_WRITE},
-    {"rpop", CMD_RPOP, 2, 2, 0, CMD_WRITE},
+    {"lpop", CMD_LPOP, 2, 3, 0, CMD_WRITE},
+    {"rpop", CMD_RPOP, 2, 3, 0, CMD_WRITE},
     {"llen", CMD_LLEN, 2, 2, 0, 0},
     {"lrange", CMD_LRANGE, 4, 4, 0, 0},
     {"lindex", CMD_LINDEX, 3, 3, 0, 0},
@@ -5885,6 +7149,26 @@ static const cmd_entry CMD_TABLE[] = {
     {"incrby", CMD_INCRBY, 3, 3, 0, CMD_WRITE},
     {"decrby", CMD_DECRBY, 3, 3, 0, CMD_WRITE},
     {"incrbyfloat", CMD_INCRBYFLOAT, 3, 3, 0, CMD_WRITE},
+    {"hstrlen", CMD_HSTRLEN, 3, 3, 0, 0},
+    {"hrandfield", CMD_HRANDFIELD, 2, 4, 0, 0},
+    {"lpos", CMD_LPOS, 3, -1, 0, 0},
+    {"lrem", CMD_LREM, 4, 4, 0, CMD_WRITE},
+    {"ltrim", CMD_LTRIM, 4, 4, 0, CMD_WRITE},
+    {"rpoplpush", CMD_RPOPLPUSH, 3, 3, 0, CMD_WRITE},
+    {"sintercard", CMD_SINTERCARD, 3, -1, 0, 0},
+    {"sinterstore", CMD_SINTERSTORE, 3, -1, 0, CMD_WRITE},
+    {"sunionstore", CMD_SUNIONSTORE, 3, -1, 0, CMD_WRITE},
+    {"sdiffstore", CMD_SDIFFSTORE, 3, -1, 0, CMD_WRITE},
+    {"zpopmin", CMD_ZPOPMIN, 2, 3, 0, CMD_WRITE},
+    {"zpopmax", CMD_ZPOPMAX, 2, 3, 0, CMD_WRITE},
+    {"zremrangebyrank", CMD_ZREMRANGEBYRANK, 4, 4, 0, CMD_WRITE},
+    {"zmscore", CMD_ZMSCORE, 3, -1, 0, 0},
+    {"zrandmember", CMD_ZRANDMEMBER, 2, 4, 0, 0},
+    {"zrangebylex", CMD_ZRANGEBYLEX, 4, -1, 0, 0},
+    {"zrevrangebylex", CMD_ZREVRANGEBYLEX, 4, -1, 0, 0},
+    {"zremrangebylex", CMD_ZREMRANGEBYLEX, 4, 4, 0, CMD_WRITE},
+    {"psubscribe", CMD_PSUBSCRIBE, 2, -1, 0, 0},
+    {"punsubscribe", CMD_PUNSUBSCRIBE, 1, -1, 0, 0},
 };
 
 static const cmd_entry *cmd_table_entry(uint16_t id)
@@ -6084,7 +7368,7 @@ static void exec_transaction(session *s, resp_buf *out, uint64_t now_ms)
             if (s->queue[i].argc > 0)
                 (void)arg_str(&s->queue[i].argv[0], &qn, &qnl);
             qid = qn != NULL ? cmd_resolve(qn, qnl) : CMD_ID_UNKNOWN;
-            if (qid != CMD_ID_UNKNOWN && qid < 128) {
+            if (qid != CMD_ID_UNKNOWN && qid < CMD_STATS_SLOTS) {
                 s->d->cmd_calls[qid]++;
                 s->d->cmd_usecs[qid] += pal_now_us() - t0;
             }
@@ -6131,7 +7415,7 @@ void session_execute_at(session *s, const resp_value *argv, size_t argc,
      * tail); cmd_calls still counts, per-call usec timing is skipped --
      * the two clock reads cost more than the stat is worth on this path. */
     if (cmd_id == CMD_GET && s->authed && !s->in_multi && s->nsub == 0 &&
-        s->nssub == 0 && !s->d->cluster_enabled) {
+        s->nssub == 0 && s->npsub == 0 && !s->d->cluster_enabled) {
         const char *k;
         size_t kl;
         const char *v;
@@ -6157,7 +7441,8 @@ void session_execute_at(session *s, const resp_value *argv, size_t argc,
         return;
     }
     if (cmd_id == CMD_SET && argc == 3 && s->authed && !s->in_multi &&
-        s->nsub == 0 && s->nssub == 0 && !s->d->cluster_enabled &&
+        s->nsub == 0 && s->nssub == 0 && s->npsub == 0 &&
+        !s->d->cluster_enabled &&
         (s->role == NULL || *s->role != SESSION_ROLE_REPLICA ||
          s->repl_link)) {
         const char *k, *v;
@@ -6204,13 +7489,13 @@ void session_execute_at(session *s, const resp_value *argv, size_t argc,
     }
 
     /* subscribed mode: only a small command set is allowed */
-    if ((s->nsub > 0 || s->nssub > 0) && name != NULL &&
+    if ((s->nsub > 0 || s->nssub > 0 || s->npsub > 0) && name != NULL &&
         cmd_id != CMD_SUBSCRIBE &&
         cmd_id != CMD_UNSUBSCRIBE &&
         cmd_id != CMD_SSUBSCRIBE &&
         cmd_id != CMD_SUNSUBSCRIBE &&
-        !ci_equal(name, nlen, "PSUBSCRIBE") &&
-        !ci_equal(name, nlen, "PUNSUBSCRIBE") &&
+        cmd_id != CMD_PSUBSCRIBE &&
+        cmd_id != CMD_PUNSUBSCRIBE &&
         cmd_id != CMD_PING && cmd_id != CMD_QUIT &&
         cmd_id != CMD_SHUTDOWN) {
         char lc[32];
@@ -6325,7 +7610,7 @@ void session_execute_at(session *s, const resp_value *argv, size_t argc,
         command_dispatch(s, argv, argc, out, now_ms);
         /* commandstats: count every dispatched command (queueing/blocked
          * paths above do not reach here) */
-        if (cmd_id != CMD_ID_UNKNOWN && cmd_id < 128) {
+        if (cmd_id != CMD_ID_UNKNOWN && cmd_id < CMD_STATS_SLOTS) {
             s->d->cmd_calls[cmd_id]++;
             s->d->cmd_usecs[cmd_id] += pal_now_us() - t0;
         }
