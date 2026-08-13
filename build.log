@@ -30,7 +30,7 @@
 -- Performing Test CMAKE_HAVE_LIBC_PTHREAD - Success
 -- Found Threads: TRUE
 -- ddup: TLS enabled (OpenSSL 3.0.13)
--- Configuring done (12.3s)
+-- Configuring done (11.0s)
 -- Generating done (0.1s)
 -- Build files have been written to: /home/runner/work/ddup/ddup/build
 [  0%] Building C object CMakeFiles/ddup_lua.dir/deps/lua/lapi.c.o
@@ -102,12 +102,28 @@
 [ 28%] Built target ddup_core
 [ 28%] Building C object CMakeFiles/ddup-server.dir/src/main.c.o
 [ 29%] Linking C executable ddup-server
+In function ‘snprintf’,
+    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:423:9,
+    inlined from ‘obj_hash_each’ at /home/runner/work/ddup/ddup/src/ds/obj.c:258:38,
+    inlined from ‘obj_hash_each’ at /home/runner/work/ddup/ddup/src/ds/obj.c:251:6,
+    inlined from ‘command_dispatch’ at /home/runner/work/ddup/ddup/src/core/command.c:3890:9:
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
+   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^
 [ 29%] Built target ddup-server
 [ 30%] Building C object CMakeFiles/ddup-bench.dir/bench/ddup-bench.c.o
 [ 30%] Linking C executable ddup-bench
 [ 30%] Built target ddup-bench
 [ 30%] Building C object CMakeFiles/bench_core.dir/bench/bench_core.c.o
 [ 30%] Linking C executable bench_core
+In function ‘snprintf’,
+    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:423:9,
+    inlined from ‘obj_hash_each’ at /home/runner/work/ddup/ddup/src/ds/obj.c:258:38,
+    inlined from ‘obj_hash_each’ at /home/runner/work/ddup/ddup/src/ds/obj.c:251:6,
+    inlined from ‘command_dispatch’ at /home/runner/work/ddup/ddup/src/core/command.c:3890:9:
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
+   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^
 [ 30%] Built target bench_core
 [ 31%] Building C object CMakeFiles/ddup-reshard.dir/tools/ddup-reshard.c.o
 [ 31%] Building C object CMakeFiles/ddup-reshard.dir/tools/reshard_args.c.o
@@ -164,6 +180,14 @@
 [ 50%] Built target test_spsc
 [ 50%] Building C object CMakeFiles/test_mt_server.dir/tests/test_mt_server.c.o
 [ 51%] Linking C executable test_mt_server
+In function ‘snprintf’,
+    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:423:9,
+    inlined from ‘obj_hash_each’ at /home/runner/work/ddup/ddup/src/ds/obj.c:258:38,
+    inlined from ‘obj_hash_each’ at /home/runner/work/ddup/ddup/src/ds/obj.c:251:6,
+    inlined from ‘command_dispatch’ at /home/runner/work/ddup/ddup/src/core/command.c:3890:9:
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
+   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^
 [ 51%] Built target test_mt_server
 [ 52%] Building C object CMakeFiles/test_cstd.dir/tests/test_cstd.c.o
 [ 52%] Linking C executable test_cstd
@@ -182,6 +206,14 @@
 [ 55%] Built target test_event
 [ 55%] Building C object CMakeFiles/test_server.dir/tests/test_server.c.o
 [ 56%] Linking C executable test_server
+In function ‘snprintf’,
+    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:423:9,
+    inlined from ‘obj_hash_each’ at /home/runner/work/ddup/ddup/src/ds/obj.c:258:38,
+    inlined from ‘obj_hash_each’ at /home/runner/work/ddup/ddup/src/ds/obj.c:251:6,
+    inlined from ‘command_dispatch’ at /home/runner/work/ddup/ddup/src/core/command.c:3890:9:
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
+   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^
 [ 56%] Built target test_server
 [ 57%] Building C object CMakeFiles/test_arena.dir/tests/test_arena.c.o
 [ 57%] Linking C executable test_arena
@@ -200,27 +232,83 @@
 [ 60%] Built target test_rhtable
 [ 61%] Building C object CMakeFiles/test_command.dir/tests/test_command.c.o
 [ 61%] Linking C executable test_command
+In function ‘snprintf’,
+    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:423:9,
+    inlined from ‘obj_hash_each’ at /home/runner/work/ddup/ddup/src/ds/obj.c:258:38,
+    inlined from ‘obj_hash_each’ at /home/runner/work/ddup/ddup/src/ds/obj.c:251:6,
+    inlined from ‘command_dispatch’ at /home/runner/work/ddup/ddup/src/core/command.c:3890:9:
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
+   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^
 [ 61%] Built target test_command
 [ 62%] Building C object CMakeFiles/test_glob.dir/tests/test_glob.c.o
 [ 62%] Linking C executable test_glob
 [ 62%] Built target test_glob
 [ 62%] Building C object CMakeFiles/test_keys.dir/tests/test_keys.c.o
 [ 63%] Linking C executable test_keys
+In function ‘snprintf’,
+    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:423:9,
+    inlined from ‘obj_hash_each’ at /home/runner/work/ddup/ddup/src/ds/obj.c:258:38,
+    inlined from ‘obj_hash_each’ at /home/runner/work/ddup/ddup/src/ds/obj.c:251:6,
+    inlined from ‘command_dispatch’ at /home/runner/work/ddup/ddup/src/core/command.c:3890:9:
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
+   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^
 [ 63%] Built target test_keys
 [ 63%] Building C object CMakeFiles/test_stringx.dir/tests/test_stringx.c.o
 [ 64%] Linking C executable test_stringx
+In function ‘snprintf’,
+    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:423:9,
+    inlined from ‘obj_hash_each’ at /home/runner/work/ddup/ddup/src/ds/obj.c:258:38,
+    inlined from ‘obj_hash_each’ at /home/runner/work/ddup/ddup/src/ds/obj.c:251:6,
+    inlined from ‘command_dispatch’ at /home/runner/work/ddup/ddup/src/core/command.c:3890:9:
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
+   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^
 [ 64%] Built target test_stringx
 [ 65%] Building C object CMakeFiles/test_expire.dir/tests/test_expire.c.o
 [ 65%] Linking C executable test_expire
+In function ‘snprintf’,
+    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:423:9,
+    inlined from ‘obj_hash_each’ at /home/runner/work/ddup/ddup/src/ds/obj.c:258:38,
+    inlined from ‘obj_hash_each’ at /home/runner/work/ddup/ddup/src/ds/obj.c:251:6,
+    inlined from ‘command_dispatch’ at /home/runner/work/ddup/ddup/src/core/command.c:3890:9:
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
+   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^
 [ 65%] Built target test_expire
 [ 65%] Building C object CMakeFiles/test_eviction.dir/tests/test_eviction.c.o
 [ 65%] Linking C executable test_eviction
+In function ‘snprintf’,
+    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:423:9,
+    inlined from ‘obj_hash_each’ at /home/runner/work/ddup/ddup/src/ds/obj.c:258:38,
+    inlined from ‘obj_hash_each’ at /home/runner/work/ddup/ddup/src/ds/obj.c:251:6,
+    inlined from ‘command_dispatch’ at /home/runner/work/ddup/ddup/src/core/command.c:3890:9:
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
+   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^
 [ 65%] Built target test_eviction
 [ 66%] Building C object CMakeFiles/test_hash.dir/tests/test_hash.c.o
 [ 66%] Linking C executable test_hash
+In function ‘snprintf’,
+    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:423:9,
+    inlined from ‘obj_hash_each’ at /home/runner/work/ddup/ddup/src/ds/obj.c:258:38,
+    inlined from ‘obj_hash_each’ at /home/runner/work/ddup/ddup/src/ds/obj.c:251:6,
+    inlined from ‘command_dispatch’ at /home/runner/work/ddup/ddup/src/core/command.c:3890:9:
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
+   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^
 [ 66%] Built target test_hash
 [ 66%] Building C object CMakeFiles/test_list.dir/tests/test_list.c.o
 [ 66%] Linking C executable test_list
+In function ‘snprintf’,
+    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:423:9,
+    inlined from ‘obj_hash_each’ at /home/runner/work/ddup/ddup/src/ds/obj.c:258:38,
+    inlined from ‘obj_hash_each’ at /home/runner/work/ddup/ddup/src/ds/obj.c:251:6,
+    inlined from ‘command_dispatch’ at /home/runner/work/ddup/ddup/src/core/command.c:3890:9:
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
+   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^
 [ 66%] Built target test_list
 [ 67%] Building C object CMakeFiles/test_listpack.dir/tests/test_listpack.c.o
 [ 67%] Linking C executable test_listpack
@@ -233,36 +321,116 @@
 [ 68%] Built target test_skiplist
 [ 68%] Building C object CMakeFiles/test_set.dir/tests/test_set.c.o
 [ 69%] Linking C executable test_set
+In function ‘snprintf’,
+    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:423:9,
+    inlined from ‘obj_hash_each’ at /home/runner/work/ddup/ddup/src/ds/obj.c:258:38,
+    inlined from ‘obj_hash_each’ at /home/runner/work/ddup/ddup/src/ds/obj.c:251:6,
+    inlined from ‘command_dispatch’ at /home/runner/work/ddup/ddup/src/core/command.c:3890:9:
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
+   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^
 [ 69%] Built target test_set
 [ 69%] Building C object CMakeFiles/test_zset.dir/tests/test_zset.c.o
 [ 70%] Linking C executable test_zset
+In function ‘snprintf’,
+    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:423:9,
+    inlined from ‘obj_hash_each’ at /home/runner/work/ddup/ddup/src/ds/obj.c:258:38,
+    inlined from ‘obj_hash_each’ at /home/runner/work/ddup/ddup/src/ds/obj.c:251:6,
+    inlined from ‘command_dispatch’ at /home/runner/work/ddup/ddup/src/core/command.c:3890:9:
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
+   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^
 [ 70%] Built target test_zset
 [ 70%] Building C object CMakeFiles/test_session.dir/tests/test_session.c.o
 [ 71%] Linking C executable test_session
+In function ‘snprintf’,
+    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:423:9,
+    inlined from ‘obj_hash_each’ at /home/runner/work/ddup/ddup/src/ds/obj.c:258:38,
+    inlined from ‘obj_hash_each’ at /home/runner/work/ddup/ddup/src/ds/obj.c:251:6,
+    inlined from ‘command_dispatch’ at /home/runner/work/ddup/ddup/src/core/command.c:3890:9:
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
+   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^
 [ 71%] Built target test_session
 [ 71%] Building C object CMakeFiles/test_multidb.dir/tests/test_multidb.c.o
 [ 72%] Linking C executable test_multidb
+In function ‘snprintf’,
+    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:423:9,
+    inlined from ‘obj_hash_each’ at /home/runner/work/ddup/ddup/src/ds/obj.c:258:38,
+    inlined from ‘obj_hash_each’ at /home/runner/work/ddup/ddup/src/ds/obj.c:251:6,
+    inlined from ‘command_dispatch’ at /home/runner/work/ddup/ddup/src/core/command.c:3890:9:
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
+   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^
 [ 72%] Built target test_multidb
 [ 72%] Building C object CMakeFiles/test_multi.dir/tests/test_multi.c.o
 [ 73%] Linking C executable test_multi
+In function ‘snprintf’,
+    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:423:9,
+    inlined from ‘obj_hash_each’ at /home/runner/work/ddup/ddup/src/ds/obj.c:258:38,
+    inlined from ‘obj_hash_each’ at /home/runner/work/ddup/ddup/src/ds/obj.c:251:6,
+    inlined from ‘command_dispatch’ at /home/runner/work/ddup/ddup/src/core/command.c:3890:9:
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
+   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^
 [ 73%] Built target test_multi
 [ 74%] Building C object CMakeFiles/test_pubsub.dir/tests/test_pubsub.c.o
 [ 74%] Linking C executable test_pubsub
+In function ‘snprintf’,
+    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:423:9,
+    inlined from ‘obj_hash_each’ at /home/runner/work/ddup/ddup/src/ds/obj.c:258:38,
+    inlined from ‘obj_hash_each’ at /home/runner/work/ddup/ddup/src/ds/obj.c:251:6,
+    inlined from ‘command_dispatch’ at /home/runner/work/ddup/ddup/src/core/command.c:3890:9:
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
+   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^
 [ 74%] Built target test_pubsub
 [ 74%] Building C object CMakeFiles/test_pubsub_shard.dir/tests/test_pubsub_shard.c.o
 [ 75%] Linking C executable test_pubsub_shard
+In function ‘snprintf’,
+    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:423:9,
+    inlined from ‘obj_hash_each’ at /home/runner/work/ddup/ddup/src/ds/obj.c:258:38,
+    inlined from ‘obj_hash_each’ at /home/runner/work/ddup/ddup/src/ds/obj.c:251:6,
+    inlined from ‘command_dispatch’ at /home/runner/work/ddup/ddup/src/core/command.c:3890:9:
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
+   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^
 [ 75%] Built target test_pubsub_shard
 [ 76%] Building C object CMakeFiles/test_config.dir/tests/test_config.c.o
 [ 76%] Linking C executable test_config
 [ 76%] Built target test_config
 [ 76%] Building C object CMakeFiles/test_aof.dir/tests/test_aof.c.o
 [ 76%] Linking C executable test_aof
+In function ‘snprintf’,
+    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:423:9,
+    inlined from ‘obj_hash_each’ at /home/runner/work/ddup/ddup/src/ds/obj.c:258:38,
+    inlined from ‘obj_hash_each’ at /home/runner/work/ddup/ddup/src/ds/obj.c:251:6,
+    inlined from ‘command_dispatch’ at /home/runner/work/ddup/ddup/src/core/command.c:3890:9:
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
+   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^
 [ 76%] Built target test_aof
 [ 77%] Building C object CMakeFiles/test_snapshot.dir/tests/test_snapshot.c.o
 [ 77%] Linking C executable test_snapshot
+In function ‘snprintf’,
+    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:423:9,
+    inlined from ‘obj_hash_each’ at /home/runner/work/ddup/ddup/src/ds/obj.c:258:38,
+    inlined from ‘obj_hash_each’ at /home/runner/work/ddup/ddup/src/ds/obj.c:251:6,
+    inlined from ‘command_dispatch’ at /home/runner/work/ddup/ddup/src/core/command.c:3890:9:
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
+   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^
 [ 77%] Built target test_snapshot
 [ 78%] Building C object CMakeFiles/test_repl.dir/tests/test_repl.c.o
 [ 78%] Linking C executable test_repl
+In function ‘snprintf’,
+    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:423:9,
+    inlined from ‘obj_hash_each’ at /home/runner/work/ddup/ddup/src/ds/obj.c:258:38,
+    inlined from ‘obj_hash_each’ at /home/runner/work/ddup/ddup/src/ds/obj.c:251:6,
+    inlined from ‘command_dispatch’ at /home/runner/work/ddup/ddup/src/core/command.c:3890:9:
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
+   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^
 [ 78%] Built target test_repl
 [ 78%] Building C object CMakeFiles/test_hashslot.dir/tests/test_hashslot.c.o
 [ 79%] Linking C executable test_hashslot
@@ -279,50 +447,162 @@ In function ‘snprintf’,
       |          ^
 In function ‘cluster_session’:
 lto1: note: destination object is likely at address zero
+In function ‘snprintf’,
+    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:423:9,
+    inlined from ‘obj_hash_each’ at /home/runner/work/ddup/ddup/src/ds/obj.c:258:38,
+    inlined from ‘obj_hash_each’ at /home/runner/work/ddup/ddup/src/ds/obj.c:251:6,
+    inlined from ‘command_dispatch’ at /home/runner/work/ddup/ddup/src/core/command.c:3890:9:
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
+   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^
 [ 81%] Built target test_cluster_cmds
 [ 82%] Building C object CMakeFiles/test_cluster_nodes.dir/tests/test_cluster_nodes.c.o
 [ 82%] Linking C executable test_cluster_nodes
+In function ‘snprintf’,
+    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:423:9,
+    inlined from ‘obj_hash_each’ at /home/runner/work/ddup/ddup/src/ds/obj.c:258:38,
+    inlined from ‘obj_hash_each’ at /home/runner/work/ddup/ddup/src/ds/obj.c:251:6,
+    inlined from ‘command_dispatch’ at /home/runner/work/ddup/ddup/src/core/command.c:3890:9:
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
+   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^
 [ 82%] Built target test_cluster_nodes
 [ 83%] Building C object CMakeFiles/test_cluster_bus.dir/tests/test_cluster_bus.c.o
 [ 83%] Linking C executable test_cluster_bus
+In function ‘snprintf’,
+    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:423:9,
+    inlined from ‘obj_hash_each’ at /home/runner/work/ddup/ddup/src/ds/obj.c:258:38,
+    inlined from ‘obj_hash_each’ at /home/runner/work/ddup/ddup/src/ds/obj.c:251:6,
+    inlined from ‘command_dispatch’ at /home/runner/work/ddup/ddup/src/core/command.c:3890:9:
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
+   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^
 [ 83%] Built target test_cluster_bus
 [ 83%] Building C object CMakeFiles/test_cluster_slots.dir/tests/test_cluster_slots.c.o
 [ 84%] Linking C executable test_cluster_slots
+In function ‘snprintf’,
+    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:423:9,
+    inlined from ‘obj_hash_each’ at /home/runner/work/ddup/ddup/src/ds/obj.c:258:38,
+    inlined from ‘obj_hash_each’ at /home/runner/work/ddup/ddup/src/ds/obj.c:251:6,
+    inlined from ‘command_dispatch’ at /home/runner/work/ddup/ddup/src/core/command.c:3890:9:
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
+   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^
 [ 84%] Built target test_cluster_slots
 [ 84%] Building C object CMakeFiles/test_dump.dir/tests/test_dump.c.o
 [ 85%] Linking C executable test_dump
+In function ‘snprintf’,
+    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:423:9,
+    inlined from ‘obj_hash_each’ at /home/runner/work/ddup/ddup/src/ds/obj.c:258:38,
+    inlined from ‘obj_hash_each’ at /home/runner/work/ddup/ddup/src/ds/obj.c:251:6,
+    inlined from ‘command_dispatch’ at /home/runner/work/ddup/ddup/src/core/command.c:3890:9:
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
+   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^
 [ 85%] Built target test_dump
 [ 86%] Building C object CMakeFiles/test_migrate.dir/tests/test_migrate.c.o
 [ 86%] Linking C executable test_migrate
+In function ‘snprintf’,
+    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:423:9,
+    inlined from ‘obj_hash_each’ at /home/runner/work/ddup/ddup/src/ds/obj.c:258:38,
+    inlined from ‘obj_hash_each’ at /home/runner/work/ddup/ddup/src/ds/obj.c:251:6,
+    inlined from ‘command_dispatch’ at /home/runner/work/ddup/ddup/src/core/command.c:3890:9:
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
+   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^
 [ 86%] Built target test_migrate
 [ 87%] Building C object CMakeFiles/test_cluster_migrate.dir/tests/test_cluster_migrate.c.o
 [ 87%] Linking C executable test_cluster_migrate
+In function ‘snprintf’,
+    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:423:9,
+    inlined from ‘obj_hash_each’ at /home/runner/work/ddup/ddup/src/ds/obj.c:258:38,
+    inlined from ‘obj_hash_each’ at /home/runner/work/ddup/ddup/src/ds/obj.c:251:6,
+    inlined from ‘command_dispatch’ at /home/runner/work/ddup/ddup/src/core/command.c:3890:9:
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
+   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^
 [ 87%] Built target test_cluster_migrate
 [ 87%] Building C object CMakeFiles/test_cluster_replica.dir/tests/test_cluster_replica.c.o
 [ 88%] Linking C executable test_cluster_replica
+In function ‘snprintf’,
+    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:423:9,
+    inlined from ‘obj_hash_each’ at /home/runner/work/ddup/ddup/src/ds/obj.c:258:38,
+    inlined from ‘obj_hash_each’ at /home/runner/work/ddup/ddup/src/ds/obj.c:251:6,
+    inlined from ‘command_dispatch’ at /home/runner/work/ddup/ddup/src/core/command.c:3890:9:
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
+   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^
 [ 88%] Built target test_cluster_replica
 [ 88%] Building C object CMakeFiles/test_cluster_epoch.dir/tests/test_cluster_epoch.c.o
 [ 89%] Linking C executable test_cluster_epoch
+In function ‘snprintf’,
+    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:423:9,
+    inlined from ‘obj_hash_each’ at /home/runner/work/ddup/ddup/src/ds/obj.c:258:38,
+    inlined from ‘obj_hash_each’ at /home/runner/work/ddup/ddup/src/ds/obj.c:251:6,
+    inlined from ‘command_dispatch’ at /home/runner/work/ddup/ddup/src/core/command.c:3890:9:
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
+   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^
 [ 89%] Built target test_cluster_epoch
 [ 89%] Building C object CMakeFiles/test_cluster_failover.dir/tests/test_cluster_failover.c.o
 [ 89%] Linking C executable test_cluster_failover
+In function ‘snprintf’,
+    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:423:9,
+    inlined from ‘obj_hash_each’ at /home/runner/work/ddup/ddup/src/ds/obj.c:258:38,
+    inlined from ‘obj_hash_each’ at /home/runner/work/ddup/ddup/src/ds/obj.c:251:6,
+    inlined from ‘command_dispatch’ at /home/runner/work/ddup/ddup/src/core/command.c:3890:9:
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
+   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^
 [ 89%] Built target test_cluster_failover
 [ 89%] Building C object CMakeFiles/test_cluster_pfail.dir/tests/test_cluster_pfail.c.o
 [ 90%] Linking C executable test_cluster_pfail
+In function ‘snprintf’,
+    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:423:9,
+    inlined from ‘obj_hash_each’ at /home/runner/work/ddup/ddup/src/ds/obj.c:258:38,
+    inlined from ‘obj_hash_each’ at /home/runner/work/ddup/ddup/src/ds/obj.c:251:6,
+    inlined from ‘command_dispatch’ at /home/runner/work/ddup/ddup/src/core/command.c:3890:9:
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
+   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^
 [ 90%] Built target test_cluster_pfail
 [ 90%] Building C object CMakeFiles/test_reshard.dir/tests/test_reshard.c.o
 [ 91%] Building C object CMakeFiles/test_reshard.dir/tools/reshard_args.c.o
 [ 91%] Building C object CMakeFiles/test_reshard.dir/tools/reshard_client.c.o
 [ 92%] Linking C executable test_reshard
+In function ‘snprintf’,
+    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:423:9,
+    inlined from ‘obj_hash_each’ at /home/runner/work/ddup/ddup/src/ds/obj.c:258:38,
+    inlined from ‘obj_hash_each’ at /home/runner/work/ddup/ddup/src/ds/obj.c:251:6,
+    inlined from ‘command_dispatch’ at /home/runner/work/ddup/ddup/src/core/command.c:3890:9:
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
+   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^
 [ 92%] Built target test_reshard
 [ 93%] Building C object CMakeFiles/test_lua_smoke.dir/tests/test_lua_smoke.c.o
 [ 93%] Linking C executable test_lua_smoke
 [ 93%] Built target test_lua_smoke
 [ 94%] Building C object CMakeFiles/test_script.dir/tests/test_script.c.o
 [ 94%] Linking C executable test_script
+In function ‘snprintf’,
+    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:423:9,
+    inlined from ‘obj_hash_each’ at /home/runner/work/ddup/ddup/src/ds/obj.c:258:38,
+    inlined from ‘obj_hash_each’ at /home/runner/work/ddup/ddup/src/ds/obj.c:251:6,
+    inlined from ‘command_dispatch’ at /home/runner/work/ddup/ddup/src/core/command.c:3890:9:
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
+   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^
 [ 94%] Built target test_script
 [ 94%] Building C object CMakeFiles/test_eval.dir/tests/test_eval.c.o
 [ 95%] Linking C executable test_eval
+In function ‘snprintf’,
+    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:423:9,
+    inlined from ‘obj_hash_each’ at /home/runner/work/ddup/ddup/src/ds/obj.c:258:38,
+    inlined from ‘obj_hash_each’ at /home/runner/work/ddup/ddup/src/ds/obj.c:251:6,
+    inlined from ‘command_dispatch’ at /home/runner/work/ddup/ddup/src/core/command.c:3890:9:
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
+   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^
 [ 95%] Built target test_eval
 [ 95%] Building C object CMakeFiles/test_redbus.dir/tests/test_redbus.c.o
 /home/runner/work/ddup/ddup/tests/test_redbus.c: In function ‘build_fixture’:
@@ -334,21 +614,61 @@ lto1: note: destination object is likely at address zero
   130 |     frame[4] = 0xFF; /* corrupt totlen */
       |                ^~~~
 [ 96%] Linking C executable test_redbus
+In function ‘snprintf’,
+    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:423:9,
+    inlined from ‘obj_hash_each’ at /home/runner/work/ddup/ddup/src/ds/obj.c:258:38,
+    inlined from ‘obj_hash_each’ at /home/runner/work/ddup/ddup/src/ds/obj.c:251:6,
+    inlined from ‘command_dispatch’ at /home/runner/work/ddup/ddup/src/core/command.c:3890:9:
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
+   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^
 [ 96%] Built target test_redbus
 [ 96%] Building C object CMakeFiles/test_redbus_bus.dir/tests/test_redbus_bus.c.o
 [ 96%] Linking C executable test_redbus_bus
+In function ‘snprintf’,
+    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:423:9,
+    inlined from ‘obj_hash_each’ at /home/runner/work/ddup/ddup/src/ds/obj.c:258:38,
+    inlined from ‘obj_hash_each’ at /home/runner/work/ddup/ddup/src/ds/obj.c:251:6,
+    inlined from ‘command_dispatch’ at /home/runner/work/ddup/ddup/src/core/command.c:3890:9:
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
+   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^
 [ 96%] Built target test_redbus_bus
 [ 97%] Building C object CMakeFiles/test_redbus_failover.dir/tests/test_redbus_failover.c.o
 [ 97%] Linking C executable test_redbus_failover
+In function ‘snprintf’,
+    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:423:9,
+    inlined from ‘obj_hash_each’ at /home/runner/work/ddup/ddup/src/ds/obj.c:258:38,
+    inlined from ‘obj_hash_each’ at /home/runner/work/ddup/ddup/src/ds/obj.c:251:6,
+    inlined from ‘command_dispatch’ at /home/runner/work/ddup/ddup/src/core/command.c:3890:9:
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
+   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^
 [ 97%] Built target test_redbus_failover
 [ 98%] Building C object CMakeFiles/test_redbus_elect.dir/tests/test_redbus_elect.c.o
 [ 98%] Linking C executable test_redbus_elect
+In function ‘snprintf’,
+    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:423:9,
+    inlined from ‘obj_hash_each’ at /home/runner/work/ddup/ddup/src/ds/obj.c:258:38,
+    inlined from ‘obj_hash_each’ at /home/runner/work/ddup/ddup/src/ds/obj.c:251:6,
+    inlined from ‘command_dispatch’ at /home/runner/work/ddup/ddup/src/core/command.c:3890:9:
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
+   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^
 [ 98%] Built target test_redbus_elect
 [ 98%] Building C object CMakeFiles/test_iouring_op.dir/tests/test_iouring_op.c.o
 [ 99%] Linking C executable test_iouring_op
 [ 99%] Built target test_iouring_op
 [ 99%] Building C object CMakeFiles/test_tls.dir/tests/test_tls.c.o
 [100%] Linking C executable test_tls
+In function ‘snprintf’,
+    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:423:9,
+    inlined from ‘obj_hash_each’ at /home/runner/work/ddup/ddup/src/ds/obj.c:258:38,
+    inlined from ‘obj_hash_each’ at /home/runner/work/ddup/ddup/src/ds/obj.c:251:6,
+    inlined from ‘command_dispatch’ at /home/runner/work/ddup/ddup/src/core/command.c:3890:9:
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
+   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^
 [100%] Built target test_tls
 Reading package lists...
 Building dependency tree...
@@ -391,7 +711,7 @@ Get:17 http://azure.archive.ubuntu.com/ubuntu noble/main amd64 libsource-highlig
 Get:18 http://azure.archive.ubuntu.com/ubuntu noble-updates/main amd64 gdb amd64 15.1-1ubuntu1~24.04.1 [4083 kB]
 Get:19 http://azure.archive.ubuntu.com/ubuntu noble-updates/main amd64 libc6-dbg amd64 2.39-0ubuntu8.8 [7461 kB]
 Preconfiguring packages ...
-Fetched 26.7 MB in 1s (18.1 MB/s)
+Fetched 26.7 MB in 2s (12.4 MB/s)
 (Reading database ... (Reading database ... 5%(Reading database ... 10%(Reading database ... 15%(Reading database ... 20%(Reading database ... 25%(Reading database ... 30%(Reading database ... 35%(Reading database ... 40%(Reading database ... 45%(Reading database ... 50%(Reading database ... 55%(Reading database ... 60%(Reading database ... 65%(Reading database ... 70%(Reading database ... 75%(Reading database ... 80%(Reading database ... 85%(Reading database ... 90%(Reading database ... 95%(Reading database ... 100%(Reading database ... 202954 files and directories currently installed.)
 Preparing to unpack .../libc6-dev_2.39-0ubuntu8.8_amd64.deb ...
 Unpacking libc6-dev:amd64 (2.39-0ubuntu8.8) over (2.39-0ubuntu8.7) ...
@@ -489,6 +809,6 @@ Service restarts being deferred:
 No containers need to be restarted.
 
 User sessions running outdated binaries:
- runner @ user manager service: systemd[1062]
+ runner @ user manager service: systemd[1110]
 
 No VM guests are running outdated hypervisor (qemu) binaries on this host.
