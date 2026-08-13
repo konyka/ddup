@@ -412,7 +412,7 @@ const unsigned char *lp_get(const unsigned char *p, uint32_t *slen,
     return NULL;
 }
 
-const unsigned char *lp_get_str(const unsigned char *p, unsigned char buf[64],
+const unsigned char *lp_get_str(const unsigned char *p, unsigned char *buf,
                                 uint32_t *slen)
 {
     int64_t iv;

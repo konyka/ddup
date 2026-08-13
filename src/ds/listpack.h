@@ -48,8 +48,9 @@ unsigned char *lp_seek(unsigned char *lp, long index);
 const unsigned char *lp_get(const unsigned char *p, uint32_t *slen,
                             int64_t *ival);
 /* Always-as-string view: integer entries are decimal-materialized into buf
- * (at most 20 bytes + NUL needed). Returns payload/buf and sets *slen. */
-const unsigned char *lp_get_str(const unsigned char *p, unsigned char buf[64],
+ * (at most 20 bytes + NUL needed; buf must hold >= 24 bytes). Returns
+ * payload/buf and sets *slen. */
+const unsigned char *lp_get_str(const unsigned char *p, unsigned char *buf,
                                 uint32_t *slen);
 
 /* Append/prepend/insert an element (int-encoded when s is canonical int64).
