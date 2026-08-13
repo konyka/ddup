@@ -16,6 +16,7 @@
 /* ==================================================================== */
 /* epoll (default) + io_uring (optional, direct syscalls, no liburing)  */
 /* ==================================================================== */
+#include <errno.h>
 #include <sys/epoll.h>
 #include <unistd.h>
 
@@ -24,6 +25,15 @@
 #include <poll.h>
 #include <sys/mman.h>
 #include <sys/syscall.h>
+
+#ifdef DDUP_TESTING
+static pal_event_uring_enter_fn uring_enter_hook;
+
+void pal_event_test_set_uring_enter(pal_event_uring_enter_fn fn)
+{
+    uring_enter_hook = fn;
+}
+#endif
 
 typedef struct ep_reg {
     struct ep_reg *next;
@@ -54,6 +64,8 @@ struct pal_loop {
     unsigned *cq_tail;
     unsigned *cq_ring_mask;
     unsigned sq_submit; /* last tail the kernel was told about */
+    struct __kernel_timespec timeout_ts;
+    int timeout_active;
 };
 
 /* ------------------------------------------------------------------ */
@@ -85,6 +97,10 @@ static int uring_sys_setup(unsigned entries, struct io_uring_params *p)
 static int uring_sys_enter(int fd, unsigned to_submit, unsigned min_complete,
                            unsigned flags)
 {
+#ifdef DDUP_TESTING
+    if (uring_enter_hook != NULL)
+        return uring_enter_hook(fd, to_submit, min_complete, flags);
+#endif
     return (int)syscall(__NR_io_uring_enter, fd, to_submit, min_complete,
                         flags, NULL, 0);
 }
@@ -167,20 +183,49 @@ pal_loop *pal_loop_create_iouring(void)
     return l;
 }
 
+static int uring_submit_pending(pal_loop *l)
+{
+    unsigned tail = __atomic_load_n(l->sq_tail, __ATOMIC_ACQUIRE);
+
+    while (l->sq_submit != tail) {
+        unsigned pending = tail - l->sq_submit;
+        int rc;
+
+        do {
+            rc = uring_sys_enter(l->uring_fd, pending, 0, 0);
+        } while (rc < 0 && errno == EINTR);
+        if (rc < 0)
+            return -1;
+        if (rc == 0 || (unsigned)rc > pending) {
+            errno = rc == 0 ? EAGAIN : EIO;
+            return -1;
+        }
+        l->sq_submit += (unsigned)rc;
+    }
+
+    return 0;
+}
+
+static int uring_reserve(pal_loop *l, unsigned count)
+{
+    unsigned tail = __atomic_load_n(l->sq_tail, __ATOMIC_RELAXED);
+
+    if (count > l->sq_entries) {
+        errno = EINVAL;
+        return -1;
+    }
+    if (tail - l->sq_submit + count > l->sq_entries &&
+        uring_submit_pending(l) != 0)
+        return -1;
+    return 0;
+}
+
 static struct io_uring_sqe *uring_get_sqe(pal_loop *l)
 {
     unsigned tail = __atomic_load_n(l->sq_tail, __ATOMIC_RELAXED);
     unsigned idx = tail & *l->sq_ring_mask;
-    struct io_uring_sqe *sqe;
-    if (tail - l->sq_submit >= l->sq_entries) {
-        /* SQ full (bursty mod/rearm storms at high fd counts): submit the
-         * queue now; non-SQPOLL enter copies the sqes synchronously, so
-         * the slots are reusable on return */
-        unsigned n = tail - l->sq_submit;
-        l->sq_submit = tail;
-        (void)uring_sys_enter(l->uring_fd, n, 0, 0);
-    }
-    sqe = &l->sqes[idx];
+    struct io_uring_sqe *sqe = &l->sqes[idx];
+
     memset(sqe, 0, sizeof(*sqe));
     /* the kernel dereferences sqes through the SQ indirection array --
      * without this write every submission aliases sqe[0] */
@@ -191,8 +236,8 @@ static struct io_uring_sqe *uring_get_sqe(pal_loop *l)
     return sqe;
 }
 
-static void uring_poll_add(pal_loop *l, ep_reg *r, int want_read,
-                           int want_write)
+static void uring_prep_poll_add(pal_loop *l, ep_reg *r, int want_read,
+                                int want_write)
 {
     struct io_uring_sqe *sqe = uring_get_sqe(l);
     sqe->opcode = IORING_OP_POLL_ADD;
@@ -203,7 +248,7 @@ static void uring_poll_add(pal_loop *l, ep_reg *r, int want_read,
     sqe->user_data = (unsigned long long)(uintptr_t)r;
 }
 
-static void uring_poll_remove(pal_loop *l, ep_reg *r)
+static void uring_prep_poll_remove(pal_loop *l, ep_reg *r)
 {
     struct io_uring_sqe *sqe = uring_get_sqe(l);
     sqe->opcode = IORING_OP_POLL_REMOVE;
@@ -265,7 +310,11 @@ int pal_loop_add(pal_loop *l, pal_socket_t fd, int want_read, int want_write,
     r->want_write = want_write;
     r->active = 1;
     if (l->use_iouring) {
-        uring_poll_add(l, r, want_read, want_write);
+        if (uring_reserve(l, 1) != 0) {
+            free(r);
+            return -1;
+        }
+        uring_prep_poll_add(l, r, want_read, want_write);
     } else if (ep_ctl(l, EPOLL_CTL_ADD, r, want_read, want_write) != 0) {
         free(r);
         return -1;
@@ -281,15 +330,18 @@ int pal_loop_mod(pal_loop *l, pal_socket_t fd, int want_read, int want_write,
     ep_reg *r = ep_find(l, fd);
     if (r == NULL)
         return -1;
-    r->userdata = userdata;
     if (l->use_iouring) {
         /* simplest correct mod: drop + re-add */
+        if (uring_reserve(l, 2) != 0)
+            return -1;
+        uring_prep_poll_remove(l, r);
+        uring_prep_poll_add(l, r, want_read, want_write);
+        r->userdata = userdata;
         r->want_read = want_read;
         r->want_write = want_write;
-        uring_poll_remove(l, r);
-        uring_poll_add(l, r, want_read, want_write);
         return 0;
     }
+    r->userdata = userdata;
     return ep_ctl(l, EPOLL_CTL_MOD, r, want_read, want_write);
 }
 
@@ -304,8 +356,10 @@ int pal_loop_del(pal_loop *l, pal_socket_t fd)
         /* deactivate + cancel; the reg is freed at loop_free (remove and
          * already-fired completions must never see freed memory) */
         ep_reg *r = *prev;
+        if (uring_reserve(l, 1) != 0)
+            return -1;
+        uring_prep_poll_remove(l, r);
         r->active = 0;
-        uring_poll_remove(l, r);
         *prev = r->next;
         r->next = l->dead;
         l->dead = r;
@@ -325,28 +379,36 @@ int pal_loop_del(pal_loop *l, pal_socket_t fd)
  * re-arm oneshot polls (level-triggered, epoll-compatible semantics). */
 static int uring_wait(pal_loop *l, pal_event *events, int max, int timeout_ms)
 {
-    struct __kernel_timespec ts;
-    unsigned to_submit = *l->sq_tail - l->sq_submit;
     unsigned min_complete = timeout_ms == 0 ? 0 : 1;
     unsigned head;
     int nev = 0;
 
-    if (timeout_ms > 0) {
-        struct io_uring_sqe *sqe = uring_get_sqe(l);
-        ts.tv_sec = timeout_ms / 1000;
-        ts.tv_nsec = (long long)(timeout_ms % 1000) * 1000000LL;
+    if (timeout_ms > 0 && !l->timeout_active) {
+        struct io_uring_sqe *sqe;
+
+        if (uring_reserve(l, 1) != 0)
+            return -1;
+        sqe = uring_get_sqe(l);
+        l->timeout_ts.tv_sec = timeout_ms / 1000;
+        l->timeout_ts.tv_nsec =
+            (long long)(timeout_ms % 1000) * 1000000LL;
+        l->timeout_active = 1;
         sqe->opcode = IORING_OP_TIMEOUT;
         sqe->fd = -1;
-        sqe->addr = (unsigned long long)(uintptr_t)&ts;
+        sqe->addr = (unsigned long long)(uintptr_t)&l->timeout_ts;
         sqe->len = 1;
         sqe->user_data = 0; /* timeout completion marker */
-        to_submit = *l->sq_tail - l->sq_submit;
     }
 
-    l->sq_submit = *l->sq_tail;
-    if (to_submit > 0 || min_complete > 0) {
-        int rc = uring_sys_enter(l->uring_fd, to_submit, min_complete,
+    if (uring_submit_pending(l) != 0)
+        return -1;
+    if (min_complete > 0) {
+        int rc;
+
+        do {
+            rc = uring_sys_enter(l->uring_fd, 0, min_complete,
                                  IORING_ENTER_GETEVENTS);
+        } while (rc < 0 && errno == EINTR);
         if (rc < 0)
             return -1;
     }
@@ -355,20 +417,25 @@ static int uring_wait(pal_loop *l, pal_event *events, int max, int timeout_ms)
     while (head != __atomic_load_n(l->cq_tail, __ATOMIC_ACQUIRE) &&
            nev < max) {
         struct io_uring_cqe *cqe = &l->cqes[head & *l->cq_ring_mask];
-        if (cqe->user_data != 0 && cqe->res > 0) {
+        if (cqe->user_data == 0) {
+            l->timeout_active = 0;
+        } else if (cqe->res > 0) {
             ep_reg *r = (ep_reg *)(uintptr_t)cqe->user_data;
             /* res > 0 is an event mask; res == 0 is a control completion
              * (POLL_REMOVE/POLL_UPDATE ack), res < 0 an error */
             if (r->active) {
+                if (uring_reserve(l, 1) != 0)
+                    return -1;
+                /* oneshot poll completed: re-arm with the last requested
+                 * interest set (level-triggered semantics). Reserve before
+                 * publishing the event so an enter failure returns cleanly. */
+                uring_prep_poll_add(l, r, r->want_read, r->want_write);
                 events[nev].fd = r->fd;
                 events[nev].userdata = r->userdata;
                 events[nev].readable =
                     (cqe->res & (POLLIN | POLLERR | POLLHUP)) ? 1 : 0;
                 events[nev].writable = (cqe->res & POLLOUT) ? 1 : 0;
                 nev++;
-                /* oneshot poll completed: re-arm with the last requested
-                 * interest set (level-triggered semantics) */
-                uring_poll_add(l, r, r->want_read, r->want_write);
             }
         }
         head++;

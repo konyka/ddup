@@ -6,12 +6,39 @@
  */
 #include "pal/pal_tls.h"
 
+#include <limits.h>
 #include <stdlib.h>
+#include "pal/pal_platform.h"
 
 #if DDUP_HAS_TLS
 
 #include <openssl/err.h>
 #include <openssl/ssl.h>
+
+#if DDUP_OS_WINDOWS
+#include <windows.h>
+#else
+#include <pthread.h>
+#endif
+
+#if DDUP_OS_WINDOWS
+static BOOL CALLBACK pal_tls_lib_init_once(PINIT_ONCE once, PVOID param,
+                                           PVOID *context)
+{
+    (void)once;
+    (void)param;
+    (void)context;
+    SSL_library_init();
+    SSL_load_error_strings();
+    return TRUE;
+}
+#else
+static void pal_tls_lib_init_once(void)
+{
+    SSL_library_init();
+    SSL_load_error_strings();
+}
+#endif
 
 struct pal_tls_ctx {
     SSL_CTX *ctx;
@@ -23,12 +50,13 @@ struct pal_tls {
 
 static void pal_tls_lib_init(void)
 {
-    static int done = 0;
-    if (!done) {
-        SSL_library_init();
-        SSL_load_error_strings();
-        done = 1;
-    }
+#if DDUP_OS_WINDOWS
+    static INIT_ONCE once = INIT_ONCE_STATIC_INIT;
+    (void)InitOnceExecuteOnce(&once, pal_tls_lib_init_once, NULL, NULL);
+#else
+    static pthread_once_t once = PTHREAD_ONCE_INIT;
+    (void)pthread_once(&once, pal_tls_lib_init_once);
+#endif
 }
 
 pal_tls_ctx *pal_tls_ctx_new(const char *cert_file, const char *key_file)
@@ -76,7 +104,12 @@ pal_tls *pal_tls_new(pal_tls_ctx *ctx, pal_socket_t fd)
         free(t);
         return NULL;
     }
-    SSL_set_fd(t->ssl, (int)fd);
+    if ((uintmax_t)fd > (uintmax_t)INT_MAX ||
+        SSL_set_fd(t->ssl, (int)fd) != 1) {
+        SSL_free(t->ssl);
+        free(t);
+        return NULL;
+    }
     return t;
 }
 
@@ -101,6 +134,8 @@ int pal_tls_handshake_nb(pal_tls *t)
 
 ptrdiff_t pal_tls_read(pal_tls *t, void *buf, size_t n)
 {
+    if (n > (size_t)INT_MAX)
+        return -1;
     int rc = SSL_read(t->ssl, buf, (int)n);
     int err;
     if (rc > 0)
@@ -117,6 +152,8 @@ ptrdiff_t pal_tls_read(pal_tls *t, void *buf, size_t n)
 
 ptrdiff_t pal_tls_write(pal_tls *t, const void *buf, size_t n)
 {
+    if (n > (size_t)INT_MAX)
+        return -1;
     int rc = SSL_write(t->ssl, buf, (int)n);
     int err;
     if (rc > 0)

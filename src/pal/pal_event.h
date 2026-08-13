@@ -41,4 +41,11 @@ int pal_loop_del(pal_loop *l, pal_socket_t fd);
  * events and returns their count, 0 on timeout, -1 on error. */
 int pal_loop_wait(pal_loop *l, pal_event *events, int max, int timeout_ms);
 
+#if defined(DDUP_TESTING) && DDUP_OS_LINUX
+typedef int (*pal_event_uring_enter_fn)(int fd, unsigned to_submit,
+                                        unsigned min_complete,
+                                        unsigned flags);
+void pal_event_test_set_uring_enter(pal_event_uring_enter_fn fn);
+#endif
+
 #endif /* DDUP_PAL_EVENT_H */

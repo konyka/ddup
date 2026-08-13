@@ -1,4 +1,5 @@
 /* test_tls.c - TLS tests (registered in CTest only when DDUP_HAS_TLS=1). */
+#include <limits.h>
 #include <string.h>
 
 #include <openssl/err.h>
@@ -6,6 +7,7 @@
 
 #include "pal/pal_tls.h"
 #include "pal/pal_time.h"
+#include "pal/pal_thread.h"
 #include "server/mt_server.h"
 #include "server/server.h"
 #include "test.h"
@@ -25,6 +27,75 @@ static void test_ctx_load(void)
 static void test_ctx_bad_files(void)
 {
     DD_CHECK(pal_tls_ctx_new("no-such-cert.pem", "no-such-key.pem") == NULL);
+}
+
+static void test_tls_new_rejects_invalid_fd(void)
+{
+    pal_tls_ctx *ctx = pal_tls_ctx_new(DDUP_TEST_CERT_DIR "/cert.pem",
+                                       DDUP_TEST_CERT_DIR "/key.pem");
+    DD_CHECK(ctx != NULL);
+    if (ctx != NULL) {
+        DD_CHECK(pal_tls_new(ctx, PAL_SOCKET_INVALID) == NULL);
+        pal_tls_ctx_free(ctx);
+    }
+}
+
+static void test_tls_rejects_lengths_over_int_max(void)
+{
+    pal_tls_ctx *ctx;
+    pal_tls *tls;
+    pal_socket_t fd;
+    char byte = 0;
+    size_t too_big = (size_t)INT_MAX + 1;
+
+    DD_CHECK_EQ_INT(0, pal_socket_init());
+    ctx = pal_tls_ctx_new(DDUP_TEST_CERT_DIR "/cert.pem",
+                          DDUP_TEST_CERT_DIR "/key.pem");
+    DD_CHECK(ctx != NULL);
+    fd = pal_tcp_listen("127.0.0.1", 0, 1, NULL);
+    DD_CHECK(fd != PAL_SOCKET_INVALID);
+    tls = ctx != NULL && fd != PAL_SOCKET_INVALID ? pal_tls_new(ctx, fd) : NULL;
+    DD_CHECK(tls != NULL);
+    if (tls != NULL) {
+        DD_CHECK_EQ_INT(-1, pal_tls_read(tls, &byte, too_big));
+        DD_CHECK_EQ_INT(-1, pal_tls_write(tls, &byte, too_big));
+        pal_tls_free(tls);
+    }
+    if (fd != PAL_SOCKET_INVALID)
+        pal_close(fd);
+    pal_tls_ctx_free(ctx);
+    pal_socket_cleanup();
+}
+
+typedef struct tls_init_worker_arg {
+    int ok;
+} tls_init_worker_arg;
+
+static void *tls_init_worker(void *arg)
+{
+    tls_init_worker_arg *a = (tls_init_worker_arg *)arg;
+    pal_tls_ctx *ctx = pal_tls_ctx_new(DDUP_TEST_CERT_DIR "/cert.pem",
+                                       DDUP_TEST_CERT_DIR "/key.pem");
+    a->ok = ctx != NULL;
+    pal_tls_ctx_free(ctx);
+    return NULL;
+}
+
+static void test_tls_init_is_thread_safe(void)
+{
+    pal_thread threads[8];
+    tls_init_worker_arg args[8];
+    int i;
+
+    memset(threads, 0, sizeof(threads));
+    memset(args, 0, sizeof(args));
+    for (i = 0; i < 8; i++)
+        DD_CHECK_EQ_INT(0, pal_thread_create(&threads[i], tls_init_worker,
+                                             &args[i]));
+    for (i = 0; i < 8; i++)
+        DD_CHECK_EQ_INT(0, pal_thread_join(&threads[i], NULL));
+    for (i = 0; i < 8; i++)
+        DD_CHECK(args[i].ok);
 }
 
 /* ------------------------------------------------------------------ */
@@ -322,8 +393,10 @@ int main(void)
     setvbuf(stdout, NULL, _IONBF, 0); /* progress visible under timeout */
     DD_RUN(test_ctx_load);
     DD_RUN(test_ctx_bad_files);
+    DD_RUN(test_tls_new_rejects_invalid_fd);
+    DD_RUN(test_tls_rejects_lengths_over_int_max);
+    DD_RUN(test_tls_init_is_thread_safe);
     DD_RUN(test_tls_server_roundtrip);
     DD_RUN(test_mt_tls_roundtrip);
     return DD_TEST_SUMMARY();
 }
-
