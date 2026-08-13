@@ -11,8 +11,18 @@
 #include "pal/pal_platform.h"
 #include "pal/pal_socket.h"
 #include "pal/pal_time.h"
+#include "server/aof.h"
 #include "server/mt_server.h"
 #include "server/server.h"
+
+static int appendfsync_mode(const char *v)
+{
+    if (strcmp(v, "always") == 0)
+        return AOF_FSYNC_ALWAYS;
+    if (strcmp(v, "no") == 0)
+        return AOF_FSYNC_NO;
+    return AOF_FSYNC_EVERYSEC;
+}
 
 static volatile sig_atomic_t g_stop = 0;
 
@@ -132,6 +142,7 @@ int main(int argc, char **argv)
                 pal_socket_cleanup();
                 return 1;
             }
+            mt_server_set_appendfsync(ms, appendfsync_mode(cfg.appendfsync));
             printf("AOF enabled (per worker): %s/worker-*-%s\n", cfg.dir,
                    cfg.appendfilename);
         } else {
@@ -243,6 +254,7 @@ int main(int argc, char **argv)
             pal_socket_cleanup();
             return 1;
         }
+        server_set_appendfsync(s, appendfsync_mode(cfg.appendfsync));
         printf("AOF enabled: %s\n", aof_path);
     } else {
         /* AOF wins over the snapshot when both exist (Redis rule) */

@@ -16,6 +16,7 @@ void config_init(ddup_config *cfg)
     strcpy(cfg->dir, ".");
     cfg->appendonly = 0;
     strcpy(cfg->appendfilename, "appendonly.aof");
+    strcpy(cfg->appendfsync, "everysec");
     strcpy(cfg->dbfilename, "dump.ddr");
     cfg->save_sec = 0;
     cfg->replicaof_host[0] = '\0';
@@ -131,6 +132,16 @@ int config_apply(ddup_config *cfg, const char *key, const char *value)
     if (key_eq(key, "appendfilename"))
         return copy_str(cfg->appendfilename, sizeof(cfg->appendfilename),
                         value);
+    if (key_eq(key, "appendfsync")) {
+        /* canonical lowercase form, so main() can strcmp the mode */
+        const char *canon = key_eq(value, "always")     ? "always"
+                            : key_eq(value, "everysec") ? "everysec"
+                            : key_eq(value, "no")       ? "no"
+                                                        : NULL;
+        if (canon == NULL)
+            return -1;
+        return copy_str(cfg->appendfsync, sizeof(cfg->appendfsync), canon);
+    }
     if (key_eq(key, "dbfilename"))
         return copy_str(cfg->dbfilename, sizeof(cfg->dbfilename), value);
     if (key_eq(key, "save"))

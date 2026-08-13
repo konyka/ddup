@@ -665,6 +665,112 @@ static void test_expiretime(void)
     db_destroy(&d);
 }
 
+static void test_copy(void)
+{
+    static const char SYNTAX[] = "-ERR syntax error\r\n";
+    db d;
+    resp_buf out;
+    uint64_t before;
+    db_init(&d);
+    resp_buf_init(&out);
+
+    /* basic copy: value duplicated, source untouched */
+    exec_cmd(&d, T0, &out, 3, "SET", "src", "v1");
+    EXPECT(out, "+OK\r\n");
+    exec_cmd(&d, T0, &out, 3, "COPY", "src", "dst");
+    EXPECT(out, ":1\r\n");
+    exec_cmd(&d, T0, &out, 2, "GET", "dst");
+    EXPECT(out, "$2\r\nv1\r\n");
+    exec_cmd(&d, T0, &out, 2, "GET", "src");
+    EXPECT(out, "$2\r\nv1\r\n");
+
+    /* a successful copy bumps dirty (AOF hook trigger) */
+    before = d.dirty;
+    exec_cmd(&d, T0, &out, 3, "COPY", "src", "dst2");
+    EXPECT(out, ":1\r\n");
+    DD_CHECK(d.dirty > before);
+
+    /* source missing */
+    exec_cmd(&d, T0, &out, 3, "COPY", "nosuch", "dst3");
+    EXPECT(out, "-ERR no such key\r\n");
+
+    /* destination exists: error without REPLACE, overwrite with it */
+    exec_cmd(&d, T0, &out, 3, "COPY", "src", "dst");
+    EXPECT(out, "-ERR Target key already exists\r\n");
+    exec_cmd(&d, T0, &out, 3, "SET", "dst", "other");
+    exec_cmd(&d, T0, &out, 4, "COPY", "src", "dst", "REPLACE");
+    EXPECT(out, ":1\r\n");
+    exec_cmd(&d, T0, &out, 2, "GET", "dst");
+    EXPECT(out, "$2\r\nv1\r\n");
+
+    /* same key: the destination-exists check applies (Redis order) */
+    exec_cmd(&d, T0, &out, 3, "COPY", "src", "src");
+    EXPECT(out, "-ERR Target key already exists\r\n");
+    exec_cmd(&d, T0, &out, 4, "COPY", "src", "src", "REPLACE");
+    EXPECT(out, ":1\r\n");
+    exec_cmd(&d, T0, &out, 2, "GET", "src");
+    EXPECT(out, "$2\r\nv1\r\n");
+
+    /* TTL: the absolute expiry instant is preserved */
+    exec_cmd(&d, T0, &out, 3, "SET", "t", "v");
+    exec_cmd(&d, T0, &out, 3, "PEXPIRE", "t", "10000");
+    exec_cmd(&d, T0 + 4000, &out, 3, "COPY", "t", "t2");
+    EXPECT(out, ":1\r\n");
+    exec_cmd(&d, T0 + 4000, &out, 2, "PTTL", "t2");
+    EXPECT(out, ":6000\r\n");
+
+    /* an expired source is missing; an expired destination is absent */
+    exec_cmd(&d, T0 + 20000, &out, 3, "COPY", "t", "t4");
+    EXPECT(out, "-ERR no such key\r\n");
+    exec_cmd(&d, T0, &out, 3, "SET", "dx", "old");
+    exec_cmd(&d, T0, &out, 3, "PEXPIRE", "dx", "1000");
+    exec_cmd(&d, T0 + 2000, &out, 3, "COPY", "src", "dx");
+    EXPECT(out, ":1\r\n");
+
+    /* a source without TTL yields a destination without TTL */
+    exec_cmd(&d, T0, &out, 3, "SET", "plain", "v");
+    exec_cmd(&d, T0, &out, 3, "COPY", "plain", "plain2");
+    exec_cmd(&d, T0, &out, 2, "PTTL", "plain2");
+    EXPECT(out, ":-1\r\n");
+
+    /* composite values are deep-copied: later writes stay independent */
+    exec_cmd(&d, T0, &out, 4, "RPUSH", "l", "a", "b");
+    EXPECT(out, ":2\r\n");
+    exec_cmd(&d, T0, &out, 3, "COPY", "l", "l2");
+    EXPECT(out, ":1\r\n");
+    exec_cmd(&d, T0, &out, 3, "RPUSH", "l", "c");
+    EXPECT(out, ":3\r\n");
+    exec_cmd(&d, T0, &out, 4, "LRANGE", "l2", "0", "-1");
+    EXPECT(out, "*2\r\n$1\r\na\r\n$1\r\nb\r\n");
+    exec_cmd(&d, T0, &out, 2, "DEL", "l");
+    exec_cmd(&d, T0, &out, 4, "LRANGE", "l2", "0", "-1");
+    EXPECT(out, "*2\r\n$1\r\na\r\n$1\r\nb\r\n");
+
+    /* DB option on a single-db session: db 0 is current, others are out
+     * of range */
+    exec_cmd(&d, T0, &out, 5, "COPY", "src", "dst9", "DB", "0");
+    EXPECT(out, ":1\r\n");
+    exec_cmd(&d, T0, &out, 5, "COPY", "src", "dst9", "DB", "3");
+    EXPECT(out, "-ERR DB index is out of range\r\n");
+    exec_cmd(&d, T0, &out, 5, "COPY", "src", "dst9", "DB", "-1");
+    EXPECT(out, "-ERR DB index is out of range\r\n");
+    exec_cmd(&d, T0, &out, 5, "COPY", "src", "dst9", "DB", "abc");
+    EXPECT(out, "-ERR value is not an integer or out of range\r\n");
+
+    /* syntax errors */
+    exec_cmd(&d, T0, &out, 2, "COPY", "src");
+    EXPECT(out, "-ERR wrong number of arguments for 'copy' command\r\n");
+    exec_cmd(&d, T0, &out, 4, "COPY", "src", "dst9", "BOGUS");
+    EXPECT(out, SYNTAX);
+    exec_cmd(&d, T0, &out, 4, "COPY", "src", "dst9", "DB");
+    EXPECT(out, SYNTAX);
+    exec_cmd(&d, T0, &out, 5, "COPY", "src", "dst9", "REPLACE", "REPLACE");
+    EXPECT(out, SYNTAX);
+
+    resp_buf_free(&out);
+    db_destroy(&d);
+}
+
 int main(void)
 {
     DD_RUN(test_type);
@@ -678,5 +784,6 @@ int main(void)
     DD_RUN(test_touch);
     DD_RUN(test_randomkey);
     DD_RUN(test_expiretime);
+    DD_RUN(test_copy);
     return DD_TEST_SUMMARY();
 }

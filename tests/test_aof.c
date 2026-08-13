@@ -444,6 +444,151 @@ static void test_aof_flush_preserves_pending_on_flush_failure(void)
     remove(TMP_AOF);
 }
 
+/* ---- appendfsync: durability policy over pal_file_sync --------------- */
+
+static int sync_calls;
+static int sync_fail_call;
+static uint64_t fake_now;
+
+static int counting_sync(pal_file *f)
+{
+    sync_calls++;
+    if (sync_calls == sync_fail_call)
+        return -1;
+    return pal_file_sync(f);
+}
+
+static uint64_t now_fake(void)
+{
+    return fake_now;
+}
+
+static void test_pal_file_sync_roundtrip(void)
+{
+    pal_file *f = pal_file_open_write(TMP_AOF);
+    char buf[8];
+    DD_CHECK(f != NULL);
+    DD_CHECK_EQ_INT(4, pal_file_write(f, "sync", 4));
+    DD_CHECK_EQ_INT(0, pal_file_flush(f));
+    DD_CHECK_EQ_INT(0, pal_file_sync(f));
+    DD_CHECK_EQ_INT(0, pal_file_close(f));
+    f = pal_file_open_read(TMP_AOF);
+    DD_CHECK(f != NULL);
+    if (f != NULL) {
+        DD_CHECK_EQ_INT(4, pal_file_read(f, buf, sizeof(buf)));
+        DD_CHECK_MEM("sync", 4, buf, 4);
+        DD_CHECK_EQ_INT(0, pal_file_close(f));
+    }
+    remove(TMP_AOF);
+}
+
+static void test_aof_fsync_always_syncs_every_flush(void)
+{
+    aof *a = aof_open(TMP_AOF);
+    DD_CHECK(a != NULL);
+    if (a == NULL)
+        return;
+    sync_calls = 0;
+    sync_fail_call = -1;
+    aof_test_set_sync_fn(a, counting_sync);
+    aof_set_fsync_mode(a, AOF_FSYNC_ALWAYS);
+    log_set(a);
+    DD_CHECK_EQ_INT(0, aof_flush(a));
+    DD_CHECK_EQ_INT(1, sync_calls);
+    DD_CHECK_EQ_INT(0, aof_flush(a)); /* nothing pending: no extra sync */
+    DD_CHECK_EQ_INT(1, sync_calls);
+    log_set(a);
+    DD_CHECK_EQ_INT(0, aof_flush(a));
+    DD_CHECK_EQ_INT(2, sync_calls);
+    aof_close(a);
+    remove(TMP_AOF);
+}
+
+static void test_aof_fsync_everysec_throttles(void)
+{
+    aof *a = aof_open(TMP_AOF);
+    DD_CHECK(a != NULL);
+    if (a == NULL)
+        return;
+    sync_calls = 0;
+    sync_fail_call = -1;
+    fake_now = 100000;
+    aof_test_set_sync_fn(a, counting_sync);
+    aof_test_set_now_fn(a, now_fake);
+    aof_set_fsync_mode(a, AOF_FSYNC_EVERYSEC);
+    log_set(a);
+    DD_CHECK_EQ_INT(0, aof_flush(a)); /* first flush syncs */
+    DD_CHECK_EQ_INT(1, sync_calls);
+    fake_now += 999;
+    log_set(a);
+    DD_CHECK_EQ_INT(0, aof_flush(a)); /* inside the 1s window: skipped */
+    DD_CHECK_EQ_INT(1, sync_calls);
+    fake_now += 1;
+    log_set(a);
+    DD_CHECK_EQ_INT(0, aof_flush(a)); /* a full second later: syncs */
+    DD_CHECK_EQ_INT(2, sync_calls);
+    aof_close(a);
+    remove(TMP_AOF);
+}
+
+static void test_aof_fsync_no_never_syncs(void)
+{
+    aof *a = aof_open(TMP_AOF);
+    DD_CHECK(a != NULL);
+    if (a == NULL)
+        return;
+    sync_calls = 0;
+    sync_fail_call = -1;
+    aof_test_set_sync_fn(a, counting_sync);
+    aof_set_fsync_mode(a, AOF_FSYNC_NO);
+    log_set(a);
+    DD_CHECK_EQ_INT(0, aof_flush(a));
+    DD_CHECK_EQ_INT(0, sync_calls);
+    aof_close(a); /* even the closing flush must not sync in mode no */
+    DD_CHECK_EQ_INT(0, sync_calls);
+    remove(TMP_AOF);
+}
+
+static void test_aof_close_final_sync_everysec(void)
+{
+    aof *a = aof_open(TMP_AOF);
+    DD_CHECK(a != NULL);
+    if (a == NULL)
+        return;
+    sync_calls = 0;
+    sync_fail_call = -1;
+    fake_now = 100000;
+    aof_test_set_sync_fn(a, counting_sync);
+    aof_test_set_now_fn(a, now_fake);
+    /* default mode is everysec (Redis default) */
+    log_set(a);
+    DD_CHECK_EQ_INT(0, aof_flush(a));
+    DD_CHECK_EQ_INT(1, sync_calls);
+    /* close inside the throttle window still syncs once at the end */
+    aof_close(a);
+    DD_CHECK_EQ_INT(2, sync_calls);
+    remove(TMP_AOF);
+}
+
+static void test_aof_sync_failure_latches_fail_closed(void)
+{
+    aof *a = aof_open(TMP_AOF);
+    DD_CHECK(a != NULL);
+    if (a == NULL)
+        return;
+    sync_calls = 0;
+    sync_fail_call = 1;
+    aof_test_set_sync_fn(a, counting_sync);
+    aof_set_fsync_mode(a, AOF_FSYNC_ALWAYS);
+    log_set(a);
+    DD_CHECK_EQ_INT(-1, aof_flush(a)); /* sync failed: latched */
+    DD_CHECK_EQ_INT(1, sync_calls);
+    DD_CHECK_EQ_INT(-1, aof_flush(a)); /* fail-closed: no retry */
+    DD_CHECK_EQ_INT(1, sync_calls);
+    aof_close(a);
+    remove(TMP_AOF);
+}
+
 static void test_aof_flushdb_logged(void)
 {
     db d, d2;
@@ -612,6 +757,12 @@ int main(void)
     DD_RUN(test_aof_flush_preserves_suffix_on_error);
     DD_RUN(test_aof_flush_latches_zero_progress);
     DD_RUN(test_aof_flush_preserves_pending_on_flush_failure);
+    DD_RUN(test_pal_file_sync_roundtrip);
+    DD_RUN(test_aof_fsync_always_syncs_every_flush);
+    DD_RUN(test_aof_fsync_everysec_throttles);
+    DD_RUN(test_aof_fsync_no_never_syncs);
+    DD_RUN(test_aof_close_final_sync_everysec);
+    DD_RUN(test_aof_sync_failure_latches_fail_closed);
     DD_RUN(test_aof_flushdb_logged);
     DD_RUN(test_aof_multidb_replay);
     DD_RUN(test_aof_session_late_corruption_does_not_mutate_dbs);

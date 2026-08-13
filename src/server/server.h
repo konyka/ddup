@@ -58,6 +58,9 @@ int server_tls_ctx_init(server *s, const char *cert_file,
 /* Enable AOF persistence: replay the file if it exists, then append every
  * mutating command. Returns 0 on success. */
 int server_enable_aof(server *s, const char *path);
+/* Set the AOF appendfsync policy (AOF_FSYNC_* from server/aof.h; default
+ * everysec). Applies to the current AOF and to one enabled later. */
+void server_set_appendfsync(server *s, int mode);
 
 /* Require AUTH before commands (Redis requirepass). The pointer is not
  * owned; pass NULL/"" to disable. New connections start unauthenticated. */

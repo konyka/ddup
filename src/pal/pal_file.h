@@ -2,8 +2,8 @@
  *
  * stdio is already portable; this wrapper centralizes the few semantic
  * differences (e.g. rename-on-existing-target on Windows) behind the pal
- * boundary. Uses C streams (buffered); durability fsync is a documented
- * future addition.
+ * boundary. Uses C streams (buffered); pal_file_sync() adds durability
+ * (fsync / FlushFileBuffers) for the AOF appendfsync policy.
  */
 #ifndef DDUP_PAL_FILE_H
 #define DDUP_PAL_FILE_H
@@ -24,6 +24,9 @@ ptrdiff_t pal_file_write(pal_file *f, const void *buf, size_t n);
 ptrdiff_t pal_file_read(pal_file *f, void *buf, size_t n);
 /* Flush the stdio buffer. 0 on success. */
 int pal_file_flush(pal_file *f);
+/* Durability sync of the flushed bytes to storage (POSIX fsync, Windows
+ * FlushFileBuffers). 0 on success, -1 on error. */
+int pal_file_sync(pal_file *f);
 /* Close the file, returning 0 on success or -1 if the close fails. */
 int pal_file_close(pal_file *f);
 
@@ -36,6 +39,7 @@ int pal_file_unlink(const char *path);
 /* Test seams for save failure and dynamic temporary-path coverage. */
 void pal_file_test_fail_next_rename(void);
 void pal_file_test_fail_next_flush(void);
+void pal_file_test_fail_next_sync(void);
 void pal_file_test_fail_next_close(void);
 int pal_file_test_open_write_attempts(void);
 void pal_file_test_reset(void);

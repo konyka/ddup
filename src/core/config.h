@@ -16,6 +16,7 @@ typedef struct ddup_config {
     char dir[512];            /* working dir for persistence files */
     int appendonly;           /* 0/1 */
     char appendfilename[256];
+    char appendfsync[16];     /* "everysec" (default) | "always" | "no" */
     char dbfilename[256];
     int save_sec;             /* snapshot interval, 0 = off */
     char replicaof_host[64];  /* "" = master role */

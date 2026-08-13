@@ -1390,7 +1390,8 @@ static int mt_multikey_target(int nworkers, uint16_t cmd,
         if (cmd == CMD_MSET && (i % 2) == 0)
             continue; /* value position */
         if ((cmd == CMD_SMOVE || cmd == CMD_RENAME ||
-             cmd == CMD_RENAMENX || cmd == CMD_RPOPLPUSH) && i > 2)
+             cmd == CMD_RENAMENX || cmd == CMD_RPOPLPUSH ||
+             cmd == CMD_COPY) && i > 2)
             break; /* only source and destination are keys */
         if (argv[i].str == NULL)
             return MT_LOCAL;
@@ -1428,6 +1429,7 @@ static int mt_classify(int nworkers, uint16_t cmd, const resp_value *argv,
     case CMD_RENAME:
     case CMD_RENAMENX:
     case CMD_RPOPLPUSH:
+    case CMD_COPY:
     case CMD_SINTER:
     case CMD_SUNION:
     case CMD_SDIFF:
@@ -2503,6 +2505,34 @@ static int mt_route(void *ctx, void *conn, session *sess,
                                   sess->db_index);
     }
 
+    /* COPY across logical dbs is rejected in mt mode: routed tasks execute
+     * sessionless against one worker db, so the DB option could not be
+     * honored (documented limitation). DB <current> is a same-db copy and
+     * routes normally. */
+    if (cmd == CMD_COPY) {
+        size_t i;
+        for (i = 3; i + 1 < argc; i++) {
+            long long dbi;
+            if (argv[i].str == NULL ||
+                !mt_ci_equal(argv[i].str, argv[i].len, "db"))
+                continue;
+            if (argv[i + 1].str != NULL &&
+                mt_parse_ll(argv[i + 1].str, argv[i + 1].len, &dbi) &&
+                dbi != sess->db_index) {
+                static const char msg[] =
+                    "-ERR COPY across databases is not supported in mt "
+                    "mode\r\n";
+                uint64_t lseq;
+                mt_batch_flush(home, conn, st);
+                lseq = st->seq_next++;
+                mt_reply_local(home, conn, st, lseq, msg, sizeof(msg) - 1,
+                               out);
+                return 1;
+            }
+            break;
+        }
+    }
+
     target = mt_classify(home->ms->nworkers, cmd, argv, argc);
     if (target == MT_PASS)
         return 0; /* legacy inline path (SINTER/SUNION/SDIFF for now) */
@@ -3321,6 +3351,13 @@ int mt_server_enable_aof(mt_server *ms, const char *dir,
             return -1;
     }
     return 0;
+}
+
+void mt_server_set_appendfsync(mt_server *ms, int mode)
+{
+    int i;
+    for (i = 0; i < ms->nworkers; i++)
+        server_set_appendfsync(ms->workers[i].srv, mode);
 }
 
 int mt_server_enable_snapshots(mt_server *ms, const char *dir,

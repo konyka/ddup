@@ -423,6 +423,93 @@ static void test_smove_same_worker(void)
     pal_socket_cleanup();
 }
 
+static void test_copy_same_worker(void)
+{
+    mt_server *ms;
+    pal_socket_t a;
+    char ka[32], kb[32], k0[32], k1[32];
+    char req[300];
+
+    DD_CHECK_EQ_INT(0, pal_socket_init());
+    pick_two_keys_for_worker(1, 2, ka, sizeof(ka), kb, sizeof(kb));
+    pick_key_for_worker(0, 2, k0, sizeof(k0));
+    pick_key_for_worker(1, 2, k1, sizeof(k1));
+
+    ms = mt_server_create("127.0.0.1", 0, 2);
+    DD_CHECK(ms != NULL);
+    DD_CHECK_EQ_INT(0, mt_server_start(ms));
+    a = connect_client(mt_server_port(ms)); /* -> worker 0 */
+
+    /* same-worker pair: routed as one unit */
+    snprintf(req, sizeof(req), "*3\r\n$3\r\nSET\r\n$%zu\r\n%s\r\n$2\r\nv1\r\n",
+             strlen(ka), ka);
+    roundtrip(a, req, "+OK\r\n");
+    snprintf(req, sizeof(req),
+             "*3\r\n$4\r\nCOPY\r\n$%zu\r\n%s\r\n$%zu\r\n%s\r\n", strlen(ka),
+             ka, strlen(kb), kb);
+    roundtrip(a, req, ":1\r\n");
+    snprintf(req, sizeof(req), "*2\r\n$3\r\nGET\r\n$%zu\r\n%s\r\n",
+             strlen(kb), kb);
+    roundtrip(a, req, "$2\r\nv1\r\n");
+
+    /* DB 0 (the current db) is a same-db copy: routed normally */
+    snprintf(req, sizeof(req),
+             "*6\r\n$4\r\nCOPY\r\n$%zu\r\n%s\r\n$%zu\r\n%s\r\n$2\r\nDB\r\n"
+             "$1\r\n0\r\n$7\r\nREPLACE\r\n",
+             strlen(ka), ka, strlen(kb), kb);
+    roundtrip(a, req, ":1\r\n");
+
+    /* keys on different workers: crossslot */
+    snprintf(req, sizeof(req),
+             "*3\r\n$4\r\nCOPY\r\n$%zu\r\n%s\r\n$%zu\r\n%s\r\n", strlen(k0),
+             k0, strlen(k1), k1);
+    roundtrip(a, req,
+              "-CROSSSLOT Keys in request don't hash to the same slot\r\n");
+
+    /* cross-db COPY is rejected in mt mode (documented limitation) */
+    snprintf(req, sizeof(req),
+             "*5\r\n$4\r\nCOPY\r\n$%zu\r\n%s\r\n$%zu\r\n%s\r\n$2\r\nDB\r\n"
+             "$1\r\n1\r\n",
+             strlen(ka), ka, strlen(kb), kb);
+    roundtrip(a, req,
+              "-ERR COPY across databases is not supported in mt mode\r\n");
+
+    pal_close(a);
+    mt_server_stop(ms);
+    mt_server_destroy(ms);
+    pal_socket_cleanup();
+}
+
+static void test_quit_closes_connection_mt(void)
+{
+    mt_server *ms;
+    pal_socket_t c;
+    char buf[64];
+    ptrdiff_t n = -1;
+    uint64_t deadline;
+
+    DD_CHECK_EQ_INT(0, pal_socket_init());
+    ms = mt_server_create("127.0.0.1", 0, 2);
+    DD_CHECK(ms != NULL);
+    DD_CHECK_EQ_INT(0, mt_server_start(ms));
+    c = connect_client(mt_server_port(ms));
+
+    /* QUIT is keyless-local on the home worker: +OK, then the conn closes */
+    roundtrip(c, "*1\r\n$4\r\nQUIT\r\n", "+OK\r\n");
+    deadline = pal_now_ms() + 5000;
+    while (n < 0 && pal_now_ms() < deadline) {
+        n = pal_recv(c, buf, sizeof(buf));
+        if (n < 0)
+            pal_sleep_ms(1);
+    }
+    DD_CHECK_EQ_INT(0, n);
+
+    pal_close(c);
+    mt_server_stop(ms);
+    mt_server_destroy(ms);
+    pal_socket_cleanup();
+}
+
 /* mt_server_enable_tls with unusable cert/key fails cleanly: the plain
  * listener keeps working and destroy is unaffected. (A full TLS handshake
  * roundtrip lives in test_tls.c, built only when OpenSSL is available.) */
@@ -1659,6 +1746,8 @@ int main(void)
     DD_RUN(test_multikey_same_worker);
     DD_RUN(test_multikey_crossslot_rejected);
     DD_RUN(test_smove_same_worker);
+    DD_RUN(test_copy_same_worker);
+    DD_RUN(test_quit_closes_connection_mt);
     DD_RUN(test_aggregate_dbsize_and_flushdb);
     DD_RUN(test_info_aggregation);
     DD_RUN(test_three_worker_aggregate_completion);

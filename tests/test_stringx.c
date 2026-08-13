@@ -514,12 +514,135 @@ static void test_incrbyfloat(void)
     db_destroy(&d);
 }
 
+static void test_set_keepttl(void)
+{
+    db d;
+    resp_buf out;
+    db_init(&d);
+    resp_buf_init(&out);
+
+    /* KEEPTTL preserves the existing TTL across an overwrite */
+    exec_cmd(&d, T0, &out, 3, "SET", "k", "v1");
+    EXPECT(out, "+OK\r\n");
+    exec_cmd(&d, T0, &out, 3, "PEXPIRE", "k", "10000");
+    EXPECT(out, ":1\r\n");
+    exec_cmd(&d, T0, &out, 4, "SET", "k", "v2", "KEEPTTL");
+    EXPECT(out, "+OK\r\n");
+    exec_cmd(&d, T0, &out, 2, "GET", "k");
+    EXPECT(out, "$2\r\nv2\r\n");
+    exec_cmd(&d, T0, &out, 2, "PTTL", "k");
+    EXPECT(out, ":10000\r\n");
+
+    /* a plain overwrite still clears the TTL */
+    exec_cmd(&d, T0, &out, 3, "SET", "k", "v3");
+    EXPECT(out, "+OK\r\n");
+    exec_cmd(&d, T0, &out, 2, "PTTL", "k");
+    EXPECT(out, ":-1\r\n");
+
+    /* KEEPTTL on a missing key: plain set, no TTL to keep */
+    exec_cmd(&d, T0, &out, 4, "SET", "fresh", "v", "KEEPTTL");
+    EXPECT(out, "+OK\r\n");
+    exec_cmd(&d, T0, &out, 2, "PTTL", "fresh");
+    EXPECT(out, ":-1\r\n");
+
+    /* the absolute expiry instant is kept, not the relative ttl */
+    exec_cmd(&d, T0, &out, 3, "SET", "a", "v1");
+    exec_cmd(&d, T0, &out, 3, "PEXPIRE", "a", "10000");
+    exec_cmd(&d, T0 + 4000, &out, 4, "SET", "a", "v2", "KEEPTTL");
+    EXPECT(out, "+OK\r\n");
+    exec_cmd(&d, T0 + 4000, &out, 2, "PTTL", "a");
+    EXPECT(out, ":6000\r\n");
+
+    /* KEEPTTL composes with XX / NX */
+    exec_cmd(&d, T0, &out, 3, "SET", "c", "v1");
+    exec_cmd(&d, T0, &out, 3, "PEXPIRE", "c", "10000");
+    exec_cmd(&d, T0, &out, 5, "SET", "c", "v2", "XX", "KEEPTTL");
+    EXPECT(out, "+OK\r\n");
+    exec_cmd(&d, T0, &out, 2, "PTTL", "c");
+    EXPECT(out, ":10000\r\n");
+    exec_cmd(&d, T0, &out, 5, "SET", "c", "v3", "NX", "KEEPTTL");
+    EXPECT(out, "$-1\r\n"); /* NX abort: value and TTL untouched */
+    exec_cmd(&d, T0, &out, 2, "GET", "c");
+    EXPECT(out, "$2\r\nv2\r\n");
+    exec_cmd(&d, T0, &out, 2, "PTTL", "c");
+    EXPECT(out, ":10000\r\n");
+    exec_cmd(&d, T0, &out, 5, "SET", "c2", "v", "NX", "KEEPTTL");
+    EXPECT(out, "+OK\r\n");
+
+    /* KEEPTTL conflicts with EX/PX and with itself: syntax error */
+    exec_cmd(&d, T0, &out, 6, "SET", "k", "v", "KEEPTTL", "EX", "10");
+    EXPECT(out, SYNTAX_REPLY);
+    exec_cmd(&d, T0, &out, 6, "SET", "k", "v", "EX", "10", "KEEPTTL");
+    EXPECT(out, SYNTAX_REPLY);
+    exec_cmd(&d, T0, &out, 6, "SET", "k", "v", "PX", "100", "KEEPTTL");
+    EXPECT(out, SYNTAX_REPLY);
+    exec_cmd(&d, T0, &out, 5, "SET", "k", "v", "KEEPTTL", "KEEPTTL");
+    EXPECT(out, SYNTAX_REPLY);
+
+    resp_buf_free(&out);
+    db_destroy(&d);
+}
+
+static void test_set_get_option(void)
+{
+    db d;
+    resp_buf out;
+    db_init(&d);
+    resp_buf_init(&out);
+
+    /* GET returns the old value (null when the key did not exist) */
+    exec_cmd(&d, T0, &out, 4, "SET", "k", "v1", "GET");
+    EXPECT(out, "$-1\r\n");
+    exec_cmd(&d, T0, &out, 4, "SET", "k", "v2", "GET");
+    EXPECT(out, "$2\r\nv1\r\n");
+    exec_cmd(&d, T0, &out, 2, "GET", "k");
+    EXPECT(out, "$2\r\nv2\r\n");
+
+    /* non-string old value: WRONGTYPE, the set is not performed */
+    exec_cmd(&d, T0, &out, 4, "HSET", "h", "f", "v");
+    exec_cmd(&d, T0, &out, 4, "SET", "h", "x", "GET");
+    EXPECT(out, WRONGTYPE_REPLY);
+    exec_cmd(&d, T0, &out, 2, "TYPE", "h");
+    EXPECT(out, "+hash\r\n");
+
+    /* GET composes with NX / XX / EX */
+    exec_cmd(&d, T0, &out, 5, "SET", "k", "v3", "GET", "NX");
+    EXPECT(out, "$-1\r\n"); /* NX abort on an existing key */
+    exec_cmd(&d, T0, &out, 2, "GET", "k");
+    EXPECT(out, "$2\r\nv2\r\n");
+    exec_cmd(&d, T0, &out, 5, "SET", "k", "v4", "GET", "XX");
+    EXPECT(out, "$2\r\nv2\r\n");
+    exec_cmd(&d, T0, &out, 6, "SET", "k", "v5", "GET", "EX", "100");
+    EXPECT(out, "$2\r\nv4\r\n");
+    exec_cmd(&d, T0, &out, 2, "TTL", "k");
+    EXPECT(out, ":100\r\n");
+
+    /* GET composes with KEEPTTL */
+    exec_cmd(&d, T0, &out, 3, "SET", "g", "old");
+    exec_cmd(&d, T0, &out, 3, "PEXPIRE", "g", "9000");
+    exec_cmd(&d, T0, &out, 5, "SET", "g", "new", "GET", "KEEPTTL");
+    EXPECT(out, "$3\r\nold\r\n");
+    exec_cmd(&d, T0, &out, 2, "PTTL", "g");
+    EXPECT(out, ":9000\r\n");
+    exec_cmd(&d, T0, &out, 2, "GET", "g");
+    EXPECT(out, "$3\r\nnew\r\n");
+
+    /* duplicate GET: syntax error */
+    exec_cmd(&d, T0, &out, 5, "SET", "k", "v", "GET", "GET");
+    EXPECT(out, SYNTAX_REPLY);
+
+    resp_buf_free(&out);
+    db_destroy(&d);
+}
+
 int main(void)
 {
     DD_RUN(test_getdel);
     DD_RUN(test_getex);
     DD_RUN(test_setex_psetex);
     DD_RUN(test_getset);
+    DD_RUN(test_set_keepttl);
+    DD_RUN(test_set_get_option);
     DD_RUN(test_setrange);
     DD_RUN(test_getrange);
     DD_RUN(test_incrby_decrby);

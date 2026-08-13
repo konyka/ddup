@@ -292,10 +292,11 @@ enum {
     CMD_ZREVRANGEBYLEX,
     CMD_ZREMRANGEBYLEX,
     CMD_PSUBSCRIBE,
-    CMD_PUNSUBSCRIBE
+    CMD_PUNSUBSCRIBE,
+    CMD_COPY
 };
 
-#define CMD_MAX CMD_PUNSUBSCRIBE
+#define CMD_MAX CMD_COPY
 
 /* Resolve a command name to its stable ID; case-insensitive. */
 uint16_t cmd_resolve(const char *name, size_t len);

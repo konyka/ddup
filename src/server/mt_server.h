@@ -52,6 +52,9 @@ uint64_t mt_server_test_worker_loops(const mt_server *ms, int worker_id);
  * interval (0 = manual SAVE only). Return 0 on success. */
 int mt_server_enable_aof(mt_server *ms, const char *dir,
                          const char *appendfilename);
+/* Set the appendfsync policy on every worker (AOF_FSYNC_* from
+ * server/aof.h; default everysec). */
+void mt_server_set_appendfsync(mt_server *ms, int mode);
 int mt_server_enable_snapshots(mt_server *ms, const char *dir,
                                const char *dbfilename, int save_sec);
 

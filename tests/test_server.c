@@ -13,6 +13,7 @@
 #include "pal/pal_iocp.h"
 #include "pal/pal_iouring_op.h"
 #include "pal/pal_socket.h"
+#include "server/aof.h"
 #include "server/server.h"
 #include "test.h"
 
@@ -207,6 +208,37 @@ static void test_aof_failure_rejects_writes(void)
     remove(path);
 }
 
+static void test_aof_sync_failure_rejects_writes(void)
+{
+    static const char path[] = "test_server_aof_sync.aof";
+    static const char misconf[] =
+        "-MISCONF Errors writing to the AOF file\r\n";
+    server *s;
+    pal_socket_t c;
+
+    remove(path);
+    s = make_server();
+    DD_CHECK(s != NULL);
+    if (s == NULL)
+        return;
+    DD_CHECK_EQ_INT(0, server_enable_aof(s, path));
+    server_set_appendfsync(s, AOF_FSYNC_ALWAYS);
+    pal_file_test_reset();
+    pal_file_test_fail_next_sync();
+    c = connect_client(s);
+
+    /* SET applies; the loop-end flush+sync fails and latches fail-closed */
+    roundtrip(s, c, "*3\r\n$3\r\nSET\r\n$1\r\nk\r\n$1\r\nv\r\n", "+OK\r\n");
+    DD_CHECK(server_test_aof_failed(s));
+    DD_CHECK(server_shutdown_requested(s));
+    roundtrip(s, c, "*3\r\n$3\r\nSET\r\n$1\r\nx\r\n$1\r\ny\r\n", misconf);
+    roundtrip(s, c, "*2\r\n$3\r\nGET\r\n$1\r\nk\r\n", "$1\r\nv\r\n");
+
+    pal_close(c);
+    server_destroy(s);
+    remove(path);
+}
+
 static void test_eventless_loop_flushes_aof(void)
 {
     static const char path[] = "test_server_aof_eventless.aof";
@@ -355,6 +387,61 @@ static void test_protocol_error_closes_conn(void)
         n = pal_recv(c, buf, sizeof(buf));
     }
     DD_CHECK_EQ_INT(0, n);
+
+    pal_close(c);
+    server_destroy(s);
+}
+
+static void test_quit_closes_connection(void)
+{
+    server *s = make_server();
+    pal_socket_t c;
+    char buf[64];
+    ptrdiff_t n;
+    int iter = 0;
+    DD_CHECK(s != NULL);
+    c = connect_client(s);
+
+    /* the ack is delivered, then the server closes the connection */
+    roundtrip(s, c, "*1\r\n$4\r\nQUIT\r\n", "+OK\r\n");
+    n = -1;
+    while (n < 0 && iter < 10000) {
+        iter++;
+        server_run_once(s, 10);
+        n = pal_recv(c, buf, sizeof(buf));
+    }
+    DD_CHECK_EQ_INT(0, n);
+
+    pal_close(c);
+    server_destroy(s);
+}
+
+static void test_quit_discards_pipelined_tail(void)
+{
+    server *s = make_server();
+    pal_socket_t c;
+    char buf[64];
+    size_t got = 0;
+    ptrdiff_t n;
+    int iter = 0;
+    DD_CHECK(s != NULL);
+    c = connect_client(s);
+
+    /* PING after QUIT in the same send is never answered */
+    roundtrip(s, c,
+              "*1\r\n$4\r\nQUIT\r\n"
+              "*1\r\n$4\r\nPING\r\n",
+              "+OK\r\n");
+    n = -1;
+    while (n < 0 && iter < 10000) {
+        iter++;
+        server_run_once(s, 10);
+        n = pal_recv(c, buf + got, sizeof(buf) - got);
+        if (n > 0)
+            got += (size_t)n;
+    }
+    DD_CHECK_EQ_INT(0, n); /* EOF, and no +PONG arrived */
+    DD_CHECK_EQ_INT(0, (long long)got);
 
     pal_close(c);
     server_destroy(s);
@@ -985,12 +1072,15 @@ static void run_all_tests(void)
     DD_RUN(test_ping_set_get);
     DD_RUN(test_pipeline);
     DD_RUN(test_aof_failure_rejects_writes);
+    DD_RUN(test_aof_sync_failure_rejects_writes);
     DD_RUN(test_eventless_loop_flushes_aof);
     DD_RUN(test_mget_missing_key);
     DD_RUN(test_unknown_command);
     DD_RUN(test_split_delivery);
     DD_RUN(test_many_connections);
     DD_RUN(test_protocol_error_closes_conn);
+    DD_RUN(test_quit_closes_connection);
+    DD_RUN(test_quit_discards_pipelined_tail);
     DD_RUN(test_request_limit_fragmentation);
     DD_RUN(test_iouring_multishot_complete_at_limit);
     DD_RUN(test_readiness_complete_at_limit);

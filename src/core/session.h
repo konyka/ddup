@@ -143,6 +143,10 @@ typedef struct session {
     /* SHUTDOWN hook (server-owned): flips the server shutdown flag. */
     void *shutdown_ctx;
     void (*request_shutdown)(void *ctx);
+    /* set by QUIT: the server closes the connection once the reply (and
+     * anything already buffered) has been flushed; no-op for stack
+     * sessions */
+    int quit;
     /* CLUSTER MEET hook (server-owned): open a bus conn and send MEET. */
     void *cluster_ctx;
     int (*cluster_meet)(void *ctx, const char *ip, uint16_t port);

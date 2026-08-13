@@ -223,6 +223,7 @@ static void test_crossslot_basic(void);
 static void test_crossslot_setops_watch(void);
 static void test_crossslot_exec(void);
 static void test_crossslot_disabled_allows(void);
+static void test_crossslot_copy(void);
 
 int main(void)
 {
@@ -232,6 +233,7 @@ int main(void)
     DD_RUN(test_count_and_getkeysinslot);
     DD_RUN(test_crossslot_basic);
     DD_RUN(test_crossslot_setops_watch);
+    DD_RUN(test_crossslot_copy);
     DD_RUN(test_crossslot_exec);
     DD_RUN(test_crossslot_disabled_allows);
     return DD_TEST_SUMMARY();
@@ -294,6 +296,29 @@ static void test_crossslot_setops_watch(void)
     EXPECT(out, XS);
     exec_sess(s, T0, &out, 3, "WATCH", "{u}.a", "{u}.b");
     EXPECT(out, "+OK\r\n");
+
+    session_free(s);
+    resp_buf_free(&out);
+    db_destroy(&d);
+}
+
+static void test_crossslot_copy(void)
+{
+    db d;
+    session *s;
+    resp_buf out;
+    db_init(&d);
+    resp_buf_init(&out);
+    s = cluster_session(&d);
+
+    exec_sess(s, T0, &out, 3, "SET", "{u}.a", "1");
+    EXPECT(out, "+OK\r\n");
+    exec_sess(s, T0, &out, 3, "COPY", "{u}.a", "{u}.b");
+    EXPECT(out, ":1\r\n");
+    exec_sess(s, T0, &out, 2, "GET", "{u}.b");
+    EXPECT(out, "$1\r\n1\r\n");
+    exec_sess(s, T0, &out, 3, "COPY", "{u}.a", "x");
+    EXPECT(out, XS);
 
     session_free(s);
     resp_buf_free(&out);

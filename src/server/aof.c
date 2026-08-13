@@ -73,6 +73,9 @@ aof *aof_open(const char *path)
     }
     resp_buf_init(&a->pending);
     a->write_fn = pal_file_write;
+    a->fsync_mode = AOF_FSYNC_EVERYSEC;
+    a->sync_fn = pal_file_sync;
+    a->now_fn = pal_wall_ms;
     return a;
 }
 
@@ -92,11 +95,35 @@ void aof_log_cmd(aof *a, const resp_value *argv, size_t argc)
     }
 }
 
+void aof_set_fsync_mode(aof *a, int mode)
+{
+    a->fsync_mode = mode;
+}
+
+/* Durability sync after a successful flush, per the appendfsync policy.
+ * 0 on success (or no sync due), -1 when the sync itself failed. */
+static int aof_policy_sync(aof *a)
+{
+    uint64_t now;
+    if (a->fsync_mode == AOF_FSYNC_NO)
+        return 0;
+    now = a->now_fn();
+    if (a->fsync_mode == AOF_FSYNC_EVERYSEC &&
+        now - a->last_sync_ms < 1000)
+        return 0;
+    if (a->sync_fn(a->f) != 0)
+        return -1;
+    a->last_sync_ms = now;
+    return 0;
+}
+
 int aof_flush(aof *a)
 {
     size_t written = 0;
+    int had_pending;
     if (a->failed)
         return -1;
+    had_pending = a->pending.len > 0;
     while (written < a->pending.len) {
         ptrdiff_t n = a->write_fn(a->f, a->pending.data + written,
                                   a->pending.len - written);
@@ -116,6 +143,12 @@ int aof_flush(aof *a)
         return -1;
     }
     a->pending.len = 0;
+    /* the bytes made it to the OS; durability sync failures latch the same
+     * fail-closed state as write/flush failures */
+    if (had_pending && aof_policy_sync(a) != 0) {
+        a->failed = 1;
+        return -1;
+    }
     return 0;
 }
 
@@ -125,11 +158,25 @@ void aof_test_set_write_fn(
     a->write_fn = write_fn != NULL ? write_fn : pal_file_write;
 }
 
+void aof_test_set_sync_fn(aof *a, int (*sync_fn)(pal_file *f))
+{
+    a->sync_fn = sync_fn != NULL ? sync_fn : pal_file_sync;
+}
+
+void aof_test_set_now_fn(aof *a, uint64_t (*now_fn)(void))
+{
+    a->now_fn = now_fn != NULL ? now_fn : pal_wall_ms;
+}
+
 void aof_close(aof *a)
 {
     if (a == NULL)
         return;
     aof_flush(a);
+    /* graceful exit: one last durability sync, throttle window ignored
+     * (best-effort -- the file is being closed either way) */
+    if (!a->failed && a->fsync_mode != AOF_FSYNC_NO)
+        (void)a->sync_fn(a->f);
     pal_file_close(a->f);
     resp_buf_free(&a->pending);
     free(a);

@@ -7,7 +7,10 @@
 #include "pal/pal_platform.h"
 
 #if DDUP_OS_WINDOWS
+#include <io.h>
 #include <windows.h>
+#else
+#include <unistd.h>
 #endif
 
 struct pal_file {
@@ -17,6 +20,7 @@ struct pal_file {
 #ifdef DDUP_TESTING
 static int pal_file_fail_next_rename;
 static int pal_file_fail_next_flush;
+static int pal_file_fail_next_sync;
 static int pal_file_fail_next_close;
 static int pal_file_open_write_count;
 
@@ -28,6 +32,11 @@ void pal_file_test_fail_next_rename(void)
 void pal_file_test_fail_next_flush(void)
 {
     pal_file_fail_next_flush = 1;
+}
+
+void pal_file_test_fail_next_sync(void)
+{
+    pal_file_fail_next_sync = 1;
 }
 
 void pal_file_test_fail_next_close(void)
@@ -44,6 +53,7 @@ void pal_file_test_reset(void)
 {
     pal_file_fail_next_rename = 0;
     pal_file_fail_next_flush = 0;
+    pal_file_fail_next_sync = 0;
     pal_file_fail_next_close = 0;
     pal_file_open_write_count = 0;
 }
@@ -106,6 +116,24 @@ int pal_file_flush(pal_file *f)
     }
 #endif
     return fflush(f->fp) == 0 ? 0 : -1;
+}
+
+int pal_file_sync(pal_file *f)
+{
+#ifdef DDUP_TESTING
+    if (pal_file_fail_next_sync) {
+        pal_file_fail_next_sync = 0;
+        return -1;
+    }
+#endif
+#if DDUP_OS_WINDOWS
+    /* _get_osfhandle maps the CRT fd to the Win32 HANDLE */
+    return FlushFileBuffers((HANDLE)_get_osfhandle(_fileno(f->fp))) != 0
+               ? 0
+               : -1;
+#else
+    return fsync(fileno(f->fp)) == 0 ? 0 : -1;
+#endif
 }
 
 int pal_file_close(pal_file *f)

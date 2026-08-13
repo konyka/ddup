@@ -86,7 +86,8 @@ struct conn {
     int zombie;          /* closed with ops in flight: freed at 0 pending */
     int zombie_mt_free;  /* zombie whose owner (mt layer) released it */
     int send_outstanding;
-    int close_after_send; /* protocol error reply must reach the peer first */
+    int close_after_send; /* QUIT / protocol error: reply reaches the peer
+                             before the connection is closed */
     /* detached send buffer: out's allocation moves here at kick_flush time
      * (zero-copy handoff, Phase 34); owned until fully sent, then returned
      * to the pool */
@@ -167,6 +168,7 @@ struct server {
     aof *aof;          /* NULL when appendonly=no */
     int aof_failed;    /* flush failed: reject writes and stop AOF growth */
     int aof_db_index;  /* last db index written to the AOF (SELECT prefix) */
+    int aof_fsync_mode; /* appendfsync policy (AOF_FSYNC_*) */
     const char *requirepass; /* AUTH password (not owned); NULL/"" = off */
     int shutdown_flag;
     int save_sec;               /* automatic snapshot interval, 0 = off */
@@ -1574,6 +1576,7 @@ server *server_create_ex(const char *host, uint16_t port, int backend)
     s->bus_listen_fd = PAL_SOCKET_INVALID;
     s->wakeup_fd = PAL_SOCKET_INVALID;
     s->node_timeout_ms = 15000;
+    s->aof_fsync_mode = AOF_FSYNC_EVERYSEC;
     s->proto_max_request_bytes = (size_t)SERVER_DEFAULT_MAX_REQUEST;
     s->repl_max_snapshot_bytes = (size_t)SERVER_DEFAULT_MAX_REQUEST;
     s->backend = backend;
@@ -1884,7 +1887,16 @@ int server_enable_aof(server *s, const char *path)
             return -1;
     }
     s->aof = aof_open(path);
+    if (s->aof != NULL)
+        aof_set_fsync_mode(s->aof, s->aof_fsync_mode);
     return s->aof != NULL ? 0 : -1;
+}
+
+void server_set_appendfsync(server *s, int mode)
+{
+    s->aof_fsync_mode = mode;
+    if (s->aof != NULL)
+        aof_set_fsync_mode(s->aof, mode);
 }
 
 void server_set_requirepass(server *s, const char *pw)
@@ -2978,6 +2990,11 @@ void server_test_cluster_nodes_save(server *s)
 static int conn_process_input(server *s, conn *c)
 {
     size_t off = 0;
+    if (c->sess->quit) {
+        /* closing after QUIT: discard anything still arriving */
+        c->rlen = 0;
+        return 0;
+    }
     while (off < c->rlen) {
         resp_value v;
         ptrdiff_t used =
@@ -2999,6 +3016,8 @@ static int conn_process_input(server *s, conn *c)
             if (rr != 0) {
                 arena_reset(&c->arena);
                 off += (size_t)used;
+                if (c->sess->quit)
+                    break; /* QUIT handled locally by the routing layer */
                 continue; /* routed / handled by the mt layer */
             }
         }
@@ -3009,6 +3028,16 @@ static int conn_process_input(server *s, conn *c)
         c->sess->raw_cmd_len = 0;
         arena_reset(&c->arena);
         off += (size_t)used;
+        if (c->sess->quit)
+            break;
+    }
+    if (c->sess->quit) {
+        /* QUIT: the reply goes out, then the connection closes (same
+         * send-then-close mechanism as a protocol error); anything
+         * pipelined after QUIT is discarded */
+        c->close_after_send = 1;
+        off = 0;
+        c->rlen = 0;
     }
     if (s->route_flush_fn != NULL)
         s->route_flush_fn(s->route_ctx, c);
@@ -3667,6 +3696,13 @@ service_io:
                 continue;
             }
             if (c->out.len > 0 && conn_flush(s, c) != 0) {
+                conn_close(s, ci);
+                ci--;
+                continue;
+            }
+            /* send-then-close (QUIT, protocol error): the last buffered
+             * byte is out, the peer has the reply */
+            if (c->close_after_send && c->out.len == 0) {
                 conn_close(s, ci);
                 ci--;
             }

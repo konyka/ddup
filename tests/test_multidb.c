@@ -352,6 +352,66 @@ static void test_info_machine_format(void)
     set_free(ds);
 }
 
+static void test_copy_crossdb(void)
+{
+    dbset *ds = set_new(4);
+    session *s = set_session(ds);
+    resp_buf out;
+    uint64_t before;
+    resp_buf_init(&out);
+
+    exec_sess(s, T0, &out, 3, "SET", "k", "v0");
+    EXPECT(out, "+OK\r\n");
+    exec_sess(s, T0, &out, 3, "PEXPIRE", "k", "10000");
+
+    /* copy into db 2: value + absolute expiry, source untouched; the
+     * session db's dirty bumps so the AOF/propagation hook fires */
+    before = s->d->dirty;
+    exec_sess(s, T0 + 4000, &out, 5, "COPY", "k", "k2", "DB", "2");
+    EXPECT(out, ":1\r\n");
+    DD_CHECK(s->d->dirty > before);
+
+    exec_sess(s, T0 + 4000, &out, 2, "SELECT", "2");
+    EXPECT(out, "+OK\r\n");
+    exec_sess(s, T0 + 4000, &out, 2, "GET", "k2");
+    EXPECT(out, "$2\r\nv0\r\n");
+    exec_sess(s, T0 + 4000, &out, 2, "PTTL", "k2");
+    EXPECT(out, ":6000\r\n");
+
+    /* target exists in the target db: REPLACE is required */
+    exec_sess(s, T0 + 4000, &out, 3, "SET", "k2", "other");
+    exec_sess(s, T0 + 4000, &out, 2, "SELECT", "0");
+    exec_sess(s, T0 + 4000, &out, 5, "COPY", "k", "k2", "DB", "2");
+    EXPECT(out, "-ERR Target key already exists\r\n");
+    exec_sess(s, T0 + 4000, &out, 6, "COPY", "k", "k2", "DB", "2", "REPLACE");
+    EXPECT(out, ":1\r\n");
+    exec_sess(s, T0 + 4000, &out, 2, "SELECT", "2");
+    exec_sess(s, T0 + 4000, &out, 2, "GET", "k2");
+    EXPECT(out, "$2\r\nv0\r\n");
+
+    /* db indexes beyond the configured range are rejected */
+    exec_sess(s, T0, &out, 2, "SELECT", "0");
+    exec_sess(s, T0, &out, 5, "COPY", "k", "k9", "DB", "4");
+    EXPECT(out, "-ERR DB index is out of range\r\n");
+    exec_sess(s, T0, &out, 5, "COPY", "k", "k9", "DB", "99");
+    EXPECT(out, "-ERR DB index is out of range\r\n");
+
+    /* composite values are deep-copied across dbs */
+    exec_sess(s, T0, &out, 4, "RPUSH", "l", "a", "b");
+    EXPECT(out, ":2\r\n");
+    exec_sess(s, T0, &out, 5, "COPY", "l", "l", "DB", "1");
+    EXPECT(out, ":1\r\n");
+    exec_sess(s, T0, &out, 3, "RPUSH", "l", "c");
+    EXPECT(out, ":3\r\n");
+    exec_sess(s, T0, &out, 2, "SELECT", "1");
+    exec_sess(s, T0, &out, 4, "LRANGE", "l", "0", "-1");
+    EXPECT(out, "*2\r\n$1\r\na\r\n$1\r\nb\r\n");
+
+    session_free(s);
+    resp_buf_free(&out);
+    set_free(ds);
+}
+
 int main(void)
 {
     DD_RUN(test_select_isolation);
@@ -362,5 +422,6 @@ int main(void)
     DD_RUN(test_expiry_isolated_per_db);
     DD_RUN(test_commandstats_in_info);
     DD_RUN(test_info_machine_format);
+    DD_RUN(test_copy_crossdb);
     return DD_TEST_SUMMARY();
 }

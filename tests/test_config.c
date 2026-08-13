@@ -46,6 +46,21 @@ static void test_requirepass(void)
     DD_CHECK_STR("other", cfg.requirepass);
 }
 
+static void test_appendfsync(void)
+{
+    ddup_config cfg;
+    config_init(&cfg);
+    DD_CHECK_STR("everysec", cfg.appendfsync); /* Redis default */
+    DD_CHECK_EQ_INT(0, config_apply(&cfg, "appendfsync", "always"));
+    DD_CHECK_STR("always", cfg.appendfsync);
+    DD_CHECK_EQ_INT(0, config_apply(&cfg, "appendfsync", "no"));
+    DD_CHECK_STR("no", cfg.appendfsync);
+    DD_CHECK_EQ_INT(0, config_apply(&cfg, "APPENDFSYNC", "EVERYSEC"));
+    DD_CHECK_STR("everysec", cfg.appendfsync);
+    DD_CHECK_EQ_INT(-1, config_apply(&cfg, "appendfsync", "sometimes"));
+    DD_CHECK_STR("everysec", cfg.appendfsync); /* unchanged on error */
+}
+
 static void test_io_backend_values(void)
 {
     ddup_config cfg;
@@ -247,6 +262,7 @@ int main(void)
     DD_RUN(test_file_errors);
     DD_RUN(test_inline_overrides);
     DD_RUN(test_requirepass);
+    DD_RUN(test_appendfsync);
     DD_RUN(test_io_backend_values);
     DD_RUN(test_io_threads);
     DD_RUN(test_validate_tls);

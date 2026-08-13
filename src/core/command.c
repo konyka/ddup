@@ -1621,7 +1621,8 @@ static int cmd_keys_accum(const resp_value *argv, size_t argc, int *have,
         return 1;
     }
     if (cmd_id == CMD_SMOVE || cmd_id == CMD_RENAME ||
-        cmd_id == CMD_RENAMENX || cmd_id == CMD_RPOPLPUSH) {
+        cmd_id == CMD_RENAMENX || cmd_id == CMD_RPOPLPUSH ||
+        cmd_id == CMD_COPY) {
         for (i = 1; i < argc && i < 3; i++) {
             const char *k;
             size_t kl;
@@ -1838,7 +1839,8 @@ static int cluster_check_ownership(session *s, const resp_value *argv,
         return 1;
     }
     if (cmd_id == CMD_SMOVE || cmd_id == CMD_RENAME ||
-        cmd_id == CMD_RENAMENX || cmd_id == CMD_RPOPLPUSH) {
+        cmd_id == CMD_RENAMENX || cmd_id == CMD_RPOPLPUSH ||
+        cmd_id == CMD_COPY) {
         for (i = 1; i < argc && i < 3; i++) {
             const char *k;
             size_t kl;
@@ -2096,7 +2098,7 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
             storage_length_error(out);
             return;
         }
-        int nx = 0, xx = 0, has_ttl = 0;
+        int nx = 0, xx = 0, has_ttl = 0, keepttl = 0, get_old = 0;
         uint64_t ttl_ms = 0;
         for (size_t i = 3; i < argc; i++) {
             const char *o;
@@ -2108,7 +2110,7 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
                 nx = ci_equal(o, ol, "NX");
                 xx = !nx;
             } else if ((ci_equal(o, ol, "EX") || ci_equal(o, ol, "PX")) &&
-                       !has_ttl && i + 1 < argc) {
+                       !has_ttl && !keepttl && i + 1 < argc) {
                 const char *t;
                 size_t tl;
                 long long tv;
@@ -2130,6 +2132,10 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
                                                : (uint64_t)tv;
                 has_ttl = 1;
                 i++;
+            } else if (ci_equal(o, ol, "KEEPTTL") && !keepttl && !has_ttl) {
+                keepttl = 1;
+            } else if (ci_equal(o, ol, "GET") && !get_old) {
+                get_old = 1;
             } else {
                 resp_write_error(out, ERR_SYNTAX, sizeof(ERR_SYNTAX) - 1);
                 return;
@@ -2147,18 +2153,49 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
                 resp_write_bulk(out, NULL, 0);
                 return;
             }
+            if (get_old) {
+                /* replied before the overwrite frees the old payload */
+                if (exists) {
+                    const char *sv;
+                    size_t sl2;
+                    if (!as_string(out, old, oldl, &sv, &sl2))
+                        return;
+                    resp_write_bulk(out, sv, sl2);
+                } else {
+                    resp_write_bulk(out, NULL, 0);
+                }
+            }
         }
         if (oom_blocked(d, out))
             return;
-        if (db_set_string(d, k, kl, v, vl, now_ms) != 0) {
-            storage_length_error(out);
-            return;
+        {
+            /* KEEPTTL: read the absolute expiry before db_set_string
+             * clears it, restore it after the overwrite */
+            uint64_t keep_when = 0;
+            int have_keep = 0;
+            if (keepttl) {
+                const char *e;
+                size_t el;
+                if (rh_get(&d->expires, k, kl, &e, &el) && el == 8) {
+                    keep_when = get_u64(e);
+                    have_keep = 1;
+                }
+            }
+            if (db_set_string(d, k, kl, v, vl, now_ms) != 0) {
+                storage_length_error(out);
+                return;
+            }
+            if (have_keep && db_set_expiry(d, k, kl, keep_when) != 0) {
+                storage_length_error(out);
+                return;
+            }
         }
         if (has_ttl && db_set_expiry(d, k, kl, now_ms + ttl_ms) != 0) {
             storage_length_error(out);
             return;
         }
-        resp_write_simple_string(out, "OK", 2);
+        if (!get_old)
+            resp_write_simple_string(out, "OK", 2);
         return;
     }
 
@@ -3327,6 +3364,106 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
             resp_write_integer(out, 1);
         else
             resp_write_simple_string(out, "OK", 2);
+        return;
+    }
+
+    if (cmd_id == CMD_COPY) {
+        const char *sk, *dk, *e;
+        size_t skl, dkl, el;
+        int replace = 0, has_db = 0;
+        long long tdb = 0;
+        size_t i;
+        db *td;
+        uint64_t expire_ms = 0;
+        resp_buf payload;
+        int rrc;
+        if (argc < 3) {
+            wrong_args(out, "copy");
+            return;
+        }
+        if (crossslot_reject(d, out, argv, argc))
+            return;
+        if (!arg_str(&argv[1], &sk, &skl) || !arg_str(&argv[2], &dk, &dkl))
+            goto bad_type;
+        for (i = 3; i < argc; i++) {
+            const char *o;
+            size_t ol;
+            if (!arg_str(&argv[i], &o, &ol))
+                goto bad_type;
+            if (ci_equal(o, ol, "REPLACE") && !replace) {
+                replace = 1;
+            } else if (ci_equal(o, ol, "DB") && !has_db && i + 1 < argc) {
+                const char *t;
+                size_t tl;
+                if (!arg_str(&argv[i + 1], &t, &tl))
+                    goto bad_type;
+                if (!parse_i64(t, tl, &tdb)) {
+                    resp_write_error(out, ERR_NOT_INT,
+                                     sizeof(ERR_NOT_INT) - 1);
+                    return;
+                }
+                has_db = 1;
+                i++;
+            } else {
+                resp_write_error(out, ERR_SYNTAX, sizeof(ERR_SYNTAX) - 1);
+                return;
+            }
+        }
+        if (!has_db)
+            tdb = s->db_index;
+        if (tdb < 0 || (tdb != s->db_index &&
+                        (s->sel_fn == NULL || tdb >= s->sel_ndbs))) {
+            static const char E[] = "ERR DB index is out of range";
+            resp_write_error(out, E, sizeof(E) - 1);
+            return;
+        }
+        if (!storage_key_ok(skl) || !storage_key_ok(dkl)) {
+            storage_length_error(out);
+            return;
+        }
+        td = tdb == s->db_index ? d : s->sel_fn(s->sel_ctx, (int)tdb);
+        if (td == NULL) {
+            static const char E[] = "ERR DB index is out of range";
+            resp_write_error(out, E, sizeof(E) - 1);
+            return;
+        }
+        /* serialize-then-install (DUMP/RESTORE path): pointer-backed objects
+         * (hash/list/set/zset) share the object pointer inside a value blob,
+         * so a raw blob copy would alias it (double free on the first
+         * delete); the serialized payload is also alias-safe for
+         * src == dst REPLACE. The absolute expiry instant is carried over. */
+        db_expire_if_needed(d, sk, skl, now_ms);
+        resp_buf_init(&payload);
+        if (snapshot_dump_key(d, sk, skl, &payload) != 0) {
+            resp_buf_free(&payload);
+            resp_write_error(out, "ERR no such key", 15);
+            return;
+        }
+        if (rh_get(&d->expires, sk, skl, &e, &el) && el == 8)
+            expire_ms = get_u64(e);
+        if (oom_blocked(td, out)) {
+            resp_buf_free(&payload);
+            return;
+        }
+        rrc = snapshot_restore_key(td, dk, dkl, payload.data, payload.len,
+                                   expire_ms, replace, now_ms);
+        resp_buf_free(&payload);
+        if (rrc == 1) {
+            static const char E[] = "ERR Target key already exists";
+            resp_write_error(out, E, sizeof(E) - 1);
+            return;
+        }
+        if (rrc != 0) {
+            storage_length_error(out);
+            return;
+        }
+        if (td != d)
+            /* cross-db: the target db's dirty/watch bookkeeping came from
+             * the install; bump the session db too so the AOF/propagation
+             * hook logs COPY itself (SWAPDB precedent). Replay is
+             * self-contained: argv carries the DB option. */
+            s->d->dirty++;
+        resp_write_integer(out, 1);
         return;
     }
 
@@ -6352,9 +6489,10 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
             wrong_args(out, "quit");
             return;
         }
-        /* acknowledged; the server does not close the connection yet
-         * (documented simplification) */
+        /* ack, then ask the server to close the connection once the
+         * reply has been flushed (stack sessions only get the +OK) */
         resp_write_simple_string(out, "OK", 2);
+        s->quit = 1;
         return;
     }
 
@@ -7169,6 +7307,7 @@ static const cmd_entry CMD_TABLE[] = {
     {"zremrangebylex", CMD_ZREMRANGEBYLEX, 4, 4, 0, CMD_WRITE},
     {"psubscribe", CMD_PSUBSCRIBE, 2, -1, 0, 0},
     {"punsubscribe", CMD_PUNSUBSCRIBE, 1, -1, 0, 0},
+    {"copy", CMD_COPY, 3, -1, 0, CMD_WRITE},
 };
 
 static const cmd_entry *cmd_table_entry(uint16_t id)
