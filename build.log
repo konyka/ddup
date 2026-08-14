@@ -30,7 +30,7 @@
 -- Performing Test CMAKE_HAVE_LIBC_PTHREAD - Success
 -- Found Threads: TRUE
 -- ddup: TLS enabled (OpenSSL 3.0.13)
--- Configuring done (11.3s)
+-- Configuring done (11.5s)
 -- Generating done (0.1s)
 -- Build files have been written to: /home/runner/work/ddup/ddup/build
 [  0%] Building C object CMakeFiles/ddup_lua.dir/deps/lua/lapi.c.o
@@ -547,17 +547,17 @@ In function ‘snprintf’,
       |          ^
 In function ‘snprintf’,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:423:9,
-    inlined from ‘obj_set_convert’ at /home/runner/work/ddup/ddup/src/ds/obj.c:460:35:
-/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
-   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
-      |          ^
-In function ‘snprintf’,
-    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:423:9,
     inlined from ‘zlp_entry_score’ at /home/runner/work/ddup/ddup/src/ds/obj.c:601:31,
     inlined from ‘obj_zset_add’ at /home/runner/work/ddup/ddup/src/ds/obj.c:765:31,
     inlined from ‘obj_zset_add’ at /home/runner/work/ddup/ddup/src/ds/obj.c:755:5,
     inlined from ‘load_payload’ at /home/runner/work/ddup/ddup/src/core/snapshot.c:504:39,
     inlined from ‘snapshot_restore_key’ at /home/runner/work/ddup/ddup/src/core/snapshot.c:977:13:
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
+   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^
+In function ‘snprintf’,
+    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:423:9,
+    inlined from ‘obj_set_convert’ at /home/runner/work/ddup/ddup/src/ds/obj.c:460:35:
 /usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
    54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
       |          ^
@@ -862,6 +862,16 @@ In function ‘snprintf’,
       |          ^
 In function ‘snprintf’,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:423:9,
+    inlined from ‘zlp_entry_score’ at /home/runner/work/ddup/ddup/src/ds/obj.c:601:31,
+    inlined from ‘obj_zset_add’ at /home/runner/work/ddup/ddup/src/ds/obj.c:765:31,
+    inlined from ‘obj_zset_add’ at /home/runner/work/ddup/ddup/src/ds/obj.c:755:5,
+    inlined from ‘load_payload’ at /home/runner/work/ddup/ddup/src/core/snapshot.c:504:39,
+    inlined from ‘snapshot_restore_key’ at /home/runner/work/ddup/ddup/src/core/snapshot.c:977:13:
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
+   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^
+In function ‘snprintf’,
+    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:423:9,
     inlined from ‘obj_zset_iter_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:924:35,
     inlined from ‘obj_zset_iter_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:920:13,
     inlined from ‘command_dispatch’ at /home/runner/work/ddup/ddup/src/core/command.c:6086:34:
@@ -881,16 +891,6 @@ In function ‘snprintf’,
     inlined from ‘obj_zset_last_in_lex_range’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1081:39,
     inlined from ‘obj_zset_last_in_lex_range’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1071:5,
     inlined from ‘command_dispatch’ at /home/runner/work/ddup/ddup/src/core/command.c:6246:18:
-/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
-   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
-      |          ^
-In function ‘snprintf’,
-    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:423:9,
-    inlined from ‘zlp_entry_score’ at /home/runner/work/ddup/ddup/src/ds/obj.c:601:31,
-    inlined from ‘obj_zset_add’ at /home/runner/work/ddup/ddup/src/ds/obj.c:765:31,
-    inlined from ‘obj_zset_add’ at /home/runner/work/ddup/ddup/src/ds/obj.c:755:5,
-    inlined from ‘load_payload’ at /home/runner/work/ddup/ddup/src/core/snapshot.c:504:39,
-    inlined from ‘snapshot_restore_key’ at /home/runner/work/ddup/ddup/src/core/snapshot.c:977:13:
 /usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
    54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
       |          ^
@@ -2252,7 +2252,7 @@ Get:17 http://azure.archive.ubuntu.com/ubuntu noble/main amd64 libsource-highlig
 Get:18 http://azure.archive.ubuntu.com/ubuntu noble-updates/main amd64 gdb amd64 15.1-1ubuntu1~24.04.1 [4083 kB]
 Get:19 http://azure.archive.ubuntu.com/ubuntu noble-updates/main amd64 libc6-dbg amd64 2.39-0ubuntu8.8 [7461 kB]
 Preconfiguring packages ...
-Fetched 26.7 MB in 1s (24.0 MB/s)
+Fetched 26.7 MB in 2s (16.9 MB/s)
 (Reading database ... (Reading database ... 5%(Reading database ... 10%(Reading database ... 15%(Reading database ... 20%(Reading database ... 25%(Reading database ... 30%(Reading database ... 35%(Reading database ... 40%(Reading database ... 45%(Reading database ... 50%(Reading database ... 55%(Reading database ... 60%(Reading database ... 65%(Reading database ... 70%(Reading database ... 75%(Reading database ... 80%(Reading database ... 85%(Reading database ... 90%(Reading database ... 95%(Reading database ... 100%(Reading database ... 202954 files and directories currently installed.)
 Preparing to unpack .../libc6-dev_2.39-0ubuntu8.8_amd64.deb ...
 Unpacking libc6-dev:amd64 (2.39-0ubuntu8.8) over (2.39-0ubuntu8.7) ...
@@ -2350,6 +2350,6 @@ Service restarts being deferred:
 No containers need to be restarted.
 
 User sessions running outdated binaries:
- runner @ user manager service: systemd[1275]
+ runner @ user manager service: systemd[1111]
 
 No VM guests are running outdated hypervisor (qemu) binaries on this host.
