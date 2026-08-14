@@ -459,8 +459,12 @@ DBSIZE 为 O(1)，可能计入尚未回收的过期 key。
 - **quicklist（src/ds/quicklist）**：listpack 节点的双链表，每节点至多
   fill 个元素（默认 `DDUP_QL_FILL` 128，配置键
   `list-max-listpack-size`）；端点节点满则push 分裂新节点，空节点
-  即摘除；稀疏中间节点不做合并（Redis 靠压缩遍历处理，此处有意简化，
-  记录在案）。list 元素访问走迭代器（seek 从近端跳块、双向遍历、
+  即摘除。删除路径上的稀疏合并（Phase 48）：删除后节点条目数低于
+  fill/4 时，若与邻居合计不超过 2*fill 则合并（优先并入 next，
+  否则并入 prev；fill<4 时阈值为 0 天然不触发）；ql_remove 的
+  迭代器在合并后按序号 lp_seek 重定位，语义不变。与 Redis 差异：
+  无压缩、仅删除路径触发合并（push 不产生稀疏节点）。
+  list 元素访问走迭代器（seek 从近端跳块、双向遍历、
   remove 后迭代器落在后继）。
 - **小对象双编码**：hash、zset、set 默认使用单个 listpack——
   hash 存 field/value 交替；zset 存 member/score（`%.17g` 十进制）

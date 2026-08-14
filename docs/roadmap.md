@@ -248,6 +248,10 @@
     默认值；entries/value 为 0 关闭紧凑编码，list fill >= 1）；
     进程级 obj_limits 全局 + quicklist fill 全局，main 启动时一次性
     应用（st/mt 共用点，之后只读无竞态）（Phase 47）
+  - [x] quicklist 稀疏节点合并：删除后节点 < fill/4 且与邻居合计
+    <= 2*fill 时合并（优先 next、否则 prev；fill<4 不触发）；
+    ql_remove 迭代器合并后按序号 lp_seek 重定位指向同一逻辑元素；
+    仅删除路径触发，无压缩（Phase 48）
   - [ ] 范围化排除（记录在案，不实施）：
     - 分层存储（热/冷数据落盘）：超出"内存缓存存储"定位
     - mt 模式的复制/集群适配：见 Phase 15 说明
