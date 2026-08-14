@@ -34,6 +34,13 @@ static uint64_t eb(size_t klen, size_t vlen)
     return (uint64_t)sizeof(rh_entry) + 16 + klen + vlen;
 }
 
+/* small-set listpack payload: 7B empty frame + per-member 6-bit-string
+ * entries (1B header + payload + 1B backlen); one malloc (16B estimate) */
+static uint64_t slp_mem(uint64_t entry_bytes)
+{
+    return sizeof(obj_set) + 16 + 7 + entry_bytes;
+}
+
 static void test_set_rejects_unrepresentable_member(void)
 {
     obj_set *s = obj_set_new();
@@ -41,7 +48,8 @@ static void test_set_rejects_unrepresentable_member(void)
     uint64_t before = obj_set_mem(s);
 
     DD_CHECK_EQ_INT(-1, obj_set_add(s, &byte, SIZE_MAX));
-    DD_CHECK_EQ_INT(0, rh_size(&s->members));
+    DD_CHECK_EQ_INT(0, (long long)obj_set_len(s));
+    DD_CHECK(obj_set_is_listpack(s));
     DD_CHECK(obj_set_mem(s) == before);
     obj_set_free(s);
 }
@@ -396,18 +404,19 @@ static void test_set_ttl_and_memory(void)
     db_init(&d);
     resp_buf_init(&out);
 
-    /* member entries carry an empty value */
+    /* member entries live in one flat listpack */
     exec_cmd(&d, T0, &out, 3, "SADD", "s", "a");
     EXPECT(out, ":1\r\n");
-    DD_CHECK(d.used_memory == eb(1, 9) + sizeof(obj_set) + eb(1, 0));
+    DD_CHECK(d.used_memory == eb(1, 9) + slp_mem(1 + 1 + 1));
 
     exec_cmd(&d, T0, &out, 3, "SADD", "s", "bb");
     EXPECT(out, ":1\r\n");
-    DD_CHECK(d.used_memory == eb(1, 9) + sizeof(obj_set) + eb(1, 0) + eb(2, 0));
+    DD_CHECK(d.used_memory ==
+             eb(1, 9) + slp_mem((1 + 1 + 1) + (1 + 2 + 1)));
 
     exec_cmd(&d, T0, &out, 3, "SREM", "s", "bb");
     EXPECT(out, ":1\r\n");
-    DD_CHECK(d.used_memory == eb(1, 9) + sizeof(obj_set) + eb(1, 0));
+    DD_CHECK(d.used_memory == eb(1, 9) + slp_mem(1 + 1 + 1));
 
     /* TTL works; expiry frees the whole object */
     exec_cmd(&d, T0, &out, 3, "EXPIRE", "s", "10");
@@ -416,7 +425,7 @@ static void test_set_ttl_and_memory(void)
     exec_cmd(&d, T0 + 10000, &out, 2, "SCARD", "s");
     EXPECT(out, ":0\r\n");
     DD_CHECK(d.used_memory ==
-             before - (eb(1, 9) + sizeof(obj_set) + eb(1, 0) + eb(1, 8)));
+             before - (eb(1, 9) + slp_mem(1 + 1 + 1) + eb(1, 8)));
     DD_CHECK_EQ_INT(1, (long long)d.expired_keys);
 
     resp_buf_free(&out);
@@ -578,6 +587,142 @@ static void test_set_stores(void)
     db_destroy(&d);
 }
 
+static obj_set *set_of(db *d, const char *k, size_t kl)
+{
+    const char *blob;
+    size_t bloblen;
+    if (rh_get(&d->table, k, kl, &blob, &bloblen) != 1)
+        return NULL;
+    return (obj_set *)obj_unpack_ptr(blob, bloblen);
+}
+
+static void test_set_listpack_encoding(void)
+{
+    db d;
+    resp_buf out;
+    char big[70];
+    int i;
+    db_init(&d);
+    resp_buf_init(&out);
+
+    /* small set starts as listpack */
+    exec_cmd(&d, T0, &out, 5, "SADD", "s", "a", "b", "c");
+    EXPECT(out, ":3\r\n");
+    DD_CHECK(obj_set_is_listpack(set_of(&d, "s", 1)));
+
+    /* int-looking member round-trips through an int-encoded entry */
+    exec_cmd(&d, T0, &out, 3, "SADD", "s", "123");
+    EXPECT(out, ":1\r\n");
+    exec_cmd(&d, T0, &out, 3, "SISMEMBER", "s", "123");
+    EXPECT(out, ":1\r\n");
+    exec_cmd(&d, T0, &out, 2, "SMEMBERS", "s");
+    DD_CHECK(out.len >= 4 && memcmp(out.data, "*4\r\n", 4) == 0);
+    check_contains(&out, "$3\r\n123\r\n");
+
+    /* LP-mode SPOP/SRANDMEMBER (copy-before-rem under listpack realloc) */
+    exec_cmd(&d, T0, &out, 2, "SPOP", "s");
+    DD_CHECK(out.len >= 6 && out.data[0] == '$');
+    exec_cmd(&d, T0, &out, 2, "SCARD", "s");
+    EXPECT(out, ":3\r\n");
+    exec_cmd(&d, T0, &out, 3, "SRANDMEMBER", "s", "2");
+    DD_CHECK(out.len >= 4 && memcmp(out.data, "*2\r\n", 4) == 0);
+    exec_cmd(&d, T0, &out, 3, "SRANDMEMBER", "s", "-4");
+    DD_CHECK(out.len >= 4 && memcmp(out.data, "*4\r\n", 4) == 0);
+    exec_cmd(&d, T0, &out, 3, "SPOP", "s", "5");
+    DD_CHECK(out.len >= 4 && memcmp(out.data, "*3\r\n", 4) == 0);
+    exec_cmd(&d, T0, &out, 2, "EXISTS", "s");
+    EXPECT(out, ":0\r\n"); /* emptied: key deleted */
+
+    /* LP-mode set operations */
+    exec_cmd(&d, T0, &out, 5, "SADD", "s1", "1", "2", "3");
+    EXPECT(out, ":3\r\n");
+    exec_cmd(&d, T0, &out, 5, "SADD", "s2", "2", "3", "4");
+    EXPECT(out, ":3\r\n");
+    DD_CHECK(obj_set_is_listpack(set_of(&d, "s1", 2)));
+    exec_cmd(&d, T0, &out, 3, "SINTER", "s1", "s2");
+    DD_CHECK(out.len >= 4 && memcmp(out.data, "*2\r\n", 4) == 0);
+    check_contains(&out, "$1\r\n2\r\n");
+    check_contains(&out, "$1\r\n3\r\n");
+    exec_cmd(&d, T0, &out, 3, "SUNION", "s1", "s2");
+    DD_CHECK(out.len >= 4 && memcmp(out.data, "*4\r\n", 4) == 0);
+    exec_cmd(&d, T0, &out, 3, "SDIFF", "s1", "s2");
+    DD_CHECK(out.len >= 4 && memcmp(out.data, "*1\r\n", 4) == 0);
+    check_contains(&out, "$1\r\n1\r\n");
+    exec_cmd(&d, T0, &out, 4, "SINTERCARD", "2", "s1", "s2");
+    EXPECT(out, ":2\r\n");
+    exec_cmd(&d, T0, &out, 6, "SINTERCARD", "2", "s1", "s2", "LIMIT", "1");
+    EXPECT(out, ":1\r\n");
+    exec_cmd(&d, T0, &out, 4, "SINTERSTORE", "dst", "s1", "s2");
+    EXPECT(out, ":2\r\n");
+    DD_CHECK(obj_set_is_listpack(set_of(&d, "dst", 3)));
+    exec_cmd(&d, T0, &out, 2, "SMEMBERS", "dst");
+    check_contains(&out, "$1\r\n2\r\n");
+    exec_cmd(&d, T0, &out, 4, "SUNIONSTORE", "dst", "s1", "s2");
+    EXPECT(out, ":4\r\n");
+    exec_cmd(&d, T0, &out, 2, "SCARD", "dst");
+    EXPECT(out, ":4\r\n");
+
+    /* LP-mode SMOVE */
+    exec_cmd(&d, T0, &out, 4, "SMOVE", "s1", "s2", "1");
+    EXPECT(out, ":1\r\n");
+    exec_cmd(&d, T0, &out, 3, "SISMEMBER", "s2", "1");
+    EXPECT(out, ":1\r\n");
+    exec_cmd(&d, T0, &out, 3, "SISMEMBER", "s1", "1");
+    EXPECT(out, ":0\r\n");
+    DD_CHECK(obj_set_is_listpack(set_of(&d, "s1", 2)));
+    DD_CHECK(obj_set_is_listpack(set_of(&d, "s2", 2)));
+
+    /* a 64-byte member still fits; 65 bytes converts to the hashtable */
+    memset(big, 'x', sizeof(big) - 1);
+    big[sizeof(big) - 1] = '\0';
+    big[64] = '\0'; /* 64-byte member */
+    exec_cmd(&d, T0, &out, 3, "SADD", "s3", big);
+    EXPECT(out, ":1\r\n");
+    DD_CHECK(obj_set_is_listpack(set_of(&d, "s3", 2)));
+    big[64] = 'y';
+    big[65] = '\0'; /* 65-byte member */
+    exec_cmd(&d, T0, &out, 3, "SADD", "s3", big);
+    EXPECT(out, ":1\r\n");
+    DD_CHECK(!obj_set_is_listpack(set_of(&d, "s3", 2)));
+    /* data survives the conversion */
+    big[64] = '\0';
+    exec_cmd(&d, T0, &out, 3, "SISMEMBER", "s3", big);
+    EXPECT(out, ":1\r\n");
+    exec_cmd(&d, T0, &out, 2, "SCARD", "s3");
+    EXPECT(out, ":2\r\n");
+
+    /* no demotion back to listpack */
+    exec_cmd(&d, T0, &out, 3, "SREM", "s3", big);
+    EXPECT(out, ":1\r\n");
+    DD_CHECK(!obj_set_is_listpack(set_of(&d, "s3", 2)));
+
+    /* 128 members stay listpack, the 129th converts */
+    for (i = 0; i < 128; i++) {
+        char m[16];
+        snprintf(m, sizeof(m), "m%d", i);
+        exec_cmd(&d, T0, &out, 3, "SADD", "s4", m);
+        EXPECT(out, ":1\r\n");
+    }
+    DD_CHECK(obj_set_is_listpack(set_of(&d, "s4", 2)));
+    exec_cmd(&d, T0, &out, 3, "SADD", "s4", "overflow");
+    EXPECT(out, ":1\r\n");
+    DD_CHECK(!obj_set_is_listpack(set_of(&d, "s4", 2)));
+    /* spot-check data after conversion */
+    exec_cmd(&d, T0, &out, 2, "SCARD", "s4");
+    EXPECT(out, ":129\r\n");
+    exec_cmd(&d, T0, &out, 3, "SISMEMBER", "s4", "m0");
+    EXPECT(out, ":1\r\n");
+    exec_cmd(&d, T0, &out, 3, "SISMEMBER", "s4", "m127");
+    EXPECT(out, ":1\r\n");
+    exec_cmd(&d, T0, &out, 3, "SISMEMBER", "s4", "overflow");
+    EXPECT(out, ":1\r\n");
+    exec_cmd(&d, T0, &out, 2, "SMEMBERS", "s4");
+    DD_CHECK(out.len >= 6 && memcmp(out.data, "*129\r\n", 6) == 0);
+
+    resp_buf_free(&out);
+    db_destroy(&d);
+}
+
 int main(void)
 {
     DD_RUN(test_set_rejects_unrepresentable_member);
@@ -592,5 +737,6 @@ int main(void)
     DD_RUN(test_set_ttl_and_memory);
     DD_RUN(test_sintercard);
     DD_RUN(test_set_stores);
+    DD_RUN(test_set_listpack_encoding);
     return DD_TEST_SUMMARY();
 }

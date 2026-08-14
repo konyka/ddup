@@ -136,21 +136,47 @@ int obj_list_set_at(obj_list *l, size_t idx, const char *data, size_t len);
 int obj_list_remove_at(obj_list_iter *it);
 
 /* ------------------------------------------------------------------ */
-/* set object: rh_table member -> empty value (uniqueness via table)  */
+/* set object: listpack for small sets, rh_table beyond                */
+/*                                                                     */
+/* OBJ_SET_LP: members live in one listpack (insertion order, dedupe   */
+/* via lp_find). Exceeding either threshold converts once to           */
+/* OBJ_SET_HT (rh_table member -> empty value); there is no way back,  */
+/* matching Redis.                                                     */
 /* ------------------------------------------------------------------ */
+#define OBJ_SET_MAX_LISTPACK_ENTRIES 128
+#define OBJ_SET_MAX_LISTPACK_VALUE 64
+
+enum { OBJ_SET_LP = 0, OBJ_SET_HT = 1 };
+
 typedef struct obj_set {
-    rh_table members;
-    uint64_t mem; /* sizeof(obj_set) + per-member entry cost, incremental */
+    int encoding;        /* OBJ_SET_LP / OBJ_SET_HT */
+    unsigned char *lp;   /* LP payload; NULL in HT mode */
+    rh_table members;    /* HT payload; uninitialized in LP mode */
+    uint64_t mem;        /* sizeof(obj_set) + payload cost, incremental */
+    unsigned char mtmp[24]; /* scratch for int-encoded member materialization */
 } obj_set;
 
 obj_set *obj_set_new(void);
 void obj_set_free(obj_set *s);
 uint64_t obj_set_mem(const obj_set *s);
+uint64_t obj_set_len(const obj_set *s);
+int obj_set_is_listpack(const obj_set *s);
 
 /* Returns 1 if the member is new, 0 if present, -1 on invalid length. */
 int obj_set_add(obj_set *s, const char *m, size_t mlen);
 int obj_set_has(obj_set *s, const char *m, size_t mlen);
 int obj_set_rem(obj_set *s, const char *m, size_t mlen);
+
+/* Visit every member (value args are always ""/0). Callback arguments
+ * borrow internal storage and are valid only for the duration of the
+ * callback. */
+void obj_set_each(obj_set *s, rh_iter_fn fn, void *ctx);
+/* Fetch the idx-th member (insertion order). LP mode only; returns 0 in
+ * HT mode or when idx >= obj_set_len. The returned bytes borrow internal
+ * storage: valid until the next obj_set_* call on s (int-encoded members
+ * are materialized). */
+int obj_set_member_at(obj_set *s, uint64_t idx, const char **m,
+                      size_t *mlen);
 
 /* ------------------------------------------------------------------ */
 /* zset object: listpack for small zsets, dict + skiplist beyond       */

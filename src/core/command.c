@@ -931,14 +931,14 @@ static int setop_eval(db *d, resp_buf *out, const resp_value *kargv,
     if (sunion) {
         for (i = 0; i < nkeys; i++)
             if (sets[i] != NULL)
-                rh_each(&sets[i]->members, set_union_cb, result);
+                obj_set_each(sets[i], set_union_cb, result);
     } else if (sets[0] != NULL) {
         setop_ctx ctx;
         ctx.sets = sets;
         ctx.n = nkeys;
         ctx.result = result;
         ctx.inter = inter;
-        rh_each(&sets[0]->members, setop_cb, &ctx);
+        obj_set_each(sets[0], setop_cb, &ctx);
     }
     free(sets);
     return 0;
@@ -964,6 +964,22 @@ static int sintercard_cb(const char *m, size_t mlen, const char *v,
             return 0;
     ctx->count++;
     return ctx->limit > 0 && ctx->count >= ctx->limit;
+}
+
+/* obj_set_each adapter for listpack sets: void callback, so the early
+ * stop requested by sintercard_cb is remembered in the wrapper. */
+typedef struct sintercard_lp_ctx {
+    sintercard_ctx ic;
+    int stop;
+} sintercard_lp_ctx;
+
+static void sintercard_lp_cb(const char *m, size_t mlen, const char *v,
+                             size_t vlen, void *c)
+{
+    sintercard_lp_ctx *w = (sintercard_lp_ctx *)c;
+    if (w->stop)
+        return;
+    w->stop = sintercard_cb(m, mlen, v, vlen, &w->ic);
 }
 
 /* Copy one result member into a fresh obj_set (STORE materialization). */
@@ -4892,7 +4908,7 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
             removed += obj_set_rem(s, m, ml);
         }
         mem_sync(d, k, kl, before, obj_set_mem(s));
-        if (rh_size(&s->members) == 0)
+        if (obj_set_len(s) == 0)
             db_del_kv(d, k, kl); /* empty set: the key goes away */
         resp_write_integer(out, removed);
         return;
@@ -4953,7 +4969,7 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
         if (rc < 0)
             return;
         resp_write_integer(out,
-                           rc == 1 ? (long long)rh_size(&s->members) : 0);
+                           rc == 1 ? (long long)obj_set_len(s) : 0);
         return;
     }
 
@@ -4979,8 +4995,8 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
             ctx.out = out;
             ctx.keys = 1;
             ctx.vals = 0;
-            resp_write_array_header(out, rh_size(&s->members));
-            rh_each(&s->members, hdump_cb, &ctx);
+            resp_write_array_header(out, (size_t)obj_set_len(s));
+            obj_set_each(s, hdump_cb, &ctx);
         }
         return;
     }
@@ -5014,35 +5030,123 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
             return;
         if (argc == 2) {
             /* single member form: bulk reply */
-            collect_ctx cc = {0};
-            size_t idx;
             if (rc == 0) {
                 resp_write_bulk(out, NULL, 0);
                 return;
             }
-            rh_each(&s->members, collect_cb, &cc);
-            idx = (size_t)(db_rand(d) % (uint32_t)cc.n);
-            if (pop) {
-                char *copy = (char *)malloc(cc.lens[idx] + 1);
-                uint64_t before;
-                memcpy(copy, cc.keys[idx], cc.lens[idx]);
-                before = obj_set_mem(s);
-                obj_set_rem(s, copy, cc.lens[idx]);
-                mem_sync(d, k, kl, before, obj_set_mem(s));
-                if (rh_size(&s->members) == 0)
-                    db_del_kv(d, k, kl);
-                resp_write_bulk(out, copy, cc.lens[idx]);
-                free(copy);
-            } else {
-                resp_write_bulk(out, cc.keys[idx], cc.lens[idx]);
+            if (obj_set_is_listpack(s)) {
+                /* small set: pick a random member index directly */
+                const char *mv;
+                size_t ml = 0;
+                uint64_t idx = db_rand(d) % (uint32_t)obj_set_len(s);
+                if (obj_set_member_at(s, idx, &mv, &ml)) {
+                    if (pop) {
+                        /* copy before rem: the listpack reallocs */
+                        char copy[OBJ_SET_MAX_LISTPACK_VALUE];
+                        uint64_t before;
+                        memcpy(copy, mv, ml);
+                        before = obj_set_mem(s);
+                        obj_set_rem(s, copy, ml);
+                        mem_sync(d, k, kl, before, obj_set_mem(s));
+                        if (obj_set_len(s) == 0)
+                            db_del_kv(d, k, kl);
+                        resp_write_bulk(out, copy, ml);
+                    } else {
+                        resp_write_bulk(out, mv, ml);
+                    }
+                }
+                return;
             }
-            free(cc.keys);
-            free(cc.lens);
-            return;
+            {
+                collect_ctx cc = {0};
+                size_t idx;
+                rh_each(&s->members, collect_cb, &cc);
+                idx = (size_t)(db_rand(d) % (uint32_t)cc.n);
+                if (pop) {
+                    char *copy = (char *)malloc(cc.lens[idx] + 1);
+                    uint64_t before;
+                    memcpy(copy, cc.keys[idx], cc.lens[idx]);
+                    before = obj_set_mem(s);
+                    obj_set_rem(s, copy, cc.lens[idx]);
+                    mem_sync(d, k, kl, before, obj_set_mem(s));
+                    if (obj_set_len(s) == 0)
+                        db_del_kv(d, k, kl);
+                    resp_write_bulk(out, copy, cc.lens[idx]);
+                    free(copy);
+                } else {
+                    resp_write_bulk(out, cc.keys[idx], cc.lens[idx]);
+                }
+                free(cc.keys);
+                free(cc.lens);
+                return;
+            }
         }
         /* count form: array reply */
         if (rc == 0 || (count == 0 && pop) || (count == 0 && !pop)) {
             resp_write_array_header(out, 0);
+            return;
+        }
+        if (obj_set_is_listpack(s)) {
+            /* small set: random member indices, no collection pass */
+            size_t n = (size_t)obj_set_len(s);
+            size_t i;
+            uint64_t before = obj_set_mem(s);
+            if (count < 0) {
+                /* with repeats */
+                resp_write_array_header(out, (size_t)-count);
+                for (i = 0; i < (size_t)-count; i++) {
+                    const char *mv;
+                    size_t ml = 0;
+                    uint64_t idx = db_rand(d) % (uint32_t)n;
+                    if (!obj_set_member_at(s, idx, &mv, &ml))
+                        continue;
+                    resp_write_bulk(out, mv, ml);
+                }
+            } else if (pop) {
+                /* pop one random member at a time: indices shift as the
+                 * listpack shrinks, so no upfront shuffle is possible */
+                size_t k2 = (size_t)count < n ? (size_t)count : n;
+                resp_write_array_header(out, k2);
+                for (i = 0; i < k2; i++) {
+                    const char *mv;
+                    size_t ml = 0;
+                    char copy[OBJ_SET_MAX_LISTPACK_VALUE];
+                    uint64_t idx = db_rand(d) % (uint32_t)obj_set_len(s);
+                    if (!obj_set_member_at(s, idx, &mv, &ml))
+                        continue;
+                    memcpy(copy, mv, ml);
+                    obj_set_rem(s, copy, ml);
+                    resp_write_bulk(out, copy, ml);
+                }
+                mem_sync(d, k, kl, before, obj_set_mem(s));
+                if (obj_set_len(s) == 0)
+                    db_del_kv(d, k, kl);
+            } else {
+                /* distinct: partial Fisher-Yates over member indices */
+                size_t k2 = (size_t)count < n ? (size_t)count : n;
+                uint32_t *idxs = (uint32_t *)malloc(n * sizeof(*idxs));
+                if (idxs == NULL) {
+                    fprintf(stderr, "ddup: out of memory\n");
+                    exit(1);
+                }
+                for (i = 0; i < n; i++)
+                    idxs[i] = (uint32_t)i;
+                for (i = 0; i < k2; i++) {
+                    size_t j = i + (size_t)(db_rand(d) % (uint32_t)(n - i));
+                    uint32_t tmp = idxs[i];
+                    idxs[i] = idxs[j];
+                    idxs[j] = tmp;
+                }
+                resp_write_array_header(out, k2);
+                for (i = 0; i < k2; i++) {
+                    const char *mv;
+                    size_t ml = 0;
+                    if (!obj_set_member_at(s, idxs[i], &mv, &ml))
+                        continue;
+                    resp_write_bulk(out, mv, ml);
+                }
+                free(idxs);
+            }
             return;
         }
         {
@@ -5076,7 +5180,7 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
             }
             if (pop) {
                 mem_sync(d, k, kl, before, obj_set_mem(s));
-                if (rh_size(&s->members) == 0)
+                if (obj_set_len(s) == 0)
                     db_del_kv(d, k, kl);
             }
             free(cc.keys);
@@ -5143,7 +5247,7 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
             obj_set_rem(src, m, ml);
             mem_sync(d, sk, skl, before, obj_set_mem(src));
         }
-        if (rh_size(&src->members) == 0)
+        if (obj_set_len(src) == 0)
             db_del_kv(d, sk, skl);
         resp_write_integer(out, 1);
         return;
@@ -5258,8 +5362,16 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
                 ctx.count = 0;
                 ctx.limit = limit;
                 /* count matches against sets[1..n); LIMIT stops early */
-                (void)rh_scan(&sets[0]->members, 0, SIZE_MAX, sintercard_cb,
-                              &ctx);
+                if (obj_set_is_listpack(sets[0])) {
+                    sintercard_lp_ctx w;
+                    w.ic = ctx;
+                    w.stop = 0;
+                    obj_set_each(sets[0], sintercard_lp_cb, &w);
+                    ctx.count = w.ic.count;
+                } else {
+                    (void)rh_scan(&sets[0]->members, 0, SIZE_MAX,
+                                  sintercard_cb, &ctx);
+                }
                 card = ctx.count;
             }
             free(sets);

@@ -179,15 +179,15 @@ static void write_value_payload(save_ctx *ctx, int tag, const char *val,
     }
     case DDUP_OBJ_SET: {
         obj_set *st = (obj_set *)obj_unpack_ptr(val, vlen);
-        if (rh_size(&st->members) > UINT32_MAX) {
+        if (obj_set_len(st) > UINT32_MAX) {
             ctx->ok = 0;
             return;
         }
-        if (buf_u32le(buf, (uint32_t)rh_size(&st->members)) != 0) {
+        if (buf_u32le(buf, (uint32_t)obj_set_len(st)) != 0) {
             ctx->ok = 0;
             return;
         }
-        rh_each(&st->members, dump_member_cb, ctx);
+        obj_set_each(st, dump_member_cb, ctx);
         break;
     }
     case DDUP_OBJ_ZSET: {

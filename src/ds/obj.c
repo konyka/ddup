@@ -2,6 +2,7 @@
 #include "ds/listpack.h"
 #include "ds/obj.h"
 
+#include <limits.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
@@ -396,8 +397,14 @@ int obj_list_remove_at(obj_list_iter *it)
 }
 
 /* ------------------------------------------------------------------ */
-/* set object                                                         */
+/* set object: listpack for small sets, rh_table beyond                */
 /* ------------------------------------------------------------------ */
+
+/* LP mode: struct + one malloc for the flat listpack. */
+static uint64_t set_lp_mem(const obj_set *s)
+{
+    return (uint64_t)sizeof(*s) + 16 + lp_bytes(s->lp);
+}
 
 obj_set *obj_set_new(void)
 {
@@ -406,8 +413,9 @@ obj_set *obj_set_new(void)
         fprintf(stderr, "ddup: out of memory\n");
         exit(1);
     }
-    rh_init(&s->members);
-    s->mem = (uint64_t)sizeof(*s);
+    s->encoding = OBJ_SET_LP;
+    s->lp = lp_new();
+    s->mem = set_lp_mem(s);
     return s;
 }
 
@@ -415,7 +423,10 @@ void obj_set_free(obj_set *s)
 {
     if (s == NULL)
         return;
-    rh_destroy(&s->members);
+    if (s->encoding == OBJ_SET_LP)
+        lp_free(s->lp);
+    else
+        rh_destroy(&s->members);
     free(s);
 }
 
@@ -424,33 +435,138 @@ uint64_t obj_set_mem(const obj_set *s)
     return s->mem;
 }
 
+uint64_t obj_set_len(const obj_set *s)
+{
+    if (s->encoding == OBJ_SET_LP)
+        return lp_length(s->lp);
+    return rh_size(&s->members);
+}
+
+int obj_set_is_listpack(const obj_set *s)
+{
+    return s->encoding == OBJ_SET_LP;
+}
+
+/* One-way conversion LP -> HT. */
+static void obj_set_convert(obj_set *s)
+{
+    unsigned char *lp = s->lp;
+    unsigned char *p = lp_first(lp);
+    rh_init(&s->members);
+    s->mem = (uint64_t)sizeof(*s);
+    while (p != NULL) {
+        unsigned char mb[24];
+        uint32_t ml = 0;
+        const unsigned char *mv = lp_get_str(p, mb, &ml);
+        if (rh_set(&s->members, (const char *)mv, ml, "", 0) == 0)
+            s->mem += field_bytes(ml, 0);
+        p = lp_next(lp, p);
+    }
+    lp_free(lp);
+    s->lp = NULL;
+    s->encoding = OBJ_SET_HT;
+}
+
 int obj_set_add(obj_set *s, const char *m, size_t mlen)
 {
-    const char *old;
-    size_t oldl;
     if (mlen > UINT32_MAX)
         return -1;
-    if (rh_get(&s->members, m, mlen, &old, &oldl))
-        return 0;
-    if (rh_set(&s->members, m, mlen, "", 0) < 0)
-        return -1;
-    s->mem += field_bytes(mlen, 0);
-    return 1;
+    if (s->encoding == OBJ_SET_LP) {
+        if (mlen <= OBJ_SET_MAX_LISTPACK_VALUE &&
+            lp_find(s->lp, NULL, (const unsigned char *)m, (uint32_t)mlen) !=
+                NULL)
+            return 0;
+        if (mlen > OBJ_SET_MAX_LISTPACK_VALUE ||
+            lp_length(s->lp) >= OBJ_SET_MAX_LISTPACK_ENTRIES) {
+            obj_set_convert(s);
+            /* fall through to the HT path below */
+        } else {
+            s->lp = lp_append(s->lp, (const unsigned char *)m, (uint32_t)mlen);
+            s->mem = set_lp_mem(s);
+            return 1;
+        }
+    }
+    {
+        const char *old;
+        size_t oldl;
+        if (rh_get(&s->members, m, mlen, &old, &oldl))
+            return 0;
+        if (rh_set(&s->members, m, mlen, "", 0) < 0)
+            return -1;
+        s->mem += field_bytes(mlen, 0);
+        return 1;
+    }
 }
 
 int obj_set_has(obj_set *s, const char *m, size_t mlen)
 {
-    const char *old;
-    size_t oldl;
-    return rh_get(&s->members, m, mlen, &old, &oldl);
+    if (s->encoding == OBJ_SET_LP) {
+        if (mlen > UINT32_MAX)
+            return 0;
+        return lp_find(s->lp, NULL, (const unsigned char *)m,
+                       (uint32_t)mlen) != NULL;
+    }
+    {
+        const char *old;
+        size_t oldl;
+        return rh_get(&s->members, m, mlen, &old, &oldl);
+    }
 }
 
 int obj_set_rem(obj_set *s, const char *m, size_t mlen)
 {
-    if (!obj_set_has(s, m, mlen))
+    if (s->encoding == OBJ_SET_LP) {
+        unsigned char *p;
+        if (mlen > UINT32_MAX)
+            return 0;
+        p = lp_find(s->lp, NULL, (const unsigned char *)m, (uint32_t)mlen);
+        if (p == NULL)
+            return 0;
+        /* callers must not pass m pointing into the listpack without
+         * copying it first: lp_delete reallocs (SPOP copies to a local) */
+        s->lp = lp_delete(s->lp, p, NULL);
+        s->mem = set_lp_mem(s);
+        return 1;
+    }
+    {
+        if (!obj_set_has(s, m, mlen))
+            return 0;
+        rh_del(&s->members, m, mlen);
+        s->mem -= field_bytes(mlen, 0);
+        return 1;
+    }
+}
+
+void obj_set_each(obj_set *s, rh_iter_fn fn, void *ctx)
+{
+    if (s->encoding == OBJ_SET_LP) {
+        unsigned char *p = lp_first(s->lp);
+        while (p != NULL) {
+            unsigned char mb[24];
+            uint32_t ml = 0;
+            const unsigned char *mv = lp_get_str(p, mb, &ml);
+            fn((const char *)mv, ml, "", 0, ctx);
+            p = lp_next(s->lp, p);
+        }
+        return;
+    }
+    rh_each(&s->members, fn, ctx);
+}
+
+int obj_set_member_at(obj_set *s, uint64_t idx, const char **m, size_t *mlen)
+{
+    unsigned char *p;
+    uint32_t ml = 0;
+    const unsigned char *mv;
+    if (s->encoding != OBJ_SET_LP || idx >= lp_length(s->lp) ||
+        idx > (uint64_t)LONG_MAX)
         return 0;
-    rh_del(&s->members, m, mlen);
-    s->mem -= field_bytes(mlen, 0);
+    p = lp_seek(s->lp, (long)idx);
+    if (p == NULL)
+        return 0;
+    mv = lp_get_str(p, s->mtmp, &ml);
+    *m = (const char *)mv;
+    *mlen = ml;
     return 1;
 }
 
