@@ -76,6 +76,27 @@ void obj_free_value(const char *val, size_t vlen)
 }
 
 /* ------------------------------------------------------------------ */
+/* runtime encoding limits (see obj.h)                                 */
+/* ------------------------------------------------------------------ */
+
+static obj_limits g_obj_limits = {
+    (int)DDUP_QL_FILL,
+    OBJ_HASH_MAX_LISTPACK_ENTRIES, OBJ_HASH_MAX_LISTPACK_VALUE,
+    OBJ_SET_MAX_LISTPACK_ENTRIES,  OBJ_SET_MAX_LISTPACK_VALUE,
+    OBJ_ZSET_MAX_LISTPACK_ENTRIES, OBJ_ZSET_MAX_LISTPACK_VALUE
+};
+
+void obj_limits_apply(const obj_limits *lim)
+{
+    g_obj_limits = *lim;
+}
+
+void obj_limits_get(obj_limits *out)
+{
+    *out = g_obj_limits;
+}
+
+/* ------------------------------------------------------------------ */
 /* hash object: listpack for small hashes, rh_table beyond             */
 /* ------------------------------------------------------------------ */
 
@@ -162,14 +183,14 @@ int obj_hash_set(obj_hash *h, const char *f, size_t flen, const char *v,
         return -1;
     if (h->encoding == OBJ_HASH_LP) {
         unsigned char *fp = NULL;
-        int fits = flen <= OBJ_HASH_MAX_LISTPACK_VALUE &&
-                   vlen <= OBJ_HASH_MAX_LISTPACK_VALUE;
+        int fits = flen <= (size_t)g_obj_limits.hash_value &&
+                   vlen <= (size_t)g_obj_limits.hash_value;
         if (fits)
             fp = lp_find(h->lp, NULL, (const unsigned char *)f,
                          (uint32_t)flen);
         if (!fits ||
             (fp == NULL &&
-             lp_length(h->lp) / 2 >= OBJ_HASH_MAX_LISTPACK_ENTRIES)) {
+             lp_length(h->lp) / 2 >= (uint64_t)g_obj_limits.hash_entries)) {
             obj_hash_convert(h);
             /* fall through to the HT path below */
         } else if (fp != NULL) {
@@ -472,12 +493,12 @@ int obj_set_add(obj_set *s, const char *m, size_t mlen)
     if (mlen > UINT32_MAX)
         return -1;
     if (s->encoding == OBJ_SET_LP) {
-        if (mlen <= OBJ_SET_MAX_LISTPACK_VALUE &&
+        if (mlen <= (size_t)g_obj_limits.set_value &&
             lp_find(s->lp, NULL, (const unsigned char *)m, (uint32_t)mlen) !=
                 NULL)
             return 0;
-        if (mlen > OBJ_SET_MAX_LISTPACK_VALUE ||
-            lp_length(s->lp) >= OBJ_SET_MAX_LISTPACK_ENTRIES) {
+        if (mlen > (size_t)g_obj_limits.set_value ||
+            lp_length(s->lp) >= (uint64_t)g_obj_limits.set_entries) {
             obj_set_convert(s);
             /* fall through to the HT path below */
         } else {
@@ -758,7 +779,7 @@ int obj_zset_add(obj_zset *z, const char *m, size_t mlen, double score)
         return -1;
     if (z->encoding == OBJ_ZSET_LP) {
         unsigned char *mp = NULL;
-        if (mlen <= OBJ_ZSET_MAX_LISTPACK_VALUE)
+        if (mlen <= (size_t)g_obj_limits.zset_value)
             mp = zlp_find_member(z, m, mlen);
         if (mp != NULL) {
             unsigned char sbuf[24];
@@ -769,8 +790,8 @@ int obj_zset_add(obj_zset *z, const char *m, size_t mlen, double score)
             zlp_insert_pair(z, m, mlen, score);
             return 0;
         }
-        if (mlen > OBJ_ZSET_MAX_LISTPACK_VALUE ||
-            lp_length(z->lp) / 2 >= OBJ_ZSET_MAX_LISTPACK_ENTRIES) {
+        if (mlen > (size_t)g_obj_limits.zset_value ||
+            lp_length(z->lp) / 2 >= (uint64_t)g_obj_limits.zset_entries) {
             obj_zset_convert(z);
             /* fall through to the HT path below */
         } else {

@@ -48,12 +48,35 @@ uint64_t obj_extra_mem(const char *val, size_t vlen);
 void obj_free_value(const char *val, size_t vlen);
 
 /* ------------------------------------------------------------------ */
+/* runtime encoding limits                                             */
+/*                                                                     */
+/* Process-wide listpack/quicklist thresholds. Defaults are the        */
+/* OBJ_*_MAX_LISTPACK_* / DDUP_QL_FILL macros below; the server        */
+/* applies config once at startup via obj_limits_apply() (single       */
+/* write before workers start, read-only afterwards, so mt mode is     */
+/* race-free). A 0 entries/value limit disables the compact encoding.  */
+/* ------------------------------------------------------------------ */
+typedef struct obj_limits {
+    int list_fill;    /* quicklist node fill limit */
+    int hash_entries; /* hash listpack entry/value limits */
+    int hash_value;
+    int set_entries; /* set listpack entry/value limits */
+    int set_value;
+    int zset_entries; /* zset listpack entry/value limits */
+    int zset_value;
+} obj_limits;
+
+void obj_limits_apply(const obj_limits *lim);
+void obj_limits_get(obj_limits *out);
+
+/* ------------------------------------------------------------------ */
 /* hash object: listpack for small hashes, rh_table beyond (Phase 6)   */
 /*                                                                     */
 /* OBJ_HASH_LP: field/value pairs alternate in one listpack. Exceeding */
 /* either threshold converts once to OBJ_HASH_HT (rh_table); there is  */
 /* no way back, matching Redis.                                        */
 /* ------------------------------------------------------------------ */
+/* Default thresholds; runtime-tunable via obj_limits. */
 #define OBJ_HASH_MAX_LISTPACK_ENTRIES 128
 #define OBJ_HASH_MAX_LISTPACK_VALUE 64
 
@@ -143,6 +166,7 @@ int obj_list_remove_at(obj_list_iter *it);
 /* OBJ_SET_HT (rh_table member -> empty value); there is no way back,  */
 /* matching Redis.                                                     */
 /* ------------------------------------------------------------------ */
+/* Default thresholds; runtime-tunable via obj_limits. */
 #define OBJ_SET_MAX_LISTPACK_ENTRIES 128
 #define OBJ_SET_MAX_LISTPACK_VALUE 64
 
@@ -188,6 +212,7 @@ int obj_set_member_at(obj_set *s, uint64_t idx, const char **m,
 /* converts once to OBJ_ZSET_HT (rh_table dict member -> 8-byte score  */
 /* + zskiplist); there is no way back, matching Redis.                 */
 /* ------------------------------------------------------------------ */
+/* Default thresholds; runtime-tunable via obj_limits. */
 #define OBJ_ZSET_MAX_LISTPACK_ENTRIES 128
 #define OBJ_ZSET_MAX_LISTPACK_VALUE 64
 

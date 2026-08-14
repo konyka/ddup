@@ -813,6 +813,52 @@ static void test_zset_listpack_encoding(void)
     db_destroy(&d);
 }
 
+static void test_zset_listpack_limits(void)
+{
+    db d;
+    resp_buf out;
+    obj_limits saved, lim;
+    db_init(&d);
+    resp_buf_init(&out);
+
+    obj_limits_get(&saved);
+    lim = saved;
+    lim.zset_entries = 3;
+    lim.zset_value = 4;
+    obj_limits_apply(&lim);
+
+    /* 3 small members stay listpack at the lowered entries limit */
+    exec_cmd(&d, T0, &out, 8, "ZADD", "z", "1", "a", "2", "b", "3", "c");
+    EXPECT(out, ":3\r\n");
+    DD_CHECK(obj_zset_is_listpack(zset_of(&d, "z", 1)));
+    /* the 4th member converts; data survives */
+    exec_cmd(&d, T0, &out, 4, "ZADD", "z", "4", "d");
+    EXPECT(out, ":1\r\n");
+    DD_CHECK(!obj_zset_is_listpack(zset_of(&d, "z", 1)));
+    exec_cmd(&d, T0, &out, 3, "ZSCORE", "z", "a");
+    EXPECT(out, "$1\r\n1\r\n");
+    exec_cmd(&d, T0, &out, 3, "ZRANK", "z", "d");
+    EXPECT(out, ":3\r\n");
+
+    /* a 5-byte member converts a fresh zset at the lowered value limit */
+    exec_cmd(&d, T0, &out, 4, "ZADD", "z2", "1", "12345");
+    EXPECT(out, ":1\r\n");
+    DD_CHECK(!obj_zset_is_listpack(zset_of(&d, "z2", 2)));
+
+    /* entries 0 disables the compact encoding entirely */
+    lim.zset_entries = 0;
+    lim.zset_value = 64;
+    obj_limits_apply(&lim);
+    exec_cmd(&d, T0, &out, 4, "ZADD", "z3", "1", "x");
+    EXPECT(out, ":1\r\n");
+    DD_CHECK(!obj_zset_is_listpack(zset_of(&d, "z3", 2)));
+
+    obj_limits_apply(&saved);
+
+    resp_buf_free(&out);
+    db_destroy(&d);
+}
+
 int main(void)
 {
     DD_RUN(test_obj_str_zero_length_blob);
@@ -832,5 +878,6 @@ int main(void)
     DD_RUN(test_zset_wrongtype);
     DD_RUN(test_zset_ttl_and_memory);
     DD_RUN(test_zset_listpack_encoding);
+    DD_RUN(test_zset_listpack_limits);
     return DD_TEST_SUMMARY();
 }

@@ -576,6 +576,56 @@ static void test_hash_listpack_encoding(void)
     db_destroy(&d);
 }
 
+static void test_hash_listpack_limits(void)
+{
+    db d;
+    resp_buf out;
+    obj_limits saved, lim, chk;
+    db_init(&d);
+    resp_buf_init(&out);
+
+    obj_limits_get(&saved);
+    lim = saved;
+    lim.hash_entries = 3;
+    lim.hash_value = 4;
+    obj_limits_apply(&lim);
+
+    /* 3 small fields stay listpack at the lowered entries limit */
+    exec_cmd(&d, T0, &out, 6, "HSET", "h", "f1", "v1", "f2", "v2");
+    EXPECT(out, ":2\r\n");
+    exec_cmd(&d, T0, &out, 4, "HSET", "h", "f3", "v3");
+    EXPECT(out, ":1\r\n");
+    DD_CHECK(obj_hash_is_listpack(hash_of(&d, "h", 1)));
+    /* the 4th field converts; data survives */
+    exec_cmd(&d, T0, &out, 4, "HSET", "h", "f4", "v4");
+    EXPECT(out, ":1\r\n");
+    DD_CHECK(!obj_hash_is_listpack(hash_of(&d, "h", 1)));
+    exec_cmd(&d, T0, &out, 3, "HGET", "h", "f1");
+    EXPECT(out, "$2\r\nv1\r\n");
+
+    /* a 5-byte value converts a fresh hash at the lowered value limit */
+    exec_cmd(&d, T0, &out, 4, "HSET", "h2", "f", "12345");
+    EXPECT(out, ":1\r\n");
+    DD_CHECK(!obj_hash_is_listpack(hash_of(&d, "h2", 2)));
+
+    /* entries 0 disables the compact encoding entirely */
+    lim.hash_entries = 0;
+    lim.hash_value = 64;
+    obj_limits_apply(&lim);
+    exec_cmd(&d, T0, &out, 4, "HSET", "h3", "f", "v");
+    EXPECT(out, ":1\r\n");
+    DD_CHECK(!obj_hash_is_listpack(hash_of(&d, "h3", 2)));
+
+    /* restore process-wide defaults */
+    obj_limits_apply(&saved);
+    obj_limits_get(&chk);
+    DD_CHECK_EQ_INT(saved.hash_entries, chk.hash_entries);
+    DD_CHECK_EQ_INT(saved.hash_value, chk.hash_value);
+
+    resp_buf_free(&out);
+    db_destroy(&d);
+}
+
 int main(void)
 {
     DD_RUN(test_hash_rejects_unrepresentable_lengths);
@@ -590,5 +640,6 @@ int main(void)
     DD_RUN(test_hstrlen);
     DD_RUN(test_hrandfield);
     DD_RUN(test_hash_listpack_encoding);
+    DD_RUN(test_hash_listpack_limits);
     return DD_TEST_SUMMARY();
 }

@@ -723,6 +723,52 @@ static void test_set_listpack_encoding(void)
     db_destroy(&d);
 }
 
+static void test_set_listpack_limits(void)
+{
+    db d;
+    resp_buf out;
+    obj_limits saved, lim;
+    db_init(&d);
+    resp_buf_init(&out);
+
+    obj_limits_get(&saved);
+    lim = saved;
+    lim.set_entries = 3;
+    lim.set_value = 4;
+    obj_limits_apply(&lim);
+
+    /* 3 small members stay listpack at the lowered entries limit */
+    exec_cmd(&d, T0, &out, 5, "SADD", "s", "a", "b", "c");
+    EXPECT(out, ":3\r\n");
+    DD_CHECK(obj_set_is_listpack(set_of(&d, "s", 1)));
+    /* the 4th member converts; data survives */
+    exec_cmd(&d, T0, &out, 3, "SADD", "s", "d");
+    EXPECT(out, ":1\r\n");
+    DD_CHECK(!obj_set_is_listpack(set_of(&d, "s", 1)));
+    exec_cmd(&d, T0, &out, 3, "SISMEMBER", "s", "a");
+    EXPECT(out, ":1\r\n");
+    exec_cmd(&d, T0, &out, 2, "SCARD", "s");
+    EXPECT(out, ":4\r\n");
+
+    /* a 5-byte member converts a fresh set at the lowered value limit */
+    exec_cmd(&d, T0, &out, 3, "SADD", "s2", "12345");
+    EXPECT(out, ":1\r\n");
+    DD_CHECK(!obj_set_is_listpack(set_of(&d, "s2", 2)));
+
+    /* entries 0 disables the compact encoding entirely */
+    lim.set_entries = 0;
+    lim.set_value = 64;
+    obj_limits_apply(&lim);
+    exec_cmd(&d, T0, &out, 3, "SADD", "s3", "x");
+    EXPECT(out, ":1\r\n");
+    DD_CHECK(!obj_set_is_listpack(set_of(&d, "s3", 2)));
+
+    obj_limits_apply(&saved);
+
+    resp_buf_free(&out);
+    db_destroy(&d);
+}
+
 int main(void)
 {
     DD_RUN(test_set_rejects_unrepresentable_member);
@@ -738,5 +784,6 @@ int main(void)
     DD_RUN(test_sintercard);
     DD_RUN(test_set_stores);
     DD_RUN(test_set_listpack_encoding);
+    DD_RUN(test_set_listpack_limits);
     return DD_TEST_SUMMARY();
 }
