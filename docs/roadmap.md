@@ -243,6 +243,11 @@
     SPOP/SRANDMEMBER listpack 模式按随机下标直取（SPOP 逐个随机弹、
     member 先拷栈再删规避 realloc 悬垂）；记账模型 128 成员
     -81%（Phase 46）
+  - [x] 编码阈值接入配置：`list-max-listpack-size` +
+    `{hash,zset,set}-max-listpack-{entries,value}` 七键（Redis 命名与
+    默认值；entries/value 为 0 关闭紧凑编码，list fill >= 1）；
+    进程级 obj_limits 全局 + quicklist fill 全局，main 启动时一次性
+    应用（st/mt 共用点，之后只读无竞态）（Phase 47）
   - [ ] 范围化排除（记录在案，不实施）：
     - 分层存储（热/冷数据落盘）：超出"内存缓存存储"定位
     - mt 模式的复制/集群适配：见 Phase 15 说明

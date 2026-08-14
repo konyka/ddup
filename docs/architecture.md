@@ -457,16 +457,20 @@ DBSIZE 为 O(1)，可能计入尚未回收的过期 key。
   "unknown"，`lp_length()` 退化为扫描。所有 mutator 可能 realloc，
   调用方须重新定位（与 Redis 同约定）。
 - **quicklist（src/ds/quicklist）**：listpack 节点的双链表，每节点至多
-  `DDUP_QL_FILL`（128）个元素；端点节点满则push 分裂新节点，空节点
+  fill 个元素（默认 `DDUP_QL_FILL` 128，配置键
+  `list-max-listpack-size`）；端点节点满则push 分裂新节点，空节点
   即摘除；稀疏中间节点不做合并（Redis 靠压缩遍历处理，此处有意简化，
   记录在案）。list 元素访问走迭代器（seek 从近端跳块、双向遍历、
   remove 后迭代器落在后继）。
 - **小对象双编码**：hash、zset、set 默认使用单个 listpack——
   hash 存 field/value 交替；zset 存 member/score（`%.17g` 十进制）
   交替并按 (score, member) 保序；set 直接存 member（插入序，lp_find
-  查重）。阈值与 Redis 默认一致：128 条目、单值 64 字节
-  （`OBJ_HASH_MAX_LISTPACK_*` / `OBJ_ZSET_MAX_LISTPACK_*` /
-  `OBJ_SET_MAX_LISTPACK_*`，编译期常量，未接配置项）。写入超阈值时
+  查重）。阈值默认与 Redis 一致（128 条目、单值 64 字节），运行时可
+  经 `{hash,zset,set}-max-listpack-{entries,value}` 配置键调整：
+  进程级 `obj_limits` 全局（src/ds/obj.c），main 启动时一次性应用、
+  之后只读（mt 无竞态）；entries 或 value 为 0 即关闭该类型的紧凑
+  编码；宏 `OBJ_*_MAX_LISTPACK_*` 仅作默认值来源（Phase 47）。
+  写入超阈值时
   一次性转换为全功能结构（rh_table / dict+skiplist），只单向转换
   不降回（同 Redis）。listpack 模式下范围/RANK/LEX 等操作为 ≤128
   条目的线性扫描；SPOP/SRANDMEMBER/HRANDFIELD/ZRANDMEMBER 直接按
