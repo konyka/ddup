@@ -7,6 +7,15 @@
 
 #include "ds/listpack.h"
 
+/* Per-node fill limit; see quicklist.h. */
+static uint32_t g_ql_fill = DDUP_QL_FILL;
+
+void quicklist_set_fill(int fill)
+{
+    if (fill >= 1)
+        g_ql_fill = (uint32_t)fill;
+}
+
 static void ql_die_oom(void)
 {
     fprintf(stderr, "ddup: out of memory\n");
@@ -131,7 +140,7 @@ int ql_push(quicklist *ql, int left, const char *data, size_t len)
     if (len > UINT32_MAX)
         return -1;
     n = left ? ql->head : ql->tail;
-    if (n == NULL || n->count >= DDUP_QL_FILL) {
+    if (n == NULL || n->count >= g_ql_fill) {
         /* only end nodes grow; a full end node splits off a fresh one */
         n = ql_node_new(ql);
         ql_node_link(ql, n, left);

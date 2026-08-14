@@ -16,8 +16,13 @@
 #include <stddef.h>
 #include <stdint.h>
 
-/* Maximum entries packed into one node before a push splits. */
+/* Maximum entries packed into one node before a push splits (default;
+ * runtime-tunable via quicklist_set_fill). */
 #define DDUP_QL_FILL 128u
+
+/* Override the per-node fill limit. Values < 1 are ignored. Applied once
+ * at server startup (single write, read-only afterwards). */
+void quicklist_set_fill(int fill);
 
 typedef struct ql_node {
     struct ql_node *prev;

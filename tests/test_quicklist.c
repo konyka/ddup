@@ -414,6 +414,36 @@ static void test_reject_huge_element(void)
 #endif
 }
 
+static void test_configurable_fill(void)
+{
+    quicklist *ql;
+
+    /* lowered fill: nodes split at the new limit */
+    quicklist_set_fill(4);
+    ql = ql_new();
+    fill_tail(ql, 10);
+    DD_CHECK_EQ_INT(10, (long long)ql->len);
+    DD_CHECK_EQ_INT(3, (long long)count_nodes(ql)); /* 4 + 4 + 2 */
+    DD_CHECK_EQ_INT(4, (long long)ql->head->count);
+    DD_CHECK_EQ_INT(2, (long long)ql->tail->count);
+    ql_free(ql);
+
+    /* fill 1: every element gets its own node */
+    quicklist_set_fill(1);
+    ql = ql_new();
+    fill_tail(ql, 3);
+    DD_CHECK_EQ_INT(3, (long long)count_nodes(ql));
+    ql_free(ql);
+
+    /* restore the default for the rest of the process */
+    quicklist_set_fill((int)DDUP_QL_FILL);
+    ql = ql_new();
+    fill_tail(ql, 129);
+    DD_CHECK_EQ_INT(2, (long long)count_nodes(ql));
+    DD_CHECK_EQ_INT(128, (long long)ql->head->count);
+    ql_free(ql);
+}
+
 int main(void)
 {
     DD_RUN(test_new_empty);
@@ -424,5 +454,6 @@ int main(void)
     DD_RUN(test_remove_iter);
     DD_RUN(test_differential);
     DD_RUN(test_reject_huge_element);
+    DD_RUN(test_configurable_fill);
     return DD_TEST_SUMMARY();
 }
