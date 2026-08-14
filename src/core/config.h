@@ -33,6 +33,15 @@ typedef struct ddup_config {
     int cluster_enabled;           /* default 0 */
     char cluster_config_file[256]; /* default "nodes.conf" */
     char cluster_bus_protocol[8];  /* "ddup" (default) or "redis" */
+    /* listpack encoding thresholds (Redis names/defaults; an entries or
+     * value limit of 0 disables the compact encoding for that type) */
+    int list_max_listpack_size;    /* default 128, >= 1 */
+    int hash_max_listpack_entries; /* default 128 */
+    int hash_max_listpack_value;   /* default 64 */
+    int zset_max_listpack_entries; /* default 128 */
+    int zset_max_listpack_value;   /* default 64 */
+    int set_max_listpack_entries;  /* default 128 */
+    int set_max_listpack_value;    /* default 64 */
 } ddup_config;
 
 void config_init(ddup_config *cfg);

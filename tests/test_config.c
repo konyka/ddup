@@ -255,6 +255,39 @@ static void test_repl_backlog_size(void)
     DD_CHECK(strstr(err, "repl-backlog-size") != NULL);
 }
 
+static void test_listpack_threshold_keys(void)
+{
+    ddup_config cfg;
+    config_init(&cfg);
+    /* defaults match Redis */
+    DD_CHECK_EQ_INT(128, cfg.list_max_listpack_size);
+    DD_CHECK_EQ_INT(128, cfg.hash_max_listpack_entries);
+    DD_CHECK_EQ_INT(64, cfg.hash_max_listpack_value);
+    DD_CHECK_EQ_INT(128, cfg.zset_max_listpack_entries);
+    DD_CHECK_EQ_INT(64, cfg.zset_max_listpack_value);
+    DD_CHECK_EQ_INT(128, cfg.set_max_listpack_entries);
+    DD_CHECK_EQ_INT(64, cfg.set_max_listpack_value);
+
+    DD_CHECK_EQ_INT(0, config_apply(&cfg, "list-max-listpack-size", "16"));
+    DD_CHECK_EQ_INT(16, cfg.list_max_listpack_size);
+    DD_CHECK_EQ_INT(0, config_apply(&cfg, "HASH-MAX-LISTPACK-ENTRIES", "8"));
+    DD_CHECK_EQ_INT(8, cfg.hash_max_listpack_entries);
+    DD_CHECK_EQ_INT(0, config_apply(&cfg, "hash-max-listpack-value", "32"));
+    DD_CHECK_EQ_INT(32, cfg.hash_max_listpack_value);
+    DD_CHECK_EQ_INT(0, config_apply(&cfg, "zset-max-listpack-entries", "0"));
+    DD_CHECK_EQ_INT(0, cfg.zset_max_listpack_entries); /* 0 = always HT */
+    DD_CHECK_EQ_INT(0, config_apply(&cfg, "set-max-listpack-value", "100"));
+    DD_CHECK_EQ_INT(100, cfg.set_max_listpack_value);
+
+    /* invalid values rejected, fields unchanged */
+    DD_CHECK_EQ_INT(-1, config_apply(&cfg, "list-max-listpack-size", "0"));
+    DD_CHECK_EQ_INT(-1, config_apply(&cfg, "list-max-listpack-size", "-2"));
+    DD_CHECK_EQ_INT(16, cfg.list_max_listpack_size);
+    DD_CHECK_EQ_INT(-1, config_apply(&cfg, "hash-max-listpack-entries", "-1"));
+    DD_CHECK_EQ_INT(-1, config_apply(&cfg, "zset-max-listpack-value", "abc"));
+    DD_CHECK_EQ_INT(-1, config_apply(&cfg, "set-max-listpack-entries", "1.5"));
+}
+
 int main(void)
 {
     DD_RUN(test_defaults);
@@ -268,5 +301,6 @@ int main(void)
     DD_RUN(test_validate_tls);
     DD_RUN(test_repl_backlog_size);
     DD_RUN(test_resource_limit_validation);
+    DD_RUN(test_listpack_threshold_keys);
     return DD_TEST_SUMMARY();
 }

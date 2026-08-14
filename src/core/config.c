@@ -32,6 +32,13 @@ void config_init(ddup_config *cfg)
     cfg->cluster_enabled = 0;
     strcpy(cfg->cluster_config_file, "nodes.conf");
     strcpy(cfg->cluster_bus_protocol, "ddup");
+    cfg->list_max_listpack_size = 128;
+    cfg->hash_max_listpack_entries = 128;
+    cfg->hash_max_listpack_value = 64;
+    cfg->zset_max_listpack_entries = 128;
+    cfg->zset_max_listpack_value = 64;
+    cfg->set_max_listpack_entries = 128;
+    cfg->set_max_listpack_value = 64;
 }
 
 static int key_eq(const char *a, const char *b)
@@ -213,6 +220,25 @@ int config_apply(ddup_config *cfg, const char *key, const char *value)
         return copy_str(cfg->cluster_bus_protocol,
                         sizeof(cfg->cluster_bus_protocol), value);
     }
+    if (key_eq(key, "list-max-listpack-size")) {
+        int n;
+        if (parse_int_nonneg(value, &n) != 0 || n < 1)
+            return -1;
+        cfg->list_max_listpack_size = n;
+        return 0;
+    }
+    if (key_eq(key, "hash-max-listpack-entries"))
+        return parse_int_nonneg(value, &cfg->hash_max_listpack_entries);
+    if (key_eq(key, "hash-max-listpack-value"))
+        return parse_int_nonneg(value, &cfg->hash_max_listpack_value);
+    if (key_eq(key, "zset-max-listpack-entries"))
+        return parse_int_nonneg(value, &cfg->zset_max_listpack_entries);
+    if (key_eq(key, "zset-max-listpack-value"))
+        return parse_int_nonneg(value, &cfg->zset_max_listpack_value);
+    if (key_eq(key, "set-max-listpack-entries"))
+        return parse_int_nonneg(value, &cfg->set_max_listpack_entries);
+    if (key_eq(key, "set-max-listpack-value"))
+        return parse_int_nonneg(value, &cfg->set_max_listpack_value);
     return -1;
 }
 
