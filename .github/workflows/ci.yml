@@ -118,3 +118,21 @@ jobs:
           git add -A
           git commit -m "CI failure logs: freebsd @ ${GITHUB_SHA:0:7}" || exit 0
           git push -f origin ci-logs-freebsd
+
+  redis-compat:
+    name: redis 7.2.15 command-compat audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Fetch Redis 7.2.15 command JSON (sparse clone)
+        run: |
+          git clone --depth 1 --branch 7.2.15 --filter=blob:none --sparse \
+            https://github.com/redis/redis.git /tmp/redis-7.2.15
+          git -C /tmp/redis-7.2.15 sparse-checkout set src/commands
+
+      - name: Audit tool self-tests (TDD)
+        run: python3 tools/test_audit_redis_compat.py
+
+      - name: Command-compat baseline check
+        run: python3 tools/audit_redis_compat.py --redis-json /tmp/redis-7.2.15/src/commands --check

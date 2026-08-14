@@ -179,8 +179,18 @@ ddup_apply_options(ddup-reshard)
 # Tests (TDD: every module has a test target; `ctest` or `cmake --build . --target check`)
 # ---------------------------------------------------------------------------
 enable_testing()
+find_package(Python3 COMPONENTS Interpreter QUIET)
 
 function(ddup_add_test name source)
+    if(source MATCHES "\\.py$")
+        if(NOT Python3_Interpreter_FOUND)
+            message(FATAL_ERROR "Python3 is required for ${name}")
+        endif()
+        add_test(NAME ${name} COMMAND ${Python3_EXECUTABLE}
+                 ${CMAKE_CURRENT_SOURCE_DIR}/${source} ${ARGN})
+        set_tests_properties(${name} PROPERTIES TIMEOUT 180)
+        return()
+    endif()
     add_executable(${name} ${source})
     target_link_libraries(${name} PRIVATE ddup_core_test)
     target_include_directories(${name} PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/tests")
@@ -305,3 +315,18 @@ add_custom_target(check
     DEPENDS ${DDUP_CHECK_DEPS}
     WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
 )
+
+# ---------------------------------------------------------------------------
+# Redis 7.2.15 command-compat audit (read-only; zero runtime cost).
+# Runs when python3 and a Redis src/commands JSON tree are available, so
+# plain `ctest` stays green on machines without a Redis checkout.
+# ---------------------------------------------------------------------------
+if(Python3_Interpreter_FOUND)
+    ddup_add_test(test_redis_compat_tool tools/test_audit_redis_compat.py)
+endif()
+if(Python3_Interpreter_FOUND AND DEFINED REDIS_COMMANDS_DIR)
+    ddup_add_test(test_redis_compat tools/audit_redis_compat.py
+                  --redis-json ${REDIS_COMMANDS_DIR}
+                  --repo ${CMAKE_CURRENT_SOURCE_DIR}
+                  --check)
+endif()
