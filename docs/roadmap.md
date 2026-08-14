@@ -252,6 +252,8 @@
     <= 2*fill 时合并（优先 next、否则 prev；fill<4 不触发）；
     ql_remove 迭代器合并后按序号 lp_seek 重定位指向同一逻辑元素；
     仅删除路径触发，无压缩（Phase 48）
+  - [x] OBJECT ENCODING 命令：编码名与 Redis 7 对齐（raw/quicklist/
+    listpack/hashtable/skiplist），缺失 key 回 null bulk（Phase 49）
   - [ ] 范围化排除（记录在案，不实施）：
     - 分层存储（热/冷数据落盘）：超出"内存缓存存储"定位
     - mt 模式的复制/集群适配：见 Phase 15 说明
