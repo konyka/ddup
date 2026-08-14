@@ -85,6 +85,60 @@ static void ql_node_mem_sync(quicklist *ql, uint64_t old_bytes,
     ql->mem += n->bytes;
 }
 
+/* 0-based index of entry inside n's listpack (linear scan; nodes are
+ * small, and this runs only on the sparse-merge path). */
+static long ql_entry_index(const ql_node *n, const unsigned char *entry)
+{
+    long idx = 0;
+    unsigned char *p = lp_first(n->lp);
+    while (p != NULL && p != entry) {
+        idx++;
+        p = lp_next(n->lp, p);
+    }
+    return idx;
+}
+
+/* Append src's entries in order to dst's tail, then unlink+free src. */
+static void ql_node_merge_into(quicklist *ql, ql_node *dst, ql_node *src)
+{
+    unsigned char *p = lp_first(src->lp);
+    uint64_t old_bytes = dst->bytes;
+    while (p != NULL) {
+        unsigned char buf[24];
+        uint32_t vl = 0;
+        const unsigned char *v = lp_get_str(p, buf, &vl);
+        dst->lp = lp_append(dst->lp, v, vl);
+        p = lp_next(src->lp, p);
+    }
+    dst->count += src->count;
+    dst->bytes = (uint64_t)lp_bytes(dst->lp);
+    ql_node_mem_sync(ql, old_bytes, dst);
+    ql_node_unlink(ql, src);
+    ql_node_free(ql, src);
+}
+
+/* Sparse-node merge after a removal: when n (non-empty) dropped below
+ * fill/4 entries, fold a neighbour into it (preferring n->next) or fold
+ * n into n->prev, as long as the combined size stays within 2*fill.
+ * fill < 4 makes the threshold 0, so merging never triggers. Returns 0
+ * when nothing merged, 1 when n->next was folded into n, 2 when n was
+ * folded into n->prev (n freed; callers must have saved what they need).
+ * Pushes never call this: only removals create sparse nodes. */
+static int ql_maybe_merge(quicklist *ql, ql_node *n)
+{
+    if (n->count >= g_ql_fill / 4)
+        return 0; /* includes fill < 4: threshold 0, count >= 1 */
+    if (n->next != NULL && n->count + n->next->count <= 2 * g_ql_fill) {
+        ql_node_merge_into(ql, n, n->next);
+        return 1;
+    }
+    if (n->prev != NULL && n->count + n->prev->count <= 2 * g_ql_fill) {
+        ql_node_merge_into(ql, n->prev, n); /* n's entries to prev's tail */
+        return 2;
+    }
+    return 0;
+}
+
 void ql_init(quicklist *ql)
 {
     ql->head = NULL;
@@ -181,6 +235,7 @@ int ql_pop(quicklist *ql, int left, char **data, size_t *len)
     } else {
         n->bytes = (uint64_t)lp_bytes(n->lp);
         ql_node_mem_sync(ql, old_bytes, n);
+        (void)ql_maybe_merge(ql, n); /* sparse end node folds inward */
     }
     ql->len--;
     return 1;
@@ -323,16 +378,41 @@ void ql_remove(ql_iter *it)
         n->bytes = (uint64_t)lp_bytes(n->lp);
         ql_node_mem_sync(ql, old_bytes, n);
         it->entry = np;
+        if (n->count < g_ql_fill / 4) {
+            /* a merge reallocs n (next folded in) or frees it (n folded
+             * into prev): reposition the iterator by index so it keeps
+             * pointing at np's element */
+            ql_node *prev = n->prev;
+            uint32_t prev_cnt = prev != NULL ? prev->count : 0;
+            long idx = ql_entry_index(n, np);
+            if (ql_maybe_merge(ql, n) == 2) {
+                it->node = prev;
+                it->entry = lp_seek(prev->lp, (long)prev_cnt + idx);
+            } else {
+                it->entry = lp_seek(n->lp, idx);
+            }
+        }
         return;
     }
     /* removed the node's tail entry (or its last one) */
     if (n->count == 0) {
         ql_node_unlink(ql, n);
         ql_node_free(ql, n);
-    } else {
-        n->bytes = (uint64_t)lp_bytes(n->lp);
-        ql_node_mem_sync(ql, old_bytes, n);
+        it->node = next_node;
+        it->entry = next_node != NULL ? lp_first(next_node->lp) : NULL;
+        return;
     }
+    n->bytes = (uint64_t)lp_bytes(n->lp);
+    ql_node_mem_sync(ql, old_bytes, n);
     it->node = next_node;
     it->entry = next_node != NULL ? lp_first(next_node->lp) : NULL;
+    if (n->count < g_ql_fill / 4) {
+        /* if n swallowed next_node, the successor moved into n at the
+         * index n had right after the removal */
+        uint32_t ncnt = n->count;
+        if (ql_maybe_merge(ql, n) == 1) {
+            it->node = n;
+            it->entry = lp_seek(n->lp, (long)ncnt);
+        }
+    }
 }

@@ -444,6 +444,212 @@ static void test_configurable_fill(void)
     ql_free(ql);
 }
 
+static void expect_values(quicklist *ql, const int *vals, int n)
+{
+    ql_iter it;
+    int i = 0;
+    DD_CHECK_EQ_INT(1, ql_first(ql, &it));
+    do {
+        char tmp[16];
+        snprintf(tmp, sizeof(tmp), "%d", vals[i]);
+        expect_elem(&it, tmp);
+        i++;
+    } while (ql_iter_next(&it));
+    DD_CHECK_EQ_INT(n, i);
+}
+
+static void test_merge_basic(void)
+{
+    /* fill=8: [0..7][8..15][16..23]; deleting 8..14 leaves the middle
+     * node at count 1 (< 8/4=2), so it absorbs next (1+8 <= 2*8) */
+    quicklist *ql;
+    ql_iter it;
+    int i;
+    int exp[17];
+    quicklist_set_fill(8);
+    ql = ql_new();
+    fill_tail(ql, 24);
+    DD_CHECK_EQ_INT(3, (long long)count_nodes(ql));
+
+    DD_CHECK_EQ_INT(1, ql_seek(ql, 8, &it));
+    for (i = 0; i < 7; i++)
+        ql_remove(&it);
+    DD_CHECK_EQ_INT(2, (long long)count_nodes(ql));
+    DD_CHECK_EQ_INT(17, (long long)ql->len);
+    DD_CHECK_EQ_INT(9, (long long)ql->head->next->count);
+
+    /* the iterator survived the merge on the same logical element */
+    expect_elem(&it, "15");
+    DD_CHECK_EQ_INT(1, ql_iter_next(&it));
+    expect_elem(&it, "16");
+    DD_CHECK_EQ_INT(1, ql_iter_prev(&it));
+    expect_elem(&it, "15");
+    DD_CHECK_EQ_INT(1, ql_iter_prev(&it));
+    expect_elem(&it, "7");
+
+    for (i = 0; i < 8; i++)
+        exp[i] = i; /* 0..7 */
+    exp[8] = 15;
+    for (i = 9; i < 17; i++)
+        exp[i] = i + 7; /* 16..23 */
+    expect_values(ql, exp, 17);
+    quicklist_set_fill((int)DDUP_QL_FILL);
+    ql_free(ql);
+}
+
+static void test_merge_into_prev(void)
+{
+    /* fill=8: [0..7][8..15][16..19]; deleting 17,18,19 leaves the tail
+     * node at count 1 (< 2); next is NULL, so it folds into prev
+     * (1+8 <= 16). Case B: the iterator falls off the end and the node
+     * under it is freed by the merge. */
+    quicklist *ql;
+    ql_iter it;
+    int i;
+    int exp[17];
+    quicklist_set_fill(8);
+    ql = ql_new();
+    fill_tail(ql, 20);
+    DD_CHECK_EQ_INT(3, (long long)count_nodes(ql));
+
+    DD_CHECK_EQ_INT(1, ql_seek(ql, 17, &it));
+    ql_remove(&it); /* 17 */
+    expect_elem(&it, "18");
+    ql_remove(&it); /* 18 */
+    ql_remove(&it); /* 19: tail entry, count 1 -> merge into prev */
+    DD_CHECK(it.entry == NULL);
+    DD_CHECK_EQ_INT(2, (long long)count_nodes(ql));
+    DD_CHECK_EQ_INT(8, (long long)ql->head->count);
+    DD_CHECK_EQ_INT(9, (long long)ql->tail->count);
+    DD_CHECK_EQ_INT(17, (long long)ql->len);
+    for (i = 0; i < 17; i++)
+        exp[i] = i;
+    expect_values(ql, exp, 17);
+    quicklist_set_fill((int)DDUP_QL_FILL);
+    ql_free(ql);
+}
+
+static void test_merge_size_cap(void)
+{
+    /* The 2*fill sum cap is unreachable through push/remove alone (nodes
+     * never exceed fill and a sparse node is < fill/4, so a pair always
+     * sums to < 1.5*fill); it becomes reachable when fill shrinks after
+     * nodes were packed. fill 128 -> 8: sparse < 2, cap 16. */
+    quicklist *ql;
+    char *data = NULL;
+    size_t len = 0;
+
+    /* [0..127][128,129] at fill 128, then fill 8: popping the tail down
+     * to 1 entry must NOT merge into the 128-entry prev (1+128 > 16) */
+    quicklist_set_fill(128);
+    ql = ql_new();
+    fill_tail(ql, 130);
+    DD_CHECK_EQ_INT(2, (long long)count_nodes(ql));
+    quicklist_set_fill(8);
+    DD_CHECK_EQ_INT(1, ql_pop(ql, 0, &data, &len));
+    DD_CHECK_MEM("129", 3, data, len);
+    free(data);
+    data = NULL;
+    DD_CHECK_EQ_INT(2, (long long)count_nodes(ql));
+    DD_CHECK_EQ_INT(128, (long long)ql->head->count);
+    DD_CHECK_EQ_INT(1, (long long)ql->tail->count);
+    ql_free(ql);
+
+    /* head-push mirror: [129][128..1 -> wait, head pushes reverse]:
+     * [x][128-entry node]; popping the head down to 1 entry must NOT
+     * merge into the 128-entry next */
+    quicklist_set_fill(128);
+    ql = ql_new();
+    {
+        int i;
+        char tmp[16];
+        for (i = 0; i < 130; i++) {
+            int l = snprintf(tmp, sizeof(tmp), "%d", i);
+            DD_CHECK_EQ_INT(0, ql_push(ql, 1, tmp, (size_t)l));
+        }
+    }
+    DD_CHECK_EQ_INT(2, (long long)count_nodes(ql));
+    DD_CHECK_EQ_INT(2, (long long)ql->head->count);
+    quicklist_set_fill(8);
+    DD_CHECK_EQ_INT(1, ql_pop(ql, 1, &data, &len));
+    free(data);
+    data = NULL;
+    DD_CHECK_EQ_INT(2, (long long)count_nodes(ql)); /* 1+128 > 16: no merge */
+    DD_CHECK_EQ_INT(1, (long long)ql->head->count);
+    DD_CHECK_EQ_INT(128, (long long)ql->tail->count);
+    ql_free(ql);
+
+    /* positive control: same layout, but cap 200 admits 1+128 */
+    quicklist_set_fill(128);
+    ql = ql_new();
+    fill_tail(ql, 130);
+    quicklist_set_fill(100); /* sparse < 25, cap 200 */
+    DD_CHECK_EQ_INT(1, ql_pop(ql, 0, &data, &len));
+    free(data);
+    data = NULL;
+    DD_CHECK_EQ_INT(1, (long long)count_nodes(ql));
+    DD_CHECK_EQ_INT(129, (long long)ql->head->count);
+    DD_CHECK_EQ_INT(129, (long long)ql->len);
+    quicklist_set_fill((int)DDUP_QL_FILL);
+    ql_free(ql);
+}
+
+static void test_merge_pop_end(void)
+{
+    /* fill=8: [0..7][8..15][16..23]; 7 head pops leave the head node at
+     * count 1 (< 2) -> it absorbs the next node (1+8 <= 16). The merge
+     * must strictly shrink mem (one node overhead gone) and keep len. */
+    quicklist *ql;
+    uint64_t mem_before;
+    int i;
+    char *data = NULL;
+    size_t len = 0;
+    int exp[17];
+    quicklist_set_fill(8);
+    ql = ql_new();
+    fill_tail(ql, 24);
+    for (i = 0; i < 6; i++) {
+        DD_CHECK_EQ_INT(1, ql_pop(ql, 1, &data, &len));
+        free(data);
+        data = NULL;
+    }
+    DD_CHECK_EQ_INT(2, (long long)ql->head->count); /* 6,7: not sparse yet */
+    mem_before = ql_mem(ql);
+    DD_CHECK_EQ_INT(1, ql_pop(ql, 1, &data, &len));
+    DD_CHECK_MEM("6", 1, data, len);
+    free(data);
+    data = NULL;
+    DD_CHECK_EQ_INT(2, (long long)count_nodes(ql));
+    DD_CHECK_EQ_INT(9, (long long)ql->head->count); /* 7,8..15 */
+    DD_CHECK_EQ_INT(17, (long long)ql->len);
+    DD_CHECK(ql_mem(ql) < mem_before);
+    DD_CHECK(ql_mem(ql) == expected_node_mem(ql));
+    for (i = 0; i < 17; i++)
+        exp[i] = i + 7; /* 7..23 */
+    expect_values(ql, exp, 17);
+    quicklist_set_fill((int)DDUP_QL_FILL);
+    ql_free(ql);
+}
+
+static void test_merge_disabled_tiny_fill(void)
+{
+    /* fill < 4 makes the sparse threshold fill/4 == 0: never triggers */
+    quicklist *ql;
+    ql_iter it;
+    int exp[9] = {0, 1, 2, 5, 6, 7, 8, -1, -1};
+    quicklist_set_fill(3);
+    ql = ql_new();
+    fill_tail(ql, 9); /* [0,1,2][3,4,5][6,7,8] */
+    DD_CHECK_EQ_INT(1, ql_seek(ql, 3, &it));
+    ql_remove(&it); /* 3 */
+    ql_remove(&it); /* 4: middle node at count 1, still no merge */
+    DD_CHECK_EQ_INT(3, (long long)count_nodes(ql));
+    DD_CHECK_EQ_INT(1, (long long)ql->head->next->count);
+    expect_values(ql, exp, 7);
+    quicklist_set_fill((int)DDUP_QL_FILL);
+    ql_free(ql);
+}
+
 int main(void)
 {
     DD_RUN(test_new_empty);
@@ -455,5 +661,10 @@ int main(void)
     DD_RUN(test_differential);
     DD_RUN(test_reject_huge_element);
     DD_RUN(test_configurable_fill);
+    DD_RUN(test_merge_basic);
+    DD_RUN(test_merge_into_prev);
+    DD_RUN(test_merge_size_cap);
+    DD_RUN(test_merge_pop_end);
+    DD_RUN(test_merge_disabled_tiny_fill);
     return DD_TEST_SUMMARY();
 }

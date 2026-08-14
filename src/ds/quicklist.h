@@ -2,8 +2,11 @@
  *
  * Each node packs up to DDUP_QL_FILL elements into one listpack; pushes to a
  * full end node allocate a new node (only end nodes ever grow), removals
- * unlink a node once it runs empty. Sparse middle nodes are NOT merged back
- * (documented simplification vs Redis, which relies on compression passes).
+ * unlink a node once it runs empty. A removal that leaves a node sparse
+ * (fewer than fill/4 entries) folds a neighbour into it (or it into its
+ * neighbour) when the combined size stays within 2*fill - same intent as
+ * Redis' merge pass, but without compression and only on the delete path
+ * (pushes never trigger merges).
  *
  * Iterators are stable across reads; any mutating call (ql_set, ql_remove,
  * ql_push, ql_pop) may realloc a node's listpack, so the iterator must be
