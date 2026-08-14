@@ -7,8 +7,13 @@
 #include "resp/resp.h"
 
 /* Forward declaration: when pool is set, memory is borrowed from a
- * core/buf_pool instead of malloc/realloc. */
+ * core/buf_pool instead of malloc/realloc. Guarded so that TUs including
+ * both this header and core/buf_pool.h stay C99-clean (repeat typedefs
+ * are C11-only; -Wpedantic flags them under forced C99). */
+#ifndef DDUP_BUF_POOL_TYPEDEF
+#define DDUP_BUF_POOL_TYPEDEF
 typedef struct buf_pool buf_pool;
+#endif
 
 typedef struct resp_buf {
     char *data;

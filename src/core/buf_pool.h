@@ -14,12 +14,18 @@ typedef struct buf_pool_free_node {
     struct buf_pool_free_node *next;
 } buf_pool_free_node;
 
-typedef struct buf_pool {
+struct buf_pool {
     size_t sizes[BUF_POOL_TIERS];
     buf_pool_free_node *lists[BUF_POOL_TIERS];
     size_t allocs;      /* fallback allocations (not from a free list) */
     size_t hits;        /* successful borrows from a free list */
-} buf_pool;
+};
+/* Guarded: resp/resp_writer.h may have forward-typedef'd buf_pool already
+ * (repeat typedefs are C11-only). */
+#ifndef DDUP_BUF_POOL_TYPEDEF
+#define DDUP_BUF_POOL_TYPEDEF
+typedef struct buf_pool buf_pool;
+#endif
 
 int buf_pool_init(buf_pool *pool);
 void buf_pool_destroy(buf_pool *pool);
