@@ -6,6 +6,7 @@
 
 #include "core/cluster.h"
 #include "core/config.h"
+#include "ds/obj.h"
 #include "pal/pal_file.h"
 #include "pal/pal_iocp.h"
 #include "pal/pal_platform.h"
@@ -68,6 +69,18 @@ int main(int argc, char **argv)
             if (config_load_file(&cfg, argv[i]) != 0)
                 return 1;
         }
+    }
+
+    /* apply listpack/quicklist encoding thresholds once, before any
+     * worker threads start (the obj layer reads them race-free) */
+    {
+        obj_limits lim = {
+            cfg.list_max_listpack_size,
+            cfg.hash_max_listpack_entries, cfg.hash_max_listpack_value,
+            cfg.set_max_listpack_entries,  cfg.set_max_listpack_value,
+            cfg.zset_max_listpack_entries, cfg.zset_max_listpack_value
+        };
+        obj_limits_apply(&lim);
     }
 
     printf("ddup-server %d.%d.%d (platform: %s, C standard: C%d)\n",
