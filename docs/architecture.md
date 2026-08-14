@@ -430,7 +430,8 @@ DBSIZE 为 O(1)，可能计入尚未回收的过期 key。
                    超阈值转嵌套 rh_table，见"紧凑编码"一节）
   DDUP_OBJ_LIST:   payload = 8 字节指针 -> obj_list（quicklist：
                    listpack 节点的双链表）
-  DDUP_OBJ_SET:    payload = 8 字节指针 -> obj_set（rh_table：member -> 空值）
+  DDUP_OBJ_SET:    payload = 8 字节指针 -> obj_set（小对象 listpack，
+                   超阈值转 rh_table：member -> 空值）
   DDUP_OBJ_ZSET:   payload = 8 字节指针 -> obj_zset（小对象 listpack，
                    超阈值转 dict + skiplist）
 ```
@@ -460,22 +461,29 @@ DBSIZE 为 O(1)，可能计入尚未回收的过期 key。
   即摘除；稀疏中间节点不做合并（Redis 靠压缩遍历处理，此处有意简化，
   记录在案）。list 元素访问走迭代器（seek 从近端跳块、双向遍历、
   remove 后迭代器落在后继）。
-- **小对象双编码**：hash 与 zset 默认使用单个 listpack——
+- **小对象双编码**：hash、zset、set 默认使用单个 listpack——
   hash 存 field/value 交替；zset 存 member/score（`%.17g` 十进制）
-  交替并按 (score, member) 保序。阈值与 Redis 默认一致：
-  128 条目、单值 64 字节（`OBJ_HASH_MAX_LISTPACK_*` /
-  `OBJ_ZSET_MAX_LISTPACK_*`，编译期常量，未接配置项）。写入超阈值时
+  交替并按 (score, member) 保序；set 直接存 member（插入序，lp_find
+  查重）。阈值与 Redis 默认一致：128 条目、单值 64 字节
+  （`OBJ_HASH_MAX_LISTPACK_*` / `OBJ_ZSET_MAX_LISTPACK_*` /
+  `OBJ_SET_MAX_LISTPACK_*`，编译期常量，未接配置项）。写入超阈值时
   一次性转换为全功能结构（rh_table / dict+skiplist），只单向转换
   不降回（同 Redis）。listpack 模式下范围/RANK/LEX 等操作为 ≤128
-  条目的线性扫描。
+  条目的线性扫描；SPOP/SRANDMEMBER/HRANDFIELD/ZRANDMEMBER 直接按
+  随机下标取元素（SPOP 先把 member 拷到栈再删除，规避 listpack
+  realloc 悬垂）。
 - **内存收益**（记账模型实测，128 条目小对象）：list -78%、
-  hash -67%、zset -92%（数字见 docs/performance.md Phase 45）。
+  hash -67%、zset -92%、set -81%（数字见 docs/performance.md
+  Phase 45/46）。
 
 ## Set / ZSet 设计（Phase 5.2）
 
-- **Set**：`obj_set` 即一张 member -> 空值的 rh_table（去重由表保证）。
-  SPOP/SRANDMEMBER 用 db 内置 xorshift 随机源：先收集 member 视图，
-  部分 Fisher-Yates 后取前 k 个（SPOP 删除选中的）；count<0 时有放回抽样。
+- **Set**：小 set 为 listpack 编码（见"紧凑编码"一节）；转换后
+  `obj_set` 为一张 member -> 空值的 rh_table（去重由表保证）。
+  SPOP/SRANDMEMBER 用 db 内置 xorshift 随机源：listpack 模式直接按
+  随机下标取/弹（SPOP 逐个随机弹出，天然去重）；rh_table 模式先收集
+  member 视图，部分 Fisher-Yates 后取前 k 个（SPOP 删除选中的）；
+  count<0 时有放回抽样。
   SINTER/SUNION/SDIFF 结果为临时 rh_table（天然去重），SINTER/SDIFF 遇
   缺失 key 结果为空，SUNION 忽略缺失 key。
 - **ZSet**：小 zset 为 listpack 编码（见"紧凑编码"一节）；转换后为

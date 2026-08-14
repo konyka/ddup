@@ -894,3 +894,16 @@ P64 1550k/3124k。本轮 mt4 两个单元格 0/爬行（c50 GET、c500 P16）
 cmd_resolve 名字样本），故无热路径 A/B 数字。复杂度注记：listpack
 模式下 hash/zset 的范围、RANK、LEX 操作为 ≤128 条目的线性扫描
 （Redis 同策略），超阈值自动转 rh_table / dict+skiplist。
+
+## Phase 46：set 小对象 listpack 编码
+
+同一记账模型测量桩（改造前 = a700f27，改造后 = 4c554f5），
+128 × 8B 成员的 set：
+
+| 对象 | 布局 | 改造前 | 改造后 | 变化 |
+| --- | --- | --- | --- | --- |
+| set | 128 × 8B 成员 | 7232 B（56.5 B/成员） | 1407 B（11.0 B/成员） | -81%（5.1×） |
+
+SPOP/SRANDMEMBER 在 listpack 模式按随机下标直取，不再先收集全体
+member 视图；SINTER/SUNION/SDIFF 的求值遍历改走 obj_set_each，
+结果集仍是临时 rh_table（去重语义不变）。
