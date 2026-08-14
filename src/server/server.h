@@ -15,7 +15,8 @@
 #include "pal/pal_socket.h"
 
 typedef struct server server;
-typedef struct buf_pool buf_pool;
+/* buf_pool comes in via core/session.h -> resp/resp_writer.h; a duplicate
+ * forward typedef here trips -Wpedantic on C99 (repeat typedef is C11). */
 
 /* Backend selection (server_create_ex). */
 #define SERVER_BACKEND_SELECT 0  /* readiness loop (epoll/kqueue/select) */
