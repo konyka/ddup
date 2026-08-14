@@ -2,6 +2,7 @@
 #include "test.h"
 
 #include <stdarg.h>
+#include <stdio.h>
 #include <string.h>
 
 #include "core/command.h"
@@ -173,6 +174,68 @@ static void test_set_rejection_is_transactional(void)
     g_db.watch_refs = 0;
 }
 
+static void test_object_encoding(void)
+{
+    int i;
+    char m[16];
+
+    cmd(3, "SET", "ostr", "v");
+    EXPECT_REPLY("+OK\r\n");
+    cmd(3, "OBJECT", "ENCODING", "ostr");
+    EXPECT_REPLY("$3\r\nraw\r\n");
+
+    cmd(3, "RPUSH", "ol", "a");
+    EXPECT_REPLY(":1\r\n");
+    cmd(3, "OBJECT", "ENCODING", "ol");
+    EXPECT_REPLY("$9\r\nquicklist\r\n");
+
+    /* small containers: listpack */
+    cmd(4, "HSET", "oh", "f", "v");
+    EXPECT_REPLY(":1\r\n");
+    cmd(3, "OBJECT", "ENCODING", "oh");
+    EXPECT_REPLY("$8\r\nlistpack\r\n");
+    cmd(3, "SADD", "os", "m");
+    EXPECT_REPLY(":1\r\n");
+    cmd(3, "OBJECT", "ENCODING", "os");
+    EXPECT_REPLY("$8\r\nlistpack\r\n");
+    cmd(4, "ZADD", "oz", "1", "m");
+    EXPECT_REPLY(":1\r\n");
+    cmd(3, "OBJECT", "ENCODING", "oz");
+    EXPECT_REPLY("$8\r\nlistpack\r\n");
+
+    /* crossing the 128-entry threshold flips the encoding */
+    for (i = 0; i < 129; i++) {
+        snprintf(m, sizeof(m), "f%d", i);
+        cmd(4, "HSET", "oh", m, "v");
+    }
+    cmd(3, "OBJECT", "ENCODING", "oh");
+    EXPECT_REPLY("$9\r\nhashtable\r\n");
+    for (i = 0; i < 129; i++) {
+        snprintf(m, sizeof(m), "m%d", i);
+        cmd(3, "SADD", "os", m);
+    }
+    cmd(3, "OBJECT", "ENCODING", "os");
+    EXPECT_REPLY("$9\r\nhashtable\r\n");
+    for (i = 0; i < 129; i++) {
+        snprintf(m, sizeof(m), "m%d", i);
+        cmd(4, "ZADD", "oz", "1", m);
+    }
+    cmd(3, "OBJECT", "ENCODING", "oz");
+    EXPECT_REPLY("$8\r\nskiplist\r\n");
+
+    /* missing key -> null bulk; command and subcommand case-insensitive */
+    cmd(3, "object", "encoding", "nokey");
+    EXPECT_REPLY("$-1\r\n");
+
+    /* unknown subcommand / arity */
+    cmd(3, "OBJECT", "FOO", "oh");
+    EXPECT_REPLY("-ERR unknown OBJECT subcommand\r\n");
+    cmd(2, "OBJECT", "ENCODING");
+    EXPECT_REPLY("-ERR wrong number of arguments for 'object' command\r\n");
+    cmd(4, "OBJECT", "ENCODING", "oh", "x");
+    EXPECT_REPLY("-ERR wrong number of arguments for 'object' command\r\n");
+}
+
 int main(void)
 {
     db_init(&g_db);
@@ -186,6 +249,7 @@ int main(void)
     DD_RUN(test_unknown_command);
     DD_RUN(test_empty_argv);
     DD_RUN(test_set_rejection_is_transactional);
+    DD_RUN(test_object_encoding);
     resp_buf_free(&g_out);
     db_destroy(&g_db);
     return DD_TEST_SUMMARY();

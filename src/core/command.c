@@ -3247,6 +3247,54 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
         return;
     }
 
+    if (cmd_id == CMD_OBJECT) {
+        /* only the ENCODING subcommand (Redis 7 encoding names) */
+        const char *sub, *k, *v;
+        size_t subl, kl, vl;
+        if (argc != 3) {
+            wrong_args(out, "object");
+            return;
+        }
+        if (!arg_str(&argv[1], &sub, &subl) || !arg_str(&argv[2], &k, &kl))
+            goto bad_type;
+        if (!ci_equal(sub, subl, "ENCODING")) {
+            resp_write_error(out, "ERR unknown OBJECT subcommand", 29);
+            return;
+        }
+        if (!db_get(d, k, kl, &v, &vl, now_ms)) {
+            resp_write_bulk(out, NULL, 0);
+            return;
+        }
+        {
+            const char *enc;
+            switch (obj_tag_of(v, vl)) {
+            case DDUP_OBJ_HASH:
+                enc = obj_hash_is_listpack((obj_hash *)obj_unpack_ptr(v, vl))
+                          ? "listpack"
+                          : "hashtable";
+                break;
+            case DDUP_OBJ_LIST:
+                enc = "quicklist";
+                break;
+            case DDUP_OBJ_SET:
+                enc = obj_set_is_listpack((obj_set *)obj_unpack_ptr(v, vl))
+                          ? "listpack"
+                          : "hashtable";
+                break;
+            case DDUP_OBJ_ZSET:
+                enc = obj_zset_is_listpack((obj_zset *)obj_unpack_ptr(v, vl))
+                          ? "listpack"
+                          : "skiplist";
+                break;
+            default:
+                enc = "raw"; /* strings carry no int/embstr optimization */
+                break;
+            }
+            resp_write_bulk(out, enc, strlen(enc));
+        }
+        return;
+    }
+
     if (cmd_id == CMD_KEYS) {
         const char *pat;
         size_t plen;
@@ -7542,6 +7590,7 @@ static const cmd_entry CMD_TABLE[] = {
     {"psubscribe", CMD_PSUBSCRIBE, 2, -1, 0, 0},
     {"punsubscribe", CMD_PUNSUBSCRIBE, 1, -1, 0, 0},
     {"copy", CMD_COPY, 3, -1, 0, CMD_WRITE},
+    {"object", CMD_OBJECT, 3, 3, 0, 0},
 };
 
 static const cmd_entry *cmd_table_entry(uint16_t id)
