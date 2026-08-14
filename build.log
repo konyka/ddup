@@ -30,7 +30,7 @@
 -- Performing Test CMAKE_HAVE_LIBC_PTHREAD - Success
 -- Found Threads: TRUE
 -- ddup: TLS enabled (OpenSSL 3.0.13)
--- Configuring done (10.4s)
+-- Configuring done (11.5s)
 -- Generating done (0.1s)
 -- Build files have been written to: /home/runner/work/ddup/ddup/build
 [  0%] Building C object CMakeFiles/ddup_lua.dir/deps/lua/lapi.c.o
@@ -117,15 +117,6 @@ In function ‘snprintf’,
       |          ^
 In function ‘snprintf’,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:423:9,
-    inlined from ‘zlp_entry_score’ at /home/runner/work/ddup/ddup/src/ds/obj.c:623:31,
-    inlined from ‘obj_zset_add’ at /home/runner/work/ddup/ddup/src/ds/obj.c:787:31,
-    inlined from ‘obj_zset_add’ at /home/runner/work/ddup/ddup/src/ds/obj.c:777:5,
-    inlined from ‘load_payload’ at /home/runner/work/ddup/ddup/src/core/snapshot.c:504:39:
-/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
-   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
-      |          ^
-In function ‘snprintf’,
-    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:423:9,
     inlined from ‘obj_zset_iter_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:946:35,
     inlined from ‘obj_zset_iter_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:942:13,
     inlined from ‘command_dispatch’ at /home/runner/work/ddup/ddup/src/core/command.c:6086:34:
@@ -145,6 +136,15 @@ In function ‘snprintf’,
     inlined from ‘obj_zset_last_in_lex_range’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1103:39,
     inlined from ‘obj_zset_last_in_lex_range’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1093:5,
     inlined from ‘command_dispatch’ at /home/runner/work/ddup/ddup/src/core/command.c:6246:18:
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
+   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^
+In function ‘snprintf’,
+    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:423:9,
+    inlined from ‘zlp_entry_score’ at /home/runner/work/ddup/ddup/src/ds/obj.c:623:31,
+    inlined from ‘obj_zset_add’ at /home/runner/work/ddup/ddup/src/ds/obj.c:787:31,
+    inlined from ‘obj_zset_add’ at /home/runner/work/ddup/ddup/src/ds/obj.c:777:5,
+    inlined from ‘load_payload’ at /home/runner/work/ddup/ddup/src/core/snapshot.c:504:39:
 /usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
    54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
       |          ^
@@ -336,15 +336,6 @@ In function ‘snprintf’,
       |          ^
 In function ‘snprintf’,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:423:9,
-    inlined from ‘zlp_entry_score’ at /home/runner/work/ddup/ddup/src/ds/obj.c:623:31,
-    inlined from ‘obj_zset_add’ at /home/runner/work/ddup/ddup/src/ds/obj.c:787:31,
-    inlined from ‘obj_zset_add’ at /home/runner/work/ddup/ddup/src/ds/obj.c:777:5,
-    inlined from ‘load_payload’ at /home/runner/work/ddup/ddup/src/core/snapshot.c:504:39:
-/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
-   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
-      |          ^
-In function ‘snprintf’,
-    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:423:9,
     inlined from ‘obj_zset_iter_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:946:35,
     inlined from ‘obj_zset_iter_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:942:13,
     inlined from ‘command_dispatch’ at /home/runner/work/ddup/ddup/src/core/command.c:6086:34:
@@ -364,6 +355,15 @@ In function ‘snprintf’,
     inlined from ‘obj_zset_last_in_lex_range’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1103:39,
     inlined from ‘obj_zset_last_in_lex_range’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1093:5,
     inlined from ‘command_dispatch’ at /home/runner/work/ddup/ddup/src/core/command.c:6246:18:
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
+   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^
+In function ‘snprintf’,
+    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:423:9,
+    inlined from ‘zlp_entry_score’ at /home/runner/work/ddup/ddup/src/ds/obj.c:623:31,
+    inlined from ‘obj_zset_add’ at /home/runner/work/ddup/ddup/src/ds/obj.c:787:31,
+    inlined from ‘obj_zset_add’ at /home/runner/work/ddup/ddup/src/ds/obj.c:777:5,
+    inlined from ‘load_payload’ at /home/runner/work/ddup/ddup/src/core/snapshot.c:504:39:
 /usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
    54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
       |          ^
@@ -766,12 +766,6 @@ In function ‘snprintf’,
       |          ^
 In function ‘snprintf’,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:423:9,
-    inlined from ‘obj_set_convert’ at /home/runner/work/ddup/ddup/src/ds/obj.c:482:35:
-/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
-   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
-      |          ^
-In function ‘snprintf’,
-    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:423:9,
     inlined from ‘obj_zset_iter_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:946:35,
     inlined from ‘obj_zset_iter_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:942:13,
     inlined from ‘command_dispatch’ at /home/runner/work/ddup/ddup/src/core/command.c:6086:34:
@@ -791,6 +785,12 @@ In function ‘snprintf’,
     inlined from ‘obj_zset_last_in_lex_range’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1103:39,
     inlined from ‘obj_zset_last_in_lex_range’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1093:5,
     inlined from ‘command_dispatch’ at /home/runner/work/ddup/ddup/src/core/command.c:6246:18:
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
+   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^
+In function ‘snprintf’,
+    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:423:9,
+    inlined from ‘obj_set_convert’ at /home/runner/work/ddup/ddup/src/ds/obj.c:482:35:
 /usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
    54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
       |          ^
@@ -1212,15 +1212,6 @@ In function ‘snprintf’,
       |          ^
 In function ‘snprintf’,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:423:9,
-    inlined from ‘zlp_entry_score’ at /home/runner/work/ddup/ddup/src/ds/obj.c:623:31,
-    inlined from ‘obj_zset_add’ at /home/runner/work/ddup/ddup/src/ds/obj.c:787:31,
-    inlined from ‘obj_zset_add’ at /home/runner/work/ddup/ddup/src/ds/obj.c:777:5,
-    inlined from ‘load_payload’ at /home/runner/work/ddup/ddup/src/core/snapshot.c:504:39:
-/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
-   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
-      |          ^
-In function ‘snprintf’,
-    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:423:9,
     inlined from ‘obj_zset_iter_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:946:35,
     inlined from ‘obj_zset_iter_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:942:13,
     inlined from ‘command_dispatch’ at /home/runner/work/ddup/ddup/src/core/command.c:6086:34:
@@ -1240,6 +1231,15 @@ In function ‘snprintf’,
     inlined from ‘obj_zset_last_in_lex_range’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1103:39,
     inlined from ‘obj_zset_last_in_lex_range’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1093:5,
     inlined from ‘command_dispatch’ at /home/runner/work/ddup/ddup/src/core/command.c:6246:18:
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
+   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^
+In function ‘snprintf’,
+    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:423:9,
+    inlined from ‘zlp_entry_score’ at /home/runner/work/ddup/ddup/src/ds/obj.c:623:31,
+    inlined from ‘obj_zset_add’ at /home/runner/work/ddup/ddup/src/ds/obj.c:787:31,
+    inlined from ‘obj_zset_add’ at /home/runner/work/ddup/ddup/src/ds/obj.c:777:5,
+    inlined from ‘load_payload’ at /home/runner/work/ddup/ddup/src/core/snapshot.c:504:39:
 /usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
    54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
       |          ^
@@ -2215,60 +2215,34 @@ Reading package lists...
 Building dependency tree...
 Reading state information...
 The following additional packages will be installed:
-  libbabeltrace1 libc-bin libc-dev-bin libc6 libc6-dbg libc6-dev libc6-i386
-  libdebuginfod-common libdebuginfod1t64 libipt2 libjemalloc2 liblzf1
-  libsource-highlight-common libsource-highlight4t64 locales
+  libbabeltrace1 libc6-dbg libdebuginfod-common libdebuginfod1t64 libipt2
+  libjemalloc2 liblzf1 libsource-highlight-common libsource-highlight4t64
 Suggested packages:
-  gdb-doc gdbserver glibc-doc libnss-nis libnss-nisplus manpages-dev
-  ruby-redis
-Recommended packages:
-  manpages-dev libc-devtools
+  gdb-doc gdbserver ruby-redis
 The following NEW packages will be installed:
   gdb libbabeltrace1 libc6-dbg libdebuginfod-common libdebuginfod1t64 libipt2
   libjemalloc2 liblzf1 libsource-highlight-common libsource-highlight4t64
   redis-server redis-tools
-The following packages will be upgraded:
-  libc-bin libc-dev-bin libc6 libc6-dev libc6-i386 locales
-6 upgraded, 12 newly installed, 0 to remove and 91 not upgraded.
-Need to get 26.7 MB of archives.
+0 upgraded, 12 newly installed, 0 to remove and 8 not upgraded.
+Need to get 13.6 MB of archives.
 After this operation, 31.4 MB of additional disk space will be used.
 Get:1 file:/etc/apt/apt-mirrors.txt Mirrorlist [144 B]
-Get:2 http://azure.archive.ubuntu.com/ubuntu noble-updates/main amd64 libc6-dev amd64 2.39-0ubuntu8.8 [2125 kB]
-Get:3 http://azure.archive.ubuntu.com/ubuntu noble-updates/main amd64 libc-dev-bin amd64 2.39-0ubuntu8.8 [20.4 kB]
-Get:4 http://azure.archive.ubuntu.com/ubuntu noble-updates/main amd64 libc6-i386 amd64 2.39-0ubuntu8.8 [2787 kB]
-Get:5 http://azure.archive.ubuntu.com/ubuntu noble-updates/main amd64 libc6 amd64 2.39-0ubuntu8.8 [3262 kB]
-Get:6 http://azure.archive.ubuntu.com/ubuntu noble-updates/main amd64 libc-bin amd64 2.39-0ubuntu8.8 [682 kB]
-Get:7 http://azure.archive.ubuntu.com/ubuntu noble-updates/main amd64 libdebuginfod-common all 0.190-1.1ubuntu0.1 [14.6 kB]
-Get:8 http://azure.archive.ubuntu.com/ubuntu noble/universe amd64 libjemalloc2 amd64 5.3.0-2build1 [256 kB]
-Get:9 http://azure.archive.ubuntu.com/ubuntu noble/universe amd64 liblzf1 amd64 3.6-4 [7624 B]
-Get:10 http://azure.archive.ubuntu.com/ubuntu noble-updates/universe amd64 redis-tools amd64 5:7.0.15-1ubuntu0.24.04.4 [1166 kB]
-Get:11 http://azure.archive.ubuntu.com/ubuntu noble-updates/universe amd64 redis-server amd64 5:7.0.15-1ubuntu0.24.04.4 [51.7 kB]
-Get:12 http://azure.archive.ubuntu.com/ubuntu noble-updates/main amd64 locales all 2.39-0ubuntu8.8 [4231 kB]
-Get:13 http://azure.archive.ubuntu.com/ubuntu noble/main amd64 libbabeltrace1 amd64 1.5.11-3build3 [164 kB]
-Get:14 http://azure.archive.ubuntu.com/ubuntu noble-updates/main amd64 libdebuginfod1t64 amd64 0.190-1.1ubuntu0.1 [17.1 kB]
-Get:15 http://azure.archive.ubuntu.com/ubuntu noble/main amd64 libipt2 amd64 2.0.6-1build1 [45.7 kB]
-Get:16 http://azure.archive.ubuntu.com/ubuntu noble/main amd64 libsource-highlight-common all 3.1.9-4.3build1 [64.2 kB]
-Get:17 http://azure.archive.ubuntu.com/ubuntu noble/main amd64 libsource-highlight4t64 amd64 3.1.9-4.3build1 [258 kB]
-Get:18 http://azure.archive.ubuntu.com/ubuntu noble-updates/main amd64 gdb amd64 15.1-1ubuntu1~24.04.1 [4083 kB]
-Get:19 http://azure.archive.ubuntu.com/ubuntu noble-updates/main amd64 libc6-dbg amd64 2.39-0ubuntu8.8 [7461 kB]
+Get:2 http://azure.archive.ubuntu.com/ubuntu noble-updates/main amd64 libdebuginfod-common all 0.190-1.1ubuntu0.1 [14.6 kB]
+Get:3 http://azure.archive.ubuntu.com/ubuntu noble/universe amd64 libjemalloc2 amd64 5.3.0-2build1 [256 kB]
+Get:4 http://azure.archive.ubuntu.com/ubuntu noble/universe amd64 liblzf1 amd64 3.6-4 [7624 B]
+Get:5 http://azure.archive.ubuntu.com/ubuntu noble-updates/universe amd64 redis-tools amd64 5:7.0.15-1ubuntu0.24.04.4 [1166 kB]
+Get:6 http://azure.archive.ubuntu.com/ubuntu noble-updates/universe amd64 redis-server amd64 5:7.0.15-1ubuntu0.24.04.4 [51.7 kB]
+Get:7 http://azure.archive.ubuntu.com/ubuntu noble/main amd64 libbabeltrace1 amd64 1.5.11-3build3 [164 kB]
+Get:8 http://azure.archive.ubuntu.com/ubuntu noble-updates/main amd64 libdebuginfod1t64 amd64 0.190-1.1ubuntu0.1 [17.1 kB]
+Get:9 http://azure.archive.ubuntu.com/ubuntu noble/main amd64 libipt2 amd64 2.0.6-1build1 [45.7 kB]
+Get:10 http://azure.archive.ubuntu.com/ubuntu noble/main amd64 libsource-highlight-common all 3.1.9-4.3build1 [64.2 kB]
+Get:11 http://azure.archive.ubuntu.com/ubuntu noble/main amd64 libsource-highlight4t64 amd64 3.1.9-4.3build1 [258 kB]
+Get:12 http://azure.archive.ubuntu.com/ubuntu noble-updates/main amd64 gdb amd64 15.1-1ubuntu1~24.04.1 [4083 kB]
+Get:13 http://azure.archive.ubuntu.com/ubuntu noble-updates/main amd64 libc6-dbg amd64 2.39-0ubuntu8.8 [7461 kB]
 Preconfiguring packages ...
-Fetched 26.7 MB in 2s (16.2 MB/s)
-(Reading database ... (Reading database ... 5%(Reading database ... 10%(Reading database ... 15%(Reading database ... 20%(Reading database ... 25%(Reading database ... 30%(Reading database ... 35%(Reading database ... 40%(Reading database ... 45%(Reading database ... 50%(Reading database ... 55%(Reading database ... 60%(Reading database ... 65%(Reading database ... 70%(Reading database ... 75%(Reading database ... 80%(Reading database ... 85%(Reading database ... 90%(Reading database ... 95%(Reading database ... 100%(Reading database ... 202954 files and directories currently installed.)
-Preparing to unpack .../libc6-dev_2.39-0ubuntu8.8_amd64.deb ...
-Unpacking libc6-dev:amd64 (2.39-0ubuntu8.8) over (2.39-0ubuntu8.7) ...
-Preparing to unpack .../libc-dev-bin_2.39-0ubuntu8.8_amd64.deb ...
-Unpacking libc-dev-bin (2.39-0ubuntu8.8) over (2.39-0ubuntu8.7) ...
-Preparing to unpack .../libc6-i386_2.39-0ubuntu8.8_amd64.deb ...
-Unpacking libc6-i386 (2.39-0ubuntu8.8) over (2.39-0ubuntu8.7) ...
-Preparing to unpack .../libc6_2.39-0ubuntu8.8_amd64.deb ...
-Unpacking libc6:amd64 (2.39-0ubuntu8.8) over (2.39-0ubuntu8.7) ...
-Setting up libc6:amd64 (2.39-0ubuntu8.8) ...
-(Reading database ... (Reading database ... 5%(Reading database ... 10%(Reading database ... 15%(Reading database ... 20%(Reading database ... 25%(Reading database ... 30%(Reading database ... 35%(Reading database ... 40%(Reading database ... 45%(Reading database ... 50%(Reading database ... 55%(Reading database ... 60%(Reading database ... 65%(Reading database ... 70%(Reading database ... 75%(Reading database ... 80%(Reading database ... 85%(Reading database ... 90%(Reading database ... 95%(Reading database ... 100%(Reading database ... 202954 files and directories currently installed.)
-Preparing to unpack .../libc-bin_2.39-0ubuntu8.8_amd64.deb ...
-Unpacking libc-bin (2.39-0ubuntu8.8) over (2.39-0ubuntu8.7) ...
-Setting up libc-bin (2.39-0ubuntu8.8) ...
+Fetched 13.6 MB in 0s (87.0 MB/s)
 Selecting previously unselected package libdebuginfod-common.
-(Reading database ... (Reading database ... 5%(Reading database ... 10%(Reading database ... 15%(Reading database ... 20%(Reading database ... 25%(Reading database ... 30%(Reading database ... 35%(Reading database ... 40%(Reading database ... 45%(Reading database ... 50%(Reading database ... 55%(Reading database ... 60%(Reading database ... 65%(Reading database ... 70%(Reading database ... 75%(Reading database ... 80%(Reading database ... 85%(Reading database ... 90%(Reading database ... 95%(Reading database ... 100%(Reading database ... 202954 files and directories currently installed.)
+(Reading database ... (Reading database ... 5%(Reading database ... 10%(Reading database ... 15%(Reading database ... 20%(Reading database ... 25%(Reading database ... 30%(Reading database ... 35%(Reading database ... 40%(Reading database ... 45%(Reading database ... 50%(Reading database ... 55%(Reading database ... 60%(Reading database ... 65%(Reading database ... 70%(Reading database ... 75%(Reading database ... 80%(Reading database ... 85%(Reading database ... 90%(Reading database ... 95%(Reading database ... 100%(Reading database ... 203139 files and directories currently installed.)
 Preparing to unpack .../00-libdebuginfod-common_0.190-1.1ubuntu0.1_all.deb ...
 Unpacking libdebuginfod-common (0.190-1.1ubuntu0.1) ...
 Selecting previously unselected package libjemalloc2:amd64.
@@ -2283,47 +2257,38 @@ Unpacking redis-tools (5:7.0.15-1ubuntu0.24.04.4) ...
 Selecting previously unselected package redis-server.
 Preparing to unpack .../04-redis-server_5%3a7.0.15-1ubuntu0.24.04.4_amd64.deb ...
 Unpacking redis-server (5:7.0.15-1ubuntu0.24.04.4) ...
-Preparing to unpack .../05-locales_2.39-0ubuntu8.8_all.deb ...
-Unpacking locales (2.39-0ubuntu8.8) over (2.39-0ubuntu8.7) ...
 Selecting previously unselected package libbabeltrace1:amd64.
-Preparing to unpack .../06-libbabeltrace1_1.5.11-3build3_amd64.deb ...
+Preparing to unpack .../05-libbabeltrace1_1.5.11-3build3_amd64.deb ...
 Unpacking libbabeltrace1:amd64 (1.5.11-3build3) ...
 Selecting previously unselected package libdebuginfod1t64:amd64.
-Preparing to unpack .../07-libdebuginfod1t64_0.190-1.1ubuntu0.1_amd64.deb ...
+Preparing to unpack .../06-libdebuginfod1t64_0.190-1.1ubuntu0.1_amd64.deb ...
 Unpacking libdebuginfod1t64:amd64 (0.190-1.1ubuntu0.1) ...
 Selecting previously unselected package libipt2.
-Preparing to unpack .../08-libipt2_2.0.6-1build1_amd64.deb ...
+Preparing to unpack .../07-libipt2_2.0.6-1build1_amd64.deb ...
 Unpacking libipt2 (2.0.6-1build1) ...
 Selecting previously unselected package libsource-highlight-common.
-Preparing to unpack .../09-libsource-highlight-common_3.1.9-4.3build1_all.deb ...
+Preparing to unpack .../08-libsource-highlight-common_3.1.9-4.3build1_all.deb ...
 Unpacking libsource-highlight-common (3.1.9-4.3build1) ...
 Selecting previously unselected package libsource-highlight4t64:amd64.
-Preparing to unpack .../10-libsource-highlight4t64_3.1.9-4.3build1_amd64.deb ...
+Preparing to unpack .../09-libsource-highlight4t64_3.1.9-4.3build1_amd64.deb ...
 Unpacking libsource-highlight4t64:amd64 (3.1.9-4.3build1) ...
 Selecting previously unselected package gdb.
-Preparing to unpack .../11-gdb_15.1-1ubuntu1~24.04.1_amd64.deb ...
+Preparing to unpack .../10-gdb_15.1-1ubuntu1~24.04.1_amd64.deb ...
 Unpacking gdb (15.1-1ubuntu1~24.04.1) ...
 Selecting previously unselected package libc6-dbg:amd64.
-Preparing to unpack .../12-libc6-dbg_2.39-0ubuntu8.8_amd64.deb ...
+Preparing to unpack .../11-libc6-dbg_2.39-0ubuntu8.8_amd64.deb ...
 Unpacking libc6-dbg:amd64 (2.39-0ubuntu8.8) ...
 Setting up libdebuginfod-common (0.190-1.1ubuntu0.1) ...
 Setting up libjemalloc2:amd64 (5.3.0-2build1) ...
-Setting up locales (2.39-0ubuntu8.8) ...
-Generating locales (this might take a while)...
-  en_US.UTF-8... done
-Generation complete.
 Setting up libsource-highlight-common (3.1.9-4.3build1) ...
 Setting up libc6-dbg:amd64 (2.39-0ubuntu8.8) ...
 Setting up liblzf1:amd64 (3.6-4) ...
 Setting up libipt2 (2.0.6-1build1) ...
 Setting up libbabeltrace1:amd64 (1.5.11-3build3) ...
-Setting up libc6-i386 (2.39-0ubuntu8.8) ...
-Setting up libc-dev-bin (2.39-0ubuntu8.8) ...
 Setting up libdebuginfod1t64:amd64 (0.190-1.1ubuntu0.1) ...
 Setting up libsource-highlight4t64:amd64 (3.1.9-4.3build1) ...
 Setting up gdb (15.1-1ubuntu1~24.04.1) ...
 Setting up redis-tools (5:7.0.15-1ubuntu0.24.04.4) ...
-Setting up libc6-dev:amd64 (2.39-0ubuntu8.8) ...
 Setting up redis-server (5:7.0.15-1ubuntu0.24.04.4) ...
 Created symlink /etc/systemd/system/redis.service → /usr/lib/systemd/system/redis-server.service.
 Created symlink /etc/systemd/system/multi-user.target.wants/redis-server.service → /usr/lib/systemd/system/redis-server.service.
@@ -2333,23 +2298,10 @@ Processing triggers for libc-bin (2.39-0ubuntu8.8) ...
 
 Running kernel seems to be up-to-date.
 
-Restarting services...
- systemctl restart chrony.service containerd.service cron.service haveged.service hv-kvp-daemon.service multipathd.service packagekit.service php8.3-fpm.service polkit.service rsyslog.service systemd-journald.service systemd-networkd.service systemd-resolved.service systemd-udevd.service udisks2.service
-
-Service restarts being deferred:
- systemctl restart ModemManager.service
- /etc/needrestart/restart.d/dbus.service
- systemctl restart docker.service
- systemctl restart getty@tty1.service
- systemctl restart hosted-compute-agent.service
- systemctl restart networkd-dispatcher.service
- systemctl restart serial-getty@ttyS0.service
- systemctl restart systemd-logind.service
- systemctl restart walinuxagent.service
+No services need to be restarted.
 
 No containers need to be restarted.
 
-User sessions running outdated binaries:
- runner @ user manager service: systemd[1041]
+No user sessions are running outdated binaries.
 
 No VM guests are running outdated hypervisor (qemu) binaries on this host.
