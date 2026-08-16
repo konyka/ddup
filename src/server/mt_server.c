@@ -1246,6 +1246,10 @@ static int mt_is_single_key(uint16_t cmd)
     case CMD_GET:
     case CMD_SET:
     case CMD_SETNX:
+    case CMD_GETBIT:
+    case CMD_SETBIT:
+    case CMD_BITCOUNT:
+    case CMD_BITPOS:
     case CMD_DUMP:
     case CMD_RESTORE:
     case CMD_INCR:

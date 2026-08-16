@@ -8,16 +8,16 @@
 
 | 类别 | 数量 |
 | --- | --- |
-| 完全未实现的独立顶层命令 | 99 |
+| 完全未实现的独立顶层命令 | 95 |
 | 整体缺失的顶层容器 | 11（对应 Redis 子命令条目 124） |
 | 已实现容器内缺失的子命令 | 26（CLUSTER 15、CONFIG 3、OBJECT 4、PUBSUB 1、SCRIPT 3） |
 | 已注册但选项/语义不完整 | 见下方手工清单 |
 
 ## A. 完全缺失的独立顶层命令（按 Redis group 分组）
 
-### bitmap（7）
+### bitmap（3）
 
-`BITCOUNT`, `BITFIELD`, `BITFIELD_RO`, `BITOP`, `BITPOS`, `GETBIT`, `SETBIT`
+`BITFIELD`, `BITFIELD_RO`, `BITOP`
 
 ### connection（3）
 
@@ -118,7 +118,7 @@
 ## 审计基线（机器断言，勿手改格式）
 
 <!-- AUDIT-BASELINE-START
-missing_top: acl bgrewriteaof bgsave bitcount bitfield bitfield_ro bitop bitpos blmove blmpop blpop brpop brpoplpush bzmpop bzpopmax bzpopmin client command debug eval_ro evalsha_ro failover fcall fcall_ro flushall function geoadd geodist geohash geopos georadius georadiusbymember georadiusbymember_ro georadius_ro geosearch geosearchstore getbit hello hincrbyfloat hscan latency lcs linsert lmove lmpop lolwut memory module monitor move pfadd pfcount pfdebug pfmerge pfselftest readonly readwrite replconf reset restore-asking role sentinel setbit slaveof slowlog sort sort_ro sscan substr time wait waitaof xack xadd xautoclaim xclaim xdel xgroup xinfo xlen xpending xrange xread xreadgroup xrevrange xsetid xtrim zdiff zdiffstore zinter zintercard zinterstore zlexcount zmpop zrangestore zrevrangebyscore zscan zunion zunionstore
+missing_top: acl bgrewriteaof bgsave bitfield bitfield_ro bitop blmove blmpop blpop brpop brpoplpush bzmpop bzpopmax bzpopmin client command debug eval_ro evalsha_ro failover fcall fcall_ro flushall function geoadd geodist geohash geopos georadius georadiusbymember georadiusbymember_ro georadius_ro geosearch geosearchstore hello hincrbyfloat hscan latency lcs linsert lmove lmpop lolwut memory module monitor move pfadd pfcount pfdebug pfmerge pfselftest readonly readwrite replconf reset restore-asking role sentinel slaveof slowlog sort sort_ro sscan substr time wait waitaof xack xadd xautoclaim xclaim xdel xgroup xinfo xlen xpending xrange xread xreadgroup xrevrange xsetid xtrim zdiff zdiffstore zinter zintercard zinterstore zlexcount zmpop zrangestore zrevrangebyscore zscan zunion zunionstore
 missing_containers: acl client command function latency memory module sentinel slowlog xgroup xinfo
 missing_sub: cluster addslotsrange
 missing_sub: cluster bumpepoch

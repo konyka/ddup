@@ -296,10 +296,14 @@ enum {
     CMD_COPY,
     CMD_OBJECT,
     CMD_SETNX,
-    CMD_MSETNX
+    CMD_MSETNX,
+    CMD_GETBIT,
+    CMD_SETBIT,
+    CMD_BITCOUNT,
+    CMD_BITPOS
 };
 
-#define CMD_MAX CMD_MSETNX
+#define CMD_MAX CMD_BITPOS
 
 /* Resolve a command name to its stable ID; case-insensitive. */
 uint16_t cmd_resolve(const char *name, size_t len);

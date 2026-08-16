@@ -537,6 +537,8 @@ static void storage_length_error(resp_buf *out)
     resp_write_error(out, E, sizeof(E) - 1);
 }
 
+static int parse_i64(const char *s, size_t len, long long *out);
+
 static int storage_key_ok(size_t klen)
 {
     return klen <= UINT32_MAX;
@@ -545,6 +547,33 @@ static int storage_key_ok(size_t klen)
 static int storage_string_ok(size_t klen, size_t vlen)
 {
     return storage_key_ok(klen) && vlen < UINT32_MAX;
+}
+
+static int bitmap_offset(const char *s, size_t len, size_t *out)
+{
+    long long n;
+    if (!parse_i64(s, len, &n) || n < 0 ||
+        (unsigned long long)n > (unsigned long long)SIZE_MAX)
+        return 0;
+    *out = (size_t)n;
+    return 1;
+}
+
+static unsigned bitmap_popcount_byte(unsigned char byte)
+{
+    byte = (unsigned char)(byte - ((byte >> 1) & 0x55U));
+    byte = (unsigned char)((byte & 0x33U) + ((byte >> 2) & 0x33U));
+    return (unsigned)((byte + (byte >> 4)) & 0x0fU);
+}
+
+static long long bitmap_pos_byte(unsigned char byte, int bit)
+{
+    int i;
+    for (i = 0; i < 8; i++) {
+        if (((byte >> (7 - i)) & 1U) == (unsigned)bit)
+            return i;
+    }
+    return -1;
 }
 
 /* Fetch the hash object for key; create when missing && create != 0.
@@ -3130,6 +3159,221 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
             return;
         }
         resp_write_integer(out, 1);
+        return;
+    }
+
+    if (cmd_id == CMD_GETBIT) {
+        const char *k, *off, *v, *sv;
+        size_t kl, offl, bit, vl, sl;
+        if (argc != 3) {
+            wrong_args(out, "getbit");
+            return;
+        }
+        if (!arg_str(&argv[1], &k, &kl) || !arg_str(&argv[2], &off, &offl))
+            goto bad_type;
+        if (!bitmap_offset(off, offl, &bit)) {
+            resp_write_error(out, "ERR bit offset is not an integer or out of range",
+                             48);
+            return;
+        }
+        if (!db_get(d, k, kl, &v, &vl, now_ms)) {
+            resp_write_integer(out, 0);
+            return;
+        }
+        if (!as_string(out, v, vl, &sv, &sl))
+            return;
+        if (bit / 8 >= sl)
+            resp_write_integer(out, 0);
+        else
+            resp_write_integer(out,
+                ((unsigned char)sv[bit / 8] >> (7 - (bit % 8))) & 1U);
+        return;
+    }
+
+    if (cmd_id == CMD_SETBIT) {
+        const char *k, *off, *bv, *v, *sv;
+        size_t kl, offl, bvl, bit, vl, sl, bytes, oldlen;
+        long long b;
+        resp_buf tmp;
+        if (argc != 4) {
+            wrong_args(out, "setbit");
+            return;
+        }
+        if (!arg_str(&argv[1], &k, &kl) || !arg_str(&argv[2], &off, &offl) ||
+            !arg_str(&argv[3], &bv, &bvl))
+            goto bad_type;
+        if (!bitmap_offset(off, offl, &bit)) {
+            resp_write_error(out, "ERR bit offset is not an integer or out of range",
+                             48);
+            return;
+        }
+        if (!parse_i64(bv, bvl, &b) || (b != 0 && b != 1)) {
+            resp_write_error(out, "ERR bit is not an integer or out of range", 41);
+            return;
+        }
+        if (bit == SIZE_MAX || bit / 8 >= UINT32_MAX) {
+            storage_length_error(out);
+            return;
+        }
+        bytes = bit / 8 + 1;
+        sv = NULL;
+        sl = 0;
+        if (db_get(d, k, kl, &v, &vl, now_ms) && !as_string(out, v, vl, &sv, &sl))
+            return;
+        oldlen = sl;
+        if (bytes < oldlen)
+            bytes = oldlen;
+        if (!storage_string_ok(kl, bytes)) {
+            storage_length_error(out);
+            return;
+        }
+        if (oom_blocked(d, out))
+            return;
+        resp_buf_init(&tmp);
+        if (resp_buf_reserve(&tmp, bytes) != 0) {
+            resp_buf_free(&tmp);
+            storage_length_error(out);
+            return;
+        }
+        if (oldlen != 0)
+            memcpy(tmp.data, sv, oldlen);
+        if (bytes > oldlen)
+            memset(tmp.data + oldlen, 0, bytes - oldlen);
+        tmp.len = bytes;
+        {
+            unsigned char mask = (unsigned char)(1U << (7 - (bit % 8)));
+            int old = (tmp.data[bit / 8] & mask) != 0;
+            if (b)
+                tmp.data[bit / 8] |= mask;
+            else
+                tmp.data[bit / 8] &= (unsigned char)~mask;
+            if (db_set_string(d, k, kl, tmp.data, tmp.len, now_ms) != 0) {
+                resp_buf_free(&tmp);
+                storage_length_error(out);
+                return;
+            }
+            resp_buf_free(&tmp);
+            resp_write_integer(out, old);
+        }
+        return;
+    }
+
+    if (cmd_id == CMD_BITCOUNT) {
+        const char *k, *v, *sv;
+        size_t kl, vl, sl, begin = 0, end;
+        long long start, stop, count = 0;
+        if (argc != 2 && argc != 4) {
+            wrong_args(out, "bitcount");
+            return;
+        }
+        if (!arg_str(&argv[1], &k, &kl))
+            goto bad_type;
+        if (!db_get(d, k, kl, &v, &vl, now_ms)) {
+            resp_write_integer(out, 0);
+            return;
+        }
+        if (!as_string(out, v, vl, &sv, &sl))
+            return;
+        if (sl == 0) {
+            resp_write_integer(out, 0);
+            return;
+        }
+        end = sl - 1;
+        if (argc == 4) {
+            const char *a, *z;
+            size_t al, zl;
+            if (!arg_str(&argv[2], &a, &al) || !arg_str(&argv[3], &z, &zl))
+                goto bad_type;
+            if (!parse_i64(a, al, &start) || !parse_i64(z, zl, &stop)) {
+                resp_write_error(out, ERR_NOT_INT, sizeof(ERR_NOT_INT) - 1);
+                return;
+            }
+            if (start < 0)
+                start += (long long)sl;
+            if (stop < 0)
+                stop += (long long)sl;
+            if (start < 0)
+                start = 0;
+            if (stop < 0 || start >= (long long)sl || start > stop) {
+                resp_write_integer(out, 0);
+                return;
+            }
+            begin = (size_t)start;
+            end = (size_t)(stop >= (long long)sl ? (long long)sl - 1 : stop);
+        }
+        while (begin <= end)
+            count += (long long)bitmap_popcount_byte((unsigned char)sv[begin++]);
+        resp_write_integer(out, count);
+        return;
+    }
+
+    if (cmd_id == CMD_BITPOS) {
+        const char *k, *bv, *v, *sv;
+        size_t kl, bvl, vl, sl, begin = 0, end;
+        long long b, start, stop;
+        int have_end = 0;
+        if (argc < 3 || argc > 5) {
+            wrong_args(out, "bitpos");
+            return;
+        }
+        if (!arg_str(&argv[1], &k, &kl) || !arg_str(&argv[2], &bv, &bvl))
+            goto bad_type;
+        if (!parse_i64(bv, bvl, &b) || (b != 0 && b != 1)) {
+            resp_write_error(out, "ERR The bit argument must be 1 or 0", 35);
+            return;
+        }
+        if (!db_get(d, k, kl, &v, &vl, now_ms)) {
+            resp_write_integer(out, b == 0 ? 0 : -1);
+            return;
+        }
+        if (!as_string(out, v, vl, &sv, &sl))
+            return;
+        if (sl == 0) {
+            resp_write_integer(out, b == 0 ? 0 : -1);
+            return;
+        }
+        end = sl - 1;
+        if (argc >= 4) {
+            const char *a;
+            size_t al;
+            if (!arg_str(&argv[3], &a, &al) || !parse_i64(a, al, &start)) {
+                resp_write_error(out, ERR_NOT_INT, sizeof(ERR_NOT_INT) - 1);
+                return;
+            }
+            if (start < 0)
+                start += (long long)sl;
+            if (start < 0)
+                start = 0;
+            if (start >= (long long)sl) {
+                resp_write_integer(out, -1);
+                return;
+            }
+            begin = (size_t)start;
+        }
+        if (argc == 5) {
+            const char *z;
+            size_t zl;
+            have_end = 1;
+            if (!arg_str(&argv[4], &z, &zl) || !parse_i64(z, zl, &stop)) {
+                resp_write_error(out, ERR_NOT_INT, sizeof(ERR_NOT_INT) - 1);
+                return;
+            }
+            if (stop < 0)
+                stop += (long long)sl;
+            if (stop < 0 || begin > (size_t)stop) {
+                resp_write_integer(out, -1);
+                return;
+            }
+            end = (size_t)(stop >= (long long)sl ? (long long)sl - 1 : stop);
+        }
+        for (; begin <= end; begin++) {
+            long long p = bitmap_pos_byte((unsigned char)sv[begin], (int)b);
+            if (p >= 0) {
+                resp_write_integer(out, (long long)begin * 8 + p);
+                return;
+            }
+        }
+        resp_write_integer(out, b == 0 && !have_end ? (long long)sl * 8 : -1);
         return;
     }
 
@@ -7661,6 +7905,10 @@ static const cmd_entry CMD_TABLE[] = {
     {"object", CMD_OBJECT, 3, 3, 0, 0},
     {"setnx", CMD_SETNX, 3, 3, 0, CMD_WRITE},
     {"msetnx", CMD_MSETNX, 3, -1, 1, CMD_WRITE},
+    {"getbit", CMD_GETBIT, 3, 3, 0, 0},
+    {"setbit", CMD_SETBIT, 4, 4, 0, CMD_WRITE},
+    {"bitcount", CMD_BITCOUNT, 2, 4, 0, 0},
+    {"bitpos", CMD_BITPOS, 3, 5, 0, 0},
 };
 
 static const cmd_entry *cmd_table_entry(uint16_t id)
