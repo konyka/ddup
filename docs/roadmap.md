@@ -258,6 +258,10 @@
     101 个缺失顶层命令、11 个整体缺失容器、26 个容器子命令缺口及
     选项/语义差异；`tools/audit_redis_compat.py` 接入 CTest/CI 持续审计
     （Phase 50）
+  - [x] Bitmap 补齐：`BITOP`（AND/OR/XOR/NOT，8 字节字批量运算、缺失源
+    按零填充、目标可兼作源）、`BITFIELD`/`BITFIELD_RO`（u1-u63/i1-i64、
+    GET/SET/INCRBY、负偏移、OVERFLOW WRAP/SAT/FAIL；整条命令先在本地
+    缓冲完成，错误时不落库），st/mt 路由与集群 CROSSSLOT 同步（Phase 51）
   - [ ] 范围化排除（记录在案，不实施）：
     - 分层存储（热/冷数据落盘）：超出"内存缓存存储"定位
     - mt 模式的复制/集群适配：见 Phase 15 说明

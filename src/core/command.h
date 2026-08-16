@@ -300,10 +300,13 @@ enum {
     CMD_GETBIT,
     CMD_SETBIT,
     CMD_BITCOUNT,
-    CMD_BITPOS
+    CMD_BITPOS,
+    CMD_BITOP,
+    CMD_BITFIELD,
+    CMD_BITFIELD_RO
 };
 
-#define CMD_MAX CMD_BITPOS
+#define CMD_MAX CMD_BITFIELD_RO
 
 /* Resolve a command name to its stable ID; case-insensitive. */
 uint16_t cmd_resolve(const char *name, size_t len);

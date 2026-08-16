@@ -1250,6 +1250,8 @@ static int mt_is_single_key(uint16_t cmd)
     case CMD_SETBIT:
     case CMD_BITCOUNT:
     case CMD_BITPOS:
+    case CMD_BITFIELD:
+    case CMD_BITFIELD_RO:
     case CMD_DUMP:
     case CMD_RESTORE:
     case CMD_INCR:
@@ -1439,6 +1441,7 @@ static int mt_classify(int nworkers, uint16_t cmd, const resp_value *argv,
     case CMD_SINTER:
     case CMD_SUNION:
     case CMD_SDIFF:
+    case CMD_BITOP:
     case CMD_SINTERCARD:
     case CMD_SINTERSTORE:
     case CMD_SUNIONSTORE:

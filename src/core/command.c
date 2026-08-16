@@ -1171,8 +1171,627 @@ static const char ERR_OVERFLOW[] = "ERR increment or decrement would overflow";
 static const char ERR_SYNTAX[] = "ERR syntax error";
 static const char ERR_NOT_FLOAT[] = "ERR value is not a valid float";
 
-/* Resulting-string ceiling for SETRANGE (Redis proto-max-bulk-len, 512MB). */
+/* Resulting-string ceiling for SETRANGE/BITFIELD (proto-max-bulk-len). */
 #define STRING_MAX_BYTES (512ULL * 1024ULL * 1024ULL)
+
+/* ------------------------------------------------------------------ */
+/* bitmap batch helpers (BITOP / BITFIELD)                            */
+/* ------------------------------------------------------------------ */
+
+enum {
+    BITOP_AND = 0,
+    BITOP_OR,
+    BITOP_XOR,
+    BITOP_NOT
+};
+
+static int bitmap_op_parse(const char *s, size_t len, int *op)
+{
+    if (ci_equal(s, len, "AND")) {
+        *op = BITOP_AND;
+        return 1;
+    }
+    if (ci_equal(s, len, "OR")) {
+        *op = BITOP_OR;
+        return 1;
+    }
+    if (ci_equal(s, len, "XOR")) {
+        *op = BITOP_XOR;
+        return 1;
+    }
+    if (ci_equal(s, len, "NOT")) {
+        *op = BITOP_NOT;
+        return 1;
+    }
+    return 0;
+}
+
+static void cmd_bitop(db *d, const resp_value *argv, size_t argc,
+                      resp_buf *out, uint64_t now_ms)
+{
+    const char *ops, *dk;
+    size_t opsl, dkl;
+    const char **srcs;
+    size_t *srclens;
+    size_t nsrc, i, maxlen = 0, full_words, tail, wi;
+    char *result = NULL;
+    int op;
+
+    if (argc < 4) {
+        wrong_args(out, "bitop");
+        return;
+    }
+    if (!arg_str(&argv[1], &ops, &opsl) || !arg_str(&argv[2], &dk, &dkl))
+        goto bitop_badtype;
+    if (!bitmap_op_parse(ops, opsl, &op)) {
+        resp_write_error(out, ERR_SYNTAX, sizeof(ERR_SYNTAX) - 1);
+        return;
+    }
+    if (op == BITOP_NOT && argc != 4) {
+        static const char E[] =
+            "ERR BITOP NOT must be called with a single source key.";
+        resp_write_error(out, E, sizeof(E) - 1);
+        return;
+    }
+    if (!storage_key_ok(dkl)) {
+        storage_length_error(out);
+        return;
+    }
+
+    nsrc = argc - 3;
+    srcs = (const char **)malloc(nsrc * sizeof(*srcs));
+    srclens = (size_t *)malloc(nsrc * sizeof(*srclens));
+    if (srcs == NULL || srclens == NULL) {
+        free(srcs);
+        free(srclens);
+        storage_length_error(out);
+        return;
+    }
+
+    /* First pass: resolve every source once and find the longest input.
+     * Missing keys are treated as empty strings, matching Redis BITOP. */
+    for (i = 0; i < nsrc; i++) {
+        const char *k;
+        size_t kl;
+        const char *v;
+        size_t vl;
+        if (!arg_str(&argv[3 + i], &k, &kl)) {
+            free(srcs);
+            free(srclens);
+            goto bitop_badtype;
+        }
+        srcs[i] = NULL;
+        srclens[i] = 0;
+        if (db_get(d, k, kl, &v, &vl, now_ms)) {
+            const char *s;
+            size_t sl;
+            if (!as_string(out, v, vl, &s, &sl)) {
+                free(srcs);
+                free(srclens);
+                return;
+            }
+            srcs[i] = s;
+            srclens[i] = sl;
+        }
+        if (srclens[i] > maxlen)
+            maxlen = srclens[i];
+    }
+    if (maxlen == 0) {
+        free(srcs);
+        free(srclens);
+        db_del_kv(d, dk, dkl);
+        resp_write_integer(out, 0);
+        return;
+    }
+    if (!storage_string_ok(dkl, maxlen)) {
+        free(srcs);
+        free(srclens);
+        storage_length_error(out);
+        return;
+    }
+    if (oom_blocked(d, out)) {
+        free(srcs);
+        free(srclens);
+        return;
+    }
+
+    result = (char *)malloc(maxlen);
+    if (result == NULL) {
+        free(srcs);
+        free(srclens);
+        storage_length_error(out);
+        return;
+    }
+
+    /* Word-at-a-time core: 8-byte chunks avoid per-byte branches on the
+     * hot path; the tail is handled bytewise for unaligned ends. */
+    full_words = maxlen / 8;
+    tail = maxlen % 8;
+    for (wi = 0; wi < full_words; wi++) {
+        uint64_t acc = op == BITOP_AND ? ~0ULL : 0ULL;
+        for (i = 0; i < nsrc; i++) {
+            uint64_t w = 0;
+            if (srclens[i] >= (wi + 1) * 8)
+                memcpy(&w, srcs[i] + wi * 8, 8);
+            if (op == BITOP_AND)
+                acc &= w;
+            else if (op == BITOP_OR)
+                acc |= w;
+            else if (op == BITOP_XOR)
+                acc ^= w;
+            else
+                acc = ~w;
+        }
+        memcpy(result + wi * 8, &acc, 8);
+    }
+    for (i = 0; i < tail; i++) {
+        unsigned char byte = op == BITOP_AND ? 0xFFU : 0U;
+        size_t bytepos = full_words * 8 + i;
+        size_t j;
+        for (j = 0; j < nsrc; j++) {
+            unsigned char w =
+                bytepos < srclens[j] ? (unsigned char)srcs[j][bytepos] : 0U;
+            if (op == BITOP_AND)
+                byte &= w;
+            else if (op == BITOP_OR)
+                byte |= w;
+            else if (op == BITOP_XOR)
+                byte ^= w;
+            else
+                byte = (unsigned char)~w;
+        }
+        result[bytepos] = (char)byte;
+    }
+
+    if (db_set_string(d, dk, dkl, result, maxlen, now_ms) != 0) {
+        free(result);
+        free(srcs);
+        free(srclens);
+        storage_length_error(out);
+        return;
+    }
+    free(result);
+    free(srcs);
+    free(srclens);
+    resp_write_integer(out, (long long)maxlen);
+    return;
+
+bitop_badtype:
+    resp_write_error(out, "ERR invalid argument type", 24);
+}
+
+#define BF_GET 0
+#define BF_SET 1
+#define BF_INCRBY 2
+
+#define BF_OVERFLOW_WRAP 0
+#define BF_OVERFLOW_SAT 1
+#define BF_OVERFLOW_FAIL 2
+
+typedef struct bf_op {
+    int kind;
+    int is_signed;
+    unsigned width;
+    long long raw_off;
+    long long value;
+    int mode;
+} bf_op;
+
+static int bf_parse_type(const char *s, size_t len, int *signedp,
+                         unsigned *width)
+{
+    unsigned w = 0;
+    size_t i;
+    int is_signed;
+    if (len < 2)
+        return 0;
+    if (s[0] == 'u') {
+        is_signed = 0;
+    } else if (s[0] == 'i') {
+        is_signed = 1;
+    } else {
+        return 0;
+    }
+    for (i = 1; i < len; i++) {
+        if (s[i] < '0' || s[i] > '9')
+            return 0;
+        if (w > 64)
+            return 0;
+        w = w * 10 + (unsigned)(s[i] - '0');
+    }
+    if (w == 0 || w > 64)
+        return 0;
+    if (!is_signed && w == 64)
+        return 0; /* Redis: u64 is not a supported BITFIELD type */
+    *signedp = is_signed;
+    *width = w;
+    return 1;
+}
+
+static uint64_t bf_read_raw(const unsigned char *p, size_t len, size_t bitoff,
+                            unsigned width)
+{
+    uint64_t v = 0;
+    unsigned i;
+    for (i = 0; i < width; i++) {
+        size_t pos = bitoff + i;
+        size_t byte = pos / 8;
+        unsigned bit = (unsigned)(7 - (pos & 7));
+        v <<= 1;
+        if (byte < len && (p[byte] & (1U << bit)))
+            v |= 1ULL;
+    }
+    return v;
+}
+
+static void bf_write_raw(unsigned char *p, size_t len, size_t bitoff,
+                         unsigned width, uint64_t v)
+{
+    unsigned i;
+    (void)len;
+    if (width < 64)
+        v &= (1ULL << width) - 1;
+    for (i = 0; i < width; i++) {
+        size_t pos = bitoff + i;
+        size_t byte = pos / 8;
+        unsigned bit = (unsigned)(7 - (pos & 7));
+        unsigned set = (unsigned)((v >> (width - 1 - i)) & 1ULL);
+        if (set)
+            p[byte] |= (unsigned char)(1U << bit);
+        else
+            p[byte] &= (unsigned char)~(1U << bit);
+    }
+}
+
+static long long bf_raw_to_signed(uint64_t v, unsigned width)
+{
+    if (width == 64) {
+        long long out;
+        memcpy(&out, &v, 8);
+        return out;
+    }
+    if (v & (1ULL << (width - 1)))
+        v |= ~((1ULL << width) - 1);
+    return (long long)v;
+}
+
+static uint64_t bf_signed_to_raw(long long v, unsigned width)
+{
+    uint64_t u;
+    memcpy(&u, &v, 8);
+    if (width < 64)
+        u &= (1ULL << width) - 1;
+    return u;
+}
+
+static int bf_incr_value(long long old, unsigned width, int is_signed,
+                         long long inc, int mode, long long *out)
+{
+    if (is_signed) {
+        long long maxv = width == 64
+                             ? LLONG_MAX
+                             : (long long)((1ULL << (width - 1)) - 1);
+        long long minv = width == 64
+                             ? LLONG_MIN
+                             : (long long)(0ULL - (1ULL << (width - 1)));
+        if (mode == BF_OVERFLOW_WRAP) {
+            uint64_t sum = bf_signed_to_raw(old, width) +
+                           bf_signed_to_raw(inc, width);
+            *out = bf_raw_to_signed(sum, width);
+            return 0;
+        }
+        if (mode == BF_OVERFLOW_SAT) {
+            if (inc > 0 && old > maxv - inc)
+                *out = maxv;
+            else if (inc < 0 && old < minv - inc)
+                *out = minv;
+            else
+                *out = old + inc;
+            return 0;
+        }
+        if ((inc > 0 && old > maxv - inc) ||
+            (inc < 0 && old < minv - inc))
+            return 1;
+        *out = old + inc;
+        return 0;
+    }
+    {
+        long long maxv = (long long)((1ULL << width) - 1);
+        if (mode == BF_OVERFLOW_WRAP) {
+            uint64_t sum = (uint64_t)old + (uint64_t)inc;
+            if (width < 64)
+                sum &= (1ULL << width) - 1;
+            *out = (long long)sum;
+            return 0;
+        }
+        if (mode == BF_OVERFLOW_SAT) {
+            if (inc > 0 && old > maxv - inc)
+                *out = maxv;
+            else if (inc < 0) {
+                uint64_t mag = (uint64_t)(-(inc + 1)) + 1ULL;
+                *out = (uint64_t)old < mag ? 0 : old + inc;
+            } else {
+                *out = old;
+            }
+            return 0;
+        }
+        if (inc > 0 && old > maxv - inc)
+            return 1;
+        if (inc < 0) {
+            uint64_t mag = (uint64_t)(-(inc + 1)) + 1ULL;
+            if ((uint64_t)old < mag)
+                return 1;
+        }
+        *out = old + inc;
+        return 0;
+    }
+}
+
+static int bf_resolve_offset(long long raw, size_t cur_bytes, unsigned width,
+                             size_t *out)
+{
+    uint64_t base = (uint64_t)cur_bytes * 8;
+    uint64_t abs;
+    if (raw < 0) {
+        uint64_t mag = (uint64_t)(-(raw + 1)) + 1ULL;
+        if (mag > base)
+            return 0;
+        abs = base - mag;
+    } else {
+        abs = (uint64_t)raw;
+    }
+    if (abs > (uint64_t)SIZE_MAX || abs + width > STRING_MAX_BYTES * 8)
+        return 0;
+    *out = (size_t)abs;
+    return 1;
+}
+
+static void cmd_bitfield(db *d, const resp_value *argv, size_t argc,
+                         resp_buf *out, uint64_t now_ms, int ro)
+{
+    const char *k;
+    size_t kl;
+    bf_op *ops = NULL;
+    size_t nops = 0, cap = 0;
+    size_t i;
+    int mode = BF_OVERFLOW_WRAP;
+    resp_buf tmp, reply;
+
+    if (argc < 3) {
+        wrong_args(out, ro ? "bitfield_ro" : "bitfield");
+        return;
+    }
+    if (!arg_str(&argv[1], &k, &kl)) {
+        resp_write_error(out, "ERR invalid argument type", 24);
+        return;
+    }
+    if (!storage_key_ok(kl)) {
+        storage_length_error(out);
+        return;
+    }
+
+    i = 2;
+    while (i < argc) {
+        const char *tok;
+        size_t tokl;
+        bf_op op;
+        if (!arg_str(&argv[i], &tok, &tokl)) {
+            resp_write_error(out, "ERR invalid argument type", 24);
+            goto bitfield_fail;
+        }
+        if (ci_equal(tok, tokl, "OVERFLOW")) {
+            const char *m;
+            size_t ml;
+            if (ro) {
+                static const char E[] =
+                    "ERR BITFIELD_RO only supports the GET subcommand";
+                resp_write_error(out, E, sizeof(E) - 1);
+                goto bitfield_fail;
+            }
+            if (i + 1 >= argc || !arg_str(&argv[i + 1], &m, &ml)) {
+                resp_write_error(out, ERR_SYNTAX, sizeof(ERR_SYNTAX) - 1);
+                goto bitfield_fail;
+            }
+            if (ci_equal(m, ml, "WRAP")) {
+                mode = BF_OVERFLOW_WRAP;
+            } else if (ci_equal(m, ml, "SAT")) {
+                mode = BF_OVERFLOW_SAT;
+            } else if (ci_equal(m, ml, "FAIL")) {
+                mode = BF_OVERFLOW_FAIL;
+            } else {
+                resp_write_error(out, ERR_SYNTAX, sizeof(ERR_SYNTAX) - 1);
+                goto bitfield_fail;
+            }
+            i += 2;
+            continue;
+        }
+
+        memset(&op, 0, sizeof(op));
+        op.mode = mode;
+        if (ci_equal(tok, tokl, "GET")) {
+            op.kind = BF_GET;
+        } else if (ci_equal(tok, tokl, "SET")) {
+            op.kind = BF_SET;
+        } else if (ci_equal(tok, tokl, "INCRBY")) {
+            op.kind = BF_INCRBY;
+        } else {
+            resp_write_error(out, ERR_SYNTAX, sizeof(ERR_SYNTAX) - 1);
+            goto bitfield_fail;
+        }
+        if (ro && op.kind != BF_GET) {
+            static const char E[] =
+                "ERR BITFIELD_RO only supports the GET subcommand";
+            resp_write_error(out, E, sizeof(E) - 1);
+            goto bitfield_fail;
+        }
+        if (i + 2 >= argc ||
+            !arg_str(&argv[i + 1], &tok, &tokl) ||
+            !bf_parse_type(tok, tokl, &op.is_signed, &op.width)) {
+            static const char E[] =
+                "ERR Invalid bitfield type. Use something like i16 u8. "
+                "Note that u64 is not supported but i64 is.";
+            resp_write_error(out, E, sizeof(E) - 1);
+            goto bitfield_fail;
+        }
+        {
+            const char *off;
+            size_t offl;
+            if (!arg_str(&argv[i + 2], &off, &offl) ||
+                !parse_i64(off, offl, &op.raw_off)) {
+                resp_write_error(out,
+                                 "ERR bit offset is not an integer or out of "
+                                 "range",
+                                 48);
+                goto bitfield_fail;
+            }
+        }
+        if (op.kind != BF_GET) {
+            const char *val;
+            size_t vall;
+            if (i + 3 >= argc || !arg_str(&argv[i + 3], &val, &vall) ||
+                !parse_i64(val, vall, &op.value)) {
+                resp_write_error(out, ERR_NOT_INT, sizeof(ERR_NOT_INT) - 1);
+                goto bitfield_fail;
+            }
+        }
+        if (nops == cap) {
+            size_t ncap = cap == 0 ? 8 : cap * 2;
+            bf_op *n = (bf_op *)realloc(ops, ncap * sizeof(*n));
+            if (n == NULL) {
+                storage_length_error(out);
+                goto bitfield_fail;
+            }
+            ops = n;
+            cap = ncap;
+        }
+        ops[nops++] = op;
+        i += op.kind == BF_GET ? 3 : 4;
+    }
+
+    if (nops == 0) {
+        resp_write_error(out, ERR_SYNTAX, sizeof(ERR_SYNTAX) - 1);
+        goto bitfield_fail;
+    }
+
+    resp_buf_init(&tmp);
+    {
+        const char *v;
+        size_t vl;
+        if (db_get(d, k, kl, &v, &vl, now_ms)) {
+            const char *s;
+            size_t sl;
+            if (!as_string(out, v, vl, &s, &sl)) {
+                resp_buf_free(&tmp);
+                free(ops);
+                return;
+            }
+            if (sl > 0 && resp_buf_reserve(&tmp, sl) != 0) {
+                resp_buf_free(&tmp);
+                free(ops);
+                storage_length_error(out);
+                return;
+            }
+            memcpy(tmp.data, s, sl);
+            tmp.len = sl;
+        }
+    }
+
+    resp_buf_init(&reply);
+    resp_write_array_header(&reply, nops);
+    for (i = 0; i < nops; i++) {
+        bf_op *op = &ops[i];
+        size_t bitoff;
+        size_t need;
+        if (!bf_resolve_offset(op->raw_off, tmp.len, op->width, &bitoff)) {
+            resp_buf_free(&tmp);
+            resp_buf_free(&reply);
+            free(ops);
+            resp_write_error(out,
+                             "ERR bit offset is not an integer or out of range",
+                             48);
+            return;
+        }
+        need = (bitoff + op->width + 7) / 8;
+        if (need > tmp.len) {
+            if (resp_buf_reserve(&tmp, need) != 0) {
+                resp_buf_free(&tmp);
+                resp_buf_free(&reply);
+                free(ops);
+                storage_length_error(out);
+                return;
+            }
+            memset(tmp.data + tmp.len, 0, need - tmp.len);
+            tmp.len = need;
+        }
+
+        {
+            uint64_t oldraw =
+                bf_read_raw((unsigned char *)tmp.data, tmp.len, bitoff,
+                            op->width);
+            if (op->kind == BF_GET) {
+                long long v = op->is_signed
+                                  ? bf_raw_to_signed(oldraw, op->width)
+                                  : (long long)oldraw;
+                resp_write_integer(&reply, v);
+            } else if (op->kind == BF_SET) {
+                long long old = op->is_signed
+                                    ? bf_raw_to_signed(oldraw, op->width)
+                                    : (long long)oldraw;
+                bf_write_raw((unsigned char *)tmp.data, tmp.len, bitoff,
+                             op->width,
+                             op->is_signed
+                                 ? bf_signed_to_raw(op->value, op->width)
+                                 : (uint64_t)op->value);
+                resp_write_integer(&reply, old);
+            } else {
+                long long old = op->is_signed
+                                    ? bf_raw_to_signed(oldraw, op->width)
+                                    : (long long)oldraw;
+                long long next = 0;
+                if (bf_incr_value(old, op->width, op->is_signed, op->value,
+                                  op->mode, &next)) {
+                    resp_write_bulk(&reply, NULL, 0);
+                } else {
+                    bf_write_raw((unsigned char *)tmp.data, tmp.len, bitoff,
+                                 op->width,
+                                 op->is_signed
+                                     ? bf_signed_to_raw(next, op->width)
+                                     : (uint64_t)next);
+                    resp_write_integer(&reply, next);
+                }
+            }
+        }
+    }
+
+    if (!ro) {
+        if (tmp.len == 0) {
+            db_del_kv(d, k, kl);
+        } else if (db_set_string(d, k, kl, tmp.data, tmp.len, now_ms) != 0) {
+            resp_buf_free(&tmp);
+            resp_buf_free(&reply);
+            free(ops);
+            storage_length_error(out);
+            return;
+        }
+    }
+
+    if (resp_buf_reserve(out, reply.len) != 0) {
+        resp_buf_free(&tmp);
+        resp_buf_free(&reply);
+        free(ops);
+        storage_length_error(out);
+        return;
+    }
+    memcpy(out->data + out->len, reply.data, reply.len);
+    out->len += reply.len;
+    resp_buf_free(&tmp);
+    resp_buf_free(&reply);
+    free(ops);
+    return;
+
+bitfield_fail:
+    free(ops);
+}
 
 static const char *policy_name(int policy)
 {
@@ -1641,7 +2260,7 @@ static int cmd_keys_accum(const resp_value *argv, size_t argc, int *have,
         cmd_id == CMD_SINTER || cmd_id == CMD_SUNION ||
         cmd_id == CMD_SDIFF || cmd_id == CMD_WATCH ||
         cmd_id == CMD_SINTERSTORE || cmd_id == CMD_SUNIONSTORE ||
-        cmd_id == CMD_SDIFFSTORE) {
+        cmd_id == CMD_SDIFFSTORE || cmd_id == CMD_BITOP) {
         for (i = 1; i < argc; i++) {
             const char *k;
             size_t kl;
@@ -1859,7 +2478,7 @@ static int cluster_check_ownership(session *s, const resp_value *argv,
         cmd_id == CMD_SINTER || cmd_id == CMD_SUNION ||
         cmd_id == CMD_SDIFF || cmd_id == CMD_WATCH ||
         cmd_id == CMD_SINTERSTORE || cmd_id == CMD_SUNIONSTORE ||
-        cmd_id == CMD_SDIFFSTORE) {
+        cmd_id == CMD_SDIFFSTORE || cmd_id == CMD_BITOP) {
         for (i = 1; i < argc; i++) {
             const char *k;
             size_t kl;
@@ -3374,6 +3993,16 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
             }
         }
         resp_write_integer(out, b == 0 && !have_end ? (long long)sl * 8 : -1);
+        return;
+    }
+
+    if (cmd_id == CMD_BITOP) {
+        cmd_bitop(d, argv, argc, out, now_ms);
+        return;
+    }
+
+    if (cmd_id == CMD_BITFIELD || cmd_id == CMD_BITFIELD_RO) {
+        cmd_bitfield(d, argv, argc, out, now_ms, cmd_id == CMD_BITFIELD_RO);
         return;
     }
 
@@ -7909,6 +8538,9 @@ static const cmd_entry CMD_TABLE[] = {
     {"setbit", CMD_SETBIT, 4, 4, 0, CMD_WRITE},
     {"bitcount", CMD_BITCOUNT, 2, 4, 0, 0},
     {"bitpos", CMD_BITPOS, 3, 5, 0, 0},
+    {"bitop", CMD_BITOP, 4, -1, 0, CMD_WRITE},
+    {"bitfield", CMD_BITFIELD, 3, -1, 0, CMD_WRITE},
+    {"bitfield_ro", CMD_BITFIELD_RO, 3, -1, 0, 0},
 };
 
 static const cmd_entry *cmd_table_entry(uint16_t id)
