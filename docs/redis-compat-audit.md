@@ -1,14 +1,14 @@
 # Redis 7.2.15 命令兼容性盘点
 
 > 基线：Redis 7.2.15 官方 `src/commands/*.json`（392 个 JSON、392 条命令条目；242 个顶层命令 + 150 个容器子命令）。
-> 对照：ddup `src/core/command.c` `CMD_TABLE`（146 个顶层命令）。
+> 对照：ddup `src/core/command.c` `CMD_TABLE`（161 个顶层命令）。
 > 生成：`python3 tools/audit_redis_compat.py --redis-json <Redis src/commands> --json`，机器可复算；`--check` 校验本文档 AUDIT-BASELINE 块与代码一致。
 
 ## 总览
 
 | 类别 | 数量 |
 | --- | --- |
-| 完全未实现的独立顶层命令 | 92 |
+| 完全未实现的独立顶层命令 | 81 |
 | 整体缺失的顶层容器 | 11（对应 Redis 子命令条目 124） |
 | 已实现容器内缺失的子命令 | 26（CLUSTER 15、CONFIG 3、OBJECT 4、PUBSUB 1、SCRIPT 3） |
 | 已注册但选项/语义不完整 | 见下方手工清单 |
@@ -51,9 +51,9 @@
 
 `SSCAN`
 
-### sorted_set（15）
+### sorted_set（4）
 
-`BZMPOP`, `BZPOPMAX`, `BZPOPMIN`, `ZDIFF`, `ZDIFFSTORE`, `ZINTER`, `ZINTERCARD`, `ZINTERSTORE`, `ZLEXCOUNT`, `ZMPOP`, `ZRANGESTORE`, `ZREVRANGEBYSCORE`, `ZSCAN`, `ZUNION`, `ZUNIONSTORE`
+`BZMPOP`, `BZPOPMAX`, `BZPOPMIN`, `ZSCAN`
 
 ### stream（15）
 
@@ -114,7 +114,7 @@
 ## 审计基线（机器断言，勿手改格式）
 
 <!-- AUDIT-BASELINE-START
-missing_top: acl bgrewriteaof bgsave blmove blmpop blpop brpop brpoplpush bzmpop bzpopmax bzpopmin client command debug eval_ro evalsha_ro failover fcall fcall_ro flushall function geoadd geodist geohash geopos georadius georadiusbymember georadiusbymember_ro georadius_ro geosearch geosearchstore hello hincrbyfloat hscan latency lcs linsert lmove lmpop lolwut memory module monitor move pfadd pfcount pfdebug pfmerge pfselftest readonly readwrite replconf reset restore-asking role sentinel slaveof slowlog sort sort_ro sscan substr time wait waitaof xack xadd xautoclaim xclaim xdel xgroup xinfo xlen xpending xrange xread xreadgroup xrevrange xsetid xtrim zdiff zdiffstore zinter zintercard zinterstore zlexcount zmpop zrangestore zrevrangebyscore zscan zunion zunionstore
+missing_top: acl bgrewriteaof bgsave blmove blmpop blpop brpop brpoplpush bzmpop bzpopmax bzpopmin client command debug eval_ro evalsha_ro failover fcall fcall_ro flushall function geoadd geodist geohash geopos georadius georadiusbymember georadiusbymember_ro georadius_ro geosearch geosearchstore hello hincrbyfloat hscan latency lcs linsert lmove lmpop lolwut memory module monitor move pfadd pfcount pfdebug pfmerge pfselftest readonly readwrite replconf reset restore-asking role sentinel slaveof slowlog sort sort_ro sscan substr time wait waitaof xack xadd xautoclaim xclaim xdel xgroup xinfo xlen xpending xrange xread xreadgroup xrevrange xsetid xtrim zscan
 missing_containers: acl client command function latency memory module sentinel slowlog xgroup xinfo
 missing_sub: cluster addslotsrange
 missing_sub: cluster bumpepoch

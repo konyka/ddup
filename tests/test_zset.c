@@ -859,6 +859,149 @@ static void test_zset_listpack_limits(void)
     db_destroy(&d);
 }
 
+static void test_zset_setops(void)
+{
+    db d;
+    resp_buf out;
+    db_init(&d);
+    resp_buf_init(&out);
+
+    exec_cmd(&d, T0, &out, 8, "ZADD", "z1", "1", "a", "2", "b", "3", "c");
+    EXPECT(out, ":3\r\n");
+    exec_cmd(&d, T0, &out, 8, "ZADD", "z2", "2", "b", "3", "c", "4", "d");
+    EXPECT(out, ":3\r\n");
+    exec_cmd(&d, T0, &out, 6, "ZADD", "z3", "10", "a", "20", "b");
+    EXPECT(out, ":2\r\n");
+
+    exec_cmd(&d, T0, &out, 12, "ZUNIONSTORE", "out", "3", "z1", "z2", "z3",
+             "WEIGHTS", "1", "2", "3", "AGGREGATE", "SUM");
+    EXPECT(out, ":4\r\n");
+    exec_cmd(&d, T0, &out, 5, "ZRANGE", "out", "0", "-1", "WITHSCORES");
+    EXPECT(out, "*8\r\n$1\r\nd\r\n$1\r\n8\r\n$1\r\nc\r\n$1\r\n9\r\n$1\r\na\r\n$2\r\n31\r\n$1\r\nb\r\n$2\r\n66\r\n");
+
+    exec_cmd(&d, T0, &out, 8, "ZINTERSTORE", "out", "3", "z1", "z2", "z3",
+             "AGGREGATE", "SUM");
+    EXPECT(out, ":1\r\n");
+    exec_cmd(&d, T0, &out, 3, "ZSCORE", "out", "b");
+    EXPECT(out, "$2\r\n24\r\n");
+
+    exec_cmd(&d, T0, &out, 5, "ZDIFFSTORE", "out", "2", "z1", "z2");
+    EXPECT(out, ":1\r\n");
+    exec_cmd(&d, T0, &out, 3, "ZSCORE", "out", "a");
+    EXPECT(out, "$1\r\n1\r\n");
+
+    exec_cmd(&d, T0, &out, 12, "ZUNION", "3", "z1", "z2", "z3",
+             "WEIGHTS", "1", "2", "3", "AGGREGATE", "SUM", "WITHSCORES");
+    EXPECT(out, "*8\r\n$1\r\nd\r\n$1\r\n8\r\n$1\r\nc\r\n$1\r\n9\r\n$1\r\na\r\n$2\r\n31\r\n$1\r\nb\r\n$2\r\n66\r\n");
+
+    exec_cmd(&d, T0, &out, 5, "ZINTER", "2", "z1", "z2", "WITHSCORES");
+    EXPECT(out, "*4\r\n$1\r\nb\r\n$1\r\n4\r\n$1\r\nc\r\n$1\r\n6\r\n");
+    exec_cmd(&d, T0, &out, 5, "ZDIFF", "2", "z1", "z2", "WITHSCORES");
+    EXPECT(out, "*2\r\n$1\r\na\r\n$1\r\n1\r\n");
+
+    exec_cmd(&d, T0, &out, 6, "ZINTERCARD", "2", "z1", "z2", "LIMIT", "5");
+    EXPECT(out, ":2\r\n");
+    exec_cmd(&d, T0, &out, 6, "ZINTERCARD", "2", "z1", "z2", "LIMIT", "0");
+    EXPECT(out, ":0\r\n");
+    exec_cmd(&d, T0, &out, 4, "ZINTER", "2", "z1", "missing");
+    EXPECT(out, "*0\r\n");
+
+    exec_cmd(&d, T0, &out, 4, "HSET", "hash", "f", "v");
+    exec_cmd(&d, T0, &out, 4, "ZUNIONSTORE", "out", "1", "hash");
+    EXPECT(out, "-WRONGTYPE Operation against a key holding the wrong kind of value\r\n");
+
+    resp_buf_free(&out);
+    db_destroy(&d);
+}
+
+static void test_zset_range_extra(void)
+{
+    db d;
+    resp_buf out;
+    db_init(&d);
+    resp_buf_init(&out);
+
+    exec_cmd(&d, T0, &out, 8, "ZADD", "lex", "0", "a", "0", "b", "0", "c");
+    EXPECT(out, ":3\r\n");
+    exec_cmd(&d, T0, &out, 4, "ZLEXCOUNT", "lex", "-", "+");
+    EXPECT(out, ":3\r\n");
+    exec_cmd(&d, T0, &out, 4, "ZLEXCOUNT", "lex", "[b", "[c");
+    EXPECT(out, ":2\r\n");
+    exec_cmd(&d, T0, &out, 4, "ZLEXCOUNT", "lex", "(a", "+");
+    EXPECT(out, ":2\r\n");
+
+    exec_cmd(&d, T0, &out, 8, "ZADD", "zr", "1", "a", "2", "b", "3", "c");
+    EXPECT(out, ":3\r\n");
+    exec_cmd(&d, T0, &out, 5, "ZREVRANGEBYSCORE", "zr", "3", "1", "WITHSCORES");
+    EXPECT(out, "*6\r\n$1\r\nc\r\n$1\r\n3\r\n$1\r\nb\r\n$1\r\n2\r\n$1\r\na\r\n$1\r\n1\r\n");
+    exec_cmd(&d, T0, &out, 7, "ZREVRANGEBYSCORE", "zr", "3", "1", "LIMIT", "0", "2");
+    EXPECT(out, "*2\r\n$1\r\nc\r\n$1\r\nb\r\n");
+
+    exec_cmd(&d, T0, &out, 6, "ZADD", "mp1", "1", "a", "2", "b");
+    EXPECT(out, ":2\r\n");
+    exec_cmd(&d, T0, &out, 4, "ZADD", "mp2", "3", "c");
+    EXPECT(out, ":1\r\n");
+    exec_cmd(&d, T0, &out, 7, "ZMPOP", "2", "mp1", "mp2", "MIN", "COUNT", "1");
+    EXPECT(out, "*2\r\n$3\r\nmp1\r\n*1\r\n*2\r\n$1\r\na\r\n$1\r\n1\r\n");
+    exec_cmd(&d, T0, &out, 7, "ZMPOP", "2", "mp1", "mp2", "MAX", "COUNT", "2");
+    EXPECT(out, "*2\r\n$3\r\nmp1\r\n*1\r\n*2\r\n$1\r\nb\r\n$1\r\n2\r\n");
+    exec_cmd(&d, T0, &out, 5, "ZMPOP", "2", "mp1", "mp2", "MIN");
+    EXPECT(out, "*2\r\n$3\r\nmp2\r\n*1\r\n*2\r\n$1\r\nc\r\n$1\r\n3\r\n");
+    exec_cmd(&d, T0, &out, 5, "ZMPOP", "2", "mp1", "mp2", "MIN");
+    EXPECT(out, "*-1\r\n");
+
+    resp_buf_free(&out);
+    db_destroy(&d);
+}
+
+static void test_zset_rangestore(void)
+{
+    db d;
+    resp_buf out;
+    db_init(&d);
+    resp_buf_init(&out);
+
+    exec_cmd(&d, T0, &out, 10, "ZADD", "src", "1", "a", "2", "b", "3", "c", "4", "d");
+    EXPECT(out, ":4\r\n");
+
+    exec_cmd(&d, T0, &out, 5, "ZRANGESTORE", "dst", "src", "1", "2");
+    EXPECT(out, ":2\r\n");
+    exec_cmd(&d, T0, &out, 5, "ZRANGE", "dst", "0", "-1", "WITHSCORES");
+    EXPECT(out, "*4\r\n$1\r\nb\r\n$1\r\n2\r\n$1\r\nc\r\n$1\r\n3\r\n");
+
+    exec_cmd(&d, T0, &out, 6, "ZRANGESTORE", "dst", "src", "0", "2", "REV");
+    EXPECT(out, ":3\r\n");
+    exec_cmd(&d, T0, &out, 3, "ZSCORE", "dst", "a");
+    EXPECT(out, "$-1\r\n");
+    exec_cmd(&d, T0, &out, 3, "ZSCORE", "dst", "d");
+    EXPECT(out, "$1\r\n4\r\n");
+
+    exec_cmd(&d, T0, &out, 6, "ZRANGESTORE", "dst", "src", "2", "3", "BYSCORE");
+    EXPECT(out, ":2\r\n");
+    exec_cmd(&d, T0, &out, 2, "ZCARD", "dst");
+    EXPECT(out, ":2\r\n");
+
+    exec_cmd(&d, T0, &out, 8, "ZADD", "lex", "0", "a", "0", "b", "0", "c");
+    EXPECT(out, ":3\r\n");
+    exec_cmd(&d, T0, &out, 6, "ZRANGESTORE", "dst", "lex", "[a", "(c", "BYLEX");
+    EXPECT(out, ":2\r\n");
+    exec_cmd(&d, T0, &out, 2, "ZCARD", "dst");
+    EXPECT(out, ":2\r\n");
+
+    exec_cmd(&d, T0, &out, 8, "ZRANGESTORE", "dst", "src", "0", "-1", "LIMIT", "1", "2");
+    EXPECT(out, ":2\r\n");
+    exec_cmd(&d, T0, &out, 5, "ZRANGE", "dst", "0", "-1", "WITHSCORES");
+    EXPECT(out, "*4\r\n$1\r\nb\r\n$1\r\n2\r\n$1\r\nc\r\n$1\r\n3\r\n");
+
+    exec_cmd(&d, T0, &out, 5, "ZRANGESTORE", "dst", "missing", "0", "-1");
+    EXPECT(out, ":0\r\n");
+    exec_cmd(&d, T0, &out, 2, "EXISTS", "dst");
+    EXPECT(out, ":0\r\n");
+
+    resp_buf_free(&out);
+    db_destroy(&d);
+}
+
 int main(void)
 {
     DD_RUN(test_obj_str_zero_length_blob);
@@ -879,5 +1022,8 @@ int main(void)
     DD_RUN(test_zset_ttl_and_memory);
     DD_RUN(test_zset_listpack_encoding);
     DD_RUN(test_zset_listpack_limits);
+    DD_RUN(test_zset_setops);
+    DD_RUN(test_zset_range_extra);
+    DD_RUN(test_zset_rangestore);
     return DD_TEST_SUMMARY();
 }

@@ -1171,6 +1171,388 @@ static const char ERR_OVERFLOW[] = "ERR increment or decrement would overflow";
 static const char ERR_SYNTAX[] = "ERR syntax error";
 static const char ERR_NOT_FLOAT[] = "ERR value is not a valid float";
 
+/* ------------------------------------------------------------------ */
+/* sorted-set aggregate command helpers (ZUNION/ZINTER/ZDIFF family)   */
+/* ------------------------------------------------------------------ */
+
+enum { ZSET_AGG_SUM = 0, ZSET_AGG_MIN = 1, ZSET_AGG_MAX = 2 };
+
+typedef struct zsetop_args {
+    obj_zset **sets;
+    size_t nkeys;
+    double *weights;
+    int aggregate;
+    int withscores;
+} zsetop_args;
+
+static double zset_aggregate(double a, double b, int aggregate)
+{
+    if (aggregate == ZSET_AGG_MIN)
+        return a < b ? a : b;
+    if (aggregate == ZSET_AGG_MAX)
+        return a > b ? a : b;
+    return a + b;
+}
+
+static int zset_resolve_operands(db *d, resp_buf *out, const resp_value *kargv,
+                                 size_t nkeys, uint64_t now_ms,
+                                 obj_zset ***sets_out)
+{
+    obj_zset **sets;
+    size_t i;
+
+    if (nkeys == 0) {
+        *sets_out = NULL;
+        return 0;
+    }
+    sets = (obj_zset **)malloc(nkeys * sizeof(*sets));
+    if (sets == NULL) {
+        oom_blocked(d, out);
+        return -1;
+    }
+    for (i = 0; i < nkeys; i++) {
+        const char *k;
+        size_t kl;
+        obj_zset *z = NULL;
+        int rc;
+        if (!arg_str(&kargv[i], &k, &kl)) {
+            free(sets);
+            resp_write_error(out, "ERR invalid argument type", 24);
+            return -1;
+        }
+        rc = get_zset(d, out, k, kl, 0, now_ms, &z);
+        if (rc < 0) {
+            free(sets);
+            return -1;
+        }
+        sets[i] = rc == 1 ? z : NULL;
+    }
+    *sets_out = sets;
+    return 0;
+}
+
+static void zsetop_args_free(zsetop_args *args)
+{
+    free(args->sets);
+    free(args->weights);
+}
+
+/* Parse "numkeys key [key ...] [options]" for the Z*STORE/Z* commands.
+ * `numkeys_idx` is 2 for STORE (argv[1] is the destination), 1 otherwise.
+ * On failure a reply has already been written and the caller returns. */
+static int zsetop_parse(db *d, resp_buf *out, const resp_value *argv,
+                        size_t argc, size_t numkeys_idx, int has_weights,
+                        int has_agg, int has_withscores, int has_limit,
+                        long long *limit, uint64_t now_ms, zsetop_args *args)
+{
+    const char *nv;
+    size_t nvl;
+    long long nk;
+    size_t nkeys, first_key, opts, i;
+    int seen_weights = 0, seen_agg = 0, seen_withscores = 0, seen_limit = 0;
+
+    memset(args, 0, sizeof(*args));
+    if (limit != NULL)
+        *limit = 0;
+    if (numkeys_idx >= argc || !arg_str(&argv[numkeys_idx], &nv, &nvl)) {
+        resp_write_error(out, "ERR invalid argument type", 24);
+        return -1;
+    }
+    if (!parse_i64(nv, nvl, &nk)) {
+        resp_write_error(out, ERR_NOT_INT, sizeof(ERR_NOT_INT) - 1);
+        return -1;
+    }
+    if (nk <= 0 ||
+        (unsigned long long)nk > (unsigned long long)(argc - numkeys_idx - 1)) {
+        static const char E[] =
+            "ERR Number of keys can't be greater than number of args";
+        resp_write_error(out, E, sizeof(E) - 1);
+        return -1;
+    }
+    nkeys = (size_t)nk;
+    first_key = numkeys_idx + 1;
+    opts = first_key + nkeys;
+
+    args->weights = (double *)malloc(nkeys * sizeof(*args->weights));
+    if (args->weights == NULL) {
+        oom_blocked(d, out);
+        return -1;
+    }
+    for (i = 0; i < nkeys; i++)
+        args->weights[i] = 1.0;
+    args->nkeys = nkeys;
+    args->aggregate = ZSET_AGG_SUM;
+
+    for (i = opts; i < argc; i++) {
+        const char *tok;
+        size_t tokl;
+        if (!arg_str(&argv[i], &tok, &tokl)) {
+            zsetop_args_free(args);
+            resp_write_error(out, "ERR invalid argument type", 24);
+            return -1;
+        }
+        if (has_withscores && ci_equal(tok, tokl, "WITHSCORES")) {
+            if (seen_withscores) {
+                zsetop_args_free(args);
+                resp_write_error(out, ERR_SYNTAX, sizeof(ERR_SYNTAX) - 1);
+                return -1;
+            }
+            seen_withscores = 1;
+            args->withscores = 1;
+        } else if (has_weights && ci_equal(tok, tokl, "WEIGHTS")) {
+            size_t j;
+            if (seen_weights || i + nkeys >= argc) {
+                zsetop_args_free(args);
+                resp_write_error(out, ERR_SYNTAX, sizeof(ERR_SYNTAX) - 1);
+                return -1;
+            }
+            seen_weights = 1;
+            for (j = 0; j < nkeys; j++) {
+                const char *w;
+                size_t wl;
+                if (!arg_str(&argv[i + 1 + j], &w, &wl) ||
+                    !parse_double(w, wl, &args->weights[j])) {
+                    zsetop_args_free(args);
+                    resp_write_error(out, ERR_NOT_FLOAT,
+                                     sizeof(ERR_NOT_FLOAT) - 1);
+                    return -1;
+                }
+            }
+            i += nkeys;
+        } else if (has_agg && ci_equal(tok, tokl, "AGGREGATE")) {
+            const char *ag;
+            size_t agl;
+            if (seen_agg || i + 1 >= argc ||
+                !arg_str(&argv[i + 1], &ag, &agl)) {
+                zsetop_args_free(args);
+                resp_write_error(out, ERR_SYNTAX, sizeof(ERR_SYNTAX) - 1);
+                return -1;
+            }
+            seen_agg = 1;
+            if (ci_equal(ag, agl, "SUM"))
+                args->aggregate = ZSET_AGG_SUM;
+            else if (ci_equal(ag, agl, "MIN"))
+                args->aggregate = ZSET_AGG_MIN;
+            else if (ci_equal(ag, agl, "MAX"))
+                args->aggregate = ZSET_AGG_MAX;
+            else {
+                zsetop_args_free(args);
+                resp_write_error(out, ERR_SYNTAX, sizeof(ERR_SYNTAX) - 1);
+                return -1;
+            }
+            i++;
+        } else if (has_limit && ci_equal(tok, tokl, "LIMIT")) {
+            long long lv;
+            const char *lvstr;
+            size_t lvlen;
+            if (seen_limit || i + 1 >= argc ||
+                !arg_str(&argv[i + 1], &lvstr, &lvlen) ||
+                !parse_i64(lvstr, lvlen, &lv)) {
+                zsetop_args_free(args);
+                resp_write_error(out, ERR_SYNTAX, sizeof(ERR_SYNTAX) - 1);
+                return -1;
+            }
+            if (lv < 0) {
+                static const char E[] = "ERR LIMIT can't be negative";
+                zsetop_args_free(args);
+                resp_write_error(out, E, sizeof(E) - 1);
+                return -1;
+            }
+            seen_limit = 1;
+            if (limit != NULL)
+                *limit = lv;
+            i++;
+        } else {
+            zsetop_args_free(args);
+            resp_write_error(out, ERR_SYNTAX, sizeof(ERR_SYNTAX) - 1);
+            return -1;
+        }
+    }
+
+    if (zset_resolve_operands(d, out, argv + first_key, nkeys, now_ms,
+                              &args->sets) != 0) {
+        zsetop_args_free(args);
+        return -1;
+    }
+    return 0;
+}
+
+static void zset_emit_all(resp_buf *out, obj_zset *z, int withscores)
+{
+    obj_zset_iter it;
+    size_t n = obj_zset_len(z);
+    size_t i;
+    resp_write_array_header(out, n * (withscores ? 2u : 1u));
+    if (obj_zset_first(z, &it)) {
+        for (i = 0; i < n; i++) {
+            zset_emit_member(out, &it, withscores);
+            if (i + 1 < n && !obj_zset_iter_next(&it))
+                break;
+        }
+    }
+}
+
+static int zset_store_result(db *d, resp_buf *out, const char *dst,
+                             size_t dstl, obj_zset *result, uint64_t now_ms)
+{
+    if (obj_zset_len(result) == 0) {
+        obj_zset_free(result);
+        db_del_kv(d, dst, dstl);
+        resp_write_integer(out, 0);
+        return 0;
+    }
+    {
+        char blob[9];
+        obj_pack_ptr(blob, DDUP_OBJ_ZSET, result);
+        if (db_set_kv(d, dst, dstl, blob, 9, now_ms) != 0) {
+            obj_zset_free(result);
+            storage_length_error(out);
+            return -1;
+        }
+    }
+    resp_write_integer(out, (long long)obj_zset_len(result));
+    return 0;
+}
+
+static int zset_union_build(obj_zset **sets, size_t nkeys, double *weights,
+                            int aggregate, obj_zset *result)
+{
+    size_t i;
+    for (i = 0; i < nkeys; i++) {
+        obj_zset_iter it;
+        if (sets[i] == NULL || !obj_zset_first(sets[i], &it))
+            continue;
+        for (;;) {
+            size_t ml = 0;
+            const char *mv = obj_zset_iter_member(&it, &ml);
+            double sc = obj_zset_iter_score(&it) * weights[i];
+            double cur;
+            if (obj_zset_score(result, mv, ml, &cur))
+                sc = zset_aggregate(cur, sc, aggregate);
+            if (sc != sc || obj_zset_add(result, mv, ml, sc) < 0)
+                return -1;
+            if (!obj_zset_iter_next(&it))
+                break;
+        }
+    }
+    return 0;
+}
+
+static int zset_inter_build(obj_zset **sets, size_t nkeys, double *weights,
+                            int aggregate, obj_zset *result)
+{
+    size_t min_idx = 0;
+    uint64_t min_len = UINT64_MAX;
+    size_t i;
+
+    for (i = 0; i < nkeys; i++) {
+        if (sets[i] == NULL)
+            return 0; /* a missing operand empties the intersection */
+        if (obj_zset_len(sets[i]) < min_len) {
+            min_len = obj_zset_len(sets[i]);
+            min_idx = i;
+        }
+    }
+    {
+        obj_zset_iter it;
+        if (!obj_zset_first(sets[min_idx], &it))
+            return 0;
+        for (;;) {
+            size_t ml = 0;
+            const char *mv = obj_zset_iter_member(&it, &ml);
+            double acc = obj_zset_iter_score(&it) * weights[min_idx];
+            int present = 1;
+            for (i = 0; i < nkeys; i++) {
+                double sc;
+                if (i == min_idx)
+                    continue;
+                if (!obj_zset_score(sets[i], mv, ml, &sc)) {
+                    present = 0;
+                    break;
+                }
+                acc = zset_aggregate(acc, sc * weights[i], aggregate);
+            }
+            if (present && (acc != acc || obj_zset_add(result, mv, ml, acc) < 0))
+                return -1;
+            if (!obj_zset_iter_next(&it))
+                break;
+        }
+    }
+    return 0;
+}
+
+static int zset_diff_build(obj_zset **sets, size_t nkeys, obj_zset *result)
+{
+    obj_zset_iter it;
+    size_t i;
+    if (sets[0] == NULL || !obj_zset_first(sets[0], &it))
+        return 0;
+    for (;;) {
+        size_t ml = 0;
+        const char *mv = obj_zset_iter_member(&it, &ml);
+        int present = 0;
+        for (i = 1; i < nkeys; i++) {
+            double sc;
+            if (sets[i] != NULL && obj_zset_score(sets[i], mv, ml, &sc)) {
+                present = 1;
+                break;
+            }
+        }
+        if (!present &&
+            obj_zset_add(result, mv, ml, obj_zset_iter_score(&it)) < 0)
+            return -1;
+        if (!obj_zset_iter_next(&it))
+            break;
+    }
+    return 0;
+}
+
+static long long zset_intercard(obj_zset **sets, size_t nkeys, long long limit)
+{
+    size_t min_idx = 0;
+    uint64_t min_len = UINT64_MAX;
+    size_t i;
+    long long count = 0;
+
+    if (limit == 0)
+        return 0;
+    for (i = 0; i < nkeys; i++) {
+        if (sets[i] == NULL)
+            return 0;
+        if (obj_zset_len(sets[i]) < min_len) {
+            min_len = obj_zset_len(sets[i]);
+            min_idx = i;
+        }
+    }
+    {
+        obj_zset_iter it;
+        if (!obj_zset_first(sets[min_idx], &it))
+            return 0;
+        for (;;) {
+            size_t ml = 0;
+            const char *mv = obj_zset_iter_member(&it, &ml);
+            int present = 1;
+            for (i = 0; i < nkeys; i++) {
+                double sc;
+                if (i == min_idx)
+                    continue;
+                if (!obj_zset_score(sets[i], mv, ml, &sc)) {
+                    present = 0;
+                    break;
+                }
+            }
+            if (present) {
+                count++;
+                if (limit > 0 && count >= limit)
+                    break;
+            }
+            if (!obj_zset_iter_next(&it))
+                break;
+        }
+    }
+    return count;
+}
+
 /* Resulting-string ceiling for SETRANGE/BITFIELD (proto-max-bulk-len). */
 #define STRING_MAX_BYTES (512ULL * 1024ULL * 1024ULL)
 
@@ -2313,6 +2695,62 @@ static int cmd_keys_accum(const resp_value *argv, size_t argc, int *have,
         }
         return 1;
     }
+    if (cmd_id == CMD_ZUNIONSTORE || cmd_id == CMD_ZINTERSTORE ||
+        cmd_id == CMD_ZDIFFSTORE) {
+        const char *nv;
+        size_t nvl;
+        long long nk = 0;
+        size_t end;
+        const char *k;
+        size_t kl;
+        if (argc < 4 || !arg_str(&argv[1], &k, &kl) ||
+            !arg_str(&argv[2], &nv, &nvl) ||
+            !parse_i64(nv, nvl, &nk) || nk <= 0)
+            return 1;
+        if (!slot_accum(k, kl, have, slot))
+            return 0;
+        end = 3 + (size_t)nk;
+        if (end > argc)
+            end = argc;
+        for (i = 3; i < end; i++) {
+            if (arg_str(&argv[i], &k, &kl) &&
+                !slot_accum(k, kl, have, slot))
+                return 0;
+        }
+        return 1;
+    }
+    if (cmd_id == CMD_ZUNION || cmd_id == CMD_ZINTER ||
+        cmd_id == CMD_ZDIFF || cmd_id == CMD_ZINTERCARD ||
+        cmd_id == CMD_ZMPOP) {
+        const char *nv;
+        size_t nvl;
+        long long nk = 0;
+        size_t end;
+        if (argc < 3 || !arg_str(&argv[1], &nv, &nvl) ||
+            !parse_i64(nv, nvl, &nk) || nk <= 0)
+            return 1;
+        end = 2 + (size_t)nk;
+        if (end > argc)
+            end = argc;
+        for (i = 2; i < end; i++) {
+            const char *k;
+            size_t kl;
+            if (arg_str(&argv[i], &k, &kl) &&
+                !slot_accum(k, kl, have, slot))
+                return 0;
+        }
+        return 1;
+    }
+    if (cmd_id == CMD_ZRANGESTORE) {
+        for (i = 1; i < argc && i < 3; i++) {
+            const char *k;
+            size_t kl;
+            if (arg_str(&argv[i], &k, &kl) &&
+                !slot_accum(k, kl, have, slot))
+                return 0;
+        }
+        return 1;
+    }
     if (cmd_id == CMD_EVAL || cmd_id == CMD_EVALSHA) {
         const char *nv;
         size_t nvl;
@@ -2544,6 +2982,62 @@ static int cluster_check_ownership(session *s, const resp_value *argv,
         if (end > argc)
             end = argc;
         for (i = 3; i < end; i++) {
+            const char *k;
+            size_t kl;
+            if (arg_str(&argv[i], &k, &kl) &&
+                !db_key_served(d, k, kl, out, now_ms, asking))
+                return 0;
+        }
+        return 1;
+    }
+    if (cmd_id == CMD_ZUNIONSTORE || cmd_id == CMD_ZINTERSTORE ||
+        cmd_id == CMD_ZDIFFSTORE) {
+        const char *nv;
+        size_t nvl;
+        long long nk = 0;
+        size_t end;
+        const char *k;
+        size_t kl;
+        if (argc < 4 || !arg_str(&argv[1], &k, &kl) ||
+            !arg_str(&argv[2], &nv, &nvl) ||
+            !parse_i64(nv, nvl, &nk) || nk <= 0)
+            return 1;
+        if (!db_key_served(d, k, kl, out, now_ms, asking))
+            return 0;
+        end = 3 + (size_t)nk;
+        if (end > argc)
+            end = argc;
+        for (i = 3; i < end; i++) {
+            if (arg_str(&argv[i], &k, &kl) &&
+                !db_key_served(d, k, kl, out, now_ms, asking))
+                return 0;
+        }
+        return 1;
+    }
+    if (cmd_id == CMD_ZUNION || cmd_id == CMD_ZINTER ||
+        cmd_id == CMD_ZDIFF || cmd_id == CMD_ZINTERCARD ||
+        cmd_id == CMD_ZMPOP) {
+        const char *nv;
+        size_t nvl;
+        long long nk = 0;
+        size_t end;
+        if (argc < 3 || !arg_str(&argv[1], &nv, &nvl) ||
+            !parse_i64(nv, nvl, &nk) || nk <= 0)
+            return 1;
+        end = 2 + (size_t)nk;
+        if (end > argc)
+            end = argc;
+        for (i = 2; i < end; i++) {
+            const char *k;
+            size_t kl;
+            if (arg_str(&argv[i], &k, &kl) &&
+                !db_key_served(d, k, kl, out, now_ms, asking))
+                return 0;
+        }
+        return 1;
+    }
+    if (cmd_id == CMD_ZRANGESTORE) {
+        for (i = 1; i < argc && i < 3; i++) {
             const char *k;
             size_t kl;
             if (arg_str(&argv[i], &k, &kl) &&
@@ -7313,6 +7807,632 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
         return;
     }
 
+    if (cmd_id == CMD_ZUNIONSTORE || cmd_id == CMD_ZINTERSTORE) {
+        int inter = cmd_id == CMD_ZINTERSTORE;
+        const char *dst;
+        size_t dstl;
+        zsetop_args args;
+        obj_zset *result;
+        if (argc < 4) {
+            wrong_args(out, inter ? "zinterstore" : "zunionstore");
+            return;
+        }
+        if (crossslot_reject(d, out, argv, argc))
+            return;
+        if (!arg_str(&argv[1], &dst, &dstl))
+            goto bad_type;
+        if (!storage_key_ok(dstl)) {
+            storage_length_error(out);
+            return;
+        }
+        if (zsetop_parse(d, out, argv, argc, 2, 1, 1, 0, 0, NULL, now_ms,
+                         &args) != 0)
+            return;
+        result = obj_zset_new();
+        if ((inter ? zset_inter_build(args.sets, args.nkeys, args.weights,
+                                      args.aggregate, result)
+                   : zset_union_build(args.sets, args.nkeys, args.weights,
+                                      args.aggregate, result)) != 0) {
+            zsetop_args_free(&args);
+            obj_zset_free(result);
+            resp_write_error(out, "ERR resulting score is not a number (NaN)",
+                             41);
+            return;
+        }
+        zsetop_args_free(&args);
+        (void)zset_store_result(d, out, dst, dstl, result, now_ms);
+        return;
+    }
+
+    if (cmd_id == CMD_ZDIFFSTORE) {
+        const char *dst;
+        size_t dstl;
+        zsetop_args args;
+        obj_zset *result;
+        if (argc < 4) {
+            wrong_args(out, "zdiffstore");
+            return;
+        }
+        if (crossslot_reject(d, out, argv, argc))
+            return;
+        if (!arg_str(&argv[1], &dst, &dstl))
+            goto bad_type;
+        if (!storage_key_ok(dstl)) {
+            storage_length_error(out);
+            return;
+        }
+        if (zsetop_parse(d, out, argv, argc, 2, 0, 0, 0, 0, NULL, now_ms,
+                         &args) != 0)
+            return;
+        result = obj_zset_new();
+        if (zset_diff_build(args.sets, args.nkeys, result) != 0) {
+            zsetop_args_free(&args);
+            obj_zset_free(result);
+            resp_write_error(out, "ERR resulting score is not a number (NaN)",
+                             41);
+            return;
+        }
+        zsetop_args_free(&args);
+        (void)zset_store_result(d, out, dst, dstl, result, now_ms);
+        return;
+    }
+
+    if (cmd_id == CMD_ZUNION || cmd_id == CMD_ZINTER ||
+        cmd_id == CMD_ZDIFF) {
+        int inter = cmd_id == CMD_ZINTER;
+        int diff = cmd_id == CMD_ZDIFF;
+        zsetop_args args;
+        obj_zset *result;
+        if (argc < 3) {
+            wrong_args(out, inter ? "zinter" : diff ? "zdiff" : "zunion");
+            return;
+        }
+        if (crossslot_reject(d, out, argv, argc))
+            return;
+        if (zsetop_parse(d, out, argv, argc, 1, !diff, !diff, 1, 0, NULL,
+                         now_ms, &args) != 0)
+            return;
+        result = obj_zset_new();
+        if ((diff ? zset_diff_build(args.sets, args.nkeys, result)
+                  : inter ? zset_inter_build(args.sets, args.nkeys,
+                                             args.weights, args.aggregate,
+                                             result)
+                          : zset_union_build(args.sets, args.nkeys,
+                                             args.weights, args.aggregate,
+                                             result)) != 0) {
+            zsetop_args_free(&args);
+            obj_zset_free(result);
+            resp_write_error(out, "ERR resulting score is not a number (NaN)",
+                             41);
+            return;
+        }
+        zset_emit_all(out, result, args.withscores);
+        obj_zset_free(result);
+        zsetop_args_free(&args);
+        return;
+    }
+
+    if (cmd_id == CMD_ZINTERCARD) {
+        zsetop_args args;
+        long long limit = 0;
+        long long card;
+        if (argc < 3) {
+            wrong_args(out, "zintercard");
+            return;
+        }
+        if (crossslot_reject(d, out, argv, argc))
+            return;
+        if (zsetop_parse(d, out, argv, argc, 1, 0, 0, 0, 1, &limit, now_ms,
+                         &args) != 0)
+            return;
+        card = zset_intercard(args.sets, args.nkeys, limit);
+        zsetop_args_free(&args);
+        resp_write_integer(out, card);
+        return;
+    }
+
+    if (cmd_id == CMD_ZLEXCOUNT) {
+        const char *k, *minv, *maxv;
+        size_t kl, minvl, maxvl;
+        zlexrangespec spec;
+        if (argc != 4) {
+            wrong_args(out, "zlexcount");
+            return;
+        }
+        if (!arg_str(&argv[1], &k, &kl) || !arg_str(&argv[2], &minv, &minvl) ||
+            !arg_str(&argv[3], &maxv, &maxvl))
+            goto bad_type;
+        if (!parse_lex_bound(minv, minvl, &spec.min) ||
+            !parse_lex_bound(maxv, maxvl, &spec.max)) {
+            static const char lex_err[] =
+                "ERR min or max is not a valid string range item";
+            resp_write_error(out, lex_err, sizeof(lex_err) - 1);
+            return;
+        }
+        {
+            obj_zset *z;
+            int rc = get_zset(d, out, k, kl, 0, now_ms, &z);
+            obj_zset_iter first, last, it;
+            long long count = 0;
+            if (rc < 0)
+                return;
+            if (rc == 0 ||
+                !obj_zset_first_in_lex_range(z, &spec, &first) ||
+                !obj_zset_last_in_lex_range(z, &spec, &last)) {
+                resp_write_integer(out, 0);
+                return;
+            }
+            it = first;
+            for (;;) {
+                count++;
+                if (obj_zset_iter_eq(&it, &last))
+                    break;
+                if (!obj_zset_iter_next(&it))
+                    break;
+            }
+            resp_write_integer(out, count);
+        }
+        return;
+    }
+
+    if (cmd_id == CMD_ZREVRANGEBYSCORE) {
+        const char *k, *maxv, *minv;
+        size_t kl, maxvl, minvl;
+        zrangespec spec;
+        int withscores = 0;
+        long long off = 0, cnt = -1;
+        if (argc < 4) {
+            wrong_args(out, "zrevrangebyscore");
+            return;
+        }
+        if (!arg_str(&argv[1], &k, &kl) || !arg_str(&argv[2], &maxv, &maxvl) ||
+            !arg_str(&argv[3], &minv, &minvl))
+            goto bad_type;
+        if (!parse_bound(minv, minvl, &spec.min, &spec.minex) ||
+            !parse_bound(maxv, maxvl, &spec.max, &spec.maxex)) {
+            resp_write_error(out, ERR_NOT_FLOAT, sizeof(ERR_NOT_FLOAT) - 1);
+            return;
+        }
+        for (size_t i = 4; i < argc; i++) {
+            const char *o;
+            size_t ol;
+            if (!arg_str(&argv[i], &o, &ol))
+                goto bad_type;
+            if (ci_equal(o, ol, "WITHSCORES") && !withscores) {
+                withscores = 1;
+            } else if (ci_equal(o, ol, "LIMIT") && i + 2 < argc) {
+                const char *ov, *cv;
+                size_t ovl, cvl;
+                if (!arg_str(&argv[i + 1], &ov, &ovl) ||
+                    !arg_str(&argv[i + 2], &cv, &cvl))
+                    goto bad_type;
+                if (!parse_i64(ov, ovl, &off) ||
+                    !parse_i64(cv, cvl, &cnt)) {
+                    resp_write_error(out, ERR_NOT_INT,
+                                     sizeof(ERR_NOT_INT) - 1);
+                    return;
+                }
+                i += 2;
+            } else {
+                resp_write_error(out, ERR_SYNTAX, sizeof(ERR_SYNTAX) - 1);
+                return;
+            }
+        }
+        if (off < 0)
+            off = 0;
+        {
+            obj_zset *z;
+            int rc = get_zset(d, out, k, kl, 0, now_ms, &z);
+            if (rc < 0)
+                return;
+            if (rc == 0) {
+                resp_write_array_header(out, 0);
+                return;
+            }
+            {
+                obj_zset_iter it;
+                long long emitted = 0;
+                long long c = 0;
+                if (obj_zset_last_in_range(z, &spec, &it)) {
+                    for (;;) {
+                        double sc = obj_zset_iter_score(&it);
+                        if (spec.minex ? !(sc > spec.min)
+                                       : !(sc >= spec.min))
+                            break;
+                        if (c >= off)
+                            emitted++;
+                        c++;
+                        if (!obj_zset_iter_prev(&it))
+                            break;
+                    }
+                }
+                if (cnt >= 0 && emitted > cnt)
+                    emitted = cnt;
+                resp_write_array_header(
+                    out, (size_t)emitted * (withscores ? 2u : 1u));
+                c = 0;
+                if (obj_zset_last_in_range(z, &spec, &it)) {
+                    for (;;) {
+                        double sc = obj_zset_iter_score(&it);
+                        if (spec.minex ? !(sc > spec.min)
+                                       : !(sc >= spec.min))
+                            break;
+                        if (c >= off && (cnt < 0 || c - off < cnt))
+                            zset_emit_member(out, &it, withscores);
+                        c++;
+                        if (!obj_zset_iter_prev(&it))
+                            break;
+                    }
+                }
+            }
+        }
+        return;
+    }
+
+    if (cmd_id == CMD_ZRANGESTORE) {
+        const char *dst, *src;
+        size_t dstl, srcl;
+        int byscore = 0, bylex = 0, rev = 0;
+        long long off = 0, cnt = -1;
+        if (argc < 5) {
+            wrong_args(out, "zrangestore");
+            return;
+        }
+        if (!arg_str(&argv[1], &dst, &dstl) || !arg_str(&argv[2], &src, &srcl))
+            goto bad_type;
+        if (!storage_key_ok(dstl)) {
+            storage_length_error(out);
+            return;
+        }
+        for (size_t i = 5; i < argc; i++) {
+            const char *o;
+            size_t ol;
+            if (!arg_str(&argv[i], &o, &ol))
+                goto bad_type;
+            if (ci_equal(o, ol, "BYSCORE") && !bylex) {
+                byscore = 1;
+            } else if (ci_equal(o, ol, "BYLEX") && !byscore) {
+                bylex = 1;
+            } else if (ci_equal(o, ol, "REV")) {
+                rev = 1;
+            } else if (ci_equal(o, ol, "LIMIT") && i + 2 < argc) {
+                const char *ov, *cv;
+                size_t ovl, cvl;
+                if (!arg_str(&argv[i + 1], &ov, &ovl) ||
+                    !arg_str(&argv[i + 2], &cv, &cvl))
+                    goto bad_type;
+                if (!parse_i64(ov, ovl, &off) ||
+                    !parse_i64(cv, cvl, &cnt)) {
+                    resp_write_error(out, ERR_NOT_INT,
+                                     sizeof(ERR_NOT_INT) - 1);
+                    return;
+                }
+                i += 2;
+            } else {
+                resp_write_error(out, ERR_SYNTAX, sizeof(ERR_SYNTAX) - 1);
+                return;
+            }
+        }
+        if (off < 0)
+            off = 0;
+        {
+            obj_zset *z;
+            int rc = get_zset(d, out, src, srcl, 0, now_ms, &z);
+            obj_zset *result;
+            if (rc < 0)
+                return;
+            result = obj_zset_new();
+            if (rc == 1) {
+                long long c = 0;
+                if (byscore) {
+                    zrangespec spec;
+                    obj_zset_iter it;
+                    const char *minv, *maxv;
+                    size_t minvl, maxvl;
+                    if (!arg_str(&argv[3], &minv, &minvl) ||
+                        !arg_str(&argv[4], &maxv, &maxvl)) {
+                        obj_zset_free(result);
+                        resp_write_error(out, "ERR invalid argument type", 24);
+                        return;
+                    }
+                    if (!parse_bound(minv, minvl, &spec.min, &spec.minex) ||
+                        !parse_bound(maxv, maxvl, &spec.max, &spec.maxex)) {
+                        obj_zset_free(result);
+                        resp_write_error(out, ERR_NOT_FLOAT,
+                                         sizeof(ERR_NOT_FLOAT) - 1);
+                        return;
+                    }
+                    if (rev) {
+                        if (obj_zset_last_in_range(z, &spec, &it)) {
+                            for (;;) {
+                                double sc = obj_zset_iter_score(&it);
+                                size_t ml = 0;
+                                const char *mv;
+                                if (spec.minex ? !(sc > spec.min)
+                                               : !(sc >= spec.min))
+                                    break;
+                                if (c >= off &&
+                                    (cnt < 0 || c - off < cnt)) {
+                                    mv = obj_zset_iter_member(&it, &ml);
+                                    if (obj_zset_add(result, mv, ml, sc) < 0)
+                                        break;
+                                }
+                                c++;
+                                if (!obj_zset_iter_prev(&it))
+                                    break;
+                            }
+                        }
+                    } else {
+                        if (obj_zset_first_in_range(z, &spec, &it)) {
+                            for (;;) {
+                                double sc = obj_zset_iter_score(&it);
+                                size_t ml = 0;
+                                const char *mv;
+                                if (spec.maxex ? !(sc < spec.max)
+                                               : !(sc <= spec.max))
+                                    break;
+                                if (c >= off &&
+                                    (cnt < 0 || c - off < cnt)) {
+                                    mv = obj_zset_iter_member(&it, &ml);
+                                    if (obj_zset_add(result, mv, ml, sc) < 0)
+                                        break;
+                                }
+                                c++;
+                                if (!obj_zset_iter_next(&it))
+                                    break;
+                            }
+                        }
+                    }
+                } else if (bylex) {
+                    zlexrangespec spec;
+                    obj_zset_iter first, last, cur;
+                    const char *minv, *maxv;
+                    size_t minvl, maxvl;
+                    if (!arg_str(&argv[3], &minv, &minvl) ||
+                        !arg_str(&argv[4], &maxv, &maxvl)) {
+                        obj_zset_free(result);
+                        resp_write_error(out, "ERR invalid argument type", 24);
+                        return;
+                    }
+                    if (!parse_lex_bound(minv, minvl, &spec.min) ||
+                        !parse_lex_bound(maxv, maxvl, &spec.max)) {
+                        obj_zset_free(result);
+                        static const char lex_err[] =
+                            "ERR min or max is not a valid string range item";
+                        resp_write_error(out, lex_err, sizeof(lex_err) - 1);
+                        return;
+                    }
+                    if (rev) {
+                        if (obj_zset_first_in_lex_range(z, &spec, &first) &&
+                            obj_zset_last_in_lex_range(z, &spec, &last)) {
+                            cur = last;
+                            for (;;) {
+                                size_t ml = 0;
+                                const char *mv = obj_zset_iter_member(&cur, &ml);
+                                double sc = obj_zset_iter_score(&cur);
+                                if (c >= off &&
+                                    (cnt < 0 || c - off < cnt)) {
+                                    if (obj_zset_add(result, mv, ml, sc) < 0)
+                                        break;
+                                }
+                                c++;
+                                if (obj_zset_iter_eq(&cur, &first))
+                                    break;
+                                if (!obj_zset_iter_prev(&cur))
+                                    break;
+                            }
+                        }
+                    } else {
+                        if (obj_zset_first_in_lex_range(z, &spec, &first) &&
+                            obj_zset_last_in_lex_range(z, &spec, &last)) {
+                            cur = first;
+                            for (;;) {
+                                size_t ml = 0;
+                                const char *mv = obj_zset_iter_member(&cur, &ml);
+                                double sc = obj_zset_iter_score(&cur);
+                                if (c >= off &&
+                                    (cnt < 0 || c - off < cnt)) {
+                                    if (obj_zset_add(result, mv, ml, sc) < 0)
+                                        break;
+                                }
+                                c++;
+                                if (obj_zset_iter_eq(&cur, &last))
+                                    break;
+                                if (!obj_zset_iter_next(&cur))
+                                    break;
+                            }
+                        }
+                    }
+                } else {
+                    long long len = (long long)obj_zset_len(z);
+                    long long start, stop;
+                    const char *sv, *ev;
+                    size_t svl, evl;
+                    if (!arg_str(&argv[3], &sv, &svl) ||
+                        !arg_str(&argv[4], &ev, &evl)) {
+                        obj_zset_free(result);
+                        resp_write_error(out, "ERR invalid argument type", 24);
+                        return;
+                    }
+                    if (!parse_i64(sv, svl, &start) ||
+                        !parse_i64(ev, evl, &stop)) {
+                        obj_zset_free(result);
+                        resp_write_error(out, ERR_NOT_INT,
+                                         sizeof(ERR_NOT_INT) - 1);
+                        return;
+                    }
+                    if (start < 0)
+                        start += len;
+                    if (start < 0)
+                        start = 0;
+                    if (stop < 0)
+                        stop += len;
+                    if (stop >= len)
+                        stop = len - 1;
+                    if (start <= stop && start < len && stop >= 0) {
+                        obj_zset_iter it;
+                        long long idx;
+                        if (!rev) {
+                            if (obj_zset_seek(z, (size_t)start, &it)) {
+                                for (idx = start; idx <= stop; idx++) {
+                                    size_t ml = 0;
+                                    const char *mv = obj_zset_iter_member(&it, &ml);
+                                    double sc = obj_zset_iter_score(&it);
+                                    if (c >= off &&
+                                        (cnt < 0 || c - off < cnt)) {
+                                        if (obj_zset_add(result, mv, ml, sc) < 0)
+                                            break;
+                                    }
+                                    c++;
+                                    if (idx != stop && !obj_zset_iter_next(&it))
+                                        break;
+                                }
+                            }
+                        } else {
+                            if (obj_zset_seek(z, (size_t)(len - 1 - start), &it)) {
+                                for (idx = start; idx <= stop; idx++) {
+                                    size_t ml = 0;
+                                    const char *mv = obj_zset_iter_member(&it, &ml);
+                                    double sc = obj_zset_iter_score(&it);
+                                    if (c >= off &&
+                                        (cnt < 0 || c - off < cnt)) {
+                                        if (obj_zset_add(result, mv, ml, sc) < 0)
+                                            break;
+                                    }
+                                    c++;
+                                    if (idx != stop && !obj_zset_iter_prev(&it))
+                                        break;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            (void)zset_store_result(d, out, dst, dstl, result, now_ms);
+        }
+        return;
+    }
+
+    if (cmd_id == CMD_ZMPOP) {
+        const char *nv;
+        size_t nvl;
+        long long nk;
+        size_t nkeys, i;
+        int min_side;
+        long long count = 1;
+        if (argc < 3) {
+            wrong_args(out, "zmpop");
+            return;
+        }
+        if (crossslot_reject(d, out, argv, argc))
+            return;
+        if (!arg_str(&argv[1], &nv, &nvl))
+            goto bad_type;
+        if (!parse_i64(nv, nvl, &nk)) {
+            resp_write_error(out, ERR_NOT_INT, sizeof(ERR_NOT_INT) - 1);
+            return;
+        }
+        if (nk <= 0 ||
+            (unsigned long long)nk > (unsigned long long)(argc - 2)) {
+            static const char E[] =
+                "ERR Number of keys can't be greater than number of args";
+            resp_write_error(out, E, sizeof(E) - 1);
+            return;
+        }
+        nkeys = (size_t)nk;
+        i = 2 + nkeys;
+        if (i >= argc)
+            goto bad_type;
+        {
+            const char *side;
+            size_t sidel;
+            if (!arg_str(&argv[i], &side, &sidel))
+                goto bad_type;
+            if (ci_equal(side, sidel, "MIN"))
+                min_side = 1;
+            else if (ci_equal(side, sidel, "MAX"))
+                min_side = 0;
+            else {
+                resp_write_error(out, ERR_SYNTAX, sizeof(ERR_SYNTAX) - 1);
+                return;
+            }
+        }
+        if (i + 1 < argc) {
+            const char *opt, *cv;
+            size_t optl, cvl;
+            if (i + 2 >= argc) {
+                resp_write_error(out, ERR_SYNTAX, sizeof(ERR_SYNTAX) - 1);
+                return;
+            }
+            if (!arg_str(&argv[i + 1], &opt, &optl) ||
+                !arg_str(&argv[i + 2], &cv, &cvl)) {
+                resp_write_error(out, "ERR invalid argument type", 24);
+                return;
+            }
+            if (!ci_equal(opt, optl, "COUNT")) {
+                resp_write_error(out, ERR_SYNTAX, sizeof(ERR_SYNTAX) - 1);
+                return;
+            }
+            if (!parse_i64(cv, cvl, &count)) {
+                resp_write_error(out, ERR_NOT_INT, sizeof(ERR_NOT_INT) - 1);
+                return;
+            }
+            if (count <= 0) {
+                static const char E[] =
+                    "ERR value is out of range, must be positive";
+                resp_write_error(out, E, sizeof(E) - 1);
+                return;
+            }
+            if (i + 3 < argc) {
+                resp_write_error(out, ERR_SYNTAX, sizeof(ERR_SYNTAX) - 1);
+                return;
+            }
+        }
+        for (i = 0; i < nkeys; i++) {
+            const char *k;
+            size_t kl;
+            obj_zset *z = NULL;
+            int rc;
+            if (!arg_str(&argv[2 + i], &k, &kl))
+                goto bad_type;
+            rc = get_zset(d, out, k, kl, 0, now_ms, &z);
+            if (rc < 0)
+                return;
+            if (rc == 0 || obj_zset_len(z) == 0)
+                continue;
+            {
+                size_t avail = obj_zset_len(z);
+                size_t n = (uint64_t)count < (uint64_t)avail ? (size_t)count
+                                                             : avail;
+                uint64_t before = obj_zset_mem(z);
+                size_t p;
+                resp_write_array_header(out, 2);
+                resp_write_bulk(out, k, kl);
+                resp_write_array_header(out, n);
+                for (p = 0; p < n; p++) {
+                    char *mv = NULL;
+                    size_t ml = 0;
+                    double sc = 0.0;
+                    char num[40];
+                    int nl;
+                    if (!obj_zset_pop(z, min_side, &mv, &ml, &sc))
+                        break;
+                    resp_write_array_header(out, 2);
+                    resp_write_bulk(out, mv, ml);
+                    nl = fmt_score(num, sizeof(num), sc);
+                    resp_write_bulk(out, num, (size_t)nl);
+                    free(mv);
+                }
+                mem_sync(d, k, kl, before, obj_zset_mem(z));
+                if (obj_zset_len(z) == 0)
+                    db_del_kv(d, k, kl);
+            }
+            return;
+        }
+        write_null_array(out);
+        return;
+    }
+
     if (cmd_id == CMD_SUBSCRIBE) {
         size_t i;
         if (argc < 2) {
@@ -8541,6 +9661,17 @@ static const cmd_entry CMD_TABLE[] = {
     {"bitop", CMD_BITOP, 4, -1, 0, CMD_WRITE},
     {"bitfield", CMD_BITFIELD, 3, -1, 0, CMD_WRITE},
     {"bitfield_ro", CMD_BITFIELD_RO, 3, -1, 0, 0},
+    {"zunionstore", CMD_ZUNIONSTORE, 4, -1, 0, CMD_WRITE},
+    {"zinterstore", CMD_ZINTERSTORE, 4, -1, 0, CMD_WRITE},
+    {"zdiffstore", CMD_ZDIFFSTORE, 4, -1, 0, CMD_WRITE},
+    {"zunion", CMD_ZUNION, 3, -1, 0, 0},
+    {"zinter", CMD_ZINTER, 3, -1, 0, 0},
+    {"zdiff", CMD_ZDIFF, 3, -1, 0, 0},
+    {"zintercard", CMD_ZINTERCARD, 3, -1, 0, 0},
+    {"zlexcount", CMD_ZLEXCOUNT, 4, 4, 0, 0},
+    {"zrevrangebyscore", CMD_ZREVRANGEBYSCORE, 4, -1, 0, 0},
+    {"zrangestore", CMD_ZRANGESTORE, 5, -1, 0, CMD_WRITE},
+    {"zmpop", CMD_ZMPOP, 3, -1, 0, CMD_WRITE},
 };
 
 static const cmd_entry *cmd_table_entry(uint16_t id)

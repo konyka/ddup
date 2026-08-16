@@ -1333,6 +1333,8 @@ static int mt_is_single_key(uint16_t cmd)
     case CMD_ZRANGEBYLEX:
     case CMD_ZREVRANGEBYLEX:
     case CMD_ZREMRANGEBYLEX:
+    case CMD_ZLEXCOUNT:
+    case CMD_ZREVRANGEBYSCORE:
         return 1;
     default:
         return 0;
@@ -1379,8 +1381,34 @@ static int mt_multikey_target(int nworkers, uint16_t cmd,
     if (argc < 2)
         return MT_LOCAL; /* arity error: let the session report it */
 
+    if (cmd == CMD_ZUNIONSTORE || cmd == CMD_ZINTERSTORE ||
+        cmd == CMD_ZDIFFSTORE) {
+        long long nk = 0;
+        size_t end;
+        if (argc < 4 || argv[1].str == NULL ||
+            argv[2].str == NULL ||
+            !mt_parse_ll(argv[2].str, argv[2].len, &nk) || nk <= 0)
+            return MT_LOCAL;
+        end = 3 + (size_t)nk;
+        if (end > argc)
+            end = argc;
+        target = (int)(hash_slot(argv[1].str, argv[1].len) %
+                       (uint32_t)nworkers);
+        for (i = 3; i < end; i++) {
+            int w;
+            if (argv[i].str == NULL)
+                return MT_LOCAL;
+            w = (int)(hash_slot(argv[i].str, argv[i].len) %
+                      (uint32_t)nworkers);
+            if (w != target)
+                return MT_CROSSSLOT;
+        }
+        return target;
+    }
+
     kend = argc;
-    if (cmd == CMD_SINTERCARD) {
+    if (cmd == CMD_SINTERCARD || cmd == CMD_ZUNION || cmd == CMD_ZINTER ||
+        cmd == CMD_ZDIFF || cmd == CMD_ZINTERCARD || cmd == CMD_ZMPOP) {
         long long nk = 0;
         if (argv[1].str == NULL || !mt_parse_ll(argv[1].str, argv[1].len, &nk))
             return MT_LOCAL; /* bad numkeys: let the session report it */
@@ -1390,6 +1418,10 @@ static int mt_multikey_target(int nworkers, uint16_t cmd,
         kend = 2 + (size_t)nk;
         if (kend > argc)
             kend = argc;
+    }
+    if (cmd == CMD_ZRANGESTORE) {
+        kstart = 1;
+        kend = argc > 2 ? 3 : argc;
     }
 
     for (i = kstart; i < kend; i++) {
@@ -1446,6 +1478,15 @@ static int mt_classify(int nworkers, uint16_t cmd, const resp_value *argv,
     case CMD_SINTERSTORE:
     case CMD_SUNIONSTORE:
     case CMD_SDIFFSTORE:
+    case CMD_ZUNIONSTORE:
+    case CMD_ZINTERSTORE:
+    case CMD_ZDIFFSTORE:
+    case CMD_ZUNION:
+    case CMD_ZINTER:
+    case CMD_ZDIFF:
+    case CMD_ZINTERCARD:
+    case CMD_ZMPOP:
+    case CMD_ZRANGESTORE:
         return mt_multikey_target(nworkers, cmd, argv, argc);
     default:
         break;

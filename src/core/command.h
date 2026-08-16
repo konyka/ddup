@@ -303,10 +303,21 @@ enum {
     CMD_BITPOS,
     CMD_BITOP,
     CMD_BITFIELD,
-    CMD_BITFIELD_RO
+    CMD_BITFIELD_RO,
+    CMD_ZUNIONSTORE,
+    CMD_ZINTERSTORE,
+    CMD_ZDIFFSTORE,
+    CMD_ZUNION,
+    CMD_ZINTER,
+    CMD_ZDIFF,
+    CMD_ZINTERCARD,
+    CMD_ZLEXCOUNT,
+    CMD_ZREVRANGEBYSCORE,
+    CMD_ZRANGESTORE,
+    CMD_ZMPOP
 };
 
-#define CMD_MAX CMD_BITFIELD_RO
+#define CMD_MAX CMD_ZMPOP
 
 /* Resolve a command name to its stable ID; case-insensitive. */
 uint16_t cmd_resolve(const char *name, size_t len);
