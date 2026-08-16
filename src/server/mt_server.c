@@ -1245,6 +1245,7 @@ static int mt_is_single_key(uint16_t cmd)
     switch (cmd) {
     case CMD_GET:
     case CMD_SET:
+    case CMD_SETNX:
     case CMD_DUMP:
     case CMD_RESTORE:
     case CMD_INCR:
@@ -1359,7 +1360,7 @@ static int mt_is_aggregate(uint16_t cmd)
  * cluster CROSSSLOT). Key positions by command:
  *   MGET/DEL/UNLINK/EXISTS/TOUCH -> argv[1..]
  *   SINTERSTORE/SUNIONSTORE/SDIFFSTORE -> argv[1..] (dst + sources)
- *   MSET                         -> argv[1], argv[3], ... (key/value pairs)
+ *   MSET/MSETNX                  -> argv[1], argv[3], ... (key/value pairs)
  *   SMOVE/RENAME/RENAMENX/RPOPLPUSH -> argv[1], argv[2] (source, destination)
  *   SINTERCARD                   -> argv[2..2+numkeys) (numkeys at argv[1]) */
 static int mt_multikey_target(int nworkers, uint16_t cmd,
@@ -1387,7 +1388,7 @@ static int mt_multikey_target(int nworkers, uint16_t cmd,
 
     for (i = kstart; i < kend; i++) {
         int w;
-        if (cmd == CMD_MSET && (i % 2) == 0)
+        if ((cmd == CMD_MSET || cmd == CMD_MSETNX) && (i % 2) == 0)
             continue; /* value position */
         if ((cmd == CMD_SMOVE || cmd == CMD_RENAME ||
              cmd == CMD_RENAMENX || cmd == CMD_RPOPLPUSH ||
@@ -1421,6 +1422,7 @@ static int mt_classify(int nworkers, uint16_t cmd, const resp_value *argv,
     switch (cmd) {
     case CMD_MGET:
     case CMD_MSET:
+    case CMD_MSETNX:
     case CMD_DEL:
     case CMD_UNLINK:
     case CMD_EXISTS:

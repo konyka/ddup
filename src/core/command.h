@@ -294,10 +294,12 @@ enum {
     CMD_PSUBSCRIBE,
     CMD_PUNSUBSCRIBE,
     CMD_COPY,
-    CMD_OBJECT
+    CMD_OBJECT,
+    CMD_SETNX,
+    CMD_MSETNX
 };
 
-#define CMD_MAX CMD_OBJECT
+#define CMD_MAX CMD_MSETNX
 
 /* Resolve a command name to its stable ID; case-insensitive. */
 uint16_t cmd_resolve(const char *name, size_t len);

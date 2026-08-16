@@ -1622,7 +1622,7 @@ static int cmd_keys_accum(const resp_value *argv, size_t argc, int *have,
         }
         return 1;
     }
-    if (cmd_id == CMD_MSET) {
+    if (cmd_id == CMD_MSET || cmd_id == CMD_MSETNX) {
         for (i = 1; i + 1 < argc; i += 2) {
             const char *k;
             size_t kl;
@@ -1927,6 +1927,7 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
         resp_write_error(out, "ERR empty command", 17);
         return;
     }
+
     const char *name;
     size_t nlen;
     if (!arg_str(&argv[0], &name, &nlen)) {
@@ -3105,6 +3106,73 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
         return;
     }
 
+    if (cmd_id == CMD_SETNX) {
+        const char *k, *v, *old;
+        size_t kl, vl, oldl;
+        if (argc != 3) {
+            wrong_args(out, "setnx");
+            return;
+        }
+        if (!arg_str(&argv[1], &k, &kl) || !arg_str(&argv[2], &v, &vl))
+            goto bad_type;
+        if (!storage_string_ok(kl, vl)) {
+            storage_length_error(out);
+            return;
+        }
+        if (db_get(d, k, kl, &old, &oldl, now_ms)) {
+            resp_write_integer(out, 0);
+            return;
+        }
+        if (oom_blocked(d, out))
+            return;
+        if (db_set_string(d, k, kl, v, vl, now_ms) != 0) {
+            storage_length_error(out);
+            return;
+        }
+        resp_write_integer(out, 1);
+        return;
+    }
+
+    if (cmd_id == CMD_MSETNX) {
+        size_t i;
+        if (argc < 3 || argc % 2 == 0) {
+            wrong_args(out, "msetnx");
+            return;
+        }
+        if (crossslot_reject(d, out, argv, argc))
+            return;
+        /* First pass validates and probes every key. No mutation happens
+         * before the condition is known, preserving Redis all-or-nothing. */
+        for (i = 1; i + 1 < argc; i += 2) {
+            const char *k, *v, *old;
+            size_t kl, vl, oldl;
+            if (!arg_str(&argv[i], &k, &kl) ||
+                !arg_str(&argv[i + 1], &v, &vl))
+                goto bad_type;
+            if (!storage_string_ok(kl, vl)) {
+                storage_length_error(out);
+                return;
+            }
+            if (db_get(d, k, kl, &old, &oldl, now_ms)) {
+                resp_write_integer(out, 0);
+                return;
+            }
+        }
+        if (oom_blocked(d, out))
+            return;
+        for (i = 1; i + 1 < argc; i += 2) {
+            const char *k, *v;
+            size_t kl, vl;
+            (void)arg_str(&argv[i], &k, &kl);
+            (void)arg_str(&argv[i + 1], &v, &vl);
+            if (db_set_string(d, k, kl, v, vl, now_ms) != 0) {
+                storage_length_error(out);
+                return;
+            }
+        }
+        resp_write_integer(out, 1);
+        return;
+    }
     if (cmd_id == CMD_MGET) {
         if (argc < 2) {
             wrong_args(out, "mget");
@@ -7591,6 +7659,8 @@ static const cmd_entry CMD_TABLE[] = {
     {"punsubscribe", CMD_PUNSUBSCRIBE, 1, -1, 0, 0},
     {"copy", CMD_COPY, 3, -1, 0, CMD_WRITE},
     {"object", CMD_OBJECT, 3, 3, 0, 0},
+    {"setnx", CMD_SETNX, 3, 3, 0, CMD_WRITE},
+    {"msetnx", CMD_MSETNX, 3, -1, 1, CMD_WRITE},
 };
 
 static const cmd_entry *cmd_table_entry(uint16_t id)

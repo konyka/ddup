@@ -335,6 +335,62 @@ static void test_setrange(void)
     db_destroy(&d);
 }
 
+static void test_setnx_msetnx(void)
+{
+    db d;
+    resp_buf out;
+    uint64_t dirty;
+    db_init(&d);
+    resp_buf_init(&out);
+
+    /* SETNX writes once and never overwrites an extant value. */
+    exec_cmd(&d, T0, &out, 3, "SETNX", "one", "v1");
+    EXPECT(out, ":1\r\n");
+    exec_cmd(&d, T0, &out, 3, "SETNX", "one", "v2");
+    EXPECT(out, ":0\r\n");
+    exec_cmd(&d, T0, &out, 2, "GET", "one");
+    EXPECT(out, "$2\r\nv1\r\n");
+
+    /* An expired value is absent, so the condition succeeds. */
+    exec_cmd(&d, T0, &out, 3, "SET", "expired", "old");
+    exec_cmd(&d, T0, &out, 3, "PEXPIRE", "expired", "10");
+    exec_cmd(&d, T0 + 11, &out, 3, "SETNX", "expired", "new");
+    EXPECT(out, ":1\r\n");
+    exec_cmd(&d, T0 + 11, &out, 2, "GET", "expired");
+    EXPECT(out, "$3\r\nnew\r\n");
+
+    /* A failed conditional write must not advance the dirty counter. */
+    dirty = d.dirty;
+    exec_cmd(&d, T0, &out, 3, "SETNX", "one", "ignored");
+    EXPECT(out, ":0\r\n");
+    DD_CHECK_EQ_INT((long long)dirty, (long long)d.dirty);
+
+    /* MSETNX is all-or-nothing: a present key prevents every write. */
+    exec_cmd(&d, T0, &out, 5, "MSETNX", "a", "1", "b", "2");
+    EXPECT(out, ":1\r\n");
+    exec_cmd(&d, T0, &out, 5, "MSETNX", "a", "new", "c", "3");
+    EXPECT(out, ":0\r\n");
+    exec_cmd(&d, T0, &out, 2, "GET", "a");
+    EXPECT(out, "$1\r\n1\r\n");
+    exec_cmd(&d, T0, &out, 2, "GET", "c");
+    EXPECT(out, "$-1\r\n");
+
+    /* Existing non-string values also make MSETNX fail, without WRONGTYPE. */
+    exec_cmd(&d, T0, &out, 4, "HSET", "hash", "f", "v");
+    exec_cmd(&d, T0, &out, 5, "MSETNX", "d", "4", "hash", "no");
+    EXPECT(out, ":0\r\n");
+    exec_cmd(&d, T0, &out, 2, "GET", "d");
+    EXPECT(out, "$-1\r\n");
+
+    exec_cmd(&d, T0, &out, 2, "SETNX", "one");
+    EXPECT(out, "-ERR wrong number of arguments for 'setnx' command\r\n");
+    exec_cmd(&d, T0, &out, 4, "MSETNX", "x", "1", "y");
+    EXPECT(out, "-ERR wrong number of arguments for 'msetnx' command\r\n");
+
+    resp_buf_free(&out);
+    db_destroy(&d);
+}
+
 static void test_getrange(void)
 {
     db d;
@@ -644,6 +700,7 @@ int main(void)
     DD_RUN(test_set_keepttl);
     DD_RUN(test_set_get_option);
     DD_RUN(test_setrange);
+    DD_RUN(test_setnx_msetnx);
     DD_RUN(test_getrange);
     DD_RUN(test_incrby_decrby);
     DD_RUN(test_incrbyfloat);
