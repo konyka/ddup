@@ -30,7 +30,7 @@
 -- Performing Test CMAKE_HAVE_LIBC_PTHREAD - Success
 -- Found Threads: TRUE
 -- ddup: TLS enabled (OpenSSL 3.0.13)
--- Configuring done (12.2s)
+-- Configuring done (9.8s)
 -- Generating done (0.1s)
 -- Build files have been written to: /home/runner/work/ddup/ddup/build
 [  1%] Building C object CMakeFiles/ddup_lua.dir/deps/lua/lapi.c.o
@@ -816,12 +816,6 @@ In function ‘snprintf’,
       |          ^
 In function ‘snprintf’,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:423:9,
-    inlined from ‘obj_set_convert’ at /home/runner/work/ddup/ddup/src/ds/obj.c:482:35:
-/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
-   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
-      |          ^
-In function ‘snprintf’,
-    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:423:9,
     inlined from ‘obj_zset_iter_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:946:35,
     inlined from ‘obj_zset_iter_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:942:13,
     inlined from ‘command_dispatch’ at /home/runner/work/ddup/ddup/src/core/command.c:6446:34:
@@ -841,6 +835,12 @@ In function ‘snprintf’,
     inlined from ‘obj_zset_last_in_lex_range’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1103:39,
     inlined from ‘obj_zset_last_in_lex_range’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1093:5,
     inlined from ‘command_dispatch’ at /home/runner/work/ddup/ddup/src/core/command.c:6606:18:
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
+   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^
+In function ‘snprintf’,
+    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:423:9,
+    inlined from ‘obj_set_convert’ at /home/runner/work/ddup/ddup/src/ds/obj.c:482:35:
 /usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
    54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
       |          ^
@@ -2290,7 +2290,7 @@ Get:11 http://azure.archive.ubuntu.com/ubuntu noble/main amd64 libsource-highlig
 Get:12 http://azure.archive.ubuntu.com/ubuntu noble-updates/main amd64 gdb amd64 15.1-1ubuntu1~24.04.1 [4083 kB]
 Get:13 http://azure.archive.ubuntu.com/ubuntu noble-updates/main amd64 libc6-dbg amd64 2.39-0ubuntu8.8 [7461 kB]
 Preconfiguring packages ...
-Fetched 13.6 MB in 2s (8046 kB/s)
+Fetched 13.6 MB in 1s (11.0 MB/s)
 Selecting previously unselected package libdebuginfod-common.
 (Reading database ... (Reading database ... 5%(Reading database ... 10%(Reading database ... 15%(Reading database ... 20%(Reading database ... 25%(Reading database ... 30%(Reading database ... 35%(Reading database ... 40%(Reading database ... 45%(Reading database ... 50%(Reading database ... 55%(Reading database ... 60%(Reading database ... 65%(Reading database ... 70%(Reading database ... 75%(Reading database ... 80%(Reading database ... 85%(Reading database ... 90%(Reading database ... 95%(Reading database ... 100%(Reading database ... 203139 files and directories currently installed.)
 Preparing to unpack .../00-libdebuginfod-common_0.190-1.1ubuntu0.1_all.deb ...
