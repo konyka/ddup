@@ -1335,6 +1335,9 @@ static int mt_is_single_key(uint16_t cmd)
     case CMD_ZREMRANGEBYLEX:
     case CMD_ZLEXCOUNT:
     case CMD_ZREVRANGEBYSCORE:
+    case CMD_HSCAN:
+    case CMD_SSCAN:
+    case CMD_ZSCAN:
         return 1;
     default:
         return 0;

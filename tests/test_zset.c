@@ -1002,6 +1002,48 @@ static void test_zset_rangestore(void)
     db_destroy(&d);
 }
 
+static void test_zscan(void)
+{
+    db d;
+    resp_buf out;
+    db_init(&d);
+    resp_buf_init(&out);
+
+    exec_cmd(&d, T0, &out, 8, "ZADD", "zs", "1", "a", "2", "b", "3", "c");
+    EXPECT(out, ":3\r\n");
+    exec_cmd(&d, T0, &out, 3, "ZSCAN", "zs", "0");
+    EXPECT(out, "*2\r\n$1\r\n0\r\n*6\r\n$1\r\na\r\n$1\r\n1\r\n$1\r\nb\r\n$1\r\n2\r\n$1\r\nc\r\n$1\r\n3\r\n");
+
+    exec_cmd(&d, T0, &out, 5, "ZSCAN", "zs", "0", "COUNT", "2");
+    EXPECT(out, "*2\r\n$1\r\n2\r\n*4\r\n$1\r\na\r\n$1\r\n1\r\n$1\r\nb\r\n$1\r\n2\r\n");
+    exec_cmd(&d, T0, &out, 3, "ZSCAN", "zs", "2");
+    EXPECT(out, "*2\r\n$1\r\n0\r\n*2\r\n$1\r\nc\r\n$1\r\n3\r\n");
+
+    exec_cmd(&d, T0, &out, 5, "ZSCAN", "zs", "0", "MATCH", "[ac]");
+    EXPECT(out, "*2\r\n$1\r\n0\r\n*4\r\n$1\r\na\r\n$1\r\n1\r\n$1\r\nc\r\n$1\r\n3\r\n");
+
+    {
+        obj_limits saved, forced;
+        obj_limits_get(&saved);
+        forced = saved;
+        forced.zset_entries = 0;
+        obj_limits_apply(&forced);
+        exec_cmd(&d, T0, &out, 4, "ZADD", "z2", "1", "x");
+        exec_cmd(&d, T0, &out, 3, "ZSCAN", "z2", "0");
+        EXPECT(out, "*2\r\n$1\r\n0\r\n*2\r\n$1\r\nx\r\n$1\r\n1\r\n");
+        obj_limits_apply(&saved);
+    }
+
+    exec_cmd(&d, T0, &out, 3, "ZSCAN", "missing", "0");
+    EXPECT(out, "*2\r\n$1\r\n0\r\n*0\r\n");
+    exec_cmd(&d, T0, &out, 3, "SET", "s", "v");
+    exec_cmd(&d, T0, &out, 3, "ZSCAN", "s", "0");
+    EXPECT(out, "-WRONGTYPE Operation against a key holding the wrong kind of value\r\n");
+
+    resp_buf_free(&out);
+    db_destroy(&d);
+}
+
 int main(void)
 {
     DD_RUN(test_obj_str_zero_length_blob);
@@ -1025,5 +1067,6 @@ int main(void)
     DD_RUN(test_zset_setops);
     DD_RUN(test_zset_range_extra);
     DD_RUN(test_zset_rangestore);
+    DD_RUN(test_zscan);
     return DD_TEST_SUMMARY();
 }

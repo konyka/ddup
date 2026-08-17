@@ -2601,6 +2601,314 @@ static int randomkey_cb(const char *key, size_t klen, const char *val,
     return 1;
 }
 
+typedef struct scan_object_opt {
+    size_t cursor;
+    const char *pat;
+    size_t plen;
+    long long count;
+} scan_object_opt;
+
+static int parse_object_scan(const resp_value *argv, size_t argc,
+                             resp_buf *out, scan_object_opt *opt)
+{
+    const char *cur;
+    size_t curl;
+    size_t i;
+
+    if (!arg_str(&argv[2], &cur, &curl)) {
+        resp_write_error(out, "ERR invalid argument type", 24);
+        return -1;
+    }
+    if (!parse_cursor(cur, curl, &opt->cursor)) {
+        resp_write_error(out, "ERR invalid cursor", 18);
+        return -1;
+    }
+    opt->pat = NULL;
+    opt->plen = 0;
+    opt->count = 10;
+    for (i = 3; i < argc; i += 2) {
+        const char *name, *val;
+        size_t namel, vall;
+        if (i + 1 >= argc) {
+            resp_write_error(out, ERR_SYNTAX, sizeof(ERR_SYNTAX) - 1);
+            return -1;
+        }
+        if (!arg_str(&argv[i], &name, &namel) ||
+            !arg_str(&argv[i + 1], &val, &vall)) {
+            resp_write_error(out, "ERR invalid argument type", 24);
+            return -1;
+        }
+        if (ci_equal(name, namel, "MATCH")) {
+            opt->pat = val;
+            opt->plen = vall;
+        } else if (ci_equal(name, namel, "COUNT")) {
+            if (!parse_i64(val, vall, &opt->count) || opt->count <= 0) {
+                resp_write_error(out, ERR_SYNTAX, sizeof(ERR_SYNTAX) - 1);
+                return -1;
+            }
+        } else {
+            resp_write_error(out, ERR_SYNTAX, sizeof(ERR_SYNTAX) - 1);
+            return -1;
+        }
+    }
+    return 0;
+}
+
+typedef struct hscan_ctx {
+    const char *fields[SCAN_BATCH];
+    size_t flens[SCAN_BATCH];
+    const char *vals[SCAN_BATCH];
+    size_t vlens[SCAN_BATCH];
+    size_t n;
+    const char *pat;
+    size_t plen;
+} hscan_ctx;
+
+static void hscan_collect(hscan_ctx *c, const char *f, size_t flen,
+                          const char *v, size_t vlen)
+{
+    if (c->n >= SCAN_BATCH)
+        return;
+    if (c->pat != NULL && !ddup_glob_match(c->pat, c->plen, f, flen))
+        return;
+    c->fields[c->n] = f;
+    c->flens[c->n] = flen;
+    c->vals[c->n] = v;
+    c->vlens[c->n] = vlen;
+    c->n++;
+}
+
+static int hscan_ht_cb(const char *f, size_t flen, const char *v,
+                       size_t vlen, void *ctx)
+{
+    hscan_ctx *c = (hscan_ctx *)ctx;
+    hscan_collect(c, f, flen, v, vlen);
+    return c->n == SCAN_BATCH;
+}
+
+static size_t hscan_ht_run(obj_hash *h, size_t cursor, size_t count,
+                            hscan_ctx *c)
+{
+    c->n = 0;
+    return rh_scan(&h->fields, cursor, count, hscan_ht_cb, c);
+}
+
+static size_t hscan_lp_next(obj_hash *h, size_t cursor, size_t count,
+                            const char *pat, size_t plen, size_t *n_out)
+{
+    uint64_t len = obj_hash_len(h);
+    size_t idx = cursor;
+    size_t visited = 0;
+    size_t n = 0;
+    while (idx < len && visited < count && n < SCAN_BATCH) {
+        const char *f, *v;
+        size_t fl, vl;
+        idx++;
+        visited++;
+        if (!obj_hash_pair_at(h, (uint64_t)(idx - 1), &f, &fl, &v, &vl))
+            break;
+        if (pat == NULL || ddup_glob_match(pat, plen, f, fl))
+            n++;
+    }
+    *n_out = n;
+    return idx >= len ? 0 : idx;
+}
+
+static void hscan_lp_emit(obj_hash *h, size_t cursor, size_t count,
+                          const char *pat, size_t plen, resp_buf *out)
+{
+    uint64_t len = obj_hash_len(h);
+    size_t idx = cursor;
+    size_t visited = 0;
+    size_t emitted = 0;
+    while (idx < len && visited < count && emitted < SCAN_BATCH) {
+        const char *f, *v;
+        size_t fl, vl;
+        idx++;
+        visited++;
+        if (!obj_hash_pair_at(h, (uint64_t)(idx - 1), &f, &fl, &v, &vl))
+            break;
+        if (pat != NULL && !ddup_glob_match(pat, plen, f, fl))
+            continue;
+        resp_write_bulk(out, f, fl);
+        resp_write_bulk(out, v, vl);
+        emitted++;
+    }
+}
+
+typedef struct sscan_ctx {
+    const char *members[SCAN_BATCH];
+    size_t mlens[SCAN_BATCH];
+    size_t n;
+    const char *pat;
+    size_t plen;
+} sscan_ctx;
+
+static void sscan_collect(sscan_ctx *c, const char *m, size_t mlen)
+{
+    if (c->n >= SCAN_BATCH)
+        return;
+    if (c->pat != NULL && !ddup_glob_match(c->pat, c->plen, m, mlen))
+        return;
+    c->members[c->n] = m;
+    c->mlens[c->n] = mlen;
+    c->n++;
+}
+
+static int sscan_ht_cb(const char *m, size_t mlen, const char *v,
+                       size_t vlen, void *ctx)
+{
+    sscan_ctx *c = (sscan_ctx *)ctx;
+    (void)v;
+    (void)vlen;
+    sscan_collect(c, m, mlen);
+    return c->n == SCAN_BATCH;
+}
+
+static size_t sscan_ht_run(obj_set *s, size_t cursor, size_t count,
+                            sscan_ctx *c)
+{
+    c->n = 0;
+    return rh_scan(&s->members, cursor, count, sscan_ht_cb, c);
+}
+
+static size_t sscan_lp_next(obj_set *s, size_t cursor, size_t count,
+                            const char *pat, size_t plen, size_t *n_out)
+{
+    uint64_t len = obj_set_len(s);
+    size_t idx = cursor;
+    size_t visited = 0;
+    size_t n = 0;
+    while (idx < len && visited < count && n < SCAN_BATCH) {
+        const char *m;
+        size_t ml;
+        idx++;
+        visited++;
+        if (!obj_set_member_at(s, (uint64_t)(idx - 1), &m, &ml))
+            break;
+        if (pat == NULL || ddup_glob_match(pat, plen, m, ml))
+            n++;
+    }
+    *n_out = n;
+    return idx >= len ? 0 : idx;
+}
+
+static void sscan_lp_emit(obj_set *s, size_t cursor, size_t count,
+                          const char *pat, size_t plen, resp_buf *out)
+{
+    uint64_t len = obj_set_len(s);
+    size_t idx = cursor;
+    size_t visited = 0;
+    size_t emitted = 0;
+    while (idx < len && visited < count && emitted < SCAN_BATCH) {
+        const char *m;
+        size_t ml;
+        idx++;
+        visited++;
+        if (!obj_set_member_at(s, (uint64_t)(idx - 1), &m, &ml))
+            break;
+        if (pat != NULL && !ddup_glob_match(pat, plen, m, ml))
+            continue;
+        resp_write_bulk(out, m, ml);
+        emitted++;
+    }
+}
+
+typedef struct zscan_ctx {
+    obj_zset *z;
+    const char *members[SCAN_BATCH];
+    size_t mlens[SCAN_BATCH];
+    double scores[SCAN_BATCH];
+    size_t n;
+    const char *pat;
+    size_t plen;
+} zscan_ctx;
+
+static void zscan_collect(zscan_ctx *c, const char *m, size_t mlen, double sc)
+{
+    if (c->n >= SCAN_BATCH)
+        return;
+    if (c->pat != NULL && !ddup_glob_match(c->pat, c->plen, m, mlen))
+        return;
+    c->members[c->n] = m;
+    c->mlens[c->n] = mlen;
+    c->scores[c->n] = sc;
+    c->n++;
+}
+
+static int zscan_ht_cb(const char *m, size_t mlen, const char *v,
+                       size_t vlen, void *ctx)
+{
+    zscan_ctx *c = (zscan_ctx *)ctx;
+    double sc;
+    (void)v;
+    (void)vlen;
+    if (!obj_zset_score(c->z, m, mlen, &sc))
+        return 0;
+    zscan_collect(c, m, mlen, sc);
+    return c->n == SCAN_BATCH;
+}
+
+static size_t zscan_ht_run(obj_zset *z, size_t cursor, size_t count,
+                            zscan_ctx *c)
+{
+    c->z = z;
+    c->n = 0;
+    return rh_scan(&z->dict, cursor, count, zscan_ht_cb, c);
+}
+
+static size_t zscan_lp_next(obj_zset *z, size_t cursor, size_t count,
+                            const char *pat, size_t plen, size_t *n_out)
+{
+    uint64_t len = obj_zset_len(z);
+    size_t idx = cursor;
+    size_t visited = 0;
+    size_t n = 0;
+    while (idx < len && visited < count && n < SCAN_BATCH) {
+        obj_zset_iter it;
+        const char *m;
+        size_t ml;
+        idx++;
+        visited++;
+        if (!obj_zset_seek(z, (size_t)(idx - 1), &it))
+            break;
+        m = obj_zset_iter_member(&it, &ml);
+        if (pat == NULL || ddup_glob_match(pat, plen, m, ml))
+            n++;
+    }
+    *n_out = n;
+    return idx >= len ? 0 : idx;
+}
+
+static void zscan_lp_emit(obj_zset *z, size_t cursor, size_t count,
+                          const char *pat, size_t plen, resp_buf *out)
+{
+    uint64_t len = obj_zset_len(z);
+    size_t idx = cursor;
+    size_t visited = 0;
+    size_t emitted = 0;
+    while (idx < len && visited < count && emitted < SCAN_BATCH) {
+        obj_zset_iter it;
+        const char *m;
+        size_t ml;
+        double sc;
+        char num[40];
+        int nl;
+        idx++;
+        visited++;
+        if (!obj_zset_seek(z, (size_t)(idx - 1), &it))
+            break;
+        m = obj_zset_iter_member(&it, &ml);
+        sc = obj_zset_iter_score(&it);
+        if (pat != NULL && !ddup_glob_match(pat, plen, m, ml))
+            continue;
+        nl = fmt_score(num, sizeof(num), sc);
+        resp_write_bulk(out, m, ml);
+        resp_write_bulk(out, num, (size_t)nl);
+        emitted++;
+    }
+}
+
 /* ------------------------------------------------------------------ */
 /* dispatch                                                           */
 /* ------------------------------------------------------------------ */
@@ -4806,6 +5114,174 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
 
     scan_syntax:
         resp_write_error(out, "ERR syntax error", 16);
+        return;
+    }
+
+    if (cmd_id == CMD_HSCAN) {
+        const char *k;
+        size_t kl;
+        obj_hash *h;
+        int rc;
+        scan_object_opt opt;
+        hscan_ctx hc;
+        size_t cursor;
+        size_t i;
+        char next[24];
+        int nextlen;
+        if (argc < 3) {
+            wrong_args(out, "hscan");
+            return;
+        }
+        if (!arg_str(&argv[1], &k, &kl))
+            goto bad_type;
+        if (parse_object_scan(argv, argc, out, &opt) != 0)
+            return;
+        rc = get_hash(d, out, k, kl, 0, now_ms, &h);
+        if (rc < 0)
+            return;
+        if (rc == 0) {
+            resp_write_array_header(out, 2);
+            resp_write_bulk(out, "0", 1);
+            resp_write_array_header(out, 0);
+            return;
+        }
+        if (obj_hash_is_listpack(h)) {
+            size_t n = 0;
+            cursor = hscan_lp_next(h, opt.cursor, (size_t)opt.count,
+                                   opt.pat, opt.plen, &n);
+            nextlen = snprintf(next, sizeof(next), "%llu",
+                               (unsigned long long)cursor);
+            resp_write_array_header(out, 2);
+            resp_write_bulk(out, next, (size_t)nextlen);
+            resp_write_array_header(out, n * 2);
+            hscan_lp_emit(h, opt.cursor, (size_t)opt.count, opt.pat,
+                          opt.plen, out);
+        } else {
+            hc.pat = opt.pat;
+            hc.plen = opt.plen;
+            cursor = hscan_ht_run(h, opt.cursor, (size_t)opt.count, &hc);
+            nextlen = snprintf(next, sizeof(next), "%llu",
+                               (unsigned long long)cursor);
+            resp_write_array_header(out, 2);
+            resp_write_bulk(out, next, (size_t)nextlen);
+            resp_write_array_header(out, hc.n * 2);
+            for (i = 0; i < hc.n; i++) {
+                resp_write_bulk(out, hc.fields[i], hc.flens[i]);
+                resp_write_bulk(out, hc.vals[i], hc.vlens[i]);
+            }
+        }
+        return;
+    }
+
+    if (cmd_id == CMD_SSCAN) {
+        const char *k;
+        size_t kl;
+        obj_set *s;
+        int rc;
+        scan_object_opt opt;
+        sscan_ctx sc;
+        size_t cursor;
+        size_t i;
+        char next[24];
+        int nextlen;
+        if (argc < 3) {
+            wrong_args(out, "sscan");
+            return;
+        }
+        if (!arg_str(&argv[1], &k, &kl))
+            goto bad_type;
+        if (parse_object_scan(argv, argc, out, &opt) != 0)
+            return;
+        rc = get_set(d, out, k, kl, 0, now_ms, &s);
+        if (rc < 0)
+            return;
+        if (rc == 0) {
+            resp_write_array_header(out, 2);
+            resp_write_bulk(out, "0", 1);
+            resp_write_array_header(out, 0);
+            return;
+        }
+        if (obj_set_is_listpack(s)) {
+            size_t n = 0;
+            cursor = sscan_lp_next(s, opt.cursor, (size_t)opt.count,
+                                   opt.pat, opt.plen, &n);
+            nextlen = snprintf(next, sizeof(next), "%llu",
+                               (unsigned long long)cursor);
+            resp_write_array_header(out, 2);
+            resp_write_bulk(out, next, (size_t)nextlen);
+            resp_write_array_header(out, n);
+            sscan_lp_emit(s, opt.cursor, (size_t)opt.count, opt.pat,
+                          opt.plen, out);
+        } else {
+            sc.pat = opt.pat;
+            sc.plen = opt.plen;
+            cursor = sscan_ht_run(s, opt.cursor, (size_t)opt.count, &sc);
+            nextlen = snprintf(next, sizeof(next), "%llu",
+                               (unsigned long long)cursor);
+            resp_write_array_header(out, 2);
+            resp_write_bulk(out, next, (size_t)nextlen);
+            resp_write_array_header(out, sc.n);
+            for (i = 0; i < sc.n; i++)
+                resp_write_bulk(out, sc.members[i], sc.mlens[i]);
+        }
+        return;
+    }
+
+    if (cmd_id == CMD_ZSCAN) {
+        const char *k;
+        size_t kl;
+        obj_zset *z;
+        int rc;
+        scan_object_opt opt;
+        zscan_ctx zc;
+        size_t cursor;
+        size_t i;
+        char next[24];
+        int nextlen;
+        if (argc < 3) {
+            wrong_args(out, "zscan");
+            return;
+        }
+        if (!arg_str(&argv[1], &k, &kl))
+            goto bad_type;
+        if (parse_object_scan(argv, argc, out, &opt) != 0)
+            return;
+        rc = get_zset(d, out, k, kl, 0, now_ms, &z);
+        if (rc < 0)
+            return;
+        if (rc == 0) {
+            resp_write_array_header(out, 2);
+            resp_write_bulk(out, "0", 1);
+            resp_write_array_header(out, 0);
+            return;
+        }
+        if (obj_zset_is_listpack(z)) {
+            size_t n = 0;
+            cursor = zscan_lp_next(z, opt.cursor, (size_t)opt.count,
+                                   opt.pat, opt.plen, &n);
+            nextlen = snprintf(next, sizeof(next), "%llu",
+                               (unsigned long long)cursor);
+            resp_write_array_header(out, 2);
+            resp_write_bulk(out, next, (size_t)nextlen);
+            resp_write_array_header(out, n * 2);
+            zscan_lp_emit(z, opt.cursor, (size_t)opt.count, opt.pat,
+                          opt.plen, out);
+        } else {
+            zc.pat = opt.pat;
+            zc.plen = opt.plen;
+            cursor = zscan_ht_run(z, opt.cursor, (size_t)opt.count, &zc);
+            nextlen = snprintf(next, sizeof(next), "%llu",
+                               (unsigned long long)cursor);
+            resp_write_array_header(out, 2);
+            resp_write_bulk(out, next, (size_t)nextlen);
+            resp_write_array_header(out, zc.n * 2);
+            for (i = 0; i < zc.n; i++) {
+                char num[40];
+                int nl = fmt_score(num, sizeof(num), zc.scores[i]);
+                resp_write_bulk(out, zc.members[i], zc.mlens[i]);
+                resp_write_bulk(out, num, (size_t)nl);
+            }
+        }
         return;
     }
 
@@ -9672,6 +10148,9 @@ static const cmd_entry CMD_TABLE[] = {
     {"zrevrangebyscore", CMD_ZREVRANGEBYSCORE, 4, -1, 0, 0},
     {"zrangestore", CMD_ZRANGESTORE, 5, -1, 0, CMD_WRITE},
     {"zmpop", CMD_ZMPOP, 3, -1, 0, CMD_WRITE},
+    {"hscan", CMD_HSCAN, 3, -1, 0, 0},
+    {"sscan", CMD_SSCAN, 3, -1, 0, 0},
+    {"zscan", CMD_ZSCAN, 3, -1, 0, 0},
 };
 
 static const cmd_entry *cmd_table_entry(uint16_t id)

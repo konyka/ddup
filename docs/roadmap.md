@@ -267,6 +267,10 @@
     操作数遍历并提前剪枝，STORE 直接物化为目标 zset，不做临时哈希表
     二次搬运）、`ZLEXCOUNT/ZREVRANGEBYSCORE/ZRANGESTORE/ZMPOP`；
     st/mt 路由与集群 key 抽取同步，兼容审计缺 81 个顶层命令（Phase 52）
+  - [x] 增量扫描补齐：`HSCAN/SSCAN/ZSCAN`（LP 路径按游标索引直取，
+    HT 路径复用 `rh_scan` 桶游标；MATCH 与 COUNT 一次解析，批量收集上限
+    与 SCAN 一致的 32 项避免热路径分配），st/mt 路由同步，兼容审计
+    缺 78 个顶层命令（Phase 53）
   - [ ] 范围化排除（记录在案，不实施）：
     - 分层存储（热/冷数据落盘）：超出"内存缓存存储"定位
     - mt 模式的复制/集群适配：见 Phase 15 说明

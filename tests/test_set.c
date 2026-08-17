@@ -769,6 +769,48 @@ static void test_set_listpack_limits(void)
     db_destroy(&d);
 }
 
+static void test_sscan(void)
+{
+    db d;
+    resp_buf out;
+    db_init(&d);
+    resp_buf_init(&out);
+
+    exec_cmd(&d, T0, &out, 5, "SADD", "s", "a", "b", "c");
+    EXPECT(out, ":3\r\n");
+    exec_cmd(&d, T0, &out, 3, "SSCAN", "s", "0");
+    EXPECT(out, "*2\r\n$1\r\n0\r\n*3\r\n$1\r\na\r\n$1\r\nb\r\n$1\r\nc\r\n");
+
+    exec_cmd(&d, T0, &out, 5, "SSCAN", "s", "0", "COUNT", "2");
+    EXPECT(out, "*2\r\n$1\r\n2\r\n*2\r\n$1\r\na\r\n$1\r\nb\r\n");
+    exec_cmd(&d, T0, &out, 3, "SSCAN", "s", "2");
+    EXPECT(out, "*2\r\n$1\r\n0\r\n*1\r\n$1\r\nc\r\n");
+
+    exec_cmd(&d, T0, &out, 5, "SSCAN", "s", "0", "MATCH", "[ac]");
+    EXPECT(out, "*2\r\n$1\r\n0\r\n*2\r\n$1\r\na\r\n$1\r\nc\r\n");
+
+    {
+        obj_limits saved, forced;
+        obj_limits_get(&saved);
+        forced = saved;
+        forced.set_entries = 0;
+        obj_limits_apply(&forced);
+        exec_cmd(&d, T0, &out, 3, "SADD", "s2", "x");
+        exec_cmd(&d, T0, &out, 3, "SSCAN", "s2", "0");
+        EXPECT(out, "*2\r\n$1\r\n0\r\n*1\r\n$1\r\nx\r\n");
+        obj_limits_apply(&saved);
+    }
+
+    exec_cmd(&d, T0, &out, 3, "SSCAN", "missing", "0");
+    EXPECT(out, "*2\r\n$1\r\n0\r\n*0\r\n");
+    exec_cmd(&d, T0, &out, 3, "SET", "str", "v");
+    exec_cmd(&d, T0, &out, 3, "SSCAN", "str", "0");
+    EXPECT(out, "-WRONGTYPE Operation against a key holding the wrong kind of value\r\n");
+
+    resp_buf_free(&out);
+    db_destroy(&d);
+}
+
 int main(void)
 {
     DD_RUN(test_set_rejects_unrepresentable_member);
@@ -785,5 +827,6 @@ int main(void)
     DD_RUN(test_set_stores);
     DD_RUN(test_set_listpack_encoding);
     DD_RUN(test_set_listpack_limits);
+    DD_RUN(test_sscan);
     return DD_TEST_SUMMARY();
 }

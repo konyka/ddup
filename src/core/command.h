@@ -314,10 +314,13 @@ enum {
     CMD_ZLEXCOUNT,
     CMD_ZREVRANGEBYSCORE,
     CMD_ZRANGESTORE,
-    CMD_ZMPOP
+    CMD_ZMPOP,
+    CMD_HSCAN,
+    CMD_SSCAN,
+    CMD_ZSCAN
 };
 
-#define CMD_MAX CMD_ZMPOP
+#define CMD_MAX CMD_ZSCAN
 
 /* Resolve a command name to its stable ID; case-insensitive. */
 uint16_t cmd_resolve(const char *name, size_t len);

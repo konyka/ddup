@@ -626,6 +626,48 @@ static void test_hash_listpack_limits(void)
     db_destroy(&d);
 }
 
+static void test_hscan(void)
+{
+    db d;
+    resp_buf out;
+    db_init(&d);
+    resp_buf_init(&out);
+
+    exec_cmd(&d, T0, &out, 8, "HSET", "h", "f1", "v1", "f2", "v2", "f3", "v3");
+    EXPECT(out, ":3\r\n");
+    exec_cmd(&d, T0, &out, 3, "HSCAN", "h", "0");
+    EXPECT(out, "*2\r\n$1\r\n0\r\n*6\r\n$2\r\nf1\r\n$2\r\nv1\r\n$2\r\nf2\r\n$2\r\nv2\r\n$2\r\nf3\r\n$2\r\nv3\r\n");
+
+    exec_cmd(&d, T0, &out, 5, "HSCAN", "h", "0", "COUNT", "2");
+    EXPECT(out, "*2\r\n$1\r\n2\r\n*4\r\n$2\r\nf1\r\n$2\r\nv1\r\n$2\r\nf2\r\n$2\r\nv2\r\n");
+    exec_cmd(&d, T0, &out, 3, "HSCAN", "h", "2");
+    EXPECT(out, "*2\r\n$1\r\n0\r\n*2\r\n$2\r\nf3\r\n$2\r\nv3\r\n");
+
+    exec_cmd(&d, T0, &out, 5, "HSCAN", "h", "0", "MATCH", "f[13]");
+    EXPECT(out, "*2\r\n$1\r\n0\r\n*4\r\n$2\r\nf1\r\n$2\r\nv1\r\n$2\r\nf3\r\n$2\r\nv3\r\n");
+
+    {
+        obj_limits saved, forced;
+        obj_limits_get(&saved);
+        forced = saved;
+        forced.hash_entries = 0;
+        obj_limits_apply(&forced);
+        exec_cmd(&d, T0, &out, 4, "HSET", "h2", "f", "v");
+        exec_cmd(&d, T0, &out, 3, "HSCAN", "h2", "0");
+        EXPECT(out, "*2\r\n$1\r\n0\r\n*2\r\n$1\r\nf\r\n$1\r\nv\r\n");
+        obj_limits_apply(&saved);
+    }
+
+    exec_cmd(&d, T0, &out, 3, "HSCAN", "missing", "0");
+    EXPECT(out, "*2\r\n$1\r\n0\r\n*0\r\n");
+    exec_cmd(&d, T0, &out, 3, "SET", "s", "v");
+    exec_cmd(&d, T0, &out, 3, "HSCAN", "s", "0");
+    EXPECT(out, "-WRONGTYPE Operation against a key holding the wrong kind of value\r\n");
+
+    resp_buf_free(&out);
+    db_destroy(&d);
+}
+
 int main(void)
 {
     DD_RUN(test_hash_rejects_unrepresentable_lengths);
@@ -641,5 +683,6 @@ int main(void)
     DD_RUN(test_hrandfield);
     DD_RUN(test_hash_listpack_encoding);
     DD_RUN(test_hash_listpack_limits);
+    DD_RUN(test_hscan);
     return DD_TEST_SUMMARY();
 }
