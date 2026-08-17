@@ -160,6 +160,27 @@ static void test_flushall_all_dbs(void)
     set_free(ds);
 }
 
+static void test_time(void)
+{
+    dbset *ds = set_new(4);
+    session *s = set_session(ds);
+    resp_buf out;
+    resp_buf_init(&out);
+
+    exec_sess(s, T0, &out, 1, "TIME");
+    EXPECT(out, "*2\r\n$4\r\n1000\r\n$1\r\n0\r\n");
+
+    exec_sess(s, T0 + 1234567, &out, 1, "TIME");
+    EXPECT(out, "*2\r\n$4\r\n2234\r\n$6\r\n567000\r\n");
+
+    exec_sess(s, T0, &out, 2, "TIME", "x");
+    EXPECT(out, "-ERR wrong number of arguments for 'time' command\r\n");
+
+    session_free(s);
+    resp_buf_free(&out);
+    set_free(ds);
+}
+
 static void test_select_out_of_range(void)
 {
     dbset *ds = set_new(4);
@@ -467,6 +488,7 @@ int main(void)
 {
     DD_RUN(test_select_isolation);
     DD_RUN(test_flushall_all_dbs);
+    DD_RUN(test_time);
     DD_RUN(test_select_out_of_range);
     DD_RUN(test_swapdb);
     DD_RUN(test_swapdb_invalidates_watch);

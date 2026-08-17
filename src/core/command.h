@@ -318,10 +318,11 @@ enum {
     CMD_HSCAN,
     CMD_SSCAN,
     CMD_ZSCAN,
-    CMD_FLUSHALL
+    CMD_FLUSHALL,
+    CMD_TIME
 };
 
-#define CMD_MAX CMD_FLUSHALL
+#define CMD_MAX CMD_TIME
 
 /* Resolve a command name to its stable ID; case-insensitive. */
 uint16_t cmd_resolve(const char *name, size_t len);

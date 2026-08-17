@@ -3187,7 +3187,7 @@ static int cluster_keyless_id(uint16_t cmd_id)
     case CMD_FLUSHDB:    case CMD_CLUSTER:    case CMD_PERSIST:
     case CMD_MIGRATE:    case CMD_ASKING:    case CMD_SCRIPT:
     case CMD_KEYS:       case CMD_SCAN:       case CMD_RANDOMKEY:
-    case CMD_FLUSHALL:
+    case CMD_FLUSHALL:   case CMD_TIME:
         return 1;
     default:
         return 0;
@@ -5574,6 +5574,23 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
             flush_db_contents(d);
         }
         resp_write_simple_string(out, "OK", 2);
+        return;
+    }
+
+    if (cmd_id == CMD_TIME) {
+        char sec[32], usec[32];
+        int slen, ulen;
+        if (argc != 1) {
+            wrong_args(out, "time");
+            return;
+        }
+        slen = snprintf(sec, sizeof(sec), "%llu",
+                        (unsigned long long)(now_ms / 1000ULL));
+        ulen = snprintf(usec, sizeof(usec), "%llu",
+                        (unsigned long long)((now_ms % 1000ULL) * 1000ULL));
+        resp_write_array_header(out, 2);
+        resp_write_bulk(out, sec, (size_t)slen);
+        resp_write_bulk(out, usec, (size_t)ulen);
         return;
     }
 
@@ -10177,6 +10194,7 @@ static const cmd_entry CMD_TABLE[] = {
     {"sscan", CMD_SSCAN, 3, -1, 0, 0},
     {"zscan", CMD_ZSCAN, 3, -1, 0, 0},
     {"flushall", CMD_FLUSHALL, 1, 1, 0, CMD_WRITE},
+    {"time", CMD_TIME, 1, 1, 0, 0},
 };
 
 static const cmd_entry *cmd_table_entry(uint16_t id)
