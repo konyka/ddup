@@ -3187,6 +3187,7 @@ static int cluster_keyless_id(uint16_t cmd_id)
     case CMD_FLUSHDB:    case CMD_CLUSTER:    case CMD_PERSIST:
     case CMD_MIGRATE:    case CMD_ASKING:    case CMD_SCRIPT:
     case CMD_KEYS:       case CMD_SCAN:       case CMD_RANDOMKEY:
+    case CMD_FLUSHALL:
         return 1;
     default:
         return 0;
@@ -3367,6 +3368,25 @@ static int cluster_check_ownership(session *s, const resp_value *argv,
 static int is_write_command(const char *name, size_t nlen)
 {
     return cmd_is_write(cmd_resolve(name, nlen));
+}
+
+/* Drop every key and expiry from one logical db without disturbing its
+ * configuration (maxmemory, policy, cluster metadata, ...). Used by both
+ * FLUSHDB and FLUSHALL. */
+static void flush_db_contents(db *d)
+{
+    rh_each(&d->table, free_obj_cb, NULL);
+    rh_destroy(&d->table);
+    rh_destroy(&d->expires);
+    rh_destroy(&d->keyvers);
+    rh_init(&d->table);
+    rh_init(&d->expires);
+    rh_init(&d->keyvers);
+    d->used_memory = 0;
+    memset(d->cmd_calls, 0, sizeof(d->cmd_calls));
+    memset(d->cmd_usecs, 0, sizeof(d->cmd_usecs));
+    d->flush_epoch++; /* invalidates all WATCHes */
+    d->dirty++;
 }
 
 static void command_dispatch(session *s, const resp_value *argv, size_t argc,
@@ -5536,18 +5556,23 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
             wrong_args(out, "flushdb");
             return;
         }
-        rh_each(&d->table, free_obj_cb, NULL);
-        rh_destroy(&d->table);
-        rh_destroy(&d->expires);
-        rh_destroy(&d->keyvers);
-        rh_init(&d->table);
-        rh_init(&d->expires);
-        rh_init(&d->keyvers);
-        d->used_memory = 0;
-        memset(d->cmd_calls, 0, sizeof(d->cmd_calls));
-        memset(d->cmd_usecs, 0, sizeof(d->cmd_usecs));
-        d->flush_epoch++; /* invalidates all WATCHes */
-        d->dirty++;
+        flush_db_contents(d);
+        resp_write_simple_string(out, "OK", 2);
+        return;
+    }
+
+    if (cmd_id == CMD_FLUSHALL) {
+        int i;
+        if (argc != 1) {
+            wrong_args(out, "flushall");
+            return;
+        }
+        if (s->sel_fn != NULL) {
+            for (i = 0; i < s->sel_ndbs; i++)
+                flush_db_contents(s->sel_fn(s->sel_ctx, i));
+        } else {
+            flush_db_contents(d);
+        }
         resp_write_simple_string(out, "OK", 2);
         return;
     }
@@ -10151,6 +10176,7 @@ static const cmd_entry CMD_TABLE[] = {
     {"hscan", CMD_HSCAN, 3, -1, 0, 0},
     {"sscan", CMD_SSCAN, 3, -1, 0, 0},
     {"zscan", CMD_ZSCAN, 3, -1, 0, 0},
+    {"flushall", CMD_FLUSHALL, 1, 1, 0, CMD_WRITE},
 };
 
 static const cmd_entry *cmd_table_entry(uint16_t id)

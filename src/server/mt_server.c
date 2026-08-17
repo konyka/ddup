@@ -1364,7 +1364,8 @@ static int mt_is_keyless(uint16_t cmd)
 static int mt_is_aggregate(uint16_t cmd)
 {
     return cmd == CMD_DBSIZE || cmd == CMD_FLUSHDB || cmd == CMD_SAVE ||
-           cmd == CMD_LASTSAVE || cmd == CMD_SWAPDB || cmd == CMD_INFO;
+           cmd == CMD_LASTSAVE || cmd == CMD_SWAPDB || cmd == CMD_INFO ||
+           cmd == CMD_FLUSHALL;
 }
 
 /* Multi-key commands: every key must map to the same worker (same rule as
@@ -1590,6 +1591,28 @@ static void mt_info_exec(worker *w, resp_buf *out)
     session_release(&sess);
 }
 
+/* Execute FLUSHALL on one worker with a stack session that sees all of the
+ * worker's logical dbs (the sessionless task path only covers one db). */
+static void mt_flushall_exec(worker *w, resp_buf *out)
+{
+    static const char req[] = "*1\r\n$8\r\nFLUSHALL\r\n";
+    session sess;
+    resp_value v;
+    arena ar;
+    session_init(&sess, server_db_at(w->srv, 0));
+    sess.sel_ctx = w->srv;
+    sess.sel_fn = server_select_db;
+    sess.sel_ndbs = server_ndbs(w->srv);
+    arena_init(&ar, 64);
+    if (resp_parse(req, sizeof(req) - 1, &v, &ar) ==
+        (ptrdiff_t)(sizeof(req) - 1))
+        session_execute_at(&sess, v.items, v.count, out, pal_wall_ms());
+    else
+        resp_write_error(out, "ERR Protocol error", 18);
+    arena_destroy(&ar);
+    session_release(&sess);
+}
+
 /* Aggregate commands (DBSIZE sum, FLUSHDB broadcast): run the home part
  * inline, fan sub-tasks out to every other worker and finish when all
  * parts arrived. Runs on the home worker thread. */
@@ -1642,6 +1665,8 @@ static int mt_route_aggregate(worker *home, void *conn,
     resp_buf_init(&local);
     if (cmd == CMD_INFO) {
         mt_info_exec(home, &local);
+    } else if (cmd == CMD_FLUSHALL) {
+        mt_flushall_exec(home, &local);
     } else if (cmd == CMD_SWAPDB) {
         resp_value v;
         arena ar;
@@ -2552,7 +2577,8 @@ static int mt_route(void *ctx, void *conn, session *sess,
     }
 
     if (cmd == CMD_DBSIZE || cmd == CMD_FLUSHDB || cmd == CMD_SAVE ||
-        cmd == CMD_LASTSAVE || cmd == CMD_SWAPDB || cmd == CMD_INFO) {
+        cmd == CMD_LASTSAVE || cmd == CMD_SWAPDB || cmd == CMD_INFO ||
+        cmd == CMD_FLUSHALL) {
         mt_batch_flush(home, conn, st);
         return mt_route_aggregate(home, conn, argv, argc, raw, rawlen, cmd,
                                   sess->db_index);
@@ -2885,6 +2911,14 @@ static void mt_exec_task(worker *w, mt_task *t)
                 v.items[1].str != NULL && v.items[1].len == 9 &&
                 mt_ci_equal(v.items[1].str, v.items[1].len, "__stats__")) {
                 mt_info_exec(w, &t->reply);
+                continue;
+            }
+            /* FLUSHALL clears every logical db on this worker, not just the
+             * caller-selected one. */
+            if (v.count == 1 && v.items[0].str != NULL &&
+                v.items[0].len == 8 &&
+                mt_ci_equal(v.items[0].str, v.items[0].len, "flushall")) {
+                mt_flushall_exec(w, &t->reply);
                 continue;
             }
             dirty_before = d->dirty;

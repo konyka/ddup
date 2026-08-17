@@ -109,6 +109,57 @@ static void test_select_isolation(void)
     set_free(ds);
 }
 
+static void test_flushall_all_dbs(void)
+{
+    dbset *ds = set_new(4);
+    session *s = set_session(ds);
+    resp_buf out;
+    resp_buf_init(&out);
+
+    exec_sess(s, T0, &out, 3, "SET", "k0", "v0");
+    EXPECT(out, "+OK\r\n");
+    exec_sess(s, T0, &out, 2, "SELECT", "1");
+    EXPECT(out, "+OK\r\n");
+    exec_sess(s, T0, &out, 3, "SET", "k1", "v1");
+    EXPECT(out, "+OK\r\n");
+    exec_sess(s, T0, &out, 2, "SELECT", "2");
+    EXPECT(out, "+OK\r\n");
+    exec_sess(s, T0, &out, 3, "SET", "k2", "v2");
+    EXPECT(out, "+OK\r\n");
+
+    exec_sess(s, T0, &out, 1, "FLUSHALL");
+    EXPECT(out, "+OK\r\n");
+    exec_sess(s, T0, &out, 1, "DBSIZE");
+    EXPECT(out, ":0\r\n");
+    exec_sess(s, T0, &out, 2, "SELECT", "0");
+    exec_sess(s, T0, &out, 2, "GET", "k0");
+    EXPECT(out, "$-1\r\n");
+    exec_sess(s, T0, &out, 2, "SELECT", "1");
+    exec_sess(s, T0, &out, 2, "GET", "k1");
+    EXPECT(out, "$-1\r\n");
+    exec_sess(s, T0, &out, 2, "SELECT", "2");
+    exec_sess(s, T0, &out, 2, "GET", "k2");
+    EXPECT(out, "$-1\r\n");
+
+    /* FLUSHALL also resets stats across dbs; the FLUSHALL call itself is
+     * accounted for on the selected db after dispatch. */
+    exec_sess(s, T0, &out, 2, "SELECT", "1");
+    exec_sess(s, T0, &out, 1, "INFO");
+    {
+        resp_buf_reserve(&out, 1);
+        out.data[out.len] = '\0';
+        DD_CHECK(strstr(out.data, "cmdstat_set:calls=") == NULL);
+    }
+
+    exec_sess(s, T0, &out, 2, "FLUSHALL", "x");
+    EXPECT(out,
+           "-ERR wrong number of arguments for 'flushall' command\r\n");
+
+    session_free(s);
+    resp_buf_free(&out);
+    set_free(ds);
+}
+
 static void test_select_out_of_range(void)
 {
     dbset *ds = set_new(4);
@@ -415,6 +466,7 @@ static void test_copy_crossdb(void)
 int main(void)
 {
     DD_RUN(test_select_isolation);
+    DD_RUN(test_flushall_all_dbs);
     DD_RUN(test_select_out_of_range);
     DD_RUN(test_swapdb);
     DD_RUN(test_swapdb_invalidates_watch);
