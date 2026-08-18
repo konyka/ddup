@@ -324,10 +324,11 @@ enum {
     CMD_READONLY,
     CMD_READWRITE,
     CMD_SUBSTR,
-    CMD_SLAVEOF
+    CMD_SLAVEOF,
+    CMD_MOVE
 };
 
-#define CMD_MAX CMD_SLAVEOF
+#define CMD_MAX CMD_MOVE
 
 /* Resolve a command name to its stable ID; case-insensitive. */
 uint16_t cmd_resolve(const char *name, size_t len);

@@ -3219,6 +3219,11 @@ static int cluster_check_ownership(session *s, const resp_value *argv,
     if (argc < 2)
         return 1;
     cmd_id = cmd_resolve(name, nlen);
+    if (cmd_id == CMD_MOVE) {
+        static const char E[] = "ERR MOVE is not allowed in cluster mode";
+        resp_write_error(out, E, sizeof(E) - 1);
+        return 0;
+    }
     if (cluster_keyless_id(cmd_id))
         return 1;
     if (cmd_id == CMD_MGET || cmd_id == CMD_DEL ||
@@ -3542,6 +3547,73 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
             s->d->dirty++; /* AOF/propagation: log SWAPDB itself */
         }
         resp_write_simple_string(out, "OK", 2);
+        return;
+    }
+
+    if (cmd_id == CMD_MOVE) {
+        long long tdb;
+        const char *k;
+        size_t kl;
+        const char *v;
+        size_t vl;
+        const char *e;
+        size_t el;
+        db *td;
+        if (argc != 3) {
+            wrong_args(out, "move");
+            return;
+        }
+        if (crossslot_reject(d, out, argv, argc))
+            return;
+        if (!arg_str(&argv[1], &k, &kl))
+            goto bad_type;
+        if (!cmd_parse_ll(&argv[2], &tdb)) {
+            resp_write_error(out,
+                             "ERR value is not an integer or out of range",
+                             43);
+            return;
+        }
+        if (tdb < 0 || tdb >= s->sel_ndbs || s->sel_fn == NULL) {
+            static const char E[] = "ERR DB index is out of range";
+            resp_write_error(out, E, sizeof(E) - 1);
+            return;
+        }
+        if (tdb == s->db_index) {
+            static const char E[] =
+                "ERR source and destination objects are the same";
+            resp_write_error(out, E, sizeof(E) - 1);
+            return;
+        }
+        if (!storage_key_ok(kl)) {
+            storage_length_error(out);
+            return;
+        }
+        td = s->sel_fn(s->sel_ctx, (int)tdb);
+        if (td == NULL) {
+            static const char E[] = "ERR DB index is out of range";
+            resp_write_error(out, E, sizeof(E) - 1);
+            return;
+        }
+        db_expire_if_needed(d, k, kl, now_ms);
+        db_expire_if_needed(td, k, kl, now_ms);
+        if (!rh_get(&d->table, k, kl, &v, &vl)) {
+            resp_write_integer(out, 0);
+            return;
+        }
+        if (rh_get(&td->table, k, kl, &e, &el)) {
+            resp_write_integer(out, 0);
+            return;
+        }
+        if (oom_blocked(td, out))
+            return;
+        if (db_set_kv(td, k, kl, v, vl, now_ms) != 0) {
+            storage_length_error(out);
+            return;
+        }
+        if (rh_get(&d->expires, k, kl, &e, &el) && el == 8)
+            (void)db_set_expiry(td, k, kl, get_u64(e));
+        db_del_kv_keep_obj(d, k, kl);
+        resp_write_integer(out, 1);
         return;
     }
 
@@ -10270,6 +10342,7 @@ static const cmd_entry CMD_TABLE[] = {
     {"readwrite", CMD_READWRITE, 1, 1, 0, 0},
     {"substr", CMD_SUBSTR, 4, 4, 0, 0},
     {"slaveof", CMD_SLAVEOF, 3, 3, 0, 0},
+    {"move", CMD_MOVE, 3, 3, 0, CMD_WRITE},
 };
 
 static const cmd_entry *cmd_table_entry(uint16_t id)

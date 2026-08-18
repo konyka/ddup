@@ -484,6 +484,86 @@ static void test_copy_crossdb(void)
     set_free(ds);
 }
 
+static void test_move_crossdb(void)
+{
+    dbset *ds = set_new(4);
+    session *s = set_session(ds);
+    resp_buf out;
+    uint64_t before;
+    resp_buf_init(&out);
+
+    exec_sess(s, T0, &out, 3, "SET", "k", "v0");
+    EXPECT(out, "+OK\r\n");
+    exec_sess(s, T0, &out, 3, "PEXPIRE", "k", "10000");
+
+    /* move into db 2: value + absolute expiry, source key removed */
+    before = s->d->dirty;
+    exec_sess(s, T0 + 4000, &out, 3, "MOVE", "k", "2");
+    EXPECT(out, ":1\r\n");
+    DD_CHECK(s->d->dirty > before);
+
+    exec_sess(s, T0 + 4000, &out, 2, "GET", "k");
+    EXPECT(out, "$-1\r\n");
+    exec_sess(s, T0 + 4000, &out, 2, "SELECT", "2");
+    EXPECT(out, "+OK\r\n");
+    exec_sess(s, T0 + 4000, &out, 2, "GET", "k");
+    EXPECT(out, "$2\r\nv0\r\n");
+    exec_sess(s, T0 + 4000, &out, 2, "PTTL", "k");
+    EXPECT(out, ":6000\r\n");
+
+    /* missing source -> 0 */
+    exec_sess(s, T0 + 4000, &out, 2, "SELECT", "0");
+    exec_sess(s, T0 + 4000, &out, 3, "MOVE", "missing", "1");
+    EXPECT(out, ":0\r\n");
+
+    /* destination already exists -> 0, source untouched */
+    exec_sess(s, T0 + 4000, &out, 3, "SET", "d", "v");
+    exec_sess(s, T0 + 4000, &out, 2, "SELECT", "1");
+    exec_sess(s, T0 + 4000, &out, 3, "SET", "d", "other");
+    exec_sess(s, T0 + 4000, &out, 2, "SELECT", "0");
+    exec_sess(s, T0 + 4000, &out, 3, "MOVE", "d", "1");
+    EXPECT(out, ":0\r\n");
+    exec_sess(s, T0 + 4000, &out, 2, "GET", "d");
+    EXPECT(out, "$1\r\nv\r\n");
+
+    /* source and destination are the same db */
+    exec_sess(s, T0 + 4000, &out, 3, "MOVE", "d", "0");
+    EXPECT(out,
+           "-ERR source and destination objects are the same\r\n");
+
+    /* bad target db forms */
+    exec_sess(s, T0 + 4000, &out, 3, "MOVE", "d", "abc");
+    EXPECT(out, "-ERR value is not an integer or out of range\r\n");
+    exec_sess(s, T0 + 4000, &out, 3, "MOVE", "d", "4");
+    EXPECT(out, "-ERR DB index is out of range\r\n");
+    exec_sess(s, T0 + 4000, &out, 3, "MOVE", "d", "-1");
+    EXPECT(out, "-ERR DB index is out of range\r\n");
+
+    /* composite value moves without aliasing */
+    exec_sess(s, T0 + 4000, &out, 4, "RPUSH", "l", "a", "b");
+    EXPECT(out, ":2\r\n");
+    exec_sess(s, T0 + 4000, &out, 3, "MOVE", "l", "1");
+    EXPECT(out, ":1\r\n");
+    exec_sess(s, T0 + 4000, &out, 3, "RPUSH", "l", "c");
+    EXPECT(out, ":1\r\n");
+    exec_sess(s, T0 + 4000, &out, 2, "SELECT", "1");
+    exec_sess(s, T0 + 4000, &out, 4, "LRANGE", "l", "0", "-1");
+    EXPECT(out, "*2\r\n$1\r\na\r\n$1\r\nb\r\n");
+    exec_sess(s, T0 + 4000, &out, 2, "SELECT", "0");
+    exec_sess(s, T0 + 4000, &out, 4, "LRANGE", "l", "0", "-1");
+    EXPECT(out, "*1\r\n$1\r\nc\r\n");
+
+    /* wrong arity */
+    exec_sess(s, T0 + 4000, &out, 2, "MOVE", "d");
+    EXPECT(out, "-ERR wrong number of arguments for 'move' command\r\n");
+    exec_sess(s, T0 + 4000, &out, 4, "MOVE", "d", "1", "x");
+    EXPECT(out, "-ERR wrong number of arguments for 'move' command\r\n");
+
+    session_free(s);
+    resp_buf_free(&out);
+    set_free(ds);
+}
+
 int main(void)
 {
     DD_RUN(test_select_isolation);
@@ -497,5 +577,6 @@ int main(void)
     DD_RUN(test_commandstats_in_info);
     DD_RUN(test_info_machine_format);
     DD_RUN(test_copy_crossdb);
+    DD_RUN(test_move_crossdb);
     return DD_TEST_SUMMARY();
 }

@@ -1267,6 +1267,7 @@ static int mt_is_single_key(uint16_t cmd)
     case CMD_SETRANGE:
     case CMD_GETRANGE:
     case CMD_SUBSTR:
+    case CMD_MOVE:
     case CMD_INCRBY:
     case CMD_DECRBY:
     case CMD_INCRBYFLOAT:
@@ -1571,6 +1572,26 @@ static void mt_swapdb_exec(worker *w, int log_db_index, const resp_value *v,
         server_aof_log_cmd(w->srv, log_db_index, v->items, v->count);
     }
     resp_write_simple_string(dst, "OK", 2);
+}
+
+/* Execute MOVE on the worker owning the source key. Unlike the sessionless
+ * routed path (which only sees one selected db), a stack session with the
+ * selection hook gives MOVE access to every logical db on this worker, so
+ * the target-db argument is honored exactly like the legacy path. */
+static void mt_move_exec(worker *w, int log_db_index, const resp_value *v,
+                         resp_buf *dst)
+{
+    session sess;
+    uint64_t dirty_before;
+    session_init(&sess, server_db_at(w->srv, log_db_index));
+    sess.sel_ctx = w->srv;
+    sess.sel_fn = server_select_db;
+    sess.sel_ndbs = server_ndbs(w->srv);
+    dirty_before = sess.d->dirty;
+    session_execute_at(&sess, v->items, v->count, dst, pal_wall_ms());
+    if (sess.d->dirty != dirty_before)
+        server_aof_log_cmd(w->srv, log_db_index, v->items, v->count);
+    session_release(&sess);
 }
 
 /* Execute INFO __STATS__ on this worker with a stack session that sees all
@@ -2907,6 +2928,12 @@ static void mt_exec_task(worker *w, mt_task *t)
                 v.items[0].len == 6 &&
                 mt_ci_equal(v.items[0].str, v.items[0].len, "swapdb")) {
                 mt_swapdb_exec(w, t->db_index, &v, &t->reply);
+                continue;
+            }
+            if (v.count == 3 && v.items[0].str != NULL &&
+                v.items[0].len == 4 &&
+                mt_ci_equal(v.items[0].str, v.items[0].len, "move")) {
+                mt_move_exec(w, t->db_index, &v, &t->reply);
                 continue;
             }
             /* INFO __STATS__ (aggregation fan-out): machine-format snapshot
