@@ -3189,7 +3189,7 @@ static int cluster_keyless_id(uint16_t cmd_id)
     case CMD_MIGRATE:    case CMD_ASKING:    case CMD_SCRIPT:
     case CMD_KEYS:       case CMD_SCAN:       case CMD_RANDOMKEY:
     case CMD_FLUSHALL:   case CMD_TIME:       case CMD_READONLY:
-    case CMD_READWRITE:
+    case CMD_READWRITE:  case CMD_ROLE:
         return 1;
     default:
         return 0;
@@ -3449,6 +3449,29 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
         }
         s->read_only = (cmd_id == CMD_READONLY);
         resp_write_simple_string(out, "OK", 2);
+        return;
+    }
+
+    if (cmd_id == CMD_ROLE) {
+        const repl_info *r = s->repl;
+        if (argc != 1) {
+            wrong_args(out, "role");
+            return;
+        }
+        if (r == NULL || r->role == SESSION_ROLE_MASTER) {
+            resp_write_array_header(out, 3);
+            resp_write_bulk(out, "master", 6);
+            resp_write_integer(out, (long long)(r == NULL ? 0 : r->offset));
+            resp_write_array_header(out, 0);
+        } else {
+            resp_write_array_header(out, 5);
+            resp_write_bulk(out, "slave", 5);
+            resp_write_bulk(out, r->master_host, strlen(r->master_host));
+            resp_write_integer(out, (long long)r->master_port);
+            resp_write_bulk(out, r->link_up ? "connected" : "connecting",
+                            r->link_up ? 9 : 10);
+            resp_write_integer(out, (long long)r->master_offset);
+        }
         return;
     }
 
@@ -10343,6 +10366,7 @@ static const cmd_entry CMD_TABLE[] = {
     {"substr", CMD_SUBSTR, 4, 4, 0, 0},
     {"slaveof", CMD_SLAVEOF, 3, 3, 0, 0},
     {"move", CMD_MOVE, 3, 3, 0, CMD_WRITE},
+    {"role", CMD_ROLE, 1, 1, 0, 0},
 };
 
 static const cmd_entry *cmd_table_entry(uint16_t id)

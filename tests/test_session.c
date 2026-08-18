@@ -221,6 +221,48 @@ static void test_slaveof_alias(void)
     db_destroy(&d);
 }
 
+static void test_role(void)
+{
+    db d;
+    session *s;
+    resp_buf out;
+    repl_info ri;
+    db_init(&d);
+    resp_buf_init(&out);
+
+    s = session_create(&d);
+    DD_CHECK(s != NULL);
+
+    /* no replication info: report a fresh master */
+    exec_sess(s, T0, &out, 1, "ROLE");
+    EXPECT(out, "*3\r\n$6\r\nmaster\r\n:0\r\n*0\r\n");
+
+    memset(&ri, 0, sizeof(ri));
+    ri.role = SESSION_ROLE_MASTER;
+    ri.offset = 1234;
+    s->repl = &ri;
+    exec_sess(s, T0, &out, 1, "ROLE");
+    EXPECT(out, "*3\r\n$6\r\nmaster\r\n:1234\r\n*0\r\n");
+
+    memset(&ri, 0, sizeof(ri));
+    ri.role = SESSION_ROLE_REPLICA;
+    strcpy(ri.master_host, "127.0.0.1");
+    ri.master_port = 6379;
+    ri.link_up = 1;
+    ri.master_offset = 42;
+    exec_sess(s, T0, &out, 1, "ROLE");
+    EXPECT(out,
+           "*5\r\n$5\r\nslave\r\n$9\r\n127.0.0.1\r\n:6379\r\n"
+           "$9\r\nconnected\r\n:42\r\n");
+
+    exec_sess(s, T0, &out, 2, "ROLE", "x");
+    EXPECT(out, "-ERR wrong number of arguments for 'role' command\r\n");
+
+    session_free(s);
+    resp_buf_free(&out);
+    db_destroy(&d);
+}
+
 static void test_readonly_readwrite(void)
 {
     db d;
@@ -261,6 +303,7 @@ int main(void)
     DD_RUN(test_auth_username_form);
     DD_RUN(test_auth_without_password_configured);
     DD_RUN(test_slaveof_alias);
+    DD_RUN(test_role);
     DD_RUN(test_readonly_readwrite);
     return DD_TEST_SUMMARY();
 }
