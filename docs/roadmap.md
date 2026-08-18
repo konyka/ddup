@@ -276,6 +276,11 @@
     （复用 `parse_ld`/`%.17Lg`）、`READONLY`/`READWRITE`（会话
     cluster 连接状态）；st/mt 路由与集群 keyless 分类同步，兼容审计
     缺 73 个顶层命令（Phase 54）
+  - [x] 命令别名与跨库/角色补齐：`SUBSTR`（`GETRANGE` 别名）、
+    `SLAVEOF`（`REPLICAOF` 别名）、`MOVE`（跨逻辑库移动并保留绝对
+    TTL；mt 模式在属主 worker 全库栈会话执行）、`ROLE`（主/从角色
+    响应，复用 `session.repl`）；st/mt 路由与集群分类同步，兼容审计
+    缺 69 个顶层命令（Phase 55）
   - [ ] 范围化排除（记录在案，不实施）：
     - 分层存储（热/冷数据落盘）：超出"内存缓存存储"定位
     - mt 模式的复制/集群适配：见 Phase 15 说明
