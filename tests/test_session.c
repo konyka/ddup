@@ -159,6 +159,68 @@ static void test_auth_without_password_configured(void)
     db_destroy(&d);
 }
 
+static const char *g_slaveof_host;
+static int g_slaveof_port;
+static int g_slaveof_calls;
+
+static int slaveof_hook(void *ctx, const char *host, uint16_t port)
+{
+    (void)ctx;
+    g_slaveof_calls++;
+    g_slaveof_host = host;
+    g_slaveof_port = (int)port;
+    return 0;
+}
+
+static void test_slaveof_alias(void)
+{
+    db d;
+    session *s;
+    resp_buf out;
+    db_init(&d);
+    resp_buf_init(&out);
+
+    s = session_create(&d);
+    DD_CHECK(s != NULL);
+
+    /* Without a hook the alias reports the same context error. */
+    exec_sess(s, T0, &out, 3, "SLAVEOF", "NO", "ONE");
+    EXPECT(out, "-ERR replicaof not supported in this context\r\n");
+
+    s->replicaof_hook = slaveof_hook;
+    s->replicaof_ctx = s;
+    g_slaveof_calls = 0;
+    g_slaveof_host = NULL;
+    g_slaveof_port = -1;
+
+    exec_sess(s, T0, &out, 3, "SLAVEOF", "NO", "ONE");
+    EXPECT(out, "+OK\r\n");
+    DD_CHECK_EQ_INT(1, g_slaveof_calls);
+    DD_CHECK(g_slaveof_host == NULL);
+    DD_CHECK_EQ_INT(0, g_slaveof_port);
+
+    exec_sess(s, T0, &out, 3, "SLAVEOF", "127.0.0.1", "6379");
+    EXPECT(out, "+OK\r\n");
+    DD_CHECK_EQ_INT(2, g_slaveof_calls);
+    DD_CHECK(g_slaveof_host != NULL);
+    DD_CHECK_STR("127.0.0.1", g_slaveof_host);
+    DD_CHECK_EQ_INT(6379, g_slaveof_port);
+
+    exec_sess(s, T0, &out, 3, "SLAVEOF", "127.0.0.1", "bad");
+    EXPECT(out,
+           "-ERR value is not an integer or out of range\r\n");
+    exec_sess(s, T0, &out, 3, "SLAVEOF", "127.0.0.1", "0");
+    EXPECT(out,
+           "-ERR value is not an integer or out of range\r\n");
+    exec_sess(s, T0, &out, 2, "SLAVEOF", "NO");
+    EXPECT(out,
+           "-ERR wrong number of arguments for 'slaveof' command\r\n");
+
+    session_free(s);
+    resp_buf_free(&out);
+    db_destroy(&d);
+}
+
 static void test_readonly_readwrite(void)
 {
     db d;
@@ -198,6 +260,7 @@ int main(void)
     DD_RUN(test_auth_flow);
     DD_RUN(test_auth_username_form);
     DD_RUN(test_auth_without_password_configured);
+    DD_RUN(test_slaveof_alias);
     DD_RUN(test_readonly_readwrite);
     return DD_TEST_SUMMARY();
 }

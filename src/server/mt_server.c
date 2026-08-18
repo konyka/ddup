@@ -1226,6 +1226,7 @@ static int mt_is_blocked(uint16_t cmd)
     case CMD_SHUTDOWN:
     case CMD_SYNC:
     case CMD_REPLICAOF:
+    case CMD_SLAVEOF:
     case CMD_CLUSTER:
     case CMD_MIGRATE:
     case CMD_ASKING:

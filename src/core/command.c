@@ -3178,7 +3178,8 @@ static int cluster_keyless_id(uint16_t cmd_id)
     case CMD_PING:       case CMD_ECHO:       case CMD_CONFIG:
     case CMD_INFO:       case CMD_SAVE:       case CMD_LASTSAVE:
     case CMD_SHUTDOWN:   case CMD_SYNC:       case CMD_REPLICAOF:
-    case CMD_PSYNC:      case CMD_AUTH:       case CMD_SELECT:
+    case CMD_SLAVEOF:    case CMD_PSYNC:      case CMD_AUTH:
+    case CMD_SELECT:
     case CMD_SWAPDB:
     case CMD_SUBSCRIBE:  case CMD_UNSUBSCRIBE:case CMD_PUBLISH:
     case CMD_SSUBSCRIBE: case CMD_SUNSUBSCRIBE: case CMD_PUBSUB:
@@ -9539,9 +9540,9 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
         return;
     }
 
-    if (cmd_id == CMD_REPLICAOF) {
+    if (cmd_id == CMD_REPLICAOF || cmd_id == CMD_SLAVEOF) {
         if (argc != 3) {
-            wrong_args(out, "replicaof");
+            wrong_args(out, cmd_id == CMD_SLAVEOF ? "slaveof" : "replicaof");
             return;
         }
         const char *host, *portv;
@@ -9551,7 +9552,9 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
         if (s->replicaof_hook == NULL) {
             resp_write_error(out,
                              "ERR replicaof not supported in this context",
-                             45);
+                             sizeof("ERR replicaof not supported in this "
+                                    "context") -
+                                 1);
             return;
         }
         if (ci_equal(host, hl, "NO") && ci_equal(portv, pl, "ONE")) {
@@ -10266,6 +10269,7 @@ static const cmd_entry CMD_TABLE[] = {
     {"readonly", CMD_READONLY, 1, 1, 0, 0},
     {"readwrite", CMD_READWRITE, 1, 1, 0, 0},
     {"substr", CMD_SUBSTR, 4, 4, 0, 0},
+    {"slaveof", CMD_SLAVEOF, 3, 3, 0, 0},
 };
 
 static const cmd_entry *cmd_table_entry(uint16_t id)
