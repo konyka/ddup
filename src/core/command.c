@@ -5983,6 +5983,61 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
         return;
     }
 
+    if (cmd_id == CMD_HINCRBYFLOAT) {
+        if (argc != 4) {
+            wrong_args(out, "hincrbyfloat");
+            return;
+        }
+        const char *k, *f, *dv;
+        size_t kl, fl, dvl;
+        long double delta, cur = 0, res;
+        char buf[5120];
+        int nl;
+        if (!arg_str(&argv[1], &k, &kl) || !arg_str(&argv[2], &f, &fl) ||
+            !arg_str(&argv[3], &dv, &dvl))
+            goto bad_type;
+        if (!storage_key_ok(kl) || !storage_key_ok(fl)) {
+            storage_length_error(out);
+            return;
+        }
+        if (!parse_ld(dv, dvl, &delta)) {
+            resp_write_error(out, ERR_NOT_FLOAT, sizeof(ERR_NOT_FLOAT) - 1);
+            return;
+        }
+        if (oom_blocked(d, out))
+            return;
+        obj_hash *h;
+        if (get_hash(d, out, k, kl, 1, now_ms, &h) <= 0)
+            return;
+        {
+            const char *v;
+            size_t vl;
+            if (obj_hash_get(h, f, fl, &v, &vl) && !parse_ld(v, vl, &cur)) {
+                static const char E[] = "ERR hash value is not a float";
+                resp_write_error(out, E, sizeof(E) - 1);
+                return;
+            }
+        }
+        res = cur + delta;
+        if (res != res || isinf(res)) {
+            static const char E[] =
+                "ERR increment would produce NaN or Infinity";
+            resp_write_error(out, E, sizeof(E) - 1);
+            return;
+        }
+        nl = snprintf(buf, sizeof(buf), "%.17Lg", res);
+        {
+            uint64_t before = obj_hash_mem(h);
+            if (obj_hash_set(h, f, fl, buf, (size_t)nl) < 0) {
+                storage_length_error(out);
+                return;
+            }
+            mem_sync(d, k, kl, before, obj_hash_mem(h));
+        }
+        resp_write_bulk(out, buf, (size_t)nl);
+        return;
+    }
+
     if (cmd_id == CMD_HSETNX) {
         if (argc != 4) {
             wrong_args(out, "hsetnx");
@@ -10195,6 +10250,7 @@ static const cmd_entry CMD_TABLE[] = {
     {"zscan", CMD_ZSCAN, 3, -1, 0, 0},
     {"flushall", CMD_FLUSHALL, 1, 1, 0, CMD_WRITE},
     {"time", CMD_TIME, 1, 1, 0, 0},
+    {"hincrbyfloat", CMD_HINCRBYFLOAT, 4, 4, 0, CMD_WRITE},
 };
 
 static const cmd_entry *cmd_table_entry(uint16_t id)

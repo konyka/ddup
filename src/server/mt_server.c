@@ -1289,6 +1289,7 @@ static int mt_is_single_key(uint16_t cmd)
     case CMD_HVALS:
     case CMD_HMGET:
     case CMD_HINCRBY:
+    case CMD_HINCRBYFLOAT:
     case CMD_HSETNX:
     case CMD_HSTRLEN:
     case CMD_HRANDFIELD:

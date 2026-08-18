@@ -1,6 +1,8 @@
 /* test_hash.c - hash object commands with synthetic injected time. */
 #include <stdarg.h>
 #include <stdio.h>
+#include <math.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "core/command.h"
@@ -249,6 +251,66 @@ static void test_hincrby(void)
     EXPECT(out, ":1\r\n");
     exec_cmd(&d, T0, &out, 4, "HINCRBY", "h", "big", "1");
     EXPECT(out, "-ERR increment or decrement would overflow\r\n");
+
+    resp_buf_free(&out);
+    db_destroy(&d);
+}
+
+static void test_hincrbyfloat(void)
+{
+    db d;
+    resp_buf out;
+    db_init(&d);
+    resp_buf_init(&out);
+
+    /* missing key and field start at 0 */
+    exec_cmd(&d, T0, &out, 4, "HINCRBYFLOAT", "h", "f", "1.5");
+    EXPECT(out, "$3\r\n1.5\r\n");
+    exec_cmd(&d, T0, &out, 3, "HGET", "h", "f");
+    EXPECT(out, "$3\r\n1.5\r\n");
+
+    exec_cmd(&d, T0, &out, 4, "HSET", "h", "g", "10");
+    EXPECT(out, ":1\r\n");
+    exec_cmd(&d, T0, &out, 4, "HINCRBYFLOAT", "h", "g", "0.5");
+    EXPECT(out, "$4\r\n10.5\r\n");
+    exec_cmd(&d, T0, &out, 4, "HINCRBYFLOAT", "h", "g", "-1.25");
+    EXPECT(out, "$4\r\n9.25\r\n");
+
+    /* non-float increment */
+    exec_cmd(&d, T0, &out, 4, "HINCRBYFLOAT", "h", "g", "xyz");
+    EXPECT(out, "-ERR value is not a valid float\r\n");
+    exec_cmd(&d, T0, &out, 4, "HINCRBYFLOAT", "h", "g", "inf");
+    EXPECT(out, "-ERR value is not a valid float\r\n");
+
+    /* non-float stored field value */
+    exec_cmd(&d, T0, &out, 4, "HSET", "h", "s", "abc");
+    EXPECT(out, ":1\r\n");
+    exec_cmd(&d, T0, &out, 4, "HINCRBYFLOAT", "h", "s", "1");
+    EXPECT(out, "-ERR hash value is not a float\r\n");
+
+    /* result must stay finite */
+    exec_cmd(&d, T0, &out, 4, "HSET", "h", "big", "9e4931");
+    EXPECT(out, ":1\r\n");
+    exec_cmd(&d, T0, &out, 4, "HINCRBYFLOAT", "h", "big", "9e4931");
+    {
+        long double probe = strtold("9e4931", NULL);
+        if (isinf(probe))
+            EXPECT(out, "-ERR value is not a valid float\r\n");
+        else
+            EXPECT(out,
+                   "-ERR increment would produce NaN or Infinity\r\n");
+    }
+
+    /* WRONGTYPE: string key */
+    exec_cmd(&d, T0, &out, 3, "SET", "str", "1");
+    exec_cmd(&d, T0, &out, 4, "HINCRBYFLOAT", "str", "f", "1");
+    EXPECT(out,
+           "-WRONGTYPE Operation against a key holding the wrong kind of "
+           "value\r\n");
+
+    exec_cmd(&d, T0, &out, 3, "HINCRBYFLOAT", "h", "f");
+    EXPECT(out,
+           "-ERR wrong number of arguments for 'hincrbyfloat' command\r\n");
 
     resp_buf_free(&out);
     db_destroy(&d);
@@ -677,6 +739,7 @@ int main(void)
     DD_RUN(test_hgetall_hkeys_hvals);
     DD_RUN(test_hmset_hmget);
     DD_RUN(test_hincrby);
+    DD_RUN(test_hincrbyfloat);
     DD_RUN(test_hash_wrongtype);
     DD_RUN(test_hash_ttl_and_memory);
     DD_RUN(test_hstrlen);
