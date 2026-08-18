@@ -1356,6 +1356,8 @@ static int mt_is_keyless(uint16_t cmd)
     case CMD_DBSIZE:
     case CMD_FLUSHDB:
     case CMD_TIME:
+    case CMD_READONLY:
+    case CMD_READWRITE:
     case CMD_QUIT:
         return 1;
     default:

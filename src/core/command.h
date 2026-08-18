@@ -320,10 +320,12 @@ enum {
     CMD_ZSCAN,
     CMD_FLUSHALL,
     CMD_TIME,
-    CMD_HINCRBYFLOAT
+    CMD_HINCRBYFLOAT,
+    CMD_READONLY,
+    CMD_READWRITE
 };
 
-#define CMD_MAX CMD_HINCRBYFLOAT
+#define CMD_MAX CMD_READWRITE
 
 /* Resolve a command name to its stable ID; case-insensitive. */
 uint16_t cmd_resolve(const char *name, size_t len);

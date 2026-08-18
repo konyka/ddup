@@ -3187,7 +3187,8 @@ static int cluster_keyless_id(uint16_t cmd_id)
     case CMD_FLUSHDB:    case CMD_CLUSTER:    case CMD_PERSIST:
     case CMD_MIGRATE:    case CMD_ASKING:    case CMD_SCRIPT:
     case CMD_KEYS:       case CMD_SCAN:       case CMD_RANDOMKEY:
-    case CMD_FLUSHALL:   case CMD_TIME:
+    case CMD_FLUSHALL:   case CMD_TIME:       case CMD_READONLY:
+    case CMD_READWRITE:
         return 1;
     default:
         return 0;
@@ -3431,6 +3432,17 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
         } else {
             wrong_args(out, "ping");
         }
+        return;
+    }
+
+    if (cmd_id == CMD_READONLY || cmd_id == CMD_READWRITE) {
+        if (argc != 1) {
+            wrong_args(out, cmd_id == CMD_READONLY ? "readonly"
+                                                   : "readwrite");
+            return;
+        }
+        s->read_only = (cmd_id == CMD_READONLY);
+        resp_write_simple_string(out, "OK", 2);
         return;
     }
 
@@ -10251,6 +10263,8 @@ static const cmd_entry CMD_TABLE[] = {
     {"flushall", CMD_FLUSHALL, 1, 1, 0, CMD_WRITE},
     {"time", CMD_TIME, 1, 1, 0, 0},
     {"hincrbyfloat", CMD_HINCRBYFLOAT, 4, 4, 0, CMD_WRITE},
+    {"readonly", CMD_READONLY, 1, 1, 0, 0},
+    {"readwrite", CMD_READWRITE, 1, 1, 0, 0},
 };
 
 static const cmd_entry *cmd_table_entry(uint16_t id)

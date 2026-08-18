@@ -154,6 +154,7 @@ typedef struct session {
      * or stop (ip == NULL) data replication of the given master. */
     int (*cluster_replicate)(void *ctx, const char *ip, uint16_t port);
     int asking; /* cluster: one-shot ASKING flag for the next command */
+    int read_only; /* cluster: READONLY/READWRITE connection state */
     int in_script; /* >0 inside Lua execution (nested EVAL is rejected) */
     int aof_skip;  /* script effects are AOF-logged individually, not EVAL */
     /* replication (server-owned; NULL for stack sessions) */

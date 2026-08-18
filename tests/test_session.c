@@ -159,6 +159,38 @@ static void test_auth_without_password_configured(void)
     db_destroy(&d);
 }
 
+static void test_readonly_readwrite(void)
+{
+    db d;
+    session *s;
+    resp_buf out;
+    db_init(&d);
+    resp_buf_init(&out);
+
+    s = session_create(&d);
+    DD_CHECK(s != NULL);
+    DD_CHECK(s->read_only == 0);
+
+    exec_sess(s, T0, &out, 1, "READONLY");
+    EXPECT(out, "+OK\r\n");
+    DD_CHECK(s->read_only == 1);
+
+    exec_sess(s, T0, &out, 1, "READWRITE");
+    EXPECT(out, "+OK\r\n");
+    DD_CHECK(s->read_only == 0);
+
+    exec_sess(s, T0, &out, 2, "READONLY", "x");
+    EXPECT(out,
+           "-ERR wrong number of arguments for 'readonly' command\r\n");
+    exec_sess(s, T0, &out, 2, "READWRITE", "x");
+    EXPECT(out,
+           "-ERR wrong number of arguments for 'readwrite' command\r\n");
+
+    session_free(s);
+    resp_buf_free(&out);
+    db_destroy(&d);
+}
+
 int main(void)
 {
     DD_RUN(test_queue_allocation_size_overflow);
@@ -166,5 +198,6 @@ int main(void)
     DD_RUN(test_auth_flow);
     DD_RUN(test_auth_username_form);
     DD_RUN(test_auth_without_password_configured);
+    DD_RUN(test_readonly_readwrite);
     return DD_TEST_SUMMARY();
 }
