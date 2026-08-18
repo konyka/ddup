@@ -271,6 +271,11 @@
     HT 路径复用 `rh_scan` 桶游标；MATCH 与 COUNT 一次解析，批量收集上限
     与 SCAN 一致的 32 项避免热路径分配），st/mt 路由同步，兼容审计
     缺 78 个顶层命令（Phase 53）
+  - [x] 服务端与连接族补齐：`FLUSHALL`（复用 `FLUSHDB` 清库逻辑并
+    广播到全部 logical db）、`TIME`（注入时钟秒/微秒）、`HINCRBYFLOAT`
+    （复用 `parse_ld`/`%.17Lg`）、`READONLY`/`READWRITE`（会话
+    cluster 连接状态）；st/mt 路由与集群 keyless 分类同步，兼容审计
+    缺 73 个顶层命令（Phase 54）
   - [ ] 范围化排除（记录在案，不实施）：
     - 分层存储（热/冷数据落盘）：超出"内存缓存存储"定位
     - mt 模式的复制/集群适配：见 Phase 15 说明

@@ -1,14 +1,14 @@
 # Redis 7.2.15 命令兼容性盘点
 
 > 基线：Redis 7.2.15 官方 `src/commands/*.json`（392 个 JSON、392 条命令条目；242 个顶层命令 + 150 个容器子命令）。
-> 对照：ddup `src/core/command.c` `CMD_TABLE`（164 个顶层命令）。
+> 对照：ddup `src/core/command.c` `CMD_TABLE`（169 个顶层命令）。
 > 生成：`python3 tools/audit_redis_compat.py --redis-json <Redis src/commands> --json`，机器可复算；`--check` 校验本文档 AUDIT-BASELINE 块与代码一致。
 
 ## 总览
 
 | 类别 | 数量 |
 | --- | --- |
-| 完全未实现的独立顶层命令 | 78 |
+| 完全未实现的独立顶层命令 | 73 |
 | 整体缺失的顶层容器 | 11（对应 Redis 子命令条目 124） |
 | 已实现容器内缺失的子命令 | 26（CLUSTER 15、CONFIG 3、OBJECT 4、PUBSUB 1、SCRIPT 3） |
 | 已注册但选项/语义不完整 | 见下方手工清单 |
@@ -27,10 +27,6 @@
 
 `GEOADD`, `GEODIST`, `GEOHASH`, `GEOPOS`, `GEORADIUS`, `GEORADIUSBYMEMBER`, `GEORADIUSBYMEMBER_RO`, `GEORADIUS_RO`, `GEOSEARCH`, `GEOSEARCHSTORE`
 
-### hash（1）
-
-`HINCRBYFLOAT`
-
 ### hyperloglog（5）
 
 `PFADD`, `PFCOUNT`, `PFDEBUG`, `PFMERGE`, `PFSELFTEST`
@@ -43,9 +39,9 @@
 
 `EVALSHA_RO`, `EVAL_RO`, `FCALL`, `FCALL_RO`, `FUNCTION`
 
-### server（18）
+### server（16）
 
-`ACL`, `BGREWRITEAOF`, `BGSAVE`, `COMMAND`, `DEBUG`, `FAILOVER`, `FLUSHALL`, `LATENCY`, `LOLWUT`, `MEMORY`, `MODULE`, `MONITOR`, `REPLCONF`, `RESTORE-ASKING`, `ROLE`, `SLAVEOF`, `SLOWLOG`, `TIME`
+`ACL`, `BGREWRITEAOF`, `BGSAVE`, `COMMAND`, `DEBUG`, `FAILOVER`, `LATENCY`, `LOLWUT`, `MEMORY`, `MODULE`, `MONITOR`, `REPLCONF`, `RESTORE-ASKING`, `ROLE`, `SLAVEOF`, `SLOWLOG`
 
 ### sorted_set（3）
 
@@ -58,10 +54,6 @@
 ### string（2）
 
 `LCS`, `SUBSTR`
-
-### cluster（2）
-
-`READONLY`, `READWRITE`
 
 ### sentinel（1）
 
@@ -99,7 +91,7 @@
 - `OBJECT`：只有 `ENCODING`。
 - `CONFIG`：只有 `GET/SET`，且 SET 仅支持 `maxmemory`/`maxmemory-policy`。
 - `SCRIPT`：只有 `LOAD/EXISTS/FLUSH`。
-- 复制/运维族：无 `REPLCONF`、`ROLE`、`SLAVEOF`（`REPLICAOF` 存在）、`BGSAVE`、`BGREWRITEAOF`、`FLUSHALL`（`FLUSHDB` 存在）、`MONITOR`、`TIME`、`WAIT/WAITAOF`、`RESTORE-ASKING`。
+- 复制/运维族：无 `REPLCONF`、`ROLE`、`SLAVEOF`（`REPLICAOF` 存在）、`BGSAVE`、`BGREWRITEAOF`、`MONITOR`、`WAIT/WAITAOF`、`RESTORE-ASKING`。
 - 管理族整体缺失：`COMMAND`、`ACL`、`CLIENT`、`DEBUG`、`LATENCY`、`MEMORY`、`MODULE`、`SLOWLOG`、`FUNCTION`、`SENTINEL`、`XGROUP`、`XINFO`。
 
 ## D. 项目范围外 / 明确不实施
@@ -110,7 +102,7 @@
 ## 审计基线（机器断言，勿手改格式）
 
 <!-- AUDIT-BASELINE-START
-missing_top: acl bgrewriteaof bgsave blmove blmpop blpop brpop brpoplpush bzmpop bzpopmax bzpopmin client command debug eval_ro evalsha_ro failover fcall fcall_ro flushall function geoadd geodist geohash geopos georadius georadius_ro georadiusbymember georadiusbymember_ro geosearch geosearchstore hello hincrbyfloat latency lcs linsert lmove lmpop lolwut memory module monitor move pfadd pfcount pfdebug pfmerge pfselftest readonly readwrite replconf reset restore-asking role sentinel slaveof slowlog sort sort_ro substr time wait waitaof xack xadd xautoclaim xclaim xdel xgroup xinfo xlen xpending xrange xread xreadgroup xrevrange xsetid xtrim
+missing_top: acl bgrewriteaof bgsave blmove blmpop blpop brpop brpoplpush bzmpop bzpopmax bzpopmin client command debug eval_ro evalsha_ro failover fcall fcall_ro function geoadd geodist geohash geopos georadius georadius_ro georadiusbymember georadiusbymember_ro geosearch geosearchstore hello latency lcs linsert lmove lmpop lolwut memory module monitor move pfadd pfcount pfdebug pfmerge pfselftest replconf reset restore-asking role sentinel slaveof slowlog sort sort_ro substr wait waitaof xack xadd xautoclaim xclaim xdel xgroup xinfo xlen xpending xrange xread xreadgroup xrevrange xsetid xtrim
 missing_containers: acl client command function latency memory module sentinel slowlog xgroup xinfo
 missing_sub: cluster addslotsrange
 missing_sub: cluster bumpepoch
