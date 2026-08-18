@@ -418,6 +418,12 @@ int obj_list_remove_at(obj_list_iter *it)
     return it->entry != NULL;
 }
 
+int obj_list_insert(obj_list_iter *it, int after, const char *data,
+                    size_t len)
+{
+    return ql_insert(it, after, data, len);
+}
+
 /* ------------------------------------------------------------------ */
 /* set object: listpack for small sets, rh_table beyond                */
 /* ------------------------------------------------------------------ */

@@ -1309,6 +1309,7 @@ static int mt_is_single_key(uint16_t cmd)
     case CMD_LPOS:
     case CMD_LREM:
     case CMD_LTRIM:
+    case CMD_LINSERT:
     case CMD_SADD:
     case CMD_SREM:
     case CMD_SISMEMBER:

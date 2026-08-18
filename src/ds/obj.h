@@ -157,6 +157,10 @@ int obj_list_set_at(obj_list *l, size_t idx, const char *data, size_t len);
  * successor. Returns 1 when the successor is valid, 0 when the removed
  * element was the tail (iterator invalid). */
 int obj_list_remove_at(obj_list_iter *it);
+/* Insert before (after == 0) or after (after != 0) the current element.
+ * The iterator lands on the inserted element. */
+int obj_list_insert(obj_list_iter *it, int after, const char *data,
+                    size_t len);
 
 /* ------------------------------------------------------------------ */
 /* set object: listpack for small sets, rh_table beyond                */

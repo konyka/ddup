@@ -79,6 +79,10 @@ const char *ql_iter_value(ql_iter *it, size_t *len);
 /* Replace the current element. Returns 1 on success, -1 on invalid length.
  * The iterator stays on the replaced element. */
 int ql_set(ql_iter *it, const char *data, size_t len);
+/* Insert before (after == 0) or after (after != 0) the current element.
+ * The iterator lands on the inserted element. Returns 1 on success, -1 on
+ * invalid length or iterator. */
+int ql_insert(ql_iter *it, int after, const char *data, size_t len);
 /* Remove the current element; the iterator lands on its successor, or
  * becomes invalid when the tail element was removed. */
 void ql_remove(ql_iter *it);

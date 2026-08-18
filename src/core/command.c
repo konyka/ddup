@@ -6994,6 +6994,71 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
         return;
     }
 
+    if (cmd_id == CMD_LINSERT) {
+        const char *k, *where, *piv, *val;
+        size_t kl, wl, pl, vl;
+        int after;
+        obj_list *l;
+        int rc;
+        obj_list_iter it;
+        int found = 0;
+        int valid;
+        if (argc != 5) {
+            wrong_args(out, "linsert");
+            return;
+        }
+        if (!arg_str(&argv[1], &k, &kl) ||
+            !arg_str(&argv[2], &where, &wl) ||
+            !arg_str(&argv[3], &piv, &pl) ||
+            !arg_str(&argv[4], &val, &vl))
+            goto bad_type;
+        if (ci_equal(where, wl, "BEFORE")) {
+            after = 0;
+        } else if (ci_equal(where, wl, "AFTER")) {
+            after = 1;
+        } else {
+            resp_write_error(out, ERR_SYNTAX, sizeof(ERR_SYNTAX) - 1);
+            return;
+        }
+        if (!storage_key_ok(kl) || vl > UINT32_MAX) {
+            storage_length_error(out);
+            return;
+        }
+        rc = get_list(d, out, k, kl, 0, now_ms, &l);
+        if (rc < 0)
+            return;
+        if (rc == 0) {
+            resp_write_integer(out, 0);
+            return;
+        }
+        valid = obj_list_first(l, &it);
+        while (valid) {
+            size_t el = 0;
+            const char *ev = obj_list_iter_value(&it, &el);
+            if (el == pl && memcmp(ev, piv, pl) == 0) {
+                found = 1;
+                break;
+            }
+            valid = obj_list_iter_next(&it);
+        }
+        if (!found) {
+            resp_write_integer(out, -1);
+            return;
+        }
+        if (oom_blocked(d, out))
+            return;
+        {
+            uint64_t before = obj_list_mem(l);
+            if (obj_list_insert(&it, after, val, vl) != 1) {
+                storage_length_error(out);
+                return;
+            }
+            mem_sync(d, k, kl, before, obj_list_mem(l));
+        }
+        resp_write_integer(out, (long long)obj_list_len(l));
+        return;
+    }
+
     /* ---------------- set commands ---------------- */
 
     if (cmd_id == CMD_SADD) {
@@ -10319,6 +10384,7 @@ static const cmd_entry CMD_TABLE[] = {
     {"lrem", CMD_LREM, 4, 4, 0, CMD_WRITE},
     {"ltrim", CMD_LTRIM, 4, 4, 0, CMD_WRITE},
     {"rpoplpush", CMD_RPOPLPUSH, 3, 3, 0, CMD_WRITE},
+    {"linsert", CMD_LINSERT, 5, 5, 0, CMD_WRITE},
     {"sintercard", CMD_SINTERCARD, 3, -1, 0, 0},
     {"sinterstore", CMD_SINTERSTORE, 3, -1, 0, CMD_WRITE},
     {"sunionstore", CMD_SUNIONSTORE, 3, -1, 0, CMD_WRITE},

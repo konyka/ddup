@@ -361,6 +361,25 @@ int ql_set(ql_iter *it, const char *data, size_t len)
     return 1;
 }
 
+int ql_insert(ql_iter *it, int after, const char *data, size_t len)
+{
+    ql_node *n;
+    uint64_t old_bytes;
+    unsigned char *newp = NULL;
+    if (it->entry == NULL || len > UINT32_MAX)
+        return -1;
+    n = it->node;
+    old_bytes = n->bytes;
+    n->lp = lp_insert(n->lp, (const unsigned char *)data, (uint32_t)len,
+                      it->entry, after ? LP_AFTER : LP_BEFORE, &newp);
+    n->count++;
+    n->bytes = (uint64_t)lp_bytes(n->lp);
+    ql_node_mem_sync(it->ql, old_bytes, n);
+    it->entry = newp;
+    it->ql->len++;
+    return 1;
+}
+
 void ql_remove(ql_iter *it)
 {
     quicklist *ql = it->ql;

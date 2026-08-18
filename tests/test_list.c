@@ -684,6 +684,60 @@ static void test_rpoplpush_bumps_both_key_versions(void)
     db_destroy(&d);
 }
 
+static void test_linsert(void)
+{
+    db d;
+    resp_buf out;
+    db_init(&d);
+    resp_buf_init(&out);
+
+    exec_cmd(&d, T0, &out, 5, "RPUSH", "l", "a", "b", "c");
+    EXPECT(out, ":3\r\n");
+
+    exec_cmd(&d, T0, &out, 5, "LINSERT", "l", "BEFORE", "b", "x");
+    EXPECT(out, ":4\r\n");
+    exec_cmd(&d, T0, &out, 4, "LRANGE", "l", "0", "-1");
+    EXPECT(out, "*4\r\n$1\r\na\r\n$1\r\nx\r\n$1\r\nb\r\n$1\r\nc\r\n");
+
+    exec_cmd(&d, T0, &out, 5, "LINSERT", "l", "after", "b", "y");
+    EXPECT(out, ":5\r\n");
+    exec_cmd(&d, T0, &out, 4, "LRANGE", "l", "0", "-1");
+    EXPECT(out,
+           "*5\r\n$1\r\na\r\n$1\r\nx\r\n$1\r\nb\r\n$1\r\ny\r\n"
+           "$1\r\nc\r\n");
+
+    exec_cmd(&d, T0, &out, 5, "LINSERT", "l", "before", "a", "z");
+    EXPECT(out, ":6\r\n");
+    exec_cmd(&d, T0, &out, 4, "LRANGE", "l", "0", "-1");
+    EXPECT(out,
+           "*6\r\n$1\r\nz\r\n$1\r\na\r\n$1\r\nx\r\n$1\r\nb\r\n"
+           "$1\r\ny\r\n$1\r\nc\r\n");
+
+    /* missing key */
+    exec_cmd(&d, T0, &out, 5, "LINSERT", "nokey", "BEFORE", "a", "x");
+    EXPECT(out, ":0\r\n");
+
+    /* pivot not found */
+    exec_cmd(&d, T0, &out, 5, "LINSERT", "l", "BEFORE", "nope", "x");
+    EXPECT(out, ":-1\r\n");
+
+    /* wrong type and syntax errors */
+    exec_cmd(&d, T0, &out, 3, "SET", "s", "v");
+    EXPECT(out, "+OK\r\n");
+    exec_cmd(&d, T0, &out, 5, "LINSERT", "s", "BEFORE", "a", "x");
+    EXPECT(out,
+           "-WRONGTYPE Operation against a key holding the wrong kind of "
+           "value\r\n");
+    exec_cmd(&d, T0, &out, 5, "LINSERT", "l", "BEFOR", "a", "x");
+    EXPECT(out, "-ERR syntax error\r\n");
+    exec_cmd(&d, T0, &out, 4, "LINSERT", "l", "BEFORE", "a");
+    EXPECT(out,
+           "-ERR wrong number of arguments for 'linsert' command\r\n");
+
+    resp_buf_free(&out);
+    db_destroy(&d);
+}
+
 static void test_lpop_rpop_count(void)
 {
     db d;
@@ -771,6 +825,7 @@ int main(void)
     DD_RUN(test_ltrim);
     DD_RUN(test_rpoplpush);
     DD_RUN(test_rpoplpush_bumps_both_key_versions);
+    DD_RUN(test_linsert);
     DD_RUN(test_lpop_rpop_count);
     return DD_TEST_SUMMARY();
 }
