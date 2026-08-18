@@ -1,14 +1,14 @@
 # Redis 7.2.15 命令兼容性盘点
 
 > 基线：Redis 7.2.15 官方 `src/commands/*.json`（392 个 JSON、392 条命令条目；242 个顶层命令 + 150 个容器子命令）。
-> 对照：ddup `src/core/command.c` `CMD_TABLE`（173 个顶层命令）。
+> 对照：ddup `src/core/command.c` `CMD_TABLE`（176 个顶层命令）。
 > 生成：`python3 tools/audit_redis_compat.py --redis-json <Redis src/commands> --json`，机器可复算；`--check` 校验本文档 AUDIT-BASELINE 块与代码一致。
 
 ## 总览
 
 | 类别 | 数量 |
 | --- | --- |
-| 完全未实现的独立顶层命令 | 69 |
+| 完全未实现的独立顶层命令 | 66 |
 | 整体缺失的顶层容器 | 11（对应 Redis 子命令条目 124） |
 | 已实现容器内缺失的子命令 | 26（CLUSTER 15、CONFIG 3、OBJECT 4、PUBSUB 1、SCRIPT 3） |
 | 已注册但选项/语义不完整 | 见下方手工清单 |
@@ -31,9 +31,9 @@
 
 `PFADD`, `PFCOUNT`, `PFDEBUG`, `PFMERGE`, `PFSELFTEST`
 
-### list（8）
+### list（5）
 
-`BLMOVE`, `BLMPOP`, `BLPOP`, `BRPOP`, `BRPOPLPUSH`, `LINSERT`, `LMOVE`, `LMPOP`
+`BLMOVE`, `BLMPOP`, `BLPOP`, `BRPOP`, `BRPOPLPUSH`
 
 ### scripting（5）
 
@@ -102,7 +102,7 @@
 ## 审计基线（机器断言，勿手改格式）
 
 <!-- AUDIT-BASELINE-START
-missing_top: acl bgrewriteaof bgsave blmove blmpop blpop brpop brpoplpush bzmpop bzpopmax bzpopmin client command debug eval_ro evalsha_ro failover fcall fcall_ro function geoadd geodist geohash geopos georadius georadius_ro georadiusbymember georadiusbymember_ro geosearch geosearchstore hello latency lcs linsert lmove lmpop lolwut memory module monitor pfadd pfcount pfdebug pfmerge pfselftest replconf reset restore-asking sentinel slowlog sort sort_ro wait waitaof xack xadd xautoclaim xclaim xdel xgroup xinfo xlen xpending xrange xread xreadgroup xrevrange xsetid xtrim
+missing_top: acl bgrewriteaof bgsave blmove blmpop blpop brpop brpoplpush bzmpop bzpopmax bzpopmin client command debug eval_ro evalsha_ro failover fcall fcall_ro function geoadd geodist geohash geopos georadius georadius_ro georadiusbymember georadiusbymember_ro geosearch geosearchstore hello latency lcs lolwut memory module monitor pfadd pfcount pfdebug pfmerge pfselftest replconf reset restore-asking sentinel slowlog sort sort_ro wait waitaof xack xadd xautoclaim xclaim xdel xgroup xinfo xlen xpending xrange xread xreadgroup xrevrange xsetid xtrim
 missing_containers: acl client command function latency memory module sentinel slowlog xgroup xinfo
 missing_sub: cluster addslotsrange
 missing_sub: cluster bumpepoch

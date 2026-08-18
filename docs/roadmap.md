@@ -281,6 +281,10 @@
     TTL；mt 模式在属主 worker 全库栈会话执行）、`ROLE`（主/从角色
     响应，复用 `session.repl`）；st/mt 路由与集群分类同步，兼容审计
     缺 69 个顶层命令（Phase 55）
+  - [x] 非阻塞 list 族补齐：`LINSERT`（BEFORE/AFTER，quicklist 内原地
+    listpack 插入）、`LMOVE`（LEFT/RIGHT 四向移动，复用 pop/push）、
+    `LMPOP`（首个非空列表按 COUNT 弹出）；st/mt 路由与集群 key 抽取
+    同步，兼容审计缺 66 个顶层命令（Phase 56）
   - [ ] 范围化排除（记录在案，不实施）：
     - 分层存储（热/冷数据落盘）：超出"内存缓存存储"定位
     - mt 模式的复制/集群适配：见 Phase 15 说明
