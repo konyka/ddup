@@ -322,10 +322,11 @@ enum {
     CMD_TIME,
     CMD_HINCRBYFLOAT,
     CMD_READONLY,
-    CMD_READWRITE
+    CMD_READWRITE,
+    CMD_SUBSTR
 };
 
-#define CMD_MAX CMD_READWRITE
+#define CMD_MAX CMD_SUBSTR
 
 /* Resolve a command name to its stable ID; case-insensitive. */
 uint16_t cmd_resolve(const char *name, size_t len);

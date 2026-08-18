@@ -445,6 +445,32 @@ static void test_getrange(void)
     db_destroy(&d);
 }
 
+static void test_substr_alias(void)
+{
+    db d;
+    resp_buf out;
+    db_init(&d);
+    resp_buf_init(&out);
+
+    exec_cmd(&d, T0, &out, 3, "SET", "k", "Hello");
+    EXPECT(out, "+OK\r\n");
+    exec_cmd(&d, T0, &out, 4, "SUBSTR", "k", "0", "4");
+    EXPECT(out, "$5\r\nHello\r\n");
+    exec_cmd(&d, T0, &out, 4, "SUBSTR", "k", "6", "100");
+    EXPECT(out, "$0\r\n\r\n");
+    exec_cmd(&d, T0, &out, 4, "SUBSTR", "k", "-1", "-5");
+    EXPECT(out, "$0\r\n\r\n");
+    exec_cmd(&d, T0, &out, 4, "SUBSTR", "missing", "0", "-1");
+    EXPECT(out, "$0\r\n\r\n");
+    exec_cmd(&d, T0, &out, 4, "SUBSTR", "k", "x", "1");
+    EXPECT(out, NOT_INT_REPLY);
+    exec_cmd(&d, T0, &out, 3, "SUBSTR", "k", "0");
+    EXPECT(out, "-ERR wrong number of arguments for 'substr' command\r\n");
+
+    resp_buf_free(&out);
+    db_destroy(&d);
+}
+
 static void test_incrby_decrby(void)
 {
     db d;
@@ -702,6 +728,7 @@ int main(void)
     DD_RUN(test_setrange);
     DD_RUN(test_setnx_msetnx);
     DD_RUN(test_getrange);
+    DD_RUN(test_substr_alias);
     DD_RUN(test_incrby_decrby);
     DD_RUN(test_incrbyfloat);
     return DD_TEST_SUMMARY();

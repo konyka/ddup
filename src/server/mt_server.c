@@ -1265,6 +1265,7 @@ static int mt_is_single_key(uint16_t cmd)
     case CMD_GETSET:
     case CMD_SETRANGE:
     case CMD_GETRANGE:
+    case CMD_SUBSTR:
     case CMD_INCRBY:
     case CMD_DECRBY:
     case CMD_INCRBYFLOAT:

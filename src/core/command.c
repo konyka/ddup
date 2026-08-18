@@ -4483,9 +4483,9 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
         return;
     }
 
-    if (cmd_id == CMD_GETRANGE) {
+    if (cmd_id == CMD_GETRANGE || cmd_id == CMD_SUBSTR) {
         if (argc != 4) {
-            wrong_args(out, "getrange");
+            wrong_args(out, cmd_id == CMD_SUBSTR ? "substr" : "getrange");
             return;
         }
         const char *k;
@@ -10265,6 +10265,7 @@ static const cmd_entry CMD_TABLE[] = {
     {"hincrbyfloat", CMD_HINCRBYFLOAT, 4, 4, 0, CMD_WRITE},
     {"readonly", CMD_READONLY, 1, 1, 0, 0},
     {"readwrite", CMD_READWRITE, 1, 1, 0, 0},
+    {"substr", CMD_SUBSTR, 4, 4, 0, 0},
 };
 
 static const cmd_entry *cmd_table_entry(uint16_t id)
