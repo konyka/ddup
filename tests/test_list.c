@@ -738,6 +738,75 @@ static void test_linsert(void)
     db_destroy(&d);
 }
 
+static void test_lmove(void)
+{
+    db d;
+    resp_buf out;
+    db_init(&d);
+    resp_buf_init(&out);
+
+    exec_cmd(&d, T0, &out, 5, "RPUSH", "src", "a", "b", "c");
+    EXPECT(out, ":3\r\n");
+
+    /* RIGHT -> LEFT: tail of src becomes head of dst */
+    exec_cmd(&d, T0, &out, 5, "LMOVE", "src", "dst", "RIGHT", "LEFT");
+    EXPECT(out, "$1\r\nc\r\n");
+    exec_cmd(&d, T0, &out, 4, "LRANGE", "src", "0", "-1");
+    EXPECT(out, "*2\r\n$1\r\na\r\n$1\r\nb\r\n");
+    exec_cmd(&d, T0, &out, 4, "LRANGE", "dst", "0", "-1");
+    EXPECT(out, "*1\r\n$1\r\nc\r\n");
+
+    /* LEFT -> RIGHT: head of src becomes tail of dst */
+    exec_cmd(&d, T0, &out, 5, "LMOVE", "src", "dst", "left", "right");
+    EXPECT(out, "$1\r\na\r\n");
+    exec_cmd(&d, T0, &out, 4, "LRANGE", "src", "0", "-1");
+    EXPECT(out, "*1\r\n$1\r\nb\r\n");
+    exec_cmd(&d, T0, &out, 4, "LRANGE", "dst", "0", "-1");
+    EXPECT(out, "*2\r\n$1\r\nc\r\n$1\r\na\r\n");
+
+    /* same key rotates */
+    exec_cmd(&d, T0, &out, 4, "RPUSH", "rot", "x", "y");
+    EXPECT(out, ":2\r\n");
+    exec_cmd(&d, T0, &out, 5, "LMOVE", "rot", "rot", "RIGHT", "LEFT");
+    EXPECT(out, "$1\r\ny\r\n");
+    exec_cmd(&d, T0, &out, 4, "LRANGE", "rot", "0", "-1");
+    EXPECT(out, "*2\r\n$1\r\ny\r\n$1\r\nx\r\n");
+    exec_cmd(&d, T0, &out, 5, "LMOVE", "rot", "rot", "LEFT", "RIGHT");
+    EXPECT(out, "$1\r\ny\r\n");
+    exec_cmd(&d, T0, &out, 4, "LRANGE", "rot", "0", "-1");
+    EXPECT(out, "*2\r\n$1\r\nx\r\n$1\r\ny\r\n");
+
+    /* draining src deletes the key */
+    exec_cmd(&d, T0, &out, 5, "LMOVE", "src", "dst", "RIGHT", "LEFT");
+    EXPECT(out, "$1\r\nb\r\n");
+    exec_cmd(&d, T0, &out, 2, "EXISTS", "src");
+    EXPECT(out, ":0\r\n");
+    exec_cmd(&d, T0, &out, 5, "LMOVE", "src", "dst", "RIGHT", "LEFT");
+    EXPECT(out, "$-1\r\n");
+
+    /* wrong types reject both sides without mutation */
+    exec_cmd(&d, T0, &out, 3, "SET", "str", "v");
+    EXPECT(out, "+OK\r\n");
+    exec_cmd(&d, T0, &out, 5, "LMOVE", "dst", "str", "LEFT", "LEFT");
+    EXPECT(out,
+           "-WRONGTYPE Operation against a key holding the wrong kind of "
+           "value\r\n");
+    exec_cmd(&d, T0, &out, 5, "LMOVE", "str", "dst", "LEFT", "LEFT");
+    EXPECT(out,
+           "-WRONGTYPE Operation against a key holding the wrong kind of "
+           "value\r\n");
+
+    /* bad direction and arity */
+    exec_cmd(&d, T0, &out, 5, "LMOVE", "dst", "x", "UP", "LEFT");
+    EXPECT(out, "-ERR syntax error\r\n");
+    exec_cmd(&d, T0, &out, 4, "LMOVE", "dst", "x", "LEFT");
+    EXPECT(out,
+           "-ERR wrong number of arguments for 'lmove' command\r\n");
+
+    resp_buf_free(&out);
+    db_destroy(&d);
+}
+
 static void test_lpop_rpop_count(void)
 {
     db d;
@@ -826,6 +895,7 @@ int main(void)
     DD_RUN(test_rpoplpush);
     DD_RUN(test_rpoplpush_bumps_both_key_versions);
     DD_RUN(test_linsert);
+    DD_RUN(test_lmove);
     DD_RUN(test_lpop_rpop_count);
     return DD_TEST_SUMMARY();
 }

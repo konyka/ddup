@@ -2972,7 +2972,7 @@ static int cmd_keys_accum(const resp_value *argv, size_t argc, int *have,
     }
     if (cmd_id == CMD_SMOVE || cmd_id == CMD_RENAME ||
         cmd_id == CMD_RENAMENX || cmd_id == CMD_RPOPLPUSH ||
-        cmd_id == CMD_COPY) {
+        cmd_id == CMD_LMOVE || cmd_id == CMD_COPY) {
         for (i = 1; i < argc && i < 3; i++) {
             const char *k;
             size_t kl;
@@ -3254,7 +3254,7 @@ static int cluster_check_ownership(session *s, const resp_value *argv,
     }
     if (cmd_id == CMD_SMOVE || cmd_id == CMD_RENAME ||
         cmd_id == CMD_RENAMENX || cmd_id == CMD_RPOPLPUSH ||
-        cmd_id == CMD_COPY) {
+        cmd_id == CMD_LMOVE || cmd_id == CMD_COPY) {
         for (i = 1; i < argc && i < 3; i++) {
             const char *k;
             size_t kl;
@@ -7059,6 +7059,100 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
         return;
     }
 
+    if (cmd_id == CMD_LMOVE) {
+        const char *sk, *dk, *sw, *dw;
+        size_t skl, dkl, swl, dwl;
+        int src_left, dst_left;
+        obj_list *src, *dst;
+        int rcs;
+        if (argc != 5) {
+            wrong_args(out, "lmove");
+            return;
+        }
+        if (!arg_str(&argv[1], &sk, &skl) ||
+            !arg_str(&argv[2], &dk, &dkl) ||
+            !arg_str(&argv[3], &sw, &swl) ||
+            !arg_str(&argv[4], &dw, &dwl))
+            goto bad_type;
+        if (ci_equal(sw, swl, "LEFT")) {
+            src_left = 1;
+        } else if (ci_equal(sw, swl, "RIGHT")) {
+            src_left = 0;
+        } else {
+            resp_write_error(out, ERR_SYNTAX, sizeof(ERR_SYNTAX) - 1);
+            return;
+        }
+        if (ci_equal(dw, dwl, "LEFT")) {
+            dst_left = 1;
+        } else if (ci_equal(dw, dwl, "RIGHT")) {
+            dst_left = 0;
+        } else {
+            resp_write_error(out, ERR_SYNTAX, sizeof(ERR_SYNTAX) - 1);
+            return;
+        }
+        if (!storage_key_ok(skl) || !storage_key_ok(dkl)) {
+            storage_length_error(out);
+            return;
+        }
+        rcs = get_list(d, out, sk, skl, 0, now_ms, &src);
+        if (rcs < 0)
+            return;
+        if (rcs == 0) {
+            resp_write_bulk(out, NULL, 0);
+            return;
+        }
+        {
+            int same = skl == dkl && memcmp(sk, dk, skl) == 0;
+            int created_dst = 0;
+            if (!same) {
+                int rcd = get_list(d, out, dk, dkl, 0, now_ms, &dst);
+                if (rcd < 0)
+                    return;
+                if (rcd == 0) {
+                    if (oom_blocked(d, out))
+                        return;
+                    rcd = get_list(d, out, dk, dkl, 1, now_ms, &dst);
+                    if (rcd < 0)
+                        return;
+                    created_dst = 1;
+                }
+            } else {
+                dst = src;
+            }
+            {
+                char *data = NULL;
+                size_t dlen = 0;
+                uint64_t sbefore = obj_list_mem(src);
+                if (!obj_list_pop(src, src_left, &data, &dlen)) {
+                    resp_write_bulk(out, NULL, 0);
+                    return;
+                }
+                {
+                    uint64_t dbefore = same ? 0 : obj_list_mem(dst);
+                    if (obj_list_push(dst, dst_left, data, dlen) != 0) {
+                        if (created_dst)
+                            db_del_kv(d, dk, dkl);
+                        (void)obj_list_push(src, src_left, data, dlen);
+                        free(data);
+                        storage_length_error(out);
+                        return;
+                    }
+                    if (same) {
+                        mem_sync(d, sk, skl, sbefore, obj_list_mem(src));
+                    } else {
+                        mem_sync(d, dk, dkl, dbefore, obj_list_mem(dst));
+                        mem_sync(d, sk, skl, sbefore, obj_list_mem(src));
+                    }
+                }
+                if (obj_list_len(src) == 0)
+                    db_del_kv(d, sk, skl); /* empty list: the key goes away */
+                resp_write_bulk(out, data, dlen);
+                free(data);
+            }
+        }
+        return;
+    }
+
     /* ---------------- set commands ---------------- */
 
     if (cmd_id == CMD_SADD) {
@@ -10385,6 +10479,7 @@ static const cmd_entry CMD_TABLE[] = {
     {"ltrim", CMD_LTRIM, 4, 4, 0, CMD_WRITE},
     {"rpoplpush", CMD_RPOPLPUSH, 3, 3, 0, CMD_WRITE},
     {"linsert", CMD_LINSERT, 5, 5, 0, CMD_WRITE},
+    {"lmove", CMD_LMOVE, 5, 5, 0, CMD_WRITE},
     {"sintercard", CMD_SINTERCARD, 3, -1, 0, 0},
     {"sinterstore", CMD_SINTERSTORE, 3, -1, 0, CMD_WRITE},
     {"sunionstore", CMD_SUNIONSTORE, 3, -1, 0, CMD_WRITE},

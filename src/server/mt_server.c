@@ -1443,7 +1443,7 @@ static int mt_multikey_target(int nworkers, uint16_t cmd,
             continue; /* value position */
         if ((cmd == CMD_SMOVE || cmd == CMD_RENAME ||
              cmd == CMD_RENAMENX || cmd == CMD_RPOPLPUSH ||
-             cmd == CMD_COPY) && i > 2)
+             cmd == CMD_LMOVE || cmd == CMD_COPY) && i > 2)
             break; /* only source and destination are keys */
         if (argv[i].str == NULL)
             return MT_LOCAL;
@@ -1482,6 +1482,7 @@ static int mt_classify(int nworkers, uint16_t cmd, const resp_value *argv,
     case CMD_RENAME:
     case CMD_RENAMENX:
     case CMD_RPOPLPUSH:
+    case CMD_LMOVE:
     case CMD_COPY:
     case CMD_SINTER:
     case CMD_SUNION:
