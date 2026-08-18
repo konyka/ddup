@@ -1421,7 +1421,8 @@ static int mt_multikey_target(int nworkers, uint16_t cmd,
 
     kend = argc;
     if (cmd == CMD_SINTERCARD || cmd == CMD_ZUNION || cmd == CMD_ZINTER ||
-        cmd == CMD_ZDIFF || cmd == CMD_ZINTERCARD || cmd == CMD_ZMPOP) {
+        cmd == CMD_ZDIFF || cmd == CMD_ZINTERCARD || cmd == CMD_ZMPOP ||
+        cmd == CMD_LMPOP) {
         long long nk = 0;
         if (argv[1].str == NULL || !mt_parse_ll(argv[1].str, argv[1].len, &nk))
             return MT_LOCAL; /* bad numkeys: let the session report it */
@@ -1500,6 +1501,7 @@ static int mt_classify(int nworkers, uint16_t cmd, const resp_value *argv,
     case CMD_ZDIFF:
     case CMD_ZINTERCARD:
     case CMD_ZMPOP:
+    case CMD_LMPOP:
     case CMD_ZRANGESTORE:
         return mt_multikey_target(nworkers, cmd, argv, argc);
     default:

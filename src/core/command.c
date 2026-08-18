@@ -3029,7 +3029,7 @@ static int cmd_keys_accum(const resp_value *argv, size_t argc, int *have,
     }
     if (cmd_id == CMD_ZUNION || cmd_id == CMD_ZINTER ||
         cmd_id == CMD_ZDIFF || cmd_id == CMD_ZINTERCARD ||
-        cmd_id == CMD_ZMPOP) {
+        cmd_id == CMD_ZMPOP || cmd_id == CMD_LMPOP) {
         const char *nv;
         size_t nvl;
         long long nk = 0;
@@ -3332,7 +3332,7 @@ static int cluster_check_ownership(session *s, const resp_value *argv,
     }
     if (cmd_id == CMD_ZUNION || cmd_id == CMD_ZINTER ||
         cmd_id == CMD_ZDIFF || cmd_id == CMD_ZINTERCARD ||
-        cmd_id == CMD_ZMPOP) {
+        cmd_id == CMD_ZMPOP || cmd_id == CMD_LMPOP) {
         const char *nv;
         size_t nvl;
         long long nk = 0;
@@ -7153,6 +7153,111 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
         return;
     }
 
+    if (cmd_id == CMD_LMPOP) {
+        long long nk;
+        long long count = 1;
+        size_t dir_idx;
+        const char *where;
+        size_t wl;
+        int left;
+        size_t i;
+        if (argc < 4) {
+            wrong_args(out, "lmpop");
+            return;
+        }
+        if (!cmd_parse_ll(&argv[1], &nk)) {
+            resp_write_error(out,
+                             "ERR value is not an integer or out of range",
+                             43);
+            return;
+        }
+        if (nk <= 0) {
+            static const char E[] =
+                "ERR numkeys should be greater than 0";
+            resp_write_error(out, E, sizeof(E) - 1);
+            return;
+        }
+        if ((unsigned long long)nk > (unsigned long long)(argc - 3)) {
+            wrong_args(out, "lmpop");
+            return;
+        }
+        dir_idx = 2 + (size_t)nk;
+        if (!arg_str(&argv[dir_idx], &where, &wl))
+            goto bad_type;
+        if (ci_equal(where, wl, "LEFT")) {
+            left = 1;
+        } else if (ci_equal(where, wl, "RIGHT")) {
+            left = 0;
+        } else {
+            resp_write_error(out, ERR_SYNTAX, sizeof(ERR_SYNTAX) - 1);
+            return;
+        }
+        if (argc > dir_idx + 1) {
+            const char *opt;
+            size_t ol;
+            if (argc != dir_idx + 3) {
+                wrong_args(out, "lmpop");
+                return;
+            }
+            if (!arg_str(&argv[dir_idx + 1], &opt, &ol))
+                goto bad_type;
+            if (!ci_equal(opt, ol, "COUNT")) {
+                resp_write_error(out, ERR_SYNTAX, sizeof(ERR_SYNTAX) - 1);
+                return;
+            }
+            if (!cmd_parse_ll(&argv[dir_idx + 2], &count)) {
+                resp_write_error(out,
+                                 "ERR value is not an integer or out of "
+                                 "range",
+                                 43);
+                return;
+            }
+            if (count <= 0) {
+                static const char E[] =
+                    "ERR value is out of range, must be positive";
+                resp_write_error(out, E, sizeof(E) - 1);
+                return;
+            }
+        }
+        for (i = 2; i < 2 + (size_t)nk; i++) {
+            const char *k;
+            size_t kl;
+            obj_list *l;
+            int rc;
+            if (!arg_str(&argv[i], &k, &kl))
+                goto bad_type;
+            rc = get_list(d, out, k, kl, 0, now_ms, &l);
+            if (rc < 0)
+                return;
+            if (rc == 0)
+                continue;
+            {
+                size_t n = (unsigned long long)count < obj_list_len(l)
+                               ? (size_t)count
+                               : (size_t)obj_list_len(l);
+                uint64_t before = obj_list_mem(l);
+                size_t j;
+                resp_write_array_header(out, 2);
+                resp_write_bulk(out, k, kl);
+                resp_write_array_header(out, n);
+                for (j = 0; j < n; j++) {
+                    char *data = NULL;
+                    size_t dlen = 0;
+                    if (!obj_list_pop(l, left, &data, &dlen))
+                        break;
+                    resp_write_bulk(out, data, dlen);
+                    free(data);
+                }
+                mem_sync(d, k, kl, before, obj_list_mem(l));
+                if (obj_list_len(l) == 0)
+                    db_del_kv(d, k, kl); /* empty list: the key goes away */
+            }
+            return;
+        }
+        write_null_array(out);
+        return;
+    }
+
     /* ---------------- set commands ---------------- */
 
     if (cmd_id == CMD_SADD) {
@@ -10480,6 +10585,7 @@ static const cmd_entry CMD_TABLE[] = {
     {"rpoplpush", CMD_RPOPLPUSH, 3, 3, 0, CMD_WRITE},
     {"linsert", CMD_LINSERT, 5, 5, 0, CMD_WRITE},
     {"lmove", CMD_LMOVE, 5, 5, 0, CMD_WRITE},
+    {"lmpop", CMD_LMPOP, 4, -1, 0, CMD_WRITE},
     {"sintercard", CMD_SINTERCARD, 3, -1, 0, 0},
     {"sinterstore", CMD_SINTERSTORE, 3, -1, 0, CMD_WRITE},
     {"sunionstore", CMD_SUNIONSTORE, 3, -1, 0, CMD_WRITE},

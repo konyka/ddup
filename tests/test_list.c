@@ -807,6 +807,57 @@ static void test_lmove(void)
     db_destroy(&d);
 }
 
+static void test_lmpop(void)
+{
+    db d;
+    resp_buf out;
+    db_init(&d);
+    resp_buf_init(&out);
+
+    exec_cmd(&d, T0, &out, 4, "RPUSH", "l1", "a", "b");
+    EXPECT(out, ":2\r\n");
+    exec_cmd(&d, T0, &out, 3, "RPUSH", "l2", "c");
+    EXPECT(out, ":1\r\n");
+
+    exec_cmd(&d, T0, &out, 5, "LMPOP", "2", "l1", "l2", "LEFT");
+    EXPECT(out, "*2\r\n$2\r\nl1\r\n*1\r\n$1\r\na\r\n");
+    exec_cmd(&d, T0, &out, 4, "LRANGE", "l1", "0", "-1");
+    EXPECT(out, "*1\r\n$1\r\nb\r\n");
+
+    /* first non-empty list wins; missing keys are skipped */
+    exec_cmd(&d, T0, &out, 7, "LMPOP", "2", "nokey", "l2", "RIGHT", "COUNT", "2");
+    EXPECT(out, "*2\r\n$2\r\nl2\r\n*1\r\n$1\r\nc\r\n");
+    exec_cmd(&d, T0, &out, 2, "EXISTS", "l2");
+    EXPECT(out, ":0\r\n");
+
+    /* COUNT larger than the list pops everything and deletes the key */
+    exec_cmd(&d, T0, &out, 5, "RPUSH", "l3", "x", "y", "z");
+    EXPECT(out, ":3\r\n");
+    exec_cmd(&d, T0, &out, 6, "LMPOP", "1", "l3", "LEFT", "COUNT", "5");
+    EXPECT(out, "*2\r\n$2\r\nl3\r\n*3\r\n$1\r\nx\r\n$1\r\ny\r\n$1\r\nz\r\n");
+    exec_cmd(&d, T0, &out, 2, "EXISTS", "l3");
+    EXPECT(out, ":0\r\n");
+
+    /* all missing -> null array */
+    exec_cmd(&d, T0, &out, 4, "LMPOP", "1", "nokey", "LEFT");
+    EXPECT(out, "*-1\r\n");
+
+    /* validation errors */
+    exec_cmd(&d, T0, &out, 4, "LMPOP", "0", "l1", "LEFT");
+    EXPECT(out, "-ERR numkeys should be greater than 0\r\n");
+    exec_cmd(&d, T0, &out, 4, "LMPOP", "2", "l1", "LEFT");
+    EXPECT(out, "-ERR wrong number of arguments for 'lmpop' command\r\n");
+    exec_cmd(&d, T0, &out, 4, "LMPOP", "1", "l1", "UP");
+    EXPECT(out, "-ERR syntax error\r\n");
+    exec_cmd(&d, T0, &out, 6, "LMPOP", "1", "l1", "LEFT", "COUNT", "0");
+    EXPECT(out, "-ERR value is out of range, must be positive\r\n");
+    exec_cmd(&d, T0, &out, 3, "LMPOP", "1", "l1");
+    EXPECT(out, "-ERR wrong number of arguments for 'lmpop' command\r\n");
+
+    resp_buf_free(&out);
+    db_destroy(&d);
+}
+
 static void test_lpop_rpop_count(void)
 {
     db d;
@@ -896,6 +947,7 @@ int main(void)
     DD_RUN(test_rpoplpush_bumps_both_key_versions);
     DD_RUN(test_linsert);
     DD_RUN(test_lmove);
+    DD_RUN(test_lmpop);
     DD_RUN(test_lpop_rpop_count);
     return DD_TEST_SUMMARY();
 }
