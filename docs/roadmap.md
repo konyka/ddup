@@ -291,6 +291,11 @@
     DP 回溯并支持 MINMATCHLEN/WITHMATCHLEN）、`SORT`/`SORT_RO`（list/set/
     zset，BY/GET/LIMIT/ASC/DESC/ALPHA/STORE，归并排序无 qsort 全局态）；
     st/mt 路由与集群分类同步，兼容审计缺 61 个顶层命令（Phase 57）
+  - [x] HyperLogLog 族补齐：`PFADD`/`PFCOUNT`/`PFMERGE`/`PFDEBUG`/
+    `PFSELFTEST`（dense-only Redis 7 编码，MurmurHash64A + 16384 个 6-bit
+    寄存器；PFCOUNT 多键临时合并单次 12KB 缓冲，不产生逐键分配；
+    PFMERGE 对缺失源按空 HLL 处理）；st/mt 路由与集群 key 抽取同步，
+    兼容审计缺 56 个顶层命令（Phase 58）
   - [ ] 范围化排除（记录在案，不实施）：
     - 分层存储（热/冷数据落盘）：超出"内存缓存存储"定位
     - mt 模式的复制/集群适配：见 Phase 15 说明
