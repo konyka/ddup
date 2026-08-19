@@ -1439,6 +1439,10 @@ static int mt_multikey_target(int nworkers, uint16_t cmd,
         kstart = 1;
         kend = argc > 2 ? 3 : argc;
     }
+    if (cmd == CMD_LCS) {
+        kstart = 1;
+        kend = argc > 2 ? 3 : argc;
+    }
 
     for (i = kstart; i < kend; i++) {
         int w;
@@ -1486,6 +1490,7 @@ static int mt_classify(int nworkers, uint16_t cmd, const resp_value *argv,
     case CMD_RENAMENX:
     case CMD_RPOPLPUSH:
     case CMD_LMOVE:
+    case CMD_LCS:
     case CMD_COPY:
     case CMD_SINTER:
     case CMD_SUNION:

@@ -717,6 +717,87 @@ static void test_set_get_option(void)
     db_destroy(&d);
 }
 
+static void test_lcs(void)
+{
+    db d;
+    resp_buf out;
+    db_init(&d);
+    resp_buf_init(&out);
+
+    exec_cmd(&d, T0, &out, 3, "SET", "a", "ohmytext");
+    EXPECT(out, "+OK\r\n");
+    exec_cmd(&d, T0, &out, 3, "SET", "b", "mynewtext");
+    EXPECT(out, "+OK\r\n");
+
+    exec_cmd(&d, T0, &out, 3, "LCS", "a", "b");
+    EXPECT(out, "$6\r\nmytext\r\n");
+    exec_cmd(&d, T0, &out, 4, "LCS", "a", "b", "LEN");
+    EXPECT(out, ":6\r\n");
+    exec_cmd(&d, T0, &out, 4, "LCS", "a", "b", "IDX");
+    EXPECT(out,
+           "*4\r\n"
+           "$7\r\nmatches\r\n"
+           "*2\r\n"
+           "*2\r\n"
+           "*2\r\n:4\r\n:7\r\n"
+           "*2\r\n:5\r\n:8\r\n"
+           "*2\r\n"
+           "*2\r\n:2\r\n:3\r\n"
+           "*2\r\n:0\r\n:1\r\n"
+           "$3\r\nlen\r\n:6\r\n");
+    exec_cmd(&d, T0, &out, 5, "LCS", "a", "b", "IDX", "WITHMATCHLEN");
+    EXPECT(out,
+           "*4\r\n"
+           "$7\r\nmatches\r\n"
+           "*2\r\n"
+           "*3\r\n"
+           "*2\r\n:4\r\n:7\r\n"
+           "*2\r\n:5\r\n:8\r\n"
+           ":4\r\n"
+           "*3\r\n"
+           "*2\r\n:2\r\n:3\r\n"
+           "*2\r\n:0\r\n:1\r\n"
+           ":2\r\n"
+           "$3\r\nlen\r\n:6\r\n");
+
+    exec_cmd(&d, T0, &out, 6, "LCS", "a", "b", "IDX", "MINMATCHLEN", "4");
+    EXPECT(out,
+           "*4\r\n"
+           "$7\r\nmatches\r\n"
+           "*1\r\n"
+           "*2\r\n"
+           "*2\r\n:4\r\n:7\r\n"
+           "*2\r\n:5\r\n:8\r\n"
+           "$3\r\nlen\r\n:6\r\n");
+
+    /* missing keys are empty strings */
+    exec_cmd(&d, T0, &out, 3, "LCS", "missing1", "missing2");
+    EXPECT(out, "$0\r\n\r\n");
+    exec_cmd(&d, T0, &out, 4, "LCS", "missing1", "missing2", "LEN");
+    EXPECT(out, ":0\r\n");
+    exec_cmd(&d, T0, &out, 4, "LCS", "missing1", "missing2", "IDX");
+    EXPECT(out, "*4\r\n$7\r\nmatches\r\n*0\r\n$3\r\nlen\r\n:0\r\n");
+
+    /* non-string values use the Redis-specific LCS error */
+    exec_cmd(&d, T0, &out, 4, "HSET", "h", "f", "v");
+    EXPECT(out, ":1\r\n");
+    exec_cmd(&d, T0, &out, 3, "LCS", "h", "b");
+    EXPECT(out, "-ERR The specified keys must contain string values\r\n");
+    exec_cmd(&d, T0, &out, 3, "LCS", "a", "h");
+    EXPECT(out, "-ERR The specified keys must contain string values\r\n");
+
+    exec_cmd(&d, T0, &out, 2, "LCS", "a");
+    EXPECT(out, "-ERR wrong number of arguments for 'lcs' command\r\n");
+    exec_cmd(&d, T0, &out, 5, "LCS", "a", "b", "IDX", "LEN");
+    EXPECT(out, "-ERR If you want both the length and indexes, please just "
+                 "use IDX.\r\n");
+    exec_cmd(&d, T0, &out, 5, "LCS", "a", "b", "IDX", "BAD");
+    EXPECT(out, SYNTAX_REPLY);
+
+    resp_buf_free(&out);
+    db_destroy(&d);
+}
+
 int main(void)
 {
     DD_RUN(test_getdel);
@@ -731,5 +812,6 @@ int main(void)
     DD_RUN(test_substr_alias);
     DD_RUN(test_incrby_decrby);
     DD_RUN(test_incrbyfloat);
+    DD_RUN(test_lcs);
     return DD_TEST_SUMMARY();
 }

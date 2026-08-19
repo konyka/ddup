@@ -2972,7 +2972,7 @@ static int cmd_keys_accum(const resp_value *argv, size_t argc, int *have,
     }
     if (cmd_id == CMD_SMOVE || cmd_id == CMD_RENAME ||
         cmd_id == CMD_RENAMENX || cmd_id == CMD_RPOPLPUSH ||
-        cmd_id == CMD_LMOVE || cmd_id == CMD_COPY) {
+        cmd_id == CMD_LMOVE || cmd_id == CMD_COPY || cmd_id == CMD_LCS) {
         for (i = 1; i < argc && i < 3; i++) {
             const char *k;
             size_t kl;
@@ -3255,7 +3255,7 @@ static int cluster_check_ownership(session *s, const resp_value *argv,
     }
     if (cmd_id == CMD_SMOVE || cmd_id == CMD_RENAME ||
         cmd_id == CMD_RENAMENX || cmd_id == CMD_RPOPLPUSH ||
-        cmd_id == CMD_LMOVE || cmd_id == CMD_COPY) {
+        cmd_id == CMD_LMOVE || cmd_id == CMD_COPY || cmd_id == CMD_LCS) {
         for (i = 1; i < argc && i < 3; i++) {
             const char *k;
             size_t kl;
@@ -3418,6 +3418,60 @@ static void hello_reply(resp_buf *out, int proto)
     resp_write_bulk(out, "modules", 7);
     resp_write_array_header(out, 0);
 }
+
+static size_t lcs_length_linear(const char *a, size_t alen, const char *b,
+                                size_t blen)
+{
+    uint32_t *prev;
+    uint32_t *curr;
+    size_t i, j;
+    uint32_t answer = 0;
+
+    if (alen == 0 || blen == 0)
+        return 0;
+    if (alen > blen) {
+        const char *tmp = a;
+        size_t tl = alen;
+        a = b;
+        b = tmp;
+        alen = blen;
+        blen = tl;
+    }
+    prev = (uint32_t *)malloc((blen + 1) * sizeof(*prev));
+    curr = (uint32_t *)malloc((blen + 1) * sizeof(*curr));
+    if (prev == NULL || curr == NULL) {
+        free(prev);
+        free(curr);
+        return SIZE_MAX;
+    }
+    memset(prev, 0, (blen + 1) * sizeof(*prev));
+    for (i = 1; i <= alen; i++) {
+        curr[0] = 0;
+        for (j = 1; j <= blen; j++) {
+            if (a[i - 1] == b[j - 1])
+                curr[j] = prev[j - 1] + 1;
+            else
+                curr[j] = prev[j] > curr[j - 1] ? prev[j] : curr[j - 1];
+        }
+        {
+            uint32_t *swap = prev;
+            prev = curr;
+            curr = swap;
+        }
+    }
+    answer = prev[blen];
+    free(prev);
+    free(curr);
+    return answer;
+}
+
+typedef struct lcs_match_range {
+    uint32_t a_start;
+    uint32_t a_end;
+    uint32_t b_start;
+    uint32_t b_end;
+    uint32_t len;
+} lcs_match_range;
 
 static void command_dispatch(session *s, const resp_value *argv, size_t argc,
                              resp_buf *out, uint64_t now_ms)
@@ -4316,6 +4370,240 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
             resp_write_integer(out, (long long)sl2);
         }
         return;
+    }
+
+    if (cmd_id == CMD_LCS) {
+        static const char LCS_TYPE[] =
+            "ERR The specified keys must contain string values";
+        static const char LCS_LONG[] = "ERR String too long for LCS";
+        static const char LCS_MEM[] =
+            "ERR Insufficient memory, failed allocating transient memory "
+            "for LCS";
+        static const char LCS_AMBIG[] =
+            "ERR If you want both the length and indexes, please just use "
+            "IDX.";
+        const char *k1, *k2;
+        size_t kl1, kl2;
+        const char *a = "";
+        const char *b = "";
+        size_t alen = 0, blen = 0;
+        const char *v;
+        size_t vl;
+        size_t j;
+        int getlen = 0, getidx = 0, withmatchlen = 0;
+        long long minmatchlen = 0;
+
+        if (argc < 3) {
+            wrong_args(out, "lcs");
+            return;
+        }
+        if (!arg_str(&argv[1], &k1, &kl1) || !arg_str(&argv[2], &k2, &kl2))
+            goto bad_type;
+
+        for (j = 3; j < argc; j++) {
+            const char *opt;
+            size_t ol;
+            if (!arg_str(&argv[j], &opt, &ol))
+                goto bad_type;
+            if (ci_equal(opt, ol, "IDX")) {
+                getidx = 1;
+            } else if (ci_equal(opt, ol, "LEN")) {
+                getlen = 1;
+            } else if (ci_equal(opt, ol, "WITHMATCHLEN")) {
+                withmatchlen = 1;
+            } else if (ci_equal(opt, ol, "MINMATCHLEN") && j + 1 < argc) {
+                const char *mv;
+                size_t mvl;
+                if (!arg_str(&argv[j + 1], &mv, &mvl))
+                    goto bad_type;
+                if (!parse_i64(mv, mvl, &minmatchlen)) {
+                    resp_write_error(out, ERR_NOT_INT,
+                                     sizeof(ERR_NOT_INT) - 1);
+                    return;
+                }
+                if (minmatchlen < 0)
+                    minmatchlen = 0;
+                j++;
+            } else {
+                resp_write_error(out, ERR_SYNTAX, sizeof(ERR_SYNTAX) - 1);
+                return;
+            }
+        }
+
+        if (getlen && getidx) {
+            resp_write_error(out, LCS_AMBIG, sizeof(LCS_AMBIG) - 1);
+            return;
+        }
+
+        if (db_get(d, k1, kl1, &v, &vl, now_ms)) {
+            if (obj_tag_of(v, vl) != DDUP_OBJ_STRING) {
+                resp_write_error(out, LCS_TYPE, sizeof(LCS_TYPE) - 1);
+                return;
+            }
+            obj_str(v, vl, &a, &alen);
+        }
+        if (db_get(d, k2, kl2, &v, &vl, now_ms)) {
+            if (obj_tag_of(v, vl) != DDUP_OBJ_STRING) {
+                resp_write_error(out, LCS_TYPE, sizeof(LCS_TYPE) - 1);
+                return;
+            }
+            obj_str(v, vl, &b, &blen);
+        }
+        if (alen >= UINT32_MAX - 1 || blen >= UINT32_MAX - 1) {
+            resp_write_error(out, LCS_LONG, sizeof(LCS_LONG) - 1);
+            return;
+        }
+
+        if (getlen) {
+            size_t lcslen = lcs_length_linear(a, alen, b, blen);
+            if (lcslen == SIZE_MAX) {
+                resp_write_error(out, LCS_MEM, sizeof(LCS_MEM) - 1);
+                return;
+            }
+            resp_write_integer(out, (long long)lcslen);
+            return;
+        }
+
+        {
+            unsigned long long cells =
+                ((unsigned long long)alen + 1) * ((unsigned long long)blen + 1);
+            size_t stride = blen + 1;
+            size_t alloc;
+            uint32_t *dp;
+            size_t i, ii, jj;
+            size_t lcslen;
+            char *result = NULL;
+            lcs_match_range *ranges = NULL;
+            size_t nmatch = 0;
+            size_t ridx;
+            size_t arange_start, arange_end = 0, brange_start = 0,
+                   brange_end = 0;
+
+            if (cells > (unsigned long long)SIZE_MAX / sizeof(uint32_t)) {
+                resp_write_error(out, LCS_LONG, sizeof(LCS_LONG) - 1);
+                return;
+            }
+            alloc = (size_t)cells * sizeof(uint32_t);
+            dp = (uint32_t *)malloc(alloc);
+            if (dp == NULL) {
+                resp_write_error(out, LCS_MEM, sizeof(LCS_MEM) - 1);
+                return;
+            }
+
+            for (i = 0; i <= alen; i++) {
+                for (jj = 0; jj <= blen; jj++) {
+                    uint32_t cur;
+                    if (i == 0 || jj == 0) {
+                        cur = 0;
+                    } else if (a[i - 1] == b[jj - 1]) {
+                        cur = dp[(jj - 1) + stride * (i - 1)] + 1;
+                    } else {
+                        uint32_t up = dp[jj + stride * (i - 1)];
+                        uint32_t left = dp[(jj - 1) + stride * i];
+                        cur = up > left ? up : left;
+                    }
+                    dp[jj + stride * i] = cur;
+                }
+            }
+            lcslen = dp[blen + stride * alen];
+
+            if (lcslen > 0) {
+                result = (char *)malloc(lcslen);
+                if (result == NULL) {
+                    free(dp);
+                    resp_write_error(out, LCS_MEM, sizeof(LCS_MEM) - 1);
+                    return;
+                }
+                if (getidx) {
+                    ranges = (lcs_match_range *)malloc(lcslen *
+                                                       sizeof(*ranges));
+                    if (ranges == NULL) {
+                        free(result);
+                        free(dp);
+                        resp_write_error(out, LCS_MEM,
+                                         sizeof(LCS_MEM) - 1);
+                        return;
+                    }
+                }
+            }
+
+            ii = alen;
+            jj = blen;
+            ridx = lcslen;
+            arange_start = alen;
+            while (ii > 0 && jj > 0) {
+                int emit_range = 0;
+                if (a[ii - 1] == b[jj - 1]) {
+                    result[ridx - 1] = a[ii - 1];
+                    if (arange_start == alen) {
+                        arange_start = ii - 1;
+                        arange_end = ii - 1;
+                        brange_start = jj - 1;
+                        brange_end = jj - 1;
+                    } else if (arange_start == ii && brange_start == jj) {
+                        arange_start--;
+                        brange_start--;
+                    } else {
+                        emit_range = 1;
+                    }
+                    if (arange_start == 0 || brange_start == 0)
+                        emit_range = 1;
+                    ridx--;
+                    ii--;
+                    jj--;
+                } else {
+                    uint32_t up = dp[jj + stride * (ii - 1)];
+                    uint32_t left = dp[(jj - 1) + stride * ii];
+                    if (up > left)
+                        ii--;
+                    else
+                        jj--;
+                    if (arange_start != alen)
+                        emit_range = 1;
+                }
+                if (emit_range) {
+                    size_t match_len = arange_end - arange_start + 1;
+                    if (minmatchlen == 0 ||
+                        (long long)match_len >= minmatchlen) {
+                        if (getidx) {
+                            ranges[nmatch].a_start = (uint32_t)arange_start;
+                            ranges[nmatch].a_end = (uint32_t)arange_end;
+                            ranges[nmatch].b_start = (uint32_t)brange_start;
+                            ranges[nmatch].b_end = (uint32_t)brange_end;
+                            ranges[nmatch].len = (uint32_t)match_len;
+                            nmatch++;
+                        }
+                    }
+                    arange_start = alen;
+                }
+            }
+
+            if (getidx) {
+                resp_write_array_header(out, 4);
+                resp_write_bulk(out, "matches", 7);
+                resp_write_array_header(out, nmatch);
+                for (i = 0; i < nmatch; i++) {
+                    resp_write_array_header(out, withmatchlen ? 3 : 2);
+                    resp_write_array_header(out, 2);
+                    resp_write_integer(out, (long long)ranges[i].a_start);
+                    resp_write_integer(out, (long long)ranges[i].a_end);
+                    resp_write_array_header(out, 2);
+                    resp_write_integer(out, (long long)ranges[i].b_start);
+                    resp_write_integer(out, (long long)ranges[i].b_end);
+                    if (withmatchlen)
+                        resp_write_integer(out, (long long)ranges[i].len);
+                }
+                resp_write_bulk(out, "len", 3);
+                resp_write_integer(out, (long long)lcslen);
+            } else {
+                resp_write_bulk(out, lcslen > 0 ? result : "", lcslen);
+            }
+
+            free(ranges);
+            free(result);
+            free(dp);
+            return;
+        }
     }
 
     if (cmd_id == CMD_GETDEL) {
@@ -10682,6 +10970,7 @@ static const cmd_entry CMD_TABLE[] = {
     {"role", CMD_ROLE, 1, 1, 0, 0},
     {"reset", CMD_RESET, 1, 1, 0, 0},
     {"hello", CMD_HELLO, 1, -1, 0, 0},
+    {"lcs", CMD_LCS, 3, -1, 0, 0},
 };
 
 static const cmd_entry *cmd_table_entry(uint16_t id)
