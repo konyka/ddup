@@ -334,10 +334,15 @@ enum {
     CMD_HELLO,
     CMD_LCS,
     CMD_SORT,
-    CMD_SORT_RO
+    CMD_SORT_RO,
+    CMD_PFADD,
+    CMD_PFCOUNT,
+    CMD_PFDEBUG,
+    CMD_PFMERGE,
+    CMD_PFSELFTEST
 };
 
-#define CMD_MAX CMD_SORT_RO
+#define CMD_MAX CMD_PFSELFTEST
 
 /* Resolve a command name to its stable ID; case-insensitive. */
 uint16_t cmd_resolve(const char *name, size_t len);

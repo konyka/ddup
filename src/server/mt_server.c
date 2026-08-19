@@ -1345,6 +1345,7 @@ static int mt_is_single_key(uint16_t cmd)
     case CMD_ZSCAN:
     case CMD_SORT:
     case CMD_SORT_RO:
+    case CMD_PFADD:
         return 1;
     default:
         return 0;
@@ -1367,6 +1368,7 @@ static int mt_is_keyless(uint16_t cmd)
     case CMD_ROLE:
     case CMD_RESET:
     case CMD_HELLO:
+    case CMD_PFSELFTEST:
     case CMD_QUIT:
         return 1;
     default:
@@ -1445,6 +1447,10 @@ static int mt_multikey_target(int nworkers, uint16_t cmd,
         kstart = 1;
         kend = argc > 2 ? 3 : argc;
     }
+    if (cmd == CMD_PFDEBUG) {
+        kstart = 2;
+        kend = argc > 2 ? 3 : argc;
+    }
 
     for (i = kstart; i < kend; i++) {
         int w;
@@ -1512,6 +1518,9 @@ static int mt_classify(int nworkers, uint16_t cmd, const resp_value *argv,
     case CMD_ZMPOP:
     case CMD_LMPOP:
     case CMD_ZRANGESTORE:
+    case CMD_PFCOUNT:
+    case CMD_PFMERGE:
+    case CMD_PFDEBUG:
         return mt_multikey_target(nworkers, cmd, argv, argc);
     default:
         break;

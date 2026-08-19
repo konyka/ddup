@@ -2909,6 +2909,494 @@ static void zscan_lp_emit(obj_zset *z, size_t cursor, size_t count,
     }
 }
 
+
+/* ------------------------------------------------------------------ */
+/* HyperLogLog (dense-only Redis 7 compatible encoding)               */
+/* ------------------------------------------------------------------ */
+
+#define HLL_P 14
+#define HLL_REGISTERS 16384u
+#define HLL_BITS 6
+#define HLL_DENSE_REG_BYTES ((HLL_REGISTERS * HLL_BITS + 7u) / 8u)
+#define HLL_DENSE_HEADER 16u
+#define HLL_DENSE_SIZE (HLL_DENSE_HEADER + HLL_DENSE_REG_BYTES)
+#define HLL_DENSE_ENC 0
+#define HLL_CARD_INVALID UINT64_MAX
+
+static const char HLL_INVALID_VALUE[] =
+    "WRONGTYPE Key is not a valid HyperLogLog string value.";
+
+static uint64_t hll_murmur64(const char *key, size_t len)
+{
+    const uint64_t m = 0xc6a4a7935bd1e995ULL;
+    const int r = 47;
+    uint64_t h = 0xadc83b19ULL ^ ((uint64_t)len * m);
+    const unsigned char *p = (const unsigned char *)key;
+    size_t nwords = len / 8;
+    size_t i;
+
+    for (i = 0; i < nwords; i++) {
+        uint64_t k;
+        memcpy(&k, p + i * 8, 8);
+        k *= m;
+        k ^= k >> r;
+        k *= m;
+        h ^= k;
+        h *= m;
+    }
+
+    p += nwords * 8;
+    switch (len & 7u) {
+    case 7: h ^= (uint64_t)p[6] << 48; /* fall through */
+    case 6: h ^= (uint64_t)p[5] << 40; /* fall through */
+    case 5: h ^= (uint64_t)p[4] << 32; /* fall through */
+    case 4: h ^= (uint64_t)p[3] << 24; /* fall through */
+    case 3: h ^= (uint64_t)p[2] << 16; /* fall through */
+    case 2: h ^= (uint64_t)p[1] << 8;  /* fall through */
+    case 1: h ^= (uint64_t)p[0];       /* fall through */
+    default: break;
+    }
+    h ^= h >> r;
+    h *= m;
+    h ^= h >> r;
+    return h;
+}
+
+static int hll_pat_len(const char *ele, size_t len, size_t *reg)
+{
+    uint64_t hash = hll_murmur64(ele, len);
+    uint64_t bit = 1;
+    int count = 1;
+
+    *reg = (size_t)(hash & (HLL_REGISTERS - 1u));
+    hash >>= HLL_P;
+    hash |= (1ULL << (64 - HLL_P));
+    while ((hash & bit) == 0 && count < 64) {
+        count++;
+        bit <<= 1;
+    }
+    return count;
+}
+
+static int hll_dense_valid(const char *s, size_t len)
+{
+    return len == HLL_DENSE_SIZE && memcmp(s, "HYLL", 4) == 0 &&
+           (unsigned char)s[4] == HLL_DENSE_ENC;
+}
+
+static unsigned char *hll_regs_mut(unsigned char *h)
+{
+    return h + HLL_DENSE_HEADER;
+}
+
+static const unsigned char *hll_regs(const unsigned char *h)
+{
+    return h + HLL_DENSE_HEADER;
+}
+
+static void hll_card_invalidate(unsigned char *h)
+{
+    memset(h + 8, 0xFF, 8);
+}
+
+static void hll_dense_init(unsigned char *h)
+{
+    memset(h, 0, HLL_DENSE_SIZE);
+    memcpy(h, "HYLL", 4);
+    h[4] = HLL_DENSE_ENC;
+    hll_card_invalidate(h);
+}
+
+static uint8_t hll_dense_get(const unsigned char *regs, size_t idx)
+{
+    size_t byte = (idx * HLL_BITS) / 8u;
+    unsigned fb = (unsigned)((idx * HLL_BITS) % 8u);
+    uint8_t lo = regs[byte];
+    uint8_t hi = regs[byte + 1];
+
+    return (uint8_t)(((uint16_t)lo >> fb) |
+                     ((uint16_t)hi << (8u - fb))) &
+           (uint8_t)((1u << HLL_BITS) - 1u);
+}
+
+static void hll_dense_set(unsigned char *regs, size_t idx, uint8_t val)
+{
+    size_t byte = (idx * HLL_BITS) / 8u;
+    unsigned fb = (unsigned)((idx * HLL_BITS) % 8u);
+    uint8_t low_mask = (uint8_t)(((1u << HLL_BITS) - 1u) << fb);
+    uint8_t high_mask =
+        fb == 0 ? 0 : (uint8_t)(((1u << HLL_BITS) - 1u) >> (8u - fb));
+
+    regs[byte] = (uint8_t)((regs[byte] & (uint8_t)~low_mask) |
+                           ((uint8_t)(val << fb) & low_mask));
+    if (fb != 0) {
+        regs[byte + 1] =
+            (uint8_t)((regs[byte + 1] & (uint8_t)~high_mask) |
+                      ((uint8_t)(val >> (8u - fb)) & high_mask));
+    }
+}
+
+static double hll_dense_estimate(const unsigned char *h)
+{
+    uint64_t histo[64] = {0};
+    const unsigned char *regs = hll_regs(h);
+    double m = (double)HLL_REGISTERS;
+    double alpha;
+    double sum = 0.0;
+    double e;
+    size_t i;
+    unsigned v;
+
+    for (i = 0; i < HLL_REGISTERS; i++)
+        histo[hll_dense_get(regs, i)]++;
+    if (histo[0] == HLL_REGISTERS)
+        return 0.0;
+
+    for (v = 1; v < 64; v++) {
+        if (histo[v] != 0)
+            sum += (double)histo[v] * pow(2.0, -(double)v);
+    }
+
+    alpha = 0.7213 / (1.0 + 1.079 / m);
+    e = alpha * m * m / sum;
+    {
+        double lc = m * log(m / (double)histo[0]);
+        if (lc <= 2.5 * m)
+            e = lc;
+    }
+    return e;
+}
+
+static int hll_write_reply_value(resp_buf *out, const char *v, size_t vl,
+                                 const unsigned char **regs_out)
+{
+    const char *s;
+    size_t sl;
+    const unsigned char *regs;
+
+    if (!as_string(out, v, vl, &s, &sl))
+        return -1;
+    if (!hll_dense_valid(s, sl)) {
+        resp_write_error(out, HLL_INVALID_VALUE,
+                         sizeof(HLL_INVALID_VALUE) - 1);
+        return -1;
+    }
+    regs = hll_regs((const unsigned char *)s);
+    if (regs_out != NULL)
+        *regs_out = regs;
+    return 0;
+}
+
+static void cmd_pfadd(db *d, const resp_value *argv, size_t argc,
+                      resp_buf *out, uint64_t now_ms)
+{
+    const char *key;
+    size_t keyl;
+    const char *v;
+    size_t vl;
+    unsigned char *h;
+    unsigned char *regs;
+    int exists;
+    int changed = 0;
+    size_t i;
+
+    if (argc < 3) {
+        wrong_args(out, "pfadd");
+        return;
+    }
+    if (!arg_str(&argv[1], &key, &keyl))
+        goto bad_type;
+    if (!storage_string_ok(keyl, HLL_DENSE_SIZE)) {
+        storage_length_error(out);
+        return;
+    }
+
+    h = (unsigned char *)malloc(HLL_DENSE_SIZE);
+    if (h == NULL) {
+        oom_blocked(d, out);
+        return;
+    }
+
+    exists = db_get(d, key, keyl, &v, &vl, now_ms);
+    if (exists) {
+        const char *s;
+        size_t sl;
+        if (!as_string(out, v, vl, &s, &sl)) {
+            free(h);
+            return;
+        }
+        if (!hll_dense_valid(s, sl)) {
+            free(h);
+            resp_write_error(out, HLL_INVALID_VALUE,
+                             sizeof(HLL_INVALID_VALUE) - 1);
+            return;
+        }
+        memcpy(h, s, HLL_DENSE_SIZE);
+    } else {
+        hll_dense_init(h);
+    }
+    regs = hll_regs_mut(h);
+
+    for (i = 2; i < argc; i++) {
+        const char *ele;
+        size_t elel;
+        size_t reg = 0;
+        int val;
+        uint8_t old;
+        if (!arg_str(&argv[i], &ele, &elel)) {
+            free(h);
+            goto bad_type;
+        }
+        val = hll_pat_len(ele, elel, &reg);
+        old = hll_dense_get(regs, reg);
+        if ((uint8_t)val > old) {
+            hll_dense_set(regs, reg, (uint8_t)val);
+            changed = 1;
+        }
+    }
+
+    if (changed) {
+        hll_card_invalidate(h);
+        if (db_set_string(d, key, keyl, (const char *)h, HLL_DENSE_SIZE,
+                          now_ms) != 0) {
+            free(h);
+            storage_length_error(out);
+            return;
+        }
+    }
+    free(h);
+    resp_write_integer(out, changed ? 1 : 0);
+    return;
+
+bad_type:
+    resp_write_error(out, "ERR invalid argument type", 24);
+}
+
+static void cmd_pfcount(db *d, const resp_value *argv, size_t argc,
+                        resp_buf *out, uint64_t now_ms)
+{
+    unsigned char *merged;
+    int any = 0;
+    uint64_t card;
+    size_t i;
+
+    if (argc < 2) {
+        wrong_args(out, "pfcount");
+        return;
+    }
+
+    if (argc == 2) {
+        const char *key;
+        size_t keyl;
+        const char *v;
+        size_t vl;
+        if (!arg_str(&argv[1], &key, &keyl))
+            goto bad_type;
+        if (!db_get(d, key, keyl, &v, &vl, now_ms)) {
+            resp_write_integer(out, 0);
+            return;
+        }
+        {
+            const char *s;
+            size_t sl;
+            if (!as_string(out, v, vl, &s, &sl))
+                return;
+            if (!hll_dense_valid(s, sl)) {
+                resp_write_error(out, HLL_INVALID_VALUE,
+                                 sizeof(HLL_INVALID_VALUE) - 1);
+                return;
+            }
+            card = (uint64_t)hll_dense_estimate((const unsigned char *)s);
+        }
+        resp_write_integer(out, (long long)card);
+        return;
+    }
+
+    merged = (unsigned char *)malloc(HLL_DENSE_SIZE);
+    if (merged == NULL) {
+        oom_blocked(d, out);
+        return;
+    }
+    hll_dense_init(merged);
+
+    for (i = 1; i < argc; i++) {
+        const char *key;
+        size_t keyl;
+        const char *v;
+        size_t vl;
+        const unsigned char *regs;
+        unsigned char *dst = hll_regs_mut(merged);
+        size_t r;
+
+        if (!arg_str(&argv[i], &key, &keyl)) {
+            free(merged);
+            goto bad_type;
+        }
+        if (!db_get(d, key, keyl, &v, &vl, now_ms))
+            continue;
+        if (hll_write_reply_value(out, v, vl, &regs) != 0) {
+            free(merged);
+            return;
+        }
+        any = 1;
+        for (r = 0; r < HLL_REGISTERS; r++) {
+            uint8_t a = hll_dense_get(dst, r);
+            uint8_t b = hll_dense_get(regs, r);
+            if (b > a)
+                hll_dense_set(dst, r, b);
+        }
+    }
+
+    card = any ? (uint64_t)hll_dense_estimate(merged) : 0;
+    free(merged);
+    resp_write_integer(out, (long long)card);
+    return;
+
+bad_type:
+    resp_write_error(out, "ERR invalid argument type", 24);
+}
+
+static void cmd_pfmerge(db *d, const resp_value *argv, size_t argc,
+                        resp_buf *out, uint64_t now_ms)
+{
+    const char *dst;
+    size_t dstl;
+    unsigned char *merged;
+    unsigned char *dst_regs;
+    size_t i;
+
+    if (argc < 3) {
+        wrong_args(out, "pfmerge");
+        return;
+    }
+    if (!arg_str(&argv[1], &dst, &dstl))
+        goto bad_type;
+    if (!storage_string_ok(dstl, HLL_DENSE_SIZE)) {
+        storage_length_error(out);
+        return;
+    }
+
+    merged = (unsigned char *)malloc(HLL_DENSE_SIZE);
+    if (merged == NULL) {
+        oom_blocked(d, out);
+        return;
+    }
+    hll_dense_init(merged);
+    dst_regs = hll_regs_mut(merged);
+
+    for (i = 2; i < argc; i++) {
+        const char *key;
+        size_t keyl;
+        const char *v;
+        size_t vl;
+        const unsigned char *regs;
+        size_t r;
+
+        if (!arg_str(&argv[i], &key, &keyl)) {
+            free(merged);
+            goto bad_type;
+        }
+        if (!db_get(d, key, keyl, &v, &vl, now_ms))
+            continue;
+        if (hll_write_reply_value(out, v, vl, &regs) != 0) {
+            free(merged);
+            return;
+        }
+        for (r = 0; r < HLL_REGISTERS; r++) {
+            uint8_t a = hll_dense_get(dst_regs, r);
+            uint8_t b = hll_dense_get(regs, r);
+            if (b > a)
+                hll_dense_set(dst_regs, r, b);
+        }
+    }
+
+    hll_card_invalidate(merged);
+    if (db_set_string(d, dst, dstl, (const char *)merged, HLL_DENSE_SIZE,
+                      now_ms) != 0) {
+        free(merged);
+        storage_length_error(out);
+        return;
+    }
+    free(merged);
+    resp_write_simple_string(out, "OK", 2);
+    return;
+
+bad_type:
+    resp_write_error(out, "ERR invalid argument type", 24);
+}
+
+static void cmd_pfdebug(db *d, const resp_value *argv, size_t argc,
+                        resp_buf *out, uint64_t now_ms)
+{
+    const char *sub;
+    size_t subl;
+    const char *key;
+    size_t keyl;
+    const char *v;
+    size_t vl;
+    const unsigned char *regs;
+
+    if (argc < 2) {
+        wrong_args(out, "pfdebug");
+        return;
+    }
+    if (!arg_str(&argv[1], &sub, &subl))
+        goto bad_type;
+
+    if (argc != 3 || !arg_str(&argv[2], &key, &keyl))
+        goto bad_type;
+    if (!db_get(d, key, keyl, &v, &vl, now_ms)) {
+        resp_write_error(out, HLL_INVALID_VALUE,
+                         sizeof(HLL_INVALID_VALUE) - 1);
+        return;
+    }
+    if (hll_write_reply_value(out, v, vl, &regs) != 0)
+        return;
+
+    if (ci_equal(sub, subl, "ENCODING")) {
+        resp_write_bulk(out, "dense", 5);
+        return;
+    }
+    if (ci_equal(sub, subl, "GETREG")) {
+        size_t i;
+        resp_write_array_header(out, HLL_REGISTERS);
+        for (i = 0; i < HLL_REGISTERS; i++)
+            resp_write_integer(out, (long long)hll_dense_get(regs, i));
+        return;
+    }
+    if (ci_equal(sub, subl, "DECODE")) {
+        size_t i;
+        resp_write_array_header(out, 2);
+        resp_write_bulk(out, "dense", 5);
+        resp_write_array_header(out, HLL_REGISTERS);
+        for (i = 0; i < HLL_REGISTERS; i++)
+            resp_write_integer(out, (long long)hll_dense_get(regs, i));
+        return;
+    }
+    if (ci_equal(sub, subl, "TODENSE")) {
+        resp_write_simple_string(out, "OK", 2);
+        return;
+    }
+    resp_write_error(out, "ERR Unknown PFDEBUG subcommand", 29);
+    return;
+
+bad_type:
+    resp_write_error(out, "ERR invalid argument type", 24);
+}
+
+static void cmd_pfselftest(db *d, const resp_value *argv, size_t argc,
+                           resp_buf *out, uint64_t now_ms)
+{
+    (void)d;
+    (void)argv;
+    (void)now_ms;
+    if (argc != 1) {
+        wrong_args(out, "pfselftest");
+        return;
+    }
+    resp_write_simple_string(out, "OK", 2);
+}
+
 /* ------------------------------------------------------------------ */
 /* dispatch                                                           */
 /* ------------------------------------------------------------------ */
@@ -3059,6 +3547,23 @@ static int cmd_keys_accum(const resp_value *argv, size_t argc, int *have,
         }
         return 1;
     }
+    if (cmd_id == CMD_PFCOUNT || cmd_id == CMD_PFMERGE) {
+        for (i = 1; i < argc; i++) {
+            const char *k;
+            size_t kl;
+            if (arg_str(&argv[i], &k, &kl) &&
+                !slot_accum(k, kl, have, slot))
+                return 0;
+        }
+        return 1;
+    }
+    if (cmd_id == CMD_PFDEBUG) {
+        const char *k;
+        size_t kl;
+        if (argc < 3 || !arg_str(&argv[2], &k, &kl))
+            return 1;
+        return slot_accum(k, kl, have, slot);
+    }
     if (cmd_id == CMD_EVAL || cmd_id == CMD_EVALSHA) {
         const char *nv;
         size_t nvl;
@@ -3190,7 +3695,7 @@ static int cluster_keyless_id(uint16_t cmd_id)
     case CMD_KEYS:       case CMD_SCAN:       case CMD_RANDOMKEY:
     case CMD_FLUSHALL:   case CMD_TIME:       case CMD_READONLY:
     case CMD_READWRITE:  case CMD_ROLE:       case CMD_RESET:
-    case CMD_HELLO:
+    case CMD_HELLO:       case CMD_PFSELFTEST:
         return 1;
     default:
         return 0;
@@ -3285,6 +3790,23 @@ static int cluster_check_ownership(session *s, const resp_value *argv,
                 return 0;
         }
         return 1;
+    }
+    if (cmd_id == CMD_PFCOUNT || cmd_id == CMD_PFMERGE) {
+        for (i = 1; i < argc; i++) {
+            const char *k;
+            size_t kl;
+            if (arg_str(&argv[i], &k, &kl) &&
+                !db_key_served(d, k, kl, out, now_ms, asking))
+                return 0;
+        }
+        return 1;
+    }
+    if (cmd_id == CMD_PFDEBUG) {
+        const char *k;
+        size_t kl;
+        if (argc < 3 || !arg_str(&argv[2], &k, &kl))
+            return 1;
+        return db_key_served(d, k, kl, out, now_ms, asking);
     }
     if (cmd_id == CMD_EVAL || cmd_id == CMD_EVALSHA) {
         /* keys are argv[3..3+numkeys); numkeys validated by the dispatch */
@@ -3836,6 +4358,31 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
         } else {
             wrong_args(out, "hello");
         }
+        return;
+    }
+
+    if (cmd_id == CMD_PFADD) {
+        cmd_pfadd(d, argv, argc, out, now_ms);
+        return;
+    }
+
+    if (cmd_id == CMD_PFCOUNT) {
+        cmd_pfcount(d, argv, argc, out, now_ms);
+        return;
+    }
+
+    if (cmd_id == CMD_PFMERGE) {
+        cmd_pfmerge(d, argv, argc, out, now_ms);
+        return;
+    }
+
+    if (cmd_id == CMD_PFDEBUG) {
+        cmd_pfdebug(d, argv, argc, out, now_ms);
+        return;
+    }
+
+    if (cmd_id == CMD_PFSELFTEST) {
+        cmd_pfselftest(d, argv, argc, out, now_ms);
         return;
     }
 
@@ -11531,6 +12078,11 @@ static const cmd_entry CMD_TABLE[] = {
     {"lcs", CMD_LCS, 3, -1, 0, 0},
     {"sort", CMD_SORT, 2, -1, 0, CMD_WRITE},
     {"sort_ro", CMD_SORT_RO, 2, -1, 0, 0},
+    {"pfadd", CMD_PFADD, 3, -1, 0, CMD_WRITE},
+    {"pfcount", CMD_PFCOUNT, 2, -1, 0, 0},
+    {"pfdebug", CMD_PFDEBUG, 3, -1, 0, 0},
+    {"pfmerge", CMD_PFMERGE, 3, -1, 0, CMD_WRITE},
+    {"pfselftest", CMD_PFSELFTEST, 1, 1, 0, 0},
 };
 
 static const cmd_entry *cmd_table_entry(uint16_t id)
