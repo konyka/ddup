@@ -285,6 +285,12 @@
     listpack 插入）、`LMOVE`（LEFT/RIGHT 四向移动，复用 pop/push）、
     `LMPOP`（首个非空列表按 COUNT 弹出）；st/mt 路由与集群 key 抽取
     同步，兼容审计缺 66 个顶层命令（Phase 56）
+  - [x] 连接协商与跨结构查询补齐：`RESET`（MULTI/WATCH/READONLY/pub/sub
+    连接态一键复位，server 级 reset hook 清理订阅）、`HELLO`（RESP2 数组
+    /RESP3 map，版本协商）、`LCS`（LEN 使用滚动 DP，字符串/IDX 使用完整
+    DP 回溯并支持 MINMATCHLEN/WITHMATCHLEN）、`SORT`/`SORT_RO`（list/set/
+    zset，BY/GET/LIMIT/ASC/DESC/ALPHA/STORE，归并排序无 qsort 全局态）；
+    st/mt 路由与集群分类同步，兼容审计缺 61 个顶层命令（Phase 57）
   - [ ] 范围化排除（记录在案，不实施）：
     - 分层存储（热/冷数据落盘）：超出"内存缓存存储"定位
     - mt 模式的复制/集群适配：见 Phase 15 说明
