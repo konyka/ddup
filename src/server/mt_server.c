@@ -1343,6 +1343,8 @@ static int mt_is_single_key(uint16_t cmd)
     case CMD_HSCAN:
     case CMD_SSCAN:
     case CMD_ZSCAN:
+    case CMD_SORT:
+    case CMD_SORT_RO:
         return 1;
     default:
         return 0;

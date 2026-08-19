@@ -3473,6 +3473,254 @@ typedef struct lcs_match_range {
     uint32_t len;
 } lcs_match_range;
 
+typedef struct sort_elem {
+    char *val;      /* NUL-terminated copy of the element */
+    size_t vlen;
+    double score;
+    char *cmp;      /* ALPHA BY lookup copy; NULL when missing/not used */
+    size_t cmplen;
+    int has_cmp;
+} sort_elem;
+
+typedef struct sort_vec {
+    sort_elem *v;
+    size_t n;
+    size_t cap;
+    int oom;
+} sort_vec;
+
+typedef struct sort_get {
+    char *pattern;
+    size_t plen;
+} sort_get;
+
+static int sort_vec_add(sort_vec *vec, const char *s, size_t len)
+{
+    sort_elem *e;
+    char *copy;
+    if (vec->oom)
+        return -1;
+    if (vec->n == vec->cap) {
+        size_t ncap = vec->cap == 0 ? 16 : vec->cap * 2;
+        sort_elem *nv =
+            (sort_elem *)realloc(vec->v, ncap * sizeof(*nv));
+        if (nv == NULL) {
+            vec->oom = 1;
+            return -1;
+        }
+        vec->v = nv;
+        vec->cap = ncap;
+    }
+    if (len == SIZE_MAX) {
+        vec->oom = 1;
+        return -1;
+    }
+    copy = (char *)malloc(len + 1);
+    if (copy == NULL) {
+        vec->oom = 1;
+        return -1;
+    }
+    memcpy(copy, s, len);
+    copy[len] = '\0';
+    e = &vec->v[vec->n++];
+    e->val = copy;
+    e->vlen = len;
+    e->score = 0.0;
+    e->cmp = NULL;
+    e->cmplen = 0;
+    e->has_cmp = 0;
+    return 0;
+}
+
+static void sort_vec_free(sort_vec *vec)
+{
+    size_t i;
+    for (i = 0; i < vec->n; i++) {
+        free(vec->v[i].val);
+        free(vec->v[i].cmp);
+    }
+    free(vec->v);
+    memset(vec, 0, sizeof(*vec));
+}
+
+static void sort_set_collect_cb(const char *member, size_t mlen,
+                                const char *value, size_t vlen, void *ctx)
+{
+    sort_vec *vec = (sort_vec *)ctx;
+    (void)value;
+    (void)vlen;
+    if (sort_vec_add(vec, member, mlen) != 0)
+        vec->oom = 1;
+}
+
+static int sort_vec_add_list(sort_vec *vec, obj_list *l)
+{
+    ql_iter it;
+    size_t len;
+    if (obj_list_first(l, &it)) {
+        do {
+            const char *v = obj_list_iter_value(&it, &len);
+            if (sort_vec_add(vec, v, len) != 0)
+                return -1;
+        } while (obj_list_iter_next(&it));
+    }
+    return vec->oom ? -1 : 0;
+}
+
+static int sort_vec_add_zset(sort_vec *vec, obj_zset *z)
+{
+    obj_zset_iter it;
+    size_t len;
+    if (obj_zset_first(z, &it)) {
+        do {
+            const char *m = obj_zset_iter_member(&it, &len);
+            if (sort_vec_add(vec, m, len) != 0)
+                return -1;
+        } while (obj_zset_iter_next(&it));
+    }
+    return vec->oom ? -1 : 0;
+}
+
+static char *sort_pattern_key(const char *pat, size_t plen, const char *elem,
+                              size_t elen, size_t *outlen)
+{
+    const char *star;
+    size_t pre, post, total;
+    char *key;
+    star = (const char *)memchr(pat, '*', plen);
+    if (star == NULL)
+        return NULL;
+    pre = (size_t)(star - pat);
+    post = plen - pre - 1;
+    if (pre > SIZE_MAX - elen || pre + elen > SIZE_MAX - post) {
+        *outlen = 0;
+        return NULL;
+    }
+    total = pre + elen + post;
+    key = (char *)malloc(total + 1);
+    if (key == NULL) {
+        *outlen = 0;
+        return NULL;
+    }
+    if (pre > 0)
+        memcpy(key, pat, pre);
+    if (elen > 0)
+        memcpy(key + pre, elem, elen);
+    if (post > 0)
+        memcpy(key + pre + elen, star + 1, post);
+    key[total] = '\0';
+    *outlen = total;
+    return key;
+}
+
+/* Look up a SORT BY/GET pattern. Returns 1 on a string hit, 0 on miss,
+ * -1 when the key exists with a non-string type (reply already written). */
+static int sort_pattern_lookup(db *d, resp_buf *out, const char *pat,
+                               size_t plen, const char *elem, size_t elen,
+                               uint64_t now_ms, const char **s, size_t *sl)
+{
+    char *key;
+    size_t klen;
+    const char *v;
+    size_t vl;
+    int rc;
+    key = sort_pattern_key(pat, plen, elem, elen, &klen);
+    if (key == NULL)
+        return 0;
+    rc = db_get(d, key, klen, &v, &vl, now_ms);
+    if (rc) {
+        if (obj_tag_of(v, vl) != DDUP_OBJ_STRING) {
+            wrongtype(out);
+            free(key);
+            return -1;
+        }
+        obj_str(v, vl, s, sl);
+    }
+    free(key);
+    return rc;
+}
+
+static int sort_cmp_bytes(const char *a, size_t alen, const char *b,
+                          size_t blen)
+{
+    size_t n = alen < blen ? alen : blen;
+    int c = n > 0 ? memcmp(a, b, n) : 0;
+    if (c != 0)
+        return c;
+    return (alen > blen) - (alen < blen);
+}
+
+static int sort_elem_compare(const sort_elem *a, const sort_elem *b, int alpha,
+                             int bypattern, int desc)
+{
+    int cmp;
+    if (alpha) {
+        if (bypattern) {
+            if (a->has_cmp && b->has_cmp) {
+                cmp = sort_cmp_bytes(a->cmp, a->cmplen, b->cmp, b->cmplen);
+            } else if (a->has_cmp == b->has_cmp) {
+                cmp = 0;
+            } else {
+                cmp = a->has_cmp ? 1 : -1;
+            }
+        } else {
+            cmp = sort_cmp_bytes(a->val, a->vlen, b->val, b->vlen);
+        }
+    } else {
+        if (a->score < b->score)
+            cmp = -1;
+        else if (a->score > b->score)
+            cmp = 1;
+        else
+            cmp = sort_cmp_bytes(a->val, a->vlen, b->val, b->vlen);
+    }
+    return desc ? -cmp : cmp;
+}
+
+static void sort_merge(sort_elem *dst, sort_elem *src, size_t lo, size_t mid,
+                       size_t hi, int alpha, int bypattern, int desc)
+{
+    size_t i = lo, j = mid, k = lo;
+    while (i < mid && j < hi) {
+        if (sort_elem_compare(&src[i], &src[j], alpha, bypattern, desc) <= 0)
+            dst[k++] = src[i++];
+        else
+            dst[k++] = src[j++];
+    }
+    while (i < mid)
+        dst[k++] = src[i++];
+    while (j < hi)
+        dst[k++] = src[j++];
+}
+
+static void sort_merge_sort(sort_elem *v, sort_elem *tmp, size_t n, int alpha,
+                            int bypattern, int desc)
+{
+    size_t width;
+    sort_elem *src = v;
+    sort_elem *dst = tmp;
+    if (n < 2)
+        return;
+    for (width = 1; width < n; width *= 2) {
+        size_t lo;
+        for (lo = 0; lo < n; lo += width * 2) {
+            size_t mid = lo + width < n ? lo + width : n;
+            size_t hi = lo + width * 2 < n ? lo + width * 2 : n;
+            sort_merge(dst, src, lo, mid, hi, alpha, bypattern, desc);
+        }
+        {
+            sort_elem *swap = src;
+            src = dst;
+            dst = swap;
+        }
+    }
+    if (src != v) {
+        size_t i;
+        for (i = 0; i < n; i++)
+            v[i] = src[i];
+    }
+}
+
 static void command_dispatch(session *s, const resp_value *argv, size_t argc,
                              resp_buf *out, uint64_t now_ms)
 {
@@ -3491,12 +3739,28 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
     const uint16_t cmd_id = cmd_resolve(name, nlen);
 
     /* replicas are read-only for client writes (replication link bypasses) */
-    if (s->role != NULL && *s->role == SESSION_ROLE_REPLICA &&
-        !s->repl_link && is_write_command(name, nlen)) {
+    {
+        int write_blocked = is_write_command(name, nlen);
+        if (write_blocked && cmd_id == CMD_SORT) {
+            size_t ai;
+            write_blocked = 0;
+            for (ai = 2; ai < argc; ai++) {
+                const char *tok;
+                size_t tl;
+                if (arg_str(&argv[ai], &tok, &tl) &&
+                    ci_equal(tok, tl, "STORE")) {
+                    write_blocked = 1;
+                    break;
+                }
+            }
+        }
+        if (s->role != NULL && *s->role == SESSION_ROLE_REPLICA &&
+            !s->repl_link && write_blocked) {
         static const char E[] =
             "READONLY You can't write against a read only replica.";
         resp_write_error(out, E, sizeof(E) - 1);
         return;
+        }
     }
 
     /* cluster mode: ownership enforcement (-MOVED / -CLUSTERDOWN / -ASK) */
@@ -4604,6 +4868,300 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
             free(dp);
             return;
         }
+    }
+
+    if (cmd_id == CMD_SORT || cmd_id == CMD_SORT_RO) {
+        static const char SORT_CONV[] =
+            "ERR One or more scores can't be converted into double";
+        static const char SORT_OOM[] = "ERR out of memory";
+        int ro = cmd_id == CMD_SORT_RO;
+        int desc = 0, alpha = 0, dontsort = 0, by_has_star = 0;
+        int int_conversion_error = 0;
+        long long limit_start = 0, limit_count = -1;
+        const char *srckey, *bypat = NULL, *storekey = NULL;
+        size_t srcklen, bylen = 0, storelen = 0;
+        sort_get *gets = NULL;
+        size_t nget = 0, getcap = 0;
+        sort_vec vec;
+        sort_elem *tmp = NULL;
+        size_t j, out_start = 0, out_count = 0, output_total;
+        obj_list *stored = NULL;
+
+        memset(&vec, 0, sizeof(vec));
+        if (argc < 2) {
+            wrong_args(out, ro ? "sort_ro" : "sort");
+            return;
+        }
+        if (!arg_str(&argv[1], &srckey, &srcklen))
+            goto bad_type;
+
+        j = 2;
+        while (j < argc) {
+            const char *tok;
+            size_t tl;
+            size_t leftargs = argc - j - 1;
+            if (!arg_str(&argv[j], &tok, &tl))
+                goto bad_type;
+            if (ci_equal(tok, tl, "ASC")) {
+                desc = 0;
+            } else if (ci_equal(tok, tl, "DESC")) {
+                desc = 1;
+            } else if (ci_equal(tok, tl, "ALPHA")) {
+                alpha = 1;
+            } else if (ci_equal(tok, tl, "LIMIT") && leftargs >= 2) {
+                const char *ov, *cv;
+                size_t ol, cl;
+                if (!arg_str(&argv[j + 1], &ov, &ol) ||
+                    !arg_str(&argv[j + 2], &cv, &cl))
+                    goto bad_type;
+                if (!parse_i64(ov, ol, &limit_start) ||
+                    !parse_i64(cv, cl, &limit_count)) {
+                    resp_write_error(out, ERR_NOT_INT,
+                                     sizeof(ERR_NOT_INT) - 1);
+                    goto sort_cleanup;
+                }
+                j += 2;
+            } else if (!ro && ci_equal(tok, tl, "STORE") && leftargs >= 1) {
+                if (!arg_str(&argv[j + 1], &storekey, &storelen))
+                    goto bad_type;
+                j++;
+            } else if (ci_equal(tok, tl, "BY") && leftargs >= 1) {
+                if (!arg_str(&argv[j + 1], &bypat, &bylen))
+                    goto bad_type;
+                by_has_star = memchr(bypat, '*', bylen) != NULL;
+                if (!by_has_star)
+                    dontsort = 1;
+                j++;
+            } else if (ci_equal(tok, tl, "GET") && leftargs >= 1) {
+                const char *pat;
+                size_t pl;
+                char *copy;
+                if (!arg_str(&argv[j + 1], &pat, &pl))
+                    goto bad_type;
+                if (nget == getcap) {
+                    size_t ncap = getcap == 0 ? 4 : getcap * 2;
+                    sort_get *ng = (sort_get *)realloc(
+                        gets, ncap * sizeof(*ng));
+                    if (ng == NULL) {
+                        resp_write_error(out, SORT_OOM,
+                                         sizeof(SORT_OOM) - 1);
+                        goto sort_cleanup;
+                    }
+                    gets = ng;
+                    getcap = ncap;
+                }
+                copy = (char *)malloc(pl + 1);
+                if (copy == NULL) {
+                    resp_write_error(out, SORT_OOM, sizeof(SORT_OOM) - 1);
+                    goto sort_cleanup;
+                }
+                memcpy(copy, pat, pl);
+                copy[pl] = '\0';
+                gets[nget].pattern = copy;
+                gets[nget].plen = pl;
+                nget++;
+                j++;
+            } else {
+                resp_write_error(out, ERR_SYNTAX, sizeof(ERR_SYNTAX) - 1);
+                goto sort_cleanup;
+            }
+            j++;
+        }
+
+        {
+            const char *srcv;
+            size_t srcvl;
+            if (db_get(d, srckey, srcklen, &srcv, &srcvl, now_ms)) {
+                int tag = obj_tag_of(srcv, srcvl);
+                if (tag == DDUP_OBJ_LIST) {
+                    obj_list *l = (obj_list *)obj_unpack_ptr(srcv, srcvl);
+                    sort_vec_add_list(&vec, l);
+                } else if (tag == DDUP_OBJ_SET) {
+                    obj_set *st = (obj_set *)obj_unpack_ptr(srcv, srcvl);
+                    obj_set_each(st, sort_set_collect_cb, &vec);
+                } else if (tag == DDUP_OBJ_ZSET) {
+                    obj_zset *z = (obj_zset *)obj_unpack_ptr(srcv, srcvl);
+                    sort_vec_add_zset(&vec, z);
+                } else {
+                    wrongtype(out);
+                    goto sort_cleanup;
+                }
+            }
+        }
+        if (vec.oom) {
+            resp_write_error(out, SORT_OOM, sizeof(SORT_OOM) - 1);
+            goto sort_cleanup;
+        }
+
+        if (!dontsort) {
+            for (j = 0; j < vec.n; j++) {
+                sort_elem *e = &vec.v[j];
+                if (bypat != NULL && by_has_star) {
+                    const char *s;
+                    size_t sl;
+                    int rc = sort_pattern_lookup(d, out, bypat, bylen,
+                                                 e->val, e->vlen, now_ms,
+                                                 &s, &sl);
+                    if (rc < 0)
+                        goto sort_cleanup;
+                    if (rc > 0) {
+                        if (alpha) {
+                            e->cmp = (char *)malloc(sl + 1);
+                            if (e->cmp == NULL) {
+                                resp_write_error(out, SORT_OOM,
+                                                 sizeof(SORT_OOM) - 1);
+                                goto sort_cleanup;
+                            }
+                            memcpy(e->cmp, s, sl);
+                            e->cmp[sl] = '\0';
+                            e->cmplen = sl;
+                            e->has_cmp = 1;
+                        } else if (!parse_double(s, sl, &e->score)) {
+                            int_conversion_error = 1;
+                        }
+                    }
+                } else if (!alpha && !parse_double(e->val, e->vlen,
+                                                   &e->score)) {
+                    int_conversion_error = 1;
+                }
+            }
+        }
+
+        if (!dontsort && vec.n > 1) {
+            tmp = (sort_elem *)malloc(vec.n * sizeof(*tmp));
+            if (tmp == NULL) {
+                resp_write_error(out, SORT_OOM, sizeof(SORT_OOM) - 1);
+                goto sort_cleanup;
+            }
+            sort_merge_sort(vec.v, tmp, vec.n, alpha,
+                            bypat != NULL && by_has_star, desc);
+        } else if (dontsort && desc && vec.n > 1) {
+            size_t lo = 0, hi = vec.n - 1;
+            while (lo < hi) {
+                sort_elem swap = vec.v[lo];
+                vec.v[lo] = vec.v[hi];
+                vec.v[hi] = swap;
+                lo++;
+                hi--;
+            }
+        }
+
+        if (vec.n > 0) {
+            size_t start = limit_start > 0 ? (size_t)limit_start : 0;
+            size_t remaining;
+            if (start < vec.n) {
+                remaining = vec.n - start;
+                if (limit_count < 0 ||
+                    (unsigned long long)limit_count >= remaining) {
+                    out_start = start;
+                    out_count = remaining;
+                } else if (limit_count > 0) {
+                    out_start = start;
+                    out_count = (size_t)limit_count;
+                }
+            }
+        }
+        output_total = nget > 0 ? out_count * nget : out_count;
+
+        if (int_conversion_error) {
+            resp_write_error(out, SORT_CONV, sizeof(SORT_CONV) - 1);
+            goto sort_cleanup;
+        }
+
+        if (storekey != NULL) {
+            if (out_count == 0) {
+                db_del_kv(d, storekey, storelen);
+                resp_write_integer(out, 0);
+            } else {
+                stored = obj_list_new();
+                if (stored == NULL) {
+                    resp_write_error(out, SORT_OOM, sizeof(SORT_OOM) - 1);
+                    goto sort_cleanup;
+                }
+                for (j = 0; j < out_count; j++) {
+                    sort_elem *e = &vec.v[out_start + j];
+                    if (nget == 0) {
+                        if (obj_list_push(stored, 0, e->val, e->vlen) != 0) {
+                            resp_write_error(out, SORT_OOM,
+                                             sizeof(SORT_OOM) - 1);
+                            goto sort_cleanup;
+                        }
+                    } else {
+                        size_t gi;
+                        for (gi = 0; gi < nget; gi++) {
+                            const char *s = e->val;
+                            size_t sl = e->vlen;
+                            if (gets[gi].plen != 1 ||
+                                gets[gi].pattern[0] != '#') {
+                                int rc = sort_pattern_lookup(
+                                    d, out, gets[gi].pattern, gets[gi].plen,
+                                    e->val, e->vlen, now_ms, &s, &sl);
+                                if (rc < 0)
+                                    goto sort_cleanup;
+                                if (rc == 0) {
+                                    s = "";
+                                    sl = 0;
+                                }
+                            }
+                            if (obj_list_push(stored, 0, s, sl) != 0) {
+                                resp_write_error(out, SORT_OOM,
+                                                 sizeof(SORT_OOM) - 1);
+                                goto sort_cleanup;
+                            }
+                        }
+                    }
+                }
+                {
+                    char blob[9];
+                    obj_pack_ptr(blob, DDUP_OBJ_LIST, stored);
+                    if (db_set_kv(d, storekey, storelen, blob, 9, now_ms) !=
+                        0) {
+                        resp_write_error(out, SORT_OOM,
+                                         sizeof(SORT_OOM) - 1);
+                        goto sort_cleanup;
+                    }
+                    stored = NULL;
+                }
+                resp_write_integer(out, (long long)output_total);
+            }
+        } else {
+            resp_write_array_header(out, output_total);
+            for (j = 0; j < out_count; j++) {
+                sort_elem *e = &vec.v[out_start + j];
+                if (nget == 0) {
+                    resp_write_bulk(out, e->val, e->vlen);
+                } else {
+                    size_t gi;
+                    for (gi = 0; gi < nget; gi++) {
+                        const char *s = e->val;
+                        size_t sl = e->vlen;
+                        if (gets[gi].plen != 1 ||
+                            gets[gi].pattern[0] != '#') {
+                            int rc = sort_pattern_lookup(
+                                d, out, gets[gi].pattern, gets[gi].plen,
+                                e->val, e->vlen, now_ms, &s, &sl);
+                            if (rc < 0)
+                                goto sort_cleanup;
+                            if (rc == 0) {
+                                s = NULL;
+                                sl = 0;
+                            }
+                        }
+                        resp_write_bulk(out, s, sl);
+                    }
+                }
+            }
+        }
+
+    sort_cleanup:
+        if (stored != NULL)
+            obj_list_free(stored);
+        for (j = 0; j < nget; j++)
+            free(gets[j].pattern);
+        free(gets);
+        free(tmp);
+        sort_vec_free(&vec);
+        return;
     }
 
     if (cmd_id == CMD_GETDEL) {
@@ -10971,6 +11529,8 @@ static const cmd_entry CMD_TABLE[] = {
     {"reset", CMD_RESET, 1, 1, 0, 0},
     {"hello", CMD_HELLO, 1, -1, 0, 0},
     {"lcs", CMD_LCS, 3, -1, 0, 0},
+    {"sort", CMD_SORT, 2, -1, 0, CMD_WRITE},
+    {"sort_ro", CMD_SORT_RO, 2, -1, 0, 0},
 };
 
 static const cmd_entry *cmd_table_entry(uint16_t id)
