@@ -645,6 +645,18 @@ static size_t srv_sunsubscribe(void *ctx, session *sess, const char *ch,
                             sess, ch, len, &sess->nssub);
 }
 
+static void srv_reset(void *ctx, session *sess)
+{
+    server *srv = (server *)ctx;
+    conn *c = (conn *)sess->owner;
+    while (c->subs != NULL)
+        srv_unsubscribe(srv, sess, c->subs->ch, c->subs->chlen);
+    while (c->ssubs != NULL)
+        srv_sunsubscribe(srv, sess, c->ssubs->ch, c->ssubs->chlen);
+    while (c->psubs != NULL)
+        srv_punsubscribe(srv, sess, c->psubs->ch, c->psubs->chlen);
+}
+
 static void srv_each_schannel(void *ctx, session *sess,
                               void (*cb)(const char *ch, size_t len,
                                          void *arg),
@@ -1135,6 +1147,8 @@ static conn *conn_create(server *srv, pal_socket_t fd)
     c->sess->sel_ndbs = srv->ndbs;
     c->sess->replicaof_ctx = srv;
     c->sess->replicaof_hook = srv_replicaof;
+    c->sess->reset_ctx = srv;
+    c->sess->reset_hook = srv_reset;
     c->sess->cluster_ctx = srv;
     c->sess->cluster_meet = srv_cluster_meet;
     c->sess->cluster_replicate = srv_replicaof;
@@ -2285,6 +2299,7 @@ void server_conn_rehome(server *s, void *conn_ptr)
     c->sess->shutdown_ctx = s;
     c->sess->sync_ctx = s;
     c->sess->replicaof_ctx = s;
+    c->sess->reset_ctx = s;
     c->sess->cluster_ctx = s;
     c->sess->aof_ctx = s;
     c->sess->repl = &s->repl;

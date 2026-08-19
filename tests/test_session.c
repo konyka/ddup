@@ -263,6 +263,85 @@ static void test_role(void)
     db_destroy(&d);
 }
 
+static void test_reset(void)
+{
+    db d;
+    session *s;
+    resp_buf out;
+    db_init(&d);
+    resp_buf_init(&out);
+
+    s = session_create(&d);
+    DD_CHECK(s != NULL);
+
+    exec_sess(s, T0, &out, 1, "MULTI");
+    EXPECT(out, "+OK\r\n");
+    exec_sess(s, T0, &out, 3, "SET", "k", "v");
+    EXPECT(out, "+QUEUED\r\n");
+    DD_CHECK_EQ_INT(1, (long long)s->queue_len);
+    exec_sess(s, T0, &out, 1, "RESET");
+    EXPECT(out, "+RESET\r\n");
+    DD_CHECK_EQ_INT(0, (long long)s->queue_len);
+    DD_CHECK(s->in_multi == 0);
+
+    exec_sess(s, T0, &out, 2, "WATCH", "k");
+    EXPECT(out, "+OK\r\n");
+    DD_CHECK_EQ_INT(1, (long long)s->nwatch);
+    s->read_only = 1;
+    exec_sess(s, T0, &out, 1, "RESET");
+    EXPECT(out, "+RESET\r\n");
+    DD_CHECK_EQ_INT(0, (long long)s->nwatch);
+    DD_CHECK(s->read_only == 0);
+
+    exec_sess(s, T0, &out, 2, "RESET", "x");
+    EXPECT(out, "-ERR wrong number of arguments for 'reset' command\r\n");
+
+    session_free(s);
+    resp_buf_free(&out);
+    db_destroy(&d);
+}
+
+static void test_hello(void)
+{
+    db d;
+    session *s;
+    resp_buf out;
+    db_init(&d);
+    resp_buf_init(&out);
+
+    s = session_create(&d);
+    DD_CHECK(s != NULL);
+
+    exec_sess(s, T0, &out, 1, "HELLO");
+    EXPECT(out,
+           "*14\r\n"
+           "$6\r\nserver\r\n$5\r\nredis\r\n"
+           "$7\r\nversion\r\n$6\r\n7.2.15\r\n"
+           "$5\r\nproto\r\n:2\r\n"
+           "$2\r\nid\r\n:0\r\n"
+           "$4\r\nmode\r\n$10\r\nstandalone\r\n"
+           "$4\r\nrole\r\n$6\r\nmaster\r\n"
+           "$7\r\nmodules\r\n*0\r\n");
+
+    exec_sess(s, T0, &out, 2, "HELLO", "3");
+    EXPECT(out,
+           "%7\r\n"
+           "$6\r\nserver\r\n$5\r\nredis\r\n"
+           "$7\r\nversion\r\n$6\r\n7.2.15\r\n"
+           "$5\r\nproto\r\n:3\r\n"
+           "$2\r\nid\r\n:0\r\n"
+           "$4\r\nmode\r\n$10\r\nstandalone\r\n"
+           "$4\r\nrole\r\n$6\r\nmaster\r\n"
+           "$7\r\nmodules\r\n*0\r\n");
+
+    exec_sess(s, T0, &out, 2, "HELLO", "4");
+    EXPECT(out, "-NOPROTO unsupported protocol version\r\n");
+
+    session_free(s);
+    resp_buf_free(&out);
+    db_destroy(&d);
+}
+
 static void test_readonly_readwrite(void)
 {
     db d;
@@ -304,6 +383,8 @@ int main(void)
     DD_RUN(test_auth_without_password_configured);
     DD_RUN(test_slaveof_alias);
     DD_RUN(test_role);
+    DD_RUN(test_reset);
+    DD_RUN(test_hello);
     DD_RUN(test_readonly_readwrite);
     return DD_TEST_SUMMARY();
 }

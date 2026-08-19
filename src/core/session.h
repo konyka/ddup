@@ -170,6 +170,10 @@ typedef struct session {
     void *psync_ctx;
     int (*replicaof_hook)(void *ctx, const char *host, uint16_t port);
     void *replicaof_ctx;
+    /* RESET: clear connection-scoped server state (pub/sub registries,
+     * MULTI/WATCH are handled by the core dispatcher). */
+    void (*reset_hook)(void *ctx, struct session *s);
+    void *reset_ctx;
 } session;
 
 void session_init(session *s, db *d);

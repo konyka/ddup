@@ -3189,7 +3189,8 @@ static int cluster_keyless_id(uint16_t cmd_id)
     case CMD_MIGRATE:    case CMD_ASKING:    case CMD_SCRIPT:
     case CMD_KEYS:       case CMD_SCAN:       case CMD_RANDOMKEY:
     case CMD_FLUSHALL:   case CMD_TIME:       case CMD_READONLY:
-    case CMD_READWRITE:  case CMD_ROLE:
+    case CMD_READWRITE:  case CMD_ROLE:       case CMD_RESET:
+    case CMD_HELLO:
         return 1;
     default:
         return 0;
@@ -3396,6 +3397,28 @@ static void flush_db_contents(db *d)
     d->dirty++;
 }
 
+static void hello_reply(resp_buf *out, int proto)
+{
+    if (proto == 3)
+        resp_write_map_header(out, 7);
+    else
+        resp_write_array_header(out, 14);
+    resp_write_bulk(out, "server", 6);
+    resp_write_bulk(out, "redis", 5);
+    resp_write_bulk(out, "version", 7);
+    resp_write_bulk(out, "7.2.15", 6);
+    resp_write_bulk(out, "proto", 5);
+    resp_write_integer(out, proto);
+    resp_write_bulk(out, "id", 2);
+    resp_write_integer(out, 0);
+    resp_write_bulk(out, "mode", 4);
+    resp_write_bulk(out, "standalone", 10);
+    resp_write_bulk(out, "role", 4);
+    resp_write_bulk(out, "master", 6);
+    resp_write_bulk(out, "modules", 7);
+    resp_write_array_header(out, 0);
+}
+
 static void command_dispatch(session *s, const resp_value *argv, size_t argc,
                              resp_buf *out, uint64_t now_ms)
 {
@@ -3471,6 +3494,29 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
             resp_write_bulk(out, r->link_up ? "connected" : "connecting",
                             r->link_up ? 9 : 10);
             resp_write_integer(out, (long long)r->master_offset);
+        }
+        return;
+    }
+
+    if (cmd_id == CMD_HELLO) {
+        long long proto = 2;
+        if (argc == 1) {
+            hello_reply(out, (int)proto);
+        } else if (argc == 2) {
+            const char *pv;
+            size_t pl;
+            if (!arg_str(&argv[1], &pv, &pl) || !parse_i64(pv, pl, &proto)) {
+                resp_write_error(out, ERR_NOT_INT, sizeof(ERR_NOT_INT) - 1);
+                return;
+            }
+            if (proto != 2 && proto != 3) {
+                static const char E[] = "NOPROTO unsupported protocol version";
+                resp_write_error(out, E, sizeof(E) - 1);
+                return;
+            }
+            hello_reply(out, (int)proto);
+        } else {
+            wrong_args(out, "hello");
         }
         return;
     }
@@ -10634,6 +10680,8 @@ static const cmd_entry CMD_TABLE[] = {
     {"slaveof", CMD_SLAVEOF, 3, 3, 0, 0},
     {"move", CMD_MOVE, 3, 3, 0, CMD_WRITE},
     {"role", CMD_ROLE, 1, 1, 0, 0},
+    {"reset", CMD_RESET, 1, 1, 0, 0},
+    {"hello", CMD_HELLO, 1, -1, 0, 0},
 };
 
 static const cmd_entry *cmd_table_entry(uint16_t id)
@@ -10947,7 +10995,7 @@ void session_execute_at(session *s, const resp_value *argv, size_t argc,
 
     /* AUTH gate: unauthenticated sessions may only run AUTH and QUIT */
     if (!s->authed && name != NULL && cmd_id != CMD_AUTH &&
-        cmd_id != CMD_QUIT) {
+        cmd_id != CMD_QUIT && cmd_id != CMD_RESET && cmd_id != CMD_HELLO) {
         static const char E[] = "NOAUTH Authentication required.";
         resp_write_error(out, E, sizeof(E) - 1);
         return;
@@ -10961,7 +11009,7 @@ void session_execute_at(session *s, const resp_value *argv, size_t argc,
         cmd_id != CMD_SUNSUBSCRIBE &&
         cmd_id != CMD_PSUBSCRIBE &&
         cmd_id != CMD_PUNSUBSCRIBE &&
-        cmd_id != CMD_PING && cmd_id != CMD_QUIT &&
+        cmd_id != CMD_PING && cmd_id != CMD_QUIT && cmd_id != CMD_RESET &&
         cmd_id != CMD_SHUTDOWN) {
         char lc[32];
         char msg[192];
@@ -11025,6 +11073,25 @@ void session_execute_at(session *s, const resp_value *argv, size_t argc,
         s->in_multi = 0;
         s->multi_error = 0;
         resp_write_simple_string(out, "OK", 2);
+        return;
+    }
+    if (name != NULL && cmd_id == CMD_RESET) {
+        if (argc != 1) {
+            wrong_args(out, "reset");
+            return;
+        }
+        session_queue_clear(s);
+        session_watch_clear(s);
+        s->in_multi = 0;
+        s->multi_error = 0;
+        s->read_only = 0;
+        s->asking = 0;
+        s->db_index = 0;
+        if (s->sel_fn != NULL)
+            s->d = s->sel_fn(s->sel_ctx, 0);
+        if (s->reset_hook != NULL)
+            s->reset_hook(s->reset_ctx, s);
+        resp_write_simple_string(out, "RESET", 5);
         return;
     }
     if (name != NULL && cmd_id == CMD_WATCH) {

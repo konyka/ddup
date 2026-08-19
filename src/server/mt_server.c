@@ -1363,6 +1363,8 @@ static int mt_is_keyless(uint16_t cmd)
     case CMD_READONLY:
     case CMD_READWRITE:
     case CMD_ROLE:
+    case CMD_RESET:
+    case CMD_HELLO:
     case CMD_QUIT:
         return 1;
     default:
@@ -2560,7 +2562,8 @@ static int mt_route(void *ctx, void *conn, session *sess,
 
     /* AUTH gate: unauthenticated conns may only run AUTH and QUIT; routed
      * tasks are trusted once the home session is authenticated */
-    if (!sess->authed && cmd != CMD_AUTH && cmd != CMD_QUIT) {
+    if (!sess->authed && cmd != CMD_AUTH && cmd != CMD_QUIT &&
+        cmd != CMD_RESET && cmd != CMD_HELLO) {
         static const char noauth[] = "-NOAUTH Authentication required.\r\n";
         uint64_t seq;
         if (st == NULL) {
@@ -2582,6 +2585,27 @@ static int mt_route(void *ctx, void *conn, session *sess,
             return 0;
         st->batch_target = -1;
         server_conn_set_mt_state(conn, st);
+    }
+
+    if (cmd == CMD_RESET) {
+        mt_batch_flush(home, conn, st);
+        st->in_multi = 0;
+        mt_mq_clear(st);
+        mt_watches_clear(home, st);
+        mt_deferred_free(st->deferred_head);
+        st->deferred_head = NULL;
+        st->deferred_tail = NULL;
+        st->watch_pending = 0;
+        st->replaying_deferred = 0;
+        while (st->subs != NULL) {
+            mt_conn_sub *sub = st->subs;
+            mt_pubsub_unregister(home, conn, sub->ch, sub->chlen, sub->owner);
+            st->subs = sub->next;
+            if (st->nsub > 0)
+                st->nsub--;
+            free(sub->ch);
+            free(sub);
+        }
     }
 
     if (cmd == CMD_MULTI || cmd == CMD_EXEC || cmd == CMD_DISCARD ||

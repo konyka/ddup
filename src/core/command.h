@@ -329,10 +329,12 @@ enum {
     CMD_SUBSTR,
     CMD_SLAVEOF,
     CMD_MOVE,
-    CMD_ROLE
+    CMD_ROLE,
+    CMD_RESET,
+    CMD_HELLO
 };
 
-#define CMD_MAX CMD_ROLE
+#define CMD_MAX CMD_HELLO
 
 /* Resolve a command name to its stable ID; case-insensitive. */
 uint16_t cmd_resolve(const char *name, size_t len);
