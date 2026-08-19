@@ -296,6 +296,14 @@
     寄存器；PFCOUNT 多键临时合并单次 12KB 缓冲，不产生逐键分配；
     PFMERGE 对缺失源按空 HLL 处理）；st/mt 路由与集群 key 抽取同步，
     兼容审计缺 56 个顶层命令（Phase 58）
+  - [x] GEO 族补齐：`GEOADD`/`GEODIST`/`GEOHASH`/`GEOPOS`/
+    `GEORADIUS`/`GEORADIUS_RO`/`GEORADIUSBYMEMBER`/
+    `GEORADIUSBYMEMBER_RO`/`GEOSEARCH`/`GEOSEARCHSTORE`
+    （zset-backed 52-bit geohash 编码、WGS84 解码、GEOHASH 标准
+    [-90,90] 重编码、HAVERSINE 距离；GEOADD NX/XX/CH；GEORADIUS
+    STORE/STOREDIST、COUNT/ANY/ASC/DESC/WITH*；GEOSEARCH
+    FROMMEMBER/FROMLONLAT/BYRADIUS/BYBOX；st/mt 路由与集群 key 抽取同步）；
+    兼容审计缺 46 个顶层命令（Phase 59）
   - [ ] 范围化排除（记录在案，不实施）：
     - 分层存储（热/冷数据落盘）：超出"内存缓存存储"定位
     - mt 模式的复制/集群适配：见 Phase 15 说明

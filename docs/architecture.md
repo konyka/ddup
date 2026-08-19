@@ -1027,7 +1027,7 @@ hazard pointer/延迟回收、索引桶 CAS、检查点与恢复的并发协议�
 ## 容器命令补齐（Phase 41/42）
 
 - **统计槽位扩容**：命令 id 总数越过 128，`db.cmd_calls/cmd_usecs`
-  与 `info_stats` 的 `[128]` 统一改为 `CMD_STATS_SLOTS`（192）；
+  与 `info_stats` 的 `[128]` 统一改为 `CMD_STATS_SLOTS`（256）；
   mt INFO __STATS__ 按 id 文本传输不受影响。**硬约束**：CMD_TABLE
   条目与枚举必须同步追加在末尾——`cmd_table_entry` 按
   `CMD_TABLE[id-1]` 位置索引，插中间会使后续命令 id 全部错位。
