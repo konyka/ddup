@@ -1346,6 +1346,13 @@ static int mt_is_single_key(uint16_t cmd)
     case CMD_SORT:
     case CMD_SORT_RO:
     case CMD_PFADD:
+    case CMD_GEOADD:
+    case CMD_GEODIST:
+    case CMD_GEOHASH:
+    case CMD_GEOPOS:
+    case CMD_GEOSEARCH:
+    case CMD_GEORADIUS_RO:
+    case CMD_GEORADIUSBYMEMBER_RO:
         return 1;
     default:
         return 0;
@@ -1423,6 +1430,36 @@ static int mt_multikey_target(int nworkers, uint16_t cmd,
                 return MT_CROSSSLOT;
         }
         return target;
+    }
+
+    if (cmd == CMD_GEORADIUS || cmd == CMD_GEORADIUSBYMEMBER) {
+        size_t start = cmd == CMD_GEORADIUS ? 6u : 5u;
+        if (argc < 2 || argv[1].str == NULL)
+            return MT_LOCAL;
+        target = (int)(hash_slot(argv[1].str, argv[1].len) %
+                       (uint32_t)nworkers);
+        for (i = start; i + 1 < argc; i++) {
+            const char *tok = argv[i].str;
+            size_t toklen = argv[i].len;
+            int w;
+            if (tok == NULL)
+                continue;
+            if (mt_ci_equal(tok, toklen, "STORE") ||
+                mt_ci_equal(tok, toklen, "STOREDIST")) {
+                if (argv[i + 1].str == NULL)
+                    return MT_LOCAL;
+                w = (int)(hash_slot(argv[i + 1].str, argv[i + 1].len) %
+                          (uint32_t)nworkers);
+                if (w != target)
+                    return MT_CROSSSLOT;
+                return target;
+            }
+        }
+        return target;
+    }
+    if (cmd == CMD_GEOSEARCHSTORE) {
+        kstart = 1;
+        kend = argc > 2 ? 3 : argc;
     }
 
     kend = argc;
@@ -1521,6 +1558,9 @@ static int mt_classify(int nworkers, uint16_t cmd, const resp_value *argv,
     case CMD_PFCOUNT:
     case CMD_PFMERGE:
     case CMD_PFDEBUG:
+    case CMD_GEOSEARCHSTORE:
+    case CMD_GEORADIUS:
+    case CMD_GEORADIUSBYMEMBER:
         return mt_multikey_target(nworkers, cmd, argv, argc);
     default:
         break;

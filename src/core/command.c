@@ -1266,7 +1266,7 @@ static int zsetop_parse(db *d, resp_buf *out, const resp_value *argv,
         (unsigned long long)nk > (unsigned long long)(argc - numkeys_idx - 1)) {
         static const char E[] =
             "ERR Number of keys can't be greater than number of args";
-        resp_write_error(out, E, sizeof(E) - 1);
+        resp_write_error(out, E, strlen(E));
         return -1;
     }
     nkeys = (size_t)nk;
@@ -1612,7 +1612,7 @@ static void cmd_bitop(db *d, const resp_value *argv, size_t argc,
     if (op == BITOP_NOT && argc != 4) {
         static const char E[] =
             "ERR BITOP NOT must be called with a single source key.";
-        resp_write_error(out, E, sizeof(E) - 1);
+        resp_write_error(out, E, strlen(E));
         return;
     }
     if (!storage_key_ok(dkl)) {
@@ -3416,6 +3416,29 @@ static int slot_accum(const char *k, size_t klen, int *have, uint32_t *slot)
     return *slot == s;
 }
 
+/* Legacy GEORADIUS/GEORADIUSBYMEMBER STORE/STOREDIST destination key. */
+static int geo_radius_store_key(const resp_value *argv, size_t argc,
+                                size_t start, const char **store,
+                                size_t *storelen)
+{
+    size_t i;
+
+    for (i = start; i + 1 < argc; i++) {
+        const char *tok;
+        size_t tokl;
+
+        if (!arg_str(&argv[i], &tok, &tokl))
+            continue;
+        if (ci_equal(tok, tokl, "STORE") ||
+            ci_equal(tok, tokl, "STOREDIST")) {
+            if (arg_str(&argv[i + 1], store, storelen))
+                return 1;
+            return 0;
+        }
+    }
+    return 0;
+}
+
 /* Single-slot accumulation for the keys of one command (cluster mode).
  * Multi-key commands check all their key positions; single-key commands
  * check argv[1]; keyless commands always pass. The {have,slot} accumulator
@@ -3563,6 +3586,31 @@ static int cmd_keys_accum(const resp_value *argv, size_t argc, int *have,
         if (argc < 3 || !arg_str(&argv[2], &k, &kl))
             return 1;
         return slot_accum(k, kl, have, slot);
+    }
+    if (cmd_id == CMD_GEOSEARCHSTORE) {
+        for (i = 1; i < argc && i < 3; i++) {
+            const char *k;
+            size_t kl;
+            if (arg_str(&argv[i], &k, &kl) &&
+                !slot_accum(k, kl, have, slot))
+                return 0;
+        }
+        return 1;
+    }
+    if (cmd_id == CMD_GEORADIUS || cmd_id == CMD_GEORADIUSBYMEMBER) {
+        const char *k;
+        const char *store;
+        size_t kl;
+        size_t sl;
+        if (arg_str(&argv[1], &k, &kl) &&
+            !slot_accum(k, kl, have, slot))
+            return 0;
+        if (geo_radius_store_key(argv, argc,
+                                 cmd_id == CMD_GEORADIUS ? 6u : 5u,
+                                 &store, &sl) &&
+            !slot_accum(store, sl, have, slot))
+            return 0;
+        return 1;
     }
     if (cmd_id == CMD_EVAL || cmd_id == CMD_EVALSHA) {
         const char *nv;
@@ -3807,6 +3855,31 @@ static int cluster_check_ownership(session *s, const resp_value *argv,
         if (argc < 3 || !arg_str(&argv[2], &k, &kl))
             return 1;
         return db_key_served(d, k, kl, out, now_ms, asking);
+    }
+    if (cmd_id == CMD_GEOSEARCHSTORE) {
+        for (i = 1; i < argc && i < 3; i++) {
+            const char *k;
+            size_t kl;
+            if (arg_str(&argv[i], &k, &kl) &&
+                !db_key_served(d, k, kl, out, now_ms, asking))
+                return 0;
+        }
+        return 1;
+    }
+    if (cmd_id == CMD_GEORADIUS || cmd_id == CMD_GEORADIUSBYMEMBER) {
+        const char *k;
+        const char *store;
+        size_t kl;
+        size_t sl;
+        if (arg_str(&argv[1], &k, &kl) &&
+            !db_key_served(d, k, kl, out, now_ms, asking))
+            return 0;
+        if (geo_radius_store_key(argv, argc,
+                                 cmd_id == CMD_GEORADIUS ? 6u : 5u,
+                                 &store, &sl) &&
+            !db_key_served(d, store, sl, out, now_ms, asking))
+            return 0;
+        return 1;
     }
     if (cmd_id == CMD_EVAL || cmd_id == CMD_EVALSHA) {
         /* keys are argv[3..3+numkeys); numkeys validated by the dispatch */
@@ -4243,6 +4316,1303 @@ static void sort_merge_sort(sort_elem *v, sort_elem *tmp, size_t n, int alpha,
     }
 }
 
+
+/* ------------------------------------------------------------------ */
+/* Geospatial commands (zset-backed Redis-compatible WGS84 encoding)  */
+/* ------------------------------------------------------------------ */
+
+#define GEO_LAT_MIN -85.05112878
+#define GEO_LAT_MAX 85.05112878
+#define GEO_LON_MIN -180.0
+#define GEO_LON_MAX 180.0
+#define GEO_EARTH_RADIUS_M 6372797.560856
+#define GEO_STEP_MAX 26u
+#define GEO_SCALE (1ULL << GEO_STEP_MAX)
+#define GEO_BITS_MASK ((1ULL << 52) - 1ULL)
+#define GEO_PI 3.14159265358979323846
+
+static const char GEO_BASE32[] = "0123456789bcdefghjkmnpqrstuvwxyz";
+
+typedef struct geo_hit {
+    char *member;
+    size_t mlen;
+    double score;
+    double dist;
+} geo_hit;
+
+typedef struct geo_vec {
+    geo_hit *v;
+    size_t n;
+    size_t cap;
+    int oom;
+} geo_vec;
+
+typedef struct geo_opts {
+    int withcoord;
+    int withdist;
+    int withhash;
+    int asc;
+    int desc;
+    long long count;
+    int has_count;
+    int any;
+    const char *store;
+    size_t storelen;
+    int storedist;
+} geo_opts;
+
+static uint64_t geo_interleave(uint32_t xlo, uint32_t ylo)
+{
+    uint64_t x = xlo;
+    uint64_t y = ylo;
+    uint64_t r = 0;
+    unsigned i;
+
+    for (i = 0; i < 32; i++) {
+        r |= ((x >> i) & 1ULL) << (2u * i);
+        r |= ((y >> i) & 1ULL) << (2u * i + 1u);
+    }
+    return r;
+}
+
+static void geo_deinterleave(uint64_t bits, uint32_t *x, uint32_t *y)
+{
+    uint32_t xo = 0;
+    uint32_t yo = 0;
+    unsigned i;
+
+    for (i = 0; i < 32; i++) {
+        xo |= (uint32_t)((bits >> (2u * i)) & 1ULL) << i;
+        yo |= (uint32_t)((bits >> (2u * i + 1u)) & 1ULL) << i;
+    }
+    *x = xo;
+    *y = yo;
+}
+
+static uint64_t geo_bits(double lon, double lat)
+{
+    double latn = (lat - GEO_LAT_MIN) / (GEO_LAT_MAX - GEO_LAT_MIN);
+    double lonn = (lon - GEO_LON_MIN) / (GEO_LON_MAX - GEO_LON_MIN);
+    uint32_t ilat = latn >= 1.0 ? (uint32_t)(GEO_SCALE - 1u)
+                                : (uint32_t)(latn * (double)GEO_SCALE);
+    uint32_t ilon = lonn >= 1.0 ? (uint32_t)(GEO_SCALE - 1u)
+                                : (uint32_t)(lonn * (double)GEO_SCALE);
+
+    return geo_interleave(ilat, ilon) & GEO_BITS_MASK;
+}
+
+static void geo_decode_bits(uint64_t bits, double *lon, double *lat)
+{
+    uint32_t xlo = 0;
+    uint32_t ylo = 0;
+    double lat_scale = GEO_LAT_MAX - GEO_LAT_MIN;
+    double lon_scale = GEO_LON_MAX - GEO_LON_MIN;
+    double lat_min;
+    double lat_max;
+    double lon_min;
+    double lon_max;
+
+    geo_deinterleave(bits, &xlo, &ylo);
+    lat_min = GEO_LAT_MIN +
+              ((double)xlo / (double)GEO_SCALE) * lat_scale;
+    lat_max = GEO_LAT_MIN +
+              ((double)(xlo + 1u) / (double)GEO_SCALE) * lat_scale;
+    lon_min = GEO_LON_MIN +
+              ((double)ylo / (double)GEO_SCALE) * lon_scale;
+    lon_max = GEO_LON_MIN +
+              ((double)(ylo + 1u) / (double)GEO_SCALE) * lon_scale;
+    *lat = (lat_min + lat_max) / 2.0;
+    *lon = (lon_min + lon_max) / 2.0;
+    if (*lat > GEO_LAT_MAX)
+        *lat = GEO_LAT_MAX;
+    if (*lat < GEO_LAT_MIN)
+        *lat = GEO_LAT_MIN;
+    if (*lon > GEO_LON_MAX)
+        *lon = GEO_LON_MAX;
+    if (*lon < GEO_LON_MIN)
+        *lon = GEO_LON_MIN;
+}
+
+static void geo_hash_string(double lon, double lat, char out[12])
+{
+    double lat_min = -90.0;
+    double lat_max = 90.0;
+    double lon_min = -180.0;
+    double lon_max = 180.0;
+    int even = 1;
+    int i;
+
+    for (i = 0; i < 11; i++) {
+        int j;
+        int val = 0;
+        for (j = 0; j < 5; j++) {
+            val <<= 1;
+            if (even) {
+                double mid = (lon_min + lon_max) / 2.0;
+                if (lon >= mid) {
+                    val |= 1;
+                    lon_min = mid;
+                } else {
+                    lon_max = mid;
+                }
+            } else {
+                double mid = (lat_min + lat_max) / 2.0;
+                if (lat >= mid) {
+                    val |= 1;
+                    lat_min = mid;
+                } else {
+                    lat_max = mid;
+                }
+            }
+            even = !even;
+        }
+        out[i] = GEO_BASE32[val];
+    }
+    out[10] = GEO_BASE32[0];
+    out[11] = '\0';
+}
+
+static double geo_distance_m(double lon1, double lat1, double lon2,
+                             double lat2)
+{
+    double lat1r = lat1 * GEO_PI / 180.0;
+    double lat2r = lat2 * GEO_PI / 180.0;
+    double dlat = (lat2 - lat1) * GEO_PI / 180.0;
+    double dlon = (lon2 - lon1) * GEO_PI / 180.0;
+    double u = sin(dlat / 2.0);
+    double v = sin(dlon / 2.0);
+    double a = u * u + cos(lat1r) * cos(lat2r) * v * v;
+
+    return 2.0 * GEO_EARTH_RADIUS_M * asin(sqrt(a));
+}
+
+static int geo_unit(const char *s, size_t len, double *meters)
+{
+    if (ci_equal(s, len, "m")) {
+        *meters = 1.0;
+        return 1;
+    }
+    if (ci_equal(s, len, "km")) {
+        *meters = 1000.0;
+        return 1;
+    }
+    if (ci_equal(s, len, "mi")) {
+        *meters = 1609.34;
+        return 1;
+    }
+    if (ci_equal(s, len, "ft")) {
+        *meters = 0.3048;
+        return 1;
+    }
+    return 0;
+}
+
+static void geo_write_distance(resp_buf *out, double meters, double unit)
+{
+    char buf[64];
+    int n = snprintf(buf, sizeof(buf), "%.4f", meters / unit);
+
+    resp_write_bulk(out, buf, (size_t)n);
+}
+
+static void geo_write_coord(resp_buf *out, double v)
+{
+    char buf[64];
+    int n = snprintf(buf, sizeof(buf), "%.17Lf", (long double)v);
+    char *p;
+
+    if (n <= 0)
+        return;
+    if (strchr(buf, '.') != NULL) {
+        p = buf + n - 1;
+        while (n > 1 && *p == '0') {
+            p--;
+            n--;
+        }
+        if (n > 0 && *p == '.')
+            n--;
+    }
+    if (n == 2 && buf[0] == '-' && buf[1] == '0') {
+        buf[0] = '0';
+        n = 1;
+    }
+    resp_write_bulk(out, buf, (size_t)n);
+}
+
+static int geo_member_coords(obj_zset *z, const char *member, size_t mlen,
+                             double *lon, double *lat)
+{
+    double score;
+
+    if (!obj_zset_score(z, member, mlen, &score))
+        return 0;
+    geo_decode_bits((uint64_t)score, lon, lat);
+    return 1;
+}
+
+static int geo_vec_add(geo_vec *vec, const char *member, size_t mlen,
+                       double score, double dist)
+{
+    geo_hit *h;
+    char *copy;
+
+    if (vec->oom)
+        return -1;
+    if (vec->n == vec->cap) {
+        size_t ncap = vec->cap == 0 ? 16 : vec->cap * 2;
+        geo_hit *nv = (geo_hit *)realloc(vec->v, ncap * sizeof(*nv));
+
+        if (nv == NULL) {
+            vec->oom = 1;
+            return -1;
+        }
+        vec->v = nv;
+        vec->cap = ncap;
+    }
+    if (mlen == SIZE_MAX) {
+        vec->oom = 1;
+        return -1;
+    }
+    copy = (char *)malloc(mlen + 1);
+    if (copy == NULL) {
+        vec->oom = 1;
+        return -1;
+    }
+    memcpy(copy, member, mlen);
+    copy[mlen] = '\0';
+    h = &vec->v[vec->n++];
+    h->member = copy;
+    h->mlen = mlen;
+    h->score = score;
+    h->dist = dist;
+    return 0;
+}
+
+static void geo_vec_free(geo_vec *vec)
+{
+    size_t i;
+
+    for (i = 0; i < vec->n; i++)
+        free(vec->v[i].member);
+    free(vec->v);
+    memset(vec, 0, sizeof(*vec));
+}
+
+static int geo_hit_compare(const geo_hit *a, const geo_hit *b, int desc)
+{
+    int cmp;
+
+    if (a->dist < b->dist)
+        cmp = -1;
+    else if (a->dist > b->dist)
+        cmp = 1;
+    else {
+        size_t n = a->mlen < b->mlen ? a->mlen : b->mlen;
+        cmp = n > 0 ? memcmp(a->member, b->member, n) : 0;
+        if (cmp == 0)
+            cmp = (a->mlen > b->mlen) - (a->mlen < b->mlen);
+    }
+    return desc ? -cmp : cmp;
+}
+
+static void geo_vec_sort(geo_vec *vec, int desc)
+{
+    geo_hit *tmp;
+    size_t n = vec->n;
+    size_t width;
+    geo_hit *src = vec->v;
+    geo_hit *dst;
+
+    if (n < 2)
+        return;
+    tmp = (geo_hit *)malloc(n * sizeof(*tmp));
+    if (tmp == NULL) {
+        vec->oom = 1;
+        return;
+    }
+    dst = tmp;
+    for (width = 1; width < n; width *= 2) {
+        size_t lo;
+        for (lo = 0; lo < n; lo += width * 2) {
+            size_t mid = lo + width < n ? lo + width : n;
+            size_t hi = lo + width * 2 < n ? lo + width * 2 : n;
+            size_t i = lo;
+            size_t j = mid;
+            size_t k = lo;
+            while (i < mid && j < hi) {
+                if (geo_hit_compare(&src[i], &src[j], desc) <= 0)
+                    dst[k++] = src[i++];
+                else
+                    dst[k++] = src[j++];
+            }
+            while (i < mid)
+                dst[k++] = src[i++];
+            while (j < hi)
+                dst[k++] = src[j++];
+        }
+        {
+            geo_hit *swap = src;
+            src = dst;
+            dst = swap;
+        }
+    }
+    if (src != vec->v) {
+        size_t i;
+        for (i = 0; i < n; i++)
+            vec->v[i] = src[i];
+    }
+    free(tmp);
+}
+
+static int geo_collect_radius(obj_zset *z, double center_lon,
+                              double center_lat, double radius_m,
+                              geo_vec *vec)
+{
+    obj_zset_iter it;
+
+    if (!obj_zset_first(z, &it))
+        return 0;
+    do {
+        size_t mlen = 0;
+        const char *member = obj_zset_iter_member(&it, &mlen);
+        double score = obj_zset_iter_score(&it);
+        double lon;
+        double lat;
+        double dist;
+
+        geo_decode_bits((uint64_t)score, &lon, &lat);
+        dist = geo_distance_m(center_lon, center_lat, lon, lat);
+        if (dist <= radius_m && geo_vec_add(vec, member, mlen, score, dist) != 0)
+            return -1;
+    } while (obj_zset_iter_next(&it));
+    return vec->oom ? -1 : 0;
+}
+
+static int geo_collect_box(obj_zset *z, double center_lon, double center_lat,
+                           double width_m, double height_m, geo_vec *vec)
+{
+    double half_w = width_m / 2.0;
+    double half_h = height_m / 2.0;
+    obj_zset_iter it;
+
+    if (!obj_zset_first(z, &it))
+        return 0;
+    do {
+        size_t mlen = 0;
+        const char *member = obj_zset_iter_member(&it, &mlen);
+        double score = obj_zset_iter_score(&it);
+        double lon;
+        double lat;
+
+        geo_decode_bits((uint64_t)score, &lon, &lat);
+        {
+            double lat_dist = GEO_EARTH_RADIUS_M *
+                              fabs((lat - center_lat) * GEO_PI / 180.0);
+            double lon_dist = geo_distance_m(center_lon, lat, lon, lat);
+            double dist;
+
+            if (lat_dist > half_h || lon_dist > half_w)
+                continue;
+            dist = geo_distance_m(center_lon, center_lat, lon, lat);
+            if (geo_vec_add(vec, member, mlen, score, dist) != 0)
+                return -1;
+        }
+    } while (obj_zset_iter_next(&it));
+    return vec->oom ? -1 : 0;
+}
+
+static int geo_parse_opts(const resp_value *argv, size_t argc, size_t start,
+                          int store_kind, geo_opts *opts, resp_buf *out)
+{
+    size_t i;
+
+    memset(opts, 0, sizeof(*opts));
+    for (i = start; i < argc; i++) {
+        const char *tok;
+        size_t tokl;
+
+        if (!arg_str(&argv[i], &tok, &tokl))
+            goto bad_type;
+        if (ci_equal(tok, tokl, "WITHCOORD") && !opts->withcoord) {
+            opts->withcoord = 1;
+        } else if (ci_equal(tok, tokl, "WITHDIST") && !opts->withdist) {
+            opts->withdist = 1;
+        } else if (ci_equal(tok, tokl, "WITHHASH") && !opts->withhash) {
+            opts->withhash = 1;
+        } else if (ci_equal(tok, tokl, "ASC")) {
+            opts->asc = 1;
+            opts->desc = 0;
+        } else if (ci_equal(tok, tokl, "DESC")) {
+            opts->desc = 1;
+            opts->asc = 0;
+        } else if (ci_equal(tok, tokl, "ANY")) {
+            opts->any = 1;
+        } else if (ci_equal(tok, tokl, "COUNT") && i + 1 < argc) {
+            const char *cv;
+            size_t cvl;
+            long long count;
+
+            if (!arg_str(&argv[i + 1], &cv, &cvl) ||
+                !parse_i64(cv, cvl, &count)) {
+                resp_write_error(out, ERR_NOT_INT, sizeof(ERR_NOT_INT) - 1);
+                return -1;
+            }
+            if (count <= 0) {
+                static const char E[] = "ERR COUNT must be > 0";
+                resp_write_error(out, E, sizeof(E) - 1);
+                return -1;
+            }
+            opts->has_count = 1;
+            opts->count = count;
+            i++;
+        } else if (store_kind == 1 && ci_equal(tok, tokl, "STORE") &&
+                   i + 1 < argc) {
+            if (!arg_str(&argv[i + 1], &opts->store, &opts->storelen))
+                goto bad_type;
+            opts->storedist = 0;
+            i++;
+        } else if (store_kind == 1 && ci_equal(tok, tokl, "STOREDIST") &&
+                   i + 1 < argc) {
+            if (!arg_str(&argv[i + 1], &opts->store, &opts->storelen))
+                goto bad_type;
+            opts->storedist = 1;
+            i++;
+        } else if (store_kind == 2 && ci_equal(tok, tokl, "STOREDIST")) {
+            opts->storedist = 1;
+        } else {
+            resp_write_error(out, ERR_SYNTAX, sizeof(ERR_SYNTAX) - 1);
+            return -1;
+        }
+    }
+    if (opts->any && !opts->has_count) {
+        static const char E[] = "ERR the ANY argument requires COUNT argument";
+        resp_write_error(out, E, sizeof(E) - 1);
+        return -1;
+    }
+    if ((opts->store != NULL || store_kind == 2) &&
+        (opts->withcoord || opts->withdist || opts->withhash)) {
+        static const char E_GEORADIUS[] =
+            "ERR STORE option in GEORADIUS is not compatible with "
+            "WITHDIST, WITHHASH and WITHCOORD options";
+        static const char E_GEOSEARCHSTORE[] =
+            "ERR GEOSEARCHSTORE is not compatible with "
+            "WITHDIST, WITHHASH and WITHCOORD options";
+        const char *E = store_kind == 2 ? E_GEOSEARCHSTORE : E_GEORADIUS;
+        resp_write_error(out, E, sizeof(E) - 1);
+        return -1;
+    }
+    return 0;
+
+bad_type:
+    resp_write_error(out, "ERR invalid argument type", 24);
+    return -1;
+}
+
+static int geo_parse_radius(const char *s, size_t len, double unit,
+                            double *radius_m)
+{
+    double v;
+
+    if (!parse_double(s, len, &v) || v < 0.0)
+        return 0;
+    *radius_m = v * unit;
+    return 1;
+}
+
+static int geo_parse_coords(const char *lons, size_t lonl, const char *lats,
+                            size_t latl, double *lon, double *lat)
+{
+    *lon = 0.0;
+    *lat = 0.0;
+    if (!parse_double(lons, lonl, lon))
+        return -1;
+    if (!parse_double(lats, latl, lat))
+        return -1;
+    if (*lon < GEO_LON_MIN || *lon > GEO_LON_MAX ||
+        *lat < GEO_LAT_MIN || *lat > GEO_LAT_MAX)
+        return 0;
+    return 1;
+}
+
+static void geo_write_coords_error(resp_buf *out, int rc, double lon,
+                                   double lat)
+{
+    if (rc < 0) {
+        resp_write_error(out, ERR_NOT_FLOAT, sizeof(ERR_NOT_FLOAT) - 1);
+        return;
+    }
+    {
+        char buf[96];
+        int n = snprintf(buf, sizeof(buf),
+                         "ERR invalid longitude,latitude pair %.6f,%.6f",
+                         lon, lat);
+        if (n < 0)
+            return;
+        resp_write_error(out, buf, (size_t)n);
+    }
+}
+
+static void geo_emit_member(resp_buf *out, const geo_hit *hit,
+                            const geo_opts *opts, double unit)
+{
+    size_t nfields = 1 + (opts->withdist ? 1u : 0u) +
+                     (opts->withhash ? 1u : 0u) +
+                     (opts->withcoord ? 1u : 0u);
+
+    if (nfields == 1) {
+        resp_write_bulk(out, hit->member, hit->mlen);
+        return;
+    }
+    resp_write_array_header(out, nfields);
+    resp_write_bulk(out, hit->member, hit->mlen);
+    if (opts->withdist)
+        geo_write_distance(out, hit->dist, unit);
+    if (opts->withhash)
+        resp_write_integer(out, (long long)(uint64_t)hit->score);
+    if (opts->withcoord) {
+        double lon;
+        double lat;
+        geo_decode_bits((uint64_t)hit->score, &lon, &lat);
+        resp_write_array_header(out, 2);
+        geo_write_coord(out, lon);
+        geo_write_coord(out, lat);
+    }
+}
+
+static void geo_emit_results(resp_buf *out, const geo_vec *vec,
+                             const geo_opts *opts, double unit)
+{
+    size_t i;
+
+    resp_write_array_header(out, vec->n);
+    for (i = 0; i < vec->n; i++)
+        geo_emit_member(out, &vec->v[i], opts, unit);
+}
+
+static int geo_store_results(db *d, resp_buf *out, const char *dst,
+                             size_t dstl, geo_vec *vec, int storedist,
+                             double unit, uint64_t now_ms)
+{
+    obj_zset *z;
+    int rc;
+    size_t i;
+
+    if (vec->n == 0) {
+        db_del_kv(d, dst, dstl);
+        resp_write_integer(out, 0);
+        return 0;
+    }
+    db_del_kv(d, dst, dstl);
+    rc = get_zset(d, out, dst, dstl, 1, now_ms, &z);
+    if (rc <= 0)
+        return rc == 0 ? 0 : -1;
+    for (i = 0; i < vec->n; i++) {
+        double score = storedist ? vec->v[i].dist / unit : vec->v[i].score;
+        if (obj_zset_add(z, vec->v[i].member, vec->v[i].mlen, score) < 0) {
+            storage_length_error(out);
+            return -1;
+        }
+    }
+    resp_write_integer(out, (long long)vec->n);
+    return 0;
+}
+
+static int geo_execute_radius(db *d, resp_buf *out, obj_zset *z,
+                              double center_lon, double center_lat,
+                              double radius_m, double unit,
+                              const geo_opts *opts, const char *dst,
+                              size_t dstl, uint64_t now_ms)
+{
+    geo_vec vec;
+    int rc;
+
+    memset(&vec, 0, sizeof(vec));
+    if (opts->any && opts->has_count) {
+        obj_zset_iter it;
+        if (obj_zset_first(z, &it)) {
+            do {
+                size_t mlen = 0;
+                const char *member = obj_zset_iter_member(&it, &mlen);
+                double score = obj_zset_iter_score(&it);
+                double lon;
+                double lat;
+                double dist;
+
+                geo_decode_bits((uint64_t)score, &lon, &lat);
+                dist = geo_distance_m(center_lon, center_lat, lon, lat);
+                if (dist <= radius_m) {
+                    if (geo_vec_add(&vec, member, mlen, score, dist) != 0)
+                        break;
+                    if ((long long)vec.n == opts->count)
+                        break;
+                }
+            } while (obj_zset_iter_next(&it));
+        }
+    } else {
+        rc = geo_collect_radius(z, center_lon, center_lat, radius_m, &vec);
+        if (rc != 0) {
+            geo_vec_free(&vec);
+            oom_blocked(d, out);
+            return -1;
+        }
+        if (opts->has_count || opts->asc || opts->desc)
+            geo_vec_sort(&vec, opts->desc);
+        if (vec.oom) {
+            geo_vec_free(&vec);
+            oom_blocked(d, out);
+            return -1;
+        }
+        if (opts->has_count && !opts->any && (size_t)opts->count < vec.n) {
+            size_t i;
+            for (i = (size_t)opts->count; i < vec.n; i++)
+                free(vec.v[i].member);
+            vec.n = (size_t)opts->count;
+        }
+    }
+
+    if (dst != NULL) {
+        rc = geo_store_results(d, out, dst, dstl, &vec, opts->storedist,
+                               unit, now_ms);
+        geo_vec_free(&vec);
+        return rc;
+    }
+    geo_emit_results(out, &vec, opts, unit);
+    geo_vec_free(&vec);
+    return 0;
+}
+
+static void cmd_geoadd(db *d, const resp_value *argv, size_t argc,
+                       resp_buf *out, uint64_t now_ms)
+{
+    const char *key;
+    size_t keyl;
+    size_t i = 2;
+    int nx = 0;
+    int xx = 0;
+    int ch = 0;
+    obj_zset *z;
+    int rc;
+    long long added = 0;
+
+    if (argc < 5) {
+        wrong_args(out, "geoadd");
+        return;
+    }
+    if (!arg_str(&argv[1], &key, &keyl))
+        goto bad_type;
+    while (i < argc) {
+        const char *tok;
+        size_t tokl;
+        if (!arg_str(&argv[i], &tok, &tokl))
+            goto bad_type;
+        if (ci_equal(tok, tokl, "NX")) {
+            nx = 1;
+            i++;
+        } else if (ci_equal(tok, tokl, "XX")) {
+            xx = 1;
+            i++;
+        } else if (ci_equal(tok, tokl, "CH")) {
+            ch = 1;
+            i++;
+        } else {
+            break;
+        }
+    }
+    if ((argc - i) % 3 != 0 || (nx && xx)) {
+        resp_write_error(out, ERR_SYNTAX, sizeof(ERR_SYNTAX) - 1);
+        return;
+    }
+
+    {
+        size_t first = i;
+        size_t j;
+
+        for (j = i; j < argc; j += 3) {
+            const char *lons;
+            const char *lats;
+            const char *member;
+            size_t lonl;
+            size_t latl;
+            size_t mlen;
+            double lon;
+            double lat;
+
+            if (!arg_str(&argv[j], &lons, &lonl) ||
+                !arg_str(&argv[j + 1], &lats, &latl) ||
+                !arg_str(&argv[j + 2], &member, &mlen))
+                goto bad_type;
+            {
+                int crc = geo_parse_coords(lons, lonl, lats, latl, &lon, &lat);
+                if (crc <= 0) {
+                    geo_write_coords_error(out, crc, lon, lat);
+                    return;
+                }
+            }
+        }
+        i = first;
+    }
+
+    rc = get_zset(d, out, key, keyl, 1, now_ms, &z);
+    if (rc <= 0)
+        return;
+
+    for (; i < argc; i += 3) {
+        const char *lons;
+        const char *lats;
+        const char *member;
+        size_t lonl;
+        size_t latl;
+        size_t mlen;
+        double lon;
+        double lat;
+        double old;
+        int present;
+
+        if (!arg_str(&argv[i], &lons, &lonl) ||
+            !arg_str(&argv[i + 1], &lats, &latl) ||
+            !arg_str(&argv[i + 2], &member, &mlen))
+            goto bad_type;
+        {
+            int crc = geo_parse_coords(lons, lonl, lats, latl, &lon, &lat);
+            if (crc <= 0) {
+                geo_write_coords_error(out, crc, lon, lat);
+                return;
+            }
+        }
+        present = obj_zset_score(z, member, mlen, &old);
+        if ((nx && present) || (xx && !present))
+            continue;
+        if (obj_zset_add(z, member, mlen,
+                         (double)geo_bits(lon, lat)) < 0) {
+            storage_length_error(out);
+            return;
+        }
+        if (!present || ch || old != (double)geo_bits(lon, lat))
+            added++;
+    }
+    resp_write_integer(out, added);
+    return;
+
+bad_type:
+    resp_write_error(out, "ERR invalid argument type", 24);
+}
+
+static void cmd_geopos(db *d, const resp_value *argv, size_t argc,
+                       resp_buf *out, uint64_t now_ms)
+{
+    const char *key;
+    size_t keyl;
+    obj_zset *z;
+    int rc;
+    size_t i;
+
+    if (argc < 2) {
+        wrong_args(out, "geopos");
+        return;
+    }
+    if (!arg_str(&argv[1], &key, &keyl))
+        goto bad_type;
+    rc = get_zset(d, out, key, keyl, 0, now_ms, &z);
+    if (rc < 0)
+        return;
+
+    resp_write_array_header(out, argc - 2);
+    for (i = 2; i < argc; i++) {
+        const char *member;
+        size_t mlen;
+        double lon;
+        double lat;
+
+        if (!arg_str(&argv[i], &member, &mlen))
+            goto bad_type;
+        if (rc == 0 || !geo_member_coords(z, member, mlen, &lon, &lat)) {
+            write_null_array(out);
+            continue;
+        }
+        resp_write_array_header(out, 2);
+        geo_write_coord(out, lon);
+        geo_write_coord(out, lat);
+    }
+    return;
+
+bad_type:
+    resp_write_error(out, "ERR invalid argument type", 24);
+}
+
+static void cmd_geohash(db *d, const resp_value *argv, size_t argc,
+                        resp_buf *out, uint64_t now_ms)
+{
+    const char *key;
+    size_t keyl;
+    obj_zset *z;
+    int rc;
+    size_t i;
+
+    if (argc < 2) {
+        wrong_args(out, "geohash");
+        return;
+    }
+    if (!arg_str(&argv[1], &key, &keyl))
+        goto bad_type;
+    rc = get_zset(d, out, key, keyl, 0, now_ms, &z);
+    if (rc < 0)
+        return;
+
+    resp_write_array_header(out, argc - 2);
+    for (i = 2; i < argc; i++) {
+        const char *member;
+        size_t mlen;
+        double lon;
+        double lat;
+
+        if (!arg_str(&argv[i], &member, &mlen))
+            goto bad_type;
+        if (rc == 0 || !geo_member_coords(z, member, mlen, &lon, &lat)) {
+            resp_write_bulk(out, NULL, 0);
+            continue;
+        }
+        {
+            char hash[12];
+            geo_hash_string(lon, lat, hash);
+            resp_write_bulk(out, hash, 11);
+        }
+    }
+    return;
+
+bad_type:
+    resp_write_error(out, "ERR invalid argument type", 24);
+}
+
+static void cmd_geodist(db *d, const resp_value *argv, size_t argc,
+                        resp_buf *out, uint64_t now_ms)
+{
+    const char *key;
+    const char *m1;
+    const char *m2;
+    size_t keyl;
+    size_t m1l;
+    size_t m2l;
+    double unit = 1.0;
+    obj_zset *z;
+    int rc;
+    double lon1;
+    double lat1;
+    double lon2;
+    double lat2;
+
+    if (argc < 4 || argc > 5) {
+        wrong_args(out, "geodist");
+        return;
+    }
+    if (!arg_str(&argv[1], &key, &keyl) ||
+        !arg_str(&argv[2], &m1, &m1l) ||
+        !arg_str(&argv[3], &m2, &m2l))
+        goto bad_type;
+    if (argc == 5) {
+        const char *u;
+        size_t ul;
+        if (!arg_str(&argv[4], &u, &ul) || !geo_unit(u, ul, &unit)) {
+            resp_write_error(out, ERR_SYNTAX, sizeof(ERR_SYNTAX) - 1);
+            return;
+        }
+    }
+    rc = get_zset(d, out, key, keyl, 0, now_ms, &z);
+    if (rc <= 0) {
+        if (rc == 0)
+            resp_write_bulk(out, NULL, 0);
+        return;
+    }
+    if (!geo_member_coords(z, m1, m1l, &lon1, &lat1) ||
+        !geo_member_coords(z, m2, m2l, &lon2, &lat2)) {
+        resp_write_bulk(out, NULL, 0);
+        return;
+    }
+    geo_write_distance(out, geo_distance_m(lon1, lat1, lon2, lat2), unit);
+    return;
+
+bad_type:
+    resp_write_error(out, "ERR invalid argument type", 24);
+}
+
+
+static int geo_execute_box(db *d, resp_buf *out, obj_zset *z,
+                           double center_lon, double center_lat,
+                           double width_m, double height_m, double unit,
+                           const geo_opts *opts, const char *dst,
+                           size_t dstl, uint64_t now_ms)
+{
+    geo_vec vec;
+    int rc;
+
+    memset(&vec, 0, sizeof(vec));
+    rc = geo_collect_box(z, center_lon, center_lat, width_m, height_m, &vec);
+    if (rc != 0) {
+        geo_vec_free(&vec);
+        oom_blocked(d, out);
+        return -1;
+    }
+    if (opts->has_count || opts->asc || opts->desc)
+        geo_vec_sort(&vec, opts->desc);
+    if (vec.oom) {
+        geo_vec_free(&vec);
+        oom_blocked(d, out);
+        return -1;
+    }
+    if (opts->has_count && !opts->any && (size_t)opts->count < vec.n) {
+        size_t i;
+        for (i = (size_t)opts->count; i < vec.n; i++)
+            free(vec.v[i].member);
+        vec.n = (size_t)opts->count;
+    }
+
+    if (dst != NULL) {
+        rc = geo_store_results(d, out, dst, dstl, &vec, opts->storedist,
+                               unit, now_ms);
+        geo_vec_free(&vec);
+        return rc;
+    }
+    geo_emit_results(out, &vec, opts, unit);
+    geo_vec_free(&vec);
+    return 0;
+}
+
+static void geo_radius_command(db *d, const resp_value *argv, size_t argc,
+                               resp_buf *out, uint64_t now_ms,
+                               int from_member, int allow_store,
+                               const char *cmdname)
+{
+    const char *key;
+    size_t keyl;
+    size_t opt_start;
+    double unit = 1.0;
+    double radius_m = 0.0;
+    double center_lon = 0.0;
+    double center_lat = 0.0;
+    obj_zset *z;
+    int rc;
+    geo_opts opts;
+
+    if (argc < (from_member ? 5u : 6u)) {
+        wrong_args(out, cmdname);
+        return;
+    }
+    if (!arg_str(&argv[1], &key, &keyl))
+        goto bad_type;
+
+    if (from_member) {
+        const char *member;
+        const char *rs;
+        const char *us;
+        size_t memberl;
+        size_t rsl;
+        size_t usl;
+
+        if (!arg_str(&argv[2], &member, &memberl) ||
+            !arg_str(&argv[3], &rs, &rsl) ||
+            !arg_str(&argv[4], &us, &usl) ||
+            !geo_unit(us, usl, &unit) ||
+            !geo_parse_radius(rs, rsl, unit, &radius_m)) {
+            resp_write_error(out, ERR_NOT_FLOAT, sizeof(ERR_NOT_FLOAT) - 1);
+            return;
+        }
+        opt_start = 5;
+        rc = get_zset(d, out, key, keyl, 0, now_ms, &z);
+        if (rc < 0)
+            return;
+        if (rc == 0) {
+            if (geo_parse_opts(argv, argc, opt_start, allow_store ? 1 : 0, &opts,
+                               out) != 0)
+                return;
+            if (opts.store != NULL) {
+                geo_vec empty;
+                memset(&empty, 0, sizeof(empty));
+                (void)geo_store_results(d, out, opts.store, opts.storelen,
+                                        &empty, opts.storedist, unit, now_ms);
+            } else {
+                resp_write_array_header(out, 0);
+            }
+            return;
+        }
+        if (!geo_member_coords(z, member, memberl, &center_lon,
+                               &center_lat)) {
+            static const char E[] =
+                "ERR could not decode requested zset member";
+            resp_write_error(out, E, sizeof(E) - 1);
+            return;
+        }
+    } else {
+        const char *lons;
+        const char *lats;
+        const char *rs;
+        const char *us;
+        size_t lonl;
+        size_t latl;
+        size_t rsl;
+        size_t usl;
+
+        if (!arg_str(&argv[2], &lons, &lonl) ||
+            !arg_str(&argv[3], &lats, &latl) ||
+            !arg_str(&argv[4], &rs, &rsl) ||
+            !arg_str(&argv[5], &us, &usl) ||
+            !geo_unit(us, usl, &unit) ||
+            !geo_parse_radius(rs, rsl, unit, &radius_m)) {
+            resp_write_error(out, ERR_NOT_FLOAT, sizeof(ERR_NOT_FLOAT) - 1);
+            return;
+        }
+        {
+            int crc = geo_parse_coords(lons, lonl, lats, latl, &center_lon,
+                                       &center_lat);
+            if (crc <= 0) {
+                geo_write_coords_error(out, crc, center_lon, center_lat);
+                return;
+            }
+        }
+        opt_start = 6;
+        rc = get_zset(d, out, key, keyl, 0, now_ms, &z);
+        if (rc < 0)
+            return;
+        if (rc == 0) {
+            if (geo_parse_opts(argv, argc, opt_start, allow_store ? 1 : 0, &opts,
+                               out) != 0)
+                return;
+            if (opts.store != NULL) {
+                geo_vec empty;
+                memset(&empty, 0, sizeof(empty));
+                (void)geo_store_results(d, out, opts.store, opts.storelen,
+                                        &empty, opts.storedist, unit, now_ms);
+            } else {
+                resp_write_array_header(out, 0);
+            }
+            return;
+        }
+    }
+
+    if (geo_parse_opts(argv, argc, opt_start, allow_store ? 1 : 0, &opts, out) != 0)
+        return;
+    (void)geo_execute_radius(d, out, z, center_lon, center_lat, radius_m,
+                             unit, &opts, opts.store, opts.storelen, now_ms);
+    return;
+
+bad_type:
+    resp_write_error(out, "ERR invalid argument type", 24);
+}
+
+static void cmd_georadius(db *d, const resp_value *argv, size_t argc,
+                          resp_buf *out, uint64_t now_ms, int allow_store,
+                          int from_member, const char *cmdname)
+{
+    geo_radius_command(d, argv, argc, out, now_ms, from_member, allow_store,
+                       cmdname);
+}
+
+static void geo_search_command(db *d, const resp_value *argv, size_t argc,
+                               resp_buf *out, uint64_t now_ms, int store_mode)
+{
+    const char *dst = NULL;
+    const char *src;
+    size_t dstl = 0;
+    size_t srcl;
+    size_t key_idx = store_mode ? 2u : 1u;
+    size_t cursor;
+    int from_member = 0;
+    int from_loc = 0;
+    int by_radius = 0;
+    int by_box = 0;
+    const char *center_arg = NULL;
+    size_t center_argl = 0;
+    double center_lon = 0.0;
+    double center_lat = 0.0;
+    double unit = 1.0;
+    double radius_m = 0.0;
+    double width_m = 0.0;
+    double height_m = 0.0;
+    obj_zset *z;
+    int rc;
+    geo_opts opts;
+
+    if (store_mode) {
+        if (argc < 8) {
+            wrong_args(out, "geosearchstore");
+            return;
+        }
+        if (!arg_str(&argv[1], &dst, &dstl))
+            goto bad_type;
+    } else if (argc < 7) {
+        wrong_args(out, "geosearch");
+        return;
+    }
+    if (!arg_str(&argv[key_idx], &src, &srcl))
+        goto bad_type;
+
+    cursor = key_idx + 1;
+    if (cursor >= argc) {
+        resp_write_error(out, ERR_SYNTAX, sizeof(ERR_SYNTAX) - 1);
+        return;
+    }
+    {
+        const char *mode;
+        size_t model;
+
+        if (!arg_str(&argv[cursor], &mode, &model))
+            goto bad_type;
+        if (ci_equal(mode, model, "FROMMEMBER")) {
+            from_member = 1;
+            if (cursor + 1 >= argc ||
+                !arg_str(&argv[cursor + 1], &center_arg, &center_argl))
+                goto bad_type;
+            cursor += 2;
+        } else if (ci_equal(mode, model, "FROMLONLAT")) {
+            const char *lons;
+            const char *lats;
+            size_t lonl;
+            size_t latl;
+
+            if (cursor + 2 >= argc ||
+                !arg_str(&argv[cursor + 1], &lons, &lonl) ||
+                !arg_str(&argv[cursor + 2], &lats, &latl)) {
+                resp_write_error(out, ERR_NOT_FLOAT,
+                                 sizeof(ERR_NOT_FLOAT) - 1);
+                return;
+            }
+            {
+                int crc = geo_parse_coords(lons, lonl, lats, latl,
+                                           &center_lon, &center_lat);
+                if (crc <= 0) {
+                    geo_write_coords_error(out, crc, center_lon, center_lat);
+                    return;
+                }
+            }
+            from_loc = 1;
+            cursor += 3;
+        } else {
+            resp_write_error(out, ERR_SYNTAX, sizeof(ERR_SYNTAX) - 1);
+            return;
+        }
+    }
+
+    if (cursor >= argc) {
+        resp_write_error(out, ERR_SYNTAX, sizeof(ERR_SYNTAX) - 1);
+        return;
+    }
+    {
+        const char *shape;
+        size_t shapel;
+
+        if (!arg_str(&argv[cursor], &shape, &shapel))
+            goto bad_type;
+        if (ci_equal(shape, shapel, "BYRADIUS")) {
+            const char *rs;
+            const char *us;
+            size_t rsl;
+            size_t usl;
+
+            if (cursor + 2 >= argc ||
+                !arg_str(&argv[cursor + 1], &rs, &rsl) ||
+                !arg_str(&argv[cursor + 2], &us, &usl) ||
+                !geo_unit(us, usl, &unit) ||
+                !geo_parse_radius(rs, rsl, unit, &radius_m)) {
+                resp_write_error(out, ERR_NOT_FLOAT,
+                                 sizeof(ERR_NOT_FLOAT) - 1);
+                return;
+            }
+            by_radius = 1;
+            cursor += 3;
+        } else if (ci_equal(shape, shapel, "BYBOX")) {
+            const char *ws;
+            const char *hs;
+            const char *us;
+            size_t wsl;
+            size_t hsl;
+            size_t usl;
+
+            if (cursor + 3 >= argc ||
+                !arg_str(&argv[cursor + 1], &ws, &wsl) ||
+                !arg_str(&argv[cursor + 2], &hs, &hsl) ||
+                !arg_str(&argv[cursor + 3], &us, &usl) ||
+                !geo_unit(us, usl, &unit) ||
+                !parse_double(ws, wsl, &width_m) || width_m < 0.0 ||
+                !parse_double(hs, hsl, &height_m) || height_m < 0.0) {
+                resp_write_error(out, ERR_NOT_FLOAT,
+                                 sizeof(ERR_NOT_FLOAT) - 1);
+                return;
+            }
+            by_box = 1;
+            width_m *= unit;
+            height_m *= unit;
+            cursor += 4;
+        } else {
+            resp_write_error(out, ERR_SYNTAX, sizeof(ERR_SYNTAX) - 1);
+            return;
+        }
+    }
+
+    if ((from_member && from_loc) || (!from_member && !from_loc)) {
+        static const char E[] =
+            "ERR exactly one of FROMMEMBER or FROMLONLAT can be specified";
+        resp_write_error(out, E, sizeof(E) - 1);
+        return;
+    }
+    if ((by_radius && by_box) || (!by_radius && !by_box)) {
+        static const char E[] =
+            "ERR exactly one of BYRADIUS and BYBOX can be specified";
+        resp_write_error(out, E, sizeof(E) - 1);
+        return;
+    }
+
+    if (geo_parse_opts(argv, argc, cursor, store_mode ? 2 : 0, &opts, out) != 0)
+        return;
+
+    rc = get_zset(d, out, src, srcl, 0, now_ms, &z);
+    if (rc < 0)
+        return;
+    if (rc == 0) {
+        if (store_mode) {
+            geo_vec empty;
+            memset(&empty, 0, sizeof(empty));
+            (void)geo_store_results(d, out, dst, dstl, &empty, opts.storedist,
+                                    unit, now_ms);
+        } else {
+            resp_write_array_header(out, 0);
+        }
+        return;
+    }
+    if (from_member &&
+        !geo_member_coords(z, center_arg, center_argl, &center_lon,
+                           &center_lat)) {
+        static const char E[] =
+            "ERR could not decode requested zset member";
+        resp_write_error(out, E, sizeof(E) - 1);
+        return;
+    }
+
+    if (by_box) {
+        (void)geo_execute_box(d, out, z, center_lon, center_lat, width_m,
+                              height_m, unit, &opts,
+                              store_mode ? dst : NULL,
+                              store_mode ? dstl : 0, now_ms);
+    } else {
+        (void)geo_execute_radius(d, out, z, center_lon, center_lat, radius_m,
+                                 unit, &opts, store_mode ? dst : NULL,
+                                 store_mode ? dstl : 0, now_ms);
+    }
+    return;
+
+bad_type:
+    resp_write_error(out, "ERR invalid argument type", 24);
+}
+
+static void cmd_geosearch(db *d, const resp_value *argv, size_t argc,
+                          resp_buf *out, uint64_t now_ms)
+{
+    geo_search_command(d, argv, argc, out, now_ms, 0);
+}
+
+static void cmd_geosearchstore(db *d, const resp_value *argv, size_t argc,
+                               resp_buf *out, uint64_t now_ms)
+{
+    geo_search_command(d, argv, argc, out, now_ms, 1);
+}
+
 static void command_dispatch(session *s, const resp_value *argv, size_t argc,
                              resp_buf *out, uint64_t now_ms)
 {
@@ -4383,6 +5753,54 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
 
     if (cmd_id == CMD_PFSELFTEST) {
         cmd_pfselftest(d, argv, argc, out, now_ms);
+        return;
+    }
+
+    if (cmd_id == CMD_GEOADD) {
+        cmd_geoadd(d, argv, argc, out, now_ms);
+        return;
+    }
+
+    if (cmd_id == CMD_GEOPOS) {
+        cmd_geopos(d, argv, argc, out, now_ms);
+        return;
+    }
+
+    if (cmd_id == CMD_GEOHASH) {
+        cmd_geohash(d, argv, argc, out, now_ms);
+        return;
+    }
+
+    if (cmd_id == CMD_GEODIST) {
+        cmd_geodist(d, argv, argc, out, now_ms);
+        return;
+    }
+
+    if (cmd_id == CMD_GEORADIUS || cmd_id == CMD_GEORADIUS_RO) {
+        cmd_georadius(d, argv, argc, out, now_ms,
+                      cmd_id == CMD_GEORADIUS, 0,
+                      cmd_id == CMD_GEORADIUS ? "georadius"
+                                              : "georadius_ro");
+        return;
+    }
+
+    if (cmd_id == CMD_GEORADIUSBYMEMBER ||
+        cmd_id == CMD_GEORADIUSBYMEMBER_RO) {
+        cmd_georadius(d, argv, argc, out, now_ms,
+                      cmd_id == CMD_GEORADIUSBYMEMBER, 1,
+                      cmd_id == CMD_GEORADIUSBYMEMBER
+                          ? "georadiusbymember"
+                          : "georadiusbymember_ro");
+        return;
+    }
+
+    if (cmd_id == CMD_GEOSEARCH) {
+        cmd_geosearch(d, argv, argc, out, now_ms);
+        return;
+    }
+
+    if (cmd_id == CMD_GEOSEARCHSTORE) {
+        cmd_geosearchstore(d, argv, argc, out, now_ms);
         return;
     }
 
@@ -12083,6 +13501,16 @@ static const cmd_entry CMD_TABLE[] = {
     {"pfdebug", CMD_PFDEBUG, 3, -1, 0, 0},
     {"pfmerge", CMD_PFMERGE, 3, -1, 0, CMD_WRITE},
     {"pfselftest", CMD_PFSELFTEST, 1, 1, 0, 0},
+    {"geoadd", CMD_GEOADD, 5, -1, 0, CMD_WRITE},
+    {"geodist", CMD_GEODIST, 4, 5, 0, 0},
+    {"geohash", CMD_GEOHASH, 2, -1, 0, 0},
+    {"geopos", CMD_GEOPOS, 2, -1, 0, 0},
+    {"georadius", CMD_GEORADIUS, 6, -1, 0, CMD_WRITE},
+    {"georadius_ro", CMD_GEORADIUS_RO, 6, -1, 0, 0},
+    {"georadiusbymember", CMD_GEORADIUSBYMEMBER, 5, -1, 0, CMD_WRITE},
+    {"georadiusbymember_ro", CMD_GEORADIUSBYMEMBER_RO, 5, -1, 0, 0},
+    {"geosearch", CMD_GEOSEARCH, 7, -1, 0, 0},
+    {"geosearchstore", CMD_GEOSEARCHSTORE, 8, -1, 0, CMD_WRITE},
 };
 
 static const cmd_entry *cmd_table_entry(uint16_t id)

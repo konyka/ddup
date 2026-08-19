@@ -18,7 +18,7 @@
 
 /* commandstats arrays are indexed by CMD_* id; sized with room to spare
  * (CMD_MAX must stay below this). */
-#define CMD_STATS_SLOTS 192
+#define CMD_STATS_SLOTS 256
 
 /* One logical database. Shared-nothing: each IO thread owns its own.
  * `expires` maps key -> 8-byte absolute wall-ms expiry (raw uint64).
@@ -339,10 +339,20 @@ enum {
     CMD_PFCOUNT,
     CMD_PFDEBUG,
     CMD_PFMERGE,
-    CMD_PFSELFTEST
+    CMD_PFSELFTEST,
+    CMD_GEOADD,
+    CMD_GEODIST,
+    CMD_GEOHASH,
+    CMD_GEOPOS,
+    CMD_GEORADIUS,
+    CMD_GEORADIUS_RO,
+    CMD_GEORADIUSBYMEMBER,
+    CMD_GEORADIUSBYMEMBER_RO,
+    CMD_GEOSEARCH,
+    CMD_GEOSEARCHSTORE
 };
 
-#define CMD_MAX CMD_PFSELFTEST
+#define CMD_MAX CMD_GEOSEARCHSTORE
 
 /* Resolve a command name to its stable ID; case-insensitive. */
 uint16_t cmd_resolve(const char *name, size_t len);
