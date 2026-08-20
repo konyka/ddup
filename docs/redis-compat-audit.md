@@ -8,8 +8,8 @@
 
 | 类别 | 数量 |
 | --- | --- |
-| 完全未实现的独立顶层命令 | 33 |
-| 整体缺失的顶层容器 | 7 |
+| 完全未实现的独立顶层命令 | 25 |
+| 整体缺失的顶层容器 | 5 |
 | 已实现容器内缺失的子命令 | 43 |
 
 ## A. 完全缺失的独立顶层命令（按 Redis group 分组）
@@ -57,23 +57,11 @@
 `BZPOPMAX`
 `BZPOPMIN`
 
-### stream（8）
-
-`XACK`
-`XAUTOCLAIM`
-`XCLAIM`
-`XGROUP`
-`XINFO`
-`XPENDING`
-`XREAD`
-`XREADGROUP`
-
-
 ## B. 容器子命令对照
 
 ### 整体缺失的顶层容器
 
-- `acl` `function` `latency` `module` `sentinel` `xgroup` `xinfo`
+- `acl` `function` `latency` `module` `sentinel`
 
 ### 已实现容器内缺失的子命令
 
@@ -99,9 +87,10 @@
 - `MEMORY`：仅 `USAGE/STATS/DOCTOR/PURGE/MALLOC-STATS`；缺 `HELP`。
 - `SLOWLOG`：仅 `GET/LEN/RESET`；缺 `HELP`。
 - Stream 核心族已实现 `XADD/XLEN/XRANGE/XREVRANGE/XDEL/XTRIM/XSETID`；
-  消费组、阻塞读与 `XINFO/XGROUP` 管理族仍缺。
+  消费组/读取族已实现 `XGROUP/XACK/XPENDING/XCLAIM/XAUTOCLAIM/XREAD/
+  XREADGROUP/XINFO`；`BLOCK` 当前按非阻塞立即返回处理，记录在案。
 - 复制/运维族：无 `REPLCONF`、`MONITOR`、`WAIT/WAITAOF`、`RESTORE-ASKING`（`REPLICAOF`/`ROLE`/`SLAVEOF` 已实现）。
-- 管理族整体缺失：`ACL`、`DEBUG`、`LATENCY`、`MODULE`、`FUNCTION`、`SENTINEL`、`XGROUP`、`XINFO`。
+- 管理族整体缺失：`ACL`、`DEBUG`、`LATENCY`、`MODULE`、`FUNCTION`、`SENTINEL`。
 
 ## D. 项目范围外 / 明确不实施
 
@@ -111,8 +100,8 @@
 ## 审计基线（机器断言，勿手改格式）
 
 <!-- AUDIT-BASELINE-START
-missing_top: acl blmove blmpop blpop brpop brpoplpush bzmpop bzpopmax bzpopmin debug eval_ro evalsha_ro failover fcall fcall_ro function latency lolwut module monitor replconf restore-asking sentinel wait waitaof xack xautoclaim xclaim xgroup xinfo xpending xread xreadgroup
-missing_containers: acl function latency module sentinel xgroup xinfo
+missing_top: acl blmove blmpop blpop brpop brpoplpush bzmpop bzpopmax bzpopmin debug eval_ro evalsha_ro failover fcall fcall_ro function latency lolwut module monitor replconf restore-asking sentinel wait waitaof
+missing_containers: acl function latency module sentinel
 missing_sub: client caching
 missing_sub: client getredir
 missing_sub: client help

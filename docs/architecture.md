@@ -250,8 +250,16 @@
 - **命令覆盖**：`XADD/XLEN/XRANGE/XREVRANGE/XDEL/XTRIM/XSETID`；
   `XRANGE/XREVRANGE` 支持 `-`/`+`、`(` 排他边界与 `COUNT`。TYPE 报告
   `stream`；快照/DUMP/RESTORE 已支持该对象类型。
-- **未覆盖**：消费组、阻塞读与 `XREAD/XREADGROUP/XGROUP/XACK/XCLAIM/
-  XAUTOCLAIM/XPENDING/XINFO` 管理族留待后续阶段。
+- **消费组/读取族（Phase 62）**：`XGROUP/XACK/XPENDING/XCLAIM/
+  XAUTOCLAIM/XREAD/XREADGROUP/XINFO`。group/consumer/PEL 均为连续数组，
+  `group_mem` 只记结构体、名称与 PEL 元素，不记 capacity 数组的暂存空间；
+  `XREADGROUP` 游标严格 `>`，NOACK 不写 PEL；`XREAD` 普通读取按
+  `obj_stream_lower_bound` 扫描，COUNT 限制发射数量。
+- **阻塞语义妥协**：`XREAD`/`XREADGROUP` 的 `BLOCK` 参数当前被解析但
+  不阻塞，按已有结果立即返回；真正的事件循环阻塞读留待后续阶段。
+- **快照扩展**：STREAM payload 在 entry 数组后追加必选 group 块
+  （group→consumer→PEL），加载器同样按块读取，保证 stream 后仍可跟
+  其他 key；旧版无 group 块的 STREAM 快照不再兼容（记录在案）。
 
 ## io_uring 后端（Phase 14，Linux）
 

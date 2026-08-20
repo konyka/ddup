@@ -318,6 +318,15 @@
     数组 + 二分查找（追加 O(1) 摊还、区间 O(log N + K)，字段值单块
     连续分配），并接入 TYPE/快照/DUMP/RESTORE、st/mt 单键路由与集群
     同槽校验；兼容审计缺 33 个顶层命令（Phase 61）
+  - [x] Stream 消费组/读取族补齐：`XGROUP`（CREATE/SETID/DESTROY/
+    CREATECONSUMER/DELCONSUMER/HELP）、`XACK`、`XPENDING`（summary +
+    range）、`XCLAIM`（IDLE/TIME/FORCE/JUSTID/LASTID，RETRYCOUNT 记录
+    不支持）、`XAUTOCLAIM`（COUNT/JUSTID）、`XREAD`、`XREADGROUP`
+    （GROUP/COUNT/NOACK，BLOCK 当前为非阻塞立即返回）、`XINFO`
+    （STREAM/GROUPS/CONSUMERS/HELP）；PEL/consumer 采用连续数组，
+    group_mem 记账不含 capacity 数组（记录在案）；快照 STREAM 负载新增
+    必选 group 块；st/mt 路由与集群 key 抽取同步；兼容审计缺 25 个
+    顶层命令、5 个整体缺失容器（Phase 62）
   - [ ] 范围化排除（记录在案，不实施）：
     - 分层存储（热/冷数据落盘）：超出"内存缓存存储"定位
     - mt 模式的复制/集群适配：见 Phase 15 说明
