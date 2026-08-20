@@ -349,10 +349,16 @@ enum {
     CMD_GEORADIUSBYMEMBER,
     CMD_GEORADIUSBYMEMBER_RO,
     CMD_GEOSEARCH,
-    CMD_GEOSEARCHSTORE
+    CMD_GEOSEARCHSTORE,
+    CMD_COMMAND,
+    CMD_CLIENT,
+    CMD_MEMORY,
+    CMD_SLOWLOG,
+    CMD_BGSAVE,
+    CMD_BGREWRITEAOF
 };
 
-#define CMD_MAX CMD_GEOSEARCHSTORE
+#define CMD_MAX CMD_BGREWRITEAOF
 
 /* Resolve a command name to its stable ID; case-insensitive. */
 uint16_t cmd_resolve(const char *name, size_t len);

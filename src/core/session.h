@@ -174,6 +174,24 @@ typedef struct session {
      * MULTI/WATCH are handled by the core dispatcher). */
     void (*reset_hook)(void *ctx, struct session *s);
     void *reset_ctx;
+    /* server ops/introspection hooks (server-owned; NULL in stack tests) */
+    void *client_ctx;
+    long long (*client_id)(void *ctx, struct session *s);
+    int (*client_setname)(void *ctx, struct session *s, const char *name,
+                          size_t len);
+    const char *(*client_getname)(void *ctx, struct session *s,
+                                  size_t *len);
+    void (*client_list)(void *ctx, resp_buf *out);
+    int (*client_kill)(void *ctx, const char *filter, size_t filterlen,
+                       resp_buf *out);
+    void *slowlog_ctx;
+    void (*slowlog_add)(void *ctx, const resp_value *argv, size_t argc,
+                        uint64_t usec, uint64_t now_ms);
+    size_t (*slowlog_len)(void *ctx);
+    void (*slowlog_get)(void *ctx, long long count, resp_buf *out);
+    void (*slowlog_reset)(void *ctx);
+    void *bgrewriteaof_ctx;
+    void (*bgrewriteaof)(void *ctx, resp_buf *out);
 } session;
 
 void session_init(session *s, db *d);

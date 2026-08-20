@@ -1376,6 +1376,11 @@ static int mt_is_keyless(uint16_t cmd)
     case CMD_RESET:
     case CMD_HELLO:
     case CMD_PFSELFTEST:
+    case CMD_COMMAND:
+    case CMD_CLIENT:
+    case CMD_MEMORY:
+    case CMD_SLOWLOG:
+    case CMD_BGREWRITEAOF:
     case CMD_QUIT:
         return 1;
     default:
@@ -1386,8 +1391,8 @@ static int mt_is_keyless(uint16_t cmd)
 static int mt_is_aggregate(uint16_t cmd)
 {
     return cmd == CMD_DBSIZE || cmd == CMD_FLUSHDB || cmd == CMD_SAVE ||
-           cmd == CMD_LASTSAVE || cmd == CMD_SWAPDB || cmd == CMD_INFO ||
-           cmd == CMD_FLUSHALL;
+           cmd == CMD_BGSAVE || cmd == CMD_LASTSAVE || cmd == CMD_SWAPDB ||
+           cmd == CMD_INFO || cmd == CMD_FLUSHALL;
 }
 
 /* Multi-key commands: every key must map to the same worker (same rule as

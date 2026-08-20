@@ -136,6 +136,33 @@ def compute_gap(entries, top_levels, repo_root=None):
         )
         if toks:
             owner[cid] = toks
+    # Container subcommands are often implemented in a small named helper
+    # (command_client, command_memory, command_slowlog, command_command)
+    # rather than inline in the dispatch block. Collect those helpers too;
+    # brace-count from the function opening brace so helper-local tokens are
+    # attributed to their container and not to the big dispatch chain.
+    helper_tok_re = re.compile(
+        r'ci_equal\(\s*sub\s*,\s*[a-z0-9_]+,\s*"([A-Z0-9-]+)"\s*\)'
+    )
+    for m in re.finditer(r'static void command_([a-z0-9_]+)\(', cmd_src):
+        cid = norm(m.group(1))
+        if cid not in containers:
+            continue
+        open_brace = cmd_src.index("{", m.start()) + 1
+        depth = 1
+        i = open_brace
+        while depth:
+            ch = cmd_src[i]
+            if ch == "{":
+                depth += 1
+            elif ch == "}":
+                depth -= 1
+            i += 1
+        block = cmd_src[open_brace:i]
+        toks = set(norm(t) for t in helper_tok_re.findall(block))
+        if toks:
+            owner.setdefault(cid, set()).update(toks)
+
     for cname in list(containers):
         if cname in top_levels and owner.get(cname):
             implemented_containers.add(cname)

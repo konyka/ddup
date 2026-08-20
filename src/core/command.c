@@ -3744,6 +3744,8 @@ static int cluster_keyless_id(uint16_t cmd_id)
     case CMD_FLUSHALL:   case CMD_TIME:       case CMD_READONLY:
     case CMD_READWRITE:  case CMD_ROLE:       case CMD_RESET:
     case CMD_HELLO:       case CMD_PFSELFTEST:
+    case CMD_COMMAND:    case CMD_CLIENT:    case CMD_MEMORY:
+    case CMD_SLOWLOG:    case CMD_BGSAVE:    case CMD_BGREWRITEAOF:
         return 1;
     default:
         return 0;
@@ -5612,6 +5614,499 @@ static void cmd_geosearchstore(db *d, const resp_value *argv, size_t argc,
 {
     geo_search_command(d, argv, argc, out, now_ms, 1);
 }
+
+
+/* ------------------------------------------------------------------ */
+/* server ops / introspection commands                                */
+/* ------------------------------------------------------------------ */
+
+static void command_write_flags(resp_buf *out, uint16_t id)
+{
+    resp_write_array_header(out, 1);
+    resp_write_bulk(out, cmd_is_write(id) ? "write" : "readonly",
+                    cmd_is_write(id) ? 5 : 8);
+}
+
+static void command_info_one(resp_buf *out, uint16_t id)
+{
+    const cmd_entry *e = cmd_table_entry(id);
+    int arity = e->min_argc;
+    if (e->max_argc != e->min_argc)
+        arity = -e->min_argc;
+
+    resp_write_array_header(out, 6);
+    resp_write_bulk(out, e->name, strlen(e->name));
+    resp_write_integer(out, arity);
+    command_write_flags(out, id);
+    if (e->min_argc <= 1) {
+        resp_write_integer(out, 0);
+        resp_write_integer(out, 0);
+        resp_write_integer(out, 0);
+    } else {
+        resp_write_integer(out, 1);
+        resp_write_integer(out, 1);
+        resp_write_integer(out, 1);
+    }
+}
+
+static void command_list_reply(resp_buf *out)
+{
+    uint16_t id;
+    int count = 0;
+    for (id = 1; id <= CMD_MAX; id++)
+        count++;
+    resp_write_array_header(out, (size_t)count);
+    for (id = 1; id <= CMD_MAX; id++)
+        resp_write_bulk(out, cmd_table_entry(id)->name,
+                        strlen(cmd_table_entry(id)->name));
+}
+
+static int command_count_reply(resp_buf *out)
+{
+    uint16_t id;
+    int count = 0;
+    for (id = 1; id <= CMD_MAX; id++)
+        count++;
+    resp_write_integer(out, count);
+    return 0;
+}
+
+/* Small key-position table used by COMMAND GETKEYS. It intentionally
+ * mirrors the cluster/mt key extraction logic for the common commands. */
+static void command_emit_keys(const resp_value *argv, size_t argc,
+                              resp_buf *out)
+{
+    const char *name;
+    size_t nlen;
+    uint16_t cmd_id;
+    const resp_value **keys = NULL;
+    size_t nkeys = 0, cap = 0, i;
+    int oom = 0;
+
+    /* argv = COMMAND GETKEYS <cmd> [arg ...] */
+    if (argc < 3 || !arg_str(&argv[2], &name, &nlen))
+        goto done;
+    cmd_id = cmd_resolve(name, nlen);
+    if (cmd_id == CMD_ID_UNKNOWN)
+        goto done;
+
+#define EMIT_KEY(idx_) do { \
+        const resp_value *_v = (idx_); \
+        if (_v->str != NULL && nkeys == cap) { \
+            size_t _nc = cap == 0 ? 8 : cap * 2; \
+            const resp_value **_nk = (const resp_value **)realloc(keys, _nc * sizeof(*keys)); \
+            if (_nk == NULL) { oom = 1; goto done; } \
+            keys = _nk; cap = _nc; \
+        } \
+        if (_v->str != NULL) keys[nkeys++] = _v; \
+    } while (0)
+
+    if (cmd_id == CMD_MGET || cmd_id == CMD_DEL ||
+        cmd_id == CMD_UNLINK || cmd_id == CMD_EXISTS ||
+        cmd_id == CMD_TOUCH || cmd_id == CMD_SINTER ||
+        cmd_id == CMD_SUNION || cmd_id == CMD_SDIFF ||
+        cmd_id == CMD_WATCH || cmd_id == CMD_SINTERSTORE ||
+        cmd_id == CMD_SUNIONSTORE || cmd_id == CMD_SDIFFSTORE ||
+        cmd_id == CMD_BITOP) {
+        for (i = 3; i < argc; i++)
+            EMIT_KEY(&argv[i]);
+        goto done;
+    }
+    if (cmd_id == CMD_MSET || cmd_id == CMD_MSETNX) {
+        for (i = 3; i + 1 < argc; i += 2)
+            EMIT_KEY(&argv[i]);
+        goto done;
+    }
+    if (cmd_id == CMD_SMOVE || cmd_id == CMD_RENAME ||
+        cmd_id == CMD_RENAMENX || cmd_id == CMD_RPOPLPUSH ||
+        cmd_id == CMD_LMOVE || cmd_id == CMD_COPY || cmd_id == CMD_LCS) {
+        for (i = 3; i < argc && i < 5; i++)
+            EMIT_KEY(&argv[i]);
+        goto done;
+    }
+    if (cmd_id == CMD_SINTERCARD || cmd_id == CMD_ZUNION ||
+        cmd_id == CMD_ZINTER || cmd_id == CMD_ZDIFF ||
+        cmd_id == CMD_ZINTERCARD || cmd_id == CMD_ZMPOP ||
+        cmd_id == CMD_LMPOP) {
+        const char *nv;
+        size_t nvl;
+        long long nk = 0;
+        size_t end;
+        if (argc < 4 || !arg_str(&argv[3], &nv, &nvl) ||
+            !parse_i64(nv, nvl, &nk) || nk <= 0)
+            goto done;
+        end = 4 + (size_t)nk;
+        if (end > argc)
+            end = argc;
+        for (i = 4; i < end; i++)
+            EMIT_KEY(&argv[i]);
+        goto done;
+    }
+    if (cmd_id == CMD_ZUNIONSTORE || cmd_id == CMD_ZINTERSTORE ||
+        cmd_id == CMD_ZDIFFSTORE) {
+        const char *nv;
+        size_t nvl;
+        long long nk = 0;
+        size_t end;
+        if (argc < 5 || !arg_str(&argv[4], &nv, &nvl) ||
+            !parse_i64(nv, nvl, &nk) || nk <= 0)
+            goto done;
+        EMIT_KEY(&argv[3]);
+        end = 5 + (size_t)nk;
+        if (end > argc)
+            end = argc;
+        for (i = 5; i < end; i++)
+            EMIT_KEY(&argv[i]);
+        goto done;
+    }
+    if (cmd_id == CMD_ZRANGESTORE) {
+        EMIT_KEY(&argv[3]);
+        EMIT_KEY(&argv[4]);
+        goto done;
+    }
+    if (cmd_id == CMD_GEORADIUS || cmd_id == CMD_GEORADIUSBYMEMBER) {
+        size_t start = cmd_id == CMD_GEORADIUS ? 3 : 3;
+        (void)start;
+        EMIT_KEY(&argv[3]);
+        for (i = cmd_id == CMD_GEORADIUS ? 7 : 6; i + 1 < argc; i++) {
+            const char *tok;
+            size_t tokl;
+            if (!arg_str(&argv[i], &tok, &tokl))
+                continue;
+            if (ci_equal(tok, tokl, "STORE") ||
+                ci_equal(tok, tokl, "STOREDIST"))
+                EMIT_KEY(&argv[i + 1]);
+        }
+        goto done;
+    }
+    if (cmd_id == CMD_GEOSEARCHSTORE) {
+        EMIT_KEY(&argv[3]);
+        EMIT_KEY(&argv[4]);
+        goto done;
+    }
+    if (cmd_id == CMD_PFDEBUG) {
+        EMIT_KEY(&argv[3]);
+        goto done;
+    }
+
+    /* Default single-key command: first argument after the command name. */
+    if (argc > 3)
+        EMIT_KEY(&argv[3]);
+
+#undef EMIT_KEY
+
+done:
+    if (oom) {
+        free(keys);
+        resp_write_error(out, "ERR out of memory", 17);
+        return;
+    }
+    resp_write_array_header(out, nkeys);
+    for (i = 0; i < nkeys; i++)
+        resp_write_bulk(out, keys[i]->str, keys[i]->len);
+    free(keys);
+}
+
+static void command_command(session *s, const resp_value *argv, size_t argc,
+                            resp_buf *out)
+{
+    const char *sub;
+    size_t sl;
+    (void)s;
+    if (argc < 2) {
+        wrong_args(out, "command");
+        return;
+    }
+    if (!arg_str(&argv[1], &sub, &sl))
+        goto bad_type;
+
+    if (ci_equal(sub, sl, "COUNT") && argc == 2) {
+        command_count_reply(out);
+        return;
+    }
+    if (ci_equal(sub, sl, "LIST") && argc == 2) {
+        command_list_reply(out);
+        return;
+    }
+    if (ci_equal(sub, sl, "DOCS") && argc == 2) {
+        resp_write_array_header(out, 0);
+        return;
+    }
+    if (ci_equal(sub, sl, "INFO") && argc >= 3) {
+        size_t i;
+        resp_write_array_header(out, argc - 2);
+        for (i = 2; i < argc; i++) {
+            const char *cn;
+            size_t cl;
+            uint16_t id;
+            if (!arg_str(&argv[i], &cn, &cl))
+                goto bad_type;
+            id = cmd_resolve(cn, cl);
+            if (id == CMD_ID_UNKNOWN) {
+                resp_write_bulk(out, NULL, 0);
+                continue;
+            }
+            command_info_one(out, id);
+        }
+        return;
+    }
+    if (ci_equal(sub, sl, "GETKEYS") && argc >= 3) {
+        command_emit_keys(argv, argc, out);
+        return;
+    }
+    resp_write_error(out, "ERR unknown COMMAND subcommand",
+                        sizeof("ERR unknown COMMAND subcommand") - 1);
+    return;
+
+bad_type:
+    resp_write_error(out, "ERR invalid argument type", 24);
+}
+
+static void command_client(session *s, const resp_value *argv, size_t argc,
+                           resp_buf *out)
+{
+    const char *sub;
+    size_t sl;
+    if (argc < 2) {
+        wrong_args(out, "client");
+        return;
+    }
+    if (!arg_str(&argv[1], &sub, &sl))
+        goto bad_type;
+    if (s->client_ctx == NULL) {
+        resp_write_error(out, "ERR CLIENT is not supported in this context",
+                         sizeof("ERR CLIENT is not supported in this context") - 1);
+        return;
+    }
+    if (ci_equal(sub, sl, "ID") && argc == 2) {
+        resp_write_integer(out, s->client_id(s->client_ctx, s));
+        return;
+    }
+    if (ci_equal(sub, sl, "SETNAME") && argc == 3) {
+        const char *name;
+        size_t nl;
+        if (!arg_str(&argv[2], &name, &nl))
+            goto bad_type;
+        if (s->client_setname(s->client_ctx, s, name, nl) != 0) {
+            resp_write_error(out, "ERR client name is too long", 29);
+            return;
+        }
+        resp_write_simple_string(out, "OK", 2);
+        return;
+    }
+    if (ci_equal(sub, sl, "GETNAME") && argc == 2) {
+        const char *name;
+        size_t nl = 0;
+        name = s->client_getname(s->client_ctx, s, &nl);
+        if (name == NULL)
+            name = "";
+        resp_write_bulk(out, name, nl);
+        return;
+    }
+    if (ci_equal(sub, sl, "LIST") && argc == 2) {
+        s->client_list(s->client_ctx, out);
+        return;
+    }
+    if (ci_equal(sub, sl, "KILL") && argc >= 3) {
+        size_t i;
+        char filter[128];
+        size_t fl = 0;
+        for (i = 2; i < argc; i++) {
+            const char *tok;
+            size_t tl;
+            if (!arg_str(&argv[i], &tok, &tl))
+                goto bad_type;
+            if (fl + tl + (fl != 0) >= sizeof(filter)) {
+                resp_write_error(out, "ERR CLIENT KILL filter is too long",
+                                 34);
+                return;
+            }
+            if (fl != 0)
+                filter[fl++] = ' ';
+            memcpy(filter + fl, tok, tl);
+            fl += tl;
+        }
+        if (s->client_kill(s->client_ctx, filter, fl, out))
+            return;
+        resp_write_integer(out, 0);
+        return;
+    }
+    resp_write_error(out, "ERR unknown CLIENT subcommand",
+                        sizeof("ERR unknown CLIENT subcommand") - 1);
+    return;
+
+bad_type:
+    resp_write_error(out, "ERR invalid argument type", 24);
+}
+
+static uint64_t command_memory_usage(db *d, const char *key, size_t klen,
+                                     uint64_t now_ms)
+{
+    const char *v;
+    size_t vl;
+    if (!db_get(d, key, klen, &v, &vl, now_ms))
+        return 0;
+    return entry_bytes(klen, vl) + obj_extra_mem(v, vl);
+}
+
+static void command_memory(session *s, const resp_value *argv, size_t argc,
+                           resp_buf *out, uint64_t now_ms)
+{
+    const char *sub;
+    size_t sl;
+    if (argc < 2) {
+        wrong_args(out, "memory");
+        return;
+    }
+    if (!arg_str(&argv[1], &sub, &sl))
+        goto bad_type;
+
+    if (ci_equal(sub, sl, "USAGE") && (argc == 3 || argc == 4)) {
+        const char *key;
+        size_t kl;
+        uint64_t usage;
+        if (!arg_str(&argv[2], &key, &kl))
+            goto bad_type;
+        if (argc == 4) {
+            /* SAMPLES is accepted and ignored for the deterministic
+             * single-thread estimate; Redis clients send it as a hint. */
+            const char *opt;
+            size_t ol;
+            if (!arg_str(&argv[3], &opt, &ol) ||
+                !ci_equal(opt, ol, "SAMPLES")) {
+                resp_write_error(out, "ERR syntax error", 16);
+                return;
+            }
+        }
+        usage = command_memory_usage(s->d, key, kl, now_ms);
+        if (usage == 0)
+            resp_write_bulk(out, NULL, 0);
+        else
+            resp_write_integer(out, (long long)usage);
+        return;
+    }
+    if (ci_equal(sub, sl, "STATS") && argc == 2) {
+        resp_write_array_header(out, 2);
+        resp_write_bulk(out, "used_memory", 11);
+        resp_write_integer(out, (long long)s->d->used_memory);
+        return;
+    }
+    if (ci_equal(sub, sl, "DOCTOR") && argc == 2) {
+        resp_write_simple_string(out, "Everything is ok", 17);
+        return;
+    }
+    if ((ci_equal(sub, sl, "PURGE") || ci_equal(sub, sl, "MALLOC-STATS")) &&
+        argc == 2) {
+        resp_write_simple_string(out, "OK", 2);
+        return;
+    }
+    resp_write_error(out, "ERR unknown MEMORY subcommand",
+                        sizeof("ERR unknown MEMORY subcommand") - 1);
+    return;
+
+bad_type:
+    resp_write_error(out, "ERR invalid argument type", 24);
+}
+
+static void command_slowlog(session *s, const resp_value *argv, size_t argc,
+                            resp_buf *out)
+{
+    const char *sub;
+    size_t sl;
+    if (argc < 2) {
+        wrong_args(out, "slowlog");
+        return;
+    }
+    if (!arg_str(&argv[1], &sub, &sl))
+        goto bad_type;
+    if (s->slowlog_ctx == NULL) {
+        resp_write_error(out, "ERR SLOWLOG is not supported in this context",
+                         sizeof("ERR SLOWLOG is not supported in this context") - 1);
+        return;
+    }
+    if (ci_equal(sub, sl, "LEN") && argc == 2) {
+        resp_write_integer(out, (long long)s->slowlog_len(s->slowlog_ctx));
+        return;
+    }
+    if (ci_equal(sub, sl, "GET") && (argc == 2 || argc == 3)) {
+        long long count = 10;
+        if (argc == 3) {
+            const char *cv;
+            size_t cl;
+            if (!arg_str(&argv[2], &cv, &cl) || !parse_i64(cv, cl, &count) ||
+                count < 0) {
+                resp_write_error(out, ERR_NOT_INT, sizeof(ERR_NOT_INT) - 1);
+                return;
+            }
+        }
+        s->slowlog_get(s->slowlog_ctx, count, out);
+        return;
+    }
+    if (ci_equal(sub, sl, "RESET") && argc == 2) {
+        s->slowlog_reset(s->slowlog_ctx);
+        resp_write_simple_string(out, "OK", 2);
+        return;
+    }
+    resp_write_error(out, "ERR unknown SLOWLOG subcommand",
+                        sizeof("ERR unknown SLOWLOG subcommand") - 1);
+    return;
+
+bad_type:
+    resp_write_error(out, "ERR invalid argument type", 24);
+}
+
+static void command_bgsave(session *s, const resp_value *argv, size_t argc,
+                           resp_buf *out, uint64_t now_ms)
+{
+    db *d = s->d;
+    (void)argv;
+    if (argc != 1) {
+        wrong_args(out, "bgsave");
+        return;
+    }
+    if (d->snapshot_path == NULL) {
+        static const char E[] = "ERR snapshot path not configured";
+        resp_write_error(out, E, sizeof(E) - 1);
+        return;
+    }
+    if (s->sel_fn != NULL) {
+        int i;
+        if (snapshot_save_multi(s->sel_ctx, (snapshot_db_get)s->sel_fn,
+                                s->sel_ndbs, d->snapshot_path) != 0) {
+            static const char E[] = "ERR snapshot save failed";
+            resp_write_error(out, E, sizeof(E) - 1);
+            return;
+        }
+        for (i = 0; i < s->sel_ndbs; i++)
+            s->sel_fn(s->sel_ctx, i)->last_save = now_ms / 1000;
+    } else {
+        if (snapshot_save(d, d->snapshot_path) != 0) {
+            static const char E[] = "ERR snapshot save failed";
+            resp_write_error(out, E, sizeof(E) - 1);
+            return;
+        }
+        d->last_save = now_ms / 1000;
+    }
+    resp_write_simple_string(out, "Background saving started", 25);
+}
+
+static void command_bgrewriteaof(session *s, const resp_value *argv,
+                                 size_t argc, resp_buf *out)
+{
+    (void)argv;
+    if (argc != 1) {
+        wrong_args(out, "bgrewriteaof");
+        return;
+    }
+    if (s->bgrewriteaof == NULL) {
+        resp_write_error(out,
+                         "ERR BGREWRITEAOF is not supported in this context",
+                         sizeof("ERR BGREWRITEAOF is not supported in this context") - 1);
+        return;
+    }
+    s->bgrewriteaof(s->bgrewriteaof_ctx, out);
+}
+
 
 static void command_dispatch(session *s, const resp_value *argv, size_t argc,
                              resp_buf *out, uint64_t now_ms)
@@ -12641,6 +13136,36 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
         return;
     }
 
+    if (cmd_id == CMD_COMMAND) {
+        command_command(s, argv, argc, out);
+        return;
+    }
+
+    if (cmd_id == CMD_CLIENT) {
+        command_client(s, argv, argc, out);
+        return;
+    }
+
+    if (cmd_id == CMD_MEMORY) {
+        command_memory(s, argv, argc, out, now_ms);
+        return;
+    }
+
+    if (cmd_id == CMD_SLOWLOG) {
+        command_slowlog(s, argv, argc, out);
+        return;
+    }
+
+    if (cmd_id == CMD_BGSAVE) {
+        command_bgsave(s, argv, argc, out, now_ms);
+        return;
+    }
+
+    if (cmd_id == CMD_BGREWRITEAOF) {
+        command_bgrewriteaof(s, argv, argc, out);
+        return;
+    }
+
     if (cmd_id == CMD_SAVE) {
         if (argc != 1) {
             wrong_args(out, "save");
@@ -13511,6 +14036,12 @@ static const cmd_entry CMD_TABLE[] = {
     {"georadiusbymember_ro", CMD_GEORADIUSBYMEMBER_RO, 5, -1, 0, 0},
     {"geosearch", CMD_GEOSEARCH, 7, -1, 0, 0},
     {"geosearchstore", CMD_GEOSEARCHSTORE, 8, -1, 0, CMD_WRITE},
+    {"command", CMD_COMMAND, 2, -1, 0, 0},
+    {"client", CMD_CLIENT, 2, -1, 0, 0},
+    {"memory", CMD_MEMORY, 2, -1, 0, 0},
+    {"slowlog", CMD_SLOWLOG, 2, -1, 0, 0},
+    {"bgsave", CMD_BGSAVE, 1, 1, 0, 0},
+    {"bgrewriteaof", CMD_BGREWRITEAOF, 1, 1, 0, 0},
 };
 
 static const cmd_entry *cmd_table_entry(uint16_t id)
@@ -13964,10 +14495,13 @@ void session_execute_at(session *s, const resp_value *argv, size_t argc,
     }
 
     {
+        uint64_t t0 = 0;
 #ifdef DDUP_NO_CMDSTATS
+        if (s->slowlog_add != NULL)
+            t0 = pal_now_us();
         command_dispatch(s, argv, argc, out, now_ms);
 #else
-        uint64_t t0 = pal_now_us();
+        t0 = pal_now_us();
         command_dispatch(s, argv, argc, out, now_ms);
         /* commandstats: count every dispatched command (queueing/blocked
          * paths above do not reach here) */
@@ -13976,6 +14510,9 @@ void session_execute_at(session *s, const resp_value *argv, size_t argc,
             s->d->cmd_usecs[cmd_id] += pal_now_us() - t0;
         }
 #endif
+        if (s->slowlog_add != NULL)
+            s->slowlog_add(s->slowlog_ctx, argv, argc, pal_now_us() - t0,
+                           now_ms);
     }
     /* AOF: log the original command if it mutated the db (script effects
      * were already logged individually by redis.call) */

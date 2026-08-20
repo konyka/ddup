@@ -80,6 +80,9 @@ struct conn {
     pal_socket_t fd;
     pal_tls *tls; /* NULL for plain connections */
     int tls_handshaking; /* non-blocking handshake in progress */
+    uint64_t id;        /* CLIENT ID / CLIENT LIST */
+    char name[64];      /* CLIENT SETNAME / GETNAME */
+    size_t name_len;
     int want_write;      /* registered for write readiness (out pending) */
     /* IOCP backend state */
     int pending_ops;     /* outstanding overlapped ops (recv+send) */
@@ -128,6 +131,15 @@ struct conn {
 #define LINK_SNAP_HDR 3 /* PSYNC FULLRESYNC: snapshot frame header next */
 #define LINK_CONNECTING 4 /* async connect in flight (readiness backend) */
 
+/* SLOWLOG ring: newest entries are appended at the tail and read backwards. */
+typedef struct slowlog_entry {
+    uint64_t id;
+    uint64_t ts;
+    uint64_t usec;
+    resp_value *argv;
+    size_t argc;
+} slowlog_entry;
+
 /* cluster bus connection (cluster bus protocol v1, server side) */
 typedef struct bus_conn {
     struct bus_conn *next;
@@ -170,6 +182,13 @@ struct server {
     int aof_db_index;  /* last db index written to the AOF (SELECT prefix) */
     int aof_fsync_mode; /* appendfsync policy (AOF_FSYNC_*) */
     const char *requirepass; /* AUTH password (not owned); NULL/"" = off */
+    uint64_t next_client_id;    /* monotonic CLIENT ID allocator */
+    uint64_t slowlog_threshold_us; /* SLOWLOG log-slower-than (0 = all) */
+    size_t slowlog_max;         /* SLOWLOG max retained entries */
+    slowlog_entry *slowlog;     /* SLOWLOG newest-last ring */
+    size_t slowlog_len;
+    size_t slowlog_cap;
+    uint64_t slowlog_next_id;
     int shutdown_flag;
     int save_sec;               /* automatic snapshot interval, 0 = off */
     uint64_t last_save_check;   /* pal_now_ms of the last interval check */
@@ -218,6 +237,20 @@ static conn *conn_create(server *srv, pal_socket_t fd);
 static db *srv_select_db(void *ctx, int idx);
 static void srv_aof_log(server *srv, int db_index, const resp_value *argv,
                         size_t argc);
+static long long srv_client_id(void *ctx, struct session *s);
+static int srv_client_setname(void *ctx, struct session *s,
+                              const char *name, size_t len);
+static const char *srv_client_getname(void *ctx, struct session *s,
+                                      size_t *len);
+static void srv_client_list(void *ctx, resp_buf *out);
+static int srv_client_kill(void *ctx, const char *filter, size_t filterlen,
+                           resp_buf *out);
+static void srv_slowlog_add(void *ctx, const resp_value *argv, size_t argc,
+                            uint64_t usec, uint64_t now_ms);
+static size_t srv_slowlog_len(void *ctx);
+static void srv_slowlog_get(void *ctx, long long count, resp_buf *out);
+static void srv_slowlog_reset(void *ctx);
+static void srv_bgrewriteaof(void *ctx, resp_buf *out);
 static int srv_aof_reject(const server *srv, const session *sess,
                           const resp_value *argv, size_t argc, resp_buf *out);
 static void srv_aof_flush(server *srv);
@@ -1078,6 +1111,8 @@ static conn *conn_create(server *srv, pal_socket_t fd)
         return NULL;
     c->fd = fd;
     c->srv = srv;
+    c->id = srv->next_client_id++;
+    c->name_len = 0;
     c->sess = session_create(&srv->db);
     if (srv->proto_max_request_bytes < SERVER_RECV_CHUNK) {
         c->rbuf = (char *)malloc(srv->proto_max_request_bytes);
@@ -1149,6 +1184,19 @@ static conn *conn_create(server *srv, pal_socket_t fd)
     c->sess->replicaof_hook = srv_replicaof;
     c->sess->reset_ctx = srv;
     c->sess->reset_hook = srv_reset;
+    c->sess->client_ctx = srv;
+    c->sess->client_id = srv_client_id;
+    c->sess->client_setname = srv_client_setname;
+    c->sess->client_getname = srv_client_getname;
+    c->sess->client_list = srv_client_list;
+    c->sess->client_kill = srv_client_kill;
+    c->sess->slowlog_ctx = srv;
+    c->sess->slowlog_add = srv_slowlog_add;
+    c->sess->slowlog_len = srv_slowlog_len;
+    c->sess->slowlog_get = srv_slowlog_get;
+    c->sess->slowlog_reset = srv_slowlog_reset;
+    c->sess->bgrewriteaof_ctx = srv;
+    c->sess->bgrewriteaof = srv_bgrewriteaof;
     c->sess->cluster_ctx = srv;
     c->sess->cluster_meet = srv_cluster_meet;
     c->sess->cluster_replicate = srv_replicaof;
@@ -1580,6 +1628,263 @@ static void repl_link_service(server *srv, conn *c)
     repl_link_feed(srv, c);
 }
 
+
+static conn *client_conn_from_session(server *srv, struct session *s)
+{
+    conn *c;
+    size_t i;
+    if (s == NULL || s->owner == NULL)
+        return NULL;
+    c = (conn *)s->owner;
+    for (i = 0; i < srv->nconns; i++)
+        if (srv->conns[i] == c)
+            return c;
+    return c; /* rehomed or detached path still owns the conn */
+}
+
+static long long srv_client_id(void *ctx, struct session *s)
+{
+    conn *c = client_conn_from_session((server *)ctx, s);
+    return c == NULL ? 0 : (long long)c->id;
+}
+
+static int srv_client_setname(void *ctx, struct session *s,
+                              const char *name, size_t len)
+{
+    conn *c = client_conn_from_session((server *)ctx, s);
+    if (c == NULL || len >= sizeof(c->name))
+        return -1;
+    memcpy(c->name, name, len);
+    c->name[len] = '\0';
+    c->name_len = len;
+    return 0;
+}
+
+static const char *srv_client_getname(void *ctx, struct session *s,
+                                      size_t *len)
+{
+    conn *c = client_conn_from_session((server *)ctx, s);
+    if (c == NULL)
+        return NULL;
+    *len = c->name_len;
+    return c->name;
+}
+
+static void srv_client_list(void *ctx, resp_buf *out)
+{
+    server *srv = (server *)ctx;
+    resp_buf body;
+    size_t i;
+    resp_buf_init(&body);
+    for (i = 0; i < srv->nconns; i++) {
+        conn *c = srv->conns[i];
+        char ip[64] = "0.0.0.0";
+        char line[256];
+        int n;
+        (void)pal_get_peer_ip(c->fd, ip, sizeof(ip));
+        n = snprintf(line, sizeof(line),
+                     "id=%llu addr=%s name=%s\n",
+                     (unsigned long long)c->id, ip,
+                     c->name_len == 0 ? "" : c->name);
+        if (n > 0 && resp_buf_reserve(&body, (size_t)n) == 0) {
+            memcpy(body.data + body.len, line, (size_t)n);
+            body.len += (size_t)n;
+        }
+    }
+    resp_write_bulk(out, body.data, body.len);
+    resp_buf_free(&body);
+}
+
+static int srv_client_kill(void *ctx, const char *filter, size_t filterlen,
+                           resp_buf *out)
+{
+    server *srv = (server *)ctx;
+    const char *p = filter;
+    const char *end = filter + filterlen;
+    long long id = -1;
+    char addr[64] = "";
+    size_t i;
+    size_t killed = 0;
+
+    while (p < end) {
+        const char *tok;
+        size_t toklen;
+        const char *val = NULL;
+        size_t vallen = 0;
+        while (p < end && (*p == ' ' || *p == '\t'))
+            p++;
+        tok = p;
+        while (p < end && *p != ' ' && *p != '\t')
+            p++;
+        toklen = (size_t)(p - tok);
+        if (toklen == 0)
+            break;
+        if (toklen == 2 && memcmp(tok, "ID", 2) == 0) {
+            while (p < end && (*p == ' ' || *p == '\t'))
+                p++;
+            val = p;
+            while (p < end && *p != ' ' && *p != '\t')
+                p++;
+            vallen = (size_t)(p - val);
+            if (vallen > 0 && vallen < 32) {
+                char tmp[32];
+                memcpy(tmp, val, vallen);
+                tmp[vallen] = '\0';
+                id = strtoll(tmp, NULL, 10);
+            }
+        } else if (toklen == 4 && memcmp(tok, "ADDR", 4) == 0) {
+            while (p < end && (*p == ' ' || *p == '\t'))
+                p++;
+            val = p;
+            while (p < end && *p != ' ' && *p != '\t')
+                p++;
+            vallen = (size_t)(p - val);
+            if (vallen < sizeof(addr)) {
+                memcpy(addr, val, vallen);
+                addr[vallen] = '\0';
+            }
+        }
+    }
+
+    for (i = 0; i < srv->nconns; i++) {
+        conn *c = srv->conns[i];
+        char ip[64] = "0.0.0.0";
+        int match = 0;
+        if (id >= 0 && (long long)c->id == id)
+            match = 1;
+        if (addr[0] != '\0') {
+            (void)pal_get_peer_ip(c->fd, ip, sizeof(ip));
+            if (strcmp(ip, addr) == 0)
+                match = 1;
+        }
+        if (match) {
+            c->close_after_send = 1;
+            killed++;
+        }
+    }
+    resp_write_integer(out, (long long)killed);
+    return 1;
+}
+
+static void slowlog_entry_free(slowlog_entry *e)
+{
+    size_t i;
+    if (e->argv == NULL)
+        return;
+    for (i = 0; i < e->argc; i++)
+        free((void *)e->argv[i].str);
+    free(e->argv);
+    e->argv = NULL;
+    e->argc = 0;
+}
+
+static void srv_slowlog_add(void *ctx, const resp_value *argv, size_t argc,
+                            uint64_t usec, uint64_t now_ms)
+{
+    server *srv = (server *)ctx;
+    slowlog_entry *e;
+    resp_value *copy;
+    size_t i;
+
+    if (usec < srv->slowlog_threshold_us)
+        return;
+    if (srv->slowlog_max == 0)
+        return;
+
+    if (srv->slowlog_len == srv->slowlog_max) {
+        slowlog_entry_free(&srv->slowlog[0]);
+        memmove(&srv->slowlog[0], &srv->slowlog[1],
+                (srv->slowlog_len - 1) * sizeof(srv->slowlog[0]));
+        srv->slowlog_len--;
+    }
+    if (srv->slowlog_len == srv->slowlog_cap) {
+        size_t ncap = srv->slowlog_cap == 0 ? 8 : srv->slowlog_cap * 2;
+        slowlog_entry *ns = (slowlog_entry *)realloc(
+            srv->slowlog, ncap * sizeof(*ns));
+        if (ns == NULL)
+            return;
+        srv->slowlog = ns;
+        srv->slowlog_cap = ncap;
+    }
+    copy = (resp_value *)calloc(argc, sizeof(*copy));
+    if (copy == NULL && argc != 0)
+        return;
+    for (i = 0; i < argc; i++) {
+        copy[i] = argv[i];
+        copy[i].items = NULL;
+        if (argv[i].str != NULL) {
+            char *cp = (char *)malloc(argv[i].len);
+            if (cp == NULL) {
+                while (i > 0) {
+                    i--;
+                    free((void *)copy[i].str);
+                }
+                free(copy);
+                return;
+            }
+            memcpy(cp, argv[i].str, argv[i].len);
+            copy[i].str = cp;
+        }
+    }
+    e = &srv->slowlog[srv->slowlog_len++];
+    e->id = srv->slowlog_next_id++;
+    e->ts = now_ms / 1000;
+    e->usec = usec;
+    e->argv = copy;
+    e->argc = argc;
+}
+
+static size_t srv_slowlog_len(void *ctx)
+{
+    return ((server *)ctx)->slowlog_len;
+}
+
+static void srv_slowlog_get(void *ctx, long long count, resp_buf *out)
+{
+    server *srv = (server *)ctx;
+    size_t i, n;
+    if (count < 0)
+        count = 10;
+    n = srv->slowlog_len;
+    if ((size_t)count < n)
+        n = (size_t)count;
+    resp_write_array_header(out, n);
+    for (i = srv->slowlog_len - n; i < srv->slowlog_len; i++) {
+        slowlog_entry *e = &srv->slowlog[i];
+        size_t j;
+        resp_write_array_header(out, 4);
+        resp_write_integer(out, (long long)e->id);
+        resp_write_integer(out, (long long)e->ts);
+        resp_write_integer(out, (long long)e->usec);
+        resp_write_array_header(out, e->argc);
+        for (j = 0; j < e->argc; j++)
+            resp_write_bulk(out, e->argv[j].str, e->argv[j].len);
+    }
+}
+
+static void srv_slowlog_reset(void *ctx)
+{
+    server *srv = (server *)ctx;
+    while (srv->slowlog_len > 0)
+        slowlog_entry_free(&srv->slowlog[--srv->slowlog_len]);
+}
+
+static void srv_bgrewriteaof(void *ctx, resp_buf *out)
+{
+    server *srv = (server *)ctx;
+    if (srv->aof != NULL && !srv->aof_failed && aof_flush(srv->aof) != 0) {
+        srv->aof_failed = 1;
+        srv->shutdown_flag = 1;
+        resp_write_error(out, "MISCONF Errors writing to the AOF file",
+                         35);
+        return;
+    }
+    resp_write_simple_string(out,
+                             "Background append only file rewriting started",
+                             45);
+}
+
+
 server *server_create_ex(const char *host, uint16_t port, int backend)
 {
     server *s = (server *)calloc(1, sizeof(*s));
@@ -1591,6 +1896,9 @@ server *server_create_ex(const char *host, uint16_t port, int backend)
     s->wakeup_fd = PAL_SOCKET_INVALID;
     s->node_timeout_ms = 15000;
     s->aof_fsync_mode = AOF_FSYNC_EVERYSEC;
+    s->next_client_id = 1;
+    s->slowlog_threshold_us = 10000; /* 10 ms, Redis default */
+    s->slowlog_max = 128;
     s->proto_max_request_bytes = (size_t)SERVER_DEFAULT_MAX_REQUEST;
     s->repl_max_snapshot_bytes = (size_t)SERVER_DEFAULT_MAX_REQUEST;
     s->backend = backend;
@@ -2014,6 +2322,11 @@ void server_enable_cluster(server *s, const char *node_id)
         (void)pal_loop_add(s->loop, s->bus_listen_fd, 1, 0, NULL);
 }
 
+void server_set_slowlog_threshold(server *s, uint64_t usec)
+{
+    s->slowlog_threshold_us = usec;
+}
+
 void server_set_save_interval(server *s, int sec)
 {
     s->save_sec = sec;
@@ -2061,6 +2374,10 @@ void server_destroy(server *s)
     s->iocp = NULL;
     s->iou = NULL;
     server_free_connections(s);
+    srv_slowlog_reset(s);
+    free(s->slowlog);
+    s->slowlog = NULL;
+    s->slowlog_cap = 0;
     if (s->loop != NULL && s->listen_fd != PAL_SOCKET_INVALID &&
         !srv_proactor(s))
         pal_loop_del(s->loop, s->listen_fd);
@@ -2301,6 +2618,9 @@ void server_conn_rehome(server *s, void *conn_ptr)
     c->sess->replicaof_ctx = s;
     c->sess->reset_ctx = s;
     c->sess->cluster_ctx = s;
+    c->sess->client_ctx = s;
+    c->sess->slowlog_ctx = s;
+    c->sess->bgrewriteaof_ctx = s;
     c->sess->aof_ctx = s;
     c->sess->repl = &s->repl;
     c->sess->role = &s->role;

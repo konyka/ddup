@@ -95,6 +95,8 @@ void server_set_node_timeout(server *s, uint64_t ms);
 #define SERVER_BUS_PROTOCOL_REDIS 1
 void server_set_bus_protocol(server *s, int proto);
 
+/* SLOWLOG log-slower-than threshold in microseconds (0 logs every command). */
+void server_set_slowlog_threshold(server *s, uint64_t usec);
 /* Automatic snapshot interval in seconds (0 = off). */
 void server_set_save_interval(server *s, int sec);
 /* Nonzero after SHUTDOWN or a fatal persistence failure. */
