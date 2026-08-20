@@ -1353,6 +1353,13 @@ static int mt_is_single_key(uint16_t cmd)
     case CMD_GEOSEARCH:
     case CMD_GEORADIUS_RO:
     case CMD_GEORADIUSBYMEMBER_RO:
+    case CMD_XADD:
+    case CMD_XLEN:
+    case CMD_XRANGE:
+    case CMD_XREVRANGE:
+    case CMD_XDEL:
+    case CMD_XTRIM:
+    case CMD_XSETID:
         return 1;
     default:
         return 0;

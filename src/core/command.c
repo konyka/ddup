@@ -696,6 +696,36 @@ static int get_zset(db *d, resp_buf *out, const char *k, size_t kl, int create,
     return 1;
 }
 
+/* Fetch the stream object for key; create when missing && create != 0.
+ * Returns 1 (*st set), 0 missing, -1 WRONGTYPE (reply written). */
+static int get_stream(db *d, resp_buf *out, const char *k, size_t kl,
+                      int create, uint64_t now, obj_stream **st)
+{
+    const char *v;
+    size_t vl;
+    if (!db_get(d, k, kl, &v, &vl, now)) {
+        char blob[9];
+        obj_stream *ns;
+        if (!create)
+            return 0;
+        ns = obj_stream_new();
+        obj_pack_ptr(blob, DDUP_OBJ_STREAM, ns);
+        if (db_set_kv(d, k, kl, blob, 9, now) != 0) {
+            obj_stream_free(ns);
+            storage_length_error(out);
+            return -1;
+        }
+        *st = ns;
+        return 1;
+    }
+    if (obj_tag_of(v, vl) != DDUP_OBJ_STREAM) {
+        wrongtype(out);
+        return -1;
+    }
+    *st = (obj_stream *)obj_unpack_ptr(v, vl);
+    return 1;
+}
+
 /* Strict double parse (strtod, full consumption, NaN rejected). */
 static int parse_double(const char *s, size_t len, double *out)
 {
@@ -1163,6 +1193,26 @@ static int parse_i64(const char *s, size_t len, long long *out)
                    : -(long long)v;
     else
         *out = (long long)v;
+    return 1;
+}
+
+/* Strict unsigned 64-bit parse (digits only, no overflow). */
+static int parse_u64(const char *s, size_t len, uint64_t *out)
+{
+    uint64_t v = 0;
+    size_t i;
+    if (len == 0)
+        return 0;
+    for (i = 0; i < len; i++) {
+        unsigned digit;
+        if (s[i] < '0' || s[i] > '9')
+            return 0;
+        digit = (unsigned)(s[i] - '0');
+        if (v > (UINT64_MAX - digit) / 10)
+            return 0;
+        v = v * 10 + digit;
+    }
+    *out = v;
     return 1;
 }
 
@@ -2487,8 +2537,9 @@ static const char *obj_type_name(int tag)
     case DDUP_OBJ_LIST:   return "list";
     case DDUP_OBJ_SET:    return "set";
     case DDUP_OBJ_ZSET:   return "zset";
+    case DDUP_OBJ_STREAM: return "stream";
     default:              return "none";
-    }
+}
 }
 
 /* SCAN cursor: decimal non-negative integer, digits only. */
@@ -6106,6 +6157,583 @@ static void command_bgrewriteaof(session *s, const resp_value *argv,
     }
     s->bgrewriteaof(s->bgrewriteaof_ctx, out);
 }
+
+/* ------------------------------------------------------------------ */
+/* stream core command helpers                                        */
+/* ------------------------------------------------------------------ */
+
+static int stream_parse_full_id(const char *s, size_t len, uint64_t *ms,
+                                uint64_t *seq)
+{
+    size_t dash = 0;
+    if (len < 3)
+        return 0;
+    while (dash < len && s[dash] != '-')
+        dash++;
+    if (dash == 0 || dash + 1 >= len)
+        return 0;
+    if (!parse_u64(s, dash, ms) ||
+        !parse_u64(s + dash + 1, len - dash - 1, seq))
+        return 0;
+    return 1;
+}
+
+static int stream_parse_range_bound(const char *s, size_t len, int *ex,
+                                    uint64_t *ms, uint64_t *seq)
+{
+    size_t off = 0;
+    *ex = 0;
+    if (len == 1 && s[0] == '-') {
+        *ms = 0;
+        *seq = 0;
+        return 1;
+    }
+    if (len == 1 && s[0] == '+') {
+        *ms = UINT64_MAX;
+        *seq = UINT64_MAX;
+        return 1;
+    }
+    if (len > 1 && s[0] == '(') {
+        *ex = 1;
+        off = 1;
+        len--;
+    }
+    return stream_parse_full_id(s + off, len, ms, seq);
+}
+
+/* Parse an XADD id. Returns 1 valid, 0 malformed, -1 not greater than the
+ * stream's last id. */
+static int stream_parse_xadd_id(const char *s, size_t len, uint64_t last_ms,
+                                uint64_t last_seq, uint64_t now_ms,
+                                uint64_t *ms, uint64_t *seq)
+{
+    size_t dash;
+    if (len == 1 && s[0] == '*') {
+        *ms = now_ms < last_ms ? last_ms : now_ms;
+        *seq = (*ms == last_ms) ? last_seq + 1 : 0;
+        return 1;
+    }
+    dash = 0;
+    while (dash < len && s[dash] != '-')
+        dash++;
+    if (dash > 0 && dash + 1 < len && s[dash + 1] == '*' &&
+        dash + 2 == len) {
+        if (!parse_u64(s, dash, ms))
+            return 0;
+        if (*ms < last_ms)
+            return -1;
+        *seq = (*ms == last_ms) ? last_seq + 1 : 0;
+        return 1;
+    }
+    if (!stream_parse_full_id(s, len, ms, seq))
+        return 0;
+    if (*ms < last_ms || (*ms == last_ms && *seq <= last_seq))
+        return -1;
+    return 1;
+}
+
+static void stream_emit_entry(resp_buf *out, const stream_entry *e)
+{
+    char id[64];
+    const char *p = e->data;
+    int n = snprintf(id, sizeof(id), "%llu-%llu",
+                     (unsigned long long)e->ms,
+                     (unsigned long long)e->seq);
+    uint32_t i;
+    resp_write_array_header(out, 2);
+    resp_write_bulk(out, id, (size_t)n);
+    resp_write_array_header(out, (size_t)e->nfields * 2);
+    for (i = 0; i < e->nfields; i++) {
+        uint32_t fl = e->lens[2 * i];
+        uint32_t vl = e->lens[2 * i + 1];
+        resp_write_bulk(out, p, fl);
+        p += fl;
+        resp_write_bulk(out, p, vl);
+        p += vl;
+    }
+}
+
+static int stream_parse_trim_option(const resp_value *argv, size_t argc,
+                                    size_t *pos, int *maxlen,
+                                    uint64_t *threshold, uint64_t *min_ms,
+                                    uint64_t *min_seq, uint64_t *limit,
+                                    resp_buf *out)
+{
+    const char *kind, *tok, *limv;
+    size_t kl, tl, ll;
+    size_t i = *pos;
+    int max = 0;
+    if (i >= argc || !arg_str(&argv[i], &kind, &kl))
+        return 0;
+    if (ci_equal(kind, kl, "MAXLEN"))
+        max = 1;
+    else if (!ci_equal(kind, kl, "MINID"))
+        return 0;
+    i++;
+    if (i < argc && arg_str(&argv[i], &tok, &tl) &&
+        (ci_equal(tok, tl, "=") || ci_equal(tok, tl, "~")))
+        i++;
+    if (i >= argc || !arg_str(&argv[i], &tok, &tl))
+        goto syntax;
+    if (max) {
+        if (!parse_u64(tok, tl, threshold))
+            goto syntax;
+    } else {
+        if (!stream_parse_full_id(tok, tl, min_ms, min_seq))
+            goto syntax;
+    }
+    i++;
+    if (i + 1 < argc) {
+        if (!arg_str(&argv[i], &tok, &tl) || !ci_equal(tok, tl, "LIMIT"))
+            goto syntax;
+        i++;
+        if (!arg_str(&argv[i], &limv, &ll) || !parse_u64(limv, ll, limit))
+            goto syntax;
+        i++;
+    }
+    *pos = i;
+    *maxlen = max;
+    return 1;
+
+syntax:
+    resp_write_error(out, ERR_SYNTAX, sizeof(ERR_SYNTAX) - 1);
+    return -1;
+}
+
+static void command_xadd(session *s, const resp_value *argv, size_t argc,
+                         resp_buf *out, uint64_t now_ms)
+{
+    db *d = s->d;
+    const char *key, *idv;
+    size_t kl, idl;
+    size_t i = 2, id_idx;
+    int nomkstream = 0;
+    int trim_set = 0, trim_maxlen = 0;
+    uint64_t trim_threshold = 0, trim_min_ms = 0, trim_min_seq = 0;
+    uint64_t trim_limit = UINT64_MAX;
+    obj_stream *st;
+    uint64_t ms, seq, before;
+    char idbuf[64];
+    int idn;
+    int rc;
+    const char **fields = NULL;
+    const char **values = NULL;
+    size_t *flens = NULL, *vlens = NULL;
+    size_t nfields = 0;
+
+    if (argc < 5) {
+        wrong_args(out, "xadd");
+        return;
+    }
+    if (!arg_str(&argv[1], &key, &kl))
+        goto bad_type;
+    if (!storage_key_ok(kl)) {
+        storage_length_error(out);
+        return;
+    }
+    for (;;) {
+        const char *tok;
+        size_t tl;
+        if (i >= argc || !arg_str(&argv[i], &tok, &tl))
+            break;
+        if (ci_equal(tok, tl, "NOMKSTREAM") && !nomkstream) {
+            nomkstream = 1;
+            i++;
+        } else if (ci_equal(tok, tl, "MAXLEN") ||
+                   ci_equal(tok, tl, "MINID")) {
+            int rc2;
+            if (trim_set)
+                goto syntax;
+            rc2 = stream_parse_trim_option(argv, argc, &i, &trim_maxlen,
+                                           &trim_threshold, &trim_min_ms,
+                                           &trim_min_seq, &trim_limit, out);
+            if (rc2 < 0)
+                return;
+            trim_set = 1;
+        } else {
+            break;
+        }
+    }
+    id_idx = i;
+    if (id_idx >= argc || !arg_str(&argv[id_idx], &idv, &idl))
+        goto syntax;
+    if ((argc - id_idx - 1) < 2 || ((argc - id_idx - 1) & 1u) != 0)
+        goto syntax;
+
+    rc = get_stream(d, out, key, kl, !nomkstream, now_ms, &st);
+    if (rc <= 0) {
+        if (rc == 0)
+            resp_write_bulk(out, NULL, 0);
+        return;
+    }
+    rc = stream_parse_xadd_id(idv, idl, st->last_ms, st->last_seq, now_ms,
+                              &ms, &seq);
+    if (rc == 0) {
+        static const char E[] =
+            "ERR Invalid stream ID specified as stream command argument";
+        resp_write_error(out, E, sizeof(E) - 1);
+        return;
+    }
+    if (rc < 0) {
+        static const char E[] =
+            "ERR The ID specified in XADD is equal or smaller than the "
+            "target stream top item";
+        resp_write_error(out, E, sizeof(E) - 1);
+        return;
+    }
+
+    nfields = (size_t)((argc - id_idx - 1) / 2);
+    if (nfields > 0) {
+        size_t j;
+        fields = (const char **)malloc(nfields * sizeof(*fields));
+        values = (const char **)malloc(nfields * sizeof(*values));
+        flens = (size_t *)malloc(nfields * sizeof(*flens));
+        vlens = (size_t *)malloc(nfields * sizeof(*vlens));
+        if (fields == NULL || values == NULL || flens == NULL ||
+            vlens == NULL) {
+            fprintf(stderr, "ddup: out of memory\n");
+            exit(1);
+        }
+        for (j = 0; j < nfields; j++) {
+            if (!arg_str(&argv[id_idx + 1 + 2 * j], &fields[j], &flens[j]) ||
+                !arg_str(&argv[id_idx + 2 + 2 * j], &values[j], &vlens[j])) {
+                free(fields);
+                free(values);
+                free(flens);
+                free(vlens);
+                goto bad_type;
+            }
+        }
+    }
+
+    before = obj_stream_mem(st);
+    if (obj_stream_append(st, ms, seq, fields, flens, values, vlens,
+                          nfields) != OBJ_STREAM_ADD_OK) {
+        static const char E[] = "ERR stream entry is not representable";
+        resp_write_error(out, E, sizeof(E) - 1);
+        goto cleanup;
+    }
+    if (trim_set) {
+        if (trim_maxlen)
+            (void)obj_stream_trim_maxlen(st, trim_threshold, trim_limit);
+        else
+            (void)obj_stream_trim_minid(st, trim_min_ms, trim_min_seq,
+                                        trim_limit);
+    }
+    mem_sync(d, key, kl, before, obj_stream_mem(st));
+    idn = snprintf(idbuf, sizeof(idbuf), "%llu-%llu",
+                   (unsigned long long)ms, (unsigned long long)seq);
+    resp_write_bulk(out, idbuf, (size_t)idn);
+
+cleanup:
+    free(fields);
+    free(values);
+    free(flens);
+    free(vlens);
+    return;
+
+syntax:
+    resp_write_error(out, ERR_SYNTAX, sizeof(ERR_SYNTAX) - 1);
+    return;
+bad_type:
+    resp_write_error(out, "ERR invalid argument type", 24);
+}
+
+static void command_xlen(session *s, const resp_value *argv, size_t argc,
+                         resp_buf *out, uint64_t now_ms)
+{
+    db *d = s->d;
+    const char *key;
+    size_t kl;
+    obj_stream *st;
+    int rc;
+    if (argc != 2) {
+        wrong_args(out, "xlen");
+        return;
+    }
+    if (!arg_str(&argv[1], &key, &kl))
+        goto bad_type;
+    rc = get_stream(d, out, key, kl, 0, now_ms, &st);
+    if (rc < 0)
+        return;
+    resp_write_integer(out, rc == 0 ? 0 : (long long)obj_stream_len(st));
+    return;
+bad_type:
+    resp_write_error(out, "ERR invalid argument type", 24);
+}
+
+static void command_xrange_rev(session *s, const resp_value *argv, size_t argc,
+                               resp_buf *out, uint64_t now_ms, int rev)
+{
+    db *d = s->d;
+    const char *key, *startv, *endv;
+    size_t kl, startl, endl;
+    uint64_t start_ms, start_seq, end_ms, end_seq;
+    int start_ex = 0, end_ex = 0;
+    long long count = -1;
+    obj_stream *st;
+    size_t first, last, emitted = 0;
+    int rc;
+    if (argc != 4 && argc != 6) {
+        wrong_args(out, rev ? "xrevrange" : "xrange");
+        return;
+    }
+    if (argc == 6) {
+        const char *opt, *cv;
+        size_t optl, cvl;
+        if (!arg_str(&argv[4], &opt, &optl) ||
+            !arg_str(&argv[5], &cv, &cvl) ||
+            !ci_equal(opt, optl, "COUNT") || !parse_i64(cv, cvl, &count) ||
+            count <= 0) {
+            resp_write_error(out, ERR_SYNTAX, sizeof(ERR_SYNTAX) - 1);
+            return;
+        }
+    }
+    if (!arg_str(&argv[1], &key, &kl) ||
+        !arg_str(&argv[2], &startv, &startl) ||
+        !arg_str(&argv[3], &endv, &endl))
+        goto bad_type;
+    if (rev) {
+        const char *tmp = startv;
+        size_t tmp_len = startl;
+        startv = endv;
+        startl = endl;
+        endv = tmp;
+        endl = tmp_len;
+    }
+    if (!stream_parse_range_bound(startv, startl, &start_ex, &start_ms,
+                                  &start_seq) ||
+        !stream_parse_range_bound(endv, endl, &end_ex, &end_ms, &end_seq)) {
+        resp_write_error(out, ERR_SYNTAX, sizeof(ERR_SYNTAX) - 1);
+        return;
+    }
+    rc = get_stream(d, out, key, kl, 0, now_ms, &st);
+    if (rc < 0)
+        return;
+    if (rc == 0) {
+        resp_write_array_header(out, 0);
+        return;
+    }
+
+    first = obj_stream_lower_bound(st, start_ms, start_seq);
+    if (start_ex && first < obj_stream_len(st)) {
+        const stream_entry *e = obj_stream_at(st, first);
+        if (e->ms == start_ms && e->seq == start_seq)
+            first++;
+    }
+    if (end_ms == UINT64_MAX && end_seq == UINT64_MAX) {
+        last = obj_stream_len(st) > 0 ? obj_stream_len(st) - 1 : 0;
+    } else {
+        size_t idx = obj_stream_lower_bound(st, end_ms, end_seq);
+        if (idx < obj_stream_len(st)) {
+            const stream_entry *e = obj_stream_at(st, idx);
+            if (e->ms == end_ms && e->seq == end_seq && !end_ex)
+                last = idx;
+            else
+                last = idx > 0 ? idx - 1 : SIZE_MAX;
+        } else if (idx > 0) {
+            last = idx - 1;
+        } else {
+            last = SIZE_MAX;
+        }
+    }
+    if (first >= obj_stream_len(st) || last == SIZE_MAX ||
+        first > last) {
+        resp_write_array_header(out, 0);
+        return;
+    }
+    if (count < 0 || (uint64_t)(last - first + 1) <= (uint64_t)count)
+        emitted = last - first + 1;
+    else
+        emitted = (size_t)count;
+    resp_write_array_header(out, emitted);
+    if (rev) {
+        size_t n = emitted;
+        size_t idx = last;
+        while (n > 0) {
+            stream_emit_entry(out, obj_stream_at(st, idx));
+            if (idx == first)
+                break;
+            idx--;
+            n--;
+        }
+    } else {
+        size_t idx;
+        for (idx = first; idx < first + emitted; idx++)
+            stream_emit_entry(out, obj_stream_at(st, idx));
+    }
+    return;
+bad_type:
+    resp_write_error(out, "ERR invalid argument type", 24);
+}
+
+static void command_xdel(session *s, const resp_value *argv, size_t argc,
+                         resp_buf *out, uint64_t now_ms)
+{
+    db *d = s->d;
+    const char *key;
+    size_t kl;
+    obj_stream *st;
+    uint64_t before;
+    long long deleted = 0;
+    size_t i;
+    int rc;
+    if (argc < 3) {
+        wrong_args(out, "xdel");
+        return;
+    }
+    if (!arg_str(&argv[1], &key, &kl))
+        goto bad_type;
+    rc = get_stream(d, out, key, kl, 0, now_ms, &st);
+    if (rc < 0)
+        return;
+    if (rc == 0) {
+        resp_write_integer(out, 0);
+        return;
+    }
+    before = obj_stream_mem(st);
+    for (i = 2; i < argc; i++) {
+        const char *idv;
+        size_t idl;
+        uint64_t ms, seq;
+        if (!arg_str(&argv[i], &idv, &idl) ||
+            !stream_parse_full_id(idv, idl, &ms, &seq)) {
+            static const char E[] =
+                "ERR Invalid stream ID specified as stream command argument";
+            resp_write_error(out, E, sizeof(E) - 1);
+            return;
+        }
+        if (obj_stream_delete(st, ms, seq))
+            deleted++;
+    }
+    if (deleted > 0)
+        mem_sync(d, key, kl, before, obj_stream_mem(st));
+    resp_write_integer(out, deleted);
+    return;
+bad_type:
+    resp_write_error(out, "ERR invalid argument type", 24);
+}
+
+static void command_xtrim(session *s, const resp_value *argv, size_t argc,
+                          resp_buf *out, uint64_t now_ms)
+{
+    db *d = s->d;
+    const char *key;
+    size_t kl;
+    obj_stream *st;
+    uint64_t before;
+    size_t removed = 0;
+    int maxlen = 0, rc;
+    uint64_t threshold = 0, min_ms = 0, min_seq = 0, limit = UINT64_MAX;
+    size_t pos = 2;
+    if (argc < 4) {
+        wrong_args(out, "xtrim");
+        return;
+    }
+    if (!arg_str(&argv[1], &key, &kl))
+        goto bad_type;
+    if (stream_parse_trim_option(argv, argc, &pos, &maxlen, &threshold,
+                                 &min_ms, &min_seq, &limit, out) < 0)
+        return;
+    if (pos != argc) {
+        resp_write_error(out, ERR_SYNTAX, sizeof(ERR_SYNTAX) - 1);
+        return;
+    }
+    rc = get_stream(d, out, key, kl, 0, now_ms, &st);
+    if (rc < 0)
+        return;
+    if (rc == 0) {
+        resp_write_integer(out, 0);
+        return;
+    }
+    before = obj_stream_mem(st);
+    if (maxlen)
+        removed = obj_stream_trim_maxlen(st, threshold, limit);
+    else
+        removed = obj_stream_trim_minid(st, min_ms, min_seq, limit);
+    if (removed > 0)
+        mem_sync(d, key, kl, before, obj_stream_mem(st));
+    resp_write_integer(out, (long long)removed);
+    return;
+bad_type:
+    resp_write_error(out, "ERR invalid argument type", 24);
+}
+
+static void command_xsetid(session *s, const resp_value *argv, size_t argc,
+                           resp_buf *out, uint64_t now_ms)
+{
+    db *d = s->d;
+    const char *key, *idv;
+    size_t kl, idl;
+    obj_stream *st;
+    uint64_t ms, seq, entries_added = UINT64_MAX;
+    uint64_t del_ms = UINT64_MAX, del_seq = UINT64_MAX;
+    size_t i = 3;
+    int rc;
+    if (argc < 3) {
+        wrong_args(out, "xsetid");
+        return;
+    }
+    if (!arg_str(&argv[1], &key, &kl) || !arg_str(&argv[2], &idv, &idl))
+        goto bad_type;
+    if (!stream_parse_full_id(idv, idl, &ms, &seq)) {
+        resp_write_error(out, ERR_SYNTAX, sizeof(ERR_SYNTAX) - 1);
+        return;
+    }
+    for (; i + 1 < argc; i += 2) {
+        const char *opt, *val;
+        size_t optl, vall;
+        if (!arg_str(&argv[i], &opt, &optl) ||
+            !arg_str(&argv[i + 1], &val, &vall))
+            goto bad_type;
+        if (ci_equal(opt, optl, "ENTRIESADDED")) {
+            if (!parse_u64(val, vall, &entries_added))
+                goto syntax;
+        } else if (ci_equal(opt, optl, "MAXDELETEDID")) {
+            if (!stream_parse_full_id(val, vall, &del_ms, &del_seq))
+                goto syntax;
+        } else {
+            goto syntax;
+        }
+    }
+    if (i != argc)
+        goto syntax;
+    rc = get_stream(d, out, key, kl, 0, now_ms, &st);
+    if (rc < 0)
+        return;
+    if (rc == 0) {
+        resp_write_error(out, "ERR no such key", 15);
+        return;
+    }
+    if (ms < st->last_ms || (ms == st->last_ms && seq < st->last_seq)) {
+        static const char E[] =
+            "ERR The ID specified in XSETID is smaller than the target "
+            "stream top item";
+        resp_write_error(out, E, sizeof(E) - 1);
+        return;
+    }
+    {
+        uint64_t before = obj_stream_mem(st);
+        st->last_ms = ms;
+        st->last_seq = seq;
+        if (entries_added != UINT64_MAX)
+            st->entries_added = entries_added;
+        if (del_ms != UINT64_MAX) {
+            st->max_deleted_ms = del_ms;
+            st->max_deleted_seq = del_seq;
+        }
+        mem_sync(d, key, kl, before, obj_stream_mem(st));
+    }
+    resp_write_simple_string(out, "OK", 2);
+    return;
+
+syntax:
+    resp_write_error(out, ERR_SYNTAX, sizeof(ERR_SYNTAX) - 1);
+    return;
+bad_type:
+    resp_write_error(out, "ERR invalid argument type", 24);
+}
+
 
 
 static void command_dispatch(session *s, const resp_value *argv, size_t argc,
@@ -13166,6 +13794,37 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
         return;
     }
 
+    if (cmd_id == CMD_XADD) {
+        command_xadd(s, argv, argc, out, now_ms);
+        return;
+    }
+
+    if (cmd_id == CMD_XLEN) {
+        command_xlen(s, argv, argc, out, now_ms);
+        return;
+    }
+
+    if (cmd_id == CMD_XRANGE || cmd_id == CMD_XREVRANGE) {
+        command_xrange_rev(s, argv, argc, out, now_ms,
+                           cmd_id == CMD_XREVRANGE);
+        return;
+    }
+
+    if (cmd_id == CMD_XDEL) {
+        command_xdel(s, argv, argc, out, now_ms);
+        return;
+    }
+
+    if (cmd_id == CMD_XTRIM) {
+        command_xtrim(s, argv, argc, out, now_ms);
+        return;
+    }
+
+    if (cmd_id == CMD_XSETID) {
+        command_xsetid(s, argv, argc, out, now_ms);
+        return;
+    }
+
     if (cmd_id == CMD_SAVE) {
         if (argc != 1) {
             wrong_args(out, "save");
@@ -14042,6 +14701,13 @@ static const cmd_entry CMD_TABLE[] = {
     {"slowlog", CMD_SLOWLOG, 2, -1, 0, 0},
     {"bgsave", CMD_BGSAVE, 1, 1, 0, 0},
     {"bgrewriteaof", CMD_BGREWRITEAOF, 1, 1, 0, 0},
+    {"xadd", CMD_XADD, 5, -1, 0, CMD_WRITE},
+    {"xlen", CMD_XLEN, 2, 2, 0, 0},
+    {"xrange", CMD_XRANGE, 4, -1, 0, 0},
+    {"xrevrange", CMD_XREVRANGE, 4, -1, 0, 0},
+    {"xdel", CMD_XDEL, 3, -1, 0, CMD_WRITE},
+    {"xtrim", CMD_XTRIM, 4, -1, 0, CMD_WRITE},
+    {"xsetid", CMD_XSETID, 3, -1, 0, CMD_WRITE},
 };
 
 static const cmd_entry *cmd_table_entry(uint16_t id)

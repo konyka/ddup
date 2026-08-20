@@ -50,6 +50,8 @@ uint64_t obj_extra_mem(const char *val, size_t vlen)
         return obj_set_mem((obj_set *)obj_unpack_ptr(val, vlen));
     case DDUP_OBJ_ZSET:
         return obj_zset_mem((obj_zset *)obj_unpack_ptr(val, vlen));
+    case DDUP_OBJ_STREAM:
+        return obj_stream_mem((obj_stream *)obj_unpack_ptr(val, vlen));
     default:
         return 0;
     }
@@ -69,6 +71,9 @@ void obj_free_value(const char *val, size_t vlen)
         break;
     case DDUP_OBJ_ZSET:
         obj_zset_free((obj_zset *)obj_unpack_ptr(val, vlen));
+        break;
+    case DDUP_OBJ_STREAM:
+        obj_stream_free((obj_stream *)obj_unpack_ptr(val, vlen));
         break;
     default:
         break;

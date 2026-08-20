@@ -215,6 +215,46 @@ static void write_value_payload(save_ctx *ctx, int tag, const char *val,
         }
         break;
     }
+    case DDUP_OBJ_STREAM: {
+        obj_stream *st = (obj_stream *)obj_unpack_ptr(val, vlen);
+        size_t i;
+        if (obj_stream_len(st) > UINT32_MAX) {
+            ctx->ok = 0;
+            return;
+        }
+        if (buf_u32le(buf, (uint32_t)obj_stream_len(st)) != 0 ||
+            buf_u64le(buf, st->last_ms) != 0 ||
+            buf_u64le(buf, st->last_seq) != 0 ||
+            buf_u64le(buf, st->entries_added) != 0 ||
+            buf_u64le(buf, st->max_deleted_ms) != 0 ||
+            buf_u64le(buf, st->max_deleted_seq) != 0) {
+            ctx->ok = 0;
+            return;
+        }
+        for (i = 0; i < obj_stream_len(st) && ctx->ok; i++) {
+            const stream_entry *e = obj_stream_at(st, i);
+            const char *p = e->data;
+            uint32_t j;
+            if (buf_u64le(buf, e->ms) != 0 ||
+                buf_u64le(buf, e->seq) != 0 ||
+                buf_u32le(buf, e->nfields) != 0) {
+                ctx->ok = 0;
+                return;
+            }
+            for (j = 0; j < e->nfields; j++) {
+                uint32_t fl = e->lens[2 * j];
+                uint32_t vl = e->lens[2 * j + 1];
+                if (buf_u32le(buf, fl) != 0 || buf_bytes(buf, p, fl) != 0 ||
+                    buf_u32le(buf, vl) != 0 ||
+                    buf_bytes(buf, p + fl, vl) != 0) {
+                    ctx->ok = 0;
+                    return;
+                }
+                p += (size_t)fl + (size_t)vl;
+            }
+        }
+        break;
+    }
     default:
         break; /* unknown tag: skipped by the loader too */
     }
@@ -509,6 +549,70 @@ static char *load_payload(reader *r, int tag, char blob[9], size_t *out_len)
             return NULL;
         }
         obj_pack_ptr(blob, DDUP_OBJ_ZSET, z);
+        *out_len = 9;
+        return NULL;
+    }
+    case DDUP_OBJ_STREAM: {
+        obj_stream *st = obj_stream_new();
+        uint64_t last_ms, last_seq, entries_added, max_del_ms, max_del_seq;
+        n = rd_u32le(r);
+        last_ms = rd_u64le(r);
+        last_seq = rd_u64le(r);
+        entries_added = rd_u64le(r);
+        max_del_ms = rd_u64le(r);
+        max_del_seq = rd_u64le(r);
+        for (i = 0; i < n && r->ok; i++) {
+            uint64_t ms = rd_u64le(r);
+            uint64_t seq = rd_u64le(r);
+            uint32_t nf = rd_u32le(r);
+            const char **fields = NULL;
+            const char **values = NULL;
+            size_t *flens = NULL;
+            size_t *vlens = NULL;
+            uint32_t j;
+            if (!r->ok)
+                break;
+            if (nf > 0) {
+                fields = (const char **)malloc((size_t)nf * sizeof(*fields));
+                values = (const char **)malloc((size_t)nf * sizeof(*values));
+                flens = (size_t *)malloc((size_t)nf * sizeof(*flens));
+                vlens = (size_t *)malloc((size_t)nf * sizeof(*vlens));
+                if (fields == NULL || values == NULL || flens == NULL ||
+                    vlens == NULL) {
+                    fprintf(stderr, "ddup: out of memory\n");
+                    exit(1);
+                }
+            }
+            for (j = 0; j < nf && r->ok; j++) {
+                uint32_t fl = rd_u32le(r);
+                const char *f = rd_bytes(r, fl);
+                uint32_t vl = rd_u32le(r);
+                const char *v = rd_bytes(r, vl);
+                fields[j] = f;
+                values[j] = v;
+                flens[j] = fl;
+                vlens[j] = vl;
+            }
+            if (!r->ok ||
+                obj_stream_append(st, ms, seq, fields, flens, values, vlens,
+                                  nf) != OBJ_STREAM_ADD_OK) {
+                r->ok = 0;
+            }
+            free(fields);
+            free(values);
+            free(flens);
+            free(vlens);
+        }
+        if (!r->ok) {
+            obj_stream_free(st);
+            return NULL;
+        }
+        st->last_ms = last_ms;
+        st->last_seq = last_seq;
+        st->entries_added = entries_added;
+        st->max_deleted_ms = max_del_ms;
+        st->max_deleted_seq = max_del_seq;
+        obj_pack_ptr(blob, DDUP_OBJ_STREAM, st);
         *out_len = 9;
         return NULL;
     }

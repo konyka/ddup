@@ -21,13 +21,15 @@
 #include "core/rhtable.h"
 #include "ds/quicklist.h"
 #include "ds/skiplist.h"
+#include "ds/stream.h"
 
 enum {
     DDUP_OBJ_STRING = 0,
     DDUP_OBJ_HASH = 1,
     DDUP_OBJ_LIST = 2,
     DDUP_OBJ_SET = 3,
-    DDUP_OBJ_ZSET = 4
+    DDUP_OBJ_ZSET = 4,
+    DDUP_OBJ_STREAM = 5
 };
 
 /* Type tag of a value blob. */

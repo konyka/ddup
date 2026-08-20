@@ -355,10 +355,17 @@ enum {
     CMD_MEMORY,
     CMD_SLOWLOG,
     CMD_BGSAVE,
-    CMD_BGREWRITEAOF
+    CMD_BGREWRITEAOF,
+    CMD_XADD,
+    CMD_XLEN,
+    CMD_XRANGE,
+    CMD_XREVRANGE,
+    CMD_XDEL,
+    CMD_XTRIM,
+    CMD_XSETID
 };
 
-#define CMD_MAX CMD_BGREWRITEAOF
+#define CMD_MAX CMD_XSETID
 
 /* Resolve a command name to its stable ID; case-insensitive. */
 uint16_t cmd_resolve(const char *name, size_t len);

@@ -1,0 +1,195 @@
+/* test_stream.c - stream core command semantics with synthetic time. */
+#include <stdarg.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+#include "core/command.h"
+#include "core/snapshot.h"
+#include "ds/obj.h"
+#include "test.h"
+
+static void exec_cmd(db *d, uint64_t now, resp_buf *out, int argc, ...)
+{
+    resp_value argv[16];
+    va_list ap;
+    int i;
+    va_start(ap, argc);
+    for (i = 0; i < argc; i++) {
+        const char *s = va_arg(ap, const char *);
+        memset(&argv[i], 0, sizeof(argv[i]));
+        argv[i].type = RESP_BULK_STRING;
+        argv[i].str = s;
+        argv[i].len = strlen(s);
+    }
+    va_end(ap);
+    out->len = 0;
+    command_execute_at(d, argv, (size_t)argc, out, now);
+}
+
+#define EXPECT(out, s) DD_CHECK_MEM((s), strlen(s), (out).data, (out).len)
+
+#define T0 1ULL
+
+static void test_xadd_xlen(void)
+{
+    db d;
+    resp_buf out;
+    db_init(&d);
+    resp_buf_init(&out);
+
+    exec_cmd(&d, T0, &out, 5, "XADD", "s", "*", "f", "v");
+    EXPECT(out, "$3\r\n1-0\r\n");
+    exec_cmd(&d, T0, &out, 5, "XADD", "s", "*", "f2", "v2");
+    EXPECT(out, "$3\r\n1-1\r\n");
+    exec_cmd(&d, T0, &out, 5, "XADD", "s", "2-*", "f3", "v3");
+    EXPECT(out, "$3\r\n2-0\r\n");
+    exec_cmd(&d, T0, &out, 5, "XADD", "s", "2-*", "f4", "v4");
+    EXPECT(out, "$3\r\n2-1\r\n");
+
+    exec_cmd(&d, T0, &out, 2, "XLEN", "s");
+    EXPECT(out, ":4\r\n");
+    exec_cmd(&d, T0, &out, 2, "XLEN", "nokey");
+    EXPECT(out, ":0\r\n");
+
+    /* equal-or-smaller IDs are rejected transactionally */
+    exec_cmd(&d, T0, &out, 5, "XADD", "s", "1-0", "bad", "x");
+    DD_CHECK(out.len > 0 && out.data[0] == '-');
+    exec_cmd(&d, T0, &out, 2, "XLEN", "s");
+    EXPECT(out, ":4\r\n");
+
+    /* NOMKSTREAM does not create the key */
+    exec_cmd(&d, T0, &out, 6, "XADD", "no", "NOMKSTREAM", "*", "f", "v");
+    EXPECT(out, "$-1\r\n");
+    exec_cmd(&d, T0, &out, 2, "EXISTS", "no");
+    EXPECT(out, ":0\r\n");
+
+    /* wrong kind */
+    exec_cmd(&d, T0, &out, 3, "SET", "str", "x");
+    exec_cmd(&d, T0, &out, 5, "XADD", "str", "*", "f", "v");
+    DD_CHECK(out.len > 0 && out.data[0] == '-');
+    DD_CHECK(out.len > 9 && memcmp(out.data, "-WRONGTYPE", 10) == 0);
+
+    resp_buf_free(&out);
+    db_destroy(&d);
+}
+
+static void test_xrange_xrevrange(void)
+{
+    db d;
+    resp_buf out;
+    db_init(&d);
+    resp_buf_init(&out);
+
+    exec_cmd(&d, T0, &out, 5, "XADD", "s", "1-0", "f", "v");
+    exec_cmd(&d, T0, &out, 5, "XADD", "s", "1-1", "a", "b");
+    exec_cmd(&d, T0, &out, 5, "XADD", "s", "2-0", "c", "d");
+
+    exec_cmd(&d, T0, &out, 4, "XRANGE", "s", "-", "+");
+    EXPECT(out,
+           "*3\r\n"
+           "*2\r\n$3\r\n1-0\r\n*2\r\n$1\r\nf\r\n$1\r\nv\r\n"
+           "*2\r\n$3\r\n1-1\r\n*2\r\n$1\r\na\r\n$1\r\nb\r\n"
+           "*2\r\n$3\r\n2-0\r\n*2\r\n$1\r\nc\r\n$1\r\nd\r\n");
+
+    exec_cmd(&d, T0, &out, 4, "XRANGE", "s", "1-1", "+");
+    EXPECT(out,
+           "*2\r\n"
+           "*2\r\n$3\r\n1-1\r\n*2\r\n$1\r\na\r\n$1\r\nb\r\n"
+           "*2\r\n$3\r\n2-0\r\n*2\r\n$1\r\nc\r\n$1\r\nd\r\n");
+
+    exec_cmd(&d, T0, &out, 6, "XRANGE", "s", "-", "+", "COUNT", "2");
+    EXPECT(out,
+           "*2\r\n"
+           "*2\r\n$3\r\n1-0\r\n*2\r\n$1\r\nf\r\n$1\r\nv\r\n"
+           "*2\r\n$3\r\n1-1\r\n*2\r\n$1\r\na\r\n$1\r\nb\r\n");
+
+    exec_cmd(&d, T0, &out, 4, "XREVRANGE", "s", "+", "-");
+    EXPECT(out,
+           "*3\r\n"
+           "*2\r\n$3\r\n2-0\r\n*2\r\n$1\r\nc\r\n$1\r\nd\r\n"
+           "*2\r\n$3\r\n1-1\r\n*2\r\n$1\r\na\r\n$1\r\nb\r\n"
+           "*2\r\n$3\r\n1-0\r\n*2\r\n$1\r\nf\r\n$1\r\nv\r\n");
+
+    exec_cmd(&d, T0, &out, 4, "XRANGE", "nokey", "-", "+");
+    EXPECT(out, "*0\r\n");
+
+    resp_buf_free(&out);
+    db_destroy(&d);
+}
+
+static void test_xdel_xtrim_xsetid(void)
+{
+    db d;
+    resp_buf out;
+    db_init(&d);
+    resp_buf_init(&out);
+
+    exec_cmd(&d, T0, &out, 5, "XADD", "s", "1-0", "f", "v");
+    exec_cmd(&d, T0, &out, 5, "XADD", "s", "1-1", "f", "v");
+    exec_cmd(&d, T0, &out, 5, "XADD", "s", "2-0", "f", "v");
+    exec_cmd(&d, T0, &out, 5, "XADD", "s", "2-1", "f", "v");
+    exec_cmd(&d, T0, &out, 5, "XADD", "s", "3-0", "f", "v");
+
+    exec_cmd(&d, T0, &out, 5, "XDEL", "s", "1-0", "3-0", "9-9");
+    EXPECT(out, ":2\r\n");
+    exec_cmd(&d, T0, &out, 2, "XLEN", "s");
+    EXPECT(out, ":3\r\n");
+
+    exec_cmd(&d, T0, &out, 5, "XTRIM", "s", "MAXLEN", "=", "2");
+    EXPECT(out, ":1\r\n");
+    exec_cmd(&d, T0, &out, 2, "XLEN", "s");
+    EXPECT(out, ":2\r\n");
+
+    exec_cmd(&d, T0, &out, 5, "XTRIM", "s", "MINID", "=", "2-1");
+    EXPECT(out, ":1\r\n");
+    exec_cmd(&d, T0, &out, 2, "XLEN", "s");
+    EXPECT(out, ":1\r\n");
+
+    exec_cmd(&d, T0, &out, 3, "XSETID", "s", "10-0");
+    EXPECT(out, "+OK\r\n");
+    exec_cmd(&d, T0, &out, 5, "XADD", "s", "9-0", "f", "v");
+    DD_CHECK(out.len > 0 && out.data[0] == '-');
+    exec_cmd(&d, T0, &out, 5, "XADD", "s", "10-*", "f", "v");
+    EXPECT(out, "$4\r\n10-1\r\n");
+
+    resp_buf_free(&out);
+    db_destroy(&d);
+}
+
+static void test_stream_snapshot_roundtrip(void)
+{
+    db d, d2;
+    resp_buf out;
+    const char *path = "/tmp/ddup-test-stream.rdb";
+    db_init(&d);
+    db_init(&d2);
+    resp_buf_init(&out);
+
+    exec_cmd(&d, T0, &out, 5, "XADD", "s", "5-1", "f", "v");
+    exec_cmd(&d, T0, &out, 5, "XADD", "s", "6-*", "a", "b");
+    DD_CHECK_EQ_INT(0, snapshot_save(&d, path));
+    DD_CHECK_EQ_INT(0, snapshot_load(&d2, path, T0));
+
+    exec_cmd(&d2, T0, &out, 2, "XLEN", "s");
+    EXPECT(out, ":2\r\n");
+    exec_cmd(&d2, T0, &out, 4, "XRANGE", "s", "-", "+");
+    EXPECT(out,
+           "*2\r\n"
+           "*2\r\n$3\r\n5-1\r\n*2\r\n$1\r\nf\r\n$1\r\nv\r\n"
+           "*2\r\n$3\r\n6-0\r\n*2\r\n$1\r\na\r\n$1\r\nb\r\n");
+
+    remove(path);
+    resp_buf_free(&out);
+    db_destroy(&d2);
+    db_destroy(&d);
+}
+
+int main(void)
+{
+    DD_RUN(test_xadd_xlen);
+    DD_RUN(test_xrange_xrevrange);
+    DD_RUN(test_xdel_xtrim_xsetid);
+    DD_RUN(test_stream_snapshot_roundtrip);
+    return DD_TEST_SUMMARY();
+}
