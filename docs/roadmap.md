@@ -311,6 +311,13 @@
     session 钩子访问 server 连接表与环形日志，st/mt 路由与集群 keyless
     分类同步；兼容审计缺 40 个顶层命令、7 个整体缺失容器、43 个容器
     子命令（Phase 60）
+  - [x] Stream 核心族补齐：`XADD`（NOMKSTREAM/MAXLEN/MINID/LIMIT 与
+    自动/显式/部分自动 ID）、`XLEN`、`XRANGE`/`XREVRANGE`（`-`/`+`、
+    `(` 排他边界、COUNT）、`XDEL`、`XTRIM`（MAXLEN/MINID + LIMIT）、
+    `XSETID`（ENTRIESADDED/MAXDELETEDID）；stream 采用连续有序 entry
+    数组 + 二分查找（追加 O(1) 摊还、区间 O(log N + K)，字段值单块
+    连续分配），并接入 TYPE/快照/DUMP/RESTORE、st/mt 单键路由与集群
+    同槽校验；兼容审计缺 33 个顶层命令（Phase 61）
   - [ ] 范围化排除（记录在案，不实施）：
     - 分层存储（热/冷数据落盘）：超出"内存缓存存储"定位
     - mt 模式的复制/集群适配：见 Phase 15 说明

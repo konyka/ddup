@@ -234,6 +234,25 @@
   返回 Redis 风格启动确认；`BGREWRITEAOF` 当前为 AOF 强制 flush 兼容实现，
   无 fork/双文件 rewrite（内存缓存存储定位，记录在案）。
 
+## Stream 核心族（Phase 61）
+
+- **表示**：新增 `DDUP_OBJ_STREAM`，对象 `obj_stream`（src/ds/stream.h）
+  为**插入序连续 entry 数组**。合法 `XADD` 只能追加单调递增 ID，因此普通
+  追加为 O(1) 摊还（容量倍增）；区间查询用 `obj_stream_lower_bound` 二分
+  定位，区间发射 O(log N + K)。每条 entry 的 field/value 字节存放在一个
+  连续块中，`lens[]` 记录各段长度，避免逐字段散落分配。
+- **ID 语义**：`*`/`ms-*` 自动 seq 与 Redis 一致（同 ms 自增、跨 ms 归零）；
+  显式 ID 必须严格大于 `last_id`；`XDEL/XTRIM` 不降低 `last_id`，`XSETID`
+  可推进并回填 `entries_added/max_deleted_id` 元数据。
+- **修剪**：`MAXLEN`/`MINID` + 可选 `LIMIT` 从前端批量释放并 `memmove`
+  收缩；`=` 与 `~` 当前采用同一精确语义（记录在案：无 radix-tree 节点粒度，
+  因此不做 Redis `~` 的过量修剪）。
+- **命令覆盖**：`XADD/XLEN/XRANGE/XREVRANGE/XDEL/XTRIM/XSETID`；
+  `XRANGE/XREVRANGE` 支持 `-`/`+`、`(` 排他边界与 `COUNT`。TYPE 报告
+  `stream`；快照/DUMP/RESTORE 已支持该对象类型。
+- **未覆盖**：消费组、阻塞读与 `XREAD/XREADGROUP/XGROUP/XACK/XCLAIM/
+  XAUTOCLAIM/XPENDING/XINFO` 管理族留待后续阶段。
+
 ## io_uring 后端（Phase 14，Linux）
 
 - **探测与接入**：`pal_loop_create_iouring()` 在 Linux 上以直接
