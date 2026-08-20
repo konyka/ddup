@@ -253,6 +253,57 @@ static void write_value_payload(save_ctx *ctx, int tag, const char *val,
                 p += (size_t)fl + (size_t)vl;
             }
         }
+        if (st->ngroups > UINT32_MAX) {
+            ctx->ok = 0;
+            return;
+        }
+        if (buf_u32le(buf, (uint32_t)st->ngroups) != 0) {
+            ctx->ok = 0;
+            return;
+        }
+        for (i = 0; i < st->ngroups && ctx->ok; i++) {
+            const stream_group *g = &st->groups[i];
+            size_t j;
+            if (g->name_len > UINT32_MAX || g->nconsumers > UINT32_MAX) {
+                ctx->ok = 0;
+                return;
+            }
+            if (buf_u32le(buf, (uint32_t)g->name_len) != 0 ||
+                buf_bytes(buf, g->name, g->name_len) != 0 ||
+                buf_u64le(buf, g->last_ms) != 0 ||
+                buf_u64le(buf, g->last_seq) != 0 ||
+                buf_u64le(buf, g->entries_read) != 0 ||
+                buf_u32le(buf, (uint32_t)g->nconsumers) != 0) {
+                ctx->ok = 0;
+                return;
+            }
+            for (j = 0; j < g->nconsumers && ctx->ok; j++) {
+                const stream_consumer *c = &g->consumers[j];
+                size_t k;
+                if (c->name_len > UINT32_MAX || c->pel_len > UINT32_MAX) {
+                    ctx->ok = 0;
+                    return;
+                }
+                if (buf_u32le(buf, (uint32_t)c->name_len) != 0 ||
+                    buf_bytes(buf, c->name, c->name_len) != 0 ||
+                    buf_u64le(buf, c->seen_time) != 0 ||
+                    buf_u64le(buf, c->active_time) != 0 ||
+                    buf_u32le(buf, (uint32_t)c->pel_len) != 0) {
+                    ctx->ok = 0;
+                    return;
+                }
+                for (k = 0; k < c->pel_len && ctx->ok; k++) {
+                    const stream_pending *pd = &c->pel[k];
+                    if (buf_u64le(buf, pd->ms) != 0 ||
+                        buf_u64le(buf, pd->seq) != 0 ||
+                        buf_u64le(buf, pd->idle) != 0 ||
+                        buf_u64le(buf, pd->delivery_count) != 0) {
+                        ctx->ok = 0;
+                        return;
+                    }
+                }
+            }
+        }
         break;
     }
     default:
@@ -612,6 +663,75 @@ static char *load_payload(reader *r, int tag, char blob[9], size_t *out_len)
         st->entries_added = entries_added;
         st->max_deleted_ms = max_del_ms;
         st->max_deleted_seq = max_del_seq;
+        {
+            uint32_t ng = rd_u32le(r);
+            uint32_t gi;
+            for (gi = 0; gi < ng && r->ok; gi++) {
+                uint32_t gl = rd_u32le(r);
+                const char *gname = rd_bytes(r, gl);
+                uint64_t g_last_ms = rd_u64le(r);
+                uint64_t g_last_seq = rd_u64le(r);
+                uint64_t g_entries = rd_u64le(r);
+                uint32_t nc = rd_u32le(r);
+                uint32_t ci;
+                stream_group *g;
+                int created = 0;
+                if (!r->ok)
+                    break;
+                g = obj_stream_group_create(st, gname, gl, g_last_ms,
+                                            g_last_seq, &created);
+                if (g == NULL || created != 1) {
+                    r->ok = 0;
+                    break;
+                }
+                g->entries_read = g_entries;
+                for (ci = 0; ci < nc && r->ok; ci++) {
+                    uint32_t cl = rd_u32le(r);
+                    const char *cname = rd_bytes(r, cl);
+                    uint64_t seen = rd_u64le(r);
+                    uint64_t active = rd_u64le(r);
+                    uint32_t np = rd_u32le(r);
+                    uint32_t pi;
+                    stream_consumer *c;
+                    if (!r->ok)
+                        break;
+                    if (obj_stream_consumer_get(g, cname, cl) != NULL) {
+                        r->ok = 0;
+                        break;
+                    }
+                    c = obj_stream_consumer_create(g, cname, cl);
+                    if (c == NULL) {
+                        r->ok = 0;
+                        break;
+                    }
+                    c->seen_time = seen;
+                    c->active_time = active;
+                    for (pi = 0; pi < np && r->ok; pi++) {
+                        uint64_t p_ms = rd_u64le(r);
+                        uint64_t p_seq = rd_u64le(r);
+                        uint64_t p_idle = rd_u64le(r);
+                        uint64_t p_delivery = rd_u64le(r);
+                        if (!r->ok)
+                            break;
+                        if (obj_stream_consumer_pel_find(c, p_ms, p_seq) !=
+                            NULL) {
+                            r->ok = 0;
+                            break;
+                        }
+                        if (obj_stream_consumer_pel_add(g, c, p_ms, p_seq,
+                                                        p_idle, p_delivery) ==
+                            NULL) {
+                            r->ok = 0;
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+        if (!r->ok) {
+            obj_stream_free(st);
+            return NULL;
+        }
         obj_pack_ptr(blob, DDUP_OBJ_STREAM, st);
         *out_len = 9;
         return NULL;

@@ -13,6 +13,18 @@
  *       HASH:   u32 n, [u32 flen, field, u32 vlen, value]...
  *       SET:    u32 n, [u32 len, member]...
  *       ZSET:   u32 n, [u32 mlen, member, f64 score]...
+ *       STREAM: u32 n, u64 last_ms, u64 last_seq,
+ *               u64 entries_added, u64 max_deleted_ms,
+ *               u64 max_deleted_seq,
+ *               [u64 ms, u64 seq, u32 nf,
+ *                (u32 flen, field, u32 vlen, value)...]...
+ *               then a required consumer-group block:
+ *                 u32 ngroups, then per group:
+ *                   u32 name_len, name, u64 last_ms, u64 last_seq,
+ *                   u64 entries_read, u32 nconsumers, then per consumer:
+ *                     u32 name_len, name, u64 seen_time, u64 active_time,
+ *                     u32 pel_len, then per PEL entry:
+ *                       u64 ms, u64 seq, u64 idle, u64 delivery_count
  *
  * Save is atomic (write "<path>.tmp", then rename over the target).
  * Load policy: keys already expired at load time are skipped; a truncated

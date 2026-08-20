@@ -1359,6 +1359,12 @@ static int mt_is_single_key(uint16_t cmd)
     case CMD_XREVRANGE:
     case CMD_XDEL:
     case CMD_XTRIM:
+    case CMD_XGROUP:
+    case CMD_XACK:
+    case CMD_XPENDING:
+    case CMD_XCLAIM:
+    case CMD_XAUTOCLAIM:
+    case CMD_XINFO:
     case CMD_XSETID:
         return 1;
     default:
@@ -1473,6 +1479,33 @@ static int mt_multikey_target(int nworkers, uint16_t cmd,
         kstart = 1;
         kend = argc > 2 ? 3 : argc;
     }
+    if (cmd == CMD_XREAD || cmd == CMD_XREADGROUP) {
+        size_t streams = 1;
+        size_t start, end;
+        while (streams < argc) {
+            if (argv[streams].str != NULL &&
+                mt_ci_equal(argv[streams].str, argv[streams].len, "STREAMS"))
+                break;
+            streams++;
+        }
+        if (streams >= argc || (argc - streams - 1) < 2 ||
+            ((argc - streams - 1) & 1u) != 0)
+            return MT_LOCAL;
+        start = streams + 1;
+        end = start + (argc - streams - 1) / 2;
+        for (i = start; i < end; i++) {
+            int w;
+            if (argv[i].str == NULL)
+                return MT_LOCAL;
+            w = (int)(hash_slot(argv[i].str, argv[i].len) %
+                      (uint32_t)nworkers);
+            if (target == -2)
+                target = w;
+            else if (target != w)
+                return MT_CROSSSLOT;
+        }
+        return target == -2 ? MT_LOCAL : target;
+    }
 
     kend = argc;
     if (cmd == CMD_SINTERCARD || cmd == CMD_ZUNION || cmd == CMD_ZINTER ||
@@ -1529,9 +1562,10 @@ static int mt_classify(int nworkers, uint16_t cmd, const resp_value *argv,
     if (mt_is_blocked(cmd))
         return MT_BLOCKED;
     if (mt_is_single_key(cmd)) {
-        if (argc < 2 || argv[1].str == NULL)
+        size_t keyidx = (cmd == CMD_XGROUP || cmd == CMD_XINFO) ? 2u : 1u;
+        if (argc <= keyidx || argv[keyidx].str == NULL)
             return MT_LOCAL; /* arity error: let the local session report it */
-        return (int)(hash_slot(argv[1].str, argv[1].len) %
+        return (int)(hash_slot(argv[keyidx].str, argv[keyidx].len) %
                      (uint32_t)nworkers);
     }
     switch (cmd) {
@@ -1573,6 +1607,8 @@ static int mt_classify(int nworkers, uint16_t cmd, const resp_value *argv,
     case CMD_GEOSEARCHSTORE:
     case CMD_GEORADIUS:
     case CMD_GEORADIUSBYMEMBER:
+    case CMD_XREAD:
+    case CMD_XREADGROUP:
         return mt_multikey_target(nworkers, cmd, argv, argc);
     default:
         break;

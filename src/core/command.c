@@ -3683,6 +3683,39 @@ static int cmd_keys_accum(const resp_value *argv, size_t argc, int *have,
         }
         return 1;
     }
+    if (cmd_id == CMD_XGROUP || cmd_id == CMD_XINFO) {
+        const char *k;
+        size_t kl;
+        if (argc < 3 || !arg_str(&argv[2], &k, &kl))
+            return 1;
+        return slot_accum(k, kl, have, slot);
+    }
+    if (cmd_id == CMD_XREAD || cmd_id == CMD_XREADGROUP) {
+        size_t streams = 1;
+        size_t nkeys;
+        size_t start;
+        while (streams < argc) {
+            const char *tok;
+            size_t tokl;
+            if (arg_str(&argv[streams], &tok, &tokl) &&
+                ci_equal(tok, tokl, "STREAMS"))
+                break;
+            streams++;
+        }
+        if (streams >= argc || (argc - streams - 1) < 2 ||
+            ((argc - streams - 1) & 1u) != 0)
+            return 1;
+        nkeys = (argc - streams - 1) / 2;
+        start = streams + 1;
+        for (i = start; i < start + nkeys; i++) {
+            const char *k;
+            size_t kl;
+            if (arg_str(&argv[i], &k, &kl) &&
+                !slot_accum(k, kl, have, slot))
+                return 0;
+        }
+        return 1;
+    }
     /* everything else: single key at argv[1] */
     {
         const char *k;
@@ -5839,6 +5872,31 @@ static void command_emit_keys(const resp_value *argv, size_t argc,
         EMIT_KEY(&argv[3]);
         goto done;
     }
+    if (cmd_id == CMD_XGROUP || cmd_id == CMD_XINFO) {
+        if (argc > 4)
+            EMIT_KEY(&argv[4]);
+        goto done;
+    }
+    if (cmd_id == CMD_XREAD || cmd_id == CMD_XREADGROUP) {
+        size_t streams = 3;
+        size_t start, end;
+        while (streams < argc) {
+            const char *tok;
+            size_t tokl;
+            if (arg_str(&argv[streams], &tok, &tokl) &&
+                ci_equal(tok, tokl, "STREAMS"))
+                break;
+            streams++;
+        }
+        if (streams >= argc || (argc - streams - 1) < 2 ||
+            ((argc - streams - 1) & 1u) != 0)
+            goto done;
+        start = streams + 1;
+        end = start + (argc - streams - 1) / 2;
+        for (i = start; i < end; i++)
+            EMIT_KEY(&argv[i]);
+        goto done;
+    }
 
     /* Default single-key command: first argument after the command name. */
     if (argc > 3)
@@ -6727,6 +6785,1158 @@ static void command_xsetid(session *s, const resp_value *argv, size_t argc,
     resp_write_simple_string(out, "OK", 2);
     return;
 
+syntax:
+    resp_write_error(out, ERR_SYNTAX, sizeof(ERR_SYNTAX) - 1);
+    return;
+bad_type:
+    resp_write_error(out, "ERR invalid argument type", 24);
+}
+
+/* ------------------------------------------------------------------ */
+/* stream consumer-group command family                               */
+/* ------------------------------------------------------------------ */
+
+static int stream_id_gt(uint64_t a_ms, uint64_t a_seq, uint64_t b_ms,
+                        uint64_t b_seq)
+{
+    return a_ms > b_ms || (a_ms == b_ms && a_seq > b_seq);
+}
+
+static int stream_name_eq(const char *a, size_t alen, const char *b,
+                          size_t blen)
+{
+    return alen == blen && (alen == 0 || memcmp(a, b, alen) == 0);
+}
+
+static void stream_write_id(resp_buf *out, uint64_t ms, uint64_t seq)
+{
+    char id[64];
+    int n = snprintf(id, sizeof(id), "%llu-%llu",
+                     (unsigned long long)ms, (unsigned long long)seq);
+    resp_write_bulk(out, id, (size_t)n);
+}
+
+static int stream_entry_index(const obj_stream *st, uint64_t ms, uint64_t seq,
+                              size_t *idx)
+{
+    size_t i = obj_stream_lower_bound(st, ms, seq);
+    if (i < obj_stream_len(st)) {
+        const stream_entry *e = obj_stream_at(st, i);
+        if (e->ms == ms && e->seq == seq) {
+            *idx = i;
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static stream_pending *stream_group_pel_find(stream_group *g, uint64_t ms,
+                                             uint64_t seq,
+                                             stream_consumer **owner)
+{
+    size_t i;
+    for (i = 0; i < g->nconsumers; i++) {
+        stream_consumer *c = &g->consumers[i];
+        stream_pending *p = obj_stream_consumer_pel_find(c, ms, seq);
+        if (p != NULL) {
+            if (owner != NULL)
+                *owner = c;
+            return p;
+        }
+    }
+    return NULL;
+}
+
+static void command_xgroup(session *s, const resp_value *argv, size_t argc,
+                           resp_buf *out, uint64_t now_ms)
+{
+    db *d = s->d;
+    const char *sub, *key, *group, *consumer, *idv, *opt, *val;
+    size_t subl, kl, gl, cl, idl, optl, vall;
+    obj_stream *st;
+    stream_group *g;
+    int rc;
+
+    if (argc < 2) {
+        wrong_args(out, "xgroup");
+        return;
+    }
+    if (!arg_str(&argv[1], &sub, &subl))
+        goto bad_type;
+
+    if (ci_equal(sub, subl, "HELP")) {
+        static const char *help[] = {
+            "CREATE <key> <group> <id|$> [MKSTREAM] [ENTRIESREAD entries-read]",
+            "SETID <key> <group> <id|$> [ENTRIESREAD entries-read]",
+            "DESTROY <key> <group>",
+            "CREATECONSUMER <key> <group> <consumer>",
+            "DELCONSUMER <key> <group> <consumer>"
+        };
+        size_t i;
+        if (argc != 2) {
+            wrong_args(out, "xgroup|HELP");
+            return;
+        }
+        resp_write_array_header(out, sizeof(help) / sizeof(help[0]));
+        for (i = 0; i < sizeof(help) / sizeof(help[0]); i++)
+            resp_write_bulk(out, help[i], strlen(help[i]));
+        return;
+    }
+
+    if (argc < 3) {
+        wrong_args(out, "xgroup");
+        return;
+    }
+    if (!arg_str(&argv[2], &key, &kl))
+        goto bad_type;
+
+    if (ci_equal(sub, subl, "CREATE") || ci_equal(sub, subl, "SETID")) {
+        uint64_t ms = 0, seq = 0, entries_read = UINT64_MAX;
+        int create = ci_equal(sub, subl, "CREATE");
+        int mkstream = 0, created = 0, dollar = 0;
+        size_t i;
+        if (argc < 5) {
+            wrong_args(out, "xgroup");
+            return;
+        }
+        if (!arg_str(&argv[3], &group, &gl) ||
+            !arg_str(&argv[4], &idv, &idl))
+            goto bad_type;
+        i = 5;
+        while (i < argc) {
+            if (!arg_str(&argv[i], &opt, &optl))
+                goto bad_type;
+            if (ci_equal(opt, optl, "MKSTREAM")) {
+                if (!create || mkstream)
+                    goto syntax;
+                mkstream = 1;
+                i++;
+            } else if (ci_equal(opt, optl, "ENTRIESREAD")) {
+                if (i + 1 >= argc)
+                    goto syntax;
+                if (!arg_str(&argv[i + 1], &val, &vall) ||
+                    !parse_u64(val, vall, &entries_read))
+                    goto syntax;
+                i += 2;
+            } else {
+                goto syntax;
+            }
+        }
+        dollar = ci_equal(idv, idl, "$");
+        if (!dollar && !stream_parse_full_id(idv, idl, &ms, &seq))
+            goto syntax;
+        rc = get_stream(d, out, key, kl, create && mkstream, now_ms, &st);
+        if (rc < 0)
+            return;
+        if (rc == 0) {
+            resp_write_error(out, "ERR no such key", 15);
+            return;
+        }
+        if (dollar) {
+            ms = st->last_ms;
+            seq = st->last_seq;
+        }
+        g = obj_stream_group_create(st, group, gl, ms, seq, &created);
+        if (g == NULL) {
+            storage_length_error(out);
+            return;
+        }
+        if (create && created == 0) {
+            static const char E[] =
+                "BUSYGROUP Consumer Group name already exists";
+            resp_write_error(out, E, sizeof(E) - 1);
+            return;
+        }
+        if (entries_read != UINT64_MAX)
+            g->entries_read = entries_read;
+        else if (create)
+            g->entries_read = 0;
+        resp_write_simple_string(out, "OK", 2);
+        return;
+    }
+
+    if (argc < 4) {
+        wrong_args(out, "xgroup");
+        return;
+    }
+    if (!arg_str(&argv[3], &group, &gl))
+        goto bad_type;
+    rc = get_stream(d, out, key, kl, 0, now_ms, &st);
+    if (rc < 0)
+        return;
+    if (rc == 0) {
+        resp_write_integer(out, 0);
+        return;
+    }
+    g = obj_stream_group_get(st, group, gl);
+    if (ci_equal(sub, subl, "DESTROY")) {
+        if (argc != 4) {
+            wrong_args(out, "xgroup|DESTROY");
+            return;
+        }
+        resp_write_integer(out, obj_stream_group_destroy(st, group, gl));
+        return;
+    }
+    if (g == NULL) {
+        static const char E[] = "NOGROUP No such consumer group";
+        resp_write_error(out, E, sizeof(E) - 1);
+        return;
+    }
+    if (ci_equal(sub, subl, "CREATECONSUMER") ||
+        ci_equal(sub, subl, "DELCONSUMER")) {
+        stream_consumer *c;
+        uint64_t pending = 0;
+        uint64_t before = obj_stream_mem(st);
+        int is_create = ci_equal(sub, subl, "CREATECONSUMER");
+        if (argc != 5) {
+            wrong_args(out, is_create ? "xgroup|CREATECONSUMER"
+                                      : "xgroup|DELCONSUMER");
+            return;
+        }
+        if (!arg_str(&argv[4], &consumer, &cl))
+            goto bad_type;
+        c = obj_stream_consumer_get(g, consumer, cl);
+        if (is_create) {
+            int existed = c != NULL;
+            c = obj_stream_consumer_create(g, consumer, cl);
+            if (c == NULL) {
+                storage_length_error(out);
+                return;
+            }
+            (void)before;
+            mem_sync(d, key, kl, before, obj_stream_mem(st));
+            resp_write_integer(out, existed ? 0 : 1);
+            return;
+        }
+        if (c != NULL)
+            pending = (uint64_t)c->pel_len;
+        if (!obj_stream_consumer_destroy(g, consumer, cl)) {
+            resp_write_integer(out, 0);
+            return;
+        }
+        mem_sync(d, key, kl, before, obj_stream_mem(st));
+        resp_write_integer(out, (long long)pending);
+        return;
+    }
+    goto syntax;
+
+syntax:
+    resp_write_error(out, ERR_SYNTAX, sizeof(ERR_SYNTAX) - 1);
+    return;
+bad_type:
+    resp_write_error(out, "ERR invalid argument type", 24);
+}
+
+static void command_xack(session *s, const resp_value *argv, size_t argc,
+                         resp_buf *out, uint64_t now_ms)
+{
+    db *d = s->d;
+    const char *key, *group, *idv;
+    size_t kl, gl, idl;
+    obj_stream *st;
+    stream_group *g;
+    uint64_t before, acked = 0;
+    size_t i;
+    int rc;
+    if (argc < 4) {
+        wrong_args(out, "xack");
+        return;
+    }
+    if (!arg_str(&argv[1], &key, &kl) ||
+        !arg_str(&argv[2], &group, &gl))
+        goto bad_type;
+    rc = get_stream(d, out, key, kl, 0, now_ms, &st);
+    if (rc < 0)
+        return;
+    if (rc == 0 || obj_stream_group_get(st, group, gl) == NULL) {
+        resp_write_integer(out, 0);
+        return;
+    }
+    g = obj_stream_group_get(st, group, gl);
+    before = obj_stream_mem(st);
+    for (i = 3; i < argc; i++) {
+        uint64_t ms, seq;
+        if (!arg_str(&argv[i], &idv, &idl) ||
+            !stream_parse_full_id(idv, idl, &ms, &seq)) {
+            static const char E[] =
+                "ERR Invalid stream ID specified as stream command argument";
+            resp_write_error(out, E, sizeof(E) - 1);
+            return;
+        }
+        if (obj_stream_group_pel_remove(g, ms, seq))
+            acked++;
+    }
+    if (acked > 0)
+        mem_sync(d, key, kl, before, obj_stream_mem(st));
+    resp_write_integer(out, (long long)acked);
+    return;
+bad_type:
+    resp_write_error(out, "ERR invalid argument type", 24);
+}
+
+static void command_xpending(session *s, const resp_value *argv, size_t argc,
+                             resp_buf *out, uint64_t now_ms)
+{
+    db *d = s->d;
+    const char *key, *group, *consumer = NULL;
+    size_t kl, gl, cl = 0;
+    obj_stream *st;
+    stream_group *g;
+    int rc;
+    if (argc != 3 && argc != 6 && argc != 7) {
+        wrong_args(out, "xpending");
+        return;
+    }
+    if (!arg_str(&argv[1], &key, &kl) ||
+        !arg_str(&argv[2], &group, &gl))
+        goto bad_type;
+    rc = get_stream(d, out, key, kl, 0, now_ms, &st);
+    if (rc < 0)
+        return;
+    if (rc == 0 || (g = obj_stream_group_get(st, group, gl)) == NULL) {
+        resp_write_integer(out, 0);
+        return;
+    }
+    if (argc == 3) {
+        uint64_t pending = obj_stream_group_pending_count(g);
+        uint64_t min_ms = 0, min_seq = 0, max_ms = 0, max_seq = 0;
+        int have = 0;
+        size_t i, j;
+        for (i = 0; i < g->nconsumers; i++) {
+            for (j = 0; j < g->consumers[i].pel_len; j++) {
+                stream_pending *p = &g->consumers[i].pel[j];
+                if (!have || stream_id_gt(min_ms, min_seq, p->ms, p->seq)) {
+                    min_ms = p->ms;
+                    min_seq = p->seq;
+                }
+                if (!have || stream_id_gt(p->ms, p->seq, max_ms, max_seq)) {
+                    max_ms = p->ms;
+                    max_seq = p->seq;
+                }
+                have = 1;
+            }
+        }
+        resp_write_array_header(out, 4);
+        resp_write_integer(out, (long long)pending);
+        if (have)
+            stream_write_id(out, min_ms, min_seq);
+        else
+            resp_write_bulk(out, NULL, 0);
+        if (have)
+            stream_write_id(out, max_ms, max_seq);
+        else
+            resp_write_bulk(out, NULL, 0);
+        resp_write_array_header(out, g->nconsumers);
+        for (i = 0; i < g->nconsumers; i++) {
+            resp_write_array_header(out, 2);
+            resp_write_bulk(out, g->consumers[i].name,
+                            g->consumers[i].name_len);
+            resp_write_integer(out, (long long)g->consumers[i].pel_len);
+        }
+        return;
+    }
+
+    {
+        const char *sv, *ev, *cv;
+        size_t svl, evl, cvl;
+        uint64_t sms, sseq, ems, eseq, count, emitted = 0;
+        size_t i, j;
+        if (!arg_str(&argv[3], &sv, &svl) ||
+            !arg_str(&argv[4], &ev, &evl) ||
+            !arg_str(&argv[5], &cv, &cvl))
+            goto bad_type;
+        if (!stream_parse_full_id(sv, svl, &sms, &sseq) ||
+            !stream_parse_full_id(ev, evl, &ems, &eseq) ||
+            !parse_u64(cv, cvl, &count))
+            goto syntax;
+        if (argc == 7) {
+            if (!arg_str(&argv[6], &consumer, &cl))
+                goto bad_type;
+            if (cl == 0)
+                goto syntax;
+        }
+        /* First pass counts matching entries; second pass emits. */
+        for (i = 0; i < g->nconsumers; i++) {
+            stream_consumer *c = &g->consumers[i];
+            if (consumer != NULL &&
+                !stream_name_eq(c->name, c->name_len, consumer, cl))
+                continue;
+            for (j = 0; j < c->pel_len; j++) {
+                stream_pending *p = &c->pel[j];
+                if (p->ms < sms || (p->ms == sms && p->seq < sseq) ||
+                    p->ms > ems || (p->ms == ems && p->seq > eseq))
+                    continue;
+                if (emitted < count)
+                    emitted++;
+            }
+        }
+        resp_write_array_header(out, emitted);
+        emitted = 0;
+        for (i = 0; i < g->nconsumers && emitted < count; i++) {
+            stream_consumer *c = &g->consumers[i];
+            if (consumer != NULL &&
+                !stream_name_eq(c->name, c->name_len, consumer, cl))
+                continue;
+            for (j = 0; j < c->pel_len && emitted < count; j++) {
+                stream_pending *p = &c->pel[j];
+                if (p->ms < sms || (p->ms == sms && p->seq < sseq) ||
+                    p->ms > ems || (p->ms == ems && p->seq > eseq))
+                    continue;
+                resp_write_array_header(out, 4);
+                stream_write_id(out, p->ms, p->seq);
+                resp_write_bulk(out, c->name, c->name_len);
+                resp_write_integer(out,
+                    (long long)(p->idle > now_ms ? 0 : now_ms - p->idle));
+                resp_write_integer(out, (long long)p->delivery_count);
+                emitted++;
+            }
+        }
+        return;
+    }
+
+syntax:
+    resp_write_error(out, ERR_SYNTAX, sizeof(ERR_SYNTAX) - 1);
+    return;
+bad_type:
+    resp_write_error(out, "ERR invalid argument type", 24);
+}
+
+static void command_xclaim(session *s, const resp_value *argv, size_t argc,
+                           resp_buf *out, uint64_t now_ms)
+{
+    db *d = s->d;
+    const char *key, *group, *consumer;
+    size_t kl, gl, cl;
+    uint64_t min_idle, idle_ms = UINT64_MAX, time_ms = now_ms;
+    int force = 0, justid = 0;
+    uint64_t last_ms = UINT64_MAX, last_seq = UINT64_MAX;
+    obj_stream *st;
+    stream_group *g;
+    stream_consumer *target = NULL;
+    uint64_t before, count = 0;
+    size_t pos, id_start, id_count;
+    int rc;
+
+    if (argc < 6) {
+        wrong_args(out, "xclaim");
+        return;
+    }
+    if (!arg_str(&argv[1], &key, &kl) ||
+        !arg_str(&argv[2], &group, &gl) ||
+        !arg_str(&argv[3], &consumer, &cl))
+        goto bad_type;
+    {
+        const char *mv;
+        size_t mvl;
+        if (!arg_str(&argv[4], &mv, &mvl) || !parse_u64(mv, mvl, &min_idle))
+            goto syntax;
+    }
+
+    id_start = 5;
+    id_count = 0;
+    for (pos = id_start; pos < argc; pos++) {
+        const char *idv;
+        size_t idl;
+        uint64_t ms, seq;
+        if (!arg_str(&argv[pos], &idv, &idl))
+            goto bad_type;
+        if (!stream_parse_full_id(idv, idl, &ms, &seq))
+            break;
+        id_count++;
+    }
+    if (id_count == 0)
+        goto syntax;
+
+    while (pos < argc) {
+        const char *opt, *val;
+        size_t optl, vall;
+        if (!arg_str(&argv[pos], &opt, &optl))
+            goto bad_type;
+        if (ci_equal(opt, optl, "FORCE")) {
+            force = 1;
+            pos++;
+        } else if (ci_equal(opt, optl, "JUSTID")) {
+            justid = 1;
+            pos++;
+        } else if (ci_equal(opt, optl, "IDLE") ||
+                   ci_equal(opt, optl, "TIME") ||
+                   ci_equal(opt, optl, "LASTID") ||
+                   ci_equal(opt, optl, "RETRYCOUNT")) {
+            if (pos + 1 >= argc)
+                goto syntax;
+            if (!arg_str(&argv[pos + 1], &val, &vall))
+                goto bad_type;
+            if (ci_equal(opt, optl, "RETRYCOUNT")) {
+                static const char E[] =
+                    "ERR XCLAIM RETRYCOUNT is not supported by this build";
+                resp_write_error(out, E, sizeof(E) - 1);
+                return;
+            }
+            if (ci_equal(opt, optl, "IDLE")) {
+                if (!parse_u64(val, vall, &idle_ms))
+                    goto syntax;
+            } else if (ci_equal(opt, optl, "TIME")) {
+                if (!parse_u64(val, vall, &time_ms))
+                    goto syntax;
+            } else {
+                if (!stream_parse_full_id(val, vall, &last_ms, &last_seq))
+                    goto syntax;
+            }
+            pos += 2;
+        } else {
+            goto syntax;
+        }
+    }
+
+    rc = get_stream(d, out, key, kl, 0, now_ms, &st);
+    if (rc < 0)
+        return;
+    if (rc == 0 || (g = obj_stream_group_get(st, group, gl)) == NULL) {
+        static const char E[] = "NOGROUP No such consumer group";
+        resp_write_error(out, E, sizeof(E) - 1);
+        return;
+    }
+    if (!justid) {
+        target = obj_stream_consumer_create(g, consumer, cl);
+        if (target == NULL) {
+            storage_length_error(out);
+            return;
+        }
+    }
+
+    for (pos = id_start; pos < id_start + id_count; pos++) {
+        const char *idv;
+        size_t idl;
+        uint64_t ms, seq;
+        stream_pending *p;
+        if (!arg_str(&argv[pos], &idv, &idl) ||
+            !stream_parse_full_id(idv, idl, &ms, &seq)) {
+            resp_write_error(out, ERR_SYNTAX, sizeof(ERR_SYNTAX) - 1);
+            return;
+        }
+        p = stream_group_pel_find(g, ms, seq, NULL);
+        if (force || (p != NULL &&
+                      (p->idle > now_ms ? 0 : now_ms - p->idle) >= min_idle))
+            count++;
+    }
+
+    before = obj_stream_mem(st);
+    resp_write_array_header(out, count);
+    for (pos = id_start; pos < id_start + id_count; pos++) {
+        const char *idv;
+        size_t idl;
+        uint64_t ms, seq, delivery = 1, new_idle;
+        stream_pending *p;
+        size_t eidx;
+        if (!arg_str(&argv[pos], &idv, &idl) ||
+            !stream_parse_full_id(idv, idl, &ms, &seq)) {
+            resp_write_error(out, ERR_SYNTAX, sizeof(ERR_SYNTAX) - 1);
+            return;
+        }
+        p = stream_group_pel_find(g, ms, seq, NULL);
+        if (!force && (p == NULL ||
+                       (p->idle > now_ms ? 0 : now_ms - p->idle) < min_idle))
+            continue;
+        if (p != NULL) {
+            delivery = p->delivery_count + (justid ? 0 : 1);
+            if (!justid)
+                (void)obj_stream_group_pel_remove(g, ms, seq);
+        }
+        if (justid) {
+            stream_write_id(out, ms, seq);
+            continue;
+        }
+        new_idle = idle_ms != UINT64_MAX ? idle_ms : time_ms;
+        if (obj_stream_consumer_pel_add(g, target, ms, seq, new_idle,
+                                        delivery) == NULL) {
+            storage_length_error(out);
+            return;
+        }
+        target->seen_time = now_ms;
+        if (stream_entry_index(st, ms, seq, &eidx))
+            stream_emit_entry(out, obj_stream_at(st, eidx));
+        else
+            resp_write_bulk(out, NULL, 0);
+    }
+    if (!justid && last_ms != UINT64_MAX) {
+        g->last_ms = last_ms;
+        g->last_seq = last_seq;
+    }
+    mem_sync(d, key, kl, before, obj_stream_mem(st));
+    return;
+
+syntax:
+    resp_write_error(out, ERR_SYNTAX, sizeof(ERR_SYNTAX) - 1);
+    return;
+bad_type:
+    resp_write_error(out, "ERR invalid argument type", 24);
+}
+
+static void command_xautoclaim(session *s, const resp_value *argv, size_t argc,
+                               resp_buf *out, uint64_t now_ms)
+{
+    db *d = s->d;
+    const char *key, *group, *consumer, *sv;
+    size_t kl, gl, cl, svl;
+    uint64_t min_idle, start_ms, start_seq, count = 100;
+    int justid = 0;
+    obj_stream *st;
+    stream_group *g;
+    stream_consumer *target;
+    uint64_t before, eligible_count = 0, next_ms = 0, next_seq = 0;
+    uint64_t to_emit;
+    size_t pos, i, j;
+    int rc;
+
+    if (argc < 6) {
+        wrong_args(out, "xautoclaim");
+        return;
+    }
+    if (!arg_str(&argv[1], &key, &kl) ||
+        !arg_str(&argv[2], &group, &gl) ||
+        !arg_str(&argv[3], &consumer, &cl) ||
+        !arg_str(&argv[4], &sv, &svl) ||
+        !parse_u64(sv, svl, &min_idle) ||
+        !arg_str(&argv[5], &sv, &svl) ||
+        !stream_parse_full_id(sv, svl, &start_ms, &start_seq))
+        goto syntax;
+    pos = 6;
+    while (pos < argc) {
+        const char *opt, *val;
+        size_t optl, vall;
+        if (!arg_str(&argv[pos], &opt, &optl))
+            goto bad_type;
+        if (ci_equal(opt, optl, "JUSTID")) {
+            justid = 1;
+            pos++;
+        } else if (ci_equal(opt, optl, "COUNT")) {
+            if (pos + 1 >= argc)
+                goto syntax;
+            if (!arg_str(&argv[pos + 1], &val, &vall) ||
+                !parse_u64(val, vall, &count))
+                goto syntax;
+            pos += 2;
+        } else {
+            goto syntax;
+        }
+    }
+    rc = get_stream(d, out, key, kl, 0, now_ms, &st);
+    if (rc < 0)
+        return;
+    if (rc == 0 || (g = obj_stream_group_get(st, group, gl)) == NULL) {
+        resp_write_array_header(out, 2);
+        stream_write_id(out, 0, 0);
+        resp_write_array_header(out, 0);
+        return;
+    }
+    if (!justid) {
+        target = obj_stream_consumer_create(g, consumer, cl);
+        if (target == NULL) {
+            storage_length_error(out);
+            return;
+        }
+    } else {
+        target = NULL;
+    }
+
+    /* First pass: count eligible entries and pick the resume cursor after
+     * COUNT claims. The cursor is the next PEL entry seen after the last
+     * claimed entry, or 0-0 when the whole PEL has been scanned. */
+    for (i = 0; i < g->nconsumers; i++) {
+        stream_consumer *c = &g->consumers[i];
+        for (j = 0; j < c->pel_len; j++) {
+            stream_pending *p = &c->pel[j];
+            if (!stream_id_gt(p->ms, p->seq, start_ms, start_seq))
+                continue;
+            if (eligible_count < count) {
+                if ((p->idle > now_ms ? 0 : now_ms - p->idle) >= min_idle)
+                    eligible_count++;
+                continue;
+            }
+            next_ms = p->ms;
+            next_seq = p->seq;
+            goto cursor_done;
+        }
+    }
+cursor_done:
+
+    before = obj_stream_mem(st);
+    resp_write_array_header(out, 2);
+    stream_write_id(out, next_ms, next_seq);
+    resp_write_array_header(out, eligible_count);
+    to_emit = eligible_count;
+
+    if (justid) {
+        for (i = 0; i < g->nconsumers && to_emit > 0; i++) {
+            stream_consumer *c = &g->consumers[i];
+            for (j = 0; j < c->pel_len && to_emit > 0; j++) {
+                stream_pending *p = &c->pel[j];
+                if (!stream_id_gt(p->ms, p->seq, start_ms, start_seq))
+                    continue;
+                if ((p->idle > now_ms ? 0 : now_ms - p->idle) < min_idle)
+                    continue;
+                stream_write_id(out, p->ms, p->seq);
+                to_emit--;
+            }
+        }
+    } else {
+        i = 0;
+        while (i < g->nconsumers && to_emit > 0) {
+            stream_consumer *c = &g->consumers[i];
+            j = 0;
+            while (j < c->pel_len && to_emit > 0) {
+                stream_pending *p = &c->pel[j];
+                if (!stream_id_gt(p->ms, p->seq, start_ms, start_seq) ||
+                    (p->idle > now_ms ? 0 : now_ms - p->idle) < min_idle) {
+                    j++;
+                    continue;
+                }
+                {
+                    uint64_t delivery = p->delivery_count + 1;
+                    size_t eidx;
+                    uint64_t p_ms = p->ms;
+                    uint64_t p_seq = p->seq;
+                    (void)obj_stream_group_pel_remove(g, p_ms, p_seq);
+                    if (obj_stream_consumer_pel_add(g, target, p_ms, p_seq,
+                                                    now_ms, delivery) == NULL) {
+                        storage_length_error(out);
+                        return;
+                    }
+                    target->seen_time = now_ms;
+                    if (stream_entry_index(st, p_ms, p_seq, &eidx))
+                        stream_emit_entry(out, obj_stream_at(st, eidx));
+                    else
+                        resp_write_bulk(out, NULL, 0);
+                }
+                to_emit--;
+            }
+            i++;
+        }
+    }
+    mem_sync(d, key, kl, before, obj_stream_mem(st));
+    return;
+
+syntax:
+    resp_write_error(out, ERR_SYNTAX, sizeof(ERR_SYNTAX) - 1);
+    return;
+bad_type:
+    resp_write_error(out, "ERR invalid argument type", 24);
+}
+
+static void command_xread(session *s, const resp_value *argv, size_t argc,
+                          resp_buf *out, uint64_t now_ms)
+{
+    db *d = s->d;
+    size_t pos = 1, nkeys, ids_start, k;
+    long long count = -1;
+    int have_streams = 0;
+
+    if (argc < 4) {
+        wrong_args(out, "xread");
+        return;
+    }
+    while (pos < argc) {
+        const char *tok, *val;
+        size_t tl, vl;
+        if (!arg_str(&argv[pos], &tok, &tl))
+            goto bad_type;
+        if (ci_equal(tok, tl, "STREAMS")) {
+            have_streams = 1;
+            pos++;
+            break;
+        }
+        if (ci_equal(tok, tl, "COUNT")) {
+            if (pos + 1 >= argc || !arg_str(&argv[pos + 1], &val, &vl) ||
+                !parse_i64(val, vl, &count) || count <= 0)
+                goto syntax;
+            pos += 2;
+        } else if (ci_equal(tok, tl, "BLOCK")) {
+            uint64_t block;
+            if (pos + 1 >= argc || !arg_str(&argv[pos + 1], &val, &vl) ||
+                !parse_u64(val, vl, &block))
+                goto syntax;
+            pos += 2;
+        } else {
+            goto syntax;
+        }
+    }
+    if (!have_streams || pos >= argc || ((argc - pos) & 1u) != 0)
+        goto syntax;
+    nkeys = (argc - pos) / 2;
+    ids_start = pos + nkeys;
+
+    for (k = 0; k < nkeys; k++) {
+        const char *idv;
+        size_t idl;
+        uint64_t ms, seq;
+        if (!arg_str(&argv[pos + k], &idv, &idl) ||
+            !arg_str(&argv[ids_start + k], &idv, &idl))
+            goto bad_type;
+        if (!ci_equal(idv, idl, "$") &&
+            !stream_parse_full_id(idv, idl, &ms, &seq))
+            goto syntax;
+    }
+
+    resp_write_array_header(out, nkeys);
+    for (k = 0; k < nkeys; k++) {
+        const char *key, *idv;
+        size_t kl, idl;
+        obj_stream *st;
+        uint64_t ms, seq, emitted = 0;
+        size_t first, i;
+        int rc;
+        if (!arg_str(&argv[pos + k], &key, &kl) ||
+            !arg_str(&argv[ids_start + k], &idv, &idl))
+            goto bad_type;
+        rc = get_stream(d, out, key, kl, 0, now_ms, &st);
+        if (rc < 0)
+            return;
+        if (rc == 0) {
+            resp_write_bulk(out, NULL, 0);
+            continue;
+        }
+        if (ci_equal(idv, idl, "$")) {
+            ms = st->last_ms;
+            seq = st->last_seq;
+        } else {
+            (void)stream_parse_full_id(idv, idl, &ms, &seq);
+        }
+        first = obj_stream_lower_bound(st, ms, seq);
+        while (first < obj_stream_len(st)) {
+            const stream_entry *e = obj_stream_at(st, first);
+            if (stream_id_gt(e->ms, e->seq, ms, seq))
+                break;
+            first++;
+        }
+        for (i = first; i < obj_stream_len(st); i++) {
+            if (count >= 0 && emitted >= (uint64_t)count)
+                break;
+            emitted++;
+        }
+        resp_write_array_header(out, emitted);
+        for (i = 0; i < emitted; i++)
+            stream_emit_entry(out, obj_stream_at(st, first + i));
+    }
+    return;
+
+syntax:
+    resp_write_error(out, ERR_SYNTAX, sizeof(ERR_SYNTAX) - 1);
+    return;
+bad_type:
+    resp_write_error(out, "ERR invalid argument type", 24);
+}
+
+static void command_xreadgroup(session *s, const resp_value *argv, size_t argc,
+                               resp_buf *out, uint64_t now_ms)
+{
+    db *d = s->d;
+    const char *group = NULL, *consumer = NULL;
+    size_t gl = 0, cl = 0, pos, nkeys, ids_start, k;
+    long long count = -1;
+    int noack = 0, have_streams = 0;
+
+    if (argc < 7) {
+        wrong_args(out, "xreadgroup");
+        return;
+    }
+    pos = 1;
+    while (pos < argc) {
+        const char *tok, *val;
+        size_t tl, vl;
+        if (!arg_str(&argv[pos], &tok, &tl))
+            goto bad_type;
+        if (ci_equal(tok, tl, "GROUP")) {
+            if (pos + 2 >= argc)
+                goto syntax;
+            if (!arg_str(&argv[pos + 1], &group, &gl) ||
+                !arg_str(&argv[pos + 2], &consumer, &cl))
+                goto bad_type;
+            pos += 3;
+        } else if (ci_equal(tok, tl, "COUNT")) {
+            if (pos + 1 >= argc || !arg_str(&argv[pos + 1], &val, &vl) ||
+                !parse_i64(val, vl, &count) || count <= 0)
+                goto syntax;
+            pos += 2;
+        } else if (ci_equal(tok, tl, "BLOCK")) {
+            uint64_t block;
+            if (pos + 1 >= argc || !arg_str(&argv[pos + 1], &val, &vl) ||
+                !parse_u64(val, vl, &block))
+                goto syntax;
+            pos += 2;
+        } else if (ci_equal(tok, tl, "NOACK")) {
+            noack = 1;
+            pos++;
+        } else if (ci_equal(tok, tl, "STREAMS")) {
+            have_streams = 1;
+            pos++;
+            break;
+        } else {
+            goto syntax;
+        }
+    }
+    if (!have_streams || group == NULL || consumer == NULL ||
+        pos >= argc || ((argc - pos) & 1u) != 0)
+        goto syntax;
+    nkeys = (argc - pos) / 2;
+    ids_start = pos + nkeys;
+
+    /* Validate ids/groups before writing the outer array. */
+    for (k = 0; k < nkeys; k++) {
+        const char *key, *idv;
+        size_t kl, idl;
+        obj_stream *st;
+        stream_group *g;
+        int rc;
+        if (!arg_str(&argv[pos + k], &key, &kl) ||
+            !arg_str(&argv[ids_start + k], &idv, &idl))
+            goto bad_type;
+        if (!ci_equal(idv, idl, ">") &&
+            !stream_parse_full_id(idv, idl, &(uint64_t){0},
+                                  &(uint64_t){0}))
+            goto syntax;
+        rc = get_stream(d, out, key, kl, 0, now_ms, &st);
+        if (rc < 0)
+            return;
+        if (rc == 0 || (g = obj_stream_group_get(st, group, gl)) == NULL) {
+            static const char E[] = "NOGROUP No such consumer group";
+            resp_write_error(out, E, sizeof(E) - 1);
+            return;
+        }
+        if (ci_equal(idv, idl, ">") &&
+            obj_stream_consumer_create(g, consumer, cl) == NULL) {
+            storage_length_error(out);
+            return;
+        }
+    }
+
+    resp_write_array_header(out, nkeys);
+    for (k = 0; k < nkeys; k++) {
+        const char *key, *idv;
+        size_t kl, idl;
+        obj_stream *st;
+        stream_group *g;
+        uint64_t before;
+        uint64_t ms, seq, emitted = 0, last_ms, last_seq;
+        size_t first, i;
+        int is_new;
+        int rc;
+        if (!arg_str(&argv[pos + k], &key, &kl) ||
+            !arg_str(&argv[ids_start + k], &idv, &idl))
+            goto bad_type;
+        rc = get_stream(d, out, key, kl, 0, now_ms, &st);
+        if (rc < 0)
+            return;
+        if (rc == 0) {
+            resp_write_bulk(out, NULL, 0);
+            continue;
+        }
+        g = obj_stream_group_get(st, group, gl);
+        if (g == NULL) {
+            static const char E[] = "NOGROUP No such consumer group";
+            resp_write_error(out, E, sizeof(E) - 1);
+            return;
+        }
+        is_new = ci_equal(idv, idl, ">");
+        if (is_new) {
+            ms = g->last_ms;
+            seq = g->last_seq;
+        } else {
+            (void)stream_parse_full_id(idv, idl, &ms, &seq);
+        }
+        first = obj_stream_lower_bound(st, ms, seq);
+        while (first < obj_stream_len(st)) {
+            const stream_entry *e = obj_stream_at(st, first);
+            if (stream_id_gt(e->ms, e->seq, ms, seq))
+                break;
+            first++;
+        }
+        for (i = first; i < obj_stream_len(st); i++) {
+            if (count >= 0 && emitted >= (uint64_t)count)
+                break;
+            emitted++;
+        }
+        before = obj_stream_mem(st);
+        resp_write_array_header(out, emitted);
+        last_ms = ms;
+        last_seq = seq;
+        for (i = 0; i < emitted; i++) {
+            const stream_entry *e = obj_stream_at(st, first + i);
+            if (is_new && !noack) {
+                stream_consumer *c = obj_stream_consumer_get(g, consumer, cl);
+                if (c == NULL) {
+                    storage_length_error(out);
+                    return;
+                }
+                if (obj_stream_consumer_pel_add(g, c, e->ms, e->seq, now_ms,
+                                                1) == NULL) {
+                    storage_length_error(out);
+                    return;
+                }
+            }
+            stream_emit_entry(out, e);
+            last_ms = e->ms;
+            last_seq = e->seq;
+        }
+        if (is_new && emitted > 0) {
+            stream_consumer *c = obj_stream_consumer_get(g, consumer, cl);
+            if (c != NULL)
+                c->seen_time = now_ms;
+            g->last_ms = last_ms;
+            g->last_seq = last_seq;
+            g->entries_read += emitted;
+        }
+        mem_sync(d, key, kl, before, obj_stream_mem(st));
+    }
+    return;
+
+syntax:
+    resp_write_error(out, ERR_SYNTAX, sizeof(ERR_SYNTAX) - 1);
+    return;
+bad_type:
+    resp_write_error(out, "ERR invalid argument type", 24);
+}
+
+static void command_xinfo(session *s, const resp_value *argv, size_t argc,
+                          resp_buf *out, uint64_t now_ms)
+{
+    db *d = s->d;
+    const char *key, *sub;
+    size_t kl, subl;
+    obj_stream *st;
+    int rc;
+    if (argc < 2) {
+        wrong_args(out, "xinfo");
+        return;
+    }
+    if (!arg_str(&argv[1], &sub, &subl))
+        goto bad_type;
+
+    if (ci_equal(sub, subl, "HELP")) {
+        static const char *help[] = {
+            "STREAM <key>",
+            "GROUPS <key>",
+            "CONSUMERS <key> <group>"
+        };
+        size_t i;
+        if (argc != 2) {
+            wrong_args(out, "xinfo|HELP");
+            return;
+        }
+        resp_write_array_header(out, sizeof(help) / sizeof(help[0]));
+        for (i = 0; i < sizeof(help) / sizeof(help[0]); i++)
+            resp_write_bulk(out, help[i], strlen(help[i]));
+        return;
+    }
+
+    if (argc < 3) {
+        wrong_args(out, "xinfo");
+        return;
+    }
+    if (!arg_str(&argv[2], &key, &kl))
+        goto bad_type;
+
+    rc = get_stream(d, out, key, kl, 0, now_ms, &st);
+    if (rc < 0)
+        return;
+    if (rc == 0) {
+        resp_write_error(out, "ERR no such key", 15);
+        return;
+    }
+
+    if (ci_equal(sub, subl, "STREAM")) {
+        if (argc != 3) {
+            wrong_args(out, "xinfo|STREAM");
+            return;
+        }
+        resp_write_array_header(out, 16);
+        resp_write_bulk(out, "length", 6);
+        resp_write_integer(out, (long long)obj_stream_len(st));
+        resp_write_bulk(out, "last-generated-id", 17);
+        stream_write_id(out, st->last_ms, st->last_seq);
+        resp_write_bulk(out, "entries-added", 13);
+        resp_write_integer(out, (long long)st->entries_added);
+        resp_write_bulk(out, "max-deleted-entry-id", 20);
+        stream_write_id(out, st->max_deleted_ms, st->max_deleted_seq);
+        resp_write_bulk(out, "entries", 7);
+        resp_write_integer(out, (long long)obj_stream_len(st));
+        resp_write_bulk(out, "groups", 6);
+        resp_write_integer(out, (long long)st->ngroups);
+        resp_write_bulk(out, "first-entry", 11);
+        if (obj_stream_len(st) > 0)
+            stream_emit_entry(out, obj_stream_at(st, 0));
+        else
+            resp_write_bulk(out, NULL, 0);
+        resp_write_bulk(out, "last-entry", 10);
+        if (obj_stream_len(st) > 0)
+            stream_emit_entry(out, obj_stream_at(st, obj_stream_len(st) - 1));
+        else
+            resp_write_bulk(out, NULL, 0);
+        return;
+    }
+
+    if (ci_equal(sub, subl, "GROUPS")) {
+        size_t i;
+        if (argc != 3) {
+            wrong_args(out, "xinfo|GROUPS");
+            return;
+        }
+        resp_write_array_header(out, st->ngroups);
+        for (i = 0; i < st->ngroups; i++) {
+            stream_group *g = &st->groups[i];
+            resp_write_array_header(out, 12);
+            resp_write_bulk(out, "name", 4);
+            resp_write_bulk(out, g->name, g->name_len);
+            resp_write_bulk(out, "consumers", 9);
+            resp_write_integer(out, (long long)g->nconsumers);
+            resp_write_bulk(out, "pending", 7);
+            resp_write_integer(out, (long long)obj_stream_group_pending_count(g));
+            resp_write_bulk(out, "last-delivered-id", 17);
+            stream_write_id(out, g->last_ms, g->last_seq);
+            resp_write_bulk(out, "entries-read", 12);
+            resp_write_integer(out, (long long)g->entries_read);
+            resp_write_bulk(out, "lag", 3);
+            resp_write_integer(out, 0);
+        }
+        return;
+    }
+
+    if (ci_equal(sub, subl, "CONSUMERS")) {
+        const char *group;
+        size_t glen;
+        stream_group *g;
+        size_t i;
+        if (argc != 4) {
+            wrong_args(out, "xinfo|CONSUMERS");
+            return;
+        }
+        if (!arg_str(&argv[3], &group, &glen))
+            goto bad_type;
+        g = obj_stream_group_get(st, group, glen);
+        if (g == NULL) {
+            static const char E[] = "NOGROUP No such consumer group";
+            resp_write_error(out, E, sizeof(E) - 1);
+            return;
+        }
+        resp_write_array_header(out, g->nconsumers);
+        for (i = 0; i < g->nconsumers; i++) {
+            stream_consumer *c = &g->consumers[i];
+            resp_write_array_header(out, 8);
+            resp_write_bulk(out, "name", 4);
+            resp_write_bulk(out, c->name, c->name_len);
+            resp_write_bulk(out, "pending", 7);
+            resp_write_integer(out, (long long)c->pel_len);
+            resp_write_bulk(out, "idle", 4);
+            resp_write_integer(out,
+                (long long)(c->seen_time > now_ms ? 0 : now_ms - c->seen_time));
+            resp_write_bulk(out, "inactive", 8);
+            resp_write_integer(out,
+                (long long)(c->active_time > now_ms ? 0
+                                                   : now_ms - c->active_time));
+        }
+        return;
+    }
+
+    goto syntax;
 syntax:
     resp_write_error(out, ERR_SYNTAX, sizeof(ERR_SYNTAX) - 1);
     return;
@@ -13820,6 +15030,46 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
         return;
     }
 
+    if (cmd_id == CMD_XGROUP) {
+        command_xgroup(s, argv, argc, out, now_ms);
+        return;
+    }
+
+    if (cmd_id == CMD_XACK) {
+        command_xack(s, argv, argc, out, now_ms);
+        return;
+    }
+
+    if (cmd_id == CMD_XPENDING) {
+        command_xpending(s, argv, argc, out, now_ms);
+        return;
+    }
+
+    if (cmd_id == CMD_XCLAIM) {
+        command_xclaim(s, argv, argc, out, now_ms);
+        return;
+    }
+
+    if (cmd_id == CMD_XAUTOCLAIM) {
+        command_xautoclaim(s, argv, argc, out, now_ms);
+        return;
+    }
+
+    if (cmd_id == CMD_XREAD) {
+        command_xread(s, argv, argc, out, now_ms);
+        return;
+    }
+
+    if (cmd_id == CMD_XREADGROUP) {
+        command_xreadgroup(s, argv, argc, out, now_ms);
+        return;
+    }
+
+    if (cmd_id == CMD_XINFO) {
+        command_xinfo(s, argv, argc, out, now_ms);
+        return;
+    }
+
     if (cmd_id == CMD_XSETID) {
         command_xsetid(s, argv, argc, out, now_ms);
         return;
@@ -14707,6 +15957,14 @@ static const cmd_entry CMD_TABLE[] = {
     {"xrevrange", CMD_XREVRANGE, 4, -1, 0, 0},
     {"xdel", CMD_XDEL, 3, -1, 0, CMD_WRITE},
     {"xtrim", CMD_XTRIM, 4, -1, 0, CMD_WRITE},
+    {"xgroup", CMD_XGROUP, 2, -1, 0, CMD_WRITE},
+    {"xack", CMD_XACK, 4, -1, 0, CMD_WRITE},
+    {"xpending", CMD_XPENDING, 3, 7, 0, 0},
+    {"xclaim", CMD_XCLAIM, 6, -1, 0, CMD_WRITE},
+    {"xautoclaim", CMD_XAUTOCLAIM, 6, -1, 0, CMD_WRITE},
+    {"xread", CMD_XREAD, 4, -1, 0, 0},
+    {"xreadgroup", CMD_XREADGROUP, 7, -1, 0, CMD_WRITE},
+    {"xinfo", CMD_XINFO, 2, -1, 0, 0},
     {"xsetid", CMD_XSETID, 3, -1, 0, CMD_WRITE},
 };
 
