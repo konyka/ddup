@@ -5929,6 +5929,21 @@ static void command_command(session *s, const resp_value *argv, size_t argc,
     if (!arg_str(&argv[1], &sub, &sl))
         goto bad_type;
 
+    if (ci_equal(sub, sl, "HELP") && argc == 2) {
+        static const char *help[] = {
+            "COUNT",
+            "LIST",
+            "INFO [command-name ...]",
+            "GETKEYS command key [key ...]",
+            "DOCS"
+        };
+        size_t i;
+        resp_write_array_header(out, sizeof(help) / sizeof(help[0]));
+        for (i = 0; i < sizeof(help) / sizeof(help[0]); i++)
+            resp_write_bulk(out, help[i], strlen(help[i]));
+        return;
+    }
+
     if (ci_equal(sub, sl, "COUNT") && argc == 2) {
         command_count_reply(out);
         return;
@@ -5982,6 +5997,20 @@ static void command_client(session *s, const resp_value *argv, size_t argc,
     }
     if (!arg_str(&argv[1], &sub, &sl))
         goto bad_type;
+    if (ci_equal(sub, sl, "HELP") && argc == 2) {
+        static const char *help[] = {
+            "ID",
+            "SETNAME <name>",
+            "GETNAME",
+            "LIST",
+            "KILL <filter ...>"
+        };
+        size_t i;
+        resp_write_array_header(out, sizeof(help) / sizeof(help[0]));
+        for (i = 0; i < sizeof(help) / sizeof(help[0]); i++)
+            resp_write_bulk(out, help[i], strlen(help[i]));
+        return;
+    }
     if (s->client_ctx == NULL) {
         resp_write_error(out, "ERR CLIENT is not supported in this context",
                          sizeof("ERR CLIENT is not supported in this context") - 1);
@@ -6070,6 +6099,21 @@ static void command_memory(session *s, const resp_value *argv, size_t argc,
     if (!arg_str(&argv[1], &sub, &sl))
         goto bad_type;
 
+    if (ci_equal(sub, sl, "HELP") && argc == 2) {
+        static const char *help[] = {
+            "USAGE <key> [SAMPLES count]",
+            "STATS",
+            "DOCTOR",
+            "PURGE",
+            "MALLOC-STATS"
+        };
+        size_t i;
+        resp_write_array_header(out, sizeof(help) / sizeof(help[0]));
+        for (i = 0; i < sizeof(help) / sizeof(help[0]); i++)
+            resp_write_bulk(out, help[i], strlen(help[i]));
+        return;
+    }
+
     if (ci_equal(sub, sl, "USAGE") && (argc == 3 || argc == 4)) {
         const char *key;
         size_t kl;
@@ -6128,6 +6172,18 @@ static void command_slowlog(session *s, const resp_value *argv, size_t argc,
     }
     if (!arg_str(&argv[1], &sub, &sl))
         goto bad_type;
+    if (ci_equal(sub, sl, "HELP") && argc == 2) {
+        static const char *help[] = {
+            "GET [count]",
+            "LEN",
+            "RESET"
+        };
+        size_t i;
+        resp_write_array_header(out, sizeof(help) / sizeof(help[0]));
+        for (i = 0; i < sizeof(help) / sizeof(help[0]); i++)
+            resp_write_bulk(out, help[i], strlen(help[i]));
+        return;
+    }
     if (s->slowlog_ctx == NULL) {
         resp_write_error(out, "ERR SLOWLOG is not supported in this context",
                          sizeof("ERR SLOWLOG is not supported in this context") - 1);
@@ -7963,6 +8019,14 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
     }
     const uint16_t cmd_id = cmd_resolve(name, nlen);
 
+    /* EVAL_RO/EVALSHA_RO scripts may call read-only commands only. */
+    if (s->in_script && s->in_ro_script && cmd_is_write(cmd_id)) {
+        static const char E[] =
+            "ERR Write commands are not allowed from read-only scripts.";
+        resp_write_error(out, E, sizeof(E) - 1);
+        return;
+    }
+
     /* replicas are read-only for client writes (replication link bypasses) */
     {
         int write_blocked = is_write_command(name, nlen);
@@ -8627,14 +8691,20 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
         return;
     }
 
-    if (cmd_id == CMD_EVAL || cmd_id == CMD_EVALSHA) {
-        int is_sha = cmd_id == CMD_EVALSHA;
+    if (cmd_id == CMD_EVAL || cmd_id == CMD_EVALSHA ||
+        cmd_id == CMD_EVAL_RO || cmd_id == CMD_EVALSHA_RO) {
+        int is_sha = cmd_id == CMD_EVALSHA || cmd_id == CMD_EVALSHA_RO;
+        int is_ro = cmd_id == CMD_EVAL_RO || cmd_id == CMD_EVALSHA_RO;
         long long numkeys;
         const char *kv, *nv;
         size_t kvl, nvl;
         char sha[41];
         if (argc < 3) {
-            wrong_args(out, is_sha ? "evalsha" : "eval");
+            const char *cn = cmd_id == CMD_EVALSHA ? "evalsha"
+                           : cmd_id == CMD_EVAL_RO ? "eval_ro"
+                           : cmd_id == CMD_EVALSHA_RO ? "evalsha_ro"
+                           : "eval";
+            wrong_args(out, cn);
             return;
         }
         if (s->in_script) {
@@ -8683,8 +8753,10 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
         }
         /* effects replication: redis.call logs effect commands itself */
         s->aof_skip = 1;
+        s->in_ro_script += is_ro;
         script_exec(s, sha, argv + 3, (size_t)numkeys,
                     argc - 3 - (size_t)numkeys, out, now_ms);
+        s->in_ro_script -= is_ro;
         return;
     }
 
@@ -8699,6 +8771,18 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
         }
         if (argc < 2 || !arg_str(&argv[1], &sub, &sl))
             goto bad_type;
+        if (ci_equal(sub, sl, "HELP") && argc == 2) {
+            static const char *help[] = {
+                "LOAD <script>",
+                "EXISTS <sha1> [sha1 ...]",
+                "FLUSH"
+            };
+            size_t i;
+            resp_write_array_header(out, sizeof(help) / sizeof(help[0]));
+            for (i = 0; i < sizeof(help) / sizeof(help[0]); i++)
+                resp_write_bulk(out, help[i], strlen(help[i]));
+            return;
+        }
         if (ci_equal(sub, sl, "LOAD") && argc == 3) {
             const char *src;
             size_t srcl;
@@ -10312,11 +10396,25 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
         /* only the ENCODING subcommand (Redis 7 encoding names) */
         const char *sub, *k, *v;
         size_t subl, kl, vl;
+        if (argc < 2) {
+            wrong_args(out, "object");
+            return;
+        }
+        if (!arg_str(&argv[1], &sub, &subl))
+            goto bad_type;
+        if (ci_equal(sub, subl, "HELP") && argc == 2) {
+            static const char *help[] = {
+                "ENCODING <key>"
+            };
+            resp_write_array_header(out, sizeof(help) / sizeof(help[0]));
+            resp_write_bulk(out, help[0], strlen(help[0]));
+            return;
+        }
         if (argc != 3) {
             wrong_args(out, "object");
             return;
         }
-        if (!arg_str(&argv[1], &sub, &subl) || !arg_str(&argv[2], &k, &kl))
+        if (!arg_str(&argv[2], &k, &kl))
             goto bad_type;
         if (!ci_equal(sub, subl, "ENCODING")) {
             resp_write_error(out, "ERR unknown OBJECT subcommand", 29);
@@ -10893,7 +10991,7 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
     }
 
     if (cmd_id == CMD_CONFIG) {
-        if (argc < 3) {
+        if (argc < 2) {
             wrong_args(out, "config");
             return;
         }
@@ -10901,6 +10999,17 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
         size_t sl;
         if (!arg_str(&argv[1], &sub, &sl))
             goto bad_type;
+        if (ci_equal(sub, sl, "HELP") && argc == 2) {
+            static const char *help[] = {
+                "GET <parameter>",
+                "SET <parameter> <value>"
+            };
+            size_t i;
+            resp_write_array_header(out, sizeof(help) / sizeof(help[0]));
+            for (i = 0; i < sizeof(help) / sizeof(help[0]); i++)
+                resp_write_bulk(out, help[i], strlen(help[i]));
+            return;
+        }
         if (ci_equal(sub, sl, "GET")) {
             const char *p;
             size_t pl;
@@ -14899,6 +15008,20 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
         size_t sl;
         if (argc < 2 || !arg_str(&argv[1], &sub, &sl))
             goto bad_type;
+        if (ci_equal(sub, sl, "HELP") && argc == 2) {
+            static const char *help[] = {
+                "CHANNELS [pattern]",
+                "NUMSUB [channel ...]",
+                "NUMPAT",
+                "SHARDCHANNELS [pattern]",
+                "SHARDNUMSUB [shardchannel ...]"
+            };
+            size_t i;
+            resp_write_array_header(out, sizeof(help) / sizeof(help[0]));
+            for (i = 0; i < sizeof(help) / sizeof(help[0]); i++)
+                resp_write_bulk(out, help[i], strlen(help[i]));
+            return;
+        }
         if (ci_equal(sub, sl, "CHANNELS") && (argc == 2 || argc == 3)) {
             const char *pat = NULL;
             size_t pl = 0;
@@ -15248,6 +15371,34 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
     /* ---------------- cluster commands (single-node mode) ------------- */
 
     if (cmd_id == CMD_CLUSTER) {
+        const char *sub;
+        size_t sl;
+        if (argc < 2 || !arg_str(&argv[1], &sub, &sl))
+            goto bad_type;
+        if (ci_equal(sub, sl, "HELP") && argc == 2) {
+            static const char *help[] = {
+                "INFO",
+                "MYID",
+                "NODES",
+                "SLOTS",
+                "KEYSLOT <key>",
+                "COUNTKEYSINSLOT <slot>",
+                "ADDSLOTS <slot ...>",
+                "DELSLOTS <slot ...>",
+                "SETSLOT <slot> MIGRATING <node-id> | "
+                    "SETSLOT <slot> IMPORTING <node-id> | "
+                    "SETSLOT <slot> STABLE",
+                "MEET <ip> <port>",
+                "REPLICATE <node-id>",
+                "FAILOVER [TAKEOVER]",
+                "GETKEYSINSLOT <slot> <count>"
+            };
+            size_t i;
+            resp_write_array_header(out, sizeof(help) / sizeof(help[0]));
+            for (i = 0; i < sizeof(help) / sizeof(help[0]); i++)
+                resp_write_bulk(out, help[i], strlen(help[i]));
+            return;
+        }
         if (!d->cluster_enabled) {
             static const char E[] =
                 "ERR This instance has cluster support disabled";
@@ -15255,10 +15406,6 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
             return;
         }
         {
-            const char *sub;
-            size_t sl;
-            if (argc < 2 || !arg_str(&argv[1], &sub, &sl))
-                goto bad_type;
             if (ci_equal(sub, sl, "INFO") && argc == 2) {
                 char body[384];
                 int covered = 0, fail_slots = 0;
@@ -15892,7 +16039,7 @@ static const cmd_entry CMD_TABLE[] = {
     {"psubscribe", CMD_PSUBSCRIBE, 2, -1, 0, 0},
     {"punsubscribe", CMD_PUNSUBSCRIBE, 1, -1, 0, 0},
     {"copy", CMD_COPY, 3, -1, 0, CMD_WRITE},
-    {"object", CMD_OBJECT, 3, 3, 0, 0},
+    {"object", CMD_OBJECT, 2, 3, 0, 0},
     {"setnx", CMD_SETNX, 3, 3, 0, CMD_WRITE},
     {"msetnx", CMD_MSETNX, 3, -1, 1, CMD_WRITE},
     {"getbit", CMD_GETBIT, 3, 3, 0, 0},
@@ -15966,6 +16113,8 @@ static const cmd_entry CMD_TABLE[] = {
     {"xreadgroup", CMD_XREADGROUP, 7, -1, 0, CMD_WRITE},
     {"xinfo", CMD_XINFO, 2, -1, 0, 0},
     {"xsetid", CMD_XSETID, 3, -1, 0, CMD_WRITE},
+    {"eval_ro", CMD_EVAL_RO, 3, -1, 0, 0},
+    {"evalsha_ro", CMD_EVALSHA_RO, 3, -1, 0, 0},
 };
 
 static const cmd_entry *cmd_table_entry(uint16_t id)

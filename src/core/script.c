@@ -225,6 +225,7 @@ static int name_blocked(const char *n, size_t nl)
     static const char *const BL[] = {
         "eval",       "evalsha",   "script",    "subscribe",
         "psubscribe", "unsubscribe", "punsubscribe", "shutdown",
+        "eval_ro",    "evalsha_ro",
     };
     size_t i;
     for (i = 0; i < sizeof(BL) / sizeof(BL[0]); i++)

@@ -230,6 +230,9 @@
 - `SLOWLOG` 采用 128 条环形缓冲（新条目尾插、读取时逆序），每条深拷贝命令
   argv；默认阈值 10000us，`server_set_slowlog_threshold()` 可调（0 记录全部）。
   计时复用 commandstats 的 `pal_now_us`，无慢日志时不增加时钟读取。
+- 自省/容器族统一补齐 `HELP`（`COMMAND/CLIENT/MEMORY/SLOWLOG/OBJECT/CONFIG/
+  SCRIPT/PUBSUB/CLUSTER`），返回各容器当前实现子命令的 Redis 风格数组，走
+  冷路径、无热路径分配。
 - `BGSAVE` 复用 `SAVE` 的 `snapshot_save[_multi]` 路径，单线程模型下同步落盘并
   返回 Redis 风格启动确认；`BGREWRITEAOF` 当前为 AOF 强制 flush 兼容实现，
   无 fork/双文件 rewrite（内存缓存存储定位，记录在案）。
@@ -454,9 +457,9 @@ ZRANDMEMBER ZRANGEBYLEX ZREVRANGEBYLEX ZREMRANGEBYLEX ｜
 MULTI EXEC DISCARD WATCH UNWATCH ｜ SUBSCRIBE UNSUBSCRIBE PUBLISH
 PSUBSCRIBE PUNSUBSCRIBE
 SSUBSCRIBE SUNSUBSCRIBE SPUBLISH
-PUBSUB(CHANNELS/NUMSUB/NUMPAT/SHARDCHANNELS/SHARDNUMSUB) QUIT ｜
+PUBSUB(CHANNELS/NUMSUB/NUMPAT/SHARDCHANNELS/SHARDNUMSUB/HELP) QUIT ｜
 AUTH SELECT SWAPDB ｜ SAVE LASTSAVE SHUTDOWN ｜ SYNC REPLICAOF ｜
-DUMP RESTORE MIGRATE ASKING ｜ EVAL EVALSHA SCRIPT(LOAD/EXISTS/FLUSH) ｜
+DUMP RESTORE MIGRATE ASKING ｜ EVAL EVALSHA EVAL_RO EVALSHA_RO SCRIPT(LOAD/EXISTS/FLUSH/HELP) ｜
 INFO（内部变体 INFO __STATS__ 供 mt 聚合）
 
 注：TTL 返回值四舍五入（(rem+500)/1000，同 Redis）；PTTL 精确到 ms。
@@ -967,6 +970,10 @@ DBSIZE 为 O(1)，可能计入尚未回收的过期 key。
 - **效果复制**（Redis 5+ 语义，记录在案）：redis.call 的写命令经既有
   dirty 钩子**逐条**写入 AOF/backlog/副本流（记录 SET 而非 EVAL）；EVAL
   argv 本身经 `session.aof_skip` 抑制（含 MULTI 队列逐项）。
+- **只读脚本别名**：`EVAL_RO/EVALSHA_RO` 复用 EVAL/EVALSHA 的加载与执行，
+  执行期间标记 `session.in_ro_script`；`redis.call/pcall` 内写命令由
+  command_dispatch 在入口处拒绝（`Write commands are not allowed from
+  read-only scripts.`），不会产生副作用。
 - **错误文本**：对齐 Redis 5/6（编译 `Error compiling script (new
   function):`、`-NOSCRIPT`、运行时 `Error running script (call to
   f_<sha>):`，含 `script:N:` 位置前缀）。

@@ -1,16 +1,16 @@
 # Redis 7.2.15 命令兼容性盘点
 
 > 基线：Redis 7.2.15 官方 `src/commands/*.json`（392 个 JSON、392 条命令条目；242 个顶层命令 + 150 个容器子命令）。
-> 对照：ddup `src/core/command.c` `CMD_TABLE`（209 个顶层命令）。
+> 对照：ddup `src/core/command.c` `CMD_TABLE`（219 个顶层命令）。
 > 生成：`python3 tools/audit_redis_compat.py --redis-json <Redis src/commands> --json`，机器可复算；`--check` 校验本文档 AUDIT-BASELINE 块与代码一致。
 
 ## 总览
 
 | 类别 | 数量 |
 | --- | --- |
-| 完全未实现的独立顶层命令 | 25 |
+| 完全未实现的独立顶层命令 | 23 |
 | 整体缺失的顶层容器 | 5 |
-| 已实现容器内缺失的子命令 | 43 |
+| 已实现容器内缺失的子命令 | 34 |
 
 ## A. 完全缺失的独立顶层命令（按 Redis group 分组）
 
@@ -27,10 +27,8 @@
 `BRPOP`
 `BRPOPLPUSH`
 
-### scripting（5）
+### scripting（3）
 
-`EVALSHA_RO`
-`EVAL_RO`
 `FCALL`
 `FCALL_RO`
 `FUNCTION`
@@ -65,27 +63,25 @@
 
 ### 已实现容器内缺失的子命令
 
-- `CLIENT`：缺 `caching`, `getredir`, `help`, `info`, `no-evict`, `no-touch`, `pause`, `reply`, `setinfo`, `tracking`, `trackinginfo`, `unblock`, `unpause`
-- `CLUSTER`：缺 `addslotsrange`, `bumpepoch`, `count-failure-reports`, `delslotsrange`, `flushslots`, `forget`, `help`, `links`, `myshardid`, `replicas`, `reset`, `saveconfig`, `set-config-epoch`, `shards`, `slaves`
-- `COMMAND`：缺 `getkeysandflags`, `help`
-- `CONFIG`：缺 `help`, `resetstat`, `rewrite`
-- `MEMORY`：缺 `help`
-- `OBJECT`：缺 `freq`, `help`, `idletime`, `refcount`
-- `PUBSUB`：缺 `help`
-- `SCRIPT`：缺 `debug`, `help`, `kill`
-- `SLOWLOG`：缺 `help`
+- `CLIENT`：缺 `caching`, `getredir`, `info`, `no-evict`, `no-touch`, `pause`, `reply`, `setinfo`, `tracking`, `trackinginfo`, `unblock`, `unpause`
+- `CLUSTER`：缺 `addslotsrange`, `bumpepoch`, `count-failure-reports`, `delslotsrange`, `flushslots`, `forget`, `links`, `myshardid`, `replicas`, `reset`, `saveconfig`, `set-config-epoch`, `shards`, `slaves`
+- `COMMAND`：缺 `getkeysandflags`
+- `CONFIG`：缺 `resetstat`, `rewrite`
+- `OBJECT`：缺 `freq`, `idletime`, `refcount`
+- `SCRIPT`：缺 `debug`, `kill`
 
 ## C. 已注册但选项/语义不完整（手工确认，命令名差分不可发现）
 
 - `ZADD`：仅裸 `score member` 对，缺 `NX/XX/GT/LT/CH/INCR`；`ZRANGE` 缺 `REV/BYSCORE/BYLEX/LIMIT` 统一语法（当前只支持索引 + WITHSCORES）。
 - `EXPIRE/PEXPIRE/EXPIREAT/PEXPIREAT`：min/max argc 仅 3，缺 `NX/XX/GT/LT`；`GETEX` 已支持 `PERSIST/EX/EXAT/PX/PXAT`。
-- `OBJECT`：只有 `ENCODING`。
-- `CONFIG`：只有 `GET/SET`，且 SET 仅支持 `maxmemory`/`maxmemory-policy`。
-- `SCRIPT`：只有 `LOAD/EXISTS/FLUSH`。
+- `OBJECT`：只有 `ENCODING/HELP`。
+- `CONFIG`：只有 `GET/SET/HELP`，且 SET 仅支持 `maxmemory`/`maxmemory-policy`。
+- `SCRIPT`：只有 `LOAD/EXISTS/FLUSH/HELP`。
 - `CLIENT`：仅 `ID/SETNAME/GETNAME/LIST/KILL`；`INFO`、`SETINFO`、`NO-EVICT/NO-TOUCH`、`PAUSE/UNPAUSE`、`REPLY`、`TRACKING*` 等缺。
-- `COMMAND`：仅 `COUNT/LIST/INFO/GETKEYS/DOCS`；缺 `HELP`、`GETKEYSANDFLAGS`。
-- `MEMORY`：仅 `USAGE/STATS/DOCTOR/PURGE/MALLOC-STATS`；缺 `HELP`。
-- `SLOWLOG`：仅 `GET/LEN/RESET`；缺 `HELP`。
+- `COMMAND`：仅 `COUNT/LIST/INFO/GETKEYS/DOCS/HELP`；缺 `GETKEYSANDFLAGS`。
+- `MEMORY`：仅 `USAGE/STATS/DOCTOR/PURGE/MALLOC-STATS/HELP`。
+- `SLOWLOG`：仅 `GET/LEN/RESET/HELP`。
+- 脚本族新增只读别名 `EVAL_RO/EVALSHA_RO`；只读脚本内写命令会被拒绝，`FCALL/FUNCTION` 仍缺。
 - Stream 核心族已实现 `XADD/XLEN/XRANGE/XREVRANGE/XDEL/XTRIM/XSETID`；
   消费组/读取族已实现 `XGROUP/XACK/XPENDING/XCLAIM/XAUTOCLAIM/XREAD/
   XREADGROUP/XINFO`；`BLOCK` 当前按非阻塞立即返回处理，记录在案。
@@ -100,11 +96,10 @@
 ## 审计基线（机器断言，勿手改格式）
 
 <!-- AUDIT-BASELINE-START
-missing_top: acl blmove blmpop blpop brpop brpoplpush bzmpop bzpopmax bzpopmin debug eval_ro evalsha_ro failover fcall fcall_ro function latency lolwut module monitor replconf restore-asking sentinel wait waitaof
+missing_top: acl blmove blmpop blpop brpop brpoplpush bzmpop bzpopmax bzpopmin debug failover fcall fcall_ro function latency lolwut module monitor replconf restore-asking sentinel wait waitaof
 missing_containers: acl function latency module sentinel
 missing_sub: client caching
 missing_sub: client getredir
-missing_sub: client help
 missing_sub: client info
 missing_sub: client no-evict
 missing_sub: client no-touch
@@ -121,7 +116,6 @@ missing_sub: cluster count-failure-reports
 missing_sub: cluster delslotsrange
 missing_sub: cluster flushslots
 missing_sub: cluster forget
-missing_sub: cluster help
 missing_sub: cluster links
 missing_sub: cluster myshardid
 missing_sub: cluster replicas
@@ -131,18 +125,11 @@ missing_sub: cluster set-config-epoch
 missing_sub: cluster shards
 missing_sub: cluster slaves
 missing_sub: command getkeysandflags
-missing_sub: command help
-missing_sub: config help
 missing_sub: config resetstat
 missing_sub: config rewrite
-missing_sub: memory help
 missing_sub: object freq
-missing_sub: object help
 missing_sub: object idletime
 missing_sub: object refcount
-missing_sub: pubsub help
 missing_sub: script debug
-missing_sub: script help
 missing_sub: script kill
-missing_sub: slowlog help
 AUDIT-BASELINE-END -->

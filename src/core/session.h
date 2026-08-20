@@ -156,6 +156,7 @@ typedef struct session {
     int asking; /* cluster: one-shot ASKING flag for the next command */
     int read_only; /* cluster: READONLY/READWRITE connection state */
     int in_script; /* >0 inside Lua execution (nested EVAL is rejected) */
+    int in_ro_script; /* >0 inside EVAL_RO/EVALSHA_RO (write commands blocked) */
     int aof_skip;  /* script effects are AOF-logged individually, not EVAL */
     /* replication (server-owned; NULL for stack sessions) */
     const repl_info *repl;  /* INFO replication source */

@@ -327,6 +327,10 @@
     group_mem 记账不含 capacity 数组（记录在案）；快照 STREAM 负载新增
     必选 group 块；st/mt 路由与集群 key 抽取同步；兼容审计缺 25 个
     顶层命令、5 个整体缺失容器（Phase 62）
+  - [x] 容器帮助与只读脚本别名：`COMMAND`/`CLIENT`/`MEMORY`/`SLOWLOG`/
+    `OBJECT`/`CONFIG`/`SCRIPT`/`PUBSUB`/`CLUSTER` 补齐 `HELP`；新增
+    `EVAL_RO`/`EVALSHA_RO`，只读脚本内写命令直接拒绝；兼容审计缺 23
+    个顶层命令、5 个整体缺失容器、34 个容器子命令（Phase 63）
   - [ ] 范围化排除（记录在案，不实施）：
     - 分层存储（热/冷数据落盘）：超出"内存缓存存储"定位
     - mt 模式的复制/集群适配：见 Phase 15 说明

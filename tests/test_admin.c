@@ -244,6 +244,45 @@ static void test_bgsave_bgrewriteaof(void)
     remove(path);
 }
 
+static void test_container_help(void)
+{
+    cmd(2, "COMMAND", "HELP");
+    DD_CHECK(g_out.len > 1 && g_out.data[0] == '*');
+    DD_CHECK(strstr(g_out.data, "INFO") != NULL);
+
+    cmd(2, "CLIENT", "HELP");
+    DD_CHECK(g_out.len > 1 && g_out.data[0] == '*');
+    DD_CHECK(strstr(g_out.data, "ID") != NULL);
+
+    cmd(2, "MEMORY", "HELP");
+    DD_CHECK(g_out.len > 1 && g_out.data[0] == '*');
+    DD_CHECK(strstr(g_out.data, "USAGE") != NULL);
+
+    cmd(2, "SLOWLOG", "HELP");
+    DD_CHECK(g_out.len > 1 && g_out.data[0] == '*');
+    DD_CHECK(strstr(g_out.data, "GET") != NULL);
+
+    cmd(2, "OBJECT", "HELP");
+    DD_CHECK(g_out.len > 1 && g_out.data[0] == '*');
+    DD_CHECK(strstr(g_out.data, "ENCODING") != NULL);
+
+    cmd(2, "CONFIG", "HELP");
+    DD_CHECK(g_out.len > 1 && g_out.data[0] == '*');
+    DD_CHECK(strstr(g_out.data, "GET") != NULL);
+
+    cmd(2, "SCRIPT", "HELP");
+    DD_CHECK(g_out.len > 1 && g_out.data[0] == '*');
+    DD_CHECK(strstr(g_out.data, "LOAD") != NULL);
+
+    cmd(2, "PUBSUB", "HELP");
+    DD_CHECK(g_out.len > 1 && g_out.data[0] == '*');
+    DD_CHECK(strstr(g_out.data, "CHANNELS") != NULL);
+
+    cmd(2, "CLUSTER", "HELP");
+    DD_CHECK(g_out.len > 1 && g_out.data[0] == '*');
+    DD_CHECK(strstr(g_out.data, "INFO") != NULL);
+}
+
 int main(void)
 {
     setvbuf(stdout, NULL, _IONBF, 0);
@@ -256,6 +295,7 @@ int main(void)
     DD_RUN(test_client_name_and_id);
     DD_RUN(test_slowlog);
     DD_RUN(test_bgsave_bgrewriteaof);
+    DD_RUN(test_container_help);
     resp_buf_free(&g_out);
     db_destroy(&g_db);
     return DD_TEST_SUMMARY();

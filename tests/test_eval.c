@@ -185,6 +185,52 @@ static void test_evalsha_and_script_family(void)
     db_destroy(&d);
 }
 
+static void test_eval_ro(void)
+{
+    db d;
+    session *s;
+    resp_buf out;
+    char sha[41];
+    const char *src;
+
+    db_init(&d);
+    resp_buf_init(&out);
+    s = session_create(&d);
+
+    exec_sess(s, T0, &out, 3, "EVAL_RO", "return 1", "0");
+    EXPECT(out, ":1\r\n");
+
+    exec_sess(s, T0, &out, 4, "EVAL_RO",
+              "return redis.call('GET', KEYS[1])", "1", "rokey");
+    EXPECT(out, "$-1\r\n");
+
+    exec_sess(s, T0, &out, 5, "EVAL_RO",
+              "redis.call('SET', KEYS[1], ARGV[1]) return 1",
+              "1", "rokey", "v");
+    DD_CHECK(out.len > 5 && out.data[0] == '-');
+    DD_CHECK(strstr(out.data, "read-only scripts") != NULL);
+    exec_sess(s, T0, &out, 2, "GET", "rokey");
+    EXPECT(out, "$-1\r\n");
+
+    src = "return 7";
+    sha1_hex(src, strlen(src), sha);
+    exec_sess(s, T0, &out, 3, "EVAL_RO", src, "0");
+    EXPECT(out, ":7\r\n");
+    exec_sess(s, T0, &out, 3, "EVALSHA_RO", sha, "0");
+    EXPECT(out, ":7\r\n");
+
+    src = "redis.call('SET', KEYS[1], ARGV[1]) return 1";
+    sha1_hex(src, strlen(src), sha);
+    exec_sess(s, T0, &out, 3, "SCRIPT", "LOAD", src);
+    exec_sess(s, T0, &out, 5, "EVALSHA_RO", sha, "1", "rokey", "v");
+    DD_CHECK(out.len > 5 && out.data[0] == '-');
+    DD_CHECK(strstr(out.data, "read-only scripts") != NULL);
+
+    session_free(s);
+    resp_buf_free(&out);
+    db_destroy(&d);
+}
+
 static void test_error_texts(void)
 {
     db d;
@@ -411,6 +457,7 @@ int main(void)
     DD_RUN(test_redis_call_and_bindings);
     DD_RUN(test_script_execution_limits);
     DD_RUN(test_evalsha_and_script_family);
+    DD_RUN(test_eval_ro);
     DD_RUN(test_error_texts);
     DD_RUN(test_pcall_captures);
     DD_RUN(test_aof_records_effects);
