@@ -304,6 +304,13 @@
     STORE/STOREDIST、COUNT/ANY/ASC/DESC/WITH*；GEOSEARCH
     FROMMEMBER/FROMLONLAT/BYRADIUS/BYBOX；st/mt 路由与集群 key 抽取同步）；
     兼容审计缺 46 个顶层命令（Phase 59）
+  - [x] 服务端运维/自省族补齐：`COMMAND`（COUNT/LIST/INFO/GETKEYS/DOCS）、
+    `CLIENT`（ID/SETNAME/GETNAME/LIST/KILL）、`MEMORY`（USAGE/STATS/
+    DOCTOR/PURGE/MALLOC-STATS）、`SLOWLOG`（GET/LEN/RESET，128 条环 +
+    log-slower-than 可调）、`BGSAVE`/`BGREWRITEAOF`；client/slowlog 经
+    session 钩子访问 server 连接表与环形日志，st/mt 路由与集群 keyless
+    分类同步；兼容审计缺 40 个顶层命令、7 个整体缺失容器、43 个容器
+    子命令（Phase 60）
   - [ ] 范围化排除（记录在案，不实施）：
     - 分层存储（热/冷数据落盘）：超出"内存缓存存储"定位
     - mt 模式的复制/集群适配：见 Phase 15 说明

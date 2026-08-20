@@ -217,6 +217,23 @@
   风格 `cmdstat_<name>:calls=,usec=,usec_per_call=`。A/B 实测开销 <1%
   （pal_now_us 单次 ~19.5ns）；`DDUP_NO_CMDSTATS` 编译开关可完全移除。
 
+## 服务端自省与 SLOWLOG（Phase 60）
+
+- `COMMAND COUNT/LIST/INFO/GETKEYS/DOCS` 直接遍历稳定命令 ID 表（`CMD_TABLE`）
+  生成元数据，不引入运行时额外字符串查找；`GETKEYS` 与集群/mt 路由共用同一套
+  命令键位规则。
+- `CLIENT ID/SETNAME/GETNAME/LIST/KILL` 通过 session 钩子访问 server 连接表；
+  连接 id 单调递增，name 内联在 `conn` 中（无额外堆分配）。`KILL` 只标记
+  `close_after_send`，待当前回复刷出后关闭目标连接。
+- `MEMORY USAGE/STATS` 复用既有增量内存记账与对象额外内存估算，无热路径逐次
+  遍历；`PURGE/MALLOC-STATS` 为无分配占位兼容响应。
+- `SLOWLOG` 采用 128 条环形缓冲（新条目尾插、读取时逆序），每条深拷贝命令
+  argv；默认阈值 10000us，`server_set_slowlog_threshold()` 可调（0 记录全部）。
+  计时复用 commandstats 的 `pal_now_us`，无慢日志时不增加时钟读取。
+- `BGSAVE` 复用 `SAVE` 的 `snapshot_save[_multi]` 路径，单线程模型下同步落盘并
+  返回 Redis 风格启动确认；`BGREWRITEAOF` 当前为 AOF 强制 flush 兼容实现，
+  无 fork/双文件 rewrite（内存缓存存储定位，记录在案）。
+
 ## io_uring 后端（Phase 14，Linux）
 
 - **探测与接入**：`pal_loop_create_iouring()` 在 Linux 上以直接
