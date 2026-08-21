@@ -353,6 +353,9 @@
     EXPIREAT/PEXPIREAT` 补 `NX/XX/GT/LT`，`RESTORE/RESTORE-ASKING` 补
     `ABSTTL/IDLETIME/FREQ`（IDLETIME/FREQ 仅解析接受）；新增对应单测，
     `docs/redis-compat-audit.md` C 节相应差分清零（Phase 68）
-  - [ ] 范围化排除（记录在案，不实施）：
+  - [x] FUNCTION 序列化收尾：`FUNCTION DUMP/RESTORE` 使用 ddup 专用
+    二进制 payload 与 `FLUSH/APPEND/REPLACE` 策略；兼容审计 C 节统一改为
+    “已实现或记录在案”，命令级与选项/语义级遗留差分全部清零（Phase 69）
+  - [x] 范围化排除（已记录在案，明确不实施）：
     - 分层存储（热/冷数据落盘）：超出"内存缓存存储"定位
     - mt 模式的复制/集群适配：见 Phase 15 说明

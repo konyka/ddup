@@ -478,7 +478,7 @@ SSUBSCRIBE SUNSUBSCRIBE SPUBLISH
 PUBSUB(CHANNELS/NUMSUB/NUMPAT/SHARDCHANNELS/SHARDNUMSUB/HELP) QUIT ｜
 AUTH SELECT SWAPDB ｜ SAVE LASTSAVE SHUTDOWN ｜ SYNC REPLICAOF ｜
 DUMP RESTORE RESTORE-ASKING MIGRATE ASKING ｜ EVAL EVALSHA EVAL_RO EVALSHA_RO
-FCALL FCALL_RO FUNCTION(LOAD/DELETE/LIST/FLUSH/STATS/HELP)
+FCALL FCALL_RO FUNCTION(LOAD/DELETE/LIST/FLUSH/DUMP/RESTORE/STATS/KILL/HELP)
 SCRIPT(LOAD/EXISTS/FLUSH/DEBUG/KILL/HELP) ｜
 WAIT WAITAOF REPLCONF FAILOVER MONITOR ｜
 ACL CAT DELUSER DRYRUN GENPASS GETUSER LIST LOAD LOG SAVE SETUSER USERS WHOAMI ｜
@@ -1003,7 +1003,11 @@ DBSIZE 为 O(1)，可能计入尚未回收的过期 key。
   read-only scripts.`），不会产生副作用。
 - **脚本库族**：`FCALL/FCALL_RO` 编译并执行命名库的源码，复用 EVAL 的
   KEYS/ARGV 全局表；`FUNCTION LOAD` 以 `#!lua name=<lib>` 头把源码按名称
-  存入 `db.function_libs` 哈希表，`DELETE/LIST/FLUSH/STATS/HELP` 维护该表。
+  存入 `db.function_libs` 哈希表，`DELETE/LIST/FLUSH/STATS/KILL/HELP` 维护
+  该表。`FUNCTION DUMP/RESTORE` 以 ddup 专用二进制 payload 一次序列化/
+  重建全部库：固定魔数 + 每库 8 位十六进制长度前缀（name/code），冷路径
+  两遍 `rh_each` 定长后一次分配；RESTORE 支持 `FLUSH/APPEND/REPLACE`
+  策略（默认 APPEND，冲突报错，REPLACE 覆盖）。
   Redis 的 `redis.register_function` 多函数库格式为本次范围外（记录在案）。
 - **错误文本**：对齐 Redis 5/6（编译 `Error compiling script (new
   function):`、`-NOSCRIPT`、运行时 `Error running script (call to
