@@ -253,6 +253,76 @@ static void test_overwrite_clears_ttl(void)
     db_destroy(&d);
 }
 
+static void test_expire_options(void)
+{
+    db d;
+    resp_buf out;
+    db_init(&d);
+    resp_buf_init(&out);
+
+    exec_cmd(&d, T0, &out, 3, "SET", "k", "v");
+    EXPECT(out, "+OK\r\n");
+
+    exec_cmd(&d, T0, &out, 4, "EXPIRE", "k", "100", "NX");
+    EXPECT(out, ":1\r\n");
+    exec_cmd(&d, T0, &out, 2, "TTL", "k");
+    EXPECT(out, ":100\r\n");
+
+    exec_cmd(&d, T0, &out, 4, "EXPIRE", "k", "200", "NX");
+    EXPECT(out, ":0\r\n");
+    exec_cmd(&d, T0, &out, 4, "EXPIRE", "k", "200", "XX");
+    EXPECT(out, ":1\r\n");
+    exec_cmd(&d, T0, &out, 2, "TTL", "k");
+    EXPECT(out, ":200\r\n");
+
+    exec_cmd(&d, T0, &out, 4, "EXPIRE", "k", "150", "GT");
+    EXPECT(out, ":0\r\n");
+    exec_cmd(&d, T0, &out, 4, "EXPIRE", "k", "300", "GT");
+    EXPECT(out, ":1\r\n");
+    exec_cmd(&d, T0, &out, 2, "TTL", "k");
+    EXPECT(out, ":300\r\n");
+
+    exec_cmd(&d, T0, &out, 4, "EXPIRE", "k", "250", "LT");
+    EXPECT(out, ":1\r\n");
+    exec_cmd(&d, T0, &out, 4, "EXPIRE", "k", "200", "LT");
+    EXPECT(out, ":1\r\n");
+    exec_cmd(&d, T0, &out, 2, "TTL", "k");
+    EXPECT(out, ":200\r\n");
+
+    /* NX/XX depend on existence of a TTL. */
+    exec_cmd(&d, T0, &out, 3, "SET", "nottl", "v");
+    EXPECT(out, "+OK\r\n");
+    exec_cmd(&d, T0, &out, 4, "EXPIRE", "nottl", "10", "XX");
+    EXPECT(out, ":0\r\n");
+    exec_cmd(&d, T0, &out, 4, "EXPIRE", "nottl", "10", "NX");
+    EXPECT(out, ":1\r\n");
+    exec_cmd(&d, T0, &out, 2, "TTL", "nottl");
+    EXPECT(out, ":10\r\n");
+
+    /* GT succeeds on a non-volatile key; LT does not. */
+    exec_cmd(&d, T0, &out, 3, "SET", "gt", "v");
+    EXPECT(out, "+OK\r\n");
+    exec_cmd(&d, T0, &out, 4, "EXPIRE", "gt", "10", "GT");
+    EXPECT(out, ":1\r\n");
+    exec_cmd(&d, T0, &out, 3, "SET", "lt", "v");
+    EXPECT(out, "+OK\r\n");
+    exec_cmd(&d, T0, &out, 4, "EXPIRE", "lt", "10", "LT");
+    EXPECT(out, ":0\r\n");
+    exec_cmd(&d, T0, &out, 2, "TTL", "lt");
+    EXPECT(out, ":-1\r\n");
+
+    /* Absolute variants use the same option flags. */
+    exec_cmd(&d, T0, &out, 4, "PEXPIREAT", "k", "1004000", "GT");
+    EXPECT(out, ":0\r\n");
+    exec_cmd(&d, T0, &out, 4, "PEXPIREAT", "k", "1300000", "GT");
+    EXPECT(out, ":1\r\n");
+    exec_cmd(&d, T0, &out, 2, "PTTL", "k");
+    EXPECT(out, ":300000\r\n");
+
+    resp_buf_free(&out);
+    db_destroy(&d);
+}
+
 static void test_active_expire(void)
 {
     db d;
@@ -329,6 +399,7 @@ int main(void)
     DD_RUN(test_expire_variants);
     DD_RUN(test_set_options);
     DD_RUN(test_overwrite_clears_ttl);
+    DD_RUN(test_expire_options);
     DD_RUN(test_active_expire);
     DD_RUN(test_dbsize_flushdb);
     return DD_TEST_SUMMARY();

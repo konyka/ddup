@@ -348,6 +348,11 @@
     `ACL/DEBUG/LATENCY/MODULE/SENTINEL` 容器（单机最小/占位语义）；
     兼容审计缺 0 个顶层命令、0 个整体缺失容器、0 个容器子命令
     （Phase 67）
+  - [x] 选项/语义差分收尾：`ZADD` 补 `NX/XX/GT/LT/CH/INCR`，`ZRANGE`
+    补 `REV/BYSCORE/BYLEX/LIMIT/WITHSCORES` 统一语法，`EXPIRE/PEXPIRE/
+    EXPIREAT/PEXPIREAT` 补 `NX/XX/GT/LT`，`RESTORE/RESTORE-ASKING` 补
+    `ABSTTL/IDLETIME/FREQ`（IDLETIME/FREQ 仅解析接受）；新增对应单测，
+    `docs/redis-compat-audit.md` C 节相应差分清零（Phase 68）
   - [ ] 范围化排除（记录在案，不实施）：
     - 分层存储（热/冷数据落盘）：超出"内存缓存存储"定位
     - mt 模式的复制/集群适配：见 Phase 15 说明

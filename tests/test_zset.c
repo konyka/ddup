@@ -1078,6 +1078,54 @@ static void test_zscan(void)
     db_destroy(&d);
 }
 
+static void test_zadd_options_and_unified_zrange(void)
+{
+    db d;
+    resp_buf out;
+    db_init(&d);
+    resp_buf_init(&out);
+
+    exec_cmd(&d, T0, &out, 5, "ZADD", "z", "NX", "1", "a");
+    EXPECT(out, ":1\r\n");
+    exec_cmd(&d, T0, &out, 5, "ZADD", "z", "NX", "2", "a");
+    EXPECT(out, ":0\r\n");
+    exec_cmd(&d, T0, &out, 3, "ZSCORE", "z", "a");
+    EXPECT(out, "$1\r\n1\r\n");
+
+    exec_cmd(&d, T0, &out, 6, "ZADD", "z", "XX", "CH", "3", "a");
+    EXPECT(out, ":1\r\n");
+    exec_cmd(&d, T0, &out, 3, "ZSCORE", "z", "a");
+    EXPECT(out, "$1\r\n3\r\n");
+    exec_cmd(&d, T0, &out, 6, "ZADD", "z", "GT", "CH", "2", "a");
+    EXPECT(out, ":0\r\n");
+    exec_cmd(&d, T0, &out, 6, "ZADD", "z", "LT", "CH", "2", "a");
+    EXPECT(out, ":1\r\n");
+
+    exec_cmd(&d, T0, &out, 5, "ZADD", "z", "INCR", "2", "a");
+    EXPECT(out, "$1\r\n4\r\n");
+    exec_cmd(&d, T0, &out, 6, "ZADD", "z", "XX", "INCR", "2", "b");
+    EXPECT(out, "$-1\r\n");
+
+    exec_cmd(&d, T0, &out, 8, "ZADD", "r", "1", "a", "2", "b", "3", "c");
+    EXPECT(out, ":3\r\n");
+    exec_cmd(&d, T0, &out, 5, "ZRANGE", "r", "1", "2", "BYSCORE");
+    EXPECT(out, "*2\r\n$1\r\na\r\n$1\r\nb\r\n");
+    exec_cmd(&d, T0, &out, 6, "ZRANGE", "r", "1", "2", "BYSCORE", "WITHSCORES");
+    EXPECT(out, "*4\r\n$1\r\na\r\n$1\r\n1\r\n$1\r\nb\r\n$1\r\n2\r\n");
+    exec_cmd(&d, T0, &out, 6, "ZRANGE", "r", "2", "1", "BYSCORE", "REV");
+    EXPECT(out, "*2\r\n$1\r\nb\r\n$1\r\na\r\n");
+    exec_cmd(&d, T0, &out, 8, "ZRANGE", "r", "-inf", "+inf", "BYSCORE", "LIMIT", "1", "2");
+    EXPECT(out, "*2\r\n$1\r\nb\r\n$1\r\nc\r\n");
+
+    exec_cmd(&d, T0, &out, 8, "ZADD", "lex", "0", "aa", "0", "bb", "0", "cc");
+    EXPECT(out, ":3\r\n");
+    exec_cmd(&d, T0, &out, 5, "ZRANGE", "lex", "[aa", "[cc", "BYLEX");
+    EXPECT(out, "*3\r\n$2\r\naa\r\n$2\r\nbb\r\n$2\r\ncc\r\n");
+
+    resp_buf_free(&out);
+    db_destroy(&d);
+}
+
 int main(void)
 {
     DD_RUN(test_obj_str_zero_length_blob);
@@ -1102,6 +1150,7 @@ int main(void)
     DD_RUN(test_zset_setops);
     DD_RUN(test_zset_range_extra);
     DD_RUN(test_zset_rangestore);
+    DD_RUN(test_zadd_options_and_unified_zrange);
     DD_RUN(test_zscan);
     return DD_TEST_SUMMARY();
 }

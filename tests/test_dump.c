@@ -67,6 +67,44 @@ static void exec_restore(session *s, uint64_t now, resp_buf *out,
                        replace);
 }
 
+/* RESTORE with a binary payload plus arbitrary string options. */
+static void exec_restore_opts(session *s, uint64_t now, resp_buf *out,
+                              const char *key, const char *ttl,
+                              const char *payload, size_t plen, int nopts, ...)
+{
+    resp_value argv[10];
+    size_t argc = 4;
+    va_list ap;
+    int i;
+
+    memset(argv, 0, sizeof(argv));
+    argv[0].type = RESP_BULK_STRING;
+    argv[0].str = "RESTORE";
+    argv[0].len = 7;
+    argv[1].type = RESP_BULK_STRING;
+    argv[1].str = key;
+    argv[1].len = strlen(key);
+    argv[2].type = RESP_BULK_STRING;
+    argv[2].str = ttl;
+    argv[2].len = strlen(ttl);
+    argv[3].type = RESP_BULK_STRING;
+    argv[3].str = payload;
+    argv[3].len = plen;
+
+    va_start(ap, nopts);
+    for (i = 0; i < nopts; i++) {
+        const char *opt = va_arg(ap, const char *);
+        argv[argc].type = RESP_BULK_STRING;
+        argv[argc].str = opt;
+        argv[argc].len = strlen(opt);
+        argc++;
+    }
+    va_end(ap);
+
+    out->len = 0;
+    session_execute_at(s, argv, argc, out, now);
+}
+
 #define EXPECT(out, s) DD_CHECK_MEM((s), strlen(s), (out).data, (out).len)
 
 /* Parse a "$<len>\r\n<bytes>\r\n" reply; returns bulk length or -1 ($-1). */
@@ -340,6 +378,58 @@ static void test_restore_ttl(void)
     resp_buf_free(&out);
 }
 
+static void test_restore_options(void)
+{
+    db src, dst;
+    session *s, *r;
+    resp_buf out;
+    char buf[256];
+    long long n;
+
+    db_init(&src);
+    db_init(&dst);
+    resp_buf_init(&out);
+    s = session_create(&src);
+    r = session_create(&dst);
+
+    exec_sess(s, T0, &out, 3, "SET", "src", "value");
+    EXPECT(out, "+OK\r\n");
+    n = dump_key(s, T0, &out, "src", buf, sizeof(buf));
+    DD_CHECK(n > 0);
+
+    /* ABSTTL treats the TTL argument as an absolute Unix ms timestamp. */
+    exec_restore_opts(r, T0, &out, "abs", "1005000", buf, (size_t)n, 1,
+                      "ABSTTL");
+    EXPECT(out, "+OK\r\n");
+    exec_sess(r, T0, &out, 2, "PTTL", "abs");
+    EXPECT(out, ":5000\r\n");
+
+    /* IDLETIME and FREQ are accepted and do not affect the restored value. */
+    exec_restore_opts(r, T0, &out, "meta", "0", buf, (size_t)n, 4,
+                      "IDLETIME", "42", "FREQ", "7");
+    EXPECT(out, "+OK\r\n");
+    exec_sess(r, T0, &out, 2, "GET", "meta");
+    EXPECT(out, "$5\r\nvalue\r\n");
+
+    /* Options may be combined; REPLACE plus ABSTTL replaces an existing key. */
+    exec_restore_opts(r, T0, &out, "abs", "1006000", buf, (size_t)n, 6,
+                      "REPLACE", "ABSTTL", "IDLETIME", "1", "FREQ", "2");
+    EXPECT(out, "+OK\r\n");
+    exec_sess(r, T0, &out, 2, "PTTL", "abs");
+    EXPECT(out, ":6000\r\n");
+
+    /* Negative IDLETIME is rejected with a syntax error. */
+    exec_restore_opts(r, T0, &out, "bad", "0", buf, (size_t)n, 2,
+                      "IDLETIME", "-1");
+    EXPECT(out, "-ERR syntax error\r\n");
+
+    session_free(s);
+    session_free(r);
+    db_destroy(&src);
+    db_destroy(&dst);
+    resp_buf_free(&out);
+}
+
 static void test_restore_asking(void)
 {
     db d;
@@ -380,6 +470,7 @@ int main(void)
     DD_RUN(test_restore_bad_payload);
     DD_RUN(test_restore_busykey_and_replace);
     DD_RUN(test_restore_ttl);
+    DD_RUN(test_restore_options);
     DD_RUN(test_restore_asking);
     return DD_TEST_SUMMARY();
 }

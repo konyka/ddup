@@ -28,8 +28,6 @@
 
 ## C. 已注册但选项/语义不完整（手工确认，命令名差分不可发现）
 
-- `ZADD`：仅裸 `score member` 对，缺 `NX/XX/GT/LT/CH/INCR`；`ZRANGE` 缺 `REV/BYSCORE/BYLEX/LIMIT` 统一语法（当前只支持索引 + WITHSCORES）。
-- `EXPIRE/PEXPIRE/EXPIREAT/PEXPIREAT`：min/max argc 仅 3，缺 `NX/XX/GT/LT`；`GETEX` 已支持 `PERSIST/EX/EXAT/PX/PXAT`。
 - `OBJECT`：`ENCODING/HELP/FREQ/IDLETIME/REFCOUNT`；`FREQ` 恒为 0、`REFCOUNT` 恒为 1（无 LFU/共享对象元数据）。
 - `CONFIG`：`GET/SET/RESETSTAT/REWRITE/HELP`；SET 仅支持 `maxmemory`/`maxmemory-policy`，REWRITE 无配置文件时返回错误。
 - `SCRIPT`：`LOAD/EXISTS/FLUSH/DEBUG/KILL/HELP`；DEBUG 仅接受模式，KILL 恒为 NOTBUSY。
@@ -50,7 +48,9 @@
   BZPOPMIN/BZPOPMAX/BZMPOP`：服务端事件循环持有挂起会话并在 key 就绪或
   超时到期时唤醒；mt 模式暂不路由这些命令（记录在案）。
 - 复制/运维族：已注册 `REPLCONF/FAILOVER/MONITOR/WAIT/WAITAOF`；单机/共享无副本语义下 `WAIT/WAITAOF` 返回 0，`FAILOVER` 返回无可副本错误，`MONITOR` 返回明确不支持，`REPLCONF` 仅做握手应答。
-- `LOLWUT` 已实现 `VERSION 5/6` 的最小 ASCII art；`RESTORE-ASKING` 已作为集群导入用 `RESTORE` 别名实现（当前仅支持 `REPLACE`，`ABSTTL/IDLETIME/FREQ` 仍缺）。
+- `LOLWUT` 已实现 `VERSION 5/6` 的最小 ASCII art；`RESTORE/RESTORE-ASKING`
+  已支持 `REPLACE/ABSTTL/IDLETIME/FREQ`（IDLETIME/FREQ 仅做参数解析与
+  兼容接受，ddup 无 LRU/LFU 对象元数据）。
 - 管理族已注册 `ACL/DEBUG/LATENCY/MODULE/SENTINEL`：ACL 提供最小匿名/default 视图，LATENCY 返回空事件集，MODULE 无扩展返回加载错误，SENTINEL 提供空拓扑视图，DEBUG 仅接受诊断参数。
 
 ## D. 项目范围外 / 明确不实施
