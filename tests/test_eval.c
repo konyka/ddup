@@ -30,6 +30,57 @@ static void exec_sess(session *s, uint64_t now, resp_buf *out, int argc, ...)
     session_execute_at(s, argv, (size_t)argc, out, now);
 }
 
+/* Extract the first RESP bulk-string payload from a reply buffer. */
+static int resp_bulk_payload(resp_buf *out, const char **data, size_t *len)
+{
+    const char *p;
+    size_t n;
+    if (out->len < 5 || out->data[0] != '$')
+        return -1;
+    p = out->data + 1;
+    n = 0;
+    while ((size_t)(p - out->data) < out->len && *p >= '0' && *p <= '9') {
+        if (n > (SIZE_MAX - 9) / 10)
+            return -1;
+        n = n * 10 + (size_t)(*p - '0');
+        p++;
+    }
+    if ((size_t)(p - out->data) >= out->len || p[0] != '\r' || p[1] != '\n')
+        return -1;
+    p += 2;
+    if (n > (size_t)(out->data + out->len - p))
+        return -1;
+    *data = p;
+    *len = n;
+    return 0;
+}
+
+static void exec_sess_restore(session *s, uint64_t now, resp_buf *out,
+                              const char *payload, size_t payload_len,
+                              const char *policy)
+{
+    resp_value argv[4];
+    int argc = policy ? 4 : 3;
+    int i;
+    memset(argv, 0, sizeof(argv));
+    for (i = 0; i < 3; i++) {
+        argv[i].type = RESP_BULK_STRING;
+    }
+    argv[0].str = "FUNCTION";
+    argv[0].len = 8;
+    argv[1].str = "RESTORE";
+    argv[1].len = 7;
+    argv[2].str = payload;
+    argv[2].len = payload_len;
+    if (policy) {
+        argv[3].type = RESP_BULK_STRING;
+        argv[3].str = policy;
+        argv[3].len = strlen(policy);
+    }
+    out->len = 0;
+    session_execute_at(s, argv, (size_t)argc, out, now);
+}
+
 #define EXPECT(out, s) DD_CHECK_MEM((s), strlen(s), (out).data, (out).len)
 
 static void test_return_matrix(void)
@@ -276,6 +327,76 @@ static void test_fcall_function(void)
     db_destroy(&d);
 }
 
+static void test_function_dump_restore(void)
+{
+    db d;
+    session *s;
+    resp_buf out;
+    const char *p;
+    size_t plen, first_len;
+    char *payload;
+
+    db_init(&d);
+    resp_buf_init(&out);
+    s = session_create(&d);
+
+    exec_sess(s, T0, &out, 3, "FUNCTION", "LOAD",
+              "#!lua name=lib_a\nreturn 1");
+    EXPECT(out, "$5\r\nlib_a\r\n");
+    exec_sess(s, T0, &out, 2, "FUNCTION", "DUMP");
+    DD_CHECK(resp_bulk_payload(&out, &p, &plen) == 0);
+    first_len = plen;
+    payload = (char *)malloc(plen + 1);
+    DD_CHECK(payload != NULL);
+    memcpy(payload, p, plen);
+    payload[plen] = '\0';
+
+    exec_sess(s, T0, &out, 2, "FUNCTION", "FLUSH");
+    EXPECT(out, "+OK\r\n");
+    exec_sess_restore(s, T0, &out, payload, first_len, NULL);
+    EXPECT(out, "+OK\r\n");
+    exec_sess(s, T0, &out, 2, "FUNCTION", "LIST");
+    DD_CHECK(strstr(out.data, "lib_a") != NULL);
+
+    exec_sess(s, T0, &out, 4, "FUNCTION", "LOAD", "REPLACE",
+              "#!lua name=lib_a\nreturn 99");
+    exec_sess(s, T0, &out, 2, "FUNCTION", "DUMP");
+    DD_CHECK(resp_bulk_payload(&out, &p, &plen) == 0);
+    {
+        char *v99 = (char *)malloc(plen + 1);
+        DD_CHECK(v99 != NULL);
+        memcpy(v99, p, plen);
+        v99[plen] = '\0';
+
+        exec_sess(s, T0, &out, 2, "FUNCTION", "FLUSH");
+        exec_sess_restore(s, T0, &out, payload, first_len, NULL);
+        EXPECT(out, "+OK\r\n");
+        exec_sess(s, T0, &out, 3, "FCALL", "lib_a", "0");
+        EXPECT(out, ":1\r\n");
+
+        exec_sess_restore(s, T0, &out, v99, plen, "REPLACE");
+        EXPECT(out, "+OK\r\n");
+        exec_sess(s, T0, &out, 3, "FCALL", "lib_a", "0");
+        EXPECT(out, ":99\r\n");
+
+        exec_sess_restore(s, T0, &out, v99, plen, "APPEND");
+        DD_CHECK(out.len > 0 && out.data[0] == '-');
+        DD_CHECK(strstr(out.data, "already exists") != NULL);
+
+        free(v99);
+    }
+
+    exec_sess_restore(s, T0, &out, "junk", 4, "REPLACE");
+    DD_CHECK(out.len > 0 && out.data[0] == '-');
+    exec_sess_restore(s, T0, &out, payload, first_len, "BOGUS");
+    DD_CHECK(out.len > 0 && out.data[0] == '-');
+
+    free(payload);
+    session_free(s);
+    resp_buf_free(&out);
+    db_destroy(&d);
+}
+
 static void test_error_texts(void)
 {
     db d;
@@ -504,6 +625,7 @@ int main(void)
     DD_RUN(test_evalsha_and_script_family);
     DD_RUN(test_eval_ro);
     DD_RUN(test_fcall_function);
+    DD_RUN(test_function_dump_restore);
     DD_RUN(test_error_texts);
     DD_RUN(test_pcall_captures);
     DD_RUN(test_aof_records_effects);

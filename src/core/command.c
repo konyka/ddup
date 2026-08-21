@@ -8924,6 +8924,175 @@ typedef struct function_lib_list_ctx {
     int write;
 } function_lib_list_ctx;
 
+#define FUNCTION_PAYLOAD_MAGIC "DDUPFN1"
+#define FUNCTION_PAYLOAD_MAGIC_LEN 7
+
+static void hex32(char *out, uint32_t v)
+{
+    static const char digits[] = "0123456789abcdef";
+    int i;
+    for (i = 7; i >= 0; i--) {
+        out[i] = digits[v & 0xfU];
+        v >>= 4;
+    }
+}
+
+static int hex32_parse(const char *s, size_t len, uint32_t *out)
+{
+    uint32_t v = 0;
+    size_t i;
+    if (len != 8)
+        return -1;
+    for (i = 0; i < 8; i++) {
+        unsigned int c = (unsigned char)s[i];
+        v <<= 4;
+        if (c >= '0' && c <= '9')
+            v |= c - '0';
+        else if (c >= 'a' && c <= 'f')
+            v |= 10 + c - 'a';
+        else if (c >= 'A' && c <= 'F')
+            v |= 10 + c - 'A';
+        else
+            return -1;
+    }
+    *out = v;
+    return 0;
+}
+
+typedef struct function_dump_len_ctx {
+    size_t total;
+    int overflow;
+} function_dump_len_ctx;
+
+static void function_dump_len_cb(const char *key, size_t klen,
+                                 const char *val, size_t vlen, void *arg)
+{
+    function_dump_len_ctx *c = (function_dump_len_ctx *)arg;
+    size_t add = 16;
+    (void)key;
+    (void)val;
+    if (c->overflow)
+        return;
+    if (klen > UINT32_MAX || vlen > UINT32_MAX ||
+        klen > SIZE_MAX - add || vlen > SIZE_MAX - add - klen) {
+        c->overflow = 1;
+        return;
+    }
+    add += klen + vlen;
+    if (c->total > SIZE_MAX - add) {
+        c->overflow = 1;
+        return;
+    }
+    c->total += add;
+}
+
+typedef struct function_dump_write_ctx {
+    char *dst;
+    size_t pos;
+} function_dump_write_ctx;
+
+static void function_dump_write_cb(const char *key, size_t klen,
+                                   const char *val, size_t vlen, void *arg)
+{
+    function_dump_write_ctx *c = (function_dump_write_ctx *)arg;
+    hex32(c->dst + c->pos, (uint32_t)klen);
+    c->pos += 8;
+    memcpy(c->dst + c->pos, key, klen);
+    c->pos += klen;
+    hex32(c->dst + c->pos, (uint32_t)vlen);
+    c->pos += 8;
+    memcpy(c->dst + c->pos, val, vlen);
+    c->pos += vlen;
+}
+
+static int function_dump_build(db *d, char **out, size_t *outlen)
+{
+    function_dump_len_ctx lc;
+    function_dump_write_ctx wc;
+    char *buf;
+    size_t total;
+
+    lc.total = FUNCTION_PAYLOAD_MAGIC_LEN;
+    lc.overflow = 0;
+    rh_each(&d->function_libs, function_dump_len_cb, &lc);
+    if (lc.overflow) {
+        *out = NULL;
+        *outlen = 0;
+        return -1;
+    }
+    total = lc.total;
+    buf = (char *)malloc(total);
+    if (buf == NULL) {
+        *out = NULL;
+        *outlen = 0;
+        return -1;
+    }
+    memcpy(buf, FUNCTION_PAYLOAD_MAGIC, FUNCTION_PAYLOAD_MAGIC_LEN);
+    wc.dst = buf;
+    wc.pos = FUNCTION_PAYLOAD_MAGIC_LEN;
+    rh_each(&d->function_libs, function_dump_write_cb, &wc);
+    *out = buf;
+    *outlen = total;
+    return 0;
+}
+
+static int function_restore_parse(const char *payload, size_t payload_len,
+                                  rh_table *tmp)
+{
+    size_t pos;
+    if (payload_len < FUNCTION_PAYLOAD_MAGIC_LEN ||
+        memcmp(payload, FUNCTION_PAYLOAD_MAGIC, FUNCTION_PAYLOAD_MAGIC_LEN) != 0)
+        return -1;
+    pos = FUNCTION_PAYLOAD_MAGIC_LEN;
+    while (pos < payload_len) {
+        uint32_t klen, vlen;
+        if (payload_len - pos < 16)
+            return -1;
+        if (hex32_parse(payload + pos, 8, &klen) != 0)
+            return -1;
+        pos += 8;
+        if ((size_t)klen > payload_len - pos)
+            return -1;
+        {
+            const char *key = payload + pos;
+            pos += klen;
+            if (payload_len - pos < 8)
+                return -1;
+            if (hex32_parse(payload + pos, 8, &vlen) != 0)
+                return -1;
+            pos += 8;
+            if ((size_t)vlen > payload_len - pos)
+                return -1;
+            if (rh_set(tmp, key, klen, payload + pos, vlen) < 0)
+                return -1;
+            pos += vlen;
+        }
+    }
+    return pos == payload_len ? 0 : -1;
+}
+
+typedef struct function_restore_join_ctx {
+    rh_table *dst;
+    int replace;
+    int fail;
+} function_restore_join_ctx;
+
+static void function_restore_join_cb(const char *key, size_t klen,
+                                     const char *val, size_t vlen, void *arg)
+{
+    function_restore_join_ctx *c = (function_restore_join_ctx *)arg;
+    const char *old;
+    size_t oldlen;
+    if (c->fail)
+        return;
+    if (!c->replace && rh_get(c->dst, key, klen, &old, &oldlen)) {
+        c->fail = 1;
+        return;
+    }
+    if (rh_set(c->dst, key, klen, val, vlen) < 0)
+        c->fail = 1;
+}
+
 static void function_lib_list_cb(const char *key, size_t klen,
                                  const char *val, size_t vlen, void *arg)
 {
@@ -9100,14 +9269,84 @@ static void command_function(session *s, const resp_value *argv, size_t argc,
     }
 
     if (ci_equal(sub, sl, "DUMP") && argc == 2) {
-        static const char E[] = "ERR DUMP is not supported in this build";
-        resp_write_error(out, E, sizeof(E) - 1);
+        char *payload;
+        size_t payloadlen;
+        if (function_dump_build(d, &payload, &payloadlen) != 0) {
+            static const char E[] = "ERR out of memory";
+            resp_write_error(out, E, sizeof(E) - 1);
+            return;
+        }
+        resp_write_bulk(out, payload, payloadlen);
+        free(payload);
         return;
     }
 
-    if (ci_equal(sub, sl, "RESTORE") && argc >= 3) {
-        static const char E[] = "ERR RESTORE is not supported in this build";
-        resp_write_error(out, E, sizeof(E) - 1);
+    if (ci_equal(sub, sl, "RESTORE") && argc >= 3 && argc <= 4) {
+        const char *payload;
+        size_t payloadlen;
+        const char *policy = NULL;
+        size_t policylen = 0;
+        int mode = 0; /* 0 append, 1 replace, 2 flush */
+        rh_table tmp;
+        function_restore_join_ctx jc;
+
+        if (argv[2].str == NULL)
+            goto bad;
+        if (!arg_str(&argv[2], &payload, &payloadlen))
+            goto bad;
+        if (argc == 4) {
+            if (!arg_str(&argv[3], &policy, &policylen))
+                goto bad;
+            if (ci_equal(policy, policylen, "APPEND")) {
+                mode = 0;
+            } else if (ci_equal(policy, policylen, "REPLACE")) {
+                mode = 1;
+            } else if (ci_equal(policy, policylen, "FLUSH")) {
+                mode = 2;
+            } else {
+                static const char E[] =
+                    "ERR Wrong restore policy given, value should be either "
+                    "FLUSH, APPEND or REPLACE.";
+                resp_write_error(out, E, sizeof(E) - 1);
+                return;
+            }
+        }
+
+        rh_init(&tmp);
+        if (function_restore_parse(payload, payloadlen, &tmp) != 0) {
+            rh_destroy(&tmp);
+            static const char E[] = "ERR invalid function payload";
+            resp_write_error(out, E, sizeof(E) - 1);
+            return;
+        }
+
+        if (mode == 2) {
+            rh_destroy(&d->function_libs);
+            d->function_libs = tmp;
+        } else {
+            jc.dst = &d->function_libs;
+            jc.replace = (mode == 1);
+            jc.fail = 0;
+            rh_each(&tmp, function_restore_join_cb, &jc);
+            rh_destroy(&tmp);
+            if (jc.fail) {
+                char msg[96];
+                int n;
+                if (jc.replace) {
+                    static const char E[] = "ERR out of memory";
+                    resp_write_error(out, E, sizeof(E) - 1);
+                    return;
+                }
+                /* APPEND collision: report the first existing library name
+                 * in the same wording as FUNCTION LOAD. */
+                n = snprintf(msg, sizeof(msg),
+                             "ERR Library already exists");
+                resp_write_error(out, msg, (size_t)n);
+                return;
+            }
+        }
+        d->dirty++;
+        resp_write_simple_string(out, "OK", 2);
         return;
     }
 
