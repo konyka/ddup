@@ -231,6 +231,43 @@ static void test_eval_ro(void)
     db_destroy(&d);
 }
 
+static void test_fcall_function(void)
+{
+    db d;
+    session *s;
+    resp_buf out;
+    db_init(&d);
+    resp_buf_init(&out);
+    s = session_create(&d);
+
+    exec_sess(s, T0, &out, 3, "FUNCTION", "LOAD",
+              "#!lua name=mylib\nreturn {KEYS[1], ARGV[1]}");
+    EXPECT(out, "$5\r\nmylib\r\n");
+    exec_sess(s, T0, &out, 5, "FCALL", "mylib", "1", "k", "arg");
+    EXPECT(out, "*2\r\n$1\r\nk\r\n$3\r\narg\r\n");
+    exec_sess(s, T0, &out, 3, "FCALL_RO", "mylib", "0");
+    EXPECT(out, "*0\r\n");
+
+    exec_sess(s, T0, &out, 2, "FUNCTION", "LIST");
+    EXPECT(out, "*1\r\n$5\r\nmylib\r\n");
+    exec_sess(s, T0, &out, 3, "FUNCTION", "DELETE", "mylib");
+    EXPECT(out, "+OK\r\n");
+    exec_sess(s, T0, &out, 4, "FCALL", "mylib", "1", "k", "arg");
+    EXPECT(out, "-ERR Function not found\r\n");
+
+    exec_sess(s, T0, &out, 3, "FUNCTION", "LOAD",
+              "#!lua name=lib2\nreturn 7");
+    EXPECT(out, "$4\r\nlib2\r\n");
+    exec_sess(s, T0, &out, 2, "FUNCTION", "FLUSH");
+    EXPECT(out, "+OK\r\n");
+    exec_sess(s, T0, &out, 2, "FUNCTION", "LIST");
+    EXPECT(out, "*0\r\n");
+
+    session_free(s);
+    resp_buf_free(&out);
+    db_destroy(&d);
+}
+
 static void test_error_texts(void)
 {
     db d;
@@ -458,6 +495,7 @@ int main(void)
     DD_RUN(test_script_execution_limits);
     DD_RUN(test_evalsha_and_script_family);
     DD_RUN(test_eval_ro);
+    DD_RUN(test_fcall_function);
     DD_RUN(test_error_texts);
     DD_RUN(test_pcall_captures);
     DD_RUN(test_aof_records_effects);

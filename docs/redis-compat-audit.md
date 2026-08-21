@@ -8,8 +8,8 @@
 
 | 类别 | 数量 |
 | --- | --- |
-| 完全未实现的独立顶层命令 | 13 |
-| 整体缺失的顶层容器 | 5 |
+| 完全未实现的独立顶层命令 | 10 |
+| 整体缺失的顶层容器 | 4 |
 | 已实现容器内缺失的子命令 | 34 |
 
 ## A. 完全缺失的独立顶层命令（按 Redis group 分组）
@@ -23,11 +23,9 @@
 
 （阻塞 list 族已实现，见“已实现”补充说明）
 
-### scripting（3）
+### scripting（0）
 
-`FCALL`
-`FCALL_RO`
-`FUNCTION`
+（脚本库族 `FCALL/FCALL_RO/FUNCTION` 已实现，见“已实现”补充说明）
 
 ### sentinel（1）
 
@@ -51,7 +49,7 @@
 
 ### 整体缺失的顶层容器
 
-- `acl` `function` `latency` `module` `sentinel`
+- `acl` `latency` `module` `sentinel`
 
 ### 已实现容器内缺失的子命令
 
@@ -73,7 +71,12 @@
 - `COMMAND`：仅 `COUNT/LIST/INFO/GETKEYS/DOCS/HELP`；缺 `GETKEYSANDFLAGS`。
 - `MEMORY`：仅 `USAGE/STATS/DOCTOR/PURGE/MALLOC-STATS/HELP`。
 - `SLOWLOG`：仅 `GET/LEN/RESET/HELP`。
-- 脚本族新增只读别名 `EVAL_RO/EVALSHA_RO`；只读脚本内写命令会被拒绝，`FCALL/FUNCTION` 仍缺。
+- 脚本族新增只读别名 `EVAL_RO/EVALSHA_RO`；只读脚本内写命令会被拒绝。
+- 脚本库族已实现 `FCALL/FCALL_RO/FUNCTION`：`FUNCTION` 支持
+  `LOAD [REPLACE]/DELETE/LIST [LIBRARYNAME pattern] [WITHCODE]/FLUSH/
+  STATS/HELP`，`DUMP/RESTORE` 返回明确不支持，`KILL` 返回 `NOTBUSY`。
+  当前把库代码按名称保存并按 EVAL 风格执行，Redis 的
+  `redis.register_function` 多函数库格式记录为本次范围外。
 - Stream 核心族已实现 `XADD/XLEN/XRANGE/XREVRANGE/XDEL/XTRIM/XSETID`；
   消费组/读取族已实现 `XGROUP/XACK/XPENDING/XCLAIM/XAUTOCLAIM/XREAD/
   XREADGROUP/XINFO`；`BLOCK` 当前按非阻塞立即返回处理，记录在案。
@@ -82,7 +85,7 @@
   超时到期时唤醒；mt 模式暂不路由这些命令（记录在案）。
 - 复制/运维族：无 `REPLCONF`、`MONITOR`、`WAIT/WAITAOF`（`REPLICAOF`/`ROLE`/`SLAVEOF` 已实现）。
 - `LOLWUT` 已实现 `VERSION 5/6` 的最小 ASCII art；`RESTORE-ASKING` 已作为集群导入用 `RESTORE` 别名实现（当前仅支持 `REPLACE`，`ABSTTL/IDLETIME/FREQ` 仍缺）。
-- 管理族整体缺失：`ACL`、`DEBUG`、`LATENCY`、`MODULE`、`FUNCTION`、`SENTINEL`。
+- 管理族整体缺失：`ACL`、`DEBUG`、`LATENCY`、`MODULE`、`SENTINEL`。
 
 ## D. 项目范围外 / 明确不实施
 
@@ -92,8 +95,8 @@
 ## 审计基线（机器断言，勿手改格式）
 
 <!-- AUDIT-BASELINE-START
-missing_top: acl debug failover fcall fcall_ro function latency module monitor replconf sentinel wait waitaof
-missing_containers: acl function latency module sentinel
+missing_top: acl debug failover latency module monitor replconf sentinel wait waitaof
+missing_containers: acl latency module sentinel
 missing_sub: client caching
 missing_sub: client getredir
 missing_sub: client info

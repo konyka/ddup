@@ -82,6 +82,7 @@ void db_init(db *d)
     d->last_save = 0;
     d->rng_state = 0x9E3779B9u; /* nonzero xorshift seed */
     rh_init(&d->scripts);
+    rh_init(&d->function_libs);
     d->lua_state = NULL;
 }
 
@@ -8652,6 +8653,259 @@ int command_blocked_try(session *s, resp_buf *out, uint64_t now_ms)
     return 1;
 }
 
+/* Minimal FUNCTION library code is `#!lua name=<lib>` followed by a plain
+ * Lua chunk (EVAL-style KEYS/ARGV globals). Redis's `redis.register_function`
+ * multi-function libraries are documented as outside this compatibility
+ * pass; FCALL runs the named library chunk with the supplied keys/args. */
+static int function_parse_lib(const char *code, size_t codelen,
+                              const char **body, size_t *bodylen,
+                              const char **lib, size_t *liblen)
+{
+    const char *p = code;
+    const char *end = code + codelen;
+    if (codelen < 8 || memcmp(p, "#!lua ", 6) != 0)
+        return -1;
+    p += 6;
+    if ((size_t)(end - p) < 5 || memcmp(p, "name=", 5) != 0)
+        return -1;
+    p += 5;
+    *lib = p;
+    while (p < end && *p != '\r' && *p != '\n' && *p != ' ')
+        p++;
+    if (p == *lib)
+        return -1;
+    *liblen = (size_t)(p - *lib);
+    while (p < end && (*p == '\r' || *p == '\n' || *p == ' '))
+        p++;
+    *body = p;
+    *bodylen = (size_t)(end - p);
+    return 0;
+}
+
+typedef struct function_lib_list_ctx {
+    resp_buf *out;
+    const char *pat;
+    size_t patlen;
+    int withcode;
+    size_t count;
+    int write;
+} function_lib_list_ctx;
+
+static void function_lib_list_cb(const char *key, size_t klen,
+                                 const char *val, size_t vlen, void *arg)
+{
+    function_lib_list_ctx *c = (function_lib_list_ctx *)arg;
+    if (c->pat != NULL &&
+        !ddup_glob_match(c->pat, c->patlen, key, klen))
+        return;
+    if (c->write) {
+        if (c->withcode) {
+            resp_write_array_header(c->out, 2);
+            resp_write_bulk(c->out, key, klen);
+            resp_write_bulk(c->out, val, vlen);
+        } else {
+            resp_write_bulk(c->out, key, klen);
+        }
+    }
+    c->count++;
+}
+
+static void command_function(session *s, const resp_value *argv, size_t argc,
+                             resp_buf *out, uint64_t now_ms)
+{
+    db *d = s->d;
+    const char *sub;
+    size_t sl;
+    (void)now_ms;
+    if (argc < 2 || !arg_str(&argv[1], &sub, &sl))
+        goto bad;
+
+    if (ci_equal(sub, sl, "HELP") && argc == 2) {
+        static const char *help[] = {
+            "LOAD [REPLACE] <function-code>",
+            "DELETE <library-name>",
+            "LIST [LIBRARYNAME pattern] [WITHCODE]",
+            "FLUSH [ASYNC|SYNC]",
+            "DUMP",
+            "RESTORE <serialized-value> [FLUSH|APPEND|REPLACE]",
+            "STATS",
+            "KILL"
+        };
+        size_t i;
+        resp_write_array_header(out,
+                                sizeof(help) / sizeof(help[0]));
+        for (i = 0; i < sizeof(help) / sizeof(help[0]); i++)
+            resp_write_bulk(out, help[i], strlen(help[i]));
+        return;
+    }
+
+    if (ci_equal(sub, sl, "LOAD")) {
+        int replace = 0;
+        const char *code;
+        size_t codelen;
+        const char *body, *lib;
+        size_t bodylen, liblen;
+        if (argc == 4) {
+            const char *opt;
+            size_t optl;
+            if (!arg_str(&argv[2], &opt, &optl))
+                goto bad;
+            if (!ci_equal(opt, optl, "REPLACE")) {
+                resp_write_error(out, ERR_SYNTAX, sizeof(ERR_SYNTAX) - 1);
+                return;
+            }
+            replace = 1;
+            code = argv[3].str;
+            codelen = argv[3].len;
+        } else if (argc == 3) {
+            code = argv[2].str;
+            codelen = argv[2].len;
+        } else {
+            wrong_args(out, "function|load");
+            return;
+        }
+        if (argv[argc - 1].str == NULL)
+            goto bad;
+        if (function_parse_lib(code, codelen, &body, &bodylen, &lib,
+                               &liblen) != 0) {
+            static const char E[] =
+                "ERR Missing library metadata";
+            resp_write_error(out, E, sizeof(E) - 1);
+            return;
+        }
+        (void)body;
+        (void)bodylen;
+        if (!replace && rh_get(&d->function_libs, lib, liblen, &body,
+                               &bodylen)) {
+            char msg[96];
+            int n = snprintf(msg, sizeof(msg),
+                             "ERR Library '%.*s' already exists",
+                             (int)liblen, lib);
+            resp_write_error(out, msg, (size_t)n);
+            return;
+        }
+        if (rh_set(&d->function_libs, lib, liblen, code, codelen) < 0) {
+            static const char E[] = "ERR out of memory";
+            resp_write_error(out, E, sizeof(E) - 1);
+            return;
+        }
+        d->dirty++;
+        resp_write_bulk(out, lib, liblen);
+        return;
+    }
+
+    if (ci_equal(sub, sl, "DELETE") && argc == 3) {
+        const char *lib;
+        size_t liblen;
+        const char *dummy;
+        size_t dummylen;
+        if (!arg_str(&argv[2], &lib, &liblen))
+            goto bad;
+        if (!rh_get(&d->function_libs, lib, liblen, &dummy, &dummylen)) {
+            static const char E[] = "ERR Library not found";
+            resp_write_error(out, E, sizeof(E) - 1);
+            return;
+        }
+        rh_del(&d->function_libs, lib, liblen);
+        d->dirty++;
+        resp_write_simple_string(out, "OK", 2);
+        return;
+    }
+
+    if (ci_equal(sub, sl, "FLUSH") && (argc == 2 || argc == 3)) {
+        rh_destroy(&d->function_libs);
+        rh_init(&d->function_libs);
+        d->dirty++;
+        resp_write_simple_string(out, "OK", 2);
+        return;
+    }
+
+    if (ci_equal(sub, sl, "LIST") && argc >= 2 && argc <= 5) {
+        function_lib_list_ctx c;
+        const char *pat = NULL;
+        size_t patlen = 0;
+        int withcode = 0;
+        size_t i = 2;
+        while (i < argc) {
+            const char *tok;
+            size_t toklen;
+            if (!arg_str(&argv[i], &tok, &toklen))
+                goto bad;
+            if (ci_equal(tok, toklen, "WITHCODE")) {
+                withcode = 1;
+                i++;
+            } else if (ci_equal(tok, toklen, "LIBRARYNAME") && i + 1 < argc) {
+                if (!arg_str(&argv[i + 1], &pat, &patlen))
+                    goto bad;
+                i += 2;
+            } else {
+                resp_write_error(out, ERR_SYNTAX, sizeof(ERR_SYNTAX) - 1);
+                return;
+            }
+        }
+        c.out = out;
+        c.pat = pat;
+        c.patlen = patlen;
+        c.withcode = withcode;
+        c.count = 0;
+        c.write = 0;
+        rh_each(&d->function_libs, function_lib_list_cb, &c);
+        resp_write_array_header(out, c.count);
+        c.count = 0;
+        c.write = 1;
+        rh_each(&d->function_libs, function_lib_list_cb, &c);
+        return;
+    }
+
+    if (ci_equal(sub, sl, "STATS") && argc == 2) {
+        resp_write_array_header(out, 4);
+        resp_write_bulk(out, "running_script", 14);
+        resp_write_bulk(out, NULL, 0);
+        resp_write_bulk(out, "engines", 7);
+        resp_write_array_header(out, 0);
+        return;
+    }
+
+    if (ci_equal(sub, sl, "DUMP") && argc == 2) {
+        static const char E[] = "ERR DUMP is not supported in this build";
+        resp_write_error(out, E, sizeof(E) - 1);
+        return;
+    }
+
+    if (ci_equal(sub, sl, "RESTORE") && argc >= 3) {
+        static const char E[] = "ERR RESTORE is not supported in this build";
+        resp_write_error(out, E, sizeof(E) - 1);
+        return;
+    }
+
+    if (ci_equal(sub, sl, "KILL") && argc == 2) {
+        static const char E[] = "NOTBUSY No scripts in execution right now";
+        resp_write_error(out, E, sizeof(E) - 1);
+        return;
+    }
+
+    {
+        char lc[32];
+        char msg[160];
+        size_t i;
+        int n;
+        for (i = 0; i < sl && i < sizeof(lc) - 1; i++)
+            lc[i] = (sub[i] >= 'A' && sub[i] <= 'Z')
+                        ? (char)(sub[i] + ('a' - 'A'))
+                        : sub[i];
+        lc[i] = '\0';
+        n = snprintf(msg, sizeof(msg),
+                     "ERR Unknown FUNCTION subcommand or wrong number of "
+                     "arguments for '%s'",
+                     lc);
+        resp_write_error(out, msg, (size_t)n);
+    }
+    return;
+
+bad:
+    resp_write_error(out, "ERR invalid argument type", 24);
+}
+
 static void command_dispatch(session *s, const resp_value *argv, size_t argc,
                              resp_buf *out, uint64_t now_ms)
 {
@@ -9424,6 +9678,78 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
         script_exec(s, sha, argv + 3, (size_t)numkeys,
                     argc - 3 - (size_t)numkeys, out, now_ms);
         s->in_ro_script -= is_ro;
+        return;
+    }
+
+    if (cmd_id == CMD_FCALL || cmd_id == CMD_FCALL_RO) {
+        int is_ro = cmd_id == CMD_FCALL_RO;
+        const char *fname, *nv;
+        size_t fnamel, nvl;
+        const char *code;
+        size_t codelen;
+        const char *body, *lib;
+        size_t bodylen, liblen;
+        long long numkeys;
+        char sha[41];
+        char err[256];
+        if (argc < 3) {
+            wrong_args(out, is_ro ? "fcall_ro" : "fcall");
+            return;
+        }
+        if (s->in_script) {
+            static const char E[] =
+                "ERR This Redis command is not allowed from scripts";
+            resp_write_error(out, E, sizeof(E) - 1);
+            return;
+        }
+        if (!arg_str(&argv[1], &fname, &fnamel) ||
+            !arg_str(&argv[2], &nv, &nvl))
+            goto bad_type;
+        if (!parse_i64(nv, nvl, &numkeys)) {
+            resp_write_error(out, ERR_NOT_INT, sizeof(ERR_NOT_INT) - 1);
+            return;
+        }
+        if (numkeys < 0) {
+            static const char E[] = "ERR Number of keys can't be negative";
+            resp_write_error(out, E, sizeof(E) - 1);
+            return;
+        }
+        if (numkeys > (long long)(argc - 3)) {
+            static const char E[] =
+                "ERR Number of keys can't be greater than number of args";
+            resp_write_error(out, E, sizeof(E) - 1);
+            return;
+        }
+        if (!rh_get(&d->function_libs, fname, fnamel, &code, &codelen)) {
+            static const char E[] = "ERR Function not found";
+            resp_write_error(out, E, sizeof(E) - 1);
+            return;
+        }
+        if (function_parse_lib(code, codelen, &body, &bodylen, &lib,
+                               &liblen) != 0) {
+            static const char E[] = "ERR Missing library metadata";
+            resp_write_error(out, E, sizeof(E) - 1);
+            return;
+        }
+        (void)lib;
+        (void)liblen;
+        if (script_load(d, body, bodylen, sha, err, sizeof(err)) != 0) {
+            char ebuf[384];
+            int n = snprintf(ebuf, sizeof(ebuf),
+                             "ERR Error compiling function: %s", err);
+            resp_write_error(out, ebuf, (size_t)n);
+            return;
+        }
+        s->aof_skip = 1;
+        s->in_ro_script += is_ro;
+        script_exec(s, sha, argv + 3, (size_t)numkeys,
+                    argc - 3 - (size_t)numkeys, out, now_ms);
+        s->in_ro_script -= is_ro;
+        return;
+    }
+
+    if (cmd_id == CMD_FUNCTION) {
+        command_function(s, argv, argc, out, now_ms);
         return;
     }
 
@@ -16823,6 +17149,9 @@ static const cmd_entry CMD_TABLE[] = {
     {"xsetid", CMD_XSETID, 3, -1, 0, CMD_WRITE},
     {"eval_ro", CMD_EVAL_RO, 3, -1, 0, 0},
     {"evalsha_ro", CMD_EVALSHA_RO, 3, -1, 0, 0},
+    {"fcall", CMD_FCALL, 3, -1, 0, CMD_WRITE},
+    {"fcall_ro", CMD_FCALL_RO, 3, -1, 0, 0},
+    {"function", CMD_FUNCTION, 2, -1, 0, CMD_WRITE},
     {"restore-asking", CMD_RESTORE_ASKING, 4, 5, 0, CMD_WRITE},
     {"lolwut", CMD_LOLWUT, 1, -1, 0, 0},
 };

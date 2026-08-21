@@ -184,6 +184,8 @@ void script_flush(db *d)
 void script_cleanup(db *d)
 {
     script_flush(d);
+    rh_destroy(&d->function_libs);
+    rh_init(&d->function_libs);
     if (d->lua_state != NULL) {
         lua_close((lua_State *)d->lua_state);
         d->lua_state = NULL;

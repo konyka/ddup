@@ -60,6 +60,7 @@ typedef struct db {
     uint64_t last_save;    /* unix seconds of the last successful SAVE */
     uint32_t rng_state;    /* sampling PRNG (xorshift32, always nonzero) */
     rh_table scripts;      /* Lua script cache: sha1 hex -> registry ref */
+    rh_table function_libs; /* FUNCTION LOAD code: library name -> source */
     void *lua_state;       /* shared interpreter, lazy (script.c owns it) */
     /* commandstats: per-command-id call count and cumulative microseconds
      * (indexed by CMD_* id, room to spare) */
@@ -377,6 +378,9 @@ enum {
     CMD_EVALSHA_RO,
     CMD_RESTORE_ASKING,
     CMD_LOLWUT,
+    CMD_FCALL,
+    CMD_FCALL_RO,
+    CMD_FUNCTION,
     CMD_BLPOP,
     CMD_BRPOP,
     CMD_BRPOPLPUSH,
