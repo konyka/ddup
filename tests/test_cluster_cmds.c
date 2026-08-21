@@ -219,6 +219,43 @@ static void test_count_and_getkeysinslot(void)
     db_destroy(&d);
 }
 
+static void test_cluster_management_subcommands(void)
+{
+    db d;
+    session *s;
+    resp_buf out;
+    db_init(&d);
+    resp_buf_init(&out);
+    s = cluster_session(&d);
+
+    exec_sess(s, T0, &out, 2, "CLUSTER", "MYSHARDID");
+    EXPECT(out, "$40\r\n" TEST_ID "\r\n");
+    exec_sess(s, T0, &out, 2, "CLUSTER", "LINKS");
+    EXPECT(out, "*0\r\n");
+    exec_sess(s, T0, &out, 2, "CLUSTER", "SHARDS");
+    EXPECT(out, "*0\r\n");
+    exec_sess(s, T0, &out, 3, "CLUSTER", "REPLICAS", TEST_ID);
+    EXPECT(out, "*0\r\n");
+    exec_sess(s, T0, &out, 3, "CLUSTER", "SLAVES", TEST_ID);
+    EXPECT(out, "*0\r\n");
+    exec_sess(s, T0, &out, 2, "CLUSTER", "BUMPEPOCH");
+    EXPECT(out, "+BUMPED 1\r\n");
+    exec_sess(s, T0, &out, 3, "CLUSTER", "SET-CONFIG-EPOCH", "5");
+    EXPECT(out, "+OK\r\n");
+    exec_sess(s, T0, &out, 3, "CLUSTER", "SET-CONFIG-EPOCH", "4");
+    DD_CHECK(out.len > 0 && out.data[0] == '-');
+    exec_sess(s, T0, &out, 3, "CLUSTER", "COUNT-FAILURE-REPORTS", TEST_ID);
+    EXPECT(out, ":0\r\n");
+    exec_sess(s, T0, &out, 3, "CLUSTER", "FORGET", TEST_ID);
+    DD_CHECK(out.len > 0 && out.data[0] == '-');
+    exec_sess(s, T0, &out, 2, "CLUSTER", "SAVECONFIG");
+    EXPECT(out, "-ERR The server is running without a config file\r\n");
+
+    session_free(s);
+    resp_buf_free(&out);
+    db_destroy(&d);
+}
+
 static void test_crossslot_basic(void);
 static void test_crossslot_setops_watch(void);
 static void test_crossslot_exec(void);
@@ -231,6 +268,7 @@ int main(void)
     DD_RUN(test_cluster_info_myid_nodes);
     DD_RUN(test_cluster_slots_and_keyslot);
     DD_RUN(test_count_and_getkeysinslot);
+    DD_RUN(test_cluster_management_subcommands);
     DD_RUN(test_crossslot_basic);
     DD_RUN(test_crossslot_setops_watch);
     DD_RUN(test_crossslot_copy);

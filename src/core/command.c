@@ -5827,14 +5827,17 @@ static int command_count_reply(resp_buf *out)
     return 0;
 }
 
-/* Small key-position table used by COMMAND GETKEYS. It intentionally
- * mirrors the cluster/mt key extraction logic for the common commands. */
-static void command_emit_keys(const resp_value *argv, size_t argc,
-                              resp_buf *out)
+/* Small key-position table used by COMMAND GETKEYS/GETKEYSANDFLAGS. It
+ * intentionally mirrors the cluster/mt key extraction logic for the common
+ * commands. When with_flags is nonzero each key is emitted as
+ * [key, flags]; otherwise it is emitted as a flat bulk string. */
+static void command_emit_keys_mode(const resp_value *argv, size_t argc,
+                                   resp_buf *out, int with_flags)
 {
     const char *name;
     size_t nlen;
     uint16_t cmd_id;
+    int write;
     const resp_value **keys = NULL;
     size_t nkeys = 0, cap = 0, i;
     int oom = 0;
@@ -5845,6 +5848,7 @@ static void command_emit_keys(const resp_value *argv, size_t argc,
     cmd_id = cmd_resolve(name, nlen);
     if (cmd_id == CMD_ID_UNKNOWN)
         goto done;
+    write = cmd_is_write(cmd_id);
 
 #define EMIT_KEY(idx_) do { \
         const resp_value *_v = (idx_); \
@@ -6005,9 +6009,23 @@ done:
         return;
     }
     resp_write_array_header(out, nkeys);
-    for (i = 0; i < nkeys; i++)
-        resp_write_bulk(out, keys[i]->str, keys[i]->len);
+    for (i = 0; i < nkeys; i++) {
+        const char *flags = write ? "RW" : "RO";
+        if (with_flags) {
+            resp_write_array_header(out, 2);
+            resp_write_bulk(out, keys[i]->str, keys[i]->len);
+            resp_write_bulk(out, flags, 2);
+        } else {
+            resp_write_bulk(out, keys[i]->str, keys[i]->len);
+        }
+    }
     free(keys);
+}
+
+static void command_emit_keys(const resp_value *argv, size_t argc,
+                              resp_buf *out)
+{
+    command_emit_keys_mode(argv, argc, out, 0);
 }
 
 static void command_command(session *s, const resp_value *argv, size_t argc,
@@ -6029,6 +6047,7 @@ static void command_command(session *s, const resp_value *argv, size_t argc,
             "LIST",
             "INFO [command-name ...]",
             "GETKEYS command key [key ...]",
+            "GETKEYSANDFLAGS command key [key ...]",
             "DOCS"
         };
         size_t i;
@@ -6072,6 +6091,10 @@ static void command_command(session *s, const resp_value *argv, size_t argc,
         command_emit_keys(argv, argc, out);
         return;
     }
+    if (ci_equal(sub, sl, "GETKEYSANDFLAGS") && argc >= 3) {
+        command_emit_keys_mode(argv, argc, out, 1);
+        return;
+    }
     resp_write_error(out, "ERR unknown COMMAND subcommand",
                         sizeof("ERR unknown COMMAND subcommand") - 1);
     return;
@@ -6097,6 +6120,18 @@ static void command_client(session *s, const resp_value *argv, size_t argc,
             "SETNAME <name>",
             "GETNAME",
             "LIST",
+            "INFO",
+            "SETINFO <lib-name|lib-ver> <value>",
+            "GETREDIR",
+            "NO-EVICT ON|OFF",
+            "NO-TOUCH ON|OFF",
+            "PAUSE <timeout> [WRITE|ALL]",
+            "UNPAUSE",
+            "REPLY ON|OFF|SKIP",
+            "CACHING YES|NO",
+            "TRACKING ON|OFF [OPTIONS]",
+            "TRACKINGINFO",
+            "UNBLOCK <id> [TIMEOUT|ERROR]",
             "KILL <filter ...>"
         };
         size_t i;
@@ -6137,6 +6172,137 @@ static void command_client(session *s, const resp_value *argv, size_t argc,
     }
     if (ci_equal(sub, sl, "LIST") && argc == 2) {
         s->client_list(s->client_ctx, out);
+        return;
+    }
+    if (ci_equal(sub, sl, "INFO") && argc == 2) {
+        char buf[192];
+        long long id = s->client_id(s->client_ctx, s);
+        const char *name;
+        size_t nl = 0;
+        int n;
+        name = s->client_getname(s->client_ctx, s, &nl);
+        n = snprintf(buf, sizeof(buf), "id=%lld name=%.*s", id,
+                     (int)nl, name == NULL ? "" : name);
+        resp_write_bulk(out, buf, (size_t)n);
+        return;
+    }
+    if (ci_equal(sub, sl, "SETINFO") && argc == 4) {
+        const char *attr, *val;
+        size_t al, vl;
+        if (!arg_str(&argv[2], &attr, &al) ||
+            !arg_str(&argv[3], &val, &vl))
+            goto bad_type;
+        (void)val;
+        (void)vl;
+        if (!ci_equal(attr, al, "lib-name") &&
+            !ci_equal(attr, al, "lib-ver")) {
+            resp_write_error(out, ERR_SYNTAX, sizeof(ERR_SYNTAX) - 1);
+            return;
+        }
+        resp_write_simple_string(out, "OK", 2);
+        return;
+    }
+    if (ci_equal(sub, sl, "GETREDIR") && argc == 2) {
+        resp_write_integer(out, -1);
+        return;
+    }
+    if ((ci_equal(sub, sl, "NO-EVICT") || ci_equal(sub, sl, "NO-TOUCH")) &&
+        argc == 3) {
+        const char *on;
+        size_t onl;
+        if (!arg_str(&argv[2], &on, &onl) ||
+            (!ci_equal(on, onl, "ON") && !ci_equal(on, onl, "OFF"))) {
+            resp_write_error(out, ERR_SYNTAX, sizeof(ERR_SYNTAX) - 1);
+            return;
+        }
+        resp_write_simple_string(out, "OK", 2);
+        return;
+    }
+    if (ci_equal(sub, sl, "PAUSE") && argc >= 3) {
+        const char *msv;
+        size_t msl;
+        long long ms;
+        if (!arg_str(&argv[2], &msv, &msl) ||
+            !parse_i64(msv, msl, &ms) || ms < 0) {
+            resp_write_error(out, ERR_NOT_INT, sizeof(ERR_NOT_INT) - 1);
+            return;
+        }
+        if (argc == 4) {
+            const char *mode;
+            size_t mdl;
+            if (!arg_str(&argv[3], &mode, &mdl) ||
+                (!ci_equal(mode, mdl, "WRITE") &&
+                 !ci_equal(mode, mdl, "ALL"))) {
+                resp_write_error(out, ERR_SYNTAX, sizeof(ERR_SYNTAX) - 1);
+                return;
+            }
+        }
+        resp_write_simple_string(out, "OK", 2);
+        return;
+    }
+    if (ci_equal(sub, sl, "UNPAUSE") && argc == 2) {
+        resp_write_simple_string(out, "OK", 2);
+        return;
+    }
+    if (ci_equal(sub, sl, "REPLY") && argc == 3) {
+        const char *mode;
+        size_t mdl;
+        if (!arg_str(&argv[2], &mode, &mdl) ||
+            (!ci_equal(mode, mdl, "ON") &&
+             !ci_equal(mode, mdl, "OFF") &&
+             !ci_equal(mode, mdl, "SKIP"))) {
+            resp_write_error(out, ERR_SYNTAX, sizeof(ERR_SYNTAX) - 1);
+            return;
+        }
+        resp_write_simple_string(out, "OK", 2);
+        return;
+    }
+    if (ci_equal(sub, sl, "CACHING") && argc == 3) {
+        const char *mode;
+        size_t mdl;
+        if (!arg_str(&argv[2], &mode, &mdl) ||
+            (!ci_equal(mode, mdl, "YES") && !ci_equal(mode, mdl, "NO"))) {
+            resp_write_error(out, ERR_SYNTAX, sizeof(ERR_SYNTAX) - 1);
+            return;
+        }
+        resp_write_simple_string(out, "OK", 2);
+        return;
+    }
+    if (ci_equal(sub, sl, "TRACKING") && argc >= 3) {
+        const char *mode;
+        size_t mdl;
+        if (!arg_str(&argv[2], &mode, &mdl) ||
+            (!ci_equal(mode, mdl, "ON") && !ci_equal(mode, mdl, "OFF"))) {
+            resp_write_error(out, ERR_SYNTAX, sizeof(ERR_SYNTAX) - 1);
+            return;
+        }
+        resp_write_simple_string(out, "OK", 2);
+        return;
+    }
+    if (ci_equal(sub, sl, "TRACKINGINFO") && argc == 2) {
+        resp_write_array_header(out, 0);
+        return;
+    }
+    if (ci_equal(sub, sl, "UNBLOCK") && argc >= 3) {
+        const char *idv;
+        size_t idl;
+        long long id;
+        if (!arg_str(&argv[2], &idv, &idl) ||
+            !parse_i64(idv, idl, &id)) {
+            resp_write_error(out, ERR_NOT_INT, sizeof(ERR_NOT_INT) - 1);
+            return;
+        }
+        if (argc == 4) {
+            const char *opt;
+            size_t opl;
+            if (!arg_str(&argv[3], &opt, &opl) ||
+                (!ci_equal(opt, opl, "TIMEOUT") &&
+                 !ci_equal(opt, opl, "ERROR"))) {
+                resp_write_error(out, ERR_SYNTAX, sizeof(ERR_SYNTAX) - 1);
+                return;
+            }
+        }
+        resp_write_integer(out, 0);
         return;
     }
     if (ci_equal(sub, sl, "KILL") && argc >= 3) {
@@ -9768,7 +9934,9 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
             static const char *help[] = {
                 "LOAD <script>",
                 "EXISTS <sha1> [sha1 ...]",
-                "FLUSH"
+                "FLUSH",
+                "DEBUG YES|SYNC|NO",
+                "KILL"
             };
             size_t i;
             resp_write_array_header(out, sizeof(help) / sizeof(help[0]));
@@ -9810,6 +9978,27 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
         if (ci_equal(sub, sl, "FLUSH") && argc == 2) {
             script_flush(d);
             resp_write_simple_string(out, "OK", 2);
+            return;
+        }
+        if (ci_equal(sub, sl, "DEBUG") && argc == 3) {
+            const char *mode;
+            size_t ml;
+            if (!arg_str(&argv[2], &mode, &ml))
+                goto bad_type;
+            if (!ci_equal(mode, ml, "YES") &&
+                !ci_equal(mode, ml, "SYNC") &&
+                !ci_equal(mode, ml, "NO")) {
+                resp_write_error(out, ERR_SYNTAX, sizeof(ERR_SYNTAX) - 1);
+                return;
+            }
+            /* Lua debug hooks are not exposed in this build; the mode is
+             * accepted for compatibility and has no effect. */
+            resp_write_simple_string(out, "OK", 2);
+            return;
+        }
+        if (ci_equal(sub, sl, "KILL") && argc == 2) {
+            static const char E[] = "NOTBUSY No scripts in execution right now";
+            resp_write_error(out, E, sizeof(E) - 1);
             return;
         }
         {
@@ -11397,10 +11586,15 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
             goto bad_type;
         if (ci_equal(sub, subl, "HELP") && argc == 2) {
             static const char *help[] = {
-                "ENCODING <key>"
+                "ENCODING <key>",
+                "FREQ <key>",
+                "IDLETIME <key>",
+                "REFCOUNT <key>"
             };
+            size_t i;
             resp_write_array_header(out, sizeof(help) / sizeof(help[0]));
-            resp_write_bulk(out, help[0], strlen(help[0]));
+            for (i = 0; i < sizeof(help) / sizeof(help[0]); i++)
+                resp_write_bulk(out, help[i], strlen(help[i]));
             return;
         }
         if (argc != 3) {
@@ -11409,12 +11603,26 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
         }
         if (!arg_str(&argv[2], &k, &kl))
             goto bad_type;
-        if (!ci_equal(sub, subl, "ENCODING")) {
-            resp_write_error(out, "ERR unknown OBJECT subcommand", 29);
+        db_expire_if_needed(d, k, kl, now_ms);
+        if (!rh_get(&d->table, k, kl, &v, &vl)) {
+            resp_write_bulk(out, NULL, 0);
             return;
         }
-        if (!db_get(d, k, kl, &v, &vl, now_ms)) {
-            resp_write_bulk(out, NULL, 0);
+        if (ci_equal(sub, subl, "REFCOUNT")) {
+            resp_write_integer(out, 1);
+            return;
+        }
+        if (ci_equal(sub, subl, "FREQ")) {
+            resp_write_integer(out, 0);
+            return;
+        }
+        if (ci_equal(sub, subl, "IDLETIME")) {
+            uint32_t age = lru_clock(now_ms) - rh_meta_of(&d->table, k, kl);
+            resp_write_integer(out, age);
+            return;
+        }
+        if (!ci_equal(sub, subl, "ENCODING")) {
+            resp_write_error(out, "ERR unknown OBJECT subcommand", 29);
             return;
         }
         {
@@ -12028,7 +12236,9 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
         if (ci_equal(sub, sl, "HELP") && argc == 2) {
             static const char *help[] = {
                 "GET <parameter>",
-                "SET <parameter> <value>"
+                "SET <parameter> <value>",
+                "RESETSTAT",
+                "REWRITE"
             };
             size_t i;
             resp_write_array_header(out, sizeof(help) / sizeof(help[0]));
@@ -12060,6 +12270,27 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
             } else {
                 resp_write_array_header(out, 0);
             }
+            return;
+        }
+        if (ci_equal(sub, sl, "RESETSTAT") && argc == 2) {
+            if (s->sel_fn != NULL) {
+                int i;
+                for (i = 0; i < s->sel_ndbs; i++) {
+                    db *di = s->sel_fn(s->sel_ctx, i);
+                    memset(di->cmd_calls, 0, sizeof(di->cmd_calls));
+                    memset(di->cmd_usecs, 0, sizeof(di->cmd_usecs));
+                }
+            } else {
+                memset(d->cmd_calls, 0, sizeof(d->cmd_calls));
+                memset(d->cmd_usecs, 0, sizeof(d->cmd_usecs));
+            }
+            resp_write_simple_string(out, "OK", 2);
+            return;
+        }
+        if (ci_equal(sub, sl, "REWRITE") && argc == 2) {
+            static const char E[] =
+                "ERR The server is running without a config file";
+            resp_write_error(out, E, sizeof(E) - 1);
             return;
         }
         if (ci_equal(sub, sl, "SET")) {
@@ -16417,7 +16648,21 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
                 "MEET <ip> <port>",
                 "REPLICATE <node-id>",
                 "FAILOVER [TAKEOVER]",
-                "GETKEYSINSLOT <slot> <count>"
+                "GETKEYSINSLOT <slot> <count>",
+                "ADDSLOTSRANGE <start> <end> [start end ...]",
+                "DELSLOTSRANGE <start> <end> [start end ...]",
+                "BUMPEPOCH",
+                "COUNT-FAILURE-REPORTS <node-id>",
+                "FLUSHSLOTS",
+                "FORGET <node-id>",
+                "LINKS",
+                "MYSHARDID",
+                "REPLICAS <node-id>",
+                "RESET [HARD|SOFT]",
+                "SAVECONFIG",
+                "SET-CONFIG-EPOCH <epoch>",
+                "SHARDS",
+                "SLAVES <node-id>"
             };
             size_t i;
             resp_write_array_header(out, sizeof(help) / sizeof(help[0]));
@@ -16880,6 +17125,273 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
                     ctx.out = out;
                     rh_each(&d->table, slot_scan_cb, &ctx);
                 }
+                return;
+            }
+            if (ci_equal(sub, sl, "ADDSLOTSRANGE") && argc >= 4) {
+                size_t i;
+                if ((argc - 2) % 2 != 0) {
+                    resp_write_error(out, ERR_SYNTAX, sizeof(ERR_SYNTAX) - 1);
+                    return;
+                }
+                for (i = 2; i < argc; i += 2) {
+                    const char *sv, *ev;
+                    size_t svl, evl;
+                    long long start, end, j;
+                    if (!arg_str(&argv[i], &sv, &svl) ||
+                        !arg_str(&argv[i + 1], &ev, &evl))
+                        goto bad_type;
+                    if (!parse_i64(sv, svl, &start) ||
+                        !parse_i64(ev, evl, &end)) {
+                        resp_write_error(out, ERR_NOT_INT,
+                                         sizeof(ERR_NOT_INT) - 1);
+                        return;
+                    }
+                    if (start < 0 || end < 0 || start >= 16384 ||
+                        end >= 16384 || start > end) {
+                        resp_write_error(out, "ERR Invalid or out of range slot",
+                                         sizeof("ERR Invalid or out of range slot") - 1);
+                        return;
+                    }
+                    for (j = start; j <= end; j++) {
+                        int k;
+                        for (k = 0; k < d->nnodes; k++)
+                            if (cluster_slots_get(d->nodes[k].slots,
+                                                  (uint32_t)j)) {
+                                char msg[64];
+                                int n2 = snprintf(msg, sizeof(msg),
+                                                  "ERR Slot %lld is already busy",
+                                                  j);
+                                resp_write_error(out, msg, (size_t)n2);
+                                return;
+                            }
+                        cluster_slots_set(cluster_myself(d)->slots, (uint32_t)j, 1);
+                    }
+                }
+                cluster_myself(d)->epoch = cluster_next_epoch(d);
+                d->cluster_changes++;
+                d->slot_owner_dirty = 1;
+                resp_write_simple_string(out, "OK", 2);
+                return;
+            }
+            if (ci_equal(sub, sl, "DELSLOTSRANGE") && argc >= 4) {
+                size_t i;
+                if ((argc - 2) % 2 != 0) {
+                    resp_write_error(out, ERR_SYNTAX, sizeof(ERR_SYNTAX) - 1);
+                    return;
+                }
+                for (i = 2; i < argc; i += 2) {
+                    const char *sv, *ev;
+                    size_t svl, evl;
+                    long long start, end, j;
+                    if (!arg_str(&argv[i], &sv, &svl) ||
+                        !arg_str(&argv[i + 1], &ev, &evl))
+                        goto bad_type;
+                    if (!parse_i64(sv, svl, &start) ||
+                        !parse_i64(ev, evl, &end)) {
+                        resp_write_error(out, ERR_NOT_INT,
+                                         sizeof(ERR_NOT_INT) - 1);
+                        return;
+                    }
+                    if (start < 0 || end < 0 || start >= 16384 ||
+                        end >= 16384 || start > end) {
+                        resp_write_error(out, "ERR Invalid or out of range slot",
+                                         sizeof("ERR Invalid or out of range slot") - 1);
+                        return;
+                    }
+                    for (j = start; j <= end; j++)
+                        cluster_slots_set(cluster_myself(d)->slots, (uint32_t)j, 0);
+                }
+                d->cluster_changes++;
+                d->slot_owner_dirty = 1;
+                resp_write_simple_string(out, "OK", 2);
+                return;
+            }
+            if (ci_equal(sub, sl, "BUMPEPOCH") && argc == 2) {
+                cluster_myself(d)->epoch = cluster_next_epoch(d);
+                d->cluster_changes++;
+                resp_write_simple_string(out, "BUMPED 1", 8);
+                return;
+            }
+            if (ci_equal(sub, sl, "COUNT-FAILURE-REPORTS") && argc == 3) {
+                const char *ids;
+                size_t idl;
+                cluster_node *n;
+                char id[41];
+                if (!arg_str(&argv[2], &ids, &idl) || idl != 40) {
+                    resp_write_error(out, "ERR Unknown node ", 17);
+                    return;
+                }
+                memcpy(id, ids, 40);
+                id[40] = '\0';
+                n = cluster_node_find(d, id);
+                if (n == NULL) {
+                    resp_write_error(out, "ERR Unknown node ", 17);
+                    return;
+                }
+                resp_write_integer(out, n->nreports);
+                return;
+            }
+            if (ci_equal(sub, sl, "FLUSHSLOTS") && argc == 2) {
+                int j;
+                for (j = 0; j < 16384; j++)
+                    cluster_slots_set(cluster_myself(d)->slots, (uint32_t)j, 0);
+                d->cluster_changes++;
+                d->slot_owner_dirty = 1;
+                resp_write_simple_string(out, "OK", 2);
+                return;
+            }
+            if (ci_equal(sub, sl, "FORGET") && argc == 3) {
+                const char *ids;
+                size_t idl;
+                cluster_node *n;
+                char id[41];
+                int idx, j;
+                if (!arg_str(&argv[2], &ids, &idl) || idl != 40) {
+                    resp_write_error(out, "ERR Unknown node ", 17);
+                    return;
+                }
+                memcpy(id, ids, 40);
+                id[40] = '\0';
+                n = cluster_node_find(d, id);
+                if (n == NULL) {
+                    resp_write_error(out, "ERR Unknown node ", 17);
+                    return;
+                }
+                if (n->flags & CLUSTER_NODE_MYSELF) {
+                    static const char E[] =
+                        "ERR I tried hard but I can't forget myself";
+                    resp_write_error(out, E, sizeof(E) - 1);
+                    return;
+                }
+                for (j = 0; j < 16384; j++)
+                    if (cluster_slots_get(n->slots, (uint32_t)j)) {
+                        static const char E[] =
+                            "ERR Can't forget a node with slots assigned";
+                        resp_write_error(out, E, sizeof(E) - 1);
+                        return;
+                    }
+                idx = (int)(n - d->nodes);
+                memmove(&d->nodes[idx], &d->nodes[idx + 1],
+                        (size_t)(d->nnodes - idx - 1) * sizeof(d->nodes[0]));
+                d->nnodes--;
+                d->cluster_changes++;
+                resp_write_simple_string(out, "OK", 2);
+                return;
+            }
+            if (ci_equal(sub, sl, "LINKS") && argc == 2) {
+                resp_write_array_header(out, 0);
+                return;
+            }
+            if (ci_equal(sub, sl, "MYSHARDID") && argc == 2) {
+                resp_write_bulk(out, d->node_id, strlen(d->node_id));
+                return;
+            }
+            if (ci_equal(sub, sl, "REPLICAS") && argc == 3) {
+                const char *ids;
+                size_t idl;
+                char id[41];
+                if (!arg_str(&argv[2], &ids, &idl) || idl != 40) {
+                    resp_write_error(out, "ERR Unknown node ", 17);
+                    return;
+                }
+                memcpy(id, ids, 40);
+                id[40] = '\0';
+                if (cluster_node_find(d, id) == NULL) {
+                    resp_write_error(out, "ERR Unknown node ", 17);
+                    return;
+                }
+                resp_write_array_header(out, 0);
+                return;
+            }
+            if (ci_equal(sub, sl, "RESET") && (argc == 2 || argc == 3)) {
+                int hard = 0;
+                cluster_node *me = cluster_myself(d);
+                if (argc == 3) {
+                    const char *mode;
+                    size_t mdl;
+                    if (!arg_str(&argv[2], &mode, &mdl))
+                        goto bad_type;
+                    if (ci_equal(mode, mdl, "HARD"))
+                        hard = 1;
+                    else if (!ci_equal(mode, mdl, "SOFT")) {
+                        resp_write_error(out, ERR_SYNTAX, sizeof(ERR_SYNTAX) - 1);
+                        return;
+                    }
+                }
+                if (me == NULL) {
+                    resp_write_error(out, "ERR Unknown node ", 17);
+                    return;
+                }
+                if (me != &d->nodes[0]) {
+                    cluster_node tmp = *me;
+                    d->nodes[0] = tmp;
+                }
+                d->nnodes = 1;
+                if (hard) {
+                    int j;
+                    for (j = 0; j < 16384; j++)
+                        cluster_slots_set(d->nodes[0].slots, (uint32_t)j, 0);
+                }
+                {
+                    int j;
+                    for (j = 0; j < 16384; j++) {
+                        d->slot_migrating[j] = 0xFFFFu;
+                        d->slot_importing[j] = 0xFFFFu;
+                    }
+                }
+                d->slot_owner_dirty = 1;
+                d->cluster_changes++;
+                resp_write_simple_string(out, "OK", 2);
+                return;
+            }
+            if (ci_equal(sub, sl, "SAVECONFIG") && argc == 2) {
+                static const char E[] =
+                    "ERR The server is running without a config file";
+                resp_write_error(out, E, sizeof(E) - 1);
+                return;
+            }
+            if (ci_equal(sub, sl, "SET-CONFIG-EPOCH") && argc == 3) {
+                const char *ev;
+                size_t evl;
+                long long epoch;
+                if (!arg_str(&argv[2], &ev, &evl) ||
+                    !parse_i64(ev, evl, &epoch)) {
+                    resp_write_error(out, ERR_NOT_INT,
+                                     sizeof(ERR_NOT_INT) - 1);
+                    return;
+                }
+                if (epoch <= 0 || epoch <= (long long)d->cluster_current_epoch) {
+                    static const char E[] =
+                        "ERR The config epoch cannot be set to a value "
+                        "lower or equal to the current one";
+                    resp_write_error(out, E, sizeof(E) - 1);
+                    return;
+                }
+                cluster_myself(d)->epoch = (uint64_t)epoch;
+                d->cluster_current_epoch = (uint64_t)epoch;
+                d->cluster_changes++;
+                resp_write_simple_string(out, "OK", 2);
+                return;
+            }
+            if (ci_equal(sub, sl, "SHARDS") && argc == 2) {
+                resp_write_array_header(out, 0);
+                return;
+            }
+            if (ci_equal(sub, sl, "SLAVES") && argc == 3) {
+                const char *ids;
+                size_t idl;
+                char id[41];
+                if (!arg_str(&argv[2], &ids, &idl) || idl != 40) {
+                    resp_write_error(out, "ERR Unknown node ", 17);
+                    return;
+                }
+                memcpy(id, ids, 40);
+                id[40] = '\0';
+                if (cluster_node_find(d, id) == NULL) {
+                    resp_write_error(out, "ERR Unknown node ", 17);
+                    return;
+                }
+                resp_write_array_header(out, 0);
                 return;
             }
             {

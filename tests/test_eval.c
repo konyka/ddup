@@ -176,6 +176,14 @@ static void test_evalsha_and_script_family(void)
     exec_sess(s, T0, &out, 3, "EVALSHA", sha, "0");
     EXPECT(out, "-NOSCRIPT No matching script. Please use EVAL.\r\n");
 
+    /* SCRIPT DEBUG accepts the Redis modes; KILL has no running script */
+    exec_sess(s, T0, &out, 3, "SCRIPT", "DEBUG", "YES");
+    EXPECT(out, "+OK\r\n");
+    exec_sess(s, T0, &out, 3, "SCRIPT", "DEBUG", "NO");
+    EXPECT(out, "+OK\r\n");
+    exec_sess(s, T0, &out, 2, "SCRIPT", "KILL");
+    EXPECT(out, "-NOTBUSY No scripts in execution right now\r\n");
+
     /* unknown subcommand */
     exec_sess(s, T0, &out, 2, "SCRIPT", "BOGUS");
     DD_CHECK(out.len > 5 && out.data[0] == '-');

@@ -297,6 +297,15 @@ static void test_lolwut(void)
     DD_CHECK(g_out.len > 5 && g_out.data[0] == '-');
 }
 
+static void test_config_resetstat_rewrite(void)
+{
+    cmd(3, "SET", "cfgkey", "v");
+    cmd(2, "CONFIG", "RESETSTAT");
+    EXPECT_REPLY("+OK\r\n");
+    cmd(2, "CONFIG", "REWRITE");
+    EXPECT_REPLY("-ERR The server is running without a config file\r\n");
+}
+
 int main(void)
 {
     setvbuf(stdout, NULL, _IONBF, 0);
@@ -305,6 +314,7 @@ int main(void)
     resp_buf_init(&g_out);
     DD_RUN(test_command_count_list);
     DD_RUN(test_command_info_getkeys);
+    DD_RUN(test_config_resetstat_rewrite);
     DD_RUN(test_memory_usage_stats);
     DD_RUN(test_client_name_and_id);
     DD_RUN(test_slowlog);

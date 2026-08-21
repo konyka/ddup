@@ -10,7 +10,7 @@
 | --- | --- |
 | 完全未实现的独立顶层命令 | 10 |
 | 整体缺失的顶层容器 | 4 |
-| 已实现容器内缺失的子命令 | 34 |
+| 已实现容器内缺失的子命令 | 0 |
 
 ## A. 完全缺失的独立顶层命令（按 Redis group 分组）
 
@@ -53,22 +53,17 @@
 
 ### 已实现容器内缺失的子命令
 
-- `CLIENT`：缺 `caching`, `getredir`, `info`, `no-evict`, `no-touch`, `pause`, `reply`, `setinfo`, `tracking`, `trackinginfo`, `unblock`, `unpause`
-- `CLUSTER`：缺 `addslotsrange`, `bumpepoch`, `count-failure-reports`, `delslotsrange`, `flushslots`, `forget`, `links`, `myshardid`, `replicas`, `reset`, `saveconfig`, `set-config-epoch`, `shards`, `slaves`
-- `COMMAND`：缺 `getkeysandflags`
-- `CONFIG`：缺 `resetstat`, `rewrite`
-- `OBJECT`：缺 `freq`, `idletime`, `refcount`
-- `SCRIPT`：缺 `debug`, `kill`
+（无：现有 `CLIENT/CLUSTER/COMMAND/CONFIG/OBJECT/SCRIPT` 容器已覆盖 Redis 7.2.15 子命令名。）
 
 ## C. 已注册但选项/语义不完整（手工确认，命令名差分不可发现）
 
 - `ZADD`：仅裸 `score member` 对，缺 `NX/XX/GT/LT/CH/INCR`；`ZRANGE` 缺 `REV/BYSCORE/BYLEX/LIMIT` 统一语法（当前只支持索引 + WITHSCORES）。
 - `EXPIRE/PEXPIRE/EXPIREAT/PEXPIREAT`：min/max argc 仅 3，缺 `NX/XX/GT/LT`；`GETEX` 已支持 `PERSIST/EX/EXAT/PX/PXAT`。
-- `OBJECT`：只有 `ENCODING/HELP`。
-- `CONFIG`：只有 `GET/SET/HELP`，且 SET 仅支持 `maxmemory`/`maxmemory-policy`。
-- `SCRIPT`：只有 `LOAD/EXISTS/FLUSH/HELP`。
-- `CLIENT`：仅 `ID/SETNAME/GETNAME/LIST/KILL`；`INFO`、`SETINFO`、`NO-EVICT/NO-TOUCH`、`PAUSE/UNPAUSE`、`REPLY`、`TRACKING*` 等缺。
-- `COMMAND`：仅 `COUNT/LIST/INFO/GETKEYS/DOCS/HELP`；缺 `GETKEYSANDFLAGS`。
+- `OBJECT`：`ENCODING/HELP/FREQ/IDLETIME/REFCOUNT`；`FREQ` 恒为 0、`REFCOUNT` 恒为 1（无 LFU/共享对象元数据）。
+- `CONFIG`：`GET/SET/RESETSTAT/REWRITE/HELP`；SET 仅支持 `maxmemory`/`maxmemory-policy`，REWRITE 无配置文件时返回错误。
+- `SCRIPT`：`LOAD/EXISTS/FLUSH/DEBUG/KILL/HELP`；DEBUG 仅接受模式，KILL 恒为 NOTBUSY。
+- `CLIENT`：已覆盖 `ID/SETNAME/GETNAME/LIST/KILL/INFO/SETINFO/GETREDIR/NO-EVICT/NO-TOUCH/PAUSE/UNPAUSE/REPLY/CACHING/TRACKING/TRACKINGINFO/UNBLOCK/HELP`；部分为无状态/兼容性应答。
+- `COMMAND`：已覆盖 `COUNT/LIST/INFO/GETKEYS/GETKEYSANDFLAGS/DOCS/HELP`；GETKEYSANDFLAGS 返回读写标志近似值。
 - `MEMORY`：仅 `USAGE/STATS/DOCTOR/PURGE/MALLOC-STATS/HELP`。
 - `SLOWLOG`：仅 `GET/LEN/RESET/HELP`。
 - 脚本族新增只读别名 `EVAL_RO/EVALSHA_RO`；只读脚本内写命令会被拒绝。
@@ -97,38 +92,4 @@
 <!-- AUDIT-BASELINE-START
 missing_top: acl debug failover latency module monitor replconf sentinel wait waitaof
 missing_containers: acl latency module sentinel
-missing_sub: client caching
-missing_sub: client getredir
-missing_sub: client info
-missing_sub: client no-evict
-missing_sub: client no-touch
-missing_sub: client pause
-missing_sub: client reply
-missing_sub: client setinfo
-missing_sub: client tracking
-missing_sub: client trackinginfo
-missing_sub: client unblock
-missing_sub: client unpause
-missing_sub: cluster addslotsrange
-missing_sub: cluster bumpepoch
-missing_sub: cluster count-failure-reports
-missing_sub: cluster delslotsrange
-missing_sub: cluster flushslots
-missing_sub: cluster forget
-missing_sub: cluster links
-missing_sub: cluster myshardid
-missing_sub: cluster replicas
-missing_sub: cluster reset
-missing_sub: cluster saveconfig
-missing_sub: cluster set-config-epoch
-missing_sub: cluster shards
-missing_sub: cluster slaves
-missing_sub: command getkeysandflags
-missing_sub: config resetstat
-missing_sub: config rewrite
-missing_sub: object freq
-missing_sub: object idletime
-missing_sub: object refcount
-missing_sub: script debug
-missing_sub: script kill
 AUDIT-BASELINE-END -->

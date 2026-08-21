@@ -236,6 +236,24 @@ static void test_object_encoding(void)
     EXPECT_REPLY("-ERR wrong number of arguments for 'object' command\r\n");
 }
 
+static void test_object_metadata_and_getkeysflags(void)
+{
+    cmd(3, "SET", "meta", "value");
+    cmd(3, "OBJECT", "REFCOUNT", "meta");
+    EXPECT_REPLY(":1\r\n");
+    cmd(3, "OBJECT", "FREQ", "meta");
+    EXPECT_REPLY(":0\r\n");
+    cmd(3, "OBJECT", "IDLETIME", "meta");
+    DD_CHECK(g_out.len > 1 && g_out.data[0] == ':');
+    cmd(3, "OBJECT", "REFCOUNT", "nokey");
+    EXPECT_REPLY("$-1\r\n");
+
+    cmd(5, "COMMAND", "GETKEYSANDFLAGS", "SET", "k", "v");
+    EXPECT_REPLY("*1\r\n*2\r\n$1\r\nk\r\n$2\r\nRW\r\n");
+    cmd(4, "COMMAND", "GETKEYSANDFLAGS", "GET", "k");
+    EXPECT_REPLY("*1\r\n*2\r\n$1\r\nk\r\n$2\r\nRO\r\n");
+}
+
 int main(void)
 {
     db_init(&g_db);
@@ -250,6 +268,7 @@ int main(void)
     DD_RUN(test_empty_argv);
     DD_RUN(test_set_rejection_is_transactional);
     DD_RUN(test_object_encoding);
+    DD_RUN(test_object_metadata_and_getkeysflags);
     resp_buf_free(&g_out);
     db_destroy(&g_db);
     return DD_TEST_SUMMARY();
