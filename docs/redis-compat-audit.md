@@ -8,7 +8,7 @@
 
 | 类别 | 数量 |
 | --- | --- |
-| 完全未实现的独立顶层命令 | 21 |
+| 完全未实现的独立顶层命令 | 13 |
 | 整体缺失的顶层容器 | 5 |
 | 已实现容器内缺失的子命令 | 34 |
 
@@ -19,13 +19,9 @@
 `WAIT`
 `WAITAOF`
 
-### list（5）
+### list（0）
 
-`BLMOVE`
-`BLMPOP`
-`BLPOP`
-`BRPOP`
-`BRPOPLPUSH`
+（阻塞 list 族已实现，见“已实现”补充说明）
 
 ### scripting（3）
 
@@ -47,11 +43,9 @@
 `MONITOR`
 `REPLCONF`
 
-### sorted_set（3）
+### sorted_set（0）
 
-`BZMPOP`
-`BZPOPMAX`
-`BZPOPMIN`
+（阻塞 zset 族已实现，见“已实现”补充说明）
 
 ## B. 容器子命令对照
 
@@ -83,6 +77,9 @@
 - Stream 核心族已实现 `XADD/XLEN/XRANGE/XREVRANGE/XDEL/XTRIM/XSETID`；
   消费组/读取族已实现 `XGROUP/XACK/XPENDING/XCLAIM/XAUTOCLAIM/XREAD/
   XREADGROUP/XINFO`；`BLOCK` 当前按非阻塞立即返回处理，记录在案。
+- 阻塞 list/zset 族已实现 `BLPOP/BRPOP/BRPOPLPUSH/BLMOVE/BLMPOP/
+  BZPOPMIN/BZPOPMAX/BZMPOP`：服务端事件循环持有挂起会话并在 key 就绪或
+  超时到期时唤醒；mt 模式暂不路由这些命令（记录在案）。
 - 复制/运维族：无 `REPLCONF`、`MONITOR`、`WAIT/WAITAOF`（`REPLICAOF`/`ROLE`/`SLAVEOF` 已实现）。
 - `LOLWUT` 已实现 `VERSION 5/6` 的最小 ASCII art；`RESTORE-ASKING` 已作为集群导入用 `RESTORE` 别名实现（当前仅支持 `REPLACE`，`ABSTTL/IDLETIME/FREQ` 仍缺）。
 - 管理族整体缺失：`ACL`、`DEBUG`、`LATENCY`、`MODULE`、`FUNCTION`、`SENTINEL`。
@@ -95,7 +92,7 @@
 ## 审计基线（机器断言，勿手改格式）
 
 <!-- AUDIT-BASELINE-START
-missing_top: acl blmove blmpop blpop brpop brpoplpush bzmpop bzpopmax bzpopmin debug failover fcall fcall_ro function latency module monitor replconf sentinel wait waitaof
+missing_top: acl debug failover fcall fcall_ro function latency module monitor replconf sentinel wait waitaof
 missing_containers: acl function latency module sentinel
 missing_sub: client caching
 missing_sub: client getredir

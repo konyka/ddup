@@ -147,6 +147,16 @@ typedef struct session {
      * anything already buffered) has been flushed; no-op for stack
      * sessions */
     int quit;
+    /* Blocking-command state (BLPOP/BRPOP/BRPOPLPUSH/BLMOVE/BLMPOP/
+     * BZPOPMIN/BZPOPMAX/BZMPOP). When blocked, the server stops reading
+     * further commands from this connection and retries the stored argv
+     * through command_blocked_try() as keys become ready or the deadline
+     * expires. `blocked_deadline_ms` is wall ms; 0 means block forever. */
+    int blocked;
+    uint16_t blocked_cmd;
+    uint64_t blocked_deadline_ms;
+    resp_value *blocked_argv;
+    size_t blocked_argc;
     /* CLUSTER MEET hook (server-owned): open a bus conn and send MEET. */
     void *cluster_ctx;
     int (*cluster_meet)(void *ctx, const char *ip, uint16_t port);
@@ -213,6 +223,12 @@ void session_queue_clear(session *s);
 void session_watch_add(session *s, const char *key, size_t klen,
                        uint64_t version, uint64_t epoch, int db_index);
 void session_watch_clear(session *s);
+
+/* Install a deep-copied blocking request. Returns 0 on success, -1 on
+ * allocation failure (the session is left unblocked). */
+int session_block_start(session *s, const resp_value *argv, size_t argc,
+                        uint16_t cmd_id, uint64_t deadline_ms);
+void session_block_clear(session *s);
 
 /* Execute one command in this session (MULTI queueing, subscribed-mode
  * restrictions); eviction check runs afterwards. */

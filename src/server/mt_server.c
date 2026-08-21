@@ -1230,6 +1230,14 @@ static int mt_is_blocked(uint16_t cmd)
     case CMD_CLUSTER:
     case CMD_MIGRATE:
     case CMD_ASKING:
+    case CMD_BLPOP:
+    case CMD_BRPOP:
+    case CMD_BRPOPLPUSH:
+    case CMD_BLMOVE:
+    case CMD_BLMPOP:
+    case CMD_BZPOPMIN:
+    case CMD_BZPOPMAX:
+    case CMD_BZMPOP:
     case CMD_KEYS:      /* whole-db scans have no mt routing target */
     case CMD_SCAN:
     case CMD_RANDOMKEY:

@@ -233,6 +233,7 @@ struct server {
 static void conn_close(server *s, size_t idx);
 static int conn_flush(server *s, conn *c);
 static int conn_process_input(server *s, conn *c);
+static void server_process_blocked(server *s);
 static conn *conn_create(server *srv, pal_socket_t fd);
 static db *srv_select_db(void *ctx, int idx);
 static void srv_aof_log(server *srv, int db_index, const resp_value *argv,
@@ -3363,6 +3364,8 @@ static int conn_process_input(server *s, conn *c)
         c->sess->raw_cmd_len = 0;
         arena_reset(&c->arena);
         off += (size_t)used;
+        if (c->sess->blocked)
+            break;
         if (c->sess->quit)
             break;
     }
@@ -3790,6 +3793,82 @@ static int server_run_once_proactor(server *s, int timeout_ms)
     return nev;
 }
 
+/* Wake every blocked client that is now ready, and reply to those whose
+ * deadline has passed. Any pipelined bytes buffered behind a blocking
+ * command are processed once the connection unblocks. */
+static void server_process_blocked(server *s)
+{
+    size_t i;
+    uint64_t now = pal_wall_ms();
+    for (i = 0; i < s->nconns; i++) {
+        conn *c = s->conns[i];
+        if (c->sess == NULL || !c->sess->blocked)
+            continue;
+        if (command_blocked_try(c->sess, &c->out, now)) {
+            if (srv_proactor(s))
+                kick_flush(s, c);
+            else if (conn_flush(s, c) != 0) {
+                conn_close(s, i);
+                i--;
+                continue;
+            }
+        }
+    }
+    for (i = 0; i < s->nconns; i++) {
+        conn *c = s->conns[i];
+        if (c->sess == NULL || c->sess->blocked || c->rlen == 0)
+            continue;
+        {
+            int pr = conn_process_input(s, c);
+            if (pr < 0) {
+                static const char proto_err[] = "-ERR Protocol error\r\n";
+                (void)conn_write(c, proto_err, sizeof(proto_err) - 1);
+                conn_close(s, i);
+                i--;
+                continue;
+            }
+            if (pr == 2)
+                continue;
+            if (c->out.len > 0) {
+                if (srv_proactor(s))
+                    kick_flush(s, c);
+                else if (conn_flush(s, c) != 0) {
+                    conn_close(s, i);
+                    i--;
+                }
+            }
+        }
+    }
+}
+
+/* Cap the readiness wait at the earliest blocking-command deadline so the
+ * event loop wakes in time to emit a timeout reply. */
+static int server_blocked_wait_ms(server *s, int timeout_ms)
+{
+    uint64_t now;
+    uint64_t wait;
+    size_t i;
+    if (timeout_ms < 0)
+        return timeout_ms;
+    wait = (uint64_t)timeout_ms;
+    now = pal_wall_ms();
+    for (i = 0; i < s->nconns; i++) {
+        conn *c = s->conns[i];
+        uint64_t rem;
+        if (c->sess == NULL || !c->sess->blocked ||
+            c->sess->blocked_deadline_ms == 0)
+            continue;
+        if (c->sess->blocked_deadline_ms <= now)
+            return 0;
+        rem = c->sess->blocked_deadline_ms - now;
+        if (rem < wait)
+            wait = rem;
+    }
+    if (wait > (uint64_t)INT_MAX)
+        wait = (uint64_t)INT_MAX;
+    return (int)wait;
+}
+
 int server_run_once(server *s, int timeout_ms)
 {
     pal_event evs[SERVER_MAX_EVENTS];
@@ -3797,6 +3876,8 @@ int server_run_once(server *s, int timeout_ms)
     int i;
 
     s->io.loops++;
+    server_process_blocked(s);
+    timeout_ms = server_blocked_wait_ms(s, timeout_ms);
     if (s->aof_failed) {
         if (s->route_fn != NULL)
             return -1;
@@ -3850,12 +3931,16 @@ int server_run_once(server *s, int timeout_ms)
     }
 
 service_io:
-    if (srv_proactor(s))
-        return server_run_once_proactor(s, timeout_ms);
+    if (srv_proactor(s)) {
+        int pr = server_run_once_proactor(s, timeout_ms);
+        server_process_blocked(s);
+        return pr;
+    }
 
     nev = pal_loop_wait(s->loop, evs, SERVER_MAX_EVENTS, timeout_ms);
     if (nev <= 0) {
         srv_aof_flush(s);
+        server_process_blocked(s);
         return nev;
     }
     s->io.events += (uint64_t)nev;
@@ -4045,5 +4130,6 @@ service_io:
     }
     /* flush the AOF buffer once per loop iteration */
     srv_aof_flush(s);
+    server_process_blocked(s);
     return nev;
 }

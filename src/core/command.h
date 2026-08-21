@@ -12,6 +12,8 @@
 #include "resp/resp.h"
 #include "resp/resp_writer.h"
 
+struct session;
+
 /* Eviction policies (db.maxmemory_policy). */
 #define DB_POLICY_ALLKEYS_LRU 0 /* default */
 #define DB_POLICY_NOEVICTION 1
@@ -374,10 +376,18 @@ enum {
     CMD_EVAL_RO,
     CMD_EVALSHA_RO,
     CMD_RESTORE_ASKING,
-    CMD_LOLWUT
+    CMD_LOLWUT,
+    CMD_BLPOP,
+    CMD_BRPOP,
+    CMD_BRPOPLPUSH,
+    CMD_BLMOVE,
+    CMD_BLMPOP,
+    CMD_BZPOPMIN,
+    CMD_BZPOPMAX,
+    CMD_BZMPOP
 };
 
-#define CMD_MAX CMD_LOLWUT
+#define CMD_MAX CMD_BZMPOP
 
 /* Resolve a command name to its stable ID; case-insensitive. */
 uint16_t cmd_resolve(const char *name, size_t len);
@@ -387,5 +397,12 @@ int cmd_is_write(uint16_t cmd_id);
 int cmd_min_argc(uint16_t cmd_id);
 int cmd_max_argc(uint16_t cmd_id);
 int cmd_parity(uint16_t cmd_id);
+
+/* Retry a session suspended by a blocking command (server event-loop
+ * integration). Writes the reply into `out` and clears the blocked state
+ * when the command is ready or its deadline has expired; otherwise leaves
+ * the session blocked. Returns 1 when the session was unblocked, 0 when it
+ * remains blocked. */
+int command_blocked_try(struct session *s, resp_buf *out, uint64_t now_ms);
 
 #endif /* DDUP_COMMAND_H */

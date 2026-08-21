@@ -866,6 +866,49 @@ static size_t read_all(server *s, pal_socket_t c, char *buf, size_t len,
     return got;
 }
 
+static void test_blocking_pop_over_socket(void)
+{
+    static const char blpop[] =
+        "*3\r\n$5\r\nBLPOP\r\n$1\r\nl\r\n$1\r\n0\r\n";
+    static const char rpush[] =
+        "*3\r\n$5\r\nRPUSH\r\n$1\r\nl\r\n$1\r\nx\r\n";
+    static const char want[] = "*2\r\n$1\r\nl\r\n$1\r\nx\r\n";
+    static const char blpop_timeout[] =
+        "*3\r\n$5\r\nBLPOP\r\n$5\r\nnokey\r\n$3\r\n0.1\r\n";
+    server *s = make_server();
+    pal_socket_t a, b;
+    char buf[64];
+    size_t got = 0;
+    int iter = 0;
+    DD_CHECK(s != NULL);
+    a = connect_client(s);
+    b = connect_client(s);
+
+    /* BLPOP blocks until another connection pushes onto the list. */
+    send_all(s, a, blpop, sizeof(blpop) - 1);
+    roundtrip(s, b, rpush, ":1\r\n");
+    expect_push(s, a, want);
+
+    /* A short timeout expires without a writer and replies a null bulk. */
+    send_all(s, a, blpop_timeout, sizeof(blpop_timeout) - 1);
+    got = 0;
+    iter = 0;
+    while (got < 5 && iter < 300) {
+        ptrdiff_t n;
+        iter++;
+        server_run_once(s, 10);
+        n = pal_recv(a, buf + got, sizeof(buf) - got);
+        if (n > 0)
+            got += (size_t)n;
+    }
+    DD_CHECK_EQ_INT(5, (int)got);
+    DD_CHECK_MEM("$-1\r\n", 5, buf, got);
+
+    pal_close(a);
+    pal_close(b);
+    server_destroy(s);
+}
+
 static void test_pipeline_2000(void)
 {
     enum { NCMD = 2000, CMDLEN = 14, REPLYLEN = 7 };
@@ -1089,6 +1132,7 @@ static void run_all_tests(void)
     DD_RUN(test_psubscribe_over_socket);
     DD_RUN(test_auth_over_socket);
     DD_RUN(test_shutdown_command);
+    DD_RUN(test_blocking_pop_over_socket);
     DD_RUN(test_connection_buf_pool);
     DD_RUN(test_pipeline_2000);
     DD_RUN(test_slow_client_no_stall);

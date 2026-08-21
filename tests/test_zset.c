@@ -322,6 +322,40 @@ static void test_zpopmin_zpopmax(void)
     db_destroy(&d);
 }
 
+static void test_blocking_zpop_ready(void)
+{
+    db d;
+    resp_buf out;
+    db_init(&d);
+    resp_buf_init(&out);
+
+    exec_cmd(&d, T0, &out, 8, "ZADD", "z", "1", "a", "2", "b", "3", "c");
+    EXPECT(out, ":3\r\n");
+    exec_cmd(&d, T0, &out, 3, "BZPOPMIN", "z", "0");
+    EXPECT(out, "*3\r\n$1\r\nz\r\n$1\r\na\r\n$1\r\n1\r\n");
+    exec_cmd(&d, T0, &out, 3, "BZPOPMAX", "z", "0");
+    EXPECT(out, "*3\r\n$1\r\nz\r\n$1\r\nc\r\n$1\r\n3\r\n");
+
+    exec_cmd(&d, T0, &out, 6, "ZADD", "m", "1", "x", "2", "y");
+    EXPECT(out, ":2\r\n");
+    exec_cmd(&d, T0, &out, 5, "BZMPOP", "0", "1", "m", "MIN");
+    EXPECT(out, "*2\r\n$1\r\nm\r\n*1\r\n*2\r\n$1\r\nx\r\n$1\r\n1\r\n");
+    exec_cmd(&d, T0, &out, 2, "ZCARD", "m");
+    EXPECT(out, ":1\r\n");
+
+    exec_cmd(&d, T0, &out, 3, "BZPOPMIN", "nokey", "-1");
+    EXPECT(out, "-ERR timeout is negative\r\n");
+    exec_cmd(&d, T0, &out, 3, "SET", "str", "v");
+    EXPECT(out, "+OK\r\n");
+    exec_cmd(&d, T0, &out, 3, "BZPOPMIN", "str", "0");
+    EXPECT(out,
+           "-WRONGTYPE Operation against a key holding the wrong kind of "
+           "value\r\n");
+
+    resp_buf_free(&out);
+    db_destroy(&d);
+}
+
 static void test_zremrangebyrank(void)
 {
     db d;
@@ -1054,6 +1088,7 @@ int main(void)
     DD_RUN(test_zcount_byscore);
     DD_RUN(test_zremrangebyscore);
     DD_RUN(test_zpopmin_zpopmax);
+    DD_RUN(test_blocking_zpop_ready);
     DD_RUN(test_zremrangebyrank);
     DD_RUN(test_zmscore);
     DD_RUN(test_zrandmember);

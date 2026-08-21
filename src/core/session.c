@@ -27,6 +27,53 @@ void session_queue_clear(session *s)
     s->queue_len = 0;
 }
 
+void session_block_clear(session *s)
+{
+    size_t i;
+    if (!s->blocked)
+        return;
+    for (i = 0; i < s->blocked_argc; i++)
+        free((void *)s->blocked_argv[i].str);
+    free(s->blocked_argv);
+    s->blocked_argv = NULL;
+    s->blocked_argc = 0;
+    s->blocked_cmd = 0;
+    s->blocked_deadline_ms = 0;
+    s->blocked = 0;
+}
+
+int session_block_start(session *s, const resp_value *argv, size_t argc,
+                        uint16_t cmd_id, uint64_t deadline_ms)
+{
+    resp_value *copy_argv;
+    size_t i;
+    if (argc > SIZE_MAX / sizeof(*copy_argv))
+        return -1;
+    copy_argv = (resp_value *)malloc(argc * sizeof(*copy_argv));
+    if (copy_argv == NULL)
+        return -1;
+    for (i = 0; i < argc; i++) {
+        char *copy = (char *)malloc(argv[i].len);
+        if (copy == NULL) {
+            while (i > 0)
+                free((void *)copy_argv[--i].str);
+            free(copy_argv);
+            return -1;
+        }
+        memcpy(copy, argv[i].str, argv[i].len);
+        copy_argv[i] = argv[i];
+        copy_argv[i].str = copy;
+        copy_argv[i].items = NULL;
+    }
+    session_block_clear(s);
+    s->blocked = 1;
+    s->blocked_cmd = cmd_id;
+    s->blocked_deadline_ms = deadline_ms;
+    s->blocked_argv = copy_argv;
+    s->blocked_argc = argc;
+    return 0;
+}
+
 void session_watch_clear(session *s)
 {
     size_t i;
@@ -46,6 +93,7 @@ void session_watch_clear(session *s)
 
 void session_release(session *s)
 {
+    session_block_clear(s);
     session_queue_clear(s);
     session_watch_clear(s);
     free(s->queue);

@@ -858,6 +858,59 @@ static void test_lmpop(void)
     db_destroy(&d);
 }
 
+static void test_blocking_ready(void)
+{
+    db d;
+    resp_buf out;
+    db_init(&d);
+    resp_buf_init(&out);
+
+    exec_cmd(&d, T0, &out, 4, "RPUSH", "l", "a", "b");
+    EXPECT(out, ":2\r\n");
+    exec_cmd(&d, T0, &out, 3, "BLPOP", "l", "0");
+    EXPECT(out, "*2\r\n$1\r\nl\r\n$1\r\na\r\n");
+    exec_cmd(&d, T0, &out, 3, "BRPOP", "l", "0");
+    EXPECT(out, "*2\r\n$1\r\nl\r\n$1\r\nb\r\n");
+    exec_cmd(&d, T0, &out, 2, "EXISTS", "l");
+    EXPECT(out, ":0\r\n");
+
+    exec_cmd(&d, T0, &out, 4, "RPUSH", "s", "x", "y");
+    EXPECT(out, ":2\r\n");
+    exec_cmd(&d, T0, &out, 4, "BRPOPLPUSH", "s", "d", "0");
+    EXPECT(out, "$1\r\ny\r\n");
+    exec_cmd(&d, T0, &out, 4, "LRANGE", "d", "0", "-1");
+    EXPECT(out, "*1\r\n$1\r\ny\r\n");
+    exec_cmd(&d, T0, &out, 4, "LRANGE", "s", "0", "-1");
+    EXPECT(out, "*1\r\n$1\r\nx\r\n");
+
+    exec_cmd(&d, T0, &out, 6, "BLMOVE", "s", "d", "LEFT", "RIGHT", "0");
+    EXPECT(out, "$1\r\nx\r\n");
+    exec_cmd(&d, T0, &out, 4, "LRANGE", "d", "0", "-1");
+    EXPECT(out, "*2\r\n$1\r\ny\r\n$1\r\nx\r\n");
+
+    exec_cmd(&d, T0, &out, 4, "RPUSH", "m", "p", "q");
+    EXPECT(out, ":2\r\n");
+    exec_cmd(&d, T0, &out, 5, "BLMPOP", "0", "1", "m", "LEFT");
+    EXPECT(out, "*2\r\n$1\r\nm\r\n*1\r\n$1\r\np\r\n");
+    exec_cmd(&d, T0, &out, 2, "LLEN", "m");
+    EXPECT(out, ":1\r\n");
+
+    /* Validation happens before the command would block. */
+    exec_cmd(&d, T0, &out, 3, "BLPOP", "nokey", "-1");
+    EXPECT(out, "-ERR timeout is negative\r\n");
+    exec_cmd(&d, T0, &out, 3, "BLPOP", "nokey", "x");
+    EXPECT(out, "-ERR timeout is not a float or out of range\r\n");
+    exec_cmd(&d, T0, &out, 3, "SET", "str", "v");
+    EXPECT(out, "+OK\r\n");
+    exec_cmd(&d, T0, &out, 3, "BLPOP", "str", "0");
+    EXPECT(out,
+           "-WRONGTYPE Operation against a key holding the wrong kind of "
+           "value\r\n");
+
+    resp_buf_free(&out);
+    db_destroy(&d);
+}
+
 static void test_lpop_rpop_count(void)
 {
     db d;
@@ -948,6 +1001,7 @@ int main(void)
     DD_RUN(test_linsert);
     DD_RUN(test_lmove);
     DD_RUN(test_lmpop);
+    DD_RUN(test_blocking_ready);
     DD_RUN(test_lpop_rpop_count);
     return DD_TEST_SUMMARY();
 }

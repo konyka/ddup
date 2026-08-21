@@ -46,6 +46,10 @@ static int arg_str(const resp_value *v, const char **s, size_t *len);
 
 static void command_dispatch(session *s, const resp_value *argv, size_t argc,
                              resp_buf *out, uint64_t now_ms);
+static int blocking_pop_try(session *s, const resp_value *argv, size_t argc,
+                            resp_buf *out, uint64_t now_ms,
+                            uint64_t *deadline_ms);
+static void blocking_timeout_reply(resp_buf *out, uint16_t cmd_id);
 
 void db_init(db *d)
 {
@@ -3534,8 +3538,40 @@ static int cmd_keys_accum(const resp_value *argv, size_t argc, int *have,
     }
     if (cmd_id == CMD_SMOVE || cmd_id == CMD_RENAME ||
         cmd_id == CMD_RENAMENX || cmd_id == CMD_RPOPLPUSH ||
-        cmd_id == CMD_LMOVE || cmd_id == CMD_COPY || cmd_id == CMD_LCS) {
+        cmd_id == CMD_LMOVE || cmd_id == CMD_COPY || cmd_id == CMD_LCS ||
+        cmd_id == CMD_BRPOPLPUSH || cmd_id == CMD_BLMOVE) {
         for (i = 1; i < argc && i < 3; i++) {
+            const char *k;
+            size_t kl;
+            if (arg_str(&argv[i], &k, &kl) &&
+                !slot_accum(k, kl, have, slot))
+                return 0;
+        }
+        return 1;
+    }
+    if (cmd_id == CMD_BLPOP || cmd_id == CMD_BRPOP ||
+        cmd_id == CMD_BZPOPMIN || cmd_id == CMD_BZPOPMAX) {
+        for (i = 1; i + 1 < argc; i++) {
+            const char *k;
+            size_t kl;
+            if (arg_str(&argv[i], &k, &kl) &&
+                !slot_accum(k, kl, have, slot))
+                return 0;
+        }
+        return 1;
+    }
+    if (cmd_id == CMD_BLMPOP || cmd_id == CMD_BZMPOP) {
+        const char *nv;
+        size_t nvl;
+        long long nk = 0;
+        size_t end;
+        if (argc < 4 || !arg_str(&argv[2], &nv, &nvl) ||
+            !parse_i64(nv, nvl, &nk) || nk <= 0)
+            return 1;
+        end = 3 + (size_t)nk;
+        if (end > argc)
+            end = argc;
+        for (i = 3; i < end; i++) {
             const char *k;
             size_t kl;
             if (arg_str(&argv[i], &k, &kl) &&
@@ -3897,8 +3933,40 @@ static int cluster_check_ownership(session *s, const resp_value *argv,
     }
     if (cmd_id == CMD_SMOVE || cmd_id == CMD_RENAME ||
         cmd_id == CMD_RENAMENX || cmd_id == CMD_RPOPLPUSH ||
-        cmd_id == CMD_LMOVE || cmd_id == CMD_COPY || cmd_id == CMD_LCS) {
+        cmd_id == CMD_LMOVE || cmd_id == CMD_COPY || cmd_id == CMD_LCS ||
+        cmd_id == CMD_BRPOPLPUSH || cmd_id == CMD_BLMOVE) {
         for (i = 1; i < argc && i < 3; i++) {
+            const char *k;
+            size_t kl;
+            if (arg_str(&argv[i], &k, &kl) &&
+                !db_key_served(d, k, kl, out, now_ms, asking))
+                return 0;
+        }
+        return 1;
+    }
+    if (cmd_id == CMD_BLPOP || cmd_id == CMD_BRPOP ||
+        cmd_id == CMD_BZPOPMIN || cmd_id == CMD_BZPOPMAX) {
+        for (i = 1; i + 1 < argc; i++) {
+            const char *k;
+            size_t kl;
+            if (arg_str(&argv[i], &k, &kl) &&
+                !db_key_served(d, k, kl, out, now_ms, asking))
+                return 0;
+        }
+        return 1;
+    }
+    if (cmd_id == CMD_BLMPOP || cmd_id == CMD_BZMPOP) {
+        const char *nv;
+        size_t nvl;
+        long long nk = 0;
+        size_t end;
+        if (argc < 4 || !arg_str(&argv[2], &nv, &nvl) ||
+            !parse_i64(nv, nvl, &nk) || nk <= 0)
+            return 1;
+        end = 3 + (size_t)nk;
+        if (end > argc)
+            end = argc;
+        for (i = 3; i < end; i++) {
             const char *k;
             size_t kl;
             if (arg_str(&argv[i], &k, &kl) &&
@@ -5806,8 +5874,30 @@ static void command_emit_keys(const resp_value *argv, size_t argc,
     }
     if (cmd_id == CMD_SMOVE || cmd_id == CMD_RENAME ||
         cmd_id == CMD_RENAMENX || cmd_id == CMD_RPOPLPUSH ||
-        cmd_id == CMD_LMOVE || cmd_id == CMD_COPY || cmd_id == CMD_LCS) {
+        cmd_id == CMD_LMOVE || cmd_id == CMD_COPY || cmd_id == CMD_LCS ||
+        cmd_id == CMD_BRPOPLPUSH || cmd_id == CMD_BLMOVE) {
         for (i = 3; i < argc && i < 5; i++)
+            EMIT_KEY(&argv[i]);
+        goto done;
+    }
+    if (cmd_id == CMD_BLPOP || cmd_id == CMD_BRPOP ||
+        cmd_id == CMD_BZPOPMIN || cmd_id == CMD_BZPOPMAX) {
+        for (i = 3; i + 1 < argc; i++)
+            EMIT_KEY(&argv[i]);
+        goto done;
+    }
+    if (cmd_id == CMD_BLMPOP || cmd_id == CMD_BZMPOP) {
+        const char *nv;
+        size_t nvl;
+        long long nk = 0;
+        size_t end;
+        if (argc < 5 || !arg_str(&argv[4], &nv, &nvl) ||
+            !parse_i64(nv, nvl, &nk) || nk <= 0)
+            goto done;
+        end = 5 + (size_t)nk;
+        if (end > argc)
+            end = argc;
+        for (i = 5; i < end; i++)
             EMIT_KEY(&argv[i]);
         goto done;
     }
@@ -8005,6 +8095,563 @@ bad_type:
 
 
 
+static void blocking_timeout_reply(resp_buf *out, uint16_t cmd_id)
+{
+    if (cmd_id == CMD_BLPOP || cmd_id == CMD_BRPOP ||
+        cmd_id == CMD_BRPOPLPUSH || cmd_id == CMD_BLMOVE)
+        resp_write_bulk(out, NULL, 0);
+    else
+        write_null_array(out);
+}
+
+static int blocking_parse_timeout(const resp_value *v, uint64_t now_ms,
+                                  uint64_t *deadline_ms, resp_buf *out)
+{
+    const char *s;
+    size_t len;
+    double sec;
+    long double ms;
+    uint64_t ums;
+    if (!arg_str(v, &s, &len) || !parse_double(s, len, &sec) ||
+        isinf(sec)) {
+        static const char E[] =
+            "ERR timeout is not a float or out of range";
+        resp_write_error(out, E, sizeof(E) - 1);
+        return -1;
+    }
+    if (sec < 0) {
+        static const char E[] = "ERR timeout is negative";
+        resp_write_error(out, E, sizeof(E) - 1);
+        return -1;
+    }
+    if (sec == 0.0) {
+        *deadline_ms = 0; /* block forever */
+        return 0;
+    }
+    ms = (long double)sec * 1000.0L;
+    if (ms >= (long double)UINT64_MAX) {
+        *deadline_ms = UINT64_MAX;
+        return 0;
+    }
+    ums = (uint64_t)ms;
+    *deadline_ms =
+        ums > UINT64_MAX - now_ms ? UINT64_MAX : now_ms + ums;
+    return 0;
+}
+
+/* Find the first non-empty list among argv[start..end); WRONGTYPE on any
+ * existing non-list is reported immediately (Redis semantics). Returns 1
+ * and sets key/kl/l on success, 0 when every list is missing/empty, -1
+ * when a reply was already written. */
+static int blocking_first_list(db *d, resp_buf *out,
+                               const resp_value *argv, size_t start,
+                               size_t end, uint64_t now_ms, const char **key,
+                               size_t *klen, obj_list **l)
+{
+    size_t i;
+    for (i = start; i < end; i++) {
+        const char *k;
+        size_t kl;
+        obj_list *cur;
+        int rc;
+        if (!arg_str(&argv[i], &k, &kl)) {
+            resp_write_error(out, "ERR invalid argument type", 24);
+            return -1;
+        }
+        rc = get_list(d, out, k, kl, 0, now_ms, &cur);
+        if (rc < 0)
+            return -1;
+        if (rc == 1 && obj_list_len(cur) > 0) {
+            *key = k;
+            *klen = kl;
+            *l = cur;
+            return 1;
+        }
+    }
+    return 0;
+}
+
+/* Same as blocking_first_list, for sorted sets. */
+static int blocking_first_zset(db *d, resp_buf *out,
+                               const resp_value *argv, size_t start,
+                               size_t end, uint64_t now_ms, const char **key,
+                               size_t *klen, obj_zset **z)
+{
+    size_t i;
+    for (i = start; i < end; i++) {
+        const char *k;
+        size_t kl;
+        obj_zset *cur;
+        int rc;
+        if (!arg_str(&argv[i], &k, &kl)) {
+            resp_write_error(out, "ERR invalid argument type", 24);
+            return -1;
+        }
+        rc = get_zset(d, out, k, kl, 0, now_ms, &cur);
+        if (rc < 0)
+            return -1;
+        if (rc == 1 && obj_zset_len(cur) > 0) {
+            *key = k;
+            *klen = kl;
+            *z = cur;
+            return 1;
+        }
+    }
+    return 0;
+}
+
+/* Execute a ready LMOVE/BRPOPLPUSH move after the source has been checked
+ * non-empty. Dest type is validated before the source is mutated. */
+static void blocking_list_move_ready(db *d, resp_buf *out, const char *sk,
+                                     size_t skl, const char *dk, size_t dkl,
+                                     int src_left, int dst_left,
+                                     uint64_t now_ms)
+{
+    obj_list *src;
+    obj_list *dst;
+    int same = skl == dkl && memcmp(sk, dk, skl) == 0;
+    int created_dst = 0;
+    int rcs = get_list(d, out, sk, skl, 0, now_ms, &src);
+    if (rcs < 0)
+        return;
+    if (!same) {
+        int rcd = get_list(d, out, dk, dkl, 0, now_ms, &dst);
+        if (rcd < 0)
+            return;
+        if (rcd == 0) {
+            if (oom_blocked(d, out))
+                return;
+            rcd = get_list(d, out, dk, dkl, 1, now_ms, &dst);
+            if (rcd < 0)
+                return;
+            created_dst = 1;
+        }
+    } else {
+        dst = src;
+    }
+    {
+        char *data = NULL;
+        size_t dlen = 0;
+        uint64_t sbefore = obj_list_mem(src);
+        if (!obj_list_pop(src, src_left, &data, &dlen)) {
+            resp_write_bulk(out, NULL, 0);
+            return;
+        }
+        {
+            uint64_t dbefore = same ? 0 : obj_list_mem(dst);
+            if (obj_list_push(dst, dst_left, data, dlen) != 0) {
+                if (created_dst)
+                    db_del_kv(d, dk, dkl);
+                (void)obj_list_push(src, src_left, data, dlen);
+                free(data);
+                storage_length_error(out);
+                return;
+            }
+            if (same) {
+                mem_sync(d, sk, skl, sbefore, obj_list_mem(src));
+            } else {
+                mem_sync(d, dk, dkl, dbefore, obj_list_mem(dst));
+                mem_sync(d, sk, skl, sbefore, obj_list_mem(src));
+            }
+        }
+        if (obj_list_len(src) == 0)
+            db_del_kv(d, sk, skl);
+        resp_write_bulk(out, data, dlen);
+        free(data);
+    }
+}
+
+/* The blocking-command executor shared by first dispatch and server retry.
+ * Returns 1 when a reply (or error) has been written and the session should
+ * be unblocked; 0 when no key is ready and the session must block. */
+static int blocking_pop_try(session *s, const resp_value *argv, size_t argc,
+                            resp_buf *out, uint64_t now_ms,
+                            uint64_t *deadline_ms)
+{
+    db *d = s->d;
+    const char *name;
+    size_t nlen;
+    uint16_t cmd_id;
+    uint64_t deadline;
+    if (argc == 0 || !arg_str(&argv[0], &name, &nlen))
+        return 1;
+    cmd_id = cmd_resolve(name, nlen);
+
+    if (cmd_id == CMD_BLPOP || cmd_id == CMD_BRPOP) {
+        int left = cmd_id == CMD_BLPOP;
+        const char *k;
+        size_t kl;
+        obj_list *l;
+        int rc;
+        if (argc < 3) {
+            wrong_args(out, left ? "blpop" : "brpop");
+            return 1;
+        }
+        if (blocking_parse_timeout(&argv[argc - 1], now_ms, &deadline,
+                                   out) != 0)
+            return 1;
+        rc = blocking_first_list(d, out, argv, 1, argc - 1, now_ms, &k,
+                                 &kl, &l);
+        if (rc < 0)
+            return 1;
+        if (rc == 0) {
+            *deadline_ms = deadline;
+            return 0;
+        }
+        {
+            char *data = NULL;
+            size_t dlen = 0;
+            uint64_t before = obj_list_mem(l);
+            if (!obj_list_pop(l, left, &data, &dlen)) {
+                resp_write_bulk(out, NULL, 0);
+                return 1;
+            }
+            mem_sync(d, k, kl, before, obj_list_mem(l));
+            if (obj_list_len(l) == 0)
+                db_del_kv(d, k, kl);
+            resp_write_array_header(out, 2);
+            resp_write_bulk(out, k, kl);
+            resp_write_bulk(out, data, dlen);
+            free(data);
+        }
+        return 1;
+    }
+
+    if (cmd_id == CMD_BRPOPLPUSH || cmd_id == CMD_BLMOVE) {
+        const char *sk, *dk, *sw, *dw;
+        size_t skl, dkl, swl, dwl;
+        int src_left, dst_left;
+        obj_list *src;
+        int rcs;
+        if (cmd_id == CMD_BRPOPLPUSH) {
+            if (argc != 4) {
+                wrong_args(out, "brpoplpush");
+                return 1;
+            }
+            if (!arg_str(&argv[1], &sk, &skl) ||
+                !arg_str(&argv[2], &dk, &dkl))
+                goto bad_blocking_arg;
+            src_left = 0;
+            dst_left = 1;
+        } else {
+            if (argc != 6) {
+                wrong_args(out, "blmove");
+                return 1;
+            }
+            if (!arg_str(&argv[1], &sk, &skl) ||
+                !arg_str(&argv[2], &dk, &dkl) ||
+                !arg_str(&argv[3], &sw, &swl) ||
+                !arg_str(&argv[4], &dw, &dwl))
+                goto bad_blocking_arg;
+            if (ci_equal(sw, swl, "LEFT")) {
+                src_left = 1;
+            } else if (ci_equal(sw, swl, "RIGHT")) {
+                src_left = 0;
+            } else {
+                resp_write_error(out, ERR_SYNTAX, sizeof(ERR_SYNTAX) - 1);
+                return 1;
+            }
+            if (ci_equal(dw, dwl, "LEFT")) {
+                dst_left = 1;
+            } else if (ci_equal(dw, dwl, "RIGHT")) {
+                dst_left = 0;
+            } else {
+                resp_write_error(out, ERR_SYNTAX, sizeof(ERR_SYNTAX) - 1);
+                return 1;
+            }
+        }
+        if (!storage_key_ok(skl) || !storage_key_ok(dkl)) {
+            storage_length_error(out);
+            return 1;
+        }
+        if (blocking_parse_timeout(&argv[argc - 1], now_ms, &deadline,
+                                   out) != 0)
+            return 1;
+        rcs = get_list(d, out, sk, skl, 0, now_ms, &src);
+        if (rcs < 0)
+            return 1;
+        if (rcs == 0 || obj_list_len(src) == 0) {
+            *deadline_ms = deadline;
+            return 0;
+        }
+        blocking_list_move_ready(d, out, sk, skl, dk, dkl, src_left,
+                                 dst_left, now_ms);
+        return 1;
+    }
+
+    if (cmd_id == CMD_BLMPOP) {
+        long long nk;
+        long long count = 1;
+        size_t dir_idx;
+        const char *where;
+        size_t wl;
+        int left;
+        const char *k;
+        size_t kl;
+        obj_list *l;
+        int rc;
+        if (argc < 4) {
+            wrong_args(out, "blmpop");
+            return 1;
+        }
+        if (blocking_parse_timeout(&argv[1], now_ms, &deadline, out) != 0)
+            return 1;
+        if (!cmd_parse_ll(&argv[2], &nk)) {
+            resp_write_error(out,
+                             "ERR value is not an integer or out of range",
+                             43);
+            return 1;
+        }
+        if (nk <= 0 ||
+            (unsigned long long)nk > (unsigned long long)(argc - 4)) {
+            static const char E[] =
+                "ERR Number of keys can't be greater than number of args";
+            resp_write_error(out, E, sizeof(E) - 1);
+            return 1;
+        }
+        dir_idx = 3 + (size_t)nk;
+        if (!arg_str(&argv[dir_idx], &where, &wl))
+            goto bad_blocking_arg;
+        if (ci_equal(where, wl, "LEFT")) {
+            left = 1;
+        } else if (ci_equal(where, wl, "RIGHT")) {
+            left = 0;
+        } else {
+            resp_write_error(out, ERR_SYNTAX, sizeof(ERR_SYNTAX) - 1);
+            return 1;
+        }
+        if (argc > dir_idx + 1) {
+            const char *opt;
+            size_t ol;
+            if (argc != dir_idx + 3) {
+                wrong_args(out, "blmpop");
+                return 1;
+            }
+            if (!arg_str(&argv[dir_idx + 1], &opt, &ol))
+                goto bad_blocking_arg;
+            if (!ci_equal(opt, ol, "COUNT")) {
+                resp_write_error(out, ERR_SYNTAX, sizeof(ERR_SYNTAX) - 1);
+                return 1;
+            }
+            if (!cmd_parse_ll(&argv[dir_idx + 2], &count)) {
+                resp_write_error(out,
+                                 "ERR value is not an integer or out of "
+                                 "range",
+                                 43);
+                return 1;
+            }
+            if (count <= 0) {
+                static const char E[] =
+                    "ERR value is out of range, must be positive";
+                resp_write_error(out, E, sizeof(E) - 1);
+                return 1;
+            }
+        }
+        rc = blocking_first_list(d, out, argv, 3, dir_idx, now_ms, &k,
+                                 &kl, &l);
+        if (rc < 0)
+            return 1;
+        if (rc == 0) {
+            *deadline_ms = deadline;
+            return 0;
+        }
+        {
+            size_t n = (unsigned long long)count < obj_list_len(l)
+                           ? (size_t)count
+                           : (size_t)obj_list_len(l);
+            uint64_t before = obj_list_mem(l);
+            size_t j;
+            resp_write_array_header(out, 2);
+            resp_write_bulk(out, k, kl);
+            resp_write_array_header(out, n);
+            for (j = 0; j < n; j++) {
+                char *data = NULL;
+                size_t dlen = 0;
+                if (!obj_list_pop(l, left, &data, &dlen))
+                    break;
+                resp_write_bulk(out, data, dlen);
+                free(data);
+            }
+            mem_sync(d, k, kl, before, obj_list_mem(l));
+            if (obj_list_len(l) == 0)
+                db_del_kv(d, k, kl);
+        }
+        return 1;
+    }
+
+    if (cmd_id == CMD_BZPOPMIN || cmd_id == CMD_BZPOPMAX) {
+        int min_side = cmd_id == CMD_BZPOPMIN;
+        const char *k;
+        size_t kl;
+        obj_zset *z;
+        int rc;
+        if (argc < 3) {
+            wrong_args(out, min_side ? "bzpopmin" : "bzpopmax");
+            return 1;
+        }
+        if (blocking_parse_timeout(&argv[argc - 1], now_ms, &deadline,
+                                   out) != 0)
+            return 1;
+        rc = blocking_first_zset(d, out, argv, 1, argc - 1, now_ms, &k,
+                                 &kl, &z);
+        if (rc < 0)
+            return 1;
+        if (rc == 0) {
+            *deadline_ms = deadline;
+            return 0;
+        }
+        {
+            char *mv = NULL;
+            size_t ml = 0;
+            double sc = 0.0;
+            char num[40];
+            int nl;
+            uint64_t before = obj_zset_mem(z);
+            if (!obj_zset_pop(z, min_side, &mv, &ml, &sc)) {
+                write_null_array(out);
+                return 1;
+            }
+            mem_sync(d, k, kl, before, obj_zset_mem(z));
+            if (obj_zset_len(z) == 0)
+                db_del_kv(d, k, kl);
+            nl = fmt_score(num, sizeof(num), sc);
+            resp_write_array_header(out, 3);
+            resp_write_bulk(out, k, kl);
+            resp_write_bulk(out, mv, ml);
+            resp_write_bulk(out, num, (size_t)nl);
+            free(mv);
+        }
+        return 1;
+    }
+
+    if (cmd_id == CMD_BZMPOP) {
+        long long nk;
+        long long count = 1;
+        size_t side_idx;
+        int min_side;
+        const char *k;
+        size_t kl;
+        obj_zset *z;
+        int rc;
+        if (argc < 4) {
+            wrong_args(out, "bzmpop");
+            return 1;
+        }
+        if (blocking_parse_timeout(&argv[1], now_ms, &deadline, out) != 0)
+            return 1;
+        if (!cmd_parse_ll(&argv[2], &nk)) {
+            resp_write_error(out, ERR_NOT_INT, sizeof(ERR_NOT_INT) - 1);
+            return 1;
+        }
+        if (nk <= 0 ||
+            (unsigned long long)nk > (unsigned long long)(argc - 4)) {
+            static const char E[] =
+                "ERR Number of keys can't be greater than number of args";
+            resp_write_error(out, E, sizeof(E) - 1);
+            return 1;
+        }
+        side_idx = 3 + (size_t)nk;
+        {
+            const char *side;
+            size_t sidel;
+            if (!arg_str(&argv[side_idx], &side, &sidel))
+                goto bad_blocking_arg;
+            if (ci_equal(side, sidel, "MIN"))
+                min_side = 1;
+            else if (ci_equal(side, sidel, "MAX"))
+                min_side = 0;
+            else {
+                resp_write_error(out, ERR_SYNTAX, sizeof(ERR_SYNTAX) - 1);
+                return 1;
+            }
+        }
+        if (argc > side_idx + 1) {
+            const char *opt;
+            size_t ol;
+            if (argc != side_idx + 3) {
+                resp_write_error(out, ERR_SYNTAX, sizeof(ERR_SYNTAX) - 1);
+                return 1;
+            }
+            if (!arg_str(&argv[side_idx + 1], &opt, &ol))
+                goto bad_blocking_arg;
+            if (!ci_equal(opt, ol, "COUNT")) {
+                resp_write_error(out, ERR_SYNTAX, sizeof(ERR_SYNTAX) - 1);
+                return 1;
+            }
+            if (!cmd_parse_ll(&argv[side_idx + 2], &count)) {
+                resp_write_error(out, ERR_NOT_INT, sizeof(ERR_NOT_INT) - 1);
+                return 1;
+            }
+            if (count <= 0) {
+                static const char E[] =
+                    "ERR value is out of range, must be positive";
+                resp_write_error(out, E, sizeof(E) - 1);
+                return 1;
+            }
+        }
+        rc = blocking_first_zset(d, out, argv, 3, side_idx, now_ms, &k,
+                                 &kl, &z);
+        if (rc < 0)
+            return 1;
+        if (rc == 0) {
+            *deadline_ms = deadline;
+            return 0;
+        }
+        {
+            size_t avail = obj_zset_len(z);
+            size_t n = (uint64_t)count < (uint64_t)avail ? (size_t)count
+                                                         : avail;
+            uint64_t before = obj_zset_mem(z);
+            size_t p;
+            resp_write_array_header(out, 2);
+            resp_write_bulk(out, k, kl);
+            resp_write_array_header(out, n);
+            for (p = 0; p < n; p++) {
+                char *mv = NULL;
+                size_t ml = 0;
+                double sc = 0.0;
+                char num[40];
+                int nl;
+                if (!obj_zset_pop(z, min_side, &mv, &ml, &sc))
+                    break;
+                resp_write_array_header(out, 2);
+                resp_write_bulk(out, mv, ml);
+                nl = fmt_score(num, sizeof(num), sc);
+                resp_write_bulk(out, num, (size_t)nl);
+                free(mv);
+            }
+            mem_sync(d, k, kl, before, obj_zset_mem(z));
+            if (obj_zset_len(z) == 0)
+                db_del_kv(d, k, kl);
+        }
+        return 1;
+    }
+
+bad_blocking_arg:
+    resp_write_error(out, "ERR invalid argument type", 24);
+    return 1;
+}
+
+int command_blocked_try(session *s, resp_buf *out, uint64_t now_ms)
+{
+    uint64_t deadline;
+    if (!s->blocked)
+        return 0;
+    if (s->blocked_deadline_ms != 0 && now_ms >= s->blocked_deadline_ms) {
+        blocking_timeout_reply(out, s->blocked_cmd);
+        session_block_clear(s);
+        return 1;
+    }
+    if (!blocking_pop_try(s, s->blocked_argv, s->blocked_argc, out, now_ms,
+                          &deadline)) {
+        /* The stored argv is the same request: leave the existing deadline
+         * untouched; a retry never shortens or extends the original wait. */
+        return 0;
+    }
+    session_block_clear(s);
+    return 1;
+}
+
 static void command_dispatch(session *s, const resp_value *argv, size_t argc,
                              resp_buf *out, uint64_t now_ms)
 {
@@ -8058,6 +8705,20 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
     /* cluster mode: ownership enforcement (-MOVED / -CLUSTERDOWN / -ASK) */
     if (!cluster_check_ownership(s, argv, argc, out, now_ms))
         return;
+
+    if (cmd_id == CMD_BLPOP || cmd_id == CMD_BRPOP ||
+        cmd_id == CMD_BRPOPLPUSH || cmd_id == CMD_BLMOVE ||
+        cmd_id == CMD_BLMPOP || cmd_id == CMD_BZPOPMIN ||
+        cmd_id == CMD_BZPOPMAX || cmd_id == CMD_BZMPOP) {
+        uint64_t deadline_ms = 0;
+        if (blocking_pop_try(s, argv, argc, out, now_ms, &deadline_ms))
+            return;
+        if (session_block_start(s, argv, argc, cmd_id, deadline_ms) != 0) {
+            static const char E[] = "ERR out of memory";
+            resp_write_error(out, E, sizeof(E) - 1);
+        }
+        return;
+    }
 
     if (cmd_id == CMD_PING) {
         if (argc == 1) {
@@ -16063,12 +16724,20 @@ static const cmd_entry CMD_TABLE[] = {
     {"linsert", CMD_LINSERT, 5, 5, 0, CMD_WRITE},
     {"lmove", CMD_LMOVE, 5, 5, 0, CMD_WRITE},
     {"lmpop", CMD_LMPOP, 4, -1, 0, CMD_WRITE},
+    {"blpop", CMD_BLPOP, 3, -1, 0, CMD_WRITE},
+    {"brpop", CMD_BRPOP, 3, -1, 0, CMD_WRITE},
+    {"brpoplpush", CMD_BRPOPLPUSH, 4, 4, 0, CMD_WRITE},
+    {"blmove", CMD_BLMOVE, 6, 6, 0, CMD_WRITE},
+    {"blmpop", CMD_BLMPOP, 4, -1, 0, CMD_WRITE},
     {"sintercard", CMD_SINTERCARD, 3, -1, 0, 0},
     {"sinterstore", CMD_SINTERSTORE, 3, -1, 0, CMD_WRITE},
     {"sunionstore", CMD_SUNIONSTORE, 3, -1, 0, CMD_WRITE},
     {"sdiffstore", CMD_SDIFFSTORE, 3, -1, 0, CMD_WRITE},
     {"zpopmin", CMD_ZPOPMIN, 2, 3, 0, CMD_WRITE},
     {"zpopmax", CMD_ZPOPMAX, 2, 3, 0, CMD_WRITE},
+    {"bzpopmin", CMD_BZPOPMIN, 3, -1, 0, CMD_WRITE},
+    {"bzpopmax", CMD_BZPOPMAX, 3, -1, 0, CMD_WRITE},
+    {"bzmpop", CMD_BZMPOP, 4, -1, 0, CMD_WRITE},
     {"zremrangebyrank", CMD_ZREMRANGEBYRANK, 4, 4, 0, CMD_WRITE},
     {"zmscore", CMD_ZMSCORE, 3, -1, 0, 0},
     {"zrandmember", CMD_ZRANDMEMBER, 2, 4, 0, 0},
