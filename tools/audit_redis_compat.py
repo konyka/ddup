@@ -91,7 +91,7 @@ def read_cmd_table(command_c):
         if in_table:
             if line.startswith("};"):
                 break
-            m = re.search(r'\{\s*"([a-z][a-z0-9_]*)"\s*,', line)
+            m = re.search(r'\{\s*"([a-z][a-z0-9_-]*)"\s*,', line)
             if m:
                 top.append(m.group(1))
     return sorted(set(top))

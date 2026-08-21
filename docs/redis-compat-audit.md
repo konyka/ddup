@@ -1,14 +1,14 @@
 # Redis 7.2.15 命令兼容性盘点
 
 > 基线：Redis 7.2.15 官方 `src/commands/*.json`（392 个 JSON、392 条命令条目；242 个顶层命令 + 150 个容器子命令）。
-> 对照：ddup `src/core/command.c` `CMD_TABLE`（219 个顶层命令）。
+> 对照：ddup `src/core/command.c` `CMD_TABLE`（221 个顶层命令）。
 > 生成：`python3 tools/audit_redis_compat.py --redis-json <Redis src/commands> --json`，机器可复算；`--check` 校验本文档 AUDIT-BASELINE 块与代码一致。
 
 ## 总览
 
 | 类别 | 数量 |
 | --- | --- |
-| 完全未实现的独立顶层命令 | 23 |
+| 完全未实现的独立顶层命令 | 21 |
 | 整体缺失的顶层容器 | 5 |
 | 已实现容器内缺失的子命令 | 34 |
 
@@ -37,17 +37,15 @@
 
 `SENTINEL`
 
-### server（9）
+### server（7）
 
 `ACL`
 `DEBUG`
 `FAILOVER`
 `LATENCY`
-`LOLWUT`
 `MODULE`
 `MONITOR`
 `REPLCONF`
-`RESTORE-ASKING`
 
 ### sorted_set（3）
 
@@ -85,7 +83,8 @@
 - Stream 核心族已实现 `XADD/XLEN/XRANGE/XREVRANGE/XDEL/XTRIM/XSETID`；
   消费组/读取族已实现 `XGROUP/XACK/XPENDING/XCLAIM/XAUTOCLAIM/XREAD/
   XREADGROUP/XINFO`；`BLOCK` 当前按非阻塞立即返回处理，记录在案。
-- 复制/运维族：无 `REPLCONF`、`MONITOR`、`WAIT/WAITAOF`、`RESTORE-ASKING`（`REPLICAOF`/`ROLE`/`SLAVEOF` 已实现）。
+- 复制/运维族：无 `REPLCONF`、`MONITOR`、`WAIT/WAITAOF`（`REPLICAOF`/`ROLE`/`SLAVEOF` 已实现）。
+- `LOLWUT` 已实现 `VERSION 5/6` 的最小 ASCII art；`RESTORE-ASKING` 已作为集群导入用 `RESTORE` 别名实现（当前仅支持 `REPLACE`，`ABSTTL/IDLETIME/FREQ` 仍缺）。
 - 管理族整体缺失：`ACL`、`DEBUG`、`LATENCY`、`MODULE`、`FUNCTION`、`SENTINEL`。
 
 ## D. 项目范围外 / 明确不实施
@@ -96,7 +95,7 @@
 ## 审计基线（机器断言，勿手改格式）
 
 <!-- AUDIT-BASELINE-START
-missing_top: acl blmove blmpop blpop brpop brpoplpush bzmpop bzpopmax bzpopmin debug failover fcall fcall_ro function latency lolwut module monitor replconf restore-asking sentinel wait waitaof
+missing_top: acl blmove blmpop blpop brpop brpoplpush bzmpop bzpopmax bzpopmin debug failover fcall fcall_ro function latency module monitor replconf sentinel wait waitaof
 missing_containers: acl function latency module sentinel
 missing_sub: client caching
 missing_sub: client getredir

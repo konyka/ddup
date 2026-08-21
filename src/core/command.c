@@ -3830,6 +3830,7 @@ static int cluster_keyless_id(uint16_t cmd_id)
     case CMD_HELLO:       case CMD_PFSELFTEST:
     case CMD_COMMAND:    case CMD_CLIENT:    case CMD_MEMORY:
     case CMD_SLOWLOG:    case CMD_BGSAVE:    case CMD_BGREWRITEAOF:
+    case CMD_LOLWUT:
         return 1;
     default:
         return 0;
@@ -3864,6 +3865,8 @@ static int cluster_check_ownership(session *s, const resp_value *argv,
         resp_write_error(out, E, sizeof(E) - 1);
         return 0;
     }
+    if (cmd_id == CMD_RESTORE_ASKING)
+        asking = 1; /* RESTORE-ASKING implies a one-shot ASKING */
     if (cluster_keyless_id(cmd_id))
         return 1;
     if (cmd_id == CMD_MGET || cmd_id == CMD_DEL ||
@@ -8549,9 +8552,12 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
         return;
     }
 
-    if (cmd_id == CMD_RESTORE) {
+    if (cmd_id == CMD_RESTORE || cmd_id == CMD_RESTORE_ASKING) {
+        const char *restore_name = cmd_id == CMD_RESTORE_ASKING
+                                     ? "restore-asking"
+                                     : "restore";
         if (argc != 4 && argc != 5) {
-            wrong_args(out, "restore");
+            wrong_args(out, restore_name);
             return;
         }
         const char *k, *t, *p;
@@ -10987,6 +10993,39 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
         resp_write_array_header(out, 2);
         resp_write_bulk(out, sec, (size_t)slen);
         resp_write_bulk(out, usec, (size_t)ulen);
+        return;
+    }
+
+    if (cmd_id == CMD_LOLWUT) {
+        static const char art[] =
+            "Redis ver. 7.2.15\n"
+            "   /\\_/\\\n"
+            "  ( o.o )\n"
+            "   > ^ <\n";
+        long long version = 6;
+        if (argc == 3) {
+            const char *opt, *vv;
+            size_t ol, vl;
+            if (!arg_str(&argv[1], &opt, &ol) ||
+                !arg_str(&argv[2], &vv, &vl))
+                goto bad_type;
+            if (!ci_equal(opt, ol, "VERSION")) {
+                resp_write_error(out, ERR_SYNTAX, sizeof(ERR_SYNTAX) - 1);
+                return;
+            }
+            if (!parse_i64(vv, vl, &version)) {
+                resp_write_error(out, ERR_NOT_INT, sizeof(ERR_NOT_INT) - 1);
+                return;
+            }
+        } else if (argc != 1) {
+            wrong_args(out, "lolwut");
+            return;
+        }
+        if (version != 5 && version != 6) {
+            resp_write_error(out, "ERR Invalid version specified", 29);
+            return;
+        }
+        resp_write_bulk(out, art, strlen(art));
         return;
     }
 
@@ -16115,6 +16154,8 @@ static const cmd_entry CMD_TABLE[] = {
     {"xsetid", CMD_XSETID, 3, -1, 0, CMD_WRITE},
     {"eval_ro", CMD_EVAL_RO, 3, -1, 0, 0},
     {"evalsha_ro", CMD_EVALSHA_RO, 3, -1, 0, 0},
+    {"restore-asking", CMD_RESTORE_ASKING, 4, 5, 0, CMD_WRITE},
+    {"lolwut", CMD_LOLWUT, 1, -1, 0, 0},
 };
 
 static const cmd_entry *cmd_table_entry(uint16_t id)

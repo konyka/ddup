@@ -1255,6 +1255,7 @@ static int mt_is_single_key(uint16_t cmd)
     case CMD_BITFIELD_RO:
     case CMD_DUMP:
     case CMD_RESTORE:
+    case CMD_RESTORE_ASKING:
     case CMD_INCR:
     case CMD_DECR:
     case CMD_APPEND:
@@ -1395,6 +1396,7 @@ static int mt_is_keyless(uint16_t cmd)
     case CMD_SLOWLOG:
     case CMD_BGREWRITEAOF:
     case CMD_QUIT:
+    case CMD_LOLWUT:
         return 1;
     default:
         return 0;

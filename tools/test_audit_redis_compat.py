@@ -141,6 +141,27 @@ def test_underscore_command_name_preserved(tmp):
     assert "bitfield_ro" in _json.loads(proc.stdout)["missing_top"]
 
 
+def test_hyphen_command_name_parsed(tmp):
+    # A table entry named "restore-asking" must be recognized by the CMD_TABLE
+    # scanner; otherwise --check would report it as an undocumented gap.
+    cmds = os.path.join(tmp, "commands")
+    _write(
+        os.path.join(cmds, "restore-asking.json"),
+        '{"RESTORE-ASKING": {"group": "server", "arity": -4}}\n',
+    )
+    cmd_c = os.path.join(tmp, "src", "core", "command.c")
+    with open(cmd_c, encoding="utf-8") as fh:
+        text = fh.read()
+    text = text.replace(
+        '    {"cluster", CMD_CLUSTER, 2, -1, 0, 0},',
+        '    {"cluster", CMD_CLUSTER, 2, -1, 0, 0},\n'
+        '    {"restore-asking", CMD_RESTORE_ASKING, 4, -1, 0, 0},',
+    )
+    _write(cmd_c, text)
+    proc = run_audit(tmp, "--check")
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+
+
 def test_missing_container_reported(tmp):
     # The real Redis JSON carries a container with no subcommands implemented
     # in ddup; verify the tool classifies it as an entirely missing container.
@@ -217,6 +238,7 @@ def main():
             test_fails_on_undocumented_missing,
             test_fails_on_stale_report_entry,
             test_underscore_command_name_preserved,
+            test_hyphen_command_name_parsed,
             test_missing_container_reported,
             test_fails_on_stale_container_entry,
             test_fails_on_stale_subcommand_entry,
@@ -230,7 +252,7 @@ def main():
                 print(f"{fn.__name__}: FAILED: {exc}")
             finally:
                 shutil.rmtree(fixture, ignore_errors=True)
-        print(f"---\n{7 - failures}/7 audit tool tests passed")
+        print(f"---\n{8 - failures}/8 audit tool tests passed")
     finally:
         if failures and not args.keep:
             shutil.rmtree(tmp, ignore_errors=True)

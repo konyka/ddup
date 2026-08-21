@@ -30,16 +30,17 @@ static void exec_sess(session *s, uint64_t now, resp_buf *out, int argc, ...)
 }
 
 /* RESTORE with a binary payload (cannot go through the varargs helper). */
-static void exec_restore(session *s, uint64_t now, resp_buf *out,
-                         const char *key, const char *ttl,
-                         const char *payload, size_t plen, int replace)
+static void exec_restore_named(session *s, uint64_t now, resp_buf *out,
+                               const char *cmd, const char *key,
+                               const char *ttl, const char *payload,
+                               size_t plen, int replace)
 {
     resp_value argv[5];
     size_t argc = replace ? 5 : 4;
     memset(argv, 0, sizeof(argv));
     argv[0].type = RESP_BULK_STRING;
-    argv[0].str = "RESTORE";
-    argv[0].len = 7;
+    argv[0].str = cmd;
+    argv[0].len = strlen(cmd);
     argv[1].type = RESP_BULK_STRING;
     argv[1].str = key;
     argv[1].len = strlen(key);
@@ -56,6 +57,14 @@ static void exec_restore(session *s, uint64_t now, resp_buf *out,
     }
     out->len = 0;
     session_execute_at(s, argv, argc, out, now);
+}
+
+static void exec_restore(session *s, uint64_t now, resp_buf *out,
+                         const char *key, const char *ttl,
+                         const char *payload, size_t plen, int replace)
+{
+    exec_restore_named(s, now, out, "RESTORE", key, ttl, payload, plen,
+                       replace);
 }
 
 #define EXPECT(out, s) DD_CHECK_MEM((s), strlen(s), (out).data, (out).len)
@@ -331,6 +340,37 @@ static void test_restore_ttl(void)
     resp_buf_free(&out);
 }
 
+static void test_restore_asking(void)
+{
+    db d;
+    session *s;
+    resp_buf out;
+    char buf[256];
+    long long n;
+
+    db_init(&d);
+    resp_buf_init(&out);
+    s = session_create(&d);
+
+    exec_sess(s, T0, &out, 3, "SET", "foo", "bar");
+    n = dump_key(s, T0, &out, "foo", buf, sizeof(buf));
+    DD_CHECK(n > 0);
+
+    exec_restore_named(s, T0, &out, "RESTORE-ASKING", "dst", "0", buf,
+                       (size_t)n, 0);
+    EXPECT(out, "+OK\r\n");
+    exec_sess(s, T0, &out, 2, "GET", "dst");
+    EXPECT(out, "$3\r\nbar\r\n");
+
+    exec_restore_named(s, T0, &out, "RESTORE-ASKING", "dst", "0", buf,
+                       (size_t)n, 0);
+    EXPECT(out, "-BUSYKEY Target key name already exists.\r\n");
+
+    session_free(s);
+    resp_buf_free(&out);
+    db_destroy(&d);
+}
+
 int main(void)
 {
     DD_RUN(test_crc64_vector);
@@ -340,5 +380,6 @@ int main(void)
     DD_RUN(test_restore_bad_payload);
     DD_RUN(test_restore_busykey_and_replace);
     DD_RUN(test_restore_ttl);
+    DD_RUN(test_restore_asking);
     return DD_TEST_SUMMARY();
 }

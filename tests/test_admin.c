@@ -283,6 +283,20 @@ static void test_container_help(void)
     DD_CHECK(strstr(g_out.data, "INFO") != NULL);
 }
 
+static void test_lolwut(void)
+{
+    cmd(1, "LOLWUT");
+    DD_CHECK(g_out.len > 1 && g_out.data[0] == '$');
+    DD_CHECK(strstr(g_out.data, "Redis ver.") != NULL);
+
+    cmd(3, "LOLWUT", "VERSION", "5");
+    DD_CHECK(g_out.len > 1 && g_out.data[0] == '$');
+    DD_CHECK(strstr(g_out.data, "Redis ver.") != NULL);
+
+    cmd(3, "LOLWUT", "VERSION", "99");
+    DD_CHECK(g_out.len > 5 && g_out.data[0] == '-');
+}
+
 int main(void)
 {
     setvbuf(stdout, NULL, _IONBF, 0);
@@ -296,6 +310,7 @@ int main(void)
     DD_RUN(test_slowlog);
     DD_RUN(test_bgsave_bgrewriteaof);
     DD_RUN(test_container_help);
+    DD_RUN(test_lolwut);
     resp_buf_free(&g_out);
     db_destroy(&g_db);
     return DD_TEST_SUMMARY();

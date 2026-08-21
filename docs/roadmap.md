@@ -331,6 +331,9 @@
     `OBJECT`/`CONFIG`/`SCRIPT`/`PUBSUB`/`CLUSTER` 补齐 `HELP`；新增
     `EVAL_RO`/`EVALSHA_RO`，只读脚本内写命令直接拒绝；兼容审计缺 23
     个顶层命令、5 个整体缺失容器、34 个容器子命令（Phase 63）
+  - [x] 迁移/趣味命令补齐：`RESTORE-ASKING`（隐式 ASKING 的 RESTORE 别名，
+    集群导入态写入）与 `LOLWUT`（VERSION 5/6 最小 ASCII art）；兼容审计
+    缺 21 个顶层命令、5 个整体缺失容器、34 个容器子命令（Phase 64）
   - [ ] 范围化排除（记录在案，不实施）：
     - 分层存储（热/冷数据落盘）：超出"内存缓存存储"定位
     - mt 模式的复制/集群适配：见 Phase 15 说明

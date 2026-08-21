@@ -372,10 +372,12 @@ enum {
     CMD_XINFO,
     CMD_XSETID,
     CMD_EVAL_RO,
-    CMD_EVALSHA_RO
+    CMD_EVALSHA_RO,
+    CMD_RESTORE_ASKING,
+    CMD_LOLWUT
 };
 
-#define CMD_MAX CMD_EVALSHA_RO
+#define CMD_MAX CMD_LOLWUT
 
 /* Resolve a command name to its stable ID; case-insensitive. */
 uint16_t cmd_resolve(const char *name, size_t len);

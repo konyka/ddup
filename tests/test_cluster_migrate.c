@@ -78,6 +78,24 @@ static void key_in_slot(uint32_t slot, char *out)
     out[0] = '\0';
 }
 
+/* Parse a "$<len>\r\n<bytes>\r\n" reply; returns bulk length or -1 ($-1). */
+static long long bulk_payload(const resp_buf *out, const char **p)
+{
+    long long n = 0;
+    const char *s;
+    if (out->len < 4 || out->data[0] != '$')
+        return -2;
+    s = out->data + 1;
+    if (*s == '-')
+        return -1;
+    while (*s != '\r') {
+        n = n * 10 + (*s - '0');
+        s++;
+    }
+    *p = s + 2;
+    return n;
+}
+
 static void test_setslot_migrating(void)
 {
     db d;
@@ -244,6 +262,66 @@ static void test_asking_bypass(void)
     EXPECT(out, "-MOVED 12182 10.0.0.2:7002\r\n");
     exec_sess(s, T0, &out, 1, "ASKING");
     exec_sess(s, T0, &out, 2, "GET", "foo");
+    EXPECT(out, "$1\r\nv\r\n");
+
+    session_free(s);
+    resp_buf_free(&out);
+    db_destroy(&d);
+}
+
+static void test_restore_asking_cluster(void)
+{
+    db d;
+    session *s;
+    resp_buf out;
+    cluster_node *o;
+    char payload[256], dst[16];
+    const char *p;
+    long long plen;
+    resp_value argv[4];
+
+    db_init(&d);
+    resp_buf_init(&out);
+    s = fresh_session(&d);
+    o = add_other(&d);
+    cluster_slots_set(o->slots, FOO_SLOT, 1);
+    d.slot_owner_dirty = 1;
+
+    exec_sess(s, T0, &out, 6, "CLUSTER", "SETSLOT", "12182", "IMPORTING",
+              "FROM", OTHER_ID);
+    EXPECT(out, "+OK\r\n");
+
+    exec_sess(s, T0, &out, 1, "ASKING");
+    exec_sess(s, T0, &out, 3, "SET", "foo", "v");
+    EXPECT(out, "+OK\r\n");
+
+    exec_sess(s, T0, &out, 1, "ASKING");
+    exec_sess(s, T0, &out, 2, "DUMP", "foo");
+    plen = bulk_payload(&out, &p);
+    DD_CHECK(plen > 0 && plen < (long long)sizeof(payload));
+    memcpy(payload, p, (size_t)plen);
+
+    key_in_slot(FOO_SLOT, dst);
+    DD_CHECK(dst[0] != '\0');
+    memset(argv, 0, sizeof(argv));
+    argv[0].type = RESP_BULK_STRING;
+    argv[0].str = "RESTORE-ASKING";
+    argv[0].len = strlen(argv[0].str);
+    argv[1].type = RESP_BULK_STRING;
+    argv[1].str = dst;
+    argv[1].len = strlen(dst);
+    argv[2].type = RESP_BULK_STRING;
+    argv[2].str = "0";
+    argv[2].len = 1;
+    argv[3].type = RESP_BULK_STRING;
+    argv[3].str = payload;
+    argv[3].len = (size_t)plen;
+    out.len = 0;
+    session_execute_at(s, argv, 4, &out, T0);
+    EXPECT(out, "+OK\r\n");
+
+    exec_sess(s, T0, &out, 1, "ASKING");
+    exec_sess(s, T0, &out, 2, "GET", dst);
     EXPECT(out, "$1\r\nv\r\n");
 
     session_free(s);
@@ -449,6 +527,7 @@ int main(void)
     DD_RUN(test_setslot_importing);
     DD_RUN(test_ask_redirect);
     DD_RUN(test_asking_bypass);
+    DD_RUN(test_restore_asking_cluster);
     DD_RUN(test_wire_full_flow);
     return DD_TEST_SUMMARY();
 }
