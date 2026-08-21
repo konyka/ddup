@@ -334,6 +334,20 @@
   - [x] 迁移/趣味命令补齐：`RESTORE-ASKING`（隐式 ASKING 的 RESTORE 别名，
     集群导入态写入）与 `LOLWUT`（VERSION 5/6 最小 ASCII art）；兼容审计
     缺 21 个顶层命令、5 个整体缺失容器、34 个容器子命令（Phase 64）
+  - [x] 阻塞 list/zset pop 族：`BLPOP/BRPOP/BRPOPLPUSH/BLMOVE/BLMPOP/
+    BZPOPMIN/BZPOPMAX/BZMPOP`；session 增加阻塞态与 argv 深拷贝，
+    server 就绪循环持有/唤醒，COMMAND GETKEYS 与集群/mt 键抽取同步；
+    兼容审计缺 13 个顶层命令、5 个整体缺失容器、34 个容器子命令
+    （Phase 65）
+  - [x] 脚本库族：`FCALL/FCALL_RO/FUNCTION`；FUNCTION 以名称保存 Lua 源码，
+    FCALL 复用 EVAL 键/参执行，FUNCTION LOAD/DELETE/LIST/FLUSH/STATS/HELP；
+    `redis.register_function` 多函数库格式记录为范围外；兼容审计缺 10 个
+    顶层命令、4 个整体缺失容器、34 个容器子命令（Phase 66）
+  - [x] 兼容性收尾：补齐 `CLIENT/CLUSTER/COMMAND/CONFIG/OBJECT/SCRIPT`
+    剩余子命令，并注册 `WAIT/WAITAOF/REPLCONF/FAILOVER/MONITOR` 与
+    `ACL/DEBUG/LATENCY/MODULE/SENTINEL` 容器（单机最小/占位语义）；
+    兼容审计缺 0 个顶层命令、0 个整体缺失容器、0 个容器子命令
+    （Phase 67）
   - [ ] 范围化排除（记录在案，不实施）：
     - 分层存储（热/冷数据落盘）：超出"内存缓存存储"定位
     - mt 模式的复制/集群适配：见 Phase 15 说明

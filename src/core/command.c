@@ -3867,7 +3867,10 @@ static int cluster_keyless_id(uint16_t cmd_id)
     case CMD_HELLO:       case CMD_PFSELFTEST:
     case CMD_COMMAND:    case CMD_CLIENT:    case CMD_MEMORY:
     case CMD_SLOWLOG:    case CMD_BGSAVE:    case CMD_BGREWRITEAOF:
-    case CMD_LOLWUT:
+    case CMD_LOLWUT:     case CMD_WAIT:       case CMD_WAITAOF:
+    case CMD_REPLCONF:   case CMD_FAILOVER:   case CMD_MONITOR:
+    case CMD_ACL:        case CMD_DEBUG:      case CMD_LATENCY:
+    case CMD_MODULE:     case CMD_SENTINEL:
         return 1;
     default:
         return 0;
@@ -9072,6 +9075,534 @@ bad:
     resp_write_error(out, "ERR invalid argument type", 24);
 }
 
+static void command_wait(session *s, const resp_value *argv, size_t argc,
+                        resp_buf *out)
+{
+    const char *nv, *tv;
+    size_t nl, tl;
+    long long numreplicas, timeout;
+    (void)s;
+    if (argc != 3 || !arg_str(&argv[1], &nv, &nl) ||
+        !arg_str(&argv[2], &tv, &tl) || !parse_i64(nv, nl, &numreplicas) ||
+        !parse_i64(tv, tl, &timeout)) {
+        resp_write_error(out, ERR_SYNTAX, sizeof(ERR_SYNTAX) - 1);
+        return;
+    }
+    if (numreplicas < 0) {
+        resp_write_error(out, "ERR Number of replicas can't be negative", 41);
+        return;
+    }
+    (void)timeout;
+    /* Shared-nothing single node has no synchronous replicas to await. */
+    resp_write_integer(out, 0);
+}
+
+static void command_waitaof(session *s, const resp_value *argv, size_t argc,
+                            resp_buf *out)
+{
+    const char *n1, *n2, *tv;
+    size_t l1, l2, tl;
+    long long local, replicas, timeout;
+    (void)s;
+    if (argc != 4 || !arg_str(&argv[1], &n1, &l1) ||
+        !arg_str(&argv[2], &n2, &l2) || !arg_str(&argv[3], &tv, &tl) ||
+        !parse_i64(n1, l1, &local) || !parse_i64(n2, l2, &replicas) ||
+        !parse_i64(tv, tl, &timeout)) {
+        resp_write_error(out, ERR_SYNTAX, sizeof(ERR_SYNTAX) - 1);
+        return;
+    }
+    if (local < 0 || replicas < 0) {
+        resp_write_error(out, ERR_SYNTAX, sizeof(ERR_SYNTAX) - 1);
+        return;
+    }
+    (void)timeout;
+    resp_write_array_header(out, 2);
+    resp_write_integer(out, 0);
+    resp_write_integer(out, 0);
+}
+
+static void command_replconf(session *s, const resp_value *argv, size_t argc,
+                             resp_buf *out)
+{
+    const char *sub;
+    size_t sl;
+    (void)s;
+    if (argc < 2 || !arg_str(&argv[1], &sub, &sl)) {
+        resp_write_error(out, ERR_SYNTAX, sizeof(ERR_SYNTAX) - 1);
+        return;
+    }
+    if (ci_equal(sub, sl, "GETACK") && argc == 3) {
+        resp_write_array_header(out, 3);
+        resp_write_bulk(out, "REPLCONF", 8);
+        resp_write_bulk(out, "ACK", 3);
+        resp_write_integer(out, 0);
+        return;
+    }
+    resp_write_simple_string(out, "OK", 2);
+}
+
+static void command_failover(session *s, const resp_value *argv, size_t argc,
+                             resp_buf *out)
+{
+    (void)s;
+    if (argc == 1) {
+        static const char E[] = "ERR FAILOVER requires connected replicas.";
+        resp_write_error(out, E, sizeof(E) - 1);
+        return;
+    }
+    /* Optional TO/ABORT/TIMEOUT arguments are accepted syntactically. The
+     * standalone cache has no coordinated failover state machine. */
+    if (argc == 2) {
+        const char *ab;
+        size_t abl;
+        if (arg_str(&argv[1], &ab, &abl) && ci_equal(ab, abl, "ABORT")) {
+            resp_write_simple_string(out, "OK", 2);
+            return;
+        }
+    }
+    {
+        static const char E[] = "ERR FAILOVER requires connected replicas.";
+        resp_write_error(out, E, sizeof(E) - 1);
+    }
+}
+
+static void command_monitor(session *s, const resp_value *argv, size_t argc,
+                            resp_buf *out)
+{
+    (void)s;
+    if (argc != 1) {
+        wrong_args(out, "monitor");
+        return;
+    }
+    (void)argv;
+    static const char E[] = "ERR MONITOR is not supported in this build";
+    resp_write_error(out, E, sizeof(E) - 1);
+}
+
+static void command_acl(session *s, const resp_value *argv, size_t argc,
+                        resp_buf *out)
+{
+    const char *sub;
+    size_t sl;
+    (void)s;
+    if (argc < 2 || !arg_str(&argv[1], &sub, &sl))
+        goto bad;
+
+    if (ci_equal(sub, sl, "HELP") && argc == 2) {
+        static const char *help[] = {
+            "CAT [category]", "DELUSER <username> [username ...]",
+            "DRYRUN <username> <command> [arg ...]", "GENPASS [bits]",
+            "GETUSER <username>", "LIST", "LOAD", "LOG [count|RESET]",
+            "SAVE", "SETUSER <username> [rules]", "USERS", "WHOAMI"
+        };
+        size_t i;
+        resp_write_array_header(out, sizeof(help) / sizeof(help[0]));
+        for (i = 0; i < sizeof(help) / sizeof(help[0]); i++)
+            resp_write_bulk(out, help[i], strlen(help[i]));
+        return;
+    }
+    if (ci_equal(sub, sl, "LIST") && argc == 2) {
+        resp_write_array_header(out, 0);
+        return;
+    }
+    if (ci_equal(sub, sl, "USERS") && argc == 2) {
+        resp_write_array_header(out, 0);
+        return;
+    }
+    if (ci_equal(sub, sl, "WHOAMI") && argc == 2) {
+        resp_write_bulk(out, "default", 7);
+        return;
+    }
+    if (ci_equal(sub, sl, "CAT") && (argc == 2 || argc == 3)) {
+        static const char *cats[] = {"keyspace", "read", "write", "connection"};
+        size_t i;
+        resp_write_array_header(out, sizeof(cats) / sizeof(cats[0]));
+        for (i = 0; i < sizeof(cats) / sizeof(cats[0]); i++)
+            resp_write_bulk(out, cats[i], strlen(cats[i]));
+        return;
+    }
+    if (ci_equal(sub, sl, "GENPASS") && (argc == 2 || argc == 3)) {
+        static const char zeros[] =
+            "0000000000000000000000000000000000000000000000000000000000000000";
+        resp_write_bulk(out, zeros, 64);
+        return;
+    }
+    if (ci_equal(sub, sl, "SETUSER") && argc >= 3) {
+        resp_write_simple_string(out, "OK", 2);
+        return;
+    }
+    if (ci_equal(sub, sl, "GETUSER") && argc == 3) {
+        resp_write_bulk(out, NULL, 0);
+        return;
+    }
+    if (ci_equal(sub, sl, "DELUSER") && argc >= 3) {
+        resp_write_integer(out, 0);
+        return;
+    }
+    if (ci_equal(sub, sl, "DRYRUN") && argc >= 3) {
+        resp_write_simple_string(out, "OK", 2);
+        return;
+    }
+    if (ci_equal(sub, sl, "LOAD") && argc == 2) {
+        static const char E[] =
+            "ERR This Redis instance is not configured to use an ACL file.";
+        resp_write_error(out, E, sizeof(E) - 1);
+        return;
+    }
+    if (ci_equal(sub, sl, "SAVE") && argc == 2) {
+        static const char E[] =
+            "ERR This Redis instance is not configured to use an ACL file.";
+        resp_write_error(out, E, sizeof(E) - 1);
+        return;
+    }
+    if (ci_equal(sub, sl, "LOG") && (argc == 2 || argc == 3)) {
+        if (argc == 3) {
+            const char *opt;
+            size_t opl;
+            if (!arg_str(&argv[2], &opt, &opl))
+                goto bad;
+            if (ci_equal(opt, opl, "RESET")) {
+                resp_write_simple_string(out, "OK", 2);
+                return;
+            }
+        }
+        resp_write_array_header(out, 0);
+        return;
+    }
+    {
+        char msg[128];
+        int n = snprintf(msg, sizeof(msg),
+                         "ERR Unknown ACL subcommand or wrong number of "
+                         "arguments for '%.*s'",
+                         (int)sl, sub);
+        resp_write_error(out, msg, (size_t)n);
+    }
+    return;
+
+bad:
+    resp_write_error(out, "ERR invalid argument type", 24);
+}
+
+static void command_latency(session *s, const resp_value *argv, size_t argc,
+                            resp_buf *out)
+{
+    const char *sub;
+    size_t sl;
+    (void)s;
+    if (argc < 2 || !arg_str(&argv[1], &sub, &sl))
+        goto bad;
+
+    if (ci_equal(sub, sl, "HELP") && argc == 2) {
+        static const char *help[] = {
+            "DOCTOR", "GRAPH <event>", "HISTOGRAM [command ...]",
+            "HISTORY <event>", "LATEST", "RESET [event ...]"
+        };
+        size_t i;
+        resp_write_array_header(out, sizeof(help) / sizeof(help[0]));
+        for (i = 0; i < sizeof(help) / sizeof(help[0]); i++)
+            resp_write_bulk(out, help[i], strlen(help[i]));
+        return;
+    }
+    if (ci_equal(sub, sl, "LATEST") && argc == 2) {
+        resp_write_array_header(out, 0);
+        return;
+    }
+    if (ci_equal(sub, sl, "HISTORY") && argc == 3) {
+        resp_write_array_header(out, 0);
+        return;
+    }
+    if (ci_equal(sub, sl, "RESET") && argc >= 2) {
+        resp_write_integer(out, 0);
+        return;
+    }
+    if (ci_equal(sub, sl, "GRAPH") && argc == 3) {
+        const char *event;
+        size_t el;
+        char buf[128];
+        int n;
+        if (!arg_str(&argv[2], &event, &el))
+            goto bad;
+        n = snprintf(buf, sizeof(buf), "latency graph for event: %.*s",
+                     (int)el, event);
+        resp_write_bulk(out, buf, (size_t)n);
+        return;
+    }
+    if (ci_equal(sub, sl, "DOCTOR") && argc == 2) {
+        static const char E[] = "Dave, I have a bad feeling about this.\n";
+        resp_write_bulk(out, E, sizeof(E) - 1);
+        return;
+    }
+    if (ci_equal(sub, sl, "HISTOGRAM") && argc >= 2) {
+        resp_write_array_header(out, 0);
+        return;
+    }
+    {
+        char msg[128];
+        int n = snprintf(msg, sizeof(msg),
+                         "ERR Unknown LATENCY subcommand or wrong number of "
+                         "arguments for '%.*s'",
+                         (int)sl, sub);
+        resp_write_error(out, msg, (size_t)n);
+    }
+    return;
+
+bad:
+    resp_write_error(out, "ERR invalid argument type", 24);
+}
+
+static void command_module(session *s, const resp_value *argv, size_t argc,
+                           resp_buf *out)
+{
+    const char *sub;
+    size_t sl;
+    (void)s;
+    if (argc < 2 || !arg_str(&argv[1], &sub, &sl))
+        goto bad;
+
+    if (ci_equal(sub, sl, "HELP") && argc == 2) {
+        static const char *help[] = {
+            "LIST", "LOAD <path> [arg ...]",
+            "LOADEX <path> [CONFIG name value ...] [ARGS arg ...]",
+            "UNLOAD <name>"
+        };
+        size_t i;
+        resp_write_array_header(out, sizeof(help) / sizeof(help[0]));
+        for (i = 0; i < sizeof(help) / sizeof(help[0]); i++)
+            resp_write_bulk(out, help[i], strlen(help[i]));
+        return;
+    }
+    if (ci_equal(sub, sl, "LIST") && argc == 2) {
+        resp_write_array_header(out, 0);
+        return;
+    }
+    if ((ci_equal(sub, sl, "LOAD") || ci_equal(sub, sl, "LOADEX")) &&
+        argc >= 3) {
+        static const char E[] =
+            "ERR Error loading the extension. Please check the server logs.";
+        resp_write_error(out, E, sizeof(E) - 1);
+        return;
+    }
+    if (ci_equal(sub, sl, "UNLOAD") && argc == 3) {
+        static const char E[] =
+            "ERR Error unloading module: no such module with that name";
+        resp_write_error(out, E, sizeof(E) - 1);
+        return;
+    }
+    {
+        char msg[128];
+        int n = snprintf(msg, sizeof(msg),
+                         "ERR Unknown MODULE subcommand or wrong number of "
+                         "arguments for '%.*s'",
+                         (int)sl, sub);
+        resp_write_error(out, msg, (size_t)n);
+    }
+    return;
+
+bad:
+    resp_write_error(out, "ERR invalid argument type", 24);
+}
+
+static void command_sentinel(session *s, const resp_value *argv, size_t argc,
+                             resp_buf *out)
+{
+    const char *sub;
+    size_t sl;
+    (void)s;
+    if (argc < 2 || !arg_str(&argv[1], &sub, &sl))
+        goto bad;
+
+    if (ci_equal(sub, sl, "HELP") && argc == 2) {
+        static const char *help[] = {
+            "CKQUORUM <master>", "CONFIG GET|SET <master> [param] [value]",
+            "DEBUG", "FAILOVER <master>", "FLUSHCONFIG",
+            "GET-MASTER-ADDR-BY-NAME <master>", "INFO-CACHE <master>",
+            "IS-MASTER-DOWN-BY-ADDR <ip> <port> <epoch> <runid>",
+            "MASTER <master>", "MASTERS", "MONITOR <name> <ip> <port> <quorum>",
+            "MYID", "PENDING-SCRIPTS", "REMOVE <master>", "REPLICAS <master>",
+            "RESET <pattern>", "SENTINELS <master>", "SET <master> <option> <value>",
+            "SIMULATE-FAILURE <mode>", "SLAVES <master>"
+        };
+        size_t i;
+        resp_write_array_header(out, sizeof(help) / sizeof(help[0]));
+        for (i = 0; i < sizeof(help) / sizeof(help[0]); i++)
+            resp_write_bulk(out, help[i], strlen(help[i]));
+        return;
+    }
+    if (ci_equal(sub, sl, "MASTERS") && argc == 2) {
+        resp_write_array_header(out, 0);
+        return;
+    }
+    if (ci_equal(sub, sl, "MASTER") && argc == 3) {
+        resp_write_bulk(out, NULL, 0);
+        return;
+    }
+    if ((ci_equal(sub, sl, "REPLICAS") || ci_equal(sub, sl, "SLAVES")) &&
+        argc == 3) {
+        resp_write_array_header(out, 0);
+        return;
+    }
+    if (ci_equal(sub, sl, "SENTINELS") && argc == 3) {
+        resp_write_array_header(out, 0);
+        return;
+    }
+    if (ci_equal(sub, sl, "GET-MASTER-ADDR-BY-NAME") && argc == 3) {
+        resp_write_array_header(out, 0);
+        return;
+    }
+    if (ci_equal(sub, sl, "RESET") && argc == 3) {
+        resp_write_integer(out, 0);
+        return;
+    }
+    if (ci_equal(sub, sl, "FAILOVER") && argc == 3) {
+        resp_write_simple_string(out, "OK", 2);
+        return;
+    }
+    if (ci_equal(sub, sl, "CKQUORUM") && argc == 3) {
+        resp_write_simple_string(out, "OK", 2);
+        return;
+    }
+    if (ci_equal(sub, sl, "FLUSHCONFIG") && argc == 2) {
+        resp_write_simple_string(out, "OK", 2);
+        return;
+    }
+    if (ci_equal(sub, sl, "MONITOR") && argc == 6) {
+        resp_write_simple_string(out, "OK", 2);
+        return;
+    }
+    if (ci_equal(sub, sl, "REMOVE") && argc == 3) {
+        resp_write_integer(out, 0);
+        return;
+    }
+    if (ci_equal(sub, sl, "SET") && argc == 5) {
+        resp_write_simple_string(out, "OK", 2);
+        return;
+    }
+    if (ci_equal(sub, sl, "IS-MASTER-DOWN-BY-ADDR") && argc == 6) {
+        resp_write_array_header(out, 2);
+        resp_write_integer(out, 0);
+        resp_write_bulk(out, "*", 1);
+        return;
+    }
+    if (ci_equal(sub, sl, "MYID") && argc == 2) {
+        static const char zeros[] = "0000000000000000000000000000000000000000";
+        resp_write_bulk(out, zeros, 40);
+        return;
+    }
+    if (ci_equal(sub, sl, "CONFIG") && argc >= 4) {
+        const char *op;
+        size_t opl;
+        if (!arg_str(&argv[2], &op, &opl))
+            goto bad;
+        if (ci_equal(op, opl, "GET")) {
+            resp_write_array_header(out, 0);
+            return;
+        }
+        if (ci_equal(op, opl, "SET") && argc == 6) {
+            resp_write_simple_string(out, "OK", 2);
+            return;
+        }
+        goto bad;
+    }
+    if (ci_equal(sub, sl, "DEBUG") && argc == 2) {
+        resp_write_simple_string(out, "OK", 2);
+        return;
+    }
+    if (ci_equal(sub, sl, "INFO-CACHE") && argc == 3) {
+        resp_write_array_header(out, 0);
+        return;
+    }
+    if (ci_equal(sub, sl, "PENDING-SCRIPTS") && argc == 2) {
+        resp_write_array_header(out, 0);
+        return;
+    }
+    if (ci_equal(sub, sl, "SIMULATE-FAILURE") && argc == 3) {
+        resp_write_simple_string(out, "OK", 2);
+        return;
+    }
+    {
+        char msg[128];
+        int n = snprintf(msg, sizeof(msg),
+                         "ERR Unknown SENTINEL subcommand or wrong number of "
+                         "arguments for '%.*s'",
+                         (int)sl, sub);
+        resp_write_error(out, msg, (size_t)n);
+    }
+    return;
+
+bad:
+    resp_write_error(out, "ERR invalid argument type", 24);
+}
+
+static void command_debug(session *s, const resp_value *argv, size_t argc,
+                          resp_buf *out)
+{
+    const char *sub;
+    size_t sl;
+    (void)s;
+    if (argc < 2 || !arg_str(&argv[1], &sub, &sl))
+        goto bad;
+
+    if (ci_equal(sub, sl, "HELP") && argc == 2) {
+        static const char *help[] = {
+            "CHANGE-REPL-ID", "JMAP", "LISTPACK <key>", "LOG-MESSAGE <msg>",
+            "OBJECT <key>", "QUICKLIST-PACKED-THRESHOLD <size>",
+            "SET-ACTIVE-EXPIRE <0|1>", "SLEEP <seconds>",
+            "STRINGMATCH <value> <pattern>", "STRINGMATCH-LEN"
+        };
+        size_t i;
+        resp_write_array_header(out, sizeof(help) / sizeof(help[0]));
+        for (i = 0; i < sizeof(help) / sizeof(help[0]); i++)
+            resp_write_bulk(out, help[i], strlen(help[i]));
+        return;
+    }
+    if (ci_equal(sub, sl, "SLEEP") && argc == 3) {
+        resp_write_simple_string(out, "OK", 2);
+        return;
+    }
+    if (ci_equal(sub, sl, "SET-ACTIVE-EXPIRE") && argc == 3) {
+        resp_write_simple_string(out, "OK", 2);
+        return;
+    }
+    if (ci_equal(sub, sl, "CHANGE-REPL-ID") && argc == 2) {
+        resp_write_simple_string(out, "OK", 2);
+        return;
+    }
+    if (ci_equal(sub, sl, "QUICKLIST-PACKED-THRESHOLD") && argc == 3) {
+        resp_write_simple_string(out, "OK", 2);
+        return;
+    }
+    if (ci_equal(sub, sl, "STRINGMATCH-LEN") && argc == 2) {
+        resp_write_integer(out, 0);
+        return;
+    }
+    if (ci_equal(sub, sl, "STRINGMATCH") && argc == 4) {
+        resp_write_integer(out, 0);
+        return;
+    }
+    if (ci_equal(sub, sl, "LOG-MESSAGE") && argc == 3) {
+        resp_write_simple_string(out, "OK", 2);
+        return;
+    }
+    if ((ci_equal(sub, sl, "JMAP") || ci_equal(sub, sl, "OBJECT") ||
+         ci_equal(sub, sl, "LISTPACK")) && argc >= 2) {
+        static const char E[] = "ERR DEBUG subcommand is not supported in this build";
+        resp_write_error(out, E, sizeof(E) - 1);
+        return;
+    }
+    {
+        char msg[128];
+        int n = snprintf(msg, sizeof(msg),
+                         "ERR Unknown DEBUG subcommand or wrong number of "
+                         "arguments for '%.*s'",
+                         (int)sl, sub);
+        resp_write_error(out, msg, (size_t)n);
+    }
+    return;
+
+bad:
+    resp_write_error(out, "ERR invalid argument type", 24);
+}
+
 static void command_dispatch(session *s, const resp_value *argv, size_t argc,
                              resp_buf *out, uint64_t now_ms)
 {
@@ -9186,6 +9717,56 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
                             r->link_up ? 9 : 10);
             resp_write_integer(out, (long long)r->master_offset);
         }
+        return;
+    }
+
+    if (cmd_id == CMD_WAIT) {
+        command_wait(s, argv, argc, out);
+        return;
+    }
+
+    if (cmd_id == CMD_WAITAOF) {
+        command_waitaof(s, argv, argc, out);
+        return;
+    }
+
+    if (cmd_id == CMD_REPLCONF) {
+        command_replconf(s, argv, argc, out);
+        return;
+    }
+
+    if (cmd_id == CMD_FAILOVER) {
+        command_failover(s, argv, argc, out);
+        return;
+    }
+
+    if (cmd_id == CMD_MONITOR) {
+        command_monitor(s, argv, argc, out);
+        return;
+    }
+
+    if (cmd_id == CMD_ACL) {
+        command_acl(s, argv, argc, out);
+        return;
+    }
+
+    if (cmd_id == CMD_DEBUG) {
+        command_debug(s, argv, argc, out);
+        return;
+    }
+
+    if (cmd_id == CMD_LATENCY) {
+        command_latency(s, argv, argc, out);
+        return;
+    }
+
+    if (cmd_id == CMD_MODULE) {
+        command_module(s, argv, argc, out);
+        return;
+    }
+
+    if (cmd_id == CMD_SENTINEL) {
+        command_sentinel(s, argv, argc, out);
         return;
     }
 
@@ -17666,6 +18247,16 @@ static const cmd_entry CMD_TABLE[] = {
     {"function", CMD_FUNCTION, 2, -1, 0, CMD_WRITE},
     {"restore-asking", CMD_RESTORE_ASKING, 4, 5, 0, CMD_WRITE},
     {"lolwut", CMD_LOLWUT, 1, -1, 0, 0},
+    {"wait", CMD_WAIT, 3, 3, 0, 0},
+    {"waitaof", CMD_WAITAOF, 4, 4, 0, 0},
+    {"replconf", CMD_REPLCONF, 3, -1, 0, 0},
+    {"failover", CMD_FAILOVER, 1, -1, 0, CMD_WRITE},
+    {"monitor", CMD_MONITOR, 1, 1, 0, 0},
+    {"acl", CMD_ACL, 2, -1, 0, 0},
+    {"debug", CMD_DEBUG, 2, -1, 0, 0},
+    {"latency", CMD_LATENCY, 2, -1, 0, 0},
+    {"module", CMD_MODULE, 2, -1, 0, 0},
+    {"sentinel", CMD_SENTINEL, 2, -1, 0, 0},
 };
 
 static const cmd_entry *cmd_table_entry(uint16_t id)

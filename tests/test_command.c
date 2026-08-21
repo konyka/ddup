@@ -254,6 +254,35 @@ static void test_object_metadata_and_getkeysflags(void)
     EXPECT_REPLY("*1\r\n*2\r\n$1\r\nk\r\n$2\r\nRO\r\n");
 }
 
+static void test_server_management_commands(void)
+{
+    cmd(3, "WAIT", "1", "0");
+    EXPECT_REPLY(":0\r\n");
+    cmd(4, "WAITAOF", "1", "1", "0");
+    EXPECT_REPLY("*2\r\n:0\r\n:0\r\n");
+    cmd(3, "REPLCONF", "ACK", "0");
+    EXPECT_REPLY("+OK\r\n");
+    cmd(3, "REPLCONF", "GETACK", "*");
+    EXPECT_REPLY("*3\r\n$8\r\nREPLCONF\r\n$3\r\nACK\r\n:0\r\n");
+    cmd(2, "FAILOVER", "ABORT");
+    EXPECT_REPLY("+OK\r\n");
+    cmd(1, "FAILOVER");
+    DD_CHECK(g_out.len > 0 && g_out.data[0] == '-');
+    cmd(1, "MONITOR");
+    EXPECT_REPLY("-ERR MONITOR is not supported in this build\r\n");
+
+    cmd(2, "ACL", "WHOAMI");
+    EXPECT_REPLY("$7\r\ndefault\r\n");
+    cmd(2, "LATENCY", "LATEST");
+    EXPECT_REPLY("*0\r\n");
+    cmd(2, "MODULE", "LIST");
+    EXPECT_REPLY("*0\r\n");
+    cmd(2, "SENTINEL", "MASTERS");
+    EXPECT_REPLY("*0\r\n");
+    cmd(3, "DEBUG", "SLEEP", "0");
+    EXPECT_REPLY("+OK\r\n");
+}
+
 int main(void)
 {
     db_init(&g_db);
@@ -269,6 +298,7 @@ int main(void)
     DD_RUN(test_set_rejection_is_transactional);
     DD_RUN(test_object_encoding);
     DD_RUN(test_object_metadata_and_getkeysflags);
+    DD_RUN(test_server_management_commands);
     resp_buf_free(&g_out);
     db_destroy(&g_db);
     return DD_TEST_SUMMARY();

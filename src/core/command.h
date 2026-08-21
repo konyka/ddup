@@ -388,10 +388,20 @@ enum {
     CMD_BLMPOP,
     CMD_BZPOPMIN,
     CMD_BZPOPMAX,
-    CMD_BZMPOP
+    CMD_BZMPOP,
+    CMD_WAIT,
+    CMD_WAITAOF,
+    CMD_REPLCONF,
+    CMD_FAILOVER,
+    CMD_MONITOR,
+    CMD_ACL,
+    CMD_DEBUG,
+    CMD_LATENCY,
+    CMD_MODULE,
+    CMD_SENTINEL
 };
 
-#define CMD_MAX CMD_BZMPOP
+#define CMD_MAX CMD_SENTINEL
 
 /* Resolve a command name to its stable ID; case-insensitive. */
 uint16_t cmd_resolve(const char *name, size_t len);

@@ -237,6 +237,21 @@
   返回 Redis 风格启动确认；`BGREWRITEAOF` 当前为 AOF 强制 flush 兼容实现，
   无 fork/双文件 rewrite（内存缓存存储定位，记录在案）。
 
+## 兼容性收尾（Phase 65–67）
+
+- **阻塞 pop 族**：`BLPOP/BRPOP/BRPOPLPUSH/BLMOVE/BLMPOP/BZPOPMIN/BZPOPMAX/
+  BZMPOP` 在命令分发层记录 `session.blocked`（key 列表、截止时间、重放
+  argv 深拷贝），server 就绪循环经 `command_blocked_try` 在数据可读或超时
+  到期时重试；mt 模式不路由这些命令（记录在案）。
+- **容器子命令补全**：`CLIENT/CLUSTER/COMMAND/CONFIG/OBJECT/SCRIPT` 的
+  Redis 7.2.15 子命令名全部注册；`COMMAND GETKEYSANDFLAGS` 复用既有
+  GETKEYS 键位表并按命令写标志返回 `RW/RO` 近似标志。
+- **管理/复制容器**：`WAIT/WAITAOF` 在共享无副本模型下返回 0 或
+  `[0,0]`；`REPLCONF` 做握手应答；`FAILOVER` 在无副本时返回明确错误；
+  `MONITOR` 返回明确不支持。`ACL/LATENCY/MODULE/SENTINEL/DEBUG` 注册为
+  容器并提供最小空视图或错误应答（无扩展模块、无 ACL 文件、无 Sentinel
+  拓扑），避免未知命令中断客户端；所有应答均为冷路径、无热路径分配。
+
 ## Stream 核心族（Phase 61）
 
 - **表示**：新增 `DDUP_OBJ_STREAM`，对象 `obj_stream`（src/ds/stream.h）
@@ -454,12 +469,18 @@ SINTER SUNION SDIFF SINTERCARD SINTERSTORE SUNIONSTORE SDIFFSTORE ｜
 ZADD ZSCORE ZCARD ZINCRBY ZREM ZRANGE ZREVRANGE ZRANK ZREVRANK ZCOUNT
 ZRANGEBYSCORE ZREMRANGEBYSCORE ZPOPMIN ZPOPMAX ZREMRANGEBYRANK ZMSCORE
 ZRANDMEMBER ZRANGEBYLEX ZREVRANGEBYLEX ZREMRANGEBYLEX ｜
+BLPOP BRPOP BRPOPLPUSH BLMOVE BLMPOP BZPOPMIN BZPOPMAX BZMPOP ｜
 MULTI EXEC DISCARD WATCH UNWATCH ｜ SUBSCRIBE UNSUBSCRIBE PUBLISH
 PSUBSCRIBE PUNSUBSCRIBE
 SSUBSCRIBE SUNSUBSCRIBE SPUBLISH
 PUBSUB(CHANNELS/NUMSUB/NUMPAT/SHARDCHANNELS/SHARDNUMSUB/HELP) QUIT ｜
 AUTH SELECT SWAPDB ｜ SAVE LASTSAVE SHUTDOWN ｜ SYNC REPLICAOF ｜
-DUMP RESTORE RESTORE-ASKING MIGRATE ASKING ｜ EVAL EVALSHA EVAL_RO EVALSHA_RO SCRIPT(LOAD/EXISTS/FLUSH/HELP) ｜
+DUMP RESTORE RESTORE-ASKING MIGRATE ASKING ｜ EVAL EVALSHA EVAL_RO EVALSHA_RO
+FCALL FCALL_RO FUNCTION(LOAD/DELETE/LIST/FLUSH/STATS/HELP)
+SCRIPT(LOAD/EXISTS/FLUSH/DEBUG/KILL/HELP) ｜
+WAIT WAITAOF REPLCONF FAILOVER MONITOR ｜
+ACL CAT DELUSER DRYRUN GENPASS GETUSER LIST LOAD LOG SAVE SETUSER USERS WHOAMI ｜
+DEBUG ｜ LATENCY ｜ MODULE ｜ SENTINEL ｜
 LOLWUT(VERSION 5/6) ｜ INFO（内部变体 INFO __STATS__ 供 mt 聚合）
 
 注：TTL 返回值四舍五入（(rem+500)/1000，同 Redis）；PTTL 精确到 ms。
@@ -977,6 +998,10 @@ DBSIZE 为 O(1)，可能计入尚未回收的过期 key。
   执行期间标记 `session.in_ro_script`；`redis.call/pcall` 内写命令由
   command_dispatch 在入口处拒绝（`Write commands are not allowed from
   read-only scripts.`），不会产生副作用。
+- **脚本库族**：`FCALL/FCALL_RO` 编译并执行命名库的源码，复用 EVAL 的
+  KEYS/ARGV 全局表；`FUNCTION LOAD` 以 `#!lua name=<lib>` 头把源码按名称
+  存入 `db.function_libs` 哈希表，`DELETE/LIST/FLUSH/STATS/HELP` 维护该表。
+  Redis 的 `redis.register_function` 多函数库格式为本次范围外（记录在案）。
 - **错误文本**：对齐 Redis 5/6（编译 `Error compiling script (new
   function):`、`-NOSCRIPT`、运行时 `Error running script (call to
   f_<sha>):`，含 `script:N:` 位置前缀）。

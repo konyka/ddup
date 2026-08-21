@@ -8,52 +8,23 @@
 
 | 类别 | 数量 |
 | --- | --- |
-| 完全未实现的独立顶层命令 | 10 |
-| 整体缺失的顶层容器 | 4 |
+| 完全未实现的独立顶层命令 | 0 |
+| 整体缺失的顶层容器 | 0 |
 | 已实现容器内缺失的子命令 | 0 |
 
 ## A. 完全缺失的独立顶层命令（按 Redis group 分组）
 
-### generic（2）
-
-`WAIT`
-`WAITAOF`
-
-### list（0）
-
-（阻塞 list 族已实现，见“已实现”补充说明）
-
-### scripting（0）
-
-（脚本库族 `FCALL/FCALL_RO/FUNCTION` 已实现，见“已实现”补充说明）
-
-### sentinel（1）
-
-`SENTINEL`
-
-### server（7）
-
-`ACL`
-`DEBUG`
-`FAILOVER`
-`LATENCY`
-`MODULE`
-`MONITOR`
-`REPLCONF`
-
-### sorted_set（0）
-
-（阻塞 zset 族已实现，见“已实现”补充说明）
+（无：Redis 7.2.15 独立顶层命令名均已注册。）
 
 ## B. 容器子命令对照
 
 ### 整体缺失的顶层容器
 
-- `acl` `latency` `module` `sentinel`
+（无：`ACL/DEBUG/LATENCY/MODULE/SENTINEL` 均已注册为容器。）
 
 ### 已实现容器内缺失的子命令
 
-（无：现有 `CLIENT/CLUSTER/COMMAND/CONFIG/OBJECT/SCRIPT` 容器已覆盖 Redis 7.2.15 子命令名。）
+（无：`CLIENT/CLUSTER/COMMAND/CONFIG/OBJECT/SCRIPT` 及管理容器子命令名均已覆盖。）
 
 ## C. 已注册但选项/语义不完整（手工确认，命令名差分不可发现）
 
@@ -78,9 +49,9 @@
 - 阻塞 list/zset 族已实现 `BLPOP/BRPOP/BRPOPLPUSH/BLMOVE/BLMPOP/
   BZPOPMIN/BZPOPMAX/BZMPOP`：服务端事件循环持有挂起会话并在 key 就绪或
   超时到期时唤醒；mt 模式暂不路由这些命令（记录在案）。
-- 复制/运维族：无 `REPLCONF`、`MONITOR`、`WAIT/WAITAOF`（`REPLICAOF`/`ROLE`/`SLAVEOF` 已实现）。
+- 复制/运维族：已注册 `REPLCONF/FAILOVER/MONITOR/WAIT/WAITAOF`；单机/共享无副本语义下 `WAIT/WAITAOF` 返回 0，`FAILOVER` 返回无可副本错误，`MONITOR` 返回明确不支持，`REPLCONF` 仅做握手应答。
 - `LOLWUT` 已实现 `VERSION 5/6` 的最小 ASCII art；`RESTORE-ASKING` 已作为集群导入用 `RESTORE` 别名实现（当前仅支持 `REPLACE`，`ABSTTL/IDLETIME/FREQ` 仍缺）。
-- 管理族整体缺失：`ACL`、`DEBUG`、`LATENCY`、`MODULE`、`SENTINEL`。
+- 管理族已注册 `ACL/DEBUG/LATENCY/MODULE/SENTINEL`：ACL 提供最小匿名/default 视图，LATENCY 返回空事件集，MODULE 无扩展返回加载错误，SENTINEL 提供空拓扑视图，DEBUG 仅接受诊断参数。
 
 ## D. 项目范围外 / 明确不实施
 
@@ -90,6 +61,4 @@
 ## 审计基线（机器断言，勿手改格式）
 
 <!-- AUDIT-BASELINE-START
-missing_top: acl debug failover latency module monitor replconf sentinel wait waitaof
-missing_containers: acl latency module sentinel
 AUDIT-BASELINE-END -->
