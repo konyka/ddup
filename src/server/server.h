@@ -83,6 +83,12 @@ int server_load_snapshot(server *s);
 
 /* Enable single-node cluster mode with a stable 40-hex node id. */
 void server_enable_cluster(server *s, const char *node_id);
+/* Override the address announced by CLUSTER SLOTS/bus (mt worker 0 uses
+ * the public acceptor address instead of its private listener port). */
+void server_set_cluster_announce(server *s, const char *ip, uint16_t port);
+/* When off, the event loop skips cluster gossip/failover/nodes.conf save.
+ * mt workers other than worker 0 run as cluster-state followers. */
+void server_set_cluster_control(server *s, int on);
 /* nodes.conf persistence path (empty = no persistence). */
 void server_set_nodes_path(server *s, const char *path);
 /* Reload persisted nodes.conf into the node table (best-effort). */
@@ -112,6 +118,18 @@ void server_graceful_stop(server *s);
 /* Point this server at a master (host/port), or promote it when host is
  * NULL (REPLICAOF NO ONE). Returns 0 on success. */
 int server_replicaof(server *s, const char *host, uint16_t port);
+
+/* Replace the replica-side full-snapshot loader. mt_server installs this
+ * so a full SYNC is partitioned across the worker pool instead of being
+ * loaded into the coordinator's db. Returns 0 on success. */
+typedef int (*server_repl_snapshot_fn)(void *ctx, const char *buf,
+                                       size_t len);
+void server_set_repl_snapshot_hook(server *s, server_repl_snapshot_fn fn,
+                                   void *ctx);
+
+/* Flush the optional AOF immediately (replication batches call this after
+ * a stream chunk; mt mode flushes every worker's AOF). */
+void server_aof_flush(server *s);
 
 /* Resize the replication backlog ring (drops current contents). Returns 0
  * on success, -1 when bytes is zero or allocation fails; failure preserves

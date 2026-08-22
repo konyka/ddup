@@ -48,6 +48,31 @@ typedef struct cluster_node {
     uint64_t fail_time_ms; /* when FAIL was marked (0 = never) */
 } cluster_node;
 
+/* Immutable-by-convention copy of the cluster metadata carried by a db.
+ * The mt server snapshots this on worker 0 and replays it on the other
+ * workers, so every key-routing worker makes MOVED/CLUSTERDOWN decisions
+ * from the same node/slot table without sharing the table itself. */
+typedef struct cluster_state {
+    int cluster_enabled;
+    char node_id[41];
+    cluster_node nodes[CLUSTER_MAX_NODES];
+    int nnodes;
+    uint16_t slot_owner[16384];
+    int slot_owner_dirty;
+    uint16_t slot_migrating[16384];
+    uint16_t slot_importing[16384];
+    uint64_t cluster_changes;
+    uint64_t cluster_current_epoch;
+    uint64_t cluster_node_timeout_ms;
+    uint64_t last_vote_epoch;
+    uint64_t failover_req_epoch;
+    uint32_t failover_ack_mask;
+    int failover_ack_count;
+    char fail_broadcast_id[41];
+    char cluster_ip[64];
+    uint16_t cluster_port;
+} cluster_state;
+
 struct db; /* command.h */
 
 /* Load the node id from path (first 40 hex chars of the file), or generate
@@ -65,6 +90,10 @@ cluster_node *cluster_node_add(struct db *d, const char *id);
 
 /* the node flagged MYSELF, or NULL */
 cluster_node *cluster_myself(struct db *d);
+
+/* Copy cluster metadata out of / into a db (data tables are untouched). */
+void cluster_state_snapshot(const struct db *d, cluster_state *out);
+void cluster_state_restore(struct db *d, const cluster_state *in);
 
 /* slot bitmap */
 void cluster_slots_set(uint8_t *bm, uint32_t slot, int on);

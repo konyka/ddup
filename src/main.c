@@ -92,9 +92,7 @@ int main(int argc, char **argv)
         return 1;
     }
 
-    /* thread-per-core path: io-threads > 1 runs the mt worker pool.
-     * Cluster/replication are rejected by config_validate in this mode
-     * (documented limitation). */
+    /* thread-per-core path: io-threads > 1 runs the mt worker pool. */
     if (cfg.io_threads > 1) {
         mt_server *ms;
         char verr[256];
@@ -176,6 +174,39 @@ int main(int argc, char **argv)
                 pal_socket_cleanup();
                 return 1;
             }
+        }
+        if (cfg.cluster_enabled) {
+            char cpath[1024];
+            char nid[41];
+            snprintf(cpath, sizeof(cpath), "%s/%s", cfg.dir,
+                     cfg.cluster_config_file);
+            if (cluster_node_id_load_or_create(cpath, nid) != 0) {
+                fprintf(stderr, "failed to load/create cluster config '%s'\n",
+                        cpath);
+                mt_server_destroy(ms);
+                pal_socket_cleanup();
+                return 1;
+            }
+            if (mt_server_enable_cluster(ms, nid, cpath, cfg.bind) != 0) {
+                fprintf(stderr, "failed to enable mt cluster mode\n");
+                mt_server_destroy(ms);
+                pal_socket_cleanup();
+                return 1;
+            }
+            if (strcmp(cfg.cluster_bus_protocol, "redis") == 0)
+                mt_server_set_bus_protocol(ms, SERVER_BUS_PROTOCOL_REDIS);
+            printf("cluster: enabled, node %s\n", nid);
+        }
+        if (cfg.replicaof_port > 0) {
+            if (mt_server_replicaof(ms, cfg.replicaof_host,
+                                    cfg.replicaof_port) != 0)
+                fprintf(stderr,
+                        "warning: connect to master %s:%u failed; will "
+                        "retry\n",
+                        cfg.replicaof_host, (unsigned)cfg.replicaof_port);
+            else
+                printf("replica of %s:%u\n", cfg.replicaof_host,
+                       (unsigned)cfg.replicaof_port);
         }
         if (mt_server_start(ms) != 0) {
             fprintf(stderr, "failed to start %d io threads\n",

@@ -933,3 +933,58 @@ cluster_node *cluster_myself(struct db *d)
             return &d->nodes[i];
     return NULL;
 }
+
+void cluster_state_snapshot(const struct db *d, cluster_state *out)
+{
+    if (d == NULL || out == NULL)
+        return;
+    memset(out, 0, sizeof(*out));
+    out->cluster_enabled = d->cluster_enabled;
+    memcpy(out->node_id, d->node_id, sizeof(d->node_id));
+    memcpy(out->nodes, d->nodes, sizeof(d->nodes));
+    out->nnodes = d->nnodes;
+    memcpy(out->slot_owner, d->slot_owner, sizeof(d->slot_owner));
+    out->slot_owner_dirty = d->slot_owner_dirty;
+    memcpy(out->slot_migrating, d->slot_migrating,
+           sizeof(d->slot_migrating));
+    memcpy(out->slot_importing, d->slot_importing,
+           sizeof(d->slot_importing));
+    out->cluster_changes = d->cluster_changes;
+    out->cluster_current_epoch = d->cluster_current_epoch;
+    out->cluster_node_timeout_ms = d->cluster_node_timeout_ms;
+    out->last_vote_epoch = d->last_vote_epoch;
+    out->failover_req_epoch = d->failover_req_epoch;
+    out->failover_ack_mask = d->failover_ack_mask;
+    out->failover_ack_count = d->failover_ack_count;
+    memcpy(out->fail_broadcast_id, d->fail_broadcast_id,
+           sizeof(d->fail_broadcast_id));
+    memcpy(out->cluster_ip, d->cluster_ip, sizeof(d->cluster_ip));
+    out->cluster_port = d->cluster_port;
+}
+
+void cluster_state_restore(struct db *d, const cluster_state *in)
+{
+    if (d == NULL || in == NULL)
+        return;
+    d->cluster_enabled = in->cluster_enabled;
+    memcpy(d->node_id, in->node_id, sizeof(d->node_id));
+    memcpy(d->nodes, in->nodes, sizeof(d->nodes));
+    d->nnodes = in->nnodes;
+    memcpy(d->slot_owner, in->slot_owner, sizeof(d->slot_owner));
+    d->slot_owner_dirty = in->slot_owner_dirty;
+    memcpy(d->slot_migrating, in->slot_migrating,
+           sizeof(d->slot_migrating));
+    memcpy(d->slot_importing, in->slot_importing,
+           sizeof(d->slot_importing));
+    d->cluster_changes = in->cluster_changes;
+    d->cluster_current_epoch = in->cluster_current_epoch;
+    d->cluster_node_timeout_ms = in->cluster_node_timeout_ms;
+    d->last_vote_epoch = in->last_vote_epoch;
+    d->failover_req_epoch = in->failover_req_epoch;
+    d->failover_ack_mask = in->failover_ack_mask;
+    d->failover_ack_count = in->failover_ack_count;
+    memcpy(d->fail_broadcast_id, in->fail_broadcast_id,
+           sizeof(d->fail_broadcast_id));
+    memcpy(d->cluster_ip, in->cluster_ip, sizeof(d->cluster_ip));
+    d->cluster_port = in->cluster_port;
+}

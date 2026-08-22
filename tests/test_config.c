@@ -112,11 +112,17 @@ static void test_io_threads(void)
     DD_CHECK_EQ_INT(0, config_validate(&cfg, err, sizeof(err)));
     remove(TMP_CONF);
 
+    /* cluster and replication are now adapted to the mt worker pool:
+     * worker 0 owns the cluster bus / master link and fans state out */
     config_init(&cfg);
     DD_CHECK_EQ_INT(0, config_apply(&cfg, "io-threads", "2"));
     DD_CHECK_EQ_INT(0, config_apply(&cfg, "cluster-enabled", "yes"));
-    DD_CHECK_EQ_INT(-1, config_validate(&cfg, err, sizeof(err)));
-    DD_CHECK(strstr(err, "io-threads") != NULL);
+    DD_CHECK_EQ_INT(0, config_validate(&cfg, err, sizeof(err)));
+
+    config_init(&cfg);
+    DD_CHECK_EQ_INT(0, config_apply(&cfg, "io-threads", "2"));
+    DD_CHECK_EQ_INT(0, config_apply(&cfg, "replicaof", "127.0.0.1 6379"));
+    DD_CHECK_EQ_INT(0, config_validate(&cfg, err, sizeof(err)));
 }
 
 static void test_file_parse(void)

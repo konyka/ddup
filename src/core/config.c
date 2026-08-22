@@ -286,13 +286,6 @@ int config_validate(const ddup_config *cfg, char *err, size_t errcap)
                  "repl-max-snapshot-bytes must be between 1 and SIZE_MAX bytes");
         return -1;
     }
-    if (cfg->io_threads > 1 &&
-        (cfg->cluster_enabled || cfg->replicaof_port > 0)) {
-        snprintf(err, errcap,
-                 "io-threads > 1 does not support cluster or "
-                 "replication yet");
-        return -1;
-    }
     if (cfg->tls_port == 0)
         return 0;
     if (!file_readable(cfg->tls_cert_file)) {

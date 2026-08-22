@@ -171,6 +171,7 @@ struct server {
     uint64_t node_timeout_ms;
     uint64_t failover_deadline_ms; /* wall ms; 0 = no pending failover */
     int bus_protocol;            /* SERVER_BUS_PROTOCOL_* (default DDUP) */
+    int cluster_control;         /* run gossip/failover/nodes.conf save */
     db db;            /* db 0 (also holds the cluster state) */
     db *extra_dbs;    /* dbs 1..ndbs-1 */
     int ndbs;         /* total logical databases (default 16) */
@@ -207,6 +208,8 @@ struct server {
     uint64_t last_reconnect; /* pal_now_ms of the last connect attempt */
     size_t proto_max_request_bytes;
     size_t repl_max_snapshot_bytes;
+    server_repl_snapshot_fn repl_snapshot_fn; /* mt replica full-sync */
+    void *repl_snapshot_ctx;
     /* proactor backend (Windows IOCP / Linux io_uring op-mode) */
     int backend;
     pal_iocp *iocp;
@@ -1560,9 +1563,17 @@ static void repl_link_feed(server *srv, conn *c)
         c->rlen -= take;
         if (c->link_got < c->link_need)
             return; /* wait for the rest of the snapshot */
-        if (snapshot_load_mem_multi(srv, srv_select_db, srv->ndbs,
-                                    c->link_snap, c->link_need,
-                                    pal_wall_ms()) != 0) {
+        if (srv->repl_snapshot_fn != NULL) {
+            if (srv->repl_snapshot_fn(srv->repl_snapshot_ctx,
+                                      c->link_snap, c->link_need) != 0) {
+                free(c->link_snap);
+                c->link_snap = NULL;
+                repl_link_close_fatal(srv);
+                return;
+            }
+        } else if (snapshot_load_mem_multi(srv, srv_select_db, srv->ndbs,
+                                          c->link_snap, c->link_need,
+                                          pal_wall_ms()) != 0) {
             free(c->link_snap);
             c->link_snap = NULL;
             repl_link_close_fatal(srv);
@@ -1588,7 +1599,20 @@ static void repl_link_feed(server *srv, conn *c)
                 return;
             }
             c->out.len = 0; /* replies are discarded */
-            session_execute(c->sess, v.items, v.count, &c->out);
+            if (srv->route_fn != NULL) {
+                int rr = srv->route_fn(srv->route_ctx, c, c->sess,
+                                       v.items, v.count,
+                                       c->rbuf + off, (size_t)used,
+                                       &c->out);
+                if (rr == 2) {
+                    repl_link_close_fatal(srv); /* replica link never migrates */
+                    return;
+                }
+                if (rr == 0)
+                    session_execute(c->sess, v.items, v.count, &c->out);
+            } else {
+                session_execute(c->sess, v.items, v.count, &c->out);
+            }
             c->out.len = 0;
             /* Replication batches may contain many mutations in one recv.
              * Detect persistence failure before applying the next frame. */
@@ -1898,6 +1922,7 @@ server *server_create_ex(const char *host, uint16_t port, int backend)
     s->bus_listen_fd = PAL_SOCKET_INVALID;
     s->wakeup_fd = PAL_SOCKET_INVALID;
     s->node_timeout_ms = 15000;
+    s->cluster_control = 1;
     s->aof_fsync_mode = AOF_FSYNC_EVERYSEC;
     s->next_client_id = 1;
     s->slowlog_threshold_us = 10000; /* 10 ms, Redis default */
@@ -2224,6 +2249,12 @@ void server_set_appendfsync(server *s, int mode)
         aof_set_fsync_mode(s->aof, mode);
 }
 
+void server_aof_flush(server *s)
+{
+    if (s != NULL)
+        srv_aof_flush(s);
+}
+
 void server_set_requirepass(server *s, const char *pw)
 {
     s->requirepass = pw;
@@ -2349,6 +2380,30 @@ void server_enable_cluster(server *s, const char *node_id)
         (void)pal_loop_add(s->loop, s->bus_listen_fd, 1, 0, NULL);
 }
 
+void server_set_cluster_announce(server *s, const char *ip, uint16_t port)
+{
+    if (s == NULL)
+        return;
+    if (ip != NULL && ip[0] != '\0')
+        snprintf(s->db.cluster_ip, sizeof(s->db.cluster_ip), "%s", ip);
+    s->db.cluster_port = port;
+}
+
+void server_set_cluster_control(server *s, int on)
+{
+    if (s != NULL)
+        s->cluster_control = on;
+}
+
+void server_set_repl_snapshot_hook(server *s, server_repl_snapshot_fn fn,
+                                   void *ctx)
+{
+    if (s == NULL)
+        return;
+    s->repl_snapshot_fn = fn;
+    s->repl_snapshot_ctx = ctx;
+}
+
 void server_set_slowlog_threshold(server *s, uint64_t usec)
 {
     s->slowlog_threshold_us = usec;
@@ -2382,7 +2437,7 @@ void server_destroy(server *s)
 {
     if (s == NULL)
         return;
-    if (s->db.cluster_enabled) {
+    if (s->db.cluster_enabled && s->cluster_control) {
         s->nodes_dirty = 1;
         cluster_nodes_save(s);
     }

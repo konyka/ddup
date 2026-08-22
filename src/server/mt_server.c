@@ -21,9 +21,12 @@
 #include <string.h>
 
 #include "core/arena.h"
+#include "core/cluster.h"
 #include "core/command.h"
 #include "core/hashslot.h"
+#include "core/rhtable.h"
 #include "core/session.h"
+#include "core/snapshot.h"
 #include "pal/pal_event.h"
 #include "pal/pal_file.h"
 #include "pal/pal_socket.h"
@@ -143,6 +146,8 @@ typedef struct mt_sub_entry {
 #define MT_TASK_PUSH 7   /* pub/sub delivery to a subscriber's home */
 #define MT_TASK_MIGRATE 8 /* connection migration to another worker */
 #define MT_TASK_WATCH_CLEANUP 9 /* reuse WATCH task to release owner refs */
+#define MT_TASK_CLUSTER_SYNC 10 /* fire-and-forget cluster metadata copy */
+#define MT_TASK_RESTORE 11     /* full-sync restore one key on a worker */
 #define MT_MAX_LOGICAL_DBS 16
 
 typedef struct mt_task {
@@ -158,6 +163,8 @@ typedef struct mt_task {
     int kind;             /* MT_TASK_* */
     int pending_owned;    /* home pending count held by this task */
     int db_index;         /* logical db the task executes against (SELECT) */
+    uint64_t task_expire_ms; /* MT_TASK_RESTORE absolute expiry (0 = none) */
+    cluster_state *cluster_state; /* MT_TASK_CLUSTER_SYNC payload */
     /* WATCH result: 2 slots per key (version, epoch), filled on the owner */
     uint64_t *watch_out;
     size_t nwatch_out;
@@ -256,6 +263,8 @@ struct mt_server {
     int fail_completion_pushes;
     int fail_completion_worker;
     int fail_completion_consumed;
+    int cluster_enabled; /* worker 0 owns the cluster bus/gossip */
+    int snapshot_pending; /* replica full-sync restore tasks not yet done */
 };
 
 /* Broadcast group for aggregate commands (DBSIZE/FLUSHDB): the home worker
@@ -330,8 +339,12 @@ static int mt_route_txn(worker *, void *, mt_conn_state *,
                         uint16_t, int, uint64_t, resp_buf *);
 static void mt_replay_deferred(worker *, void *, mt_conn_state *);
 static void mt_exec_task(worker *, mt_task *);
+static void mt_cluster_sync(worker *leader);
+static void mt_route_replicaof(worker *home, const resp_value *argv,
+                               size_t argc, resp_buf *out);
 static int mt_route(void *, void *, session *, const resp_value *, size_t,
                     const char *, size_t, resp_buf *);
+static int mt_repl_snapshot_load(void *ctx, const char *buf, size_t len);
 
 static void mt_blobs_free(mt_cmd_blob *blobs, size_t n)
 {
@@ -373,6 +386,7 @@ static void mt_task_free(void *ptr)
              t->inline_cmd.raw != t->inline_buf)
         free(t->inline_cmd.raw);
     free(t->watch_out);
+    free(t->cluster_state);
     if (t->exec_watches != NULL) {
         for (i = 0; i < t->nexec_watches; i++)
             free(t->exec_watches[i].key);
@@ -1231,9 +1245,6 @@ static int mt_is_blocked(uint16_t cmd)
     switch (cmd) {
     case CMD_SHUTDOWN:
     case CMD_SYNC:
-    case CMD_REPLICAOF:
-    case CMD_SLAVEOF:
-    case CMD_CLUSTER:
     case CMD_MIGRATE:
     case CMD_ASKING:
     case CMD_BLPOP:
@@ -1577,6 +1588,9 @@ static int mt_classify(int nworkers, uint16_t cmd, const resp_value *argv,
 {
     if (mt_is_blocked(cmd))
         return MT_BLOCKED;
+    if (cmd == CMD_CLUSTER || cmd == CMD_REPLICAOF ||
+        cmd == CMD_SLAVEOF)
+        return 0; /* worker 0 owns the cluster/replication control plane */
     if (mt_is_single_key(cmd)) {
         size_t keyidx = (cmd == CMD_XGROUP || cmd == CMD_XINFO) ? 2u : 1u;
         if (argc <= keyidx || argv[keyidx].str == NULL)
@@ -2788,6 +2802,48 @@ static int mt_route(void *ctx, void *conn, session *sess,
         }
     }
 
+    if (cmd == CMD_REPLICAOF || cmd == CMD_SLAVEOF) {
+        mt_batch_flush(home, conn, st);
+        seq = st->seq_next++;
+        if (seq == st->seq_write) {
+            mt_route_replicaof(home, argv, argc, out);
+            st->seq_write++;
+        } else {
+            mt_task *t = mt_task_new(conn, home, seq, 1, 0, NULL);
+            if (t == NULL) {
+                resp_write_error(out, "ERR out of memory", 17);
+                st->seq_write++;
+            } else {
+                mt_route_replicaof(home, argv, argc, &t->reply);
+                mt_reorder_insert(st, t);
+                mt_drain_ready(home->srv, &home->exec_arena, conn, st, 1);
+            }
+        }
+        return 1;
+    }
+
+    if (cmd == CMD_CLUSTER && home->id == 0) {
+        mt_batch_flush(home, conn, st);
+        seq = st->seq_next++;
+        if (seq == st->seq_write) {
+            session_execute(sess, argv, argc, out);
+            st->seq_write++;
+            mt_cluster_sync(home);
+        } else {
+            mt_task *t = mt_task_new(conn, home, seq, 1, 0, NULL);
+            if (t == NULL) {
+                resp_write_error(out, "ERR out of memory", 17);
+                st->seq_write++;
+            } else {
+                session_execute(sess, argv, argc, &t->reply);
+                mt_reorder_insert(st, t);
+                mt_drain_ready(home->srv, &home->exec_arena, conn, st, 1);
+                mt_cluster_sync(home);
+            }
+        }
+        return 1;
+    }
+
     target = mt_classify(home->ms->nworkers, cmd, argv, argc);
     if (target == MT_PASS)
         return 0; /* legacy inline path (SINTER/SUNION/SDIFF for now) */
@@ -2806,7 +2862,8 @@ static int mt_route(void *ctx, void *conn, session *sess,
          * plain task routing still applies. */
         if (server_backend(home->srv) != SERVER_BACKEND_IOCP &&
             server_backend(home->srv) != SERVER_BACKEND_IOURING_OP &&
-            !st->migrated && st->pending == 0 && st->reorder == NULL &&
+            !sess->repl_link && !st->migrated && st->pending == 0 &&
+            st->reorder == NULL &&
             st->batch_n == 0 && !st->in_multi && st->nwatch == 0 &&
             st->subs == NULL && !st->closing) {
             st->seq_next--; /* nothing was answered yet */
@@ -2947,18 +3004,260 @@ static int mt_push_task(worker *self, mt_spsc *q, mt_task *t,
     return 0;
 }
 
+/* Fan worker 0's cluster metadata out to every follower. Fire-and-forget:
+ * each target applies the snapshot in its own event loop, and the SPSC
+ * producer/consumer order preserves snapshot order per target. */
+static void mt_cluster_sync(worker *leader)
+{
+    mt_server *ms;
+    int i;
+
+    if (leader == NULL || leader->id != 0)
+        return;
+    ms = leader->ms;
+    if (!ms->cluster_enabled)
+        return;
+    for (i = 1; i < ms->nworkers; i++) {
+        worker *target = &ms->workers[i];
+        cluster_state *snap =
+            (cluster_state *)malloc(sizeof(cluster_state));
+        mt_task *t;
+
+        if (snap == NULL)
+            continue;
+        cluster_state_snapshot(server_db(leader->srv), snap);
+        t = mt_task_new(NULL, target, 0, 1, 0, NULL);
+        if (t == NULL) {
+            free(snap);
+            continue;
+        }
+        t->kind = MT_TASK_CLUSTER_SYNC;
+        t->cluster_state = snap;
+        (void)mt_push_task(leader, &target->inbox[leader->id], t, target);
+    }
+}
+
+typedef struct mt_repl_tmp_ctx {
+    db *dbs;
+    int ndbs;
+} mt_repl_tmp_ctx;
+
+static db *mt_repl_tmp_get(void *ctx, int idx)
+{
+    mt_repl_tmp_ctx *tc = (mt_repl_tmp_ctx *)ctx;
+    if (tc == NULL || idx < 0 || idx >= tc->ndbs)
+        return NULL;
+    return &tc->dbs[idx];
+}
+
+typedef struct mt_repl_restore_ctx {
+    worker *leader;
+    db *src;
+    int db_index;
+    int failed;
+} mt_repl_restore_ctx;
+
+static void mt_repl_restore_cb(const char *key, size_t klen,
+                               const char *val, size_t vlen, void *ctx)
+{
+    mt_repl_restore_ctx *rc = (mt_repl_restore_ctx *)ctx;
+    mt_server *ms = rc->leader->ms;
+    resp_buf payload;
+    mt_cmd_blob *cmds;
+    mt_task *t;
+    worker *target;
+    const char *ev;
+    size_t evl;
+    uint64_t expire = 0;
+    int tid;
+
+    (void)val;
+    (void)vlen;
+    if (rc->failed)
+        return;
+    resp_buf_init(&payload);
+    if (snapshot_dump_key(rc->src, key, klen, &payload) != 0) {
+        resp_buf_free(&payload);
+        rc->failed = 1;
+        return;
+    }
+    if (rh_get(&rc->src->expires, key, klen, &ev, &evl) && evl == 8)
+        memcpy(&expire, ev, sizeof(expire));
+
+    cmds = (mt_cmd_blob *)calloc(2, sizeof(*cmds));
+    if (cmds == NULL) {
+        resp_buf_free(&payload);
+        rc->failed = 1;
+        return;
+    }
+    cmds[0].raw = (char *)malloc(klen);
+    cmds[1].raw = (char *)malloc(payload.len);
+    if (cmds[0].raw == NULL || cmds[1].raw == NULL) {
+        free(cmds[0].raw);
+        free(cmds[1].raw);
+        free(cmds);
+        resp_buf_free(&payload);
+        rc->failed = 1;
+        return;
+    }
+    memcpy(cmds[0].raw, key, klen);
+    cmds[0].len = klen;
+    memcpy(cmds[1].raw, payload.data, payload.len);
+    cmds[1].len = payload.len;
+    resp_buf_free(&payload);
+
+    tid = (int)(hash_slot(key, klen) % (uint32_t)ms->nworkers);
+    target = &ms->workers[tid];
+    t = mt_task_new(NULL, rc->leader, 0, 1, 2, cmds);
+    if (t == NULL) {
+        free(cmds[0].raw);
+        free(cmds[1].raw);
+        free(cmds);
+        rc->failed = 1;
+        return;
+    }
+    t->kind = MT_TASK_RESTORE;
+    t->db_index = rc->db_index;
+    t->task_expire_ms = expire;
+    if (mt_push_task(rc->leader, &target->inbox[rc->leader->id], t,
+                     target) == 0)
+        ms->snapshot_pending++;
+    else
+        rc->failed = 1;
+}
+
+/* Partition a master full-sync snapshot across the worker pool. The bytes
+ * are first loaded into temporary dbs on the coordinator thread, then each
+ * key is dumped back to the compact DUMP/RESTORE payload and sent to the
+ * worker owning its slot. This keeps steady-state data shared-nothing; the
+ * temporary copy exists only for the duration of the full sync. */
+static int mt_repl_snapshot_load(void *ctx, const char *buf, size_t len)
+{
+    mt_server *ms = (mt_server *)ctx;
+    worker *leader;
+    int ndbs, i, j;
+    db *tmp;
+    mt_repl_tmp_ctx tc;
+
+    if (ms == NULL || ms->nworkers == 0)
+        return -1;
+    leader = &ms->workers[0];
+    ndbs = server_ndbs(leader->srv);
+    tmp = (db *)calloc((size_t)ndbs, sizeof(db));
+    if (tmp == NULL)
+        return -1;
+    for (i = 0; i < ndbs; i++)
+        db_init(&tmp[i]);
+    tc.dbs = tmp;
+    tc.ndbs = ndbs;
+    if (snapshot_load_mem_multi(&tc, mt_repl_tmp_get, ndbs, buf, len,
+                                pal_wall_ms()) != 0) {
+        for (i = 0; i < ndbs; i++)
+            db_destroy(&tmp[i]);
+        free(tmp);
+        return -1;
+    }
+
+    /* Full resync replaces the old shared-nothing dataset. */
+    for (i = 0; i < ms->nworkers; i++) {
+        worker *w = &ms->workers[i];
+        for (j = 0; j < ndbs; j++)
+            db_flush(server_db_at(w->srv, j));
+    }
+
+    ms->snapshot_pending = 0;
+    for (i = 0; i < ndbs; i++) {
+        mt_repl_restore_ctx rc;
+        rc.leader = leader;
+        rc.src = &tmp[i];
+        rc.db_index = i;
+        rc.failed = 0;
+        rh_each(&tmp[i].table, mt_repl_restore_cb, &rc);
+        if (rc.failed)
+            break;
+    }
+
+    for (i = 0; i < ndbs; i++)
+        db_destroy(&tmp[i]);
+    free(tmp);
+
+    while (ms->snapshot_pending > 0 && leader->running) {
+        mt_drain_inbox(leader);
+        mt_drain_completions(leader);
+        pal_sleep_ms(1);
+    }
+    return ms->snapshot_pending == 0 ? 0 : -1;
+}
+
+/* REPLICAOF/SLAVEOF in mt mode operates the worker-0 master link directly.
+ * This avoids forwarding a session-hook command through the sessionless
+ * routed-task path (command_execute_at has no server hooks). */
+static void mt_route_replicaof(worker *home, const resp_value *argv,
+                               size_t argc, resp_buf *out)
+{
+    mt_server *ms = home->ms;
+    server *leader = ms->workers[0].srv;
+    char hostbuf[64];
+    long long port;
+
+    if (argc != 3 || argv[1].str == NULL || argv[2].str == NULL) {
+        resp_write_error(out, "ERR wrong number of arguments for "
+                              "'replicaof' command",
+                         46);
+        return;
+    }
+    if (mt_ci_equal(argv[1].str, argv[1].len, "NO") &&
+        mt_ci_equal(argv[2].str, argv[2].len, "ONE")) {
+        (void)server_replicaof(leader, NULL, 0);
+        resp_write_simple_string(out, "OK", 2);
+        return;
+    }
+    if (argv[1].len >= sizeof(hostbuf)) {
+        resp_write_error(out, "ERR invalid master host", 23);
+        return;
+    }
+    memcpy(hostbuf, argv[1].str, argv[1].len);
+    hostbuf[argv[1].len] = '\0';
+    if (!mt_parse_ll(argv[2].str, argv[2].len, &port) || port <= 0 ||
+        port > 65535) {
+        resp_write_error(out, "ERR value is not an integer or out of range",
+                         44);
+        return;
+    }
+    if (mt_server_replicaof(ms, hostbuf, (uint16_t)port) != 0) {
+        resp_write_error(out, "ERR could not connect to master", 29);
+        return;
+    }
+    resp_write_simple_string(out, "OK", 2);
+}
+
 static void mt_exec_task(worker *w, mt_task *t)
 {
     uint32_t ci;
-    if (t->kind == MT_TASK_UNWATCH) {
+    if (t->kind == MT_TASK_CLUSTER_SYNC) {
+        if (t->cluster_state != NULL)
+            cluster_state_restore(server_db(w->srv), t->cluster_state);
+        mt_task_free(t);
+        return;
+    }
+    if (t->kind == MT_TASK_RESTORE) {
+        db *d = server_db_at(w->srv, t->db_index);
+        if (t->ncmds == 2 && t->cmds != NULL) {
+            (void)snapshot_restore_key(
+                d, t->cmds[0].raw, t->cmds[0].len,
+                t->cmds[1].raw, t->cmds[1].len,
+                t->task_expire_ms, 1, pal_wall_ms());
+        }
+        /* This task replies with a completion so the replica full-sync
+         * barrier can count it. */
+    } else if (t->kind == MT_TASK_UNWATCH) {
         /* fire-and-forget watch_refs release (key bytes in cmds) */
         db *d = server_db_at(w->srv, t->db_index);
         if (d->watch_refs > 0)
             d->watch_refs--;
         mt_task_free(t);
         return;
-    }
-    if (t->kind == MT_TASK_WATCH_CLEANUP) {
+    } else if (t->kind == MT_TASK_WATCH_CLEANUP) {
         resp_value v;
         ptrdiff_t used;
         size_t i;
@@ -2975,8 +3274,7 @@ static void mt_exec_task(worker *w, mt_task *t)
         }
         mt_task_free(t);
         return;
-    }
-    if (t->kind == MT_TASK_UNSUB) {
+    } else if (t->kind == MT_TASK_UNSUB) {
         /* remove (conn, channel) from this worker's registry */
         mt_sub_entry **pp = &w->subs;
         while (*pp != NULL) {
@@ -2993,8 +3291,7 @@ static void mt_exec_task(worker *w, mt_task *t)
         }
         mt_task_free(t);
         return;
-    }
-    if (t->kind == MT_TASK_SUB) {
+    } else if (t->kind == MT_TASK_SUB) {
         /* register (conn, channel) and report back (round trip so
          * the subscriber conn stays alive until registered) */
         mt_sub_entry *e = (mt_sub_entry *)calloc(1, sizeof(*e));
@@ -3061,6 +3358,7 @@ static void mt_exec_task(worker *w, mt_task *t)
             resp_value v;
             ptrdiff_t used;
             uint64_t dirty_before;
+            int is_cluster;
             db *d = server_db_at(w->srv, t->db_index);
             arena_reset(&w->exec_arena);
             used = resp_parse(t->cmds[ci].raw, t->cmds[ci].len, &v,
@@ -3071,6 +3369,10 @@ static void mt_exec_task(worker *w, mt_task *t)
                                  18);
                 continue;
             }
+            is_cluster = v.count > 0 && v.items[0].str != NULL &&
+                         v.items[0].len == 7 &&
+                         mt_ci_equal(v.items[0].str, v.items[0].len,
+                                     "cluster");
             /* SWAPDB executes on every worker (broadcast): swap this
              * worker's two logical dbs directly (sessionless path) */
             if (v.count == 3 && v.items[0].str != NULL &&
@@ -3110,6 +3412,8 @@ static void mt_exec_task(worker *w, mt_task *t)
              * worker's own AOF */
             if (d->dirty != dirty_before)
                 server_aof_log_cmd(w->srv, t->db_index, v.items, v.count);
+            if (is_cluster && w->id == 0)
+                mt_cluster_sync(w);
         }
     }
     w->tasks_executed++;
@@ -3186,6 +3490,12 @@ static void mt_drain_completions(worker *w)
             n++;
             conn = t->conn;
             st = (mt_conn_state *)server_conn_mt_state(conn);
+            if (t->kind == MT_TASK_RESTORE) {
+                if (t->home == w && w->ms->snapshot_pending > 0)
+                    w->ms->snapshot_pending--;
+                mt_task_free(t);
+                continue;
+            }
             if (t->kind == MT_TASK_SUB) {
                 /* registration round trip finished: just release the ref */
                 mt_task_free(t);
@@ -3660,6 +3970,54 @@ int mt_server_enable_tiering(mt_server *ms, const char *dir,
             return -1;
     }
     return 0;
+}
+
+int mt_server_enable_cluster(mt_server *ms, const char *node_id,
+                             const char *nodes_path,
+                             const char *announce_ip)
+{
+    server *leader;
+    cluster_state snap;
+    int i;
+
+    if (ms == NULL || node_id == NULL || ms->nworkers == 0)
+        return -1;
+    leader = ms->workers[0].srv;
+    server_set_cluster_announce(leader, announce_ip, ms->port);
+    server_set_cluster_control(leader, 1);
+    if (nodes_path != NULL && nodes_path[0] != '\0') {
+        server_load_nodes(leader, nodes_path);
+        server_set_nodes_path(leader, nodes_path);
+    }
+    server_enable_cluster(leader, node_id);
+    ms->cluster_enabled = 1;
+
+    /* Followers have the same node/slot table but never bind the bus or run
+     * gossip; worker 0 pushes updated snapshots after cluster commands. */
+    cluster_state_snapshot(server_db(leader), &snap);
+    for (i = 1; i < ms->nworkers; i++) {
+        worker *w = &ms->workers[i];
+        server_set_cluster_control(w->srv, 0);
+        cluster_state_restore(server_db(w->srv), &snap);
+    }
+    return 0;
+}
+
+void mt_server_set_bus_protocol(mt_server *ms, int proto)
+{
+    if (ms != NULL && ms->nworkers > 0)
+        server_set_bus_protocol(ms->workers[0].srv, proto);
+}
+
+int mt_server_replicaof(mt_server *ms, const char *host, uint16_t port)
+{
+    server *leader;
+
+    if (ms == NULL || host == NULL || ms->nworkers == 0)
+        return -1;
+    leader = ms->workers[0].srv;
+    server_set_repl_snapshot_hook(leader, mt_repl_snapshot_load, ms);
+    return server_replicaof(leader, host, port);
 }
 
 int mt_server_enable_tls(mt_server *ms, const char *host, uint16_t port,

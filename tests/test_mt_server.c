@@ -9,6 +9,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "core/cluster.h"
 #include "core/hashslot.h"
 #include "pal/pal_file.h"
 #include "pal/pal_socket.h"
@@ -284,6 +285,40 @@ static void test_blocked_commands_in_mt_mode(void)
     roundtrip(a, "*1\r\n$4\r\nPING\r\n", "+PONG\r\n");
 
     pal_close(a);
+    mt_server_stop(ms);
+    mt_server_destroy(ms);
+    pal_socket_cleanup();
+}
+
+static void test_cluster_control_plane_mt(void)
+{
+    mt_server *ms;
+    pal_socket_t a, b;
+    char nid[41];
+    char req[128];
+    char expected[128];
+
+    DD_CHECK_EQ_INT(0, pal_socket_init());
+    cluster_gen_id(nid);
+    ms = mt_server_create("127.0.0.1", 0, 2);
+    DD_CHECK(ms != NULL);
+    DD_CHECK_EQ_INT(0,
+                    mt_server_enable_cluster(ms, nid, "", "127.0.0.1"));
+    DD_CHECK_EQ_INT(0, mt_server_start(ms));
+    a = connect_client(mt_server_port(ms));
+    b = connect_client(mt_server_port(ms));
+
+    snprintf(req, sizeof(req), "*2\r\n$7\r\nCLUSTER\r\n$4\r\nMYID\r\n");
+    snprintf(expected, sizeof(expected), "$40\r\n%s\r\n", nid);
+    roundtrip(a, req, expected);
+    roundtrip(b, req, expected);
+
+    /* REPLICAOF NO ONE is now handled by the worker-0 control plane. */
+    roundtrip(a, "*3\r\n$9\r\nREPLICAOF\r\n$2\r\nNO\r\n$3\r\nONE\r\n",
+              "+OK\r\n");
+
+    pal_close(a);
+    pal_close(b);
     mt_server_stop(ms);
     mt_server_destroy(ms);
     pal_socket_cleanup();
@@ -1740,6 +1775,7 @@ int main(void)
     DD_RUN(test_routed_cross_worker_commands);
     DD_RUN(test_pipeline_mixed_targets_keeps_order);
     DD_RUN(test_blocked_commands_in_mt_mode);
+    DD_RUN(test_cluster_control_plane_mt);
     DD_RUN(test_pubsub_cross_worker);
     DD_RUN(test_unsubscribe_stops_delivery);
     DD_RUN(test_pubsub_conn_close_unsubscribes);

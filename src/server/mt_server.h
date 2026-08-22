@@ -61,6 +61,20 @@ int mt_server_enable_snapshots(mt_server *ms, const char *dir,
 int mt_server_enable_tiering(mt_server *ms, const char *dir,
                              uint64_t max_disk_bytes);
 
+/* Enable cluster mode with worker 0 as the cluster control plane. node_id
+ * is stable 40-hex; nodes_path is the persisted nodes.conf (empty = none).
+ * The announced ip/port is the public acceptor address. */
+int mt_server_enable_cluster(mt_server *ms, const char *node_id,
+                             const char *nodes_path,
+                             const char *announce_ip);
+/* Select the cluster bus wire protocol on worker 0. */
+void mt_server_set_bus_protocol(mt_server *ms, int proto);
+
+/* Point worker 0's replica link at a master. Full sync is partitioned
+ * across the worker pool; the command stream is routed like client traffic.
+ * Returns 0 on success, -1 when the initial connect fails. */
+int mt_server_replicaof(mt_server *ms, const char *host, uint16_t port);
+
 /* TLS alongside the plain listener: the acceptor owns a second (TLS)
  * listener and tags accepted fds; each worker wraps them with its own TLS
  * context and drives the non-blocking handshake in its event loop.
