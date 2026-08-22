@@ -70,7 +70,9 @@
     SLAVEOF 操作 worker 0 的 master link，全量快照经临时 db 解码后按
     hash slot 分区恢复到各 worker，命令流经 mt 路由分发；CLUSTER 命令
     与总线/故障检测只跑在 worker 0，节点/槽位元数据以不可变快照扇出
-    到其余 worker，使每个 worker 都能独立给出 MOVED/CLUSTERDOWN
+    到其余 worker，使每个 worker 都能独立给出 MOVED/CLUSTERDOWN；
+    master 侧 SYNC/PSYNC 全量同步按 worker 本地序列化后封成 DDUPMT01，
+    聚合/MOVE/EXEC 命令复制推流恰好一次
 
 - [x] **Phase 13 — 安全与多数据库**
   AUTH（requirepass + NOAUTH 门）、16 逻辑库（SELECT/SWAPDB、session

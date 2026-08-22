@@ -187,11 +187,12 @@
   expired/evicted/dbsize 求和、按库与按命令 id 合并），再由共享的
   `command_info_render()` 渲染为单份人类可读 INFO（maxmemory/策略/
   cluster 标志取 home worker 值）。
-- **限制（记录在案）**：mt 模式下 SHUTDOWN/SYNC/MIGRATE/ASKING/KEYS/
+- **限制（记录在案）**：mt 模式下 SHUTDOWN/MIGRATE/ASKING/KEYS/
   SCAN/RANDOMKEY/PSUBSCRIBE/PUNSUBSCRIBE 返回 `-ERR command not
-  supported in mt mode`；`REPLICAOF/SLAVEOF/CLUSTER` 已支持（worker 0
-  控制面）。INFO 仍不含 # Replication 段（mt 副本侧已支持，但
-  per-worker replication 统计尚未聚合）。
+  supported in mt mode`；`SYNC/PSYNC/REPLICAOF/SLAVEOF/CLUSTER` 已由
+  worker 0 控制面支持（SYNC/PSYNC 分类到 worker 0，master 侧全量快照
+  见 mt 复制/集群适配）。INFO 仍不含 # Replication 段（mt 副本侧已
+  支持，但 per-worker replication 统计尚未聚合）。
 - **并发可靠性**：跨 worker 队列满时，生产者背压重试会**自排空本
   worker 的 inbox/completion 队列**以打破环形等待；drain 按环限批
   （512 条/次）并在有剩余时自 kick，避免持续生产下的 drain 活锁。
@@ -412,6 +413,19 @@ proactor——提交 IORING_OP_RECV/SEND/ACCEPT 操作本身，完成携带结�
     投递给 `hash_slot(key) % nworkers` 的属主 worker，等全部完成才进入
     streaming；之后的 master 命令流走 worker 0 的 mt 路由，与客户端
     流量同一条分区路径。master link 连接不参与连接迁移。
+  - **master 侧全量同步（15.4 续）**：`SYNC/PSYNC` 握手在 worker 0 的
+    复制控制面完成，快照不再从其他 worker 的 db 跨线程读取。每个
+    follower 经 `MT_TASK_REPL_SNAPSHOT` 在自己的事件循环内用
+    `snapshot_serialize_multi()` 序列化本 worker 的 DDUP0002 快照；
+    worker 0 就地序列化自身分片并排空 completion 环收集各分片，再经
+    `snapshot_serialize_multi_buffers()` 封成单帧 `DDUPMT01` 发给副本。
+    副本加载器按逻辑库合并所有分片（与 master 的 shared-nothing 分片
+    解耦）。
+  - **复制推流恰好一次**：普通路由命令由执行 worker 把原始 RESP 字节
+    投递到 worker 0 的中央 backlog；`FLUSHDB/FLUSHALL/SWAPDB` 等广播
+    聚合命令只由 home 端在全部 worker 成功归并后转发一次（follower
+    子任务抑制重复转发）；`MOVE` 与 `MULTI/EXEC` 重放也在成功应用后
+    逐条转发。
   - 集群：只有 worker 0 `server_enable_cluster()`（绑定总线、跑
     gossip/failover/nodes.conf 持久化）；`cluster_state_snapshot()`
     把节点/槽位/epoch 等元数据拷成不可变快照，`MT_TASK_CLUSTER_SYNC`
