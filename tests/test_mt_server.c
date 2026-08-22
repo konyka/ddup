@@ -26,6 +26,19 @@ static ptrdiff_t fail_aof_write(pal_file *f, const void *buf, size_t n)
     return -1;
 }
 
+typedef struct server_thread_ctx {
+    server *srv;
+    volatile int running;
+} server_thread_ctx;
+
+static void *server_thread_main(void *arg)
+{
+    server_thread_ctx *ctx = (server_thread_ctx *)arg;
+    while (ctx->running)
+        (void)server_run_once(ctx->srv, 20);
+    return NULL;
+}
+
 static pal_socket_t connect_client(uint16_t port)
 {
     pal_socket_t c = pal_tcp_connect("127.0.0.1", port);
@@ -321,6 +334,153 @@ static void test_cluster_control_plane_mt(void)
     pal_close(b);
     mt_server_stop(ms);
     mt_server_destroy(ms);
+    pal_socket_cleanup();
+}
+
+static void pick_key_for_slot(int wanted, char *out, size_t cap)
+{
+    int i;
+    for (i = 0;; i++) {
+        snprintf(out, cap, "slotkey:%d", i);
+        if ((int)hash_slot(out, strlen(out)) == wanted)
+            return;
+    }
+}
+
+static void test_cluster_state_propagates_to_workers(void)
+{
+    mt_server *ms;
+    pal_socket_t a, b;
+    char nid[41];
+    char k0[32], k1[32];
+    char req[160];
+
+    DD_CHECK_EQ_INT(0, pal_socket_init());
+    cluster_gen_id(nid);
+    ms = mt_server_create("127.0.0.1", 0, 2);
+    DD_CHECK(ms != NULL);
+    DD_CHECK_EQ_INT(0,
+                    mt_server_enable_cluster(ms, nid, "", "127.0.0.1"));
+    DD_CHECK_EQ_INT(0, mt_server_start(ms));
+    a = connect_client(mt_server_port(ms));
+    b = connect_client(mt_server_port(ms));
+
+    roundtrip(a, "*3\r\n$7\r\nCLUSTER\r\n$8\r\nADDSLOTS\r\n$1\r\n0\r\n",
+              "+OK\r\n");
+    /* Fire-and-forget metadata fan-out has a very short propagation window;
+     * poll CLUSTER INFO on the second worker until it observes the slot. */
+    {
+        uint64_t deadline = pal_now_ms() + 5000;
+        char info[512];
+        for (;;) {
+            size_t got = request_full(
+                b, "*2\r\n$7\r\nCLUSTER\r\n$4\r\nINFO\r\n", info,
+                sizeof(info));
+            if (got > 0 && strstr(info, "cluster_slots_assigned:1") != NULL)
+                break;
+            if (pal_now_ms() >= deadline) {
+                fprintf(stderr, "cluster state did not propagate: %.*s\n",
+                        (int)got, info);
+                DD_CHECK(0);
+            }
+            pal_sleep_ms(10);
+        }
+    }
+
+    pick_key_for_slot(0, k0, sizeof(k0));
+    pick_key_for_slot(1, k1, sizeof(k1));
+    snprintf(req, sizeof(req), "*3\r\n$3\r\nSET\r\n$%zu\r\n%s\r\n$1\r\nx\r\n",
+             strlen(k0), k0);
+    roundtrip(a, req, "+OK\r\n");
+    snprintf(req, sizeof(req), "*3\r\n$3\r\nSET\r\n$%zu\r\n%s\r\n$1\r\nx\r\n",
+             strlen(k1), k1);
+    roundtrip(a, req, "-CLUSTERDOWN Hash slot not served\r\n");
+    roundtrip(b, req, "-CLUSTERDOWN Hash slot not served\r\n");
+
+    pal_close(a);
+    pal_close(b);
+    mt_server_stop(ms);
+    mt_server_destroy(ms);
+    pal_socket_cleanup();
+}
+
+static void wait_for_bulk(pal_socket_t c, const char *key,
+                          const char *expected)
+{
+    char req[128];
+    char buf[512];
+    size_t elen = strlen(expected);
+    uint64_t deadline = pal_now_ms() + 5000;
+
+    snprintf(req, sizeof(req), "*2\r\n$3\r\nGET\r\n$%zu\r\n%s\r\n",
+             strlen(key), key);
+    while (pal_now_ms() < deadline) {
+        size_t got = request_full(c, req, buf, sizeof(buf));
+        if (got == elen && memcmp(buf, expected, elen) == 0)
+            return;
+        pal_sleep_ms(10);
+    }
+    fprintf(stderr, "timed out waiting for GET %s = %s; last reply: %.*s\n",
+            key, expected, (int)strlen(buf), buf);
+    DD_CHECK(0);
+}
+
+static void test_mt_replica_partitions_full_sync(void)
+{
+    server *master;
+    server_thread_ctx mt_ctx;
+    pal_thread master_thread;
+    mt_server *ms;
+    pal_socket_t mc, c;
+    char k0[32], k1[32];
+    char req[256];
+
+    DD_CHECK_EQ_INT(0, pal_socket_init());
+    master = server_create("127.0.0.1", 0);
+    DD_CHECK(master != NULL);
+    mt_ctx.srv = master;
+    mt_ctx.running = 1;
+    DD_CHECK_EQ_INT(0,
+                    pal_thread_create(&master_thread, server_thread_main,
+                                      &mt_ctx));
+
+    pick_key_for_worker(0, 2, k0, sizeof(k0));
+    pick_key_for_worker(1, 2, k1, sizeof(k1));
+    mc = connect_client(server_port(master));
+    snprintf(req, sizeof(req), "*3\r\n$3\r\nSET\r\n$%zu\r\n%s\r\n$2\r\nv0\r\n",
+             strlen(k0), k0);
+    roundtrip(mc, req, "+OK\r\n");
+    snprintf(req, sizeof(req), "*3\r\n$3\r\nSET\r\n$%zu\r\n%s\r\n$2\r\nv1\r\n",
+             strlen(k1), k1);
+    roundtrip(mc, req, "+OK\r\n");
+    pal_close(mc);
+
+    ms = mt_server_create("127.0.0.1", 0, 2);
+    DD_CHECK(ms != NULL);
+    DD_CHECK_EQ_INT(0,
+                    mt_server_replicaof(ms, "127.0.0.1",
+                                        server_port(master)));
+    DD_CHECK_EQ_INT(0, mt_server_start(ms));
+
+    c = connect_client(mt_server_port(ms));
+    wait_for_bulk(c, k0, "$2\r\nv0\r\n");
+    wait_for_bulk(c, k1, "$2\r\nv1\r\n");
+
+    /* Post-sync stream is routed to the owning worker exactly like client
+     * traffic. */
+    mc = connect_client(server_port(master));
+    snprintf(req, sizeof(req), "*3\r\n$3\r\nSET\r\n$%zu\r\n%s\r\n$2\r\nv2\r\n",
+             strlen(k0), k0);
+    roundtrip(mc, req, "+OK\r\n");
+    pal_close(mc);
+    wait_for_bulk(c, k0, "$2\r\nv2\r\n");
+    pal_close(c);
+
+    mt_server_stop(ms);
+    mt_server_destroy(ms);
+    mt_ctx.running = 0;
+    pal_thread_join(&master_thread, NULL);
+    server_destroy(master);
     pal_socket_cleanup();
 }
 
@@ -1776,6 +1936,8 @@ int main(void)
     DD_RUN(test_pipeline_mixed_targets_keeps_order);
     DD_RUN(test_blocked_commands_in_mt_mode);
     DD_RUN(test_cluster_control_plane_mt);
+    DD_RUN(test_cluster_state_propagates_to_workers);
+    DD_RUN(test_mt_replica_partitions_full_sync);
     DD_RUN(test_pubsub_cross_worker);
     DD_RUN(test_unsubscribe_stops_delivery);
     DD_RUN(test_pubsub_conn_close_unsubscribes);
