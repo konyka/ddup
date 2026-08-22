@@ -64,6 +64,7 @@ typedef struct db {
     rh_table function_libs; /* FUNCTION LOAD code: library name -> source */
     struct tier_store *tier;  /* optional cold layer (NULL = tiering off) */
     int tier_db_index;        /* logical db index used in tier records */
+    int tier_io_error;        /* set when a tier read/write fails */
     void *lua_state;       /* shared interpreter, lazy (script.c owns it) */
     /* commandstats: per-command-id call count and cumulative microseconds
      * (indexed by CMD_* id, room to spare) */

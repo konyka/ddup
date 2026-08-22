@@ -47,6 +47,9 @@ static int arg_str(const resp_value *v, const char **s, size_t *len);
 
 static void command_dispatch(session *s, const resp_value *argv, size_t argc,
                              resp_buf *out, uint64_t now_ms);
+static int db_tier_materialize(db *d, const char *key, size_t klen,
+                               const char **val, size_t *vlen,
+                               uint64_t now_ms);
 static int blocking_pop_try(session *s, const resp_value *argv, size_t argc,
                             resp_buf *out, uint64_t now_ms,
                             uint64_t *deadline_ms);
@@ -86,6 +89,7 @@ void db_init(db *d)
     rh_init(&d->function_libs);
     d->tier = NULL;
     d->tier_db_index = 0;
+    d->tier_io_error = 0;
     d->lua_state = NULL;
 }
 
@@ -112,6 +116,8 @@ void db_flush(db *d)
     rh_init(&d->table);
     rh_init(&d->expires);
     d->used_memory = 0;
+    if (d->tier != NULL)
+        (void)tier_flush_db(d->tier, (unsigned int)d->tier_db_index);
     memset(d->cmd_calls, 0, sizeof(d->cmd_calls));
     memset(d->cmd_usecs, 0, sizeof(d->cmd_usecs));
 }
@@ -191,6 +197,12 @@ int db_expire_if_needed(db *d, const char *key, size_t klen, uint64_t now_ms)
     rh_del(&d->expires, key, klen);
     d->used_memory -= entry_bytes(klen, 8);
     if (rh_get(&d->table, key, klen, &v, &vl)) {
+        if (d->tier != NULL && obj_is_tier(v, vl)) {
+            uint64_t rid = 0, ignored = 0;
+            obj_tier_unpack(v, vl, &rid, &ignored);
+            if (tier_del(d->tier, rid) != 0)
+                d->tier_io_error = 1;
+        }
         d->used_memory -= entry_bytes(klen, vl) + obj_extra_mem(v, vl);
         obj_free_value(v, vl);
         rh_del(&d->table, key, klen);
@@ -205,7 +217,11 @@ static int db_get(db *d, const char *key, size_t klen, const char **val,
                   size_t *vlen, uint64_t now_ms)
 {
     db_expire_if_needed(d, key, klen, now_ms);
-    return rh_get_touch(&d->table, key, klen, val, vlen, lru_clock(now_ms));
+    if (!rh_get_touch(&d->table, key, klen, val, vlen, lru_clock(now_ms)))
+        return 0;
+    if (obj_is_tier(*val, *vlen))
+        return db_tier_materialize(d, key, klen, val, vlen, now_ms);
+    return 1;
 }
 
 /* Overwrite a value blob (tagged; see ds/obj.h); clears any expiry;
@@ -234,6 +250,12 @@ static int db_set_kv(db *d, const char *key, size_t klen, const char *val,
     }
     if (set_rc == 1) {
         const char *oldv = old_kv + klen;
+        if (d->tier != NULL && obj_is_tier(oldv, old_vlen)) {
+            uint64_t rid = 0, ignored = 0;
+            obj_tier_unpack(oldv, old_vlen, &rid, &ignored);
+            if (tier_del(d->tier, rid) != 0)
+                d->tier_io_error = 1;
+        }
         d->used_memory -=
             entry_bytes(klen, old_vlen) + obj_extra_mem(oldv, old_vlen);
         obj_free_value(oldv, old_vlen);
@@ -270,6 +292,12 @@ static int db_set_kv_string(db *d, const char *key, size_t klen,
     }
     if (set_rc == 1) {
         const char *oldv = old_kv + klen;
+        if (d->tier != NULL && obj_is_tier(oldv, old_vlen)) {
+            uint64_t rid = 0, ignored = 0;
+            obj_tier_unpack(oldv, old_vlen, &rid, &ignored);
+            if (tier_del(d->tier, rid) != 0)
+                d->tier_io_error = 1;
+        }
         d->used_memory -=
             entry_bytes(klen, old_vlen) + obj_extra_mem(oldv, old_vlen);
         obj_free_value(oldv, old_vlen);
@@ -301,6 +329,12 @@ int db_del_kv(db *d, const char *key, size_t klen)
     }
     existed = rh_get(&d->table, key, klen, &old, &oldl);
     if (existed) {
+        if (d->tier != NULL && obj_is_tier(old, oldl)) {
+            uint64_t rid = 0, ignored = 0;
+            obj_tier_unpack(old, oldl, &rid, &ignored);
+            if (tier_del(d->tier, rid) != 0)
+                d->tier_io_error = 1;
+        }
         d->used_memory -= entry_bytes(klen, oldl) + obj_extra_mem(old, oldl);
         obj_free_value(old, oldl);
         rh_del(&d->table, key, klen);
@@ -360,6 +394,42 @@ int db_install_blob(db *d, const char *key, size_t klen, const char *blob,
 int db_install_expiry(db *d, const char *key, size_t klen, uint64_t when_ms)
 {
     return db_set_expiry(d, key, klen, when_ms);
+}
+
+static int db_tier_materialize(db *d, const char *key, size_t klen,
+                               const char **val, size_t *vlen,
+                               uint64_t now_ms)
+{
+    uint64_t rid = 0;
+    uint64_t expire = 0;
+    uint64_t cold_expire = 0;
+    char *payload = NULL;
+    size_t plen = 0;
+    int rc;
+
+    if (d->tier == NULL) {
+        d->tier_io_error = 1;
+        return 0;
+    }
+    obj_tier_unpack(*val, *vlen, &rid, &expire);
+    if (tier_get(d->tier, rid, &payload, &plen, &cold_expire) != 0) {
+        d->tier_io_error = 1;
+        return 0;
+    }
+    rc = snapshot_restore_key(d, key, klen, payload, plen, cold_expire, 1,
+                              now_ms);
+    free(payload);
+    if (rc != 0) {
+        d->tier_io_error = 1;
+        return 0;
+    }
+    if (tier_del(d->tier, rid) != 0)
+        d->tier_io_error = 1;
+    if (!rh_get_touch(&d->table, key, klen, val, vlen, lru_clock(now_ms))) {
+        d->tier_io_error = 1;
+        return 0;
+    }
+    return 1;
 }
 
 /* rh_each callback: free any owned object value (FLUSHDB teardown). */
@@ -425,9 +495,62 @@ size_t db_active_expire(db *d, uint64_t now_ms, int max_samples)
 
 #define DB_EVICT_SAMPLES 5
 
+/* Serialize the current hot value into the cold layer and replace the table
+ * entry with a compact tier-ref. The caller owns the key bytes. Returns 1 on
+ * offload, 0 when offload does not apply, -1 on tier failure (fail-closed). */
+static int db_tier_offload(db *d, const char *key, size_t klen,
+                           const char *val, size_t vlen, uint64_t now_ms)
+{
+    resp_buf sb;
+    uint64_t expire_ms = 0;
+    uint64_t rid = 0;
+    unsigned char ref[17];
+    const char *ev;
+    size_t el;
+    char *old_kv = NULL;
+    size_t old_vlen = 0;
+    int set_rc;
+
+    if (d->tier == NULL || obj_is_tier(val, vlen))
+        return 0;
+    resp_buf_init(&sb);
+    if (snapshot_dump_key(d, key, klen, &sb) != 0) {
+        resp_buf_free(&sb);
+        d->tier_io_error = 1;
+        return -1;
+    }
+    if (rh_get(&d->expires, key, klen, &ev, &el) && el == 8)
+        expire_ms = get_u64(ev);
+    if (tier_put(d->tier, (unsigned int)d->tier_db_index, key, klen,
+                 sb.data, sb.len, expire_ms, &rid) != 0) {
+        resp_buf_free(&sb);
+        d->tier_io_error = 1;
+        return -1;
+    }
+    obj_tier_pack((char *)ref, rid, expire_ms);
+    set_rc = rh_set_ex(&d->table, key, klen, (const char *)ref, sizeof(ref),
+                       lru_clock(now_ms), &old_kv, &old_vlen);
+    if (set_rc < 0) {
+        (void)tier_del(d->tier, rid);
+        resp_buf_free(&sb);
+        d->tier_io_error = 1;
+        return -1;
+    }
+    if (set_rc == 1) {
+        const char *oldv = old_kv + klen;
+        d->used_memory -=
+            entry_bytes(klen, old_vlen) + obj_extra_mem(oldv, old_vlen);
+        obj_free_value(oldv, old_vlen);
+        free(old_kv);
+    }
+    d->used_memory += entry_bytes(klen, sizeof(ref));
+    resp_buf_free(&sb);
+    return 1;
+}
+
 /* Sample up to DB_EVICT_SAMPLES keys and evict the one with the oldest
  * 24-bit LRU clock. Returns 1 if a key was evicted. */
-static int db_evict_one(db *d)
+static int db_evict_one(db *d, uint64_t now_ms)
 {
     const char *cand_key[DB_EVICT_SAMPLES];
     size_t cand_klen[DB_EVICT_SAMPLES];
@@ -454,7 +577,7 @@ static int db_evict_one(db *d)
         if (cand_meta[i] < cand_meta[oldest])
             oldest = i;
 
-    /* the sampled views dangle once we delete: copy the victim key first */
+    /* the sampled views dangle once we mutate: copy the victim key first */
     {
         char stackbuf[256];
         char *kb = stackbuf;
@@ -462,6 +585,27 @@ static int db_evict_one(db *d)
         if (kl > sizeof(stackbuf))
             kb = (char *)malloc(kl);
         memcpy(kb, cand_key[oldest], kl);
+        if (d->tier != NULL) {
+            const char *v;
+            size_t vl;
+            int rc;
+            if (rh_get(&d->table, kb, kl, &v, &vl))
+                rc = db_tier_offload(d, kb, kl, v, vl, now_ms);
+            else
+                rc = 0;
+            if (rc > 0) {
+                d->evicted_keys++;
+                if (kb != stackbuf)
+                    free(kb);
+                return 1;
+            }
+            if (rc < 0) {
+                /* tier failure: keep the hot value and stop eviction */
+                if (kb != stackbuf)
+                    free(kb);
+                return 0;
+            }
+        }
         db_del_kv(d, kb, kl);
         if (kb != stackbuf)
             free(kb);
@@ -470,18 +614,25 @@ static int db_evict_one(db *d)
     return 1;
 }
 
-static void db_evict_if_needed(db *d)
+static void db_evict_if_needed(db *d, uint64_t now_ms)
 {
     if (d->maxmemory == 0)
         return;
     while (d->used_memory > d->maxmemory && rh_size(&d->table) > 0) {
-        if (!db_evict_one(d))
+        if (!db_evict_one(d, now_ms))
             break;
     }
 }
 
 static const char OOM_MSG[] =
     "OOM command not allowed when used memory > 'maxmemory'.";
+static const char TIER_IO_MSG[] = "ERR tiered storage I/O error";
+
+static void tier_io_reply(resp_buf *out)
+{
+    out->len = 0;
+    resp_write_error(out, TIER_IO_MSG, sizeof(TIER_IO_MSG) - 1);
+}
 
 /* noeviction policy: reject writes while over the cap. */
 static int oom_blocked(db *d, resp_buf *out)
@@ -19208,7 +19359,7 @@ static void exec_transaction(session *s, resp_buf *out, uint64_t now_ms)
     }
     /* queued writes may have crossed maxmemory */
     if (s->d->maxmemory_policy == DB_POLICY_ALLKEYS_LRU)
-        db_evict_if_needed(s->d);
+        db_evict_if_needed(s->d, now_ms);
 done:
     session_queue_clear(s);
     session_watch_clear(s);
@@ -19223,6 +19374,7 @@ void session_execute_at(session *s, const resp_value *argv, size_t argc,
     size_t nlen = 0;
     uint16_t cmd_id = CMD_ID_UNKNOWN;
     uint64_t dirty_before = s->d->dirty;
+    s->d->tier_io_error = 0;
     if (argc > 0)
         (void)arg_str(&argv[0], &name, &nlen);
     if (name != NULL)
@@ -19254,11 +19406,15 @@ void session_execute_at(session *s, const resp_value *argv, size_t argc,
                 return;
             resp_write_bulk(out, sv, sl);
         } else {
+            if (s->d->tier_io_error) {
+                tier_io_reply(out);
+                return;
+            }
             resp_write_bulk(out, NULL, 0);
         }
         s->d->cmd_calls[CMD_GET]++;
         if (s->d->maxmemory_policy == DB_POLICY_ALLKEYS_LRU)
-            db_evict_if_needed(s->d);
+            db_evict_if_needed(s->d, now_ms);
         return;
     }
     if (cmd_id == CMD_SET && argc == 3 && s->authed && !s->in_multi &&
@@ -19282,6 +19438,10 @@ void session_execute_at(session *s, const resp_value *argv, size_t argc,
                 wrongtype(out);
                 return;
             }
+            if (s->d->tier_io_error) {
+                tier_io_reply(out);
+                return;
+            }
         }
         if (oom_blocked(s->d, out))
             return;
@@ -19297,7 +19457,7 @@ void session_execute_at(session *s, const resp_value *argv, size_t argc,
                        s->raw_cmd_len);
         s->aof_skip = 0;
         if (s->d->maxmemory_policy == DB_POLICY_ALLKEYS_LRU)
-            db_evict_if_needed(s->d);
+            db_evict_if_needed(s->d, now_ms);
         return;
     }
 
@@ -19462,6 +19622,10 @@ void session_execute_at(session *s, const resp_value *argv, size_t argc,
             s->slowlog_add(s->slowlog_ctx, argv, argc, pal_now_us() - t0,
                            now_ms);
     }
+    if (s->d->tier_io_error) {
+        tier_io_reply(out);
+        return;
+    }
     /* AOF: log the original command if it mutated the db (script effects
      * were already logged individually by redis.call) */
     if (s->d->dirty != dirty_before && s->aof_log != NULL && !s->aof_skip)
@@ -19470,7 +19634,7 @@ void session_execute_at(session *s, const resp_value *argv, size_t argc,
     s->aof_skip = 0;
     /* allkeys-lru eviction runs after write commands (and CONFIG SET) */
     if (s->d->maxmemory_policy == DB_POLICY_ALLKEYS_LRU)
-        db_evict_if_needed(s->d);
+        db_evict_if_needed(s->d, now_ms);
     return;
 
 bad_type:
