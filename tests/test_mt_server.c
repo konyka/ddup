@@ -287,8 +287,6 @@ static void test_blocked_commands_in_mt_mode(void)
 
     roundtrip(a, "*1\r\n$8\r\nSHUTDOWN\r\n",
               "-ERR command not supported in mt mode\r\n");
-    roundtrip(a, "*1\r\n$4\r\nSYNC\r\n",
-              "-ERR command not supported in mt mode\r\n");
     /* pattern subscriptions are not supported in mt mode (Phase 43) */
     roundtrip(a, "*2\r\n$10\r\nPSUBSCRIBE\r\n$6\r\nnews.*\r\n",
               "-ERR command not supported in mt mode\r\n");
@@ -481,6 +479,168 @@ static void test_mt_replica_partitions_full_sync(void)
     mt_ctx.running = 0;
     pal_thread_join(&master_thread, NULL);
     server_destroy(master);
+    pal_socket_cleanup();
+}
+
+static void test_mt_master_serves_replica_full_sync(void)
+{
+    mt_server *ms;
+    server *replica;
+    server_thread_ctx rt;
+    pal_thread replica_thread;
+    pal_socket_t mc, c;
+    char k0[32], k1[32];
+    char req[256];
+
+    DD_CHECK_EQ_INT(0, pal_socket_init());
+    pick_key_for_worker(0, 2, k0, sizeof(k0));
+    pick_key_for_worker(1, 2, k1, sizeof(k1));
+
+    ms = mt_server_create("127.0.0.1", 0, 2);
+    DD_CHECK(ms != NULL);
+    DD_CHECK_EQ_INT(0, mt_server_start(ms));
+
+    mc = connect_client(mt_server_port(ms));
+    snprintf(req, sizeof(req), "*3\r\n$3\r\nSET\r\n$%zu\r\n%s\r\n$2\r\nv0\r\n",
+             strlen(k0), k0);
+    roundtrip(mc, req, "+OK\r\n");
+    snprintf(req, sizeof(req), "*3\r\n$3\r\nSET\r\n$%zu\r\n%s\r\n$2\r\nv1\r\n",
+             strlen(k1), k1);
+    roundtrip(mc, req, "+OK\r\n");
+    pal_close(mc);
+
+    replica = server_create("127.0.0.1", 0);
+    DD_CHECK(replica != NULL);
+    rt.srv = replica;
+    rt.running = 1;
+    DD_CHECK_EQ_INT(0,
+                    pal_thread_create(&replica_thread, server_thread_main,
+                                      &rt));
+    DD_CHECK_EQ_INT(0,
+                    server_replicaof(replica, "127.0.0.1",
+                                     mt_server_port(ms)));
+
+    pal_sleep_ms(200);
+    c = connect_client(server_port(replica));
+    wait_for_bulk(c, k0, "$2\r\nv0\r\n");
+    wait_for_bulk(c, k1, "$2\r\nv1\r\n");
+
+    mc = connect_client(mt_server_port(ms));
+    snprintf(req, sizeof(req), "*3\r\n$3\r\nSET\r\n$%zu\r\n%s\r\n$2\r\nv2\r\n",
+             strlen(k0), k0);
+    roundtrip(mc, req, "+OK\r\n");
+    pal_close(mc);
+    wait_for_bulk(c, k0, "$2\r\nv2\r\n");
+    pal_close(c);
+
+    mt_server_stop(ms);
+    mt_server_destroy(ms);
+    rt.running = 0;
+    pal_thread_join(&replica_thread, NULL);
+    server_destroy(replica);
+    pal_socket_cleanup();
+}
+
+static void test_mt_replication_forwards_mutations(void)
+{
+    mt_server *ms;
+    server *replica;
+    server_thread_ctx rt;
+    pal_thread replica_thread;
+    pal_socket_t mc, c;
+    char k0[32], k1[32];
+    char req[256];
+
+    DD_CHECK_EQ_INT(0, pal_socket_init());
+    pick_key_for_worker(0, 2, k0, sizeof(k0));
+    pick_key_for_worker(1, 2, k1, sizeof(k1));
+
+    ms = mt_server_create("127.0.0.1", 0, 2);
+    DD_CHECK(ms != NULL);
+    DD_CHECK_EQ_INT(0, mt_server_start(ms));
+
+    replica = server_create("127.0.0.1", 0);
+    DD_CHECK(replica != NULL);
+    rt.srv = replica;
+    rt.running = 1;
+    DD_CHECK_EQ_INT(0,
+                    pal_thread_create(&replica_thread, server_thread_main,
+                                      &rt));
+    DD_CHECK_EQ_INT(0,
+                    server_replicaof(replica, "127.0.0.1",
+                                     mt_server_port(ms)));
+    pal_sleep_ms(200);
+
+    mc = connect_client(mt_server_port(ms));
+    c = connect_client(server_port(replica));
+
+    /* Baseline: routed SETs on both workers reach the replica. */
+    snprintf(req, sizeof(req), "*3\r\n$3\r\nSET\r\n$%zu\r\n%s\r\n$2\r\nv0\r\n",
+             strlen(k0), k0);
+    roundtrip(mc, req, "+OK\r\n");
+    snprintf(req, sizeof(req), "*3\r\n$3\r\nSET\r\n$%zu\r\n%s\r\n$2\r\nv1\r\n",
+             strlen(k1), k1);
+    roundtrip(mc, req, "+OK\r\n");
+    wait_for_bulk(c, k0, "$2\r\nv0\r\n");
+    wait_for_bulk(c, k1, "$2\r\nv1\r\n");
+
+    /* MULTI/EXEC is applied as individual replicated commands. */
+    roundtrip(mc, "*1\r\n$5\r\nMULTI\r\n", "+OK\r\n");
+    snprintf(req, sizeof(req), "*3\r\n$3\r\nSET\r\n$%zu\r\n%s\r\n$2\r\nv2\r\n",
+             strlen(k1), k1);
+    roundtrip(mc, req, "+QUEUED\r\n");
+    roundtrip(mc, "*1\r\n$4\r\nEXEC\r\n", "*1\r\n+OK\r\n");
+    wait_for_bulk(c, k1, "$2\r\nv2\r\n");
+
+    /* MOVE to db 1 must replicate. */
+    snprintf(req, sizeof(req), "*3\r\n$4\r\nMOVE\r\n$%zu\r\n%s\r\n$1\r\n1\r\n",
+             strlen(k1), k1);
+    roundtrip(mc, req, ":1\r\n");
+    wait_for_bulk(c, k1, "$-1\r\n");
+    roundtrip(c, "*2\r\n$6\r\nSELECT\r\n$1\r\n1\r\n", "+OK\r\n");
+    wait_for_bulk(c, k1, "$2\r\nv2\r\n");
+    roundtrip(c, "*2\r\n$6\r\nSELECT\r\n$1\r\n0\r\n", "+OK\r\n");
+
+    /* SWAPDB is broadcast on the master but must be replicated once. */
+    roundtrip(mc, "*2\r\n$6\r\nSELECT\r\n$1\r\n0\r\n", "+OK\r\n");
+    snprintf(req, sizeof(req), "*3\r\n$3\r\nSET\r\n$%zu\r\n%s\r\n$2\r\nd0\r\n",
+             strlen(k0), k0);
+    roundtrip(mc, req, "+OK\r\n");
+    roundtrip(mc, "*2\r\n$6\r\nSELECT\r\n$1\r\n1\r\n", "+OK\r\n");
+    snprintf(req, sizeof(req), "*3\r\n$3\r\nSET\r\n$%zu\r\n%s\r\n$2\r\nd1\r\n",
+             strlen(k1), k1);
+    roundtrip(mc, req, "+OK\r\n");
+    roundtrip(mc, "*3\r\n$6\r\nSWAPDB\r\n$1\r\n0\r\n$1\r\n1\r\n", "+OK\r\n");
+    wait_for_bulk(c, k0, "$-1\r\n");
+    wait_for_bulk(c, k1, "$2\r\nd1\r\n");
+    roundtrip(c, "*2\r\n$6\r\nSELECT\r\n$1\r\n1\r\n", "+OK\r\n");
+    wait_for_bulk(c, k1, "$-1\r\n");
+    wait_for_bulk(c, k0, "$2\r\nd0\r\n");
+    roundtrip(c, "*2\r\n$6\r\nSELECT\r\n$1\r\n0\r\n", "+OK\r\n");
+
+    /* FLUSHALL clears every db on the replica. */
+    roundtrip(mc, "*1\r\n$8\r\nFLUSHALL\r\n", "+OK\r\n");
+    wait_for_bulk(c, k1, "$-1\r\n");
+    roundtrip(c, "*2\r\n$6\r\nSELECT\r\n$1\r\n1\r\n", "+OK\r\n");
+    wait_for_bulk(c, k0, "$-1\r\n");
+    roundtrip(c, "*2\r\n$6\r\nSELECT\r\n$1\r\n0\r\n", "+OK\r\n");
+    roundtrip(mc, "*2\r\n$6\r\nSELECT\r\n$1\r\n0\r\n", "+OK\r\n");
+
+    /* FLUSHDB flushes only the selected db. */
+    snprintf(req, sizeof(req), "*3\r\n$3\r\nSET\r\n$%zu\r\n%s\r\n$2\r\nfd\r\n",
+             strlen(k0), k0);
+    roundtrip(mc, req, "+OK\r\n");
+    wait_for_bulk(c, k0, "$2\r\nfd\r\n");
+    roundtrip(mc, "*1\r\n$7\r\nFLUSHDB\r\n", "+OK\r\n");
+    wait_for_bulk(c, k0, "$-1\r\n");
+
+    pal_close(mc);
+    pal_close(c);
+    mt_server_stop(ms);
+    mt_server_destroy(ms);
+    rt.running = 0;
+    pal_thread_join(&replica_thread, NULL);
+    server_destroy(replica);
     pal_socket_cleanup();
 }
 
@@ -1938,6 +2098,8 @@ int main(void)
     DD_RUN(test_cluster_control_plane_mt);
     DD_RUN(test_cluster_state_propagates_to_workers);
     DD_RUN(test_mt_replica_partitions_full_sync);
+    DD_RUN(test_mt_master_serves_replica_full_sync);
+    DD_RUN(test_mt_replication_forwards_mutations);
     DD_RUN(test_pubsub_cross_worker);
     DD_RUN(test_unsubscribe_stops_delivery);
     DD_RUN(test_pubsub_conn_close_unsubscribes);

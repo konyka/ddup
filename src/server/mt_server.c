@@ -148,6 +148,8 @@ typedef struct mt_sub_entry {
 #define MT_TASK_WATCH_CLEANUP 9 /* reuse WATCH task to release owner refs */
 #define MT_TASK_CLUSTER_SYNC 10 /* fire-and-forget cluster metadata copy */
 #define MT_TASK_RESTORE 11     /* full-sync restore one key on a worker */
+#define MT_TASK_REPL_STREAM 12 /* fire-and-forget central replication append */
+#define MT_TASK_REPL_SNAPSHOT 13 /* serialize one worker's db for full sync */
 #define MT_MAX_LOGICAL_DBS 16
 
 typedef struct mt_task {
@@ -163,6 +165,7 @@ typedef struct mt_task {
     int kind;             /* MT_TASK_* */
     int pending_owned;    /* home pending count held by this task */
     int db_index;         /* logical db the task executes against (SELECT) */
+    int repl_worker_id;   /* MT_TASK_REPL_SNAPSHOT source worker id */
     uint64_t task_expire_ms; /* MT_TASK_RESTORE absolute expiry (0 = none) */
     cluster_state *cluster_state; /* MT_TASK_CLUSTER_SYNC payload */
     /* WATCH result: 2 slots per key (version, epoch), filled on the owner */
@@ -264,7 +267,10 @@ struct mt_server {
     int fail_completion_worker;
     int fail_completion_consumed;
     int cluster_enabled; /* worker 0 owns the cluster bus/gossip */
+    int replica_mode;    /* worker 0 is an outbound replica link */
     int snapshot_pending; /* replica full-sync restore tasks not yet done */
+    int snapshot_ser_pending; /* master full-sync snapshot tasks not yet done */
+    mt_task **snapshot_ser_tasks; /* completed snapshots, indexed by worker id */
 };
 
 /* Broadcast group for aggregate commands (DBSIZE/FLUSHDB): the home worker
@@ -281,12 +287,155 @@ struct mt_agg {
     int err;        /* any part replied with an error */
     int db_index;   /* logical db for DBSIZE/FLUSHDB (SELECT-aware) */
     info_stats *stats; /* INFO: summed machine-format parts (or NULL) */
+    char *raw;      /* copied command bytes for aggregate mutation replay */
+    size_t rawlen;
     int fanout_done;
     int abandoned;
     int finished;
 };
 
 static void mt_untrack_abandoned_agg(mt_server *ms, mt_agg *agg);
+static void mt_blobs_free(mt_cmd_blob *blobs, size_t n);
+static mt_task *mt_task_new(void *conn, worker *home, uint64_t seq,
+                            uint32_t span, uint32_t ncmds, mt_cmd_blob *cmds);
+static void mt_task_free(void *ptr);
+static mt_cmd_blob *mt_blob_one(const char *raw, size_t len);
+static int mt_push_task(worker *self, mt_spsc *q, mt_task *t,
+                        worker *target);
+static void mt_drain_completions(worker *w);
+
+/* Forward one applied mutation to the worker-0 central replication stream.
+ * Called on the executing worker thread; the fire-and-forget task preserves
+ * per-worker order through that worker's SPSC inbox. */
+static void mt_repl_stream_forward(void *ctx, int db_index, const char *raw,
+                                   size_t raw_len)
+{
+    worker *self = (worker *)ctx;
+    mt_server *ms;
+    mt_task *t;
+    mt_cmd_blob *blob;
+
+    if (self == NULL || raw == NULL || raw_len == 0)
+        return;
+    ms = self->ms;
+    if (ms == NULL || ms->nworkers == 0)
+        return;
+    if (ms->replica_mode)
+        return;
+    blob = mt_blob_one(raw, raw_len);
+    if (blob == NULL)
+        return;
+    t = mt_task_new(NULL, &ms->workers[0], 0, 1, 1, blob);
+    if (t == NULL || t->cmds == NULL) {
+        if (t != NULL)
+            mt_task_free(t);
+        else
+            mt_blobs_free(blob, 1);
+        return;
+    }
+    t->kind = MT_TASK_REPL_STREAM;
+    t->db_index = db_index;
+    (void)mt_push_task(self, &ms->workers[0].inbox[self->id], t,
+                       &ms->workers[0]);
+}
+
+/* Master full-sync snapshot: one framed DDUPMT01 snapshot containing every
+ * worker's DDUP0002 snapshot. Replica loaders merge the shards by db. Each
+ * worker serializes its own db on its own event loop (worker 0 is serialized
+ * inline here), so no follower db is ever read from another thread. */
+static int mt_repl_snapshot_serialize(void *ctx, resp_buf *out)
+{
+    mt_server *ms = (mt_server *)ctx;
+    worker *leader;
+    resp_buf local;
+    mt_task **tasks;
+    const char **bufs;
+    size_t *lens;
+    int ndbs, i;
+    int failed = 0;
+    int rc = -1;
+
+    if (ms == NULL || ms->nworkers == 0 || out == NULL)
+        return -1;
+    leader = &ms->workers[0];
+    ndbs = server_ndbs(leader->srv);
+    if (ndbs <= 0)
+        return -1;
+
+    tasks = (mt_task **)calloc((size_t)ms->nworkers, sizeof(*tasks));
+    bufs = (const char **)calloc((size_t)ms->nworkers, sizeof(*bufs));
+    lens = (size_t *)calloc((size_t)ms->nworkers, sizeof(*lens));
+    if (tasks == NULL || bufs == NULL || lens == NULL)
+        goto done;
+
+    resp_buf_init(&local);
+    if (snapshot_serialize_multi(leader->srv, server_select_db, ndbs,
+                                 &local) != 0) {
+        resp_buf_free(&local);
+        goto done;
+    }
+    bufs[0] = local.data;
+    lens[0] = local.len;
+
+    ms->snapshot_ser_pending = 0;
+    ms->snapshot_ser_tasks = tasks;
+    for (i = 1; i < ms->nworkers; i++) {
+        mt_task *t = mt_task_new(NULL, leader, 0, 1, 0, NULL);
+        if (t == NULL) {
+            failed = 1;
+            break;
+        }
+        t->kind = MT_TASK_REPL_SNAPSHOT;
+        t->repl_worker_id = i;
+        ms->snapshot_ser_pending++;
+        if (mt_push_task(leader, &ms->workers[i].inbox[leader->id], t,
+                         &ms->workers[i]) != 0) {
+            ms->snapshot_ser_pending--;
+            failed = 1;
+        }
+    }
+
+    while (ms->snapshot_ser_pending > 0 && leader->running) {
+        mt_drain_completions(leader);
+        pal_sleep_ms(1);
+    }
+
+    if (failed || ms->snapshot_ser_pending != 0) {
+        for (i = 1; i < ms->nworkers; i++) {
+            if (tasks[i] != NULL)
+                mt_task_free(tasks[i]);
+            tasks[i] = NULL;
+        }
+        ms->snapshot_ser_tasks = NULL;
+        ms->snapshot_ser_pending = 0;
+        resp_buf_free(&local);
+        goto done;
+    }
+
+    for (i = 1; i < ms->nworkers; i++) {
+        if (tasks[i] == NULL || tasks[i]->reply.len == 0) {
+            failed = 1;
+            break;
+        }
+        bufs[i] = tasks[i]->reply.data;
+        lens[i] = tasks[i]->reply.len;
+    }
+    if (!failed)
+        rc = snapshot_serialize_multi_buffers(bufs, lens, ms->nworkers, out);
+
+    for (i = 1; i < ms->nworkers; i++) {
+        if (tasks[i] != NULL)
+            mt_task_free(tasks[i]);
+    }
+    ms->snapshot_ser_tasks = NULL;
+    ms->snapshot_ser_pending = 0;
+    resp_buf_free(&local);
+done:
+    free(tasks);
+    free(bufs);
+    free(lens);
+    return rc;
+}
 
 /* Per-conn routing state (stored via server_conn_set_mt_state). */
 typedef struct mt_conn_state {
@@ -339,12 +488,16 @@ static int mt_route_txn(worker *, void *, mt_conn_state *,
                         uint16_t, int, uint64_t, resp_buf *);
 static void mt_replay_deferred(worker *, void *, mt_conn_state *);
 static void mt_exec_task(worker *, mt_task *);
+static void mt_drain_completions(worker *w);
 static void mt_cluster_sync(worker *leader);
 static void mt_route_replicaof(worker *home, const resp_value *argv,
                                size_t argc, resp_buf *out);
 static int mt_route(void *, void *, session *, const resp_value *, size_t,
                     const char *, size_t, resp_buf *);
 static int mt_repl_snapshot_load(void *ctx, const char *buf, size_t len);
+static int mt_repl_snapshot_serialize(void *ctx, resp_buf *out);
+static void mt_repl_stream_forward(void *ctx, int db_index, const char *raw,
+                                   size_t raw_len);
 
 static void mt_blobs_free(mt_cmd_blob *blobs, size_t n)
 {
@@ -472,6 +625,7 @@ static void mt_agg_free(mt_agg *agg)
         return;
     mt_untrack_abandoned_agg(agg->home->ms, agg);
     agg->finished = 1;
+    free(agg->raw);
     free(agg->stats);
     free(agg);
 }
@@ -1210,6 +1364,11 @@ static void mt_agg_finish(server *srv, void *conn, mt_conn_state *st,
 {
     mt_task *fin = mt_task_new(conn, agg->home, agg->seq, 1, 0, NULL);
     if (fin != NULL) {
+        if (!agg->err && agg->raw != NULL &&
+            (agg->cmd == CMD_FLUSHDB || agg->cmd == CMD_FLUSHALL ||
+             agg->cmd == CMD_SWAPDB))
+            server_repl_stream_forward(agg->home->srv, agg->db_index,
+                                       agg->raw, agg->rawlen);
         if (agg->err)
             resp_write_error(&fin->reply,
                              "ERR command failed on a worker", 29);
@@ -1244,7 +1403,6 @@ static int mt_is_blocked(uint16_t cmd)
 {
     switch (cmd) {
     case CMD_SHUTDOWN:
-    case CMD_SYNC:
     case CMD_MIGRATE:
     case CMD_ASKING:
     case CMD_BLPOP:
@@ -1589,7 +1747,7 @@ static int mt_classify(int nworkers, uint16_t cmd, const resp_value *argv,
     if (mt_is_blocked(cmd))
         return MT_BLOCKED;
     if (cmd == CMD_CLUSTER || cmd == CMD_REPLICAOF ||
-        cmd == CMD_SLAVEOF)
+        cmd == CMD_SLAVEOF || cmd == CMD_SYNC || cmd == CMD_PSYNC)
         return 0; /* worker 0 owns the cluster/replication control plane */
     if (mt_is_single_key(cmd)) {
         size_t keyidx = (cmd == CMD_XGROUP || cmd == CMD_XINFO) ? 2u : 1u;
@@ -1719,20 +1877,24 @@ static void mt_swapdb_exec(worker *w, int log_db_index, const resp_value *v,
  * routed path (which only sees one selected db), a stack session with the
  * selection hook gives MOVE access to every logical db on this worker, so
  * the target-db argument is honored exactly like the legacy path. */
-static void mt_move_exec(worker *w, int log_db_index, const resp_value *v,
-                         resp_buf *dst)
+static int mt_move_exec(worker *w, int log_db_index, const resp_value *v,
+                        resp_buf *dst)
 {
     session sess;
     uint64_t dirty_before;
+    int changed = 0;
     session_init(&sess, server_db_at(w->srv, log_db_index));
     sess.sel_ctx = w->srv;
     sess.sel_fn = server_select_db;
     sess.sel_ndbs = server_ndbs(w->srv);
     dirty_before = sess.d->dirty;
     session_execute_at(&sess, v->items, v->count, dst, pal_wall_ms());
-    if (sess.d->dirty != dirty_before)
+    if (sess.d->dirty != dirty_before) {
         server_aof_log_cmd(w->srv, log_db_index, v->items, v->count);
+        changed = 1;
+    }
     session_release(&sess);
+    return changed;
 }
 
 /* Execute INFO __STATS__ on this worker with a stack session that sees all
@@ -1821,6 +1983,13 @@ static int mt_route_aggregate(worker *home, void *conn,
         resp_buf_free(&local);
         st->seq_write++;
         return 1;
+    }
+    if (cmd == CMD_FLUSHDB || cmd == CMD_FLUSHALL || cmd == CMD_SWAPDB) {
+        agg->raw = (char *)malloc(rawlen);
+        if (agg->raw != NULL) {
+            memcpy(agg->raw, raw, rawlen);
+            agg->rawlen = rawlen;
+        }
     }
     agg->conn = conn;
     agg->home = home;
@@ -2137,8 +2306,11 @@ static void mt_exec_on_db(server *srv, mt_task *t, arena *ar)
         dirty_before = d->dirty;
         command_execute_at(d, v.items, v.count, &t->reply, pal_wall_ms());
         /* EXEC logs the applied commands individually (no MULTI wrapper) */
-        if (d->dirty != dirty_before)
+        if (d->dirty != dirty_before) {
             server_aof_log_cmd(srv, t->db_index, v.items, v.count);
+            server_repl_stream_forward(srv, t->db_index,
+                                       t->cmds[i].raw, t->cmds[i].len);
+        }
     }
 }
 
@@ -2721,6 +2893,44 @@ static int mt_route(void *ctx, void *conn, session *sess,
         server_conn_set_mt_state(conn, st);
     }
 
+    /* A replica handshake must live on worker 0, where the aggregated
+     * snapshot serializer and the central downstream backlog own the
+     * connection. Move clean handshake conns from any other worker. */
+    if ((cmd == CMD_SYNC || cmd == CMD_PSYNC) && home->id != 0) {
+        static const char sync_migrate_msg[] =
+            "-ERR SYNC must run on worker 0\r\n";
+        mt_batch_flush(home, conn, st);
+        if (server_backend(home->srv) != SERVER_BACKEND_IOCP &&
+            server_backend(home->srv) != SERVER_BACKEND_IOURING_OP &&
+            !sess->repl_link && !st->migrated && st->pending == 0 &&
+            st->reorder == NULL && st->batch_n == 0 && !st->in_multi &&
+            st->nwatch == 0 && st->subs == NULL && !st->closing &&
+            st->deferred_head == NULL && st->watch_pending == 0) {
+            st->migrated = 1;
+            if (server_conn_detach(home->srv, conn) == 0) {
+                mt_task *t = mt_task_new(conn, &home->ms->workers[0], 0, 1,
+                                         0, NULL);
+                if (t != NULL) {
+                    t->kind = MT_TASK_MIGRATE;
+                    mt_push_task(home,
+                                 &home->ms->workers[0].migrate[home->id],
+                                 t, &home->ms->workers[0]);
+                    return 2;
+                }
+                (void)server_conn_rehome(home->srv, conn);
+                if (server_conn_adopt(home->srv, conn) != 0) {
+                    server_conn_free_now(home->srv, conn);
+                    return 2;
+                }
+            }
+            st->migrated = 0;
+        }
+        seq = st->seq_next++;
+        mt_reply_local(home, conn, st, seq, sync_migrate_msg,
+                       sizeof(sync_migrate_msg) - 1, out);
+        return 1;
+    }
+
     if (cmd == CMD_RESET) {
         mt_batch_flush(home, conn, st);
         st->in_multi = 0;
@@ -3212,6 +3422,7 @@ static void mt_route_replicaof(worker *home, const resp_value *argv,
     if (mt_ci_equal(argv[1].str, argv[1].len, "NO") &&
         mt_ci_equal(argv[2].str, argv[2].len, "ONE")) {
         (void)server_replicaof(leader, NULL, 0);
+        ms->replica_mode = 0;
         resp_write_simple_string(out, "OK", 2);
         return;
     }
@@ -3237,6 +3448,20 @@ static void mt_route_replicaof(worker *home, const resp_value *argv,
 static void mt_exec_task(worker *w, mt_task *t)
 {
     uint32_t ci;
+    if (t->kind == MT_TASK_REPL_STREAM) {
+        if (t->ncmds == 1 && t->cmds != NULL)
+            server_repl_stream_append_db(w->srv, t->db_index,
+                                         t->cmds[0].raw, t->cmds[0].len);
+        mt_task_free(t);
+        return;
+    }
+    if (t->kind == MT_TASK_REPL_SNAPSHOT) {
+        (void)snapshot_serialize_multi(w->srv, server_select_db,
+                                       server_ndbs(w->srv), &t->reply);
+        t->repl_worker_id = w->id;
+        (void)mt_push_task(w, &t->home->completions[w->id], t, t->home);
+        return;
+    }
     if (t->kind == MT_TASK_CLUSTER_SYNC) {
         if (t->cluster_state != NULL)
             cluster_state_restore(server_db(w->srv), t->cluster_state);
@@ -3387,7 +3612,10 @@ static void mt_exec_task(worker *w, mt_task *t)
             if (v.count == 3 && v.items[0].str != NULL &&
                 v.items[0].len == 4 &&
                 mt_ci_equal(v.items[0].str, v.items[0].len, "move")) {
-                mt_move_exec(w, t->db_index, &v, &t->reply);
+                if (mt_move_exec(w, t->db_index, &v, &t->reply))
+                    server_repl_stream_forward(w->srv, t->db_index,
+                                               t->cmds[ci].raw,
+                                               t->cmds[ci].len);
                 continue;
             }
             /* INFO __STATS__ (aggregation fan-out): machine-format snapshot
@@ -3415,6 +3643,10 @@ static void mt_exec_task(worker *w, mt_task *t)
              * worker's own AOF */
             if (d->dirty != dirty_before)
                 server_aof_log_cmd(w->srv, t->db_index, v.items, v.count);
+            if (d->dirty != dirty_before && !is_cluster && t->agg == NULL)
+                server_repl_stream_forward(w->srv, t->db_index,
+                                           t->cmds[ci].raw,
+                                           t->cmds[ci].len);
             if (is_cluster && w->id == 0)
                 mt_cluster_sync(w);
         }
@@ -3491,6 +3723,20 @@ static void mt_drain_completions(worker *w)
             if (t == NULL)
                 break;
             n++;
+            if (t->kind == MT_TASK_REPL_SNAPSHOT) {
+                if (t->home == w && w->ms->snapshot_ser_tasks != NULL &&
+                    w->ms->snapshot_ser_pending > 0) {
+                    int idx = t->repl_worker_id;
+                    if (idx > 0 && idx < w->ms->nworkers)
+                        w->ms->snapshot_ser_tasks[idx] = t;
+                    else
+                        mt_task_free(t);
+                    w->ms->snapshot_ser_pending--;
+                } else {
+                    mt_task_free(t);
+                }
+                continue;
+            }
             conn = t->conn;
             st = (mt_conn_state *)server_conn_mt_state(conn);
             if (t->kind == MT_TASK_RESTORE) {
@@ -3812,6 +4058,11 @@ mt_server *mt_server_create_ex(const char *host, uint16_t port, int nworkers,
         server_set_route(w->srv, mt_route, mt_route_flush_cb,
                          mt_state_free_cb, w);
         server_set_mt_close(w->srv, mt_conn_close);
+        server_set_repl_centralized(w->srv, 1);
+        server_set_repl_stream_forward(w->srv, mt_repl_stream_forward, w);
+        if (i == 0)
+            server_set_repl_snapshot_serialize_hook(
+                w->srv, mt_repl_snapshot_serialize, ms);
     }
     return ms;
 }
@@ -4020,7 +4271,10 @@ int mt_server_replicaof(mt_server *ms, const char *host, uint16_t port)
         return -1;
     leader = ms->workers[0].srv;
     server_set_repl_snapshot_hook(leader, mt_repl_snapshot_load, ms);
-    return server_replicaof(leader, host, port);
+    if (server_replicaof(leader, host, port) != 0)
+        return -1;
+    ms->replica_mode = 1;
+    return 0;
 }
 
 int mt_server_enable_tls(mt_server *ms, const char *host, uint16_t port,
