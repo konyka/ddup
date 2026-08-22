@@ -96,7 +96,9 @@ typedef struct obj_hash {
     int encoding;        /* OBJ_HASH_LP / OBJ_HASH_HT */
     unsigned char *lp;   /* LP payload; NULL in HT mode */
     rh_table fields;     /* HT payload; uninitialized in LP mode */
+    rh_table expires;    /* field -> absolute expiry ms (8-byte LE) */
     uint64_t mem;        /* sizeof(obj_hash) + payload cost, incremental */
+    uint64_t ttl_mem;    /* incremental cost of the expires table */
     unsigned char ftmp[24]; /* scratch for int-encoded field materialization */
     unsigned char vtmp[24]; /* scratch for int-encoded value materialization */
 } obj_hash;
@@ -115,6 +117,37 @@ int obj_hash_set(obj_hash *h, const char *f, size_t flen, const char *v,
 int obj_hash_get(obj_hash *h, const char *f, size_t flen, const char **v,
                  size_t *vlen);
 int obj_hash_del(obj_hash *h, const char *f, size_t flen);
+
+/* Hash-field expiration aware variants. `now_ms` is the absolute wall-clock
+ * millisecond snapshot for this command. Expired fields are lazily deleted;
+ * the key is not deleted here (the command layer owns that decision). */
+int obj_hash_get_at(obj_hash *h, const char *f, size_t flen, uint64_t now_ms,
+                    const char **v, size_t *vlen);
+int obj_hash_set_at(obj_hash *h, const char *f, size_t flen, const char *v,
+                    size_t vlen, uint64_t now_ms, int keep_ttl);
+int obj_hash_del_at(obj_hash *h, const char *f, size_t flen, uint64_t now_ms);
+
+/* Returns 1 and stores the absolute expiry in *expire_ms when the field has
+ * a TTL (whether or not it has already expired). 0 = no TTL, -1 = no field. */
+int obj_hash_expire_get(obj_hash *h, const char *f, size_t flen,
+                        uint64_t *expire_ms);
+/* Sets the absolute expiry for a live field. Returns 1 on success, 0 when
+ * the field does not exist, -1 when the expiry cannot be stored. */
+int obj_hash_expire_set(obj_hash *h, const char *f, size_t flen,
+                        uint64_t expire_ms, uint64_t now_ms);
+/* Removes a field's TTL. Returns 1 when removed, 0 when no TTL was set,
+ * -1 when the field does not exist. */
+int obj_hash_expire_persist(obj_hash *h, const char *f, size_t flen,
+                            uint64_t now_ms);
+/* Returns 1 and stores remaining TTL in *ttl_ms for a live field with a TTL;
+ * 0 for a live field without a TTL; -1 when the field is missing/expired. */
+int obj_hash_ttl(obj_hash *h, const char *f, size_t flen, uint64_t now_ms,
+                 uint64_t *ttl_ms);
+/* Delete every expired field. Callers needing a whole-hash view should call
+ * this first; single-field operations use the *_at variants above. */
+void obj_hash_purge_expired(obj_hash *h, uint64_t now_ms);
+uint64_t obj_hash_len_at(obj_hash *h, uint64_t now_ms);
+void obj_hash_each_at(obj_hash *h, rh_iter_fn fn, void *ctx, uint64_t now_ms);
 
 /* Visit every field/value pair. Callback arguments borrow internal
  * storage and are valid only for the duration of the callback. */

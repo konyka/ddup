@@ -9,7 +9,7 @@
 
 | 类别 | 数量 |
 | --- | --- |
-| 缺失顶层命令 | 48 |
+| 缺失顶层命令 | 36 |
 | 整体缺失容器 | 3 |
 | 已实现容器内缺失子命令 | 3 |
 
@@ -19,6 +19,14 @@
 2. Redis 7.4/8.0 hash 字段级 TTL 与 `HGETDEL/HGETEX/HSETEX`（13 个命令）。
 3. Redis 8.2+ 的 stream 精确删除/PEL 控制、集合基数、list 多元素移动、
    限流计数器和运维/诊断命令。
+
+## 已实现增量
+
+- Hash 字段级 TTL 全族：`HGETDEL/HGETEX/HSETEX` 与
+  `HEXPIRE/HPEXPIRE/HEXPIREAT/HPEXPIREAT/HPERSIST/HTTL/HPTTL/
+  HEXPIRETIME/HPEXPIRETIME`。`obj_hash` 增加独立 `expires` 表，字段
+  TTL 为绝对毫秒时间戳；读路径惰性删除过期字段，全量视图先 purge，
+  空 hash 自动删除 key。
 
 ## 实现策略（性能优先）
 
@@ -45,7 +53,7 @@
 ## 审计基线（机器断言，勿手改格式）
 
 <!-- AUDIT-BASELINE-START
-missing_top: arcount ardel ardelrange arget argetrange argrep arinfo arinsert arlastitems arlen armget armset arnext arop arring arscan arseek arset backup blmovem delex digest hexpire hexpireat hexpiretime hgetdel hgetex himport hotkeys hpersist hpexpire hpexpireat hpexpiretime hpttl hsetex httl increx lmovem msetex sdiffcard sflush sunioncard trimslots xackdel xcfgset xdelex xidmprecord xnack
+missing_top: arcount ardel ardelrange arget argetrange argrep arinfo arinsert arlastitems arlen armget armset arnext arop arring arscan arseek arset backup blmovem delex digest himport hotkeys increx lmovem msetex sdiffcard sflush sunioncard trimslots xackdel xcfgset xdelex xidmprecord xnack
 missing_containers: backup himport hotkeys
 missing_sub: cluster migration
 missing_sub: cluster slot-stats

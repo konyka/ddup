@@ -10095,6 +10095,131 @@ bad:
     resp_write_error(out, "ERR invalid argument type", 24);
 }
 
+static int hash_parse_field_list(const resp_value *argv, size_t argc,
+                                 size_t fields_idx, size_t args_per_field,
+                                 size_t *num_fields, size_t *first_field,
+                                 resp_buf *out)
+{
+    const char *p;
+    size_t pl;
+    long long nf;
+    static const char NEED_FIELDS[] =
+        "ERR Mandatory argument FIELDS is missing or not at the right "
+        "position";
+    static const char NEED_COUNT[] =
+        "ERR The `numfields` parameter must match the number of arguments";
+    if (fields_idx == 0 || fields_idx + 2 >= argc) {
+        resp_write_error(out, NEED_FIELDS, sizeof(NEED_FIELDS) - 1);
+        return -1;
+    }
+    if (!arg_str(&argv[fields_idx + 1], &p, &pl) ||
+        !parse_i64(p, pl, &nf) || nf <= 0) {
+        static const char E[] = "ERR Number of fields must be a positive integer";
+        resp_write_error(out, E, sizeof(E) - 1);
+        return -1;
+    }
+    if ((unsigned long long)nf !=
+            (argc - fields_idx - 2) / args_per_field ||
+        (argc - fields_idx - 2) % args_per_field != 0) {
+        resp_write_error(out, NEED_COUNT, sizeof(NEED_COUNT) - 1);
+        return -1;
+    }
+    *num_fields = (size_t)nf;
+    *first_field = fields_idx + 2;
+    return 0;
+}
+
+static int hash_parse_expire(const resp_value *argv, size_t argc, size_t *pos,
+                             int is_hsetex, uint64_t now_ms,
+                             uint64_t *expire_ms, int *expire_opt,
+                             resp_buf *out)
+{
+    int flag = 0;
+    *expire_opt = 0;
+    *expire_ms = 0;
+    while (*pos < argc) {
+        const char *opt;
+        size_t optl;
+        if (!arg_str(&argv[*pos], &opt, &optl))
+            return -1;
+        if (ci_equal(opt, optl, "FIELDS"))
+            return 0;
+        if (is_hsetex && ci_equal(opt, optl, "KEEPTTL")) {
+            if (flag)
+                goto err_expire;
+            flag = 1;
+            *expire_opt = 1; /* KEEPTTL */
+            (*pos)++;
+            continue;
+        }
+        if (!is_hsetex && ci_equal(opt, optl, "PERSIST")) {
+            if (flag)
+                goto err_expire;
+            flag = 1;
+            *expire_opt = 2; /* PERSIST */
+            (*pos)++;
+            continue;
+        }
+        if (ci_equal(opt, optl, "EX") || ci_equal(opt, optl, "PX") ||
+            ci_equal(opt, optl, "EXAT") || ci_equal(opt, optl, "PXAT")) {
+            const char *tv;
+            size_t tvl;
+            long long val;
+            int unit_ms = ci_equal(opt, optl, "PX") ||
+                          ci_equal(opt, optl, "PXAT");
+            int relative = ci_equal(opt, optl, "EX") ||
+                           ci_equal(opt, optl, "PX");
+            if (flag)
+                goto err_expire;
+            if (*pos + 1 >= argc) {
+                static const char E[] = "ERR missing expire time";
+                resp_write_error(out, E, sizeof(E) - 1);
+                return -1;
+            }
+            if (!arg_str(&argv[++(*pos)], &tv, &tvl) ||
+                !parse_i64(tv, tvl, &val) || val < 0) {
+                static const char E[] = "ERR invalid expire time";
+                resp_write_error(out, E, sizeof(E) - 1);
+                return -1;
+            }
+            if (unit_ms)
+                *expire_ms = relative ? now_ms + (uint64_t)val
+                                      : (uint64_t)val;
+            else
+                *expire_ms = relative ? now_ms + (uint64_t)val * 1000ULL
+                                      : (uint64_t)val * 1000ULL;
+            flag = 1;
+            *expire_opt = 3; /* absolute expiry set */
+            (*pos)++;
+            continue;
+        }
+        if (is_hsetex && (ci_equal(opt, optl, "FNX") ||
+                          ci_equal(opt, optl, "FXX"))) {
+            /* handled by the caller through its own scan */
+            (*pos)++;
+            continue;
+        }
+        {
+            char msg[128];
+            int n = snprintf(msg, sizeof(msg), "ERR unknown argument: %.*s",
+                             (int)optl, opt);
+            resp_write_error(out, msg, (size_t)n);
+        }
+        return -1;
+    }
+    static const char MISSING[] = "ERR missing FIELDS argument";
+    resp_write_error(out, MISSING, sizeof(MISSING) - 1);
+    return -1;
+err_expire:
+    {
+        static const char E[] =
+            "ERR Only one of EX, PX, EXAT, PXAT or KEEPTTL/PERSIST arguments "
+            "can be specified";
+        resp_write_error(out, E, sizeof(E) - 1);
+    }
+    return -1;
+}
+
 static void command_dispatch(session *s, const resp_value *argv, size_t argc,
                              resp_buf *out, uint64_t now_ms)
 {
@@ -13565,7 +13690,7 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
             if (!arg_str(&argv[i], &f, &fl) || !arg_str(&argv[i + 1], &v, &vl))
                 goto bad_type;
             {
-                int set_rc = obj_hash_set(h, f, fl, v, vl);
+                int set_rc = obj_hash_set_at(h, f, fl, v, vl, now_ms, 0);
                 if (set_rc < 0) {
                     storage_length_error(out);
                     return;
@@ -13578,6 +13703,381 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
             resp_write_simple_string(out, "OK", 2);
         else
             resp_write_integer(out, added);
+        return;
+    }
+
+
+    if (cmd_id == CMD_HSETEX || cmd_id == CMD_HGETEX) {
+        const char *k;
+        size_t kl;
+        size_t pos = 2, fields_idx, num_fields, first_field;
+        uint64_t expire_ms = 0;
+        int expire_opt = 0;
+        int fnx = 0, fxx = 0;
+        obj_hash *h;
+        int rc;
+        uint64_t before;
+        if (!arg_str(&argv[1], &k, &kl))
+            goto bad_type;
+        if (!storage_key_ok(kl)) {
+            storage_length_error(out);
+            return;
+        }
+        if (hash_parse_expire(argv, argc, &pos, cmd_id == CMD_HSETEX,
+                              now_ms, &expire_ms, &expire_opt, out) != 0)
+            return;
+        fields_idx = pos;
+        for (size_t i = 2; i < fields_idx; i++) {
+            const char *opt;
+            size_t optl;
+            if (!arg_str(&argv[i], &opt, &optl))
+                goto bad_type;
+            if (ci_equal(opt, optl, "FNX"))
+                fnx = 1;
+            else if (ci_equal(opt, optl, "FXX"))
+                fxx = 1;
+        }
+        if (fnx && fxx) {
+            static const char E[] =
+                "ERR Only one of FNX or FXX arguments can be specified";
+            resp_write_error(out, E, sizeof(E) - 1);
+            return;
+        }
+        if (hash_parse_field_list(argv, argc, fields_idx,
+                                  cmd_id == CMD_HSETEX ? 2 : 1,
+                                  &num_fields, &first_field,
+                                  out) != 0)
+            return;
+
+        if (cmd_id == CMD_HSETEX) {
+            for (size_t i = first_field; i + 1 < first_field + num_fields * 2;
+                 i += 2) {
+                const char *f, *v;
+                size_t fl, vl;
+                if (!arg_str(&argv[i], &f, &fl) ||
+                    !arg_str(&argv[i + 1], &v, &vl))
+                    goto bad_type;
+                if (!storage_string_ok(fl, vl)) {
+                    storage_length_error(out);
+                    return;
+                }
+            }
+            rc = get_hash(d, out, k, kl, 0, now_ms, &h);
+            if (rc < 0)
+                return;
+            if (rc == 0) {
+                if (fxx) {
+                    resp_write_integer(out, 0);
+                    return;
+                }
+                rc = get_hash(d, out, k, kl, 1, now_ms, &h);
+                if (rc <= 0)
+                    return;
+            }
+            if (fxx || fnx) {
+                size_t found = 0;
+                for (size_t i = first_field; i < first_field + num_fields * 2;
+                     i += 2) {
+                    const char *f, *v;
+                    size_t fl, vl;
+                    if (!arg_str(&argv[i], &f, &fl))
+                        goto bad_type;
+                    if (obj_hash_get_at(h, f, fl, now_ms, &v, &vl))
+                        found++;
+                }
+                if ((fxx && found != num_fields) ||
+                    (fnx && found != 0)) {
+                    resp_write_integer(out, 0);
+                    return;
+                }
+            }
+            before = obj_hash_mem(h);
+            for (size_t i = first_field; i + 1 < first_field + num_fields * 2;
+                 i += 2) {
+                const char *f, *v;
+                size_t fl, vl;
+                if (!arg_str(&argv[i], &f, &fl) ||
+                    !arg_str(&argv[i + 1], &v, &vl))
+                    goto bad_type;
+                if (obj_hash_set_at(h, f, fl, v, vl, now_ms,
+                                    expire_opt != 0) < 0) {
+                    storage_length_error(out);
+                    return;
+                }
+                if (expire_opt == 3)
+                    (void)obj_hash_expire_set(h, f, fl, expire_ms, now_ms);
+            }
+            mem_sync(d, k, kl, before, obj_hash_mem(h));
+            obj_hash_purge_expired(h, now_ms);
+            if (obj_hash_len_at(h, now_ms) == 0)
+                db_del_kv(d, k, kl);
+            resp_write_integer(out, 1);
+            return;
+        }
+
+        rc = get_hash(d, out, k, kl, 0, now_ms, &h);
+        if (rc < 0)
+            return;
+        resp_write_array_header(out, num_fields);
+        before = rc == 1 ? obj_hash_mem(h) : 0;
+        for (size_t i = first_field; i < first_field + num_fields; i++) {
+            const char *f, *v;
+            size_t fl, vl;
+            if (!arg_str(&argv[i], &f, &fl))
+                goto bad_type;
+            if (rc == 1 && obj_hash_get_at(h, f, fl, now_ms, &v, &vl)) {
+                resp_write_bulk(out, v, vl);
+                if (expire_opt == 3)
+                    (void)obj_hash_expire_set(h, f, fl, expire_ms, now_ms);
+                else if (expire_opt == 2)
+                    (void)obj_hash_expire_persist(h, f, fl, now_ms);
+            } else {
+                resp_write_bulk(out, NULL, 0);
+            }
+        }
+        if (rc == 1) {
+            mem_sync(d, k, kl, before, obj_hash_mem(h));
+            obj_hash_purge_expired(h, now_ms);
+            if (obj_hash_len_at(h, now_ms) == 0)
+                db_del_kv(d, k, kl);
+        }
+        return;
+    }
+
+
+    if (cmd_id == CMD_HEXPIRE || cmd_id == CMD_HPEXPIRE ||
+        cmd_id == CMD_HEXPIREAT || cmd_id == CMD_HPEXPIREAT) {
+        const char *k, *tv;
+        size_t kl, tvl;
+        long long val;
+        uint64_t expire_ms;
+        int cond = 0;
+        size_t pos = 3, fields_idx, num_fields, first_field;
+        obj_hash *h;
+        int rc;
+        uint64_t before;
+        if (!arg_str(&argv[1], &k, &kl) ||
+            !arg_str(&argv[2], &tv, &tvl))
+            goto bad_type;
+        if (!parse_i64(tv, tvl, &val) || val < 0) {
+            static const char E[] = "ERR invalid expire time";
+            resp_write_error(out, E, sizeof(E) - 1);
+            return;
+        }
+        if (cmd_id == CMD_HEXPIRE)
+            expire_ms = now_ms + (uint64_t)val * 1000ULL;
+        else if (cmd_id == CMD_HPEXPIRE)
+            expire_ms = now_ms + (uint64_t)val;
+        else if (cmd_id == CMD_HEXPIREAT)
+            expire_ms = (uint64_t)val * 1000ULL;
+        else
+            expire_ms = (uint64_t)val;
+
+        fields_idx = 0;
+        for (; pos < argc; pos++) {
+            const char *opt;
+            size_t optl;
+            if (!arg_str(&argv[pos], &opt, &optl))
+                goto bad_type;
+            if (ci_equal(opt, optl, "FIELDS")) {
+                fields_idx = pos;
+                break;
+            }
+            if (ci_equal(opt, optl, "NX")) {
+                if (cond) {
+                    static const char E[] =
+                        "ERR Only one of NX, XX, GT or LT can be specified";
+                    resp_write_error(out, E, sizeof(E) - 1);
+                    return;
+                }
+                cond = 1;
+            } else if (ci_equal(opt, optl, "XX")) {
+                if (cond) {
+                    static const char E[] =
+                        "ERR Only one of NX, XX, GT or LT can be specified";
+                    resp_write_error(out, E, sizeof(E) - 1);
+                    return;
+                }
+                cond = 2;
+            } else if (ci_equal(opt, optl, "GT")) {
+                if (cond) {
+                    static const char E[] =
+                        "ERR Only one of NX, XX, GT or LT can be specified";
+                    resp_write_error(out, E, sizeof(E) - 1);
+                    return;
+                }
+                cond = 3;
+            } else if (ci_equal(opt, optl, "LT")) {
+                if (cond) {
+                    static const char E[] =
+                        "ERR Only one of NX, XX, GT or LT can be specified";
+                    resp_write_error(out, E, sizeof(E) - 1);
+                    return;
+                }
+                cond = 4;
+            } else {
+                char msg[128];
+                int n = snprintf(msg, sizeof(msg),
+                                 "ERR unknown argument: %.*s",
+                                 (int)optl, opt);
+                resp_write_error(out, msg, (size_t)n);
+                return;
+            }
+        }
+        if (fields_idx == 0) {
+            static const char E[] = "ERR missing FIELDS argument";
+            resp_write_error(out, E, sizeof(E) - 1);
+            return;
+        }
+        if (hash_parse_field_list(argv, argc, fields_idx, 1, &num_fields,
+                                  &first_field, out) != 0)
+            return;
+        rc = get_hash(d, out, k, kl, 0, now_ms, &h);
+        if (rc < 0)
+            return;
+        resp_write_array_header(out, num_fields);
+        if (rc == 0) {
+            for (size_t i = 0; i < num_fields; i++)
+                resp_write_integer(out, -2);
+            return;
+        }
+        before = obj_hash_mem(h);
+        for (size_t i = first_field; i < first_field + num_fields; i++) {
+            const char *f, *v;
+            size_t fl, vl;
+            uint64_t cur = 0;
+            int has_ttl, satisfied = 1;
+            if (!arg_str(&argv[i], &f, &fl))
+                goto bad_type;
+            if (!obj_hash_get_at(h, f, fl, now_ms, &v, &vl)) {
+                resp_write_integer(out, -2);
+                continue;
+            }
+            has_ttl = obj_hash_expire_get(h, f, fl, &cur) == 1;
+            if (cond == 1 && has_ttl)
+                satisfied = 0;
+            else if (cond == 2 && !has_ttl)
+                satisfied = 0;
+            else if (cond == 3 && (!has_ttl || expire_ms <= cur))
+                satisfied = 0;
+            else if (cond == 4 && (!has_ttl || expire_ms >= cur))
+                satisfied = 0;
+            if (!satisfied) {
+                resp_write_integer(out, 0);
+                continue;
+            }
+            if (expire_ms <= now_ms) {
+                (void)obj_hash_del_at(h, f, fl, now_ms);
+                resp_write_integer(out, 2);
+            } else if (obj_hash_expire_set(h, f, fl, expire_ms, now_ms) == 1) {
+                resp_write_integer(out, 1);
+            } else {
+                resp_write_integer(out, -2);
+            }
+        }
+        mem_sync(d, k, kl, before, obj_hash_mem(h));
+        obj_hash_purge_expired(h, now_ms);
+        if (obj_hash_len_at(h, now_ms) == 0)
+            db_del_kv(d, k, kl);
+        return;
+    }
+
+    if (cmd_id == CMD_HTTL || cmd_id == CMD_HPTTL ||
+        cmd_id == CMD_HEXPIRETIME || cmd_id == CMD_HPEXPIRETIME ||
+        cmd_id == CMD_HPERSIST) {
+        const char *k;
+        size_t kl;
+        size_t num_fields = 0, first_field = 0;
+        obj_hash *h;
+        int rc;
+        uint64_t before;
+        if (!arg_str(&argv[1], &k, &kl))
+            goto bad_type;
+        if (hash_parse_field_list(argv, argc, 2, 1, &num_fields,
+                                  &first_field, out) != 0)
+            return;
+        rc = get_hash(d, out, k, kl, 0, now_ms, &h);
+        if (rc < 0)
+            return;
+        resp_write_array_header(out, num_fields);
+        if (rc == 0) {
+            for (size_t i = 0; i < num_fields; i++)
+                resp_write_integer(out, -2);
+            return;
+        }
+        before = obj_hash_mem(h);
+        for (size_t i = first_field; i < first_field + num_fields; i++) {
+            const char *f, *v;
+            size_t fl, vl;
+            uint64_t ttl_ms = 0, expire = 0;
+            if (!arg_str(&argv[i], &f, &fl))
+                goto bad_type;
+            if (!obj_hash_get_at(h, f, fl, now_ms, &v, &vl)) {
+                resp_write_integer(out, -2);
+                continue;
+            }
+            if (cmd_id == CMD_HPERSIST) {
+                int pr = obj_hash_expire_persist(h, f, fl, now_ms);
+                resp_write_integer(out, pr == 0 ? -1 : pr);
+                continue;
+            }
+            if (obj_hash_ttl(h, f, fl, now_ms, &ttl_ms) != 1) {
+                resp_write_integer(out, -1);
+                continue;
+            }
+            if (cmd_id == CMD_HTTL)
+                resp_write_integer(out, (long long)((ttl_ms + 999) / 1000));
+            else if (cmd_id == CMD_HPTTL)
+                resp_write_integer(out, (long long)ttl_ms);
+            else if (cmd_id == CMD_HEXPIRETIME) {
+                (void)obj_hash_expire_get(h, f, fl, &expire);
+                resp_write_integer(out, (long long)(expire / 1000));
+            } else {
+                (void)obj_hash_expire_get(h, f, fl, &expire);
+                resp_write_integer(out, (long long)expire);
+            }
+        }
+        mem_sync(d, k, kl, before, obj_hash_mem(h));
+        obj_hash_purge_expired(h, now_ms);
+        if (obj_hash_len_at(h, now_ms) == 0)
+            db_del_kv(d, k, kl);
+        return;
+    }
+
+    if (cmd_id == CMD_HGETDEL) {
+        const char *k;
+        size_t kl;
+        size_t num_fields = 0, first_field = 0;
+        obj_hash *h;
+        int rc;
+        uint64_t before;
+        if (!arg_str(&argv[1], &k, &kl))
+            goto bad_type;
+        if (hash_parse_field_list(argv, argc, 2, 1, &num_fields,
+                                  &first_field, out) != 0)
+            return;
+        rc = get_hash(d, out, k, kl, 0, now_ms, &h);
+        if (rc < 0)
+            return;
+        before = rc == 1 ? obj_hash_mem(h) : 0;
+        resp_write_array_header(out, num_fields);
+        for (size_t i = first_field; i < first_field + num_fields; i++) {
+            const char *f, *v;
+            size_t fl, vl;
+            if (!arg_str(&argv[i], &f, &fl))
+                goto bad_type;
+            if (rc == 1 && obj_hash_get_at(h, f, fl, now_ms, &v, &vl)) {
+                resp_write_bulk(out, v, vl);
+                (void)obj_hash_del_at(h, f, fl, now_ms);
+            } else {
+                resp_write_bulk(out, NULL, 0);
+            }
+        }
+        if (rc == 1) {
+            mem_sync(d, k, kl, before, obj_hash_mem(h));
+            if (obj_hash_len_at(h, now_ms) == 0)
+                db_del_kv(d, k, kl);
+        }
         return;
     }
 
@@ -13596,7 +14096,7 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
             return;
         const char *v;
         size_t vl;
-        if (rc == 1 && obj_hash_get(h, f, fl, &v, &vl))
+        if (rc == 1 && obj_hash_get_at(h, f, fl, now_ms, &v, &vl))
             resp_write_bulk(out, v, vl);
         else
             resp_write_bulk(out, NULL, 0);
@@ -13652,7 +14152,8 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
         const char *v;
         size_t vl;
         resp_write_integer(out,
-                           rc == 1 && obj_hash_get(h, f, fl, &v, &vl) ? 1 : 0);
+                           rc == 1 && obj_hash_get_at(h, f, fl, now_ms,
+                                                      &v, &vl) ? 1 : 0);
         return;
     }
 
@@ -13669,7 +14170,8 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
         int rc = get_hash(d, out, k, kl, 0, now_ms, &h);
         if (rc < 0)
             return;
-        resp_write_integer(out, rc == 1 ? (long long)obj_hash_len(h) : 0);
+        resp_write_integer(out, rc == 1 ? (long long)obj_hash_len_at(h, now_ms)
+                                       : 0);
         return;
     }
 
@@ -13697,10 +14199,12 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
         ctx.out = out;
         ctx.keys = cmd_id != CMD_HVALS;
         ctx.vals = cmd_id != CMD_HKEYS;
-        resp_write_array_header(out, cmd_id == CMD_HGETALL
-                                        ? obj_hash_len(h) * 2
-                                        : obj_hash_len(h));
-        obj_hash_each(h, hdump_cb, &ctx);
+        {
+            uint64_t len = obj_hash_len_at(h, now_ms);
+            resp_write_array_header(out, cmd_id == CMD_HGETALL ? len * 2
+                                                                : len);
+        }
+        obj_hash_each_at(h, hdump_cb, &ctx, now_ms);
         return;
     }
 
@@ -13723,7 +14227,7 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
             size_t fl, vl;
             if (!arg_str(&argv[i], &f, &fl))
                 goto bad_type;
-            if (rc == 1 && obj_hash_get(h, f, fl, &v, &vl))
+            if (rc == 1 && obj_hash_get_at(h, f, fl, now_ms, &v, &vl))
                 resp_write_bulk(out, v, vl);
             else
                 resp_write_bulk(out, NULL, 0);
@@ -13758,7 +14262,8 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
         {
             const char *v;
             size_t vl;
-            if (obj_hash_get(h, f, fl, &v, &vl) && !parse_i64(v, vl, &cur)) {
+            if (obj_hash_get_at(h, f, fl, now_ms, &v, &vl) &&
+                !parse_i64(v, vl, &cur)) {
                 resp_write_error(out, ERR_NOT_INT, sizeof(ERR_NOT_INT) - 1);
                 return;
             }
@@ -13773,7 +14278,7 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
             char num[24];
             int nl = snprintf(num, sizeof(num), "%lld", cur);
             uint64_t before = obj_hash_mem(h);
-            if (obj_hash_set(h, f, fl, num, (size_t)nl) < 0) {
+            if (obj_hash_set_at(h, f, fl, num, (size_t)nl, now_ms, 0) < 0) {
                 storage_length_error(out);
                 return;
             }
@@ -13812,7 +14317,8 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
         {
             const char *v;
             size_t vl;
-            if (obj_hash_get(h, f, fl, &v, &vl) && !parse_ld(v, vl, &cur)) {
+            if (obj_hash_get_at(h, f, fl, now_ms, &v, &vl) &&
+                !parse_ld(v, vl, &cur)) {
                 static const char E[] = "ERR hash value is not a float";
                 resp_write_error(out, E, sizeof(E) - 1);
                 return;
@@ -13828,7 +14334,7 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
         nl = snprintf(buf, sizeof(buf), "%.17Lg", res);
         {
             uint64_t before = obj_hash_mem(h);
-            if (obj_hash_set(h, f, fl, buf, (size_t)nl) < 0) {
+            if (obj_hash_set_at(h, f, fl, buf, (size_t)nl, now_ms, 0) < 0) {
                 storage_length_error(out);
                 return;
             }
@@ -13860,14 +14366,14 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
         {
             const char *old;
             size_t oldl;
-            if (obj_hash_get(h, f, fl, &old, &oldl)) {
+            if (obj_hash_get_at(h, f, fl, now_ms, &old, &oldl)) {
                 resp_write_integer(out, 0);
                 return;
             }
         }
         {
             uint64_t before = obj_hash_mem(h);
-            if (obj_hash_set(h, f, fl, v, vl) < 0) {
+            if (obj_hash_set_at(h, f, fl, v, vl, now_ms, 0) < 0) {
                 storage_length_error(out);
                 return;
             }
@@ -19211,6 +19717,18 @@ static const cmd_entry CMD_TABLE[] = {
     {"latency", CMD_LATENCY, 2, -1, 0, 0},
     {"module", CMD_MODULE, 2, -1, 0, 0},
     {"sentinel", CMD_SENTINEL, 2, -1, 0, 0},
+    {"hgetdel", CMD_HGETDEL, 5, -1, 0, CMD_WRITE},
+    {"hsetex", CMD_HSETEX, 6, -1, 0, CMD_WRITE},
+    {"hgetex", CMD_HGETEX, 5, -1, 0, CMD_WRITE},
+    {"hexpire", CMD_HEXPIRE, 6, -1, 0, CMD_WRITE},
+    {"hpexpire", CMD_HPEXPIRE, 6, -1, 0, CMD_WRITE},
+    {"hexpireat", CMD_HEXPIREAT, 6, -1, 0, CMD_WRITE},
+    {"hpexpireat", CMD_HPEXPIREAT, 6, -1, 0, CMD_WRITE},
+    {"hpersist", CMD_HPERSIST, 5, -1, 0, CMD_WRITE},
+    {"httl", CMD_HTTL, 5, -1, 0, 0},
+    {"hpttl", CMD_HPTTL, 5, -1, 0, 0},
+    {"hexpiretime", CMD_HEXPIRETIME, 5, -1, 0, 0},
+    {"hpexpiretime", CMD_HPEXPIRETIME, 5, -1, 0, 0},
 };
 
 static const cmd_entry *cmd_table_entry(uint16_t id)

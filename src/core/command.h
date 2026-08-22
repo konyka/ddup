@@ -21,7 +21,7 @@ struct tier_store;
 
 /* commandstats arrays are indexed by CMD_* id; sized with room to spare
  * (CMD_MAX must stay below this). */
-#define CMD_STATS_SLOTS 256
+#define CMD_STATS_SLOTS 512
 
 /* One logical database. Shared-nothing: each IO thread owns its own.
  * `expires` maps key -> 8-byte absolute wall-ms expiry (raw uint64).
@@ -410,10 +410,22 @@ enum {
     CMD_DEBUG,
     CMD_LATENCY,
     CMD_MODULE,
-    CMD_SENTINEL
+    CMD_SENTINEL,
+    CMD_HGETDEL,
+    CMD_HSETEX,
+    CMD_HGETEX,
+    CMD_HEXPIRE,
+    CMD_HPEXPIRE,
+    CMD_HEXPIREAT,
+    CMD_HPEXPIREAT,
+    CMD_HPERSIST,
+    CMD_HTTL,
+    CMD_HPTTL,
+    CMD_HEXPIRETIME,
+    CMD_HPEXPIRETIME
 };
 
-#define CMD_MAX CMD_SENTINEL
+#define CMD_MAX CMD_HPEXPIRETIME
 
 /* Resolve a command name to its stable ID; case-insensitive. */
 uint16_t cmd_resolve(const char *name, size_t len);

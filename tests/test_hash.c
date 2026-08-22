@@ -688,6 +688,100 @@ static void test_hash_listpack_limits(void)
     db_destroy(&d);
 }
 
+
+static void test_hgetdel(void)
+{
+    db d;
+    resp_buf out;
+    db_init(&d);
+    resp_buf_init(&out);
+
+    exec_cmd(&d, T0, &out, 8, "HSET", "h", "f1", "v1", "f2", "v2", "f3", "v3");
+    EXPECT(out, ":3\r\n");
+    exec_cmd(&d, T0, &out, 6, "HGETDEL", "h", "FIELDS", "2", "f1", "f2");
+    EXPECT(out, "*2\r\n$2\r\nv1\r\n$2\r\nv2\r\n");
+    exec_cmd(&d, T0, &out, 2, "HLEN", "h");
+    EXPECT(out, ":1\r\n");
+    exec_cmd(&d, T0, &out, 6, "HGETDEL", "h", "FIELDS", "2", "f1", "f3");
+    EXPECT(out, "*2\r\n$-1\r\n$2\r\nv3\r\n");
+    exec_cmd(&d, T0, &out, 2, "EXISTS", "h");
+    EXPECT(out, ":0\r\n");
+
+    exec_cmd(&d, T0, &out, 5, "HGETDEL", "no", "FIELDS", "1", "f");
+    EXPECT(out, "*1\r\n$-1\r\n");
+    exec_cmd(&d, T0, &out, 4, "HGETDEL", "h", "FIELDS", "x");
+    DD_CHECK(out.len > 0 && out.data[0] == '-');
+
+    resp_buf_free(&out);
+    db_destroy(&d);
+}
+
+static void test_hash_field_ttl_commands(void)
+{
+    db d;
+    resp_buf out;
+    db_init(&d);
+    resp_buf_init(&out);
+
+    exec_cmd(&d, T0, &out, 8, "HSET", "h", "f1", "v1", "f2", "v2", "f3", "v3");
+    EXPECT(out, ":3\r\n");
+
+    /* Missing key returns NO_FIELD (-2) for every requested field. */
+    exec_cmd(&d, T0, &out, 6, "HEXPIRE", "no", "100", "FIELDS", "1", "f");
+    EXPECT(out, "*1\r\n:-2\r\n");
+
+    exec_cmd(&d, T0, &out, 7, "HEXPIRE", "h", "100", "FIELDS", "2", "f1", "f2");
+    EXPECT(out, "*2\r\n:1\r\n:1\r\n");
+    exec_cmd(&d, T0, &out, 7, "HTTL", "h", "FIELDS", "3", "f1", "f2", "f3");
+    EXPECT(out, "*3\r\n:100\r\n:100\r\n:-1\r\n");
+    exec_cmd(&d, T0, &out, 7, "HPTTL", "h", "FIELDS", "3", "f1", "f2", "f3");
+    EXPECT(out, "*3\r\n:100000\r\n:100000\r\n:-1\r\n");
+    exec_cmd(&d, T0, &out, 6, "HPERSIST", "h", "FIELDS", "2", "f1", "f3");
+    EXPECT(out, "*2\r\n:1\r\n:-1\r\n");
+    exec_cmd(&d, T0, &out, 5, "HTTL", "h", "FIELDS", "1", "f1");
+    EXPECT(out, "*1\r\n:-1\r\n");
+
+    /* Expired fields disappear lazily and the key is removed when empty. */
+    exec_cmd(&d, T0, &out, 6, "HEXPIRE", "h", "1", "FIELDS", "1", "f3");
+    EXPECT(out, "*1\r\n:1\r\n");
+    exec_cmd(&d, T0 + 2000, &out, 3, "HGET", "h", "f3");
+    EXPECT(out, "$-1\r\n");
+    exec_cmd(&d, T0 + 2000, &out, 2, "HLEN", "h");
+    EXPECT(out, ":2\r\n");
+    exec_cmd(&d, T0 + 2000, &out, 3, "HDEL", "h", "f1");
+    exec_cmd(&d, T0 + 2000, &out, 3, "HDEL", "h", "f2");
+    exec_cmd(&d, T0 + 2000, &out, 2, "EXISTS", "h");
+    EXPECT(out, ":0\r\n");
+
+    resp_buf_free(&out);
+    db_destroy(&d);
+}
+
+static void test_hsetex_hgetex(void)
+{
+    db d;
+    resp_buf out;
+    db_init(&d);
+    resp_buf_init(&out);
+
+    exec_cmd(&d, T0, &out, 10, "HSETEX", "h", "EX", "10", "FIELDS", "2", "f1", "v1", "f2", "v2");
+    EXPECT(out, ":1\r\n");
+    exec_cmd(&d, T0, &out, 6, "HTTL", "h", "FIELDS", "2", "f1", "f2");
+    EXPECT(out, "*2\r\n:10\r\n:10\r\n");
+
+    exec_cmd(&d, T0, &out, 9, "HSETEX", "h", "FXX", "FIELDS", "2", "f1", "x", "f9", "x");
+    EXPECT(out, ":0\r\n");
+    exec_cmd(&d, T0, &out, 3, "HGET", "h", "f1");
+    EXPECT(out, "$2\r\nv1\r\n");
+
+    exec_cmd(&d, T0, &out, 7, "HGETEX", "h", "PERSIST", "FIELDS", "2", "f1", "f9");
+    EXPECT(out, "*2\r\n$2\r\nv1\r\n$-1\r\n");
+    exec_cmd(&d, T0, &out, 5, "HTTL", "h", "FIELDS", "1", "f1");
+    EXPECT(out, "*1\r\n:-1\r\n");
+
+    resp_buf_free(&out);
+    db_destroy(&d);
+}
 static void test_hscan(void)
 {
     db d;
@@ -747,5 +841,8 @@ int main(void)
     DD_RUN(test_hash_listpack_encoding);
     DD_RUN(test_hash_listpack_limits);
     DD_RUN(test_hscan);
+    DD_RUN(test_hgetdel);
+    DD_RUN(test_hash_field_ttl_commands);
+    DD_RUN(test_hsetex_hgetex);
     return DD_TEST_SUMMARY();
 }

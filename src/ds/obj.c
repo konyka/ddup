@@ -154,10 +154,31 @@ static uint64_t field_bytes(size_t flen, size_t vlen)
     return (uint64_t)sizeof(rh_entry) + 16 + flen + vlen;
 }
 
+static uint64_t ttl_bytes(size_t flen)
+{
+    return (uint64_t)sizeof(rh_entry) + 16 + flen + 8;
+}
+
+static void pack_expire(char buf[8], uint64_t expire_ms)
+{
+    int i;
+    for (i = 0; i < 8; i++)
+        buf[i] = (char)((expire_ms >> (8 * i)) & 0xFFu);
+}
+
+static uint64_t unpack_expire(const char *buf)
+{
+    uint64_t v = 0;
+    int i;
+    for (i = 7; i >= 0; i--)
+        v = (v << 8) | (uint64_t)(unsigned char)buf[i];
+    return v;
+}
+
 /* LP mode: struct + one malloc for the flat listpack. */
 static uint64_t hash_lp_mem(const obj_hash *h)
 {
-    return (uint64_t)sizeof(*h) + 16 + lp_bytes(h->lp);
+    return (uint64_t)sizeof(*h) + 16 + lp_bytes(h->lp) + h->ttl_mem;
 }
 
 obj_hash *obj_hash_new(void)
@@ -169,6 +190,9 @@ obj_hash *obj_hash_new(void)
     }
     h->encoding = OBJ_HASH_LP;
     h->lp = lp_new();
+    rh_init(&h->fields);
+    rh_init(&h->expires);
+    h->ttl_mem = 0;
     h->mem = hash_lp_mem(h);
     return h;
 }
@@ -181,6 +205,7 @@ void obj_hash_free(obj_hash *h)
         lp_free(h->lp);
     else
         rh_destroy(&h->fields);
+    rh_destroy(&h->expires);
     free(h);
 }
 
@@ -205,8 +230,8 @@ int obj_hash_is_listpack(const obj_hash *h)
 static void obj_hash_convert(obj_hash *h)
 {
     unsigned char *p;
-    rh_init(&h->fields);
-    h->mem = (uint64_t)sizeof(*h);
+    uint64_t ttl = h->ttl_mem;
+    h->mem = (uint64_t)sizeof(*h) + ttl;
     p = lp_first(h->lp);
     while (p != NULL) {
         unsigned char fb[24], vb[24];
@@ -229,6 +254,18 @@ int obj_hash_set(obj_hash *h, const char *f, size_t flen, const char *v,
 {
     if (flen > UINT32_MAX || vlen > UINT32_MAX || flen > SIZE_MAX - vlen)
         return -1;
+    {
+        const char *ev;
+        size_t evl;
+        if (rh_get(&h->expires, f, flen, &ev, &evl)) {
+            h->ttl_mem -= ttl_bytes(flen);
+            if (h->encoding == OBJ_HASH_LP)
+                h->mem = hash_lp_mem(h);
+            else
+                h->mem -= ttl_bytes(flen);
+            rh_del(&h->expires, f, flen);
+        }
+    }
     if (h->encoding == OBJ_HASH_LP) {
         unsigned char *fp = NULL;
         int fits = flen <= (size_t)g_obj_limits.hash_value &&
@@ -291,6 +328,18 @@ int obj_hash_get(obj_hash *h, const char *f, size_t flen, const char **v,
 
 int obj_hash_del(obj_hash *h, const char *f, size_t flen)
 {
+    {
+        const char *ev;
+        size_t evl;
+        if (rh_get(&h->expires, f, flen, &ev, &evl)) {
+            h->ttl_mem -= ttl_bytes(flen);
+            if (h->encoding == OBJ_HASH_LP)
+                h->mem = hash_lp_mem(h);
+            else
+                h->mem -= ttl_bytes(flen);
+            rh_del(&h->expires, f, flen);
+        }
+    }
     if (h->encoding == OBJ_HASH_LP) {
         unsigned char *fp;
         size_t foff, voff;
@@ -316,6 +365,170 @@ int obj_hash_del(obj_hash *h, const char *f, size_t flen)
         rh_del(&h->fields, f, flen);
         return 1;
     }
+}
+
+static void hash_ttl_mem_delta(obj_hash *h, int64_t delta)
+{
+    if (delta == 0)
+        return;
+    if (h->encoding == OBJ_HASH_LP)
+        h->mem = hash_lp_mem(h);
+    else
+        h->mem = (uint64_t)((int64_t)h->mem + delta);
+}
+
+int obj_hash_get_at(obj_hash *h, const char *f, size_t flen, uint64_t now_ms,
+                    const char **v, size_t *vlen)
+{
+    const char *ev;
+    size_t evl;
+    if (rh_get(&h->expires, f, flen, &ev, &evl) &&
+        unpack_expire(ev) <= now_ms) {
+        (void)obj_hash_del(h, f, flen);
+        return 0;
+    }
+    return obj_hash_get(h, f, flen, v, vlen);
+}
+
+int obj_hash_set_at(obj_hash *h, const char *f, size_t flen, const char *v,
+                    size_t vlen, uint64_t now_ms, int keep_ttl)
+{
+    uint64_t expire = 0;
+    int had_ttl = 0;
+    int rc;
+    if (keep_ttl) {
+        const char *ev;
+        size_t evl;
+        if (rh_get(&h->expires, f, flen, &ev, &evl)) {
+            expire = unpack_expire(ev);
+            had_ttl = 1;
+            if (expire <= now_ms) {
+                (void)obj_hash_del(h, f, flen);
+                had_ttl = 0;
+            }
+        }
+    }
+    rc = obj_hash_set(h, f, flen, v, vlen);
+    if (rc < 0)
+        return rc;
+    if (keep_ttl && had_ttl) {
+        char buf[8];
+        const char *ev;
+        size_t evl;
+        pack_expire(buf, expire);
+        if (!rh_get(&h->expires, f, flen, &ev, &evl)) {
+            h->ttl_mem += ttl_bytes(flen);
+            hash_ttl_mem_delta(h, (int64_t)ttl_bytes(flen));
+        }
+        if (rh_set(&h->expires, f, flen, buf, 8) < 0)
+            return -1;
+    }
+    return rc;
+}
+
+int obj_hash_del_at(obj_hash *h, const char *f, size_t flen, uint64_t now_ms)
+{
+    (void)now_ms;
+    return obj_hash_del(h, f, flen);
+}
+
+int obj_hash_expire_get(obj_hash *h, const char *f, size_t flen,
+                        uint64_t *expire_ms)
+{
+    const char *ev;
+    size_t evl;
+    if (!obj_hash_get(h, f, flen, &ev, &evl))
+        return -1;
+    if (!rh_get(&h->expires, f, flen, &ev, &evl))
+        return 0;
+    if (expire_ms != NULL)
+        *expire_ms = unpack_expire(ev);
+    return 1;
+}
+
+int obj_hash_expire_set(obj_hash *h, const char *f, size_t flen,
+                        uint64_t expire_ms, uint64_t now_ms)
+{
+    char buf[8];
+    const char *ev;
+    size_t evl;
+    int existed;
+    if (!obj_hash_get_at(h, f, flen, now_ms, &ev, &evl))
+        return 0;
+    pack_expire(buf, expire_ms);
+    existed = rh_get(&h->expires, f, flen, &ev, &evl);
+    if (rh_set(&h->expires, f, flen, buf, 8) < 0)
+        return -1;
+    if (!existed) {
+        h->ttl_mem += ttl_bytes(flen);
+        hash_ttl_mem_delta(h, (int64_t)ttl_bytes(flen));
+    }
+    return 1;
+}
+
+int obj_hash_expire_persist(obj_hash *h, const char *f, size_t flen,
+                            uint64_t now_ms)
+{
+    const char *ev;
+    size_t evl;
+    if (!obj_hash_get_at(h, f, flen, now_ms, &ev, &evl))
+        return -1;
+    if (!rh_get(&h->expires, f, flen, &ev, &evl))
+        return 0;
+    rh_del(&h->expires, f, flen);
+    h->ttl_mem -= ttl_bytes(flen);
+    hash_ttl_mem_delta(h, -(int64_t)ttl_bytes(flen));
+    return 1;
+}
+
+int obj_hash_ttl(obj_hash *h, const char *f, size_t flen, uint64_t now_ms,
+                 uint64_t *ttl_ms)
+{
+    const char *v;
+    size_t vl;
+    uint64_t expire;
+    if (!obj_hash_get_at(h, f, flen, now_ms, &v, &vl))
+        return -1;
+    if (!rh_get(&h->expires, f, flen, &v, &vl))
+        return 0;
+    expire = unpack_expire(v);
+    *ttl_ms = expire > now_ms ? expire - now_ms : 0;
+    return 1;
+}
+
+typedef struct hash_purge_ctx {
+    obj_hash *h;
+    uint64_t now_ms;
+} hash_purge_ctx;
+
+static int hash_purge_cb(const char *key, size_t klen, const char *val,
+                         size_t vlen, void *ctx)
+{
+    hash_purge_ctx *c = (hash_purge_ctx *)ctx;
+    (void)vlen;
+    if (unpack_expire(val) <= c->now_ms)
+        (void)obj_hash_del(c->h, key, klen);
+    return 0;
+}
+
+void obj_hash_purge_expired(obj_hash *h, uint64_t now_ms)
+{
+    hash_purge_ctx ctx;
+    ctx.h = h;
+    ctx.now_ms = now_ms;
+    (void)rh_scan(&h->expires, 0, SIZE_MAX, hash_purge_cb, &ctx);
+}
+
+uint64_t obj_hash_len_at(obj_hash *h, uint64_t now_ms)
+{
+    obj_hash_purge_expired(h, now_ms);
+    return obj_hash_len(h);
+}
+
+void obj_hash_each_at(obj_hash *h, rh_iter_fn fn, void *ctx, uint64_t now_ms)
+{
+    obj_hash_purge_expired(h, now_ms);
+    obj_hash_each(h, fn, ctx);
 }
 
 void obj_hash_each(obj_hash *h, rh_iter_fn fn, void *ctx)

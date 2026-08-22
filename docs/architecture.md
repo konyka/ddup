@@ -1179,6 +1179,25 @@ hazard pointer/延迟回收、索引桶 CAS、检查点与恢复的并发协议�
   dirty 检查只覆盖源库，`-ERR COPY across databases is not
   supported in mt mode`，记录在案）。
 
+## Hash 字段级 TTL（Redis 8 增量）
+
+- `obj_hash` 在 listpack/rh_table 双编码之外增加独立的 `expires` 表：
+  键为 field，值为 8 字节小端绝对过期毫秒时间戳。紧凑编码不会退化为
+  逐字段分配；字段 TTL 只在设置时进入额外表，未设置 TTL 的普通 hash
+  热路径仅多一次 `rh_get`。
+- 读路径 `obj_hash_get_at` 对过期字段惰性删除；`HLEN/HGETALL/HKEYS/
+  HVALS/HSCAN` 等全量视图调用 `obj_hash_purge_expired` 后再遍历。
+  单字段操作 O(field)；全量 purge O(带 TTL 字段数)，不扫描整个 hash。
+- `HSET/HSETNX/HINCRBY/HINCRBYFLOAT` 普通覆盖写清字段 TTL；
+  `HSETEX` 的 `KEEPTTL/EX/PX/EXAT/PXAT` 与 `HGETEX` 的
+  `EX/PX/EXAT/PXAT/PERSIST` 按 Redis 8 解析；`FNX/FXX` 全字段前置
+  判定后原子设置。
+- `HEXPIRE` 族支持 `NX/XX/GT/LT`；到期时间落在过去时删除字段并回
+  `2`，条件不满足回 `0`，字段不存在回 `-2`。TTL 查询族同样使用
+  `-2`/`-1` 区分“无字段”与“无 TTL”。
+- 命令 id 总数已突破原 `CMD_STATS_SLOTS` 128 的上限，扩容为 512；
+  CMD_TABLE 与枚举继续只追加尾部。
+
 ## 目录结构
 
 ```
