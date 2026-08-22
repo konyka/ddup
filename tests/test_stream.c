@@ -372,6 +372,104 @@ static void test_stream_group_snapshot_roundtrip(void)
     db_destroy(&d);
 }
 
+
+static void test_xdelex_xackdel_xnack_xcfgset_xidmprecord(void)
+{
+    db d;
+    resp_buf out;
+    db_init(&d);
+    resp_buf_init(&out);
+
+    /* XDELEX deletes by ID and reports per-ID status. */
+    exec_cmd(&d, T0, &out, 5, "XADD", "s", "1-0", "f", "v");
+    exec_cmd(&d, T0, &out, 5, "XADD", "s", "1-1", "f", "v");
+    exec_cmd(&d, T0, &out, 5, "XADD", "s", "2-0", "f", "v");
+    exec_cmd(&d, T0, &out, 6, "XDELEX", "s", "IDS", "2", "1-0", "9-9");
+    EXPECT(out, "*2\r\n:1\r\n:-1\r\n");
+    exec_cmd(&d, T0, &out, 2, "XLEN", "s");
+    EXPECT(out, ":2\r\n");
+    exec_cmd(&d, T0, &out, 6, "XDELEX", "missing", "IDS", "2", "1-0", "2-0");
+    EXPECT(out, "*2\r\n:-1\r\n:-1\r\n");
+    exec_cmd(&d, T0, &out, 6, "XDELEX", "s", "IDS", "2", "1-1", "2-0");
+    EXPECT(out, "*2\r\n:1\r\n:1\r\n");
+    exec_cmd(&d, T0, &out, 2, "XLEN", "s");
+    EXPECT(out, ":0\r\n");
+    exec_cmd(&d, T0, &out, 2, "EXISTS", "s");
+    EXPECT(out, ":1\r\n");
+
+    /* XACKDEL acknowledges the group PEL and deletes the stream entry. */
+    exec_cmd(&d, T0, &out, 5, "XADD", "a", "1-0", "f", "v");
+    exec_cmd(&d, T0, &out, 5, "XADD", "a", "1-1", "f", "v");
+    exec_cmd(&d, T0, &out, 5, "XGROUP", "CREATE", "a", "g", "0-0");
+    exec_cmd(&d, T0, &out, 7, "XREADGROUP", "GROUP", "g", "c",
+             "STREAMS", "a", ">");
+    exec_cmd(&d, T0, &out, 7, "XACKDEL", "a", "g", "IDS", "2", "1-0", "9-9");
+    EXPECT(out, "*2\r\n:1\r\n:-1\r\n");
+    exec_cmd(&d, T0, &out, 2, "XLEN", "a");
+    EXPECT(out, ":1\r\n");
+    exec_cmd(&d, T0, &out, 6, "XACKDEL", "a", "g", "IDS", "1", "1-0");
+    EXPECT(out, "*1\r\n:-1\r\n");
+
+    /* ACKED keeps the entry while another group still references it. */
+    exec_cmd(&d, T0, &out, 5, "XADD", "b", "1-0", "f", "v");
+    exec_cmd(&d, T0, &out, 5, "XGROUP", "CREATE", "b", "g1", "0-0");
+    exec_cmd(&d, T0, &out, 5, "XGROUP", "CREATE", "b", "g2", "0-0");
+    exec_cmd(&d, T0, &out, 7, "XREADGROUP", "GROUP", "g1", "c1",
+             "STREAMS", "b", ">");
+    exec_cmd(&d, T0, &out, 7, "XREADGROUP", "GROUP", "g2", "c2",
+             "STREAMS", "b", ">");
+    exec_cmd(&d, T0, &out, 7, "XACKDEL", "b", "g1", "ACKED", "IDS", "1", "1-0");
+    EXPECT(out, "*1\r\n:2\r\n");
+    exec_cmd(&d, T0, &out, 2, "XLEN", "b");
+    EXPECT(out, ":1\r\n");
+    exec_cmd(&d, T0, &out, 7, "XACKDEL", "b", "g2", "ACKED", "IDS", "1", "1-0");
+    EXPECT(out, "*1\r\n:1\r\n");
+    exec_cmd(&d, T0, &out, 2, "XLEN", "b");
+    EXPECT(out, ":0\r\n");
+    exec_cmd(&d, T0, &out, 2, "EXISTS", "b");
+    EXPECT(out, ":1\r\n");
+
+    /* XNACK updates pending delivery state and supports FORCE. */
+    exec_cmd(&d, T0, &out, 5, "XADD", "n", "1-0", "f", "v");
+    exec_cmd(&d, T0, &out, 5, "XADD", "n", "1-1", "f", "v");
+    exec_cmd(&d, T0, &out, 5, "XADD", "n", "2-0", "f", "v");
+    exec_cmd(&d, T0, &out, 5, "XGROUP", "CREATE", "n", "g", "0-0");
+    exec_cmd(&d, T0, &out, 9, "XREADGROUP", "GROUP", "g", "c",
+             "COUNT", "2", "STREAMS", "n", ">");
+    exec_cmd(&d, T0, &out, 7, "XNACK", "n", "g", "FAIL", "IDS", "1", "1-0");
+    EXPECT(out, ":1\r\n");
+    exec_cmd(&d, T0, &out, 8, "XNACK", "n", "g", "SILENT", "IDS", "1",
+             "2-0", "FORCE");
+    EXPECT(out, ":1\r\n");
+    exec_cmd(&d, T0, &out, 8, "XNACK", "n", "g", "SILENT", "IDS", "1", "9-9",
+             "FORCE");
+    EXPECT(out, ":0\r\n");
+    exec_cmd(&d, T0, &out, 7, "XNACK", "n", "nogroup", "FAIL", "IDS", "1",
+             "1-0");
+    DD_CHECK(out.len > 0 && out.data[0] == '-');
+
+    /* XCFGSET validates and accepts IDMP configuration. */
+    exec_cmd(&d, T0, &out, 5, "XADD", "cfg", "1-0", "f", "v");
+    exec_cmd(&d, T0, &out, 4, "XCFGSET", "cfg", "IDMP-DURATION", "100");
+    EXPECT(out, "+OK\r\n");
+    exec_cmd(&d, T0, &out, 4, "XCFGSET", "cfg", "IDMP-MAXSIZE", "200");
+    EXPECT(out, "+OK\r\n");
+    exec_cmd(&d, T0, &out, 4, "XCFGSET", "missing", "IDMP-DURATION", "100");
+    EXPECT(out, "-ERR no such key\r\n");
+
+    /* XIDMPRECORD is a validated metadata no-op on an existing entry. */
+    exec_cmd(&d, T0, &out, 5, "XADD", "idm", "1-0", "f", "v");
+    exec_cmd(&d, T0, &out, 5, "XIDMPRECORD", "idm", "pid", "iid", "1-0");
+    EXPECT(out, "+OK\r\n");
+    exec_cmd(&d, T0, &out, 5, "XIDMPRECORD", "idm", "pid", "iid", "9-9");
+    EXPECT(out, "-ERR No such message in stream\r\n");
+    exec_cmd(&d, T0, &out, 5, "XIDMPRECORD", "missing", "pid", "iid", "1-0");
+    EXPECT(out, "-ERR no such key\r\n");
+
+    resp_buf_free(&out);
+    db_destroy(&d);
+}
+
 int main(void)
 {
     DD_RUN(test_xadd_xlen);
@@ -382,5 +480,6 @@ int main(void)
     DD_RUN(test_xread);
     DD_RUN(test_xclaim_xautoclaim_xinfo);
     DD_RUN(test_stream_group_snapshot_roundtrip);
+    DD_RUN(test_xdelex_xackdel_xnack_xcfgset_xidmprecord);
     return DD_TEST_SUMMARY();
 }

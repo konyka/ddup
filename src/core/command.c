@@ -7278,6 +7278,20 @@ bad_type:
     resp_write_error(out, "ERR invalid argument type", 24);
 }
 
+/* Delete strategy for XDELEX/XACKDEL. */
+#define STREAM_EX_KEEPREF 1
+#define STREAM_EX_DELREF  2
+#define STREAM_EX_ACKED   3
+
+static int stream_parse_ex_ids(const resp_value *argv, size_t argc,
+                               size_t start, int *strategy,
+                               size_t *ids_start, size_t *numids,
+                               resp_buf *out);
+static int stream_entry_referenced(const obj_stream *st, uint64_t ms,
+                                   uint64_t seq);
+static void stream_entry_remove_refs(obj_stream *st, uint64_t ms,
+                                     uint64_t seq);
+
 static void command_xdel(session *s, const resp_value *argv, size_t argc,
                          resp_buf *out, uint64_t now_ms)
 {
@@ -7322,6 +7336,92 @@ static void command_xdel(session *s, const resp_value *argv, size_t argc,
     resp_write_integer(out, deleted);
     return;
 bad_type:
+    resp_write_error(out, "ERR invalid argument type", 24);
+}
+
+static void command_xdelex(session *s, const resp_value *argv, size_t argc,
+                           resp_buf *out, uint64_t now_ms)
+{
+    db *d = s->d;
+    const char *key;
+    size_t kl;
+    obj_stream *st;
+    uint64_t before;
+    uint64_t *ids = NULL;
+    size_t ids_start = 0, numids = 0, i;
+    int strategy = 0;
+    int rc;
+    int changed = 0;
+
+    if (argc < 5) {
+        wrong_args(out, "xdelex");
+        return;
+    }
+    if (!arg_str(&argv[1], &key, &kl))
+        goto bad_type;
+    if (stream_parse_ex_ids(argv, argc, 2, &strategy, &ids_start,
+                            &numids, out) != 0)
+        return;
+
+    ids = (uint64_t *)malloc(numids * 2 * sizeof(*ids));
+    if (ids == NULL) {
+        resp_write_error(out, OOM_MSG, sizeof(OOM_MSG) - 1);
+        return;
+    }
+    for (i = 0; i < numids; i++) {
+        const char *idv;
+        size_t idl;
+        if (!arg_str(&argv[ids_start + i], &idv, &idl) ||
+            !stream_parse_full_id(idv, idl, &ids[2 * i], &ids[2 * i + 1])) {
+            static const char E[] =
+                "ERR Invalid stream ID specified as stream command argument";
+            resp_write_error(out, E, sizeof(E) - 1);
+            free(ids);
+            return;
+        }
+    }
+
+    rc = get_stream(d, out, key, kl, 0, now_ms, &st);
+    if (rc < 0) {
+        free(ids);
+        return;
+    }
+    resp_write_array_header(out, numids);
+    if (rc == 0) {
+        for (i = 0; i < numids; i++)
+            resp_write_integer(out, -1);
+        free(ids);
+        return;
+    }
+
+    before = obj_stream_mem(st);
+    for (i = 0; i < numids; i++) {
+        uint64_t ms = ids[2 * i];
+        uint64_t seq = ids[2 * i + 1];
+        int result = -1;
+        if (strategy == STREAM_EX_ACKED &&
+            stream_entry_referenced(st, ms, seq)) {
+            result = 2;
+        } else {
+            if (strategy == STREAM_EX_DELREF) {
+                if (stream_entry_referenced(st, ms, seq))
+                    changed = 1;
+                stream_entry_remove_refs(st, ms, seq);
+            }
+            if (obj_stream_delete(st, ms, seq)) {
+                result = 1;
+                changed = 1;
+            }
+        }
+        resp_write_integer(out, result);
+    }
+    if (changed)
+        mem_sync(d, key, kl, before, obj_stream_mem(st));
+    free(ids);
+    return;
+
+bad_type:
+    free(ids);
     resp_write_error(out, "ERR invalid argument type", 24);
 }
 
@@ -7445,6 +7545,125 @@ bad_type:
     resp_write_error(out, "ERR invalid argument type", 24);
 }
 
+static int stream_entry_index(const obj_stream *st, uint64_t ms, uint64_t seq,
+                              size_t *idx);
+
+static void command_xcfgset(session *s, const resp_value *argv, size_t argc,
+                            resp_buf *out, uint64_t now_ms)
+{
+    db *d = s->d;
+    const char *key;
+    size_t kl;
+    obj_stream *st;
+    int rc;
+    int have_duration = 0;
+    int have_maxsize = 0;
+    size_t i = 2;
+
+    if (argc < 2) {
+        wrong_args(out, "xcfgset");
+        return;
+    }
+    if (!arg_str(&argv[1], &key, &kl))
+        goto bad_type;
+    while (i < argc) {
+        const char *opt, *val;
+        size_t optl, vall;
+        long long n;
+        if (i + 1 >= argc)
+            goto syntax;
+        if (!arg_str(&argv[i], &opt, &optl) ||
+            !arg_str(&argv[i + 1], &val, &vall))
+            goto bad_type;
+        if (!parse_i64(val, vall, &n) || n < 0)
+            goto syntax;
+        if (ci_equal(opt, optl, "IDMP-DURATION")) {
+            if (have_duration)
+                goto syntax;
+            have_duration = 1;
+        } else if (ci_equal(opt, optl, "IDMP-MAXSIZE")) {
+            if (have_maxsize)
+                goto syntax;
+            have_maxsize = 1;
+        } else {
+            goto syntax;
+        }
+        i += 2;
+    }
+    if (!have_duration && !have_maxsize)
+        goto syntax;
+
+    rc = get_stream(d, out, key, kl, 0, now_ms, &st);
+    if (rc < 0)
+        return;
+    if (rc == 0) {
+        resp_write_error(out, "ERR no such key", 15);
+        return;
+    }
+    (void)st;
+    resp_write_simple_string(out, "OK", 2);
+    return;
+
+syntax:
+    resp_write_error(out, ERR_SYNTAX, sizeof(ERR_SYNTAX) - 1);
+    return;
+bad_type:
+    resp_write_error(out, "ERR invalid argument type", 24);
+}
+
+static void command_xidmprecord(session *s, const resp_value *argv,
+                                size_t argc, resp_buf *out, uint64_t now_ms)
+{
+    db *d = s->d;
+    const char *key, *pid, *iid, *idv;
+    size_t kl, pl, il, idl;
+    obj_stream *st;
+    uint64_t ms, seq;
+    size_t eidx;
+    int rc;
+
+    if (argc != 5) {
+        wrong_args(out, "xidmprecord");
+        return;
+    }
+    if (!arg_str(&argv[1], &key, &kl) ||
+        !arg_str(&argv[2], &pid, &pl) ||
+        !arg_str(&argv[3], &iid, &il) ||
+        !arg_str(&argv[4], &idv, &idl))
+        goto bad_type;
+    if (pl == 0) {
+        static const char E[] = "ERR producer ID must be non-empty";
+        resp_write_error(out, E, sizeof(E) - 1);
+        return;
+    }
+    if (il == 0) {
+        static const char E[] = "ERR idempotent ID must be non-empty";
+        resp_write_error(out, E, sizeof(E) - 1);
+        return;
+    }
+    if (!stream_parse_full_id(idv, idl, &ms, &seq)) {
+        resp_write_error(out, ERR_SYNTAX, sizeof(ERR_SYNTAX) - 1);
+        return;
+    }
+    rc = get_stream(d, out, key, kl, 0, now_ms, &st);
+    if (rc < 0)
+        return;
+    if (rc == 0) {
+        resp_write_error(out, "ERR no such key", 15);
+        return;
+    }
+    if (!stream_entry_index(st, ms, seq, &eidx)) {
+        static const char E[] = "ERR No such message in stream";
+        resp_write_error(out, E, sizeof(E) - 1);
+        return;
+    }
+    resp_write_simple_string(out, "OK", 2);
+    return;
+
+bad_type:
+    resp_write_error(out, "ERR invalid argument type", 24);
+}
+
 /* ------------------------------------------------------------------ */
 /* stream consumer-group command family                               */
 /* ------------------------------------------------------------------ */
@@ -7498,6 +7717,95 @@ static stream_pending *stream_group_pel_find(stream_group *g, uint64_t ms,
         }
     }
     return NULL;
+}
+
+/* Returns 1 when any consumer group still references this stream entry. */
+static int stream_entry_referenced(const obj_stream *st, uint64_t ms,
+                                   uint64_t seq)
+{
+    size_t i;
+    for (i = 0; i < st->ngroups; i++) {
+        if (stream_group_pel_find(&st->groups[i], ms, seq, NULL) != NULL)
+            return 1;
+    }
+    return 0;
+}
+
+/* Remove all PEL references to an entry across every consumer group. */
+static void stream_entry_remove_refs(obj_stream *st, uint64_t ms,
+                                     uint64_t seq)
+{
+    size_t i;
+    for (i = 0; i < st->ngroups; i++)
+        (void)obj_stream_group_pel_remove(&st->groups[i], ms, seq);
+}
+
+/* Delete strategy for XDELEX/XACKDEL. */
+#define STREAM_EX_KEEPREF 1
+#define STREAM_EX_DELREF  2
+#define STREAM_EX_ACKED   3
+
+/* Parse [KEEPREF|DELREF|ACKED] IDS <numids> <id ...> with no trailing
+ * options. start is the first argument after the fixed key/group fields. */
+static int stream_parse_ex_ids(const resp_value *argv, size_t argc,
+                               size_t start, int *strategy,
+                               size_t *ids_start, size_t *numids,
+                               resp_buf *out)
+{
+    size_t i = start;
+    long long n = 0;
+    *strategy = 0;
+    while (i < argc) {
+        const char *tok;
+        size_t tl;
+        if (!arg_str(&argv[i], &tok, &tl))
+            goto ex_bad_arg;
+        if (ci_equal(tok, tl, "KEEPREF") && *strategy == 0) {
+            *strategy = STREAM_EX_KEEPREF;
+            i++;
+        } else if (ci_equal(tok, tl, "DELREF") && *strategy == 0) {
+            *strategy = STREAM_EX_DELREF;
+            i++;
+        } else if (ci_equal(tok, tl, "ACKED") && *strategy == 0) {
+            *strategy = STREAM_EX_ACKED;
+            i++;
+        } else if (ci_equal(tok, tl, "IDS") && i + 1 < argc) {
+            const char *nv;
+            size_t nvl;
+            if (!arg_str(&argv[i + 1], &nv, &nvl) ||
+                !parse_i64(nv, nvl, &n) || n <= 0)
+                goto ex_syntax;
+            *ids_start = i + 2;
+            *numids = (size_t)n;
+            if (*numids > argc - *ids_start) {
+                static const char E[] =
+                    "ERR number of IDs doesn't match numids";
+                resp_write_error(out, E, sizeof(E) - 1);
+                return -1;
+            }
+            if (*ids_start + *numids != argc) {
+                static const char E[] =
+                    "ERR number of IDs doesn't match numids";
+                resp_write_error(out, E, sizeof(E) - 1);
+                return -1;
+            }
+            if (*strategy == 0)
+                *strategy = STREAM_EX_KEEPREF;
+            return 0;
+        } else {
+            goto ex_syntax;
+        }
+    }
+    static const char MISSING[] = "ERR IDS option is required";
+    resp_write_error(out, MISSING, sizeof(MISSING) - 1);
+    return -1;
+
+ex_syntax:
+    resp_write_error(out, ERR_SYNTAX, sizeof(ERR_SYNTAX) - 1);
+    return -1;
+ex_bad_arg:
+    resp_write_error(out, "ERR invalid argument type", 24);
+    return -1;
 }
 
 static void command_xgroup(session *s, const resp_value *argv, size_t argc,
@@ -7724,6 +8032,94 @@ static void command_xack(session *s, const resp_value *argv, size_t argc,
     resp_write_integer(out, (long long)acked);
     return;
 bad_type:
+    resp_write_error(out, "ERR invalid argument type", 24);
+}
+
+static void command_xackdel(session *s, const resp_value *argv, size_t argc,
+                            resp_buf *out, uint64_t now_ms)
+{
+    db *d = s->d;
+    const char *key, *group;
+    size_t kl, gl;
+    obj_stream *st;
+    stream_group *g;
+    uint64_t before;
+    uint64_t *ids = NULL;
+    size_t ids_start = 0, numids = 0, i;
+    int strategy = 0;
+    int rc;
+    int changed = 0;
+
+    if (argc < 6) {
+        wrong_args(out, "xackdel");
+        return;
+    }
+    if (!arg_str(&argv[1], &key, &kl) ||
+        !arg_str(&argv[2], &group, &gl))
+        goto bad_type;
+    if (stream_parse_ex_ids(argv, argc, 3, &strategy, &ids_start,
+                            &numids, out) != 0)
+        return;
+
+    ids = (uint64_t *)malloc(numids * 2 * sizeof(*ids));
+    if (ids == NULL) {
+        resp_write_error(out, OOM_MSG, sizeof(OOM_MSG) - 1);
+        return;
+    }
+    for (i = 0; i < numids; i++) {
+        const char *idv;
+        size_t idl;
+        if (!arg_str(&argv[ids_start + i], &idv, &idl) ||
+            !stream_parse_full_id(idv, idl, &ids[2 * i], &ids[2 * i + 1])) {
+            static const char E[] =
+                "ERR Invalid stream ID specified as stream command argument";
+            resp_write_error(out, E, sizeof(E) - 1);
+            free(ids);
+            return;
+        }
+    }
+
+    rc = get_stream(d, out, key, kl, 0, now_ms, &st);
+    if (rc < 0) {
+        free(ids);
+        return;
+    }
+    resp_write_array_header(out, numids);
+    if (rc == 0 || (g = obj_stream_group_get(st, group, gl)) == NULL) {
+        for (i = 0; i < numids; i++)
+            resp_write_integer(out, -1);
+        free(ids);
+        return;
+    }
+
+    before = obj_stream_mem(st);
+    for (i = 0; i < numids; i++) {
+        uint64_t ms = ids[2 * i];
+        uint64_t seq = ids[2 * i + 1];
+        int result = -1;
+        if (obj_stream_group_pel_remove(g, ms, seq)) {
+            changed = 1;
+            if (strategy == STREAM_EX_ACKED &&
+                stream_entry_referenced(st, ms, seq)) {
+                result = 2;
+            } else {
+                if (strategy == STREAM_EX_DELREF) {
+                    stream_entry_remove_refs(st, ms, seq);
+                    changed = 1;
+                }
+                (void)obj_stream_delete(st, ms, seq);
+                result = 1;
+            }
+        }
+        resp_write_integer(out, result);
+    }
+    if (changed)
+        mem_sync(d, key, kl, before, obj_stream_mem(st));
+    free(ids);
+    return;
+
+bad_type:
+    free(ids);
     resp_write_error(out, "ERR invalid argument type", 24);
 }
 
@@ -8173,6 +8569,179 @@ syntax:
     resp_write_error(out, ERR_SYNTAX, sizeof(ERR_SYNTAX) - 1);
     return;
 bad_type:
+    resp_write_error(out, "ERR invalid argument type", 24);
+}
+
+static void command_xnack(session *s, const resp_value *argv, size_t argc,
+                           resp_buf *out, uint64_t now_ms)
+{
+    db *d = s->d;
+    const char *key, *group, *mode;
+    size_t kl, gl, ml;
+    obj_stream *st;
+    stream_group *g;
+    uint64_t before;
+    uint64_t *ids = NULL;
+    size_t ids_start = 0, numids = 0, i;
+    int mode_id = -1;
+    int force = 0;
+    long long retrycount = -1;
+    int retry_set = 0;
+    long long nacked = 0;
+    int rc;
+
+    if (argc < 7) {
+        wrong_args(out, "xnack");
+        return;
+    }
+    if (!arg_str(&argv[1], &key, &kl) ||
+        !arg_str(&argv[2], &group, &gl) ||
+        !arg_str(&argv[3], &mode, &ml))
+        goto bad_type;
+    if (ci_equal(mode, ml, "SILENT")) {
+        mode_id = 0;
+    } else if (ci_equal(mode, ml, "FAIL")) {
+        mode_id = 1;
+    } else if (ci_equal(mode, ml, "FATAL")) {
+        mode_id = 2;
+    } else {
+        static const char E[] = "ERR mode must be SILENT, FAIL, or FATAL";
+        resp_write_error(out, E, sizeof(E) - 1);
+        return;
+    }
+
+    for (i = 4; i < argc; i++) {
+        const char *tok;
+        size_t tl;
+        if (!arg_str(&argv[i], &tok, &tl))
+            goto bad_type;
+        if (ci_equal(tok, tl, "IDS") && i + 1 < argc) {
+            const char *nv;
+            size_t nvl;
+            long long n;
+            if (!arg_str(&argv[i + 1], &nv, &nvl) ||
+                !parse_i64(nv, nvl, &n) || n <= 0) {
+                static const char E[] =
+                    "ERR numids must be a positive integer";
+                resp_write_error(out, E, sizeof(E) - 1);
+                return;
+            }
+            ids_start = i + 2;
+            numids = (size_t)n;
+            if (numids > argc - ids_start) {
+                static const char E[] =
+                    "ERR number of IDs doesn't match numids";
+                resp_write_error(out, E, sizeof(E) - 1);
+                return;
+            }
+            i = ids_start + numids - 1;
+        } else if (ci_equal(tok, tl, "FORCE")) {
+            force = 1;
+        } else if (ci_equal(tok, tl, "RETRYCOUNT") && i + 1 < argc) {
+            const char *nv;
+            size_t nvl;
+            i++;
+            if (!arg_str(&argv[i], &nv, &nvl) ||
+                !parse_i64(nv, nvl, &retrycount) || retrycount < 0) {
+                static const char E[] =
+                    "ERR Invalid RETRYCOUNT value, must be >= 0";
+                resp_write_error(out, E, sizeof(E) - 1);
+                return;
+            }
+            retry_set = 1;
+        } else {
+            resp_write_error(out, ERR_SYNTAX, sizeof(ERR_SYNTAX) - 1);
+            return;
+        }
+    }
+    if (ids_start == 0) {
+        static const char E[] = "ERR syntax error, expected IDS keyword";
+        resp_write_error(out, E, sizeof(E) - 1);
+        return;
+    }
+
+    ids = (uint64_t *)malloc(numids * 2 * sizeof(*ids));
+    if (ids == NULL) {
+        resp_write_error(out, OOM_MSG, sizeof(OOM_MSG) - 1);
+        return;
+    }
+    for (i = 0; i < numids; i++) {
+        const char *idv;
+        size_t idl;
+        if (!arg_str(&argv[ids_start + i], &idv, &idl) ||
+            !stream_parse_full_id(idv, idl, &ids[2 * i], &ids[2 * i + 1])) {
+            static const char E[] =
+                "ERR Invalid stream ID specified as stream command argument";
+            resp_write_error(out, E, sizeof(E) - 1);
+            free(ids);
+            return;
+        }
+    }
+
+    rc = get_stream(d, out, key, kl, 0, now_ms, &st);
+    if (rc < 0) {
+        free(ids);
+        return;
+    }
+    if (rc == 0 || (g = obj_stream_group_get(st, group, gl)) == NULL) {
+        static const char E[] = "NOGROUP No such consumer group";
+        resp_write_error(out, E, sizeof(E) - 1);
+        free(ids);
+        return;
+    }
+
+    before = obj_stream_mem(st);
+    for (i = 0; i < numids; i++) {
+        uint64_t ms = ids[2 * i];
+        uint64_t seq = ids[2 * i + 1];
+        stream_pending *p = stream_group_pel_find(g, ms, seq, NULL);
+        if (p != NULL) {
+            if (retry_set) {
+                p->delivery_count = (uint64_t)retrycount;
+            } else if (mode_id == 0) {
+                if (p->delivery_count > 0)
+                    p->delivery_count--;
+            } else if (mode_id == 2) {
+                p->delivery_count = (uint64_t)INT64_MAX;
+            }
+            p->idle = 0;
+            nacked++;
+            continue;
+        }
+        if (force) {
+            size_t eidx;
+            stream_consumer *c;
+            uint64_t delivery = 0;
+            if (!stream_entry_index(st, ms, seq, &eidx))
+                continue;
+            c = obj_stream_consumer_create(g, "", 1);
+            if (c == NULL) {
+                storage_length_error(out);
+                free(ids);
+                return;
+            }
+            if (retry_set) {
+                delivery = (uint64_t)retrycount;
+            } else if (mode_id == 2) {
+                delivery = (uint64_t)INT64_MAX;
+            }
+            if (obj_stream_consumer_pel_add(g, c, ms, seq, 0, delivery) ==
+                NULL) {
+                storage_length_error(out);
+                free(ids);
+                return;
+            }
+            nacked++;
+        }
+    }
+    if (nacked > 0)
+        mem_sync(d, key, kl, before, obj_stream_mem(st));
+    resp_write_integer(out, nacked);
+    free(ids);
+    return;
+
+bad_type:
+    free(ids);
     resp_write_error(out, "ERR invalid argument type", 24);
 }
 
@@ -18966,6 +19535,11 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
         return;
     }
 
+    if (cmd_id == CMD_XDELEX) {
+        command_xdelex(s, argv, argc, out, now_ms);
+        return;
+    }
+
     if (cmd_id == CMD_XTRIM) {
         command_xtrim(s, argv, argc, out, now_ms);
         return;
@@ -18981,6 +19555,11 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
         return;
     }
 
+    if (cmd_id == CMD_XACKDEL) {
+        command_xackdel(s, argv, argc, out, now_ms);
+        return;
+    }
+
     if (cmd_id == CMD_XPENDING) {
         command_xpending(s, argv, argc, out, now_ms);
         return;
@@ -18993,6 +19572,11 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
 
     if (cmd_id == CMD_XAUTOCLAIM) {
         command_xautoclaim(s, argv, argc, out, now_ms);
+        return;
+    }
+
+    if (cmd_id == CMD_XNACK) {
+        command_xnack(s, argv, argc, out, now_ms);
         return;
     }
 
@@ -19013,6 +19597,16 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
 
     if (cmd_id == CMD_XSETID) {
         command_xsetid(s, argv, argc, out, now_ms);
+        return;
+    }
+
+    if (cmd_id == CMD_XCFGSET) {
+        command_xcfgset(s, argv, argc, out, now_ms);
+        return;
+    }
+
+    if (cmd_id == CMD_XIDMPRECORD) {
+        command_xidmprecord(s, argv, argc, out, now_ms);
         return;
     }
 
@@ -20212,16 +20806,21 @@ static const cmd_entry CMD_TABLE[] = {
     {"xrange", CMD_XRANGE, 4, -1, 0, 0},
     {"xrevrange", CMD_XREVRANGE, 4, -1, 0, 0},
     {"xdel", CMD_XDEL, 3, -1, 0, CMD_WRITE},
+    {"xdelex", CMD_XDELEX, 5, -1, 0, CMD_WRITE},
     {"xtrim", CMD_XTRIM, 4, -1, 0, CMD_WRITE},
     {"xgroup", CMD_XGROUP, 2, -1, 0, CMD_WRITE},
     {"xack", CMD_XACK, 4, -1, 0, CMD_WRITE},
+    {"xackdel", CMD_XACKDEL, 6, -1, 0, CMD_WRITE},
     {"xpending", CMD_XPENDING, 3, 7, 0, 0},
     {"xclaim", CMD_XCLAIM, 6, -1, 0, CMD_WRITE},
     {"xautoclaim", CMD_XAUTOCLAIM, 6, -1, 0, CMD_WRITE},
+    {"xnack", CMD_XNACK, 7, -1, 0, CMD_WRITE},
     {"xread", CMD_XREAD, 4, -1, 0, 0},
     {"xreadgroup", CMD_XREADGROUP, 7, -1, 0, CMD_WRITE},
     {"xinfo", CMD_XINFO, 2, -1, 0, 0},
     {"xsetid", CMD_XSETID, 3, -1, 0, CMD_WRITE},
+    {"xcfgset", CMD_XCFGSET, 2, -1, 0, CMD_WRITE},
+    {"xidmprecord", CMD_XIDMPRECORD, 5, 5, 0, CMD_WRITE},
     {"eval_ro", CMD_EVAL_RO, 3, -1, 0, 0},
     {"evalsha_ro", CMD_EVALSHA_RO, 3, -1, 0, 0},
     {"fcall", CMD_FCALL, 3, -1, 0, CMD_WRITE},
