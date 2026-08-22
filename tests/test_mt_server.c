@@ -423,6 +423,19 @@ static void wait_for_bulk(pal_socket_t c, const char *key,
     DD_CHECK(0);
 }
 
+static void wait_for_mt_repl_synced(const mt_server *ms)
+{
+    uint64_t deadline = pal_now_ms() + 30000;
+
+    while (pal_now_ms() < deadline) {
+        if (mt_server_repl_synced(ms))
+            return;
+        pal_sleep_ms(10);
+    }
+    fprintf(stderr, "timed out waiting for mt replica full sync\n");
+    DD_CHECK(0);
+}
+
 static void test_mt_replica_partitions_full_sync(void)
 {
     server *master;
@@ -459,6 +472,7 @@ static void test_mt_replica_partitions_full_sync(void)
                     mt_server_replicaof(ms, "127.0.0.1",
                                         server_port(master)));
     DD_CHECK_EQ_INT(0, mt_server_start(ms));
+    wait_for_mt_repl_synced(ms);
 
     c = connect_client(mt_server_port(ms));
     wait_for_bulk(c, k0, "$2\r\nv0\r\n");
@@ -633,6 +647,107 @@ static void test_mt_replication_forwards_mutations(void)
     wait_for_bulk(c, k0, "$2\r\nfd\r\n");
     roundtrip(mc, "*1\r\n$7\r\nFLUSHDB\r\n", "+OK\r\n");
     wait_for_bulk(c, k0, "$-1\r\n");
+
+    pal_close(mc);
+    pal_close(c);
+    mt_server_stop(ms);
+    mt_server_destroy(ms);
+    rt.running = 0;
+    pal_thread_join(&replica_thread, NULL);
+    server_destroy(replica);
+    pal_socket_cleanup();
+}
+
+static void test_mt_info_replication(void)
+{
+    mt_server *ms;
+    server *replica;
+    server_thread_ctx rt;
+    pal_thread replica_thread;
+    pal_socket_t c;
+    char info[65536];
+    size_t got;
+
+    DD_CHECK_EQ_INT(0, pal_socket_init());
+    ms = mt_server_create("127.0.0.1", 0, 2);
+    DD_CHECK(ms != NULL);
+    DD_CHECK_EQ_INT(0, mt_server_start(ms));
+
+    replica = server_create("127.0.0.1", 0);
+    DD_CHECK(replica != NULL);
+    rt.srv = replica;
+    rt.running = 1;
+    DD_CHECK_EQ_INT(0,
+                    pal_thread_create(&replica_thread, server_thread_main,
+                                      &rt));
+    DD_CHECK_EQ_INT(0,
+                    server_replicaof(replica, "127.0.0.1",
+                                     mt_server_port(ms)));
+    pal_sleep_ms(200);
+
+    c = connect_client(mt_server_port(ms));
+    got = request_full(c, "*1\r\n$4\r\nINFO\r\n", info, sizeof(info));
+    DD_CHECK(got > 0);
+    info[got] = '\0';
+    DD_CHECK(strstr(info, "role:master\r\n") != NULL);
+    DD_CHECK(strstr(info, "connected_slaves:1\r\n") != NULL);
+    pal_close(c);
+
+    mt_server_stop(ms);
+    mt_server_destroy(ms);
+    rt.running = 0;
+    pal_thread_join(&replica_thread, NULL);
+    server_destroy(replica);
+    pal_socket_cleanup();
+}
+
+static void test_mt_swapdb_replicates_once_three_workers(void)
+{
+    mt_server *ms;
+    server *replica;
+    server_thread_ctx rt;
+    pal_thread replica_thread;
+    pal_socket_t mc, c;
+    char k0[32], k1[32];
+    char req[256];
+
+    DD_CHECK_EQ_INT(0, pal_socket_init());
+    pick_key_for_worker(0, 3, k0, sizeof(k0));
+    pick_key_for_worker(1, 3, k1, sizeof(k1));
+
+    ms = mt_server_create("127.0.0.1", 0, 3);
+    DD_CHECK(ms != NULL);
+    DD_CHECK_EQ_INT(0, mt_server_start(ms));
+
+    replica = server_create("127.0.0.1", 0);
+    DD_CHECK(replica != NULL);
+    rt.srv = replica;
+    rt.running = 1;
+    DD_CHECK_EQ_INT(0,
+                    pal_thread_create(&replica_thread, server_thread_main,
+                                      &rt));
+    DD_CHECK_EQ_INT(0,
+                    server_replicaof(replica, "127.0.0.1",
+                                     mt_server_port(ms)));
+    pal_sleep_ms(200);
+
+    mc = connect_client(mt_server_port(ms));
+    c = connect_client(server_port(replica));
+
+    snprintf(req, sizeof(req), "*3\r\n$3\r\nSET\r\n$%zu\r\n%s\r\n$2\r\nd0\r\n",
+             strlen(k0), k0);
+    roundtrip(mc, req, "+OK\r\n");
+    roundtrip(mc, "*2\r\n$6\r\nSELECT\r\n$1\r\n1\r\n", "+OK\r\n");
+    snprintf(req, sizeof(req), "*3\r\n$3\r\nSET\r\n$%zu\r\n%s\r\n$2\r\nd1\r\n",
+             strlen(k1), k1);
+    roundtrip(mc, req, "+OK\r\n");
+    roundtrip(mc, "*3\r\n$6\r\nSWAPDB\r\n$1\r\n0\r\n$1\r\n1\r\n", "+OK\r\n");
+
+    wait_for_bulk(c, k0, "$-1\r\n");
+    wait_for_bulk(c, k1, "$2\r\nd1\r\n");
+    roundtrip(c, "*2\r\n$6\r\nSELECT\r\n$1\r\n1\r\n", "+OK\r\n");
+    wait_for_bulk(c, k1, "$-1\r\n");
+    wait_for_bulk(c, k0, "$2\r\nd0\r\n");
 
     pal_close(mc);
     pal_close(c);
@@ -1594,6 +1709,91 @@ static void test_aof_persistence_mt(void)
     pal_socket_cleanup();
 }
 
+static void test_aof_aggregate_mt(void)
+{
+    mt_server *ms;
+    pal_socket_t a;
+    char k0[32], k1[32];
+    char req[192];
+    const char *aof0 = "./worker-0-mtaggr.aof";
+    const char *aof1 = "./worker-1-mtaggr.aof";
+
+    DD_CHECK_EQ_INT(0, pal_socket_init());
+    pick_key_for_worker(0, 2, k0, sizeof(k0));
+    pick_key_for_worker(1, 2, k1, sizeof(k1));
+    (void)pal_file_unlink(aof0);
+    (void)pal_file_unlink(aof1);
+
+    ms = mt_server_create("127.0.0.1", 0, 2);
+    DD_CHECK(ms != NULL);
+    DD_CHECK_EQ_INT(0, mt_server_enable_aof(ms, ".", "mtaggr.aof"));
+    DD_CHECK_EQ_INT(0, mt_server_start(ms));
+    a = connect_client(mt_server_port(ms));
+
+    snprintf(req, sizeof(req), "*3\r\n$3\r\nSET\r\n$%zu\r\n%s\r\n$2\r\nv0\r\n",
+             strlen(k0), k0);
+    roundtrip(a, req, "+OK\r\n");
+    snprintf(req, sizeof(req), "*3\r\n$3\r\nSET\r\n$%zu\r\n%s\r\n$2\r\nv1\r\n",
+             strlen(k1), k1);
+    roundtrip(a, req, "+OK\r\n");
+    roundtrip(a, "*1\r\n$7\r\nFLUSHDB\r\n", "+OK\r\n");
+
+    pal_close(a);
+    mt_server_stop(ms);
+    mt_server_destroy(ms);
+
+    ms = mt_server_create("127.0.0.1", 0, 2);
+    DD_CHECK(ms != NULL);
+    DD_CHECK_EQ_INT(0, mt_server_enable_aof(ms, ".", "mtaggr.aof"));
+    DD_CHECK_EQ_INT(0, mt_server_start(ms));
+    a = connect_client(mt_server_port(ms));
+    snprintf(req, sizeof(req), "*2\r\n$3\r\nGET\r\n$%zu\r\n%s\r\n",
+             strlen(k0), k0);
+    roundtrip(a, req, "$-1\r\n");
+    snprintf(req, sizeof(req), "*2\r\n$3\r\nGET\r\n$%zu\r\n%s\r\n",
+             strlen(k1), k1);
+    roundtrip(a, req, "$-1\r\n");
+    pal_close(a);
+    mt_server_stop(ms);
+    mt_server_destroy(ms);
+
+    ms = mt_server_create("127.0.0.1", 0, 2);
+    DD_CHECK(ms != NULL);
+    DD_CHECK_EQ_INT(0, mt_server_enable_aof(ms, ".", "mtaggr.aof"));
+    DD_CHECK_EQ_INT(0, mt_server_start(ms));
+    a = connect_client(mt_server_port(ms));
+    snprintf(req, sizeof(req), "*3\r\n$3\r\nSET\r\n$%zu\r\n%s\r\n$2\r\nv2\r\n",
+             strlen(k0), k0);
+    roundtrip(a, req, "+OK\r\n");
+    snprintf(req, sizeof(req), "*3\r\n$3\r\nSET\r\n$%zu\r\n%s\r\n$2\r\nv2\r\n",
+             strlen(k1), k1);
+    roundtrip(a, req, "+OK\r\n");
+    roundtrip(a, "*1\r\n$8\r\nFLUSHALL\r\n", "+OK\r\n");
+
+    pal_close(a);
+    mt_server_stop(ms);
+    mt_server_destroy(ms);
+
+    ms = mt_server_create("127.0.0.1", 0, 2);
+    DD_CHECK(ms != NULL);
+    DD_CHECK_EQ_INT(0, mt_server_enable_aof(ms, ".", "mtaggr.aof"));
+    DD_CHECK_EQ_INT(0, mt_server_start(ms));
+    a = connect_client(mt_server_port(ms));
+    snprintf(req, sizeof(req), "*2\r\n$3\r\nGET\r\n$%zu\r\n%s\r\n",
+             strlen(k0), k0);
+    roundtrip(a, req, "$-1\r\n");
+    snprintf(req, sizeof(req), "*2\r\n$3\r\nGET\r\n$%zu\r\n%s\r\n",
+             strlen(k1), k1);
+    roundtrip(a, req, "$-1\r\n");
+    pal_close(a);
+    mt_server_stop(ms);
+    mt_server_destroy(ms);
+
+    (void)pal_file_unlink(aof0);
+    (void)pal_file_unlink(aof1);
+    pal_socket_cleanup();
+}
+
 static void test_aof_failure_stops_mt_workers_without_spin(void)
 {
     mt_server *ms;
@@ -2100,6 +2300,8 @@ int main(void)
     DD_RUN(test_mt_replica_partitions_full_sync);
     DD_RUN(test_mt_master_serves_replica_full_sync);
     DD_RUN(test_mt_replication_forwards_mutations);
+    DD_RUN(test_mt_info_replication);
+    DD_RUN(test_mt_swapdb_replicates_once_three_workers);
     DD_RUN(test_pubsub_cross_worker);
     DD_RUN(test_unsubscribe_stops_delivery);
     DD_RUN(test_pubsub_conn_close_unsubscribes);
@@ -2125,6 +2327,7 @@ int main(void)
     DD_RUN(test_watch_pipeline_unwatch_is_ordered_and_disconnect_safe);
     DD_RUN(test_watch_shutdown_releases_remote_owner);
     DD_RUN(test_aof_persistence_mt);
+    DD_RUN(test_aof_aggregate_mt);
     DD_RUN(test_aof_failure_stops_mt_workers_without_spin);
     DD_RUN(test_snapshot_mt);
     DD_RUN(test_connection_migration_to_key_owner);
