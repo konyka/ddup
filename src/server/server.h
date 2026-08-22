@@ -161,6 +161,10 @@ void server_repl_stream_append_db(server *s, int db_index, const char *raw,
  * must be maintained. */
 int server_repl_active(const server *s);
 
+/* Snapshot of the replication role/backlog state for INFO. In mt mode the
+ * worker-0 server owns the master link and the downstream replica set. */
+const repl_info *server_repl_info(const server *s);
+
 /* Flush the optional AOF immediately (replication batches call this after
  * a stream chunk; mt mode flushes every worker's AOF). */
 void server_aof_flush(server *s);

@@ -2478,6 +2478,11 @@ int server_repl_active(const server *s)
                          s->backlog_used != 0);
 }
 
+const repl_info *server_repl_info(const server *s)
+{
+    return s != NULL ? &s->repl : NULL;
+}
+
 void server_repl_stream_append(server *s, const char *raw, size_t raw_len)
 {
     size_t i;

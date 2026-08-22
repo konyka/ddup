@@ -31,6 +31,8 @@ uint16_t mt_server_port(const mt_server *ms);
 
 /* Total routed tasks executed across all workers (test/observability). */
 uint64_t mt_server_tasks_executed(const mt_server *ms);
+/* Nonzero once a replica full sync has finished restoring every shard. */
+int mt_server_repl_synced(const mt_server *ms);
 /* pooled-task freelist hits across workers (Phase 31 observability) */
 uint64_t mt_server_pool_hits(const mt_server *ms);
 /* Test seam: force the next n executed-task completion pushes to fail. */

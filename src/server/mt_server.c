@@ -28,6 +28,7 @@
 #include "core/session.h"
 #include "core/snapshot.h"
 #include "pal/pal_event.h"
+#include "pal/pal_cstd.h"
 #include "pal/pal_file.h"
 #include "pal/pal_socket.h"
 #include "pal/pal_thread.h"
@@ -268,6 +269,7 @@ struct mt_server {
     int fail_completion_consumed;
     int cluster_enabled; /* worker 0 owns the cluster bus/gossip */
     int replica_mode;    /* worker 0 is an outbound replica link */
+    ddup_atomic_int repl_synced; /* full-sync restore finished */
     int snapshot_pending; /* replica full-sync restore tasks not yet done */
     int snapshot_ser_pending; /* master full-sync snapshot tasks not yet done */
     mt_task **snapshot_ser_tasks; /* completed snapshots, indexed by worker id */
@@ -1374,7 +1376,9 @@ static void mt_agg_finish(server *srv, void *conn, mt_conn_state *st,
                              "ERR command failed on a worker", 29);
         else if (agg->cmd == CMD_INFO)
             command_info_render(server_db_at(agg->home->srv, agg->db_index),
-                                NULL, agg->stats, &fin->reply);
+                                server_repl_info(
+                                    agg->home->ms->workers[0].srv),
+                                agg->stats, &fin->reply);
         else if (agg->cmd == CMD_DBSIZE || agg->cmd == CMD_LASTSAVE)
             resp_write_integer(&fin->reply, agg->sum);
         else
@@ -1923,22 +1927,26 @@ static void mt_info_exec(worker *w, resp_buf *out)
 
 /* Execute FLUSHALL on one worker with a stack session that sees all of the
  * worker's logical dbs (the sessionless task path only covers one db). */
-static void mt_flushall_exec(worker *w, resp_buf *out)
+static void mt_flushall_exec(worker *w, int log_db_index, resp_buf *out)
 {
     static const char req[] = "*1\r\n$8\r\nFLUSHALL\r\n";
     session sess;
     resp_value v;
     arena ar;
+    uint64_t dirty_before;
     session_init(&sess, server_db_at(w->srv, 0));
     sess.sel_ctx = w->srv;
     sess.sel_fn = server_select_db;
     sess.sel_ndbs = server_ndbs(w->srv);
+    dirty_before = sess.d->dirty;
     arena_init(&ar, 64);
     if (resp_parse(req, sizeof(req) - 1, &v, &ar) ==
         (ptrdiff_t)(sizeof(req) - 1))
         session_execute_at(&sess, v.items, v.count, out, pal_wall_ms());
     else
         resp_write_error(out, "ERR Protocol error", 18);
+    if (sess.d->dirty != dirty_before)
+        server_aof_log_cmd(w->srv, log_db_index, v.items, v.count);
     arena_destroy(&ar);
     session_release(&sess);
 }
@@ -2003,7 +2011,7 @@ static int mt_route_aggregate(worker *home, void *conn,
     if (cmd == CMD_INFO) {
         mt_info_exec(home, &local);
     } else if (cmd == CMD_FLUSHALL) {
-        mt_flushall_exec(home, &local);
+        mt_flushall_exec(home, db_index, &local);
     } else if (cmd == CMD_SWAPDB) {
         resp_value v;
         arena ar;
@@ -2013,6 +2021,12 @@ static int mt_route_aggregate(worker *home, void *conn,
         else
             resp_write_error(&local, "ERR Protocol error", 18);
         arena_destroy(&ar);
+    } else if (cmd == CMD_FLUSHDB) {
+        db *d = server_db_at(home->srv, db_index);
+        uint64_t dirty_before = d->dirty;
+        command_execute_at(d, argv, argc, &local, pal_wall_ms());
+        if (d->dirty != dirty_before)
+            server_aof_log_cmd(home->srv, db_index, argv, argc);
     } else {
         command_execute_at(server_db_at(home->srv, db_index), argv, argc,
                            &local, pal_wall_ms());
@@ -3352,6 +3366,7 @@ static int mt_repl_snapshot_load(void *ctx, const char *buf, size_t len)
 
     if (ms == NULL || ms->nworkers == 0)
         return -1;
+    ddup_atomic_store(&ms->repl_synced, 0, ddup_memory_order_release);
     leader = &ms->workers[0];
     ndbs = server_ndbs(leader->srv);
     tmp = (db *)calloc((size_t)ndbs, sizeof(db));
@@ -3399,7 +3414,10 @@ static int mt_repl_snapshot_load(void *ctx, const char *buf, size_t len)
         mt_drain_completions(leader);
         pal_sleep_ms(1);
     }
-    return (!failed && ms->snapshot_pending == 0) ? 0 : -1;
+    if (failed || ms->snapshot_pending != 0)
+        return -1;
+    ddup_atomic_store(&ms->repl_synced, 1, ddup_memory_order_release);
+    return 0;
 }
 
 /* REPLICAOF/SLAVEOF in mt mode operates the worker-0 master link directly.
@@ -3633,7 +3651,7 @@ static void mt_exec_task(worker *w, mt_task *t)
             if (v.count == 1 && v.items[0].str != NULL &&
                 v.items[0].len == 8 &&
                 mt_ci_equal(v.items[0].str, v.items[0].len, "flushall")) {
-                mt_flushall_exec(w, &t->reply);
+                mt_flushall_exec(w, t->db_index, &t->reply);
                 continue;
             }
             dirty_before = d->dirty;
@@ -4007,6 +4025,7 @@ mt_server *mt_server_create_ex(const char *host, uint16_t port, int nworkers,
         free(ms);
         return NULL;
     }
+    ddup_atomic_init(&ms->repl_synced, 0);
     ms->workers = (worker *)calloc((size_t)nworkers, sizeof(worker));
     if (ms->workers == NULL) {
         pal_close(ms->listen_fd);
@@ -4070,6 +4089,12 @@ mt_server *mt_server_create_ex(const char *host, uint16_t port, int nworkers,
 uint16_t mt_server_port(const mt_server *ms)
 {
     return ms->port;
+}
+
+int mt_server_repl_synced(const mt_server *ms)
+{
+    return ms != NULL &&
+           ddup_atomic_load(&ms->repl_synced, ddup_memory_order_acquire);
 }
 
 void mt_server_set_requirepass(mt_server *ms, const char *pw)
