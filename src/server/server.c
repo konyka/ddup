@@ -24,6 +24,7 @@
 #include "core/redbus.h"
 #include "core/session.h"
 #include "core/snapshot.h"
+#include "core/tier.h"
 #include "ds/glob.h"
 #include "server/aof.h"
 #include "pal/pal_cstd.h"
@@ -173,6 +174,7 @@ struct server {
     db db;            /* db 0 (also holds the cluster state) */
     db *extra_dbs;    /* dbs 1..ndbs-1 */
     int ndbs;         /* total logical databases (default 16) */
+    struct tier_store *tier; /* optional shared cold layer (NULL = off) */
     rh_table channels; /* pub/sub: channel -> chan_node list head (8-byte ptr) */
     rh_table schannels; /* shard channels (Redis 7 sharded pub/sub) */
     rh_table patterns;  /* pattern pub/sub: pattern -> chan_node list head */
@@ -2237,6 +2239,30 @@ void server_set_maxmemory(server *s, uint64_t bytes, int policy)
     }
 }
 
+int server_enable_tiering(server *s, const char *dir, const char *logname,
+                          uint64_t max_disk_bytes)
+{
+    char path[1088];
+    tier_store *tier = NULL;
+    int i;
+
+    if (s == NULL || dir == NULL || logname == NULL || dir[0] == '\0' ||
+        logname[0] == '\0')
+        return -1;
+    snprintf(path, sizeof(path), "%s/%s", dir, logname);
+    if (tier_open(&tier, path, max_disk_bytes) != 0)
+        return -1;
+    for (i = 0; i < s->ndbs; i++) {
+        db *d = srv_select_db(s, i);
+        db_set_tier(d, tier, i);
+        snprintf(d->tier_dir, sizeof(d->tier_dir), "%s", dir);
+        d->tier_max_disk_bytes = max_disk_bytes;
+        d->tier_enabled = 1;
+    }
+    s->tier = tier;
+    return 0;
+}
+
 void server_set_proto_max_request_bytes(server *s, size_t bytes)
 {
     if (bytes > 0)
@@ -2403,6 +2429,7 @@ void server_destroy(server *s)
             db_destroy(&s->extra_dbs[i]);
         free(s->extra_dbs);
     }
+    tier_close(s->tier);
     buf_pool_destroy(&s->pool);
     free(s);
 }

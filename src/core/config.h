@@ -33,6 +33,9 @@ typedef struct ddup_config {
     int cluster_enabled;           /* default 0 */
     char cluster_config_file[256]; /* default "nodes.conf" */
     char cluster_bus_protocol[8];  /* "ddup" (default) or "redis" */
+    int tiered_storage;            /* default 0 */
+    char tiered_storage_dir[512];  /* cold-layer directory */
+    uint64_t tiered_storage_max_disk_bytes; /* 0 = unlimited */
     /* listpack encoding thresholds (Redis names/defaults; an entries or
      * value limit of 0 disables the compact encoding for that type) */
     int list_max_listpack_size;    /* default 128, >= 1 */

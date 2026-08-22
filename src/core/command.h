@@ -64,6 +64,9 @@ typedef struct db {
     rh_table function_libs; /* FUNCTION LOAD code: library name -> source */
     struct tier_store *tier;  /* optional cold layer (NULL = tiering off) */
     int tier_db_index;        /* logical db index used in tier records */
+    int tier_enabled;         /* CONFIG tiered-storage toggle */
+    char tier_dir[512];       /* configured cold-layer directory */
+    uint64_t tier_max_disk_bytes; /* configured disk cap, 0 = unlimited */
     int tier_io_error;        /* set when a tier read/write fails */
     void *lua_state;       /* shared interpreter, lazy (script.c owns it) */
     /* commandstats: per-command-id call count and cumulative microseconds
@@ -103,6 +106,9 @@ typedef struct info_stats {
     uint64_t used_memory;
     uint64_t expired_keys;
     uint64_t evicted_keys;
+    uint64_t tier_disk_bytes;
+    uint64_t tier_live_records;
+    uint64_t tier_failed;
     uint64_t dbsize; /* current db only (Redis DBSIZE semantics) */
     int ndbs;        /* logical dbs covered by db_keys/db_expires */
     uint64_t db_keys[INFO_STATS_MAX_DBS];

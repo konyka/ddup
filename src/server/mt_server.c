@@ -1091,6 +1091,12 @@ static void mt_agg_info_line(mt_agg *agg, const char *p, size_t n)
         st->expired_keys += strtoull(p + 13, NULL, 10);
     } else if (n >= 13 && memcmp(p, "evicted_keys:", 13) == 0) {
         st->evicted_keys += strtoull(p + 13, NULL, 10);
+    } else if (n >= 16 && memcmp(p, "tier_disk_bytes:", 16) == 0) {
+        st->tier_disk_bytes += strtoull(p + 16, NULL, 10);
+    } else if (n >= 18 && memcmp(p, "tier_live_records:", 18) == 0) {
+        st->tier_live_records += strtoull(p + 18, NULL, 10);
+    } else if (n >= 12 && memcmp(p, "tier_failed:", 12) == 0) {
+        st->tier_failed += strtoull(p + 12, NULL, 10);
     } else if (n >= 7 && memcmp(p, "dbsize:", 7) == 0) {
         st->dbsize += strtoull(p + 7, NULL, 10);
     } else if (n >= 5 && memcmp(p, "ndbs:", 5) == 0) {
@@ -3636,6 +3642,22 @@ int mt_server_enable_snapshots(mt_server *ms, const char *dir,
             server_load_snapshot(w->srv) != 0)
             return -1;
         server_set_save_interval(w->srv, save_sec);
+    }
+    return 0;
+}
+
+int mt_server_enable_tiering(mt_server *ms, const char *dir,
+                             uint64_t max_disk_bytes)
+{
+    int i;
+    if (ms == NULL || dir == NULL)
+        return -1;
+    for (i = 0; i < ms->nworkers; i++) {
+        worker *w = &ms->workers[i];
+        char logname[64];
+        snprintf(logname, sizeof(logname), "tier-%d.log", w->id);
+        if (server_enable_tiering(w->srv, dir, logname, max_disk_bytes) != 0)
+            return -1;
     }
     return 0;
 }

@@ -89,6 +89,9 @@ void db_init(db *d)
     rh_init(&d->function_libs);
     d->tier = NULL;
     d->tier_db_index = 0;
+    d->tier_enabled = 0;
+    d->tier_dir[0] = '\0';
+    d->tier_max_disk_bytes = 0;
     d->tier_io_error = 0;
     d->lua_state = NULL;
 }
@@ -97,6 +100,7 @@ void db_set_tier(db *d, tier_store *tier, int db_index)
 {
     d->tier = tier;
     d->tier_db_index = db_index;
+    d->tier_enabled = tier != NULL;
 }
 
 void db_destroy(db *d)
@@ -511,7 +515,7 @@ static int db_tier_offload(db *d, const char *key, size_t klen,
     size_t old_vlen = 0;
     int set_rc;
 
-    if (d->tier == NULL || obj_is_tier(val, vlen))
+    if (d->tier == NULL || !d->tier_enabled || obj_is_tier(val, vlen))
         return 0;
     resp_buf_init(&sb);
     if (snapshot_dump_key(d, key, klen, &sb) != 0) {
@@ -2419,6 +2423,12 @@ static void info_fill(const session *s, info_stats *st)
     db *d = s->d;
     uint16_t id;
     memset(st, 0, sizeof(*st));
+    st->tier_disk_bytes =
+        d->tier != NULL ? tier_disk_bytes(d->tier) : 0;
+    st->tier_live_records =
+        d->tier != NULL ? tier_live_records(d->tier) : 0;
+    st->tier_failed =
+        d->tier != NULL ? (uint64_t)tier_failed(d->tier) : 0;
     st->dbsize = rh_size(&d->table);
     if (s->sel_fn != NULL) {
         int i;
@@ -2467,6 +2477,9 @@ static void info_format_stats(const info_stats *st, resp_buf *out)
                   "used_memory:%llu\r\n"
                   "expired_keys:%llu\r\n"
                   "evicted_keys:%llu\r\n"
+                  "tier_disk_bytes:%llu\r\n"
+                  "tier_live_records:%llu\r\n"
+                  "tier_failed:%llu\r\n"
                   "dbsize:%llu\r\n"
                   "ndbs:%d\r\n"
                   "io_loops:%llu\r\n"
@@ -2478,6 +2491,9 @@ static void info_format_stats(const info_stats *st, resp_buf *out)
                   (unsigned long long)st->used_memory,
                   (unsigned long long)st->expired_keys,
                   (unsigned long long)st->evicted_keys,
+                  (unsigned long long)st->tier_disk_bytes,
+                  (unsigned long long)st->tier_live_records,
+                  (unsigned long long)st->tier_failed,
                   (unsigned long long)st->dbsize, st->ndbs,
                   (unsigned long long)st->io.loops,
                   (unsigned long long)st->io.events,
@@ -2518,6 +2534,13 @@ void command_info_render(const db *home, const repl_info *repl,
                   "used_memory_human:%s\r\n"
                   "maxmemory:%llu\r\n"
                   "maxmemory_policy:%s\r\n"
+                  "# Tiering\r\n"
+                  "tiered_storage:%s\r\n"
+                  "tiered_storage_dir:%s\r\n"
+                  "tiered_storage_max_disk_bytes:%llu\r\n"
+                  "tier_disk_bytes:%llu\r\n"
+                  "tier_live_records:%llu\r\n"
+                  "tier_failed:%llu\r\n"
                   "# Stats\r\n"
                   "expired_keys:%llu\r\n"
                   "evicted_keys:%llu\r\n"
@@ -2526,6 +2549,12 @@ void command_info_render(const db *home, const repl_info *repl,
                   (unsigned long long)st->used_memory, human,
                   (unsigned long long)home->maxmemory,
                   policy_name(home->maxmemory_policy),
+                  home->tier_enabled ? "yes" : "no",
+                  home->tier_dir,
+                  (unsigned long long)home->tier_max_disk_bytes,
+                  (unsigned long long)st->tier_disk_bytes,
+                  (unsigned long long)st->tier_live_records,
+                  (unsigned long long)st->tier_failed,
                   (unsigned long long)st->expired_keys,
                   (unsigned long long)st->evicted_keys,
                   (unsigned long long)st->dbsize);
@@ -13333,6 +13362,24 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
                 resp_write_array_header(out, 2);
                 resp_write_bulk(out, "maxmemory-policy", 16);
                 resp_write_bulk(out, pn, strlen(pn));
+            } else if (ci_equal(p, pl, "tiered-storage")) {
+                resp_write_array_header(out, 2);
+                resp_write_bulk(out, "tiered-storage", 14);
+                resp_write_bulk(out, d->tier_enabled ? "yes" : "no",
+                                d->tier_enabled ? 3 : 2);
+            } else if (ci_equal(p, pl, "tiered-storage-dir")) {
+                resp_write_array_header(out, 2);
+                resp_write_bulk(out, "tiered-storage-dir",
+                                sizeof("tiered-storage-dir") - 1);
+                resp_write_bulk(out, d->tier_dir, strlen(d->tier_dir));
+            } else if (ci_equal(p, pl, "tiered-storage-max-disk-bytes")) {
+                char num[24];
+                int nl2 = snprintf(num, sizeof(num), "%llu",
+                                   (unsigned long long)d->tier_max_disk_bytes);
+                resp_write_array_header(out, 2);
+                resp_write_bulk(out, "tiered-storage-max-disk-bytes",
+                                sizeof("tiered-storage-max-disk-bytes") - 1);
+                resp_write_bulk(out, num, (size_t)nl2);
             } else {
                 resp_write_array_header(out, 0);
             }
@@ -13411,6 +13458,29 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
                         s->sel_fn(s->sel_ctx, i)->maxmemory_policy = pol;
                 } else {
                     d->maxmemory_policy = pol;
+                }
+                resp_write_simple_string(out, "OK", 2);
+                return;
+            }
+            if (ci_equal(p, pl, "tiered-storage")) {
+                int enable;
+                if (ci_equal(v, vl2, "yes")) {
+                    enable = 1;
+                } else if (ci_equal(v, vl2, "no")) {
+                    enable = 0;
+                } else {
+                    static const char E[] =
+                        "ERR invalid argument for CONFIG SET "
+                        "'tiered-storage'";
+                    resp_write_error(out, E, sizeof(E) - 1);
+                    return;
+                }
+                if (s->sel_fn != NULL) {
+                    int i;
+                    for (i = 0; i < s->sel_ndbs; i++)
+                        s->sel_fn(s->sel_ctx, i)->tier_enabled = enable;
+                } else {
+                    d->tier_enabled = enable;
                 }
                 resp_write_simple_string(out, "OK", 2);
                 return;

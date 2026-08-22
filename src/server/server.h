@@ -69,6 +69,10 @@ void server_set_requirepass(server *s, const char *pw);
 
 /* Apply the memory limit and eviction policy to every logical db. */
 void server_set_maxmemory(server *s, uint64_t bytes, int policy);
+/* Enable tiered storage for every logical db from dir/<logname>. The store
+ * is shared by all logical dbs and closed by server_destroy(). */
+int server_enable_tiering(server *s, const char *dir, const char *logname,
+                          uint64_t max_disk_bytes);
 void server_set_proto_max_request_bytes(server *s, size_t bytes);
 void server_set_repl_max_snapshot_bytes(server *s, size_t bytes);
 

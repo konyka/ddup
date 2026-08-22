@@ -142,6 +142,16 @@ int main(int argc, char **argv)
         if (cfg.requirepass[0] != '\0')
             mt_server_set_requirepass(ms, cfg.requirepass);
         mt_server_set_maxmemory(ms, cfg.maxmemory, cfg.maxmemory_policy);
+        if (cfg.tiered_storage) {
+            if (mt_server_enable_tiering(ms, cfg.tiered_storage_dir,
+                                         cfg.tiered_storage_max_disk_bytes) !=
+                0) {
+                fprintf(stderr, "failed to open per-worker tiered storage\n");
+                mt_server_destroy(ms);
+                pal_socket_cleanup();
+                return 1;
+            }
+        }
         mt_server_set_proto_max_request_bytes(ms,
                                               (size_t)cfg.proto_max_request_bytes);
         mt_server_set_repl_max_snapshot_bytes(ms,
@@ -232,6 +242,18 @@ int main(int argc, char **argv)
     if (cfg.requirepass[0] != '\0')
         server_set_requirepass(s, cfg.requirepass);
     server_set_maxmemory(s, cfg.maxmemory, cfg.maxmemory_policy);
+    if (cfg.tiered_storage) {
+        if (server_enable_tiering(s, cfg.tiered_storage_dir, "tier.log",
+                                  cfg.tiered_storage_max_disk_bytes) != 0) {
+            fprintf(stderr, "failed to open tiered storage in '%s'\n",
+                    cfg.tiered_storage_dir);
+            server_destroy(s);
+            pal_socket_cleanup();
+            return 1;
+        }
+        printf("tiered storage enabled: %s/tier.log\n",
+               cfg.tiered_storage_dir);
+    }
 
     {
         char verr[256];

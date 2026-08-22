@@ -164,12 +164,53 @@ static void test_offload_reopen(void)
     tier_close(reopened);
 }
 
+static void test_config_and_info(void)
+{
+    db d;
+    resp_buf out;
+    tier_store *tier;
+    char nul[16384];
+
+    pal_file_unlink(PATH);
+    DD_CHECK_EQ_INT(0, tier_open(&tier, PATH, 0));
+    db_init(&d);
+    db_set_tier(&d, tier, 0);
+    resp_buf_init(&out);
+
+    exec_cmd(&d, T0, &out, 3, "CONFIG", "GET", "tiered-storage");
+    EXPECT(out,
+           "*2\r\n$14\r\ntiered-storage\r\n$3\r\nyes\r\n");
+    exec_cmd(&d, T0, &out, 3, "CONFIG", "GET",
+             "tiered-storage-max-disk-bytes");
+    EXPECT(out,
+           "*2\r\n$29\r\ntiered-storage-max-disk-bytes\r\n$1\r\n0\r\n");
+    exec_cmd(&d, T0, &out, 4, "CONFIG", "SET", "tiered-storage", "no");
+    EXPECT(out, "+OK\r\n");
+    exec_cmd(&d, T0, &out, 3, "CONFIG", "GET", "tiered-storage");
+    EXPECT(out,
+           "*2\r\n$14\r\ntiered-storage\r\n$2\r\nno\r\n");
+
+    exec_cmd(&d, T0, &out, 1, "INFO");
+    DD_CHECK(out.len > 0 && out.data[0] == '$');
+    DD_CHECK(out.len < sizeof(nul) - 1);
+    memcpy(nul, out.data, out.len);
+    nul[out.len] = '\0';
+    DD_CHECK(strstr(nul, "# Tiering\r\n") != NULL);
+    DD_CHECK(strstr(nul, "tiered_storage:no\r\n") != NULL);
+    DD_CHECK(strstr(nul, "tier_disk_bytes:") != NULL);
+
+    resp_buf_free(&out);
+    db_destroy(&d);
+    tier_close(tier);
+}
+
 int main(void)
 {
     setvbuf(stdout, NULL, _IONBF, 0);
     DD_RUN(test_offload_materialize_delete);
     DD_RUN(test_offloaded_expire);
     DD_RUN(test_offload_reopen);
+    DD_RUN(test_config_and_info);
     pal_file_unlink(PATH);
     return DD_TEST_SUMMARY();
 }

@@ -57,6 +57,9 @@ int mt_server_enable_aof(mt_server *ms, const char *dir,
 void mt_server_set_appendfsync(mt_server *ms, int mode);
 int mt_server_enable_snapshots(mt_server *ms, const char *dir,
                                const char *dbfilename, int save_sec);
+/* Enable tiered storage on every worker using "<dir>/tier-<id>.log". */
+int mt_server_enable_tiering(mt_server *ms, const char *dir,
+                             uint64_t max_disk_bytes);
 
 /* TLS alongside the plain listener: the acceptor owns a second (TLS)
  * listener and tags accepted fds; each worker wraps them with its own TLS

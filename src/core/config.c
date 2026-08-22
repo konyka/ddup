@@ -32,6 +32,9 @@ void config_init(ddup_config *cfg)
     cfg->cluster_enabled = 0;
     strcpy(cfg->cluster_config_file, "nodes.conf");
     strcpy(cfg->cluster_bus_protocol, "ddup");
+    cfg->tiered_storage = 0;
+    strcpy(cfg->tiered_storage_dir, ".");
+    cfg->tiered_storage_max_disk_bytes = 0;
     cfg->list_max_listpack_size = 128;
     cfg->hash_max_listpack_entries = 128;
     cfg->hash_max_listpack_value = 64;
@@ -220,6 +223,13 @@ int config_apply(ddup_config *cfg, const char *key, const char *value)
         return copy_str(cfg->cluster_bus_protocol,
                         sizeof(cfg->cluster_bus_protocol), value);
     }
+    if (key_eq(key, "tiered-storage"))
+        return parse_bool(value, &cfg->tiered_storage);
+    if (key_eq(key, "tiered-storage-dir"))
+        return copy_str(cfg->tiered_storage_dir,
+                        sizeof(cfg->tiered_storage_dir), value);
+    if (key_eq(key, "tiered-storage-max-disk-bytes"))
+        return parse_u64(value, &cfg->tiered_storage_max_disk_bytes);
     if (key_eq(key, "list-max-listpack-size")) {
         int n;
         if (parse_int_nonneg(value, &n) != 0 || n < 1)

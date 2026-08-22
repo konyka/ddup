@@ -27,6 +27,9 @@ static void test_defaults(void)
     DD_CHECK_EQ_INT(0, cfg.appendonly);
     DD_CHECK_STR("appendonly.aof", cfg.appendfilename);
     DD_CHECK_STR("dump.ddr", cfg.dbfilename);
+    DD_CHECK_EQ_INT(0, cfg.tiered_storage);
+    DD_CHECK_STR(".", cfg.tiered_storage_dir);
+    DD_CHECK_EQ_INT(0, (long long)cfg.tiered_storage_max_disk_bytes);
     DD_CHECK_EQ_INT(0, cfg.save_sec);
     DD_CHECK_EQ_INT(1, cfg.io_threads);
     DD_CHECK_EQ_INT(1024LL * 1024LL * 1024LL,
@@ -189,6 +192,16 @@ static void test_inline_overrides(void)
     DD_CHECK_EQ_INT(128, (long long)cfg.proto_max_request_bytes);
     DD_CHECK_EQ_INT(0, config_apply(&cfg, "repl-max-snapshot-bytes", "256"));
     DD_CHECK_EQ_INT(256, (long long)cfg.repl_max_snapshot_bytes);
+    DD_CHECK_EQ_INT(0, config_apply(&cfg, "tiered-storage", "yes"));
+    DD_CHECK_EQ_INT(1, cfg.tiered_storage);
+    DD_CHECK_EQ_INT(0, config_apply(&cfg, "tiered-storage-dir", "/tmp/tier"));
+    DD_CHECK_STR("/tmp/tier", cfg.tiered_storage_dir);
+    DD_CHECK_EQ_INT(0, config_apply(&cfg, "tiered-storage-max-disk-bytes",
+                                     "1048576"));
+    DD_CHECK_EQ_INT(1048576, (long long)cfg.tiered_storage_max_disk_bytes);
+    DD_CHECK_EQ_INT(-1, config_apply(&cfg, "tiered-storage", "maybe"));
+    DD_CHECK_EQ_INT(-1, config_apply(&cfg, "tiered-storage-max-disk-bytes",
+                                     "-1"));
     DD_CHECK_EQ_INT(-1, config_apply(&cfg, "proto-max-request-bytes",
                                      "18446744073709551616"));
     DD_CHECK_EQ_INT(-1, config_apply(&cfg, "repl-max-snapshot-bytes",
