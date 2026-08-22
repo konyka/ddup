@@ -3136,6 +3136,7 @@ static int mt_repl_snapshot_load(void *ctx, const char *buf, size_t len)
     mt_server *ms = (mt_server *)ctx;
     worker *leader;
     int ndbs, i, j;
+    int failed = 0;
     db *tmp;
     mt_repl_tmp_ctx tc;
 
@@ -3173,8 +3174,10 @@ static int mt_repl_snapshot_load(void *ctx, const char *buf, size_t len)
         rc.db_index = i;
         rc.failed = 0;
         rh_each(&tmp[i].table, mt_repl_restore_cb, &rc);
-        if (rc.failed)
+        if (rc.failed) {
+            failed = 1;
             break;
+        }
     }
 
     for (i = 0; i < ndbs; i++)
@@ -3186,7 +3189,7 @@ static int mt_repl_snapshot_load(void *ctx, const char *buf, size_t len)
         mt_drain_completions(leader);
         pal_sleep_ms(1);
     }
-    return ms->snapshot_pending == 0 ? 0 : -1;
+    return (!failed && ms->snapshot_pending == 0) ? 0 : -1;
 }
 
 /* REPLICAOF/SLAVEOF in mt mode operates the worker-0 master link directly.
