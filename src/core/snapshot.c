@@ -850,6 +850,138 @@ int snapshot_load_mem(db *d, const char *buf, size_t len, uint64_t now_ms)
 /* multi-database snapshots (DDUP0002)                                 */
 /* ------------------------------------------------------------------ */
 
+/* ------------------------------------------------------------------ */
+/* multi-shard snapshots (DDUPMT01)                                    */
+/*                                                                     */
+/*   magic: 8 bytes "DDUPMT01"                                         */
+/*   u16   nshards                                                     */
+/*   per shard:                                                        */
+/*     u32   snapshot length                                           */
+/*     bytes DDUP0002 snapshot for that shard                          */
+/*                                                                     */
+/* Loading accepts DDUP0001 (falls into db 0), DDUP0002 and DDUPMT01.  */
+/* DDUPMT01 is loaded into temporary dbs and merged by db index.       */
+/* ------------------------------------------------------------------ */
+
+typedef struct db_array_ctx {
+    db *dbs;
+    int ndbs;
+} db_array_ctx;
+
+static db *db_array_get(void *ctx, int idx)
+{
+    db_array_ctx *ac = (db_array_ctx *)ctx;
+    if (ac == NULL || idx < 0 || idx >= ac->ndbs)
+        return NULL;
+    return &ac->dbs[idx];
+}
+
+static uint64_t rd_u64le_bytes(const char *p)
+{
+    uint64_t v = 0;
+    int i;
+    for (i = 7; i >= 0; i--)
+        v = (v << 8) | (uint8_t)p[i];
+    return v;
+}
+
+typedef struct merge_ctx {
+    db *dst;
+    uint64_t now_ms;
+    int ok;
+} merge_ctx;
+
+static void merge_entry_cb(const char *key, size_t klen, const char *val,
+                           size_t vlen, void *arg)
+{
+    merge_ctx *mc = (merge_ctx *)arg;
+    if (mc->ok && db_install_blob(mc->dst, key, klen, val, vlen,
+                                  mc->now_ms) != 0)
+        mc->ok = 0;
+}
+
+static void merge_expiry_cb(const char *key, size_t klen, const char *val,
+                            size_t vlen, void *arg)
+{
+    merge_ctx *mc = (merge_ctx *)arg;
+    if (mc->ok && vlen == 8 &&
+        db_install_expiry(mc->dst, key, klen,
+                          rd_u64le_bytes(val)) != 0)
+        mc->ok = 0;
+}
+
+static int merge_shard_db(db *dst, db *src, uint64_t now_ms)
+{
+    merge_ctx mc;
+    mc.dst = dst;
+    mc.now_ms = now_ms;
+    mc.ok = 1;
+    rh_each(&src->table, merge_entry_cb, &mc);
+    if (mc.ok)
+        rh_each(&src->expires, merge_expiry_cb, &mc);
+    return mc.ok ? 0 : -1;
+}
+
+int snapshot_serialize_multi_shards(void *const *ctxs, snapshot_db_get get,
+                                    int nshards, int ndbs, resp_buf *out)
+{
+    int i;
+    size_t start = out->len;
+    if (ctxs == NULL || get == NULL || nshards < 0 ||
+        nshards > UINT16_MAX)
+        return -1;
+    if (buf_bytes(out, "DDUPMT01", 8) != 0 ||
+        buf_u16le(out, (uint16_t)nshards) != 0) {
+        out->len = start;
+        return -1;
+    }
+    for (i = 0; i < nshards; i++) {
+        resp_buf shard;
+        resp_buf_init(&shard);
+        if (snapshot_serialize_multi(ctxs[i], get, ndbs, &shard) != 0 ||
+            shard.len > UINT32_MAX ||
+            buf_u32le(out, (uint32_t)shard.len) != 0 ||
+            buf_bytes(out, shard.data, shard.len) != 0) {
+            resp_buf_free(&shard);
+            out->len = start;
+            return -1;
+        }
+        resp_buf_free(&shard);
+    }
+    return 0;
+}
+
+int snapshot_serialize_multi_buffers(const char *const *bufs,
+                                     const size_t *lens, int nshards,
+                                     resp_buf *out)
+{
+    int i;
+    size_t start;
+
+    if (out == NULL || bufs == NULL || lens == NULL || nshards < 0 ||
+        nshards > UINT16_MAX)
+        return -1;
+    start = out->len;
+    if (buf_bytes(out, "DDUPMT01", 8) != 0 ||
+        buf_u16le(out, (uint16_t)nshards) != 0) {
+        out->len = start;
+        return -1;
+    }
+    for (i = 0; i < nshards; i++) {
+        if (lens[i] > UINT32_MAX ||
+            (lens[i] > 0 && bufs[i] == NULL) ||
+            buf_u32le(out, (uint32_t)lens[i]) != 0) {
+            out->len = start;
+            return -1;
+        }
+        if (lens[i] > 0 && buf_bytes(out, bufs[i], lens[i]) != 0) {
+            out->len = start;
+            return -1;
+        }
+    }
+    return 0;
+}
+
 int snapshot_serialize_multi(void *ctx, snapshot_db_get get, int ndbs,
                              resp_buf *out)
 {
@@ -946,6 +1078,79 @@ int snapshot_load_mem_multi(void *ctx, snapshot_db_get get, int ndbs,
 
     if (len < 8)
         return -1;
+    if (memcmp(buf, "DDUPMT01", 8) == 0) {
+        db_array_ctx shard_ctx;
+        db *shard_tmps = NULL;
+        uint16_t nshards;
+        uint32_t sh;
+
+        if (ndbs <= 0 || get == NULL)
+            return -1;
+        tmps = (db *)calloc((size_t)ndbs, sizeof(*tmps));
+        if (tmps == NULL)
+            return -1;
+        for (i = 0; i < ndbs; i++)
+            db_init(&tmps[i]);
+
+        r.p = buf;
+        r.len = len;
+        r.off = 8;
+        r.ok = 1;
+        nshards = rd_u16le(&r);
+        shard_tmps = (db *)calloc((size_t)ndbs, sizeof(*shard_tmps));
+        if (!r.ok || shard_tmps == NULL) {
+            ok = 0;
+            goto mt_done;
+        }
+        shard_ctx.dbs = shard_tmps;
+        shard_ctx.ndbs = ndbs;
+        for (sh = 0; sh < nshards && ok; sh++) {
+            uint32_t slen = rd_u32le(&r);
+            const char *shbuf;
+            int j;
+            if (!r.ok || slen > (uint64_t)(r.len - r.off)) {
+                ok = 0;
+                break;
+            }
+            shbuf = r.p + r.off;
+            r.off += slen;
+            for (j = 0; j < ndbs; j++)
+                db_init(&shard_tmps[j]);
+            if (snapshot_load_mem_multi(&shard_ctx, db_array_get, ndbs,
+                                        shbuf, slen, now_ms) != 0) {
+                for (j = 0; j < ndbs; j++)
+                    db_destroy(&shard_tmps[j]);
+                ok = 0;
+                break;
+            }
+            for (j = 0; j < ndbs; j++) {
+                if (merge_shard_db(&tmps[j], &shard_tmps[j],
+                                   now_ms) != 0) {
+                    ok = 0;
+                }
+                db_destroy(&shard_tmps[j]);
+            }
+        }
+        ok = ok && r.ok && r.off == r.len;
+        if (ok) {
+            for (i = 0; i < ndbs; i++) {
+                if (get(ctx, i) == NULL) {
+                    ok = 0;
+                    break;
+                }
+            }
+        }
+        if (ok) {
+            for (i = 0; i < ndbs; i++)
+                swap_db_data(get(ctx, i), &tmps[i]);
+        }
+        for (i = 0; i < ndbs; i++)
+            db_destroy(&tmps[i]);
+mt_done:
+        free(tmps);
+        free(shard_tmps);
+        return ok ? 0 : -1;
+    }
     if (memcmp(buf, "DDUP0001", 8) == 0) {
         db *tmps;
         char *segs;

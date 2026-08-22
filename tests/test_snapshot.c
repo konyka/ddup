@@ -364,6 +364,77 @@ static void test_multidb_v1_compat(void)
     resp_buf_free(&out);
 }
 
+static void test_multishard_buffers_roundtrip(void)
+{
+    snap_dbset *s0, *s1, *dst;
+    session *s;
+    resp_buf shard[2], framed, out;
+    const char *bufs[2];
+    size_t lens[2];
+
+    s0 = snap_dbset_new();
+    s1 = snap_dbset_new();
+    dst = snap_dbset_new();
+    resp_buf_init(&shard[0]);
+    resp_buf_init(&shard[1]);
+    resp_buf_init(&framed);
+    resp_buf_init(&out);
+
+    s = session_create(&s0->dbs[0]);
+    s->sel_ctx = s0;
+    s->sel_fn = snap_get;
+    s->sel_ndbs = 3;
+    exec_sess(s, T0, &out, 3, "SET", "a", "from-shard0");
+    exec_sess(s, T0, &out, 2, "SELECT", "1");
+    exec_sess(s, T0, &out, 3, "SET", "shared", "s0-db1");
+    session_free(s);
+
+    s = session_create(&s1->dbs[0]);
+    s->sel_ctx = s1;
+    s->sel_fn = snap_get;
+    s->sel_ndbs = 3;
+    exec_sess(s, T0, &out, 3, "SET", "b", "from-shard1");
+    exec_sess(s, T0, &out, 2, "SELECT", "1");
+    exec_sess(s, T0, &out, 3, "SET", "shared", "s1-db1");
+    session_free(s);
+
+    DD_CHECK_EQ_INT(0, snapshot_serialize_multi(s0, snap_get, 3, &shard[0]));
+    DD_CHECK_EQ_INT(0, snapshot_serialize_multi(s1, snap_get, 3, &shard[1]));
+    bufs[0] = shard[0].data;
+    lens[0] = shard[0].len;
+    bufs[1] = shard[1].data;
+    lens[1] = shard[1].len;
+    DD_CHECK_EQ_INT(0, snapshot_serialize_multi_buffers(bufs, lens, 2,
+                                                        &framed));
+    DD_CHECK_MEM("DDUPMT01", 8, framed.data, 8);
+
+    DD_CHECK_EQ_INT(0, snapshot_load_mem_multi(dst, snap_get, 3,
+                                               framed.data, framed.len,
+                                               T0));
+    {
+        session *r = session_create(&dst->dbs[0]);
+        r->sel_ctx = dst;
+        r->sel_fn = snap_get;
+        r->sel_ndbs = 3;
+        exec_sess(r, T0, &out, 2, "GET", "a");
+        EXPECT(out, "$11\r\nfrom-shard0\r\n");
+        exec_sess(r, T0, &out, 2, "GET", "b");
+        EXPECT(out, "$11\r\nfrom-shard1\r\n");
+        exec_sess(r, T0, &out, 2, "SELECT", "1");
+        exec_sess(r, T0, &out, 2, "GET", "shared");
+        EXPECT(out, "$6\r\ns1-db1\r\n");
+        session_free(r);
+    }
+
+    snap_dbset_free(s0);
+    snap_dbset_free(s1);
+    snap_dbset_free(dst);
+    resp_buf_free(&shard[0]);
+    resp_buf_free(&shard[1]);
+    resp_buf_free(&framed);
+    resp_buf_free(&out);
+}
+
 static void test_serialize_rejects_unrepresentable_sizes(void)
 {
     db d;
@@ -652,6 +723,7 @@ int main(void)
     DD_RUN(test_save_lastsave_command);
     DD_RUN(test_multidb_roundtrip);
     DD_RUN(test_multidb_v1_compat);
+    DD_RUN(test_multishard_buffers_roundtrip);
     DD_RUN(test_serialize_rejects_unrepresentable_sizes);
     DD_RUN(test_save_failure_preserves_existing_snapshot);
     DD_RUN(test_save_rename_failure_removes_temporary_file);

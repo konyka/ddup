@@ -75,6 +75,18 @@ typedef db *(*snapshot_db_get)(void *ctx, int idx);
 
 int snapshot_serialize_multi(void *ctx, snapshot_db_get get, int ndbs,
                              resp_buf *out);
+/* Serialize several shared-nothing shards (one db accessor context per
+ * shard) into one framed multi-shard snapshot. Same-thread utility; mt
+ * master full sync uses snapshot_serialize_multi_buffers so each worker
+ * serializes its own db on its own event loop. */
+int snapshot_serialize_multi_shards(void *const *ctxs, snapshot_db_get get,
+                                    int nshards, int ndbs, resp_buf *out);
+/* Frame nshards of already-serialized DDUP0002 snapshots into one
+ * DDUPMT01 snapshot. Used by mt master full sync after each worker
+ * serializes its own db on its own event loop. */
+int snapshot_serialize_multi_buffers(const char *const *bufs,
+                                     const size_t *lens, int nshards,
+                                     resp_buf *out);
 int snapshot_save_multi(void *ctx, snapshot_db_get get, int ndbs,
                         const char *path);
 int snapshot_load_multi(void *ctx, snapshot_db_get get, int ndbs,
