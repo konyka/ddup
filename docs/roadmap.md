@@ -66,9 +66,11 @@
     机器格式快照 + home 端归并渲染）、TLS 支持（acceptor 持 TLS listener，
     每 worker 独立 TLS ctx + worker 内嵌握手）、IOCP worker 后端
     （pal_iocp_post 唤醒；IOCP 后端禁用连接迁移）
-  - [ ] mt 后续（范围化排除，记录在案）：复制/集群在 per-worker 模型下
-    的适配——worker 各自为战与全库复制/集群总线的语义冲突大、收益低，
-    集群/复制请用单线程模式
+  - [x] mt 复制/集群适配：worker 0 作为复制/集群控制面；REPLICAOF/
+    SLAVEOF 操作 worker 0 的 master link，全量快照经临时 db 解码后按
+    hash slot 分区恢复到各 worker，命令流经 mt 路由分发；CLUSTER 命令
+    与总线/故障检测只跑在 worker 0，节点/槽位元数据以不可变快照扇出
+    到其余 worker，使每个 worker 都能独立给出 MOVED/CLUSTERDOWN
 
 - [x] **Phase 13 — 安全与多数据库**
   AUTH（requirepass + NOAUTH 门）、16 逻辑库（SELECT/SWAPDB、session
@@ -357,5 +359,4 @@
     二进制 payload 与 `FLUSH/APPEND/REPLACE` 策略；兼容审计 C 节统一改为
     “已实现或记录在案”，命令级与选项/语义级遗留差分全部清零（Phase 69）
   - [x] 范围化排除（已记录在案，明确不实施）：
-    - 分层存储（热/冷数据落盘）：超出"内存缓存存储"定位
-    - mt 模式的复制/集群适配：见 Phase 15 说明
+    - Lua 分布式锁脚本等 Garnet/单机缓存存储不适配项

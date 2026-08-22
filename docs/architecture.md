@@ -187,10 +187,11 @@
   expired/evicted/dbsize 求和、按库与按命令 id 合并），再由共享的
   `command_info_render()` 渲染为单份人类可读 INFO（maxmemory/策略/
   cluster 标志取 home worker 值）。
-- **限制（记录在案）**：mt 模式下 SHUTDOWN/SYNC/REPLICAOF/CLUSTER/
-  MIGRATE/ASKING 返回 `-ERR command not supported in mt mode`；
-  集群/复制与 io-threads>1 互斥（config_validate 报错）；INFO 不含
-  # Replication 段（mt 不支持复制）。
+- **限制（记录在案）**：mt 模式下 SHUTDOWN/SYNC/MIGRATE/ASKING/KEYS/
+  SCAN/RANDOMKEY/PSUBSCRIBE/PUNSUBSCRIBE 返回 `-ERR command not
+  supported in mt mode`；`REPLICAOF/SLAVEOF/CLUSTER` 已支持（worker 0
+  控制面）。INFO 仍不含 # Replication 段（mt 副本侧已支持，但
+  per-worker replication 统计尚未聚合）。
 - **并发可靠性**：跨 worker 队列满时，生产者背压重试会**自排空本
   worker 的 inbox/completion 队列**以打破环形等待；drain 按环限批
   （512 条/次）并在有剩余时自 kick，避免持续生产下的 drain 活锁。
@@ -388,8 +389,8 @@ proactor——提交 IORING_OP_RECV/SEND/ACCEPT 操作本身，完成携带结�
   `server_tls_ctx_init()` 装载**自己的** TLS ctx（shared-nothing，无跨
   线程 SSL_CTX 使用），`server_adopt_fd_tls()` 包装 fd 并在 worker 自己
   的 readiness 循环内驱动非阻塞握手（与单线程同一状态机）。
-  config_validate 解除 mt+TLS 互斥（集群/复制仍互斥）。IOCP 后端不
-  支持 TLS（回落 readiness workers）。
+  config_validate 解除 mt+TLS 互斥；集群/复制由 worker 0 控制面适配。
+  IOCP 后端不支持 TLS（回落 readiness workers）。
 - **IOCP worker 后端（15.3，Windows）**：`mt_server_create_ex(...,
   SERVER_BACKEND_IOCP)`；main 在 Windows 默认用 IOCP workers（TLS 开启
   时回落 readiness，`--io iouring` 在 Linux 选 io_uring workers）。
@@ -404,6 +405,21 @@ proactor——提交 IORING_OP_RECV/SEND/ACCEPT 操作本身，完成携带结�
   - **连接迁移在 IOCP 后端禁用**（记录在案）：任何时刻都有在飞的重叠
     recv，连接无法安全跨完成端口移动；任务路由不受影响（亲和优化
     仅 readiness workers 享有）。
+- **mt 复制/集群适配（15.4）**：worker 0 是唯一的复制/集群控制面。
+  - 复制：`mt_server_replicaof()` 只把 `server_replicaof()` 作用在
+    worker 0；全量快照先载入 worker 0 的临时 db，再把每个 key 用
+    `snapshot_dump_key()` 转成 DUMP/RESTORE payload，经 `MT_TASK_RESTORE`
+    投递给 `hash_slot(key) % nworkers` 的属主 worker，等全部完成才进入
+    streaming；之后的 master 命令流走 worker 0 的 mt 路由，与客户端
+    流量同一条分区路径。master link 连接不参与连接迁移。
+  - 集群：只有 worker 0 `server_enable_cluster()`（绑定总线、跑
+    gossip/failover/nodes.conf 持久化）；`cluster_state_snapshot()`
+    把节点/槽位/epoch 等元数据拷成不可变快照，`MT_TASK_CLUSTER_SYNC`
+    按 SPSC 顺序扇出到 follower。follower 的 db 有完整 `slot_owner`/
+    migrating/importing 表，因此任意 worker 都能在本地给出
+    `MOVED/CLUSTERDOWN/ASK`；`server.cluster_control=0` 阻止 follower
+    重复绑总线或保存 nodes.conf。`CLUSTER` 命令强制路由到 worker 0，
+    `REPLICAOF/SLAVEOF` 直接操作 worker 0 master link。
 - **批量写出（Phase 23）**：完成队列 drain 一轮内，同一连接的回复
   （已由 seq/reorder 排好序进入 conn->out）只在轮末统一 flush 一次，
   消除每完成项一次 send 调用的放大；pub/sub 推送同策。本机 c200 规模
