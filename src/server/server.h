@@ -127,6 +127,40 @@ typedef int (*server_repl_snapshot_fn)(void *ctx, const char *buf,
 void server_set_repl_snapshot_hook(server *s, server_repl_snapshot_fn fn,
                                    void *ctx);
 
+/* Replace the master-side full-sync snapshot serializer. mt_server installs
+ * this so SYNC/PSYNC emits one merged snapshot from every worker. */
+typedef int (*server_repl_snapshot_serialize_fn)(void *ctx, resp_buf *out);
+void server_set_repl_snapshot_serialize_hook(
+    server *s, server_repl_snapshot_serialize_fn fn, void *ctx);
+
+/* In centralized mt replication mode worker-local sessions log AOF but do
+ * not append to a worker-local backlog; the mt coordinator forwards the
+ * exact command bytes to worker 0. */
+void server_set_repl_centralized(server *s, int on);
+
+/* Called on a worker-local server after a mutation. In centralized mt mode
+ * this forwards the exact RESP command to the mt coordinator (worker 0);
+ * in single-server mode it is unused. */
+typedef void (*server_repl_stream_fn)(void *ctx, int db_index,
+                                      const char *raw, size_t raw_len);
+void server_set_repl_stream_forward(server *s, server_repl_stream_fn fn,
+                                    void *ctx);
+void server_repl_stream_forward(server *s, int db_index, const char *raw,
+                                size_t raw_len);
+
+/* Append an exact RESP command to the master backlog and every downstream
+ * replica connection (used by the mt replication coordinator). */
+void server_repl_stream_append(server *s, const char *raw, size_t raw_len);
+
+/* Coordinator-side append that emits a SELECT prefix when db_index changes.
+ * Runs on the worker-0 event loop only. */
+void server_repl_stream_append_db(server *s, int db_index, const char *raw,
+                                  size_t raw_len);
+
+/* Nonzero when a downstream replica is attached or a PSYNC resume backlog
+ * must be maintained. */
+int server_repl_active(const server *s);
+
 /* Flush the optional AOF immediately (replication batches call this after
  * a stream chunk; mt mode flushes every worker's AOF). */
 void server_aof_flush(server *s);

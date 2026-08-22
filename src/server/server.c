@@ -203,6 +203,10 @@ struct server {
     resp_buf prop_buf;    /* reusable propagation serialization buffer */
     repl_info repl;       /* INFO replication snapshot */
     int backlog_used;     /* a replica attached at least once (Phase 28) */
+    int repl_centralized; /* mt: worker-local sessions skip repl fan-out */
+    int repl_stream_db;   /* last db index written to the central stream */
+    server_repl_stream_fn repl_stream_fn; /* mt central coordinator */
+    void *repl_stream_ctx;
     io_counters io;       /* always-on IO counters (Phase 27; calloc-zeroed) */
     conn *master_link;    /* outbound link to the master (replica side) */
     uint64_t last_reconnect; /* pal_now_ms of the last connect attempt */
@@ -210,6 +214,8 @@ struct server {
     size_t repl_max_snapshot_bytes;
     server_repl_snapshot_fn repl_snapshot_fn; /* mt replica full-sync */
     void *repl_snapshot_ctx;
+    server_repl_snapshot_serialize_fn repl_snapshot_serialize_fn;
+    void *repl_snapshot_serialize_ctx;
     /* proactor backend (Windows IOCP / Linux io_uring op-mode) */
     int backend;
     pal_iocp *iocp;
@@ -817,6 +823,28 @@ static void srv_propagate(void *ctx, int db_index, const resp_value *argv,
     if (srv->aof != NULL && !srv->aof_failed)
         srv_aof_log(srv, db_index, argv, argc);
 
+    if (srv->repl_centralized) {
+        /* mt: worker-local backlogs are inert; forward the authoritative
+         * command bytes to the coordinator instead of fanning out here. */
+        if (raw != NULL) {
+            server_repl_stream_forward(srv, db_index, raw, raw_len);
+        } else {
+            srv->prop_buf.len = 0;
+            resp_write_array_header(&srv->prop_buf, argc);
+            for (i = 0; i < argc; i++) {
+                if (argv[i].type == RESP_BULK_STRING ||
+                    argv[i].type == RESP_SIMPLE_STRING)
+                    resp_write_bulk(&srv->prop_buf, argv[i].str,
+                                    argv[i].len);
+                else
+                    resp_write_bulk(&srv->prop_buf, "", 0);
+            }
+            server_repl_stream_forward(srv, db_index, srv->prop_buf.data,
+                                       srv->prop_buf.len);
+        }
+        return;
+    }
+
     /* no replication sinks: with zero downstream replicas and no replica
      * ever attached, the backlog can never be resumed from, so skip the
      * append entirely (Phase 28). A first replica always full-resyncs. */
@@ -932,7 +960,14 @@ static int srv_write_snapshot(server *srv, resp_buf *out, const char *prefix,
     size_t frame_len;
 
     resp_buf_init(&snap);
-    if (snapshot_serialize_multi(srv, srv_select_db, srv->ndbs, &snap) != 0) {
+    if (srv->repl_snapshot_serialize_fn != NULL) {
+        if (srv->repl_snapshot_serialize_fn(srv->repl_snapshot_serialize_ctx,
+                                            &snap) != 0) {
+            resp_buf_free(&snap);
+            return -1;
+        }
+    } else if (snapshot_serialize_multi(srv, srv_select_db, srv->ndbs,
+                                        &snap) != 0) {
         resp_buf_free(&snap);
         return -1;
     }
@@ -2010,6 +2045,7 @@ server *server_create_ex(const char *host, uint16_t port, int backend)
     s->prop_buf.pool = &s->pool;
     memset(&s->repl, 0, sizeof(s->repl));
     s->repl.role = SESSION_ROLE_MASTER;
+    s->repl_centralized = 0;
     cluster_gen_id(s->repl.replid);
     if (!srv_proactor(s) &&
         pal_loop_add(s->loop, s->listen_fd, 1, 0, NULL) != 0) {
@@ -2404,6 +2440,89 @@ void server_set_repl_snapshot_hook(server *s, server_repl_snapshot_fn fn,
     s->repl_snapshot_ctx = ctx;
 }
 
+void server_set_repl_snapshot_serialize_hook(
+    server *s, server_repl_snapshot_serialize_fn fn, void *ctx)
+{
+    if (s == NULL)
+        return;
+    s->repl_snapshot_serialize_fn = fn;
+    s->repl_snapshot_serialize_ctx = ctx;
+}
+
+void server_set_repl_centralized(server *s, int on)
+{
+    if (s != NULL)
+        s->repl_centralized = on;
+}
+
+void server_set_repl_stream_forward(server *s, server_repl_stream_fn fn,
+                                    void *ctx)
+{
+    if (s == NULL)
+        return;
+    s->repl_stream_fn = fn;
+    s->repl_stream_ctx = ctx;
+}
+
+void server_repl_stream_forward(server *s, int db_index, const char *raw,
+                                size_t raw_len)
+{
+    if (s != NULL && s->repl_centralized &&
+        s->role == SESSION_ROLE_MASTER && s->repl_stream_fn != NULL)
+        s->repl_stream_fn(s->repl_stream_ctx, db_index, raw, raw_len);
+}
+
+int server_repl_active(const server *s)
+{
+    return s != NULL && (s->repl.connected_slaves != 0 ||
+                         s->backlog_used != 0);
+}
+
+void server_repl_stream_append(server *s, const char *raw, size_t raw_len)
+{
+    size_t i;
+    if (s == NULL || raw == NULL || raw_len == 0)
+        return;
+    if (!server_repl_active(s))
+        return;
+    repl_backlog_append(&s->backlog, raw, raw_len);
+    s->repl.offset = s->backlog.offset;
+    if (s->repl.connected_slaves == 0)
+        return;
+    for (i = 0; i < s->nconns; i++) {
+        conn *rc = s->conns[i];
+        if (rc->is_replica) {
+            if (resp_buf_reserve(&rc->out, raw_len) != 0) {
+                rc->close_after_send = 1;
+                continue;
+            }
+            memcpy(rc->out.data + rc->out.len, raw, raw_len);
+            rc->out.len += raw_len;
+        }
+    }
+}
+
+void server_repl_stream_append_db(server *s, int db_index, const char *raw,
+                                  size_t raw_len)
+{
+    char sel[48];
+    int n;
+    if (s == NULL || raw == NULL || raw_len == 0 ||
+        db_index < 0 || db_index > 999999999)
+        return;
+    if (!server_repl_active(s))
+        return;
+    if (db_index != s->repl_stream_db) {
+        n = snprintf(sel, sizeof(sel), "*2\r\n$6\r\nSELECT\r\n$%d\r\n%d\r\n",
+                     db_index, db_index);
+        if (n < 0 || (size_t)n >= sizeof(sel))
+            return;
+        server_repl_stream_append(s, sel, (size_t)n);
+        s->repl_stream_db = db_index;
+    }
+    server_repl_stream_append(s, raw, raw_len);
+}
+
 void server_set_slowlog_threshold(server *s, uint64_t usec)
 {
     s->slowlog_threshold_us = usec;
@@ -2698,6 +2817,7 @@ void server_conn_rehome(server *s, void *conn_ptr)
     c->sess->ps_ctx = s;
     c->sess->shutdown_ctx = s;
     c->sess->sync_ctx = s;
+    c->sess->psync_ctx = s;
     c->sess->replicaof_ctx = s;
     c->sess->reset_ctx = s;
     c->sess->cluster_ctx = s;
