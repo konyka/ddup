@@ -39,6 +39,44 @@ void *obj_unpack_ptr(const char *val, size_t vlen)
     return ptr;
 }
 
+void obj_tier_pack(char buf[17], uint64_t record_id, uint64_t expire_ms)
+{
+    int i;
+    buf[0] = (char)DDUP_OBJ_TIER;
+    for (i = 0; i < 8; i++)
+        buf[1 + i] = (char)((record_id >> (8 * i)) & 0xFFu);
+    for (i = 0; i < 8; i++)
+        buf[9 + i] = (char)((expire_ms >> (8 * i)) & 0xFFu);
+}
+
+void obj_tier_unpack(const char *val, size_t vlen, uint64_t *record_id,
+                     uint64_t *expire_ms)
+{
+    uint64_t rid = 0;
+    uint64_t exp = 0;
+    int i;
+    if (vlen < 17) {
+        if (record_id != NULL)
+            *record_id = 0;
+        if (expire_ms != NULL)
+            *expire_ms = 0;
+        return;
+    }
+    for (i = 7; i >= 0; i--)
+        rid = (rid << 8) | (uint64_t)(unsigned char)val[1 + i];
+    for (i = 7; i >= 0; i--)
+        exp = (exp << 8) | (uint64_t)(unsigned char)val[9 + i];
+    if (record_id != NULL)
+        *record_id = rid;
+    if (expire_ms != NULL)
+        *expire_ms = exp;
+}
+
+int obj_is_tier(const char *val, size_t vlen)
+{
+    return obj_tag_of(val, vlen) == DDUP_OBJ_TIER;
+}
+
 uint64_t obj_extra_mem(const char *val, size_t vlen)
 {
     switch (obj_tag_of(val, vlen)) {
@@ -52,6 +90,8 @@ uint64_t obj_extra_mem(const char *val, size_t vlen)
         return obj_zset_mem((obj_zset *)obj_unpack_ptr(val, vlen));
     case DDUP_OBJ_STREAM:
         return obj_stream_mem((obj_stream *)obj_unpack_ptr(val, vlen));
+    case DDUP_OBJ_TIER:
+        return 0; /* tier-ref is accounted by the db entry itself */
     default:
         return 0;
     }
@@ -75,6 +115,8 @@ void obj_free_value(const char *val, size_t vlen)
     case DDUP_OBJ_STREAM:
         obj_stream_free((obj_stream *)obj_unpack_ptr(val, vlen));
         break;
+    case DDUP_OBJ_TIER:
+        break; /* no owned object */
     default:
         break;
     }

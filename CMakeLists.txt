@@ -71,6 +71,7 @@ set(DDUP_CORE_SOURCES
     src/core/rhtable.c
     src/core/command.c
     src/core/buf_pool.c
+    src/core/tier.c
     src/ds/obj.c
     src/ds/glob.c
     src/ds/listpack.c
@@ -238,6 +239,7 @@ ddup_add_test(test_resp_writer tests/test_resp_writer.c)
 ddup_add_test(test_resp3 tests/test_resp3.c)
 ddup_add_test(test_rhtable tests/test_rhtable.c)
 ddup_add_test(test_command tests/test_command.c)
+ddup_add_test(test_tier tests/test_tier.c)
 ddup_add_test(test_glob tests/test_glob.c)
 ddup_add_test(test_keys tests/test_keys.c)
 ddup_add_test(test_stringx tests/test_stringx.c)

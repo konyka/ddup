@@ -21,6 +21,7 @@
 #include "core/session.h"
 #include "core/hashslot.h"
 #include "core/snapshot.h"
+#include "core/tier.h"
 #include "core/migrate.h"
 #include "core/script.h"
 
@@ -83,7 +84,15 @@ void db_init(db *d)
     d->rng_state = 0x9E3779B9u; /* nonzero xorshift seed */
     rh_init(&d->scripts);
     rh_init(&d->function_libs);
+    d->tier = NULL;
+    d->tier_db_index = 0;
     d->lua_state = NULL;
+}
+
+void db_set_tier(db *d, tier_store *tier, int db_index)
+{
+    d->tier = tier;
+    d->tier_db_index = db_index;
 }
 
 void db_destroy(db *d)

@@ -13,6 +13,7 @@
 #include "resp/resp_writer.h"
 
 struct session;
+struct tier_store;
 
 /* Eviction policies (db.maxmemory_policy). */
 #define DB_POLICY_ALLKEYS_LRU 0 /* default */
@@ -61,6 +62,8 @@ typedef struct db {
     uint32_t rng_state;    /* sampling PRNG (xorshift32, always nonzero) */
     rh_table scripts;      /* Lua script cache: sha1 hex -> registry ref */
     rh_table function_libs; /* FUNCTION LOAD code: library name -> source */
+    struct tier_store *tier;  /* optional cold layer (NULL = tiering off) */
+    int tier_db_index;        /* logical db index used in tier records */
     void *lua_state;       /* shared interpreter, lazy (script.c owns it) */
     /* commandstats: per-command-id call count and cumulative microseconds
      * (indexed by CMD_* id, room to spare) */
@@ -70,6 +73,8 @@ typedef struct db {
 
 void db_init(db *d);
 void db_destroy(db *d);
+/* Attach a cold layer to this logical db. tier may be NULL to disable. */
+void db_set_tier(db *d, struct tier_store *tier, int db_index);
 
 /* ------------------------------------------------------------------ */
 /* INFO statistics (shared by the single-thread path and mt aggregation) */

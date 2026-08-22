@@ -3,6 +3,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdint.h>
 
 #include "pal/pal_platform.h"
 
@@ -11,6 +12,7 @@
 #include <windows.h>
 #else
 #include <unistd.h>
+#include <sys/types.h>
 #endif
 
 struct pal_file {
@@ -91,6 +93,14 @@ pal_file *pal_file_open_write(const char *path)
     return wrap(fopen(path, "wb"));
 }
 
+pal_file *pal_file_open_update(const char *path)
+{
+    FILE *fp = fopen(path, "r+b");
+    if (fp == NULL)
+        fp = fopen(path, "w+b");
+    return wrap(fp);
+}
+
 ptrdiff_t pal_file_write(pal_file *f, const void *buf, size_t n)
 {
     size_t w = fwrite(buf, 1, n, f->fp);
@@ -116,6 +126,27 @@ int pal_file_flush(pal_file *f)
     }
 #endif
     return fflush(f->fp) == 0 ? 0 : -1;
+}
+
+int pal_file_seek(pal_file *f, uint64_t pos)
+{
+#if DDUP_OS_WINDOWS
+    return _fseeki64(f->fp, (long long)pos, SEEK_SET) == 0 ? 0 : -1;
+#else
+    return fseeko(f->fp, (off_t)pos, SEEK_SET) == 0 ? 0 : -1;
+#endif
+}
+
+uint64_t pal_file_tell(pal_file *f)
+{
+#if DDUP_OS_WINDOWS
+    long long pos = _ftelli64(f->fp);
+#else
+    off_t pos = ftello(f->fp);
+#endif
+    if (pos < 0)
+        return 0;
+    return (uint64_t)pos;
 }
 
 int pal_file_sync(pal_file *f)

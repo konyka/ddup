@@ -29,7 +29,8 @@ enum {
     DDUP_OBJ_LIST = 2,
     DDUP_OBJ_SET = 3,
     DDUP_OBJ_ZSET = 4,
-    DDUP_OBJ_STREAM = 5
+    DDUP_OBJ_STREAM = 5,
+    DDUP_OBJ_TIER = 6
 };
 
 /* Type tag of a value blob. */
@@ -41,6 +42,13 @@ void obj_str(const char *val, size_t vlen, const char **s, size_t *len);
 /* Pack/unpack an object pointer blob (9 bytes: tag + pointer). */
 void obj_pack_ptr(char buf[9], int tag, const void *ptr);
 void *obj_unpack_ptr(const char *val, size_t vlen);
+
+/* Tier reference blob: 1 tag byte + 8-byte record id + 8-byte absolute
+ * expiry (17 bytes total). */
+void obj_tier_pack(char buf[17], uint64_t record_id, uint64_t expire_ms);
+void obj_tier_unpack(const char *val, size_t vlen, uint64_t *record_id,
+                     uint64_t *expire_ms);
+int obj_is_tier(const char *val, size_t vlen);
 
 /* Extra bytes owned by the value beyond the rh_table entry itself
  * (0 for strings; object struct + elements for hash/list). */

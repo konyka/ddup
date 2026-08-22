@@ -9,6 +9,7 @@
 #define DDUP_PAL_FILE_H
 
 #include <stddef.h>
+#include <stdint.h>
 
 typedef struct pal_file pal_file;
 
@@ -18,12 +19,18 @@ pal_file *pal_file_open_append(const char *path);
 pal_file *pal_file_open_read(const char *path);
 /* Open for writing (truncates/creates). NULL on error. */
 pal_file *pal_file_open_write(const char *path);
+/* Open existing file for update (read+write) or create it when absent. */
+pal_file *pal_file_open_update(const char *path);
 
 /* Bytes written/read, or -1 on error. */
 ptrdiff_t pal_file_write(pal_file *f, const void *buf, size_t n);
 ptrdiff_t pal_file_read(pal_file *f, void *buf, size_t n);
 /* Flush the stdio buffer. 0 on success. */
 int pal_file_flush(pal_file *f);
+/* Seek to an absolute byte offset. 0 on success, -1 on error. */
+int pal_file_seek(pal_file *f, uint64_t pos);
+/* Current byte offset, or -1 on error (returned as uint64_t). */
+uint64_t pal_file_tell(pal_file *f);
 /* Durability sync of the flushed bytes to storage (POSIX fsync, Windows
  * FlushFileBuffers). 0 on success, -1 on error. */
 int pal_file_sync(pal_file *f);
