@@ -1210,6 +1210,60 @@ static void sintercard_lp_cb(const char *m, size_t mlen, const char *v,
     w->stop = sintercard_cb(m, mlen, v, vlen, &w->ic);
 }
 
+typedef struct setcard_ctx {
+    rh_table *seen;
+    long long limit;
+    long long count;
+    int stop;
+} setcard_ctx;
+
+static void setcard_union_cb(const char *m, size_t mlen, const char *v,
+                             size_t vlen, void *c)
+{
+    setcard_ctx *sc = (setcard_ctx *)c;
+    const char *old;
+    size_t oldl;
+    (void)v;
+    (void)vlen;
+    if (sc->stop)
+        return;
+    if (sc->limit > 0 && sc->count >= sc->limit) {
+        sc->stop = 1;
+        return;
+    }
+    if (!rh_get(sc->seen, m, mlen, &old, &oldl)) {
+        if (rh_set(sc->seen, m, mlen, "", 0) == 0)
+            sc->count++;
+    }
+}
+
+static void setcard_collect_cb(const char *m, size_t mlen, const char *v,
+                               size_t vlen, void *c)
+{
+    rh_table *seen = (rh_table *)c;
+    (void)v;
+    (void)vlen;
+    (void)rh_set(seen, m, mlen, "", 0);
+}
+
+static void setcard_diff_cb(const char *m, size_t mlen, const char *v,
+                            size_t vlen, void *c)
+{
+    setcard_ctx *sc = (setcard_ctx *)c;
+    const char *old;
+    size_t oldl;
+    (void)v;
+    (void)vlen;
+    if (sc->stop)
+        return;
+    if (sc->limit > 0 && sc->count >= sc->limit) {
+        sc->stop = 1;
+        return;
+    }
+    if (!rh_get(sc->seen, m, mlen, &old, &oldl))
+        sc->count++;
+}
+
 /* Copy one result member into a fresh obj_set (STORE materialization). */
 static void set_store_cb(const char *m, size_t mlen, const char *v,
                          size_t vlen, void *c)
@@ -3834,8 +3888,29 @@ static int cmd_keys_accum(const resp_value *argv, size_t argc, int *have,
         }
         return 1;
     }
+
     if (cmd_id == CMD_SINTERCARD) {
         /* keys are argv[2..2+numkeys); numkeys validated by the dispatch */
+        const char *nv;
+        size_t nvl;
+        long long nk = 0;
+        size_t end;
+        if (argc < 3 || !arg_str(&argv[1], &nv, &nvl) ||
+            !parse_i64(nv, nvl, &nk) || nk <= 0)
+            return 1;
+        end = 2 + (size_t)nk;
+        if (end > argc)
+            end = argc;
+        for (i = 2; i < end; i++) {
+            const char *k;
+            size_t kl;
+            if (arg_str(&argv[i], &k, &kl) &&
+                !slot_accum(k, kl, have, slot))
+                return 0;
+        }
+        return 1;
+    }
+    if (cmd_id == CMD_SUNIONCARD || cmd_id == CMD_SDIFFCARD) {
         const char *nv;
         size_t nvl;
         long long nk = 0;
@@ -15910,6 +15985,118 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
         return;
     }
 
+
+    if (cmd_id == CMD_SUNIONCARD || cmd_id == CMD_SDIFFCARD) {
+        int is_union = cmd_id == CMD_SUNIONCARD;
+        const char *nv;
+        size_t nvl;
+        long long nk, limit = 0;
+        size_t nkeys, i, j;
+        obj_set **sets;
+        rh_table seen;
+        long long card = 0;
+        if (!arg_str(&argv[1], &nv, &nvl))
+            goto bad_type;
+        if (!parse_i64(nv, nvl, &nk)) {
+            resp_write_error(out, ERR_NOT_INT, sizeof(ERR_NOT_INT) - 1);
+            return;
+        }
+        if (nk <= 0) {
+            static const char E[] = "ERR numkeys should be greater than 0";
+            resp_write_error(out, E, sizeof(E) - 1);
+            return;
+        }
+        if ((unsigned long long)nk > argc - 2) {
+            static const char E[] =
+                "ERR Number of keys can't be greater than number of args";
+            resp_write_error(out, E, sizeof(E) - 1);
+            return;
+        }
+        nkeys = (size_t)nk;
+        for (j = 2 + nkeys; j < argc; j++) {
+            const char *opt;
+            size_t optl;
+            if (!arg_str(&argv[j], &opt, &optl))
+                goto bad_type;
+            if (ci_equal(opt, optl, "LIMIT") && j + 1 < argc) {
+                const char *lv;
+                size_t lvl;
+                if (!arg_str(&argv[++j], &lv, &lvl) ||
+                    !parse_i64(lv, lvl, &limit) || limit < 0) {
+                    static const char E[] = "ERR LIMIT can't be negative";
+                    resp_write_error(out, E, sizeof(E) - 1);
+                    return;
+                }
+            } else if (is_union && ci_equal(opt, optl, "APPROX")) {
+                continue;
+            } else {
+                resp_write_error(out, ERR_SYNTAX, sizeof(ERR_SYNTAX) - 1);
+                return;
+            }
+        }
+        if (crossslot_reject(d, out, argv, argc))
+            return;
+        sets = (obj_set **)malloc(nkeys * sizeof(*sets));
+        for (i = 0; i < nkeys; i++) {
+            const char *k;
+            size_t kl;
+            obj_set *set = NULL;
+            int rc;
+            if (!arg_str(&argv[2 + i], &k, &kl)) {
+                free(sets);
+                goto bad_type;
+            }
+            rc = get_set(d, out, k, kl, 0, now_ms, &set);
+            if (rc < 0) {
+                free(sets);
+                return;
+            }
+            sets[i] = rc == 1 ? set : NULL;
+        }
+        rh_init(&seen);
+        if (is_union) {
+            setcard_ctx ctx;
+            ctx.seen = &seen;
+            ctx.limit = limit;
+            ctx.count = 0;
+            ctx.stop = 0;
+            for (i = 0; i < nkeys && !ctx.stop; i++) {
+                if (sets[i] == NULL)
+                    continue;
+                if (obj_set_is_listpack(sets[i]))
+                    obj_set_each(sets[i], setcard_union_cb, &ctx);
+                else
+                    rh_each(&sets[i]->members, setcard_union_cb, &ctx);
+            }
+            card = ctx.count;
+        } else {
+            for (i = 1; i < nkeys; i++) {
+                if (sets[i] == NULL)
+                    continue;
+                if (obj_set_is_listpack(sets[i]))
+                    obj_set_each(sets[i], setcard_collect_cb, &seen);
+                else
+                    rh_each(&sets[i]->members, setcard_collect_cb, &seen);
+            }
+            if (sets[0] != NULL) {
+                setcard_ctx ctx;
+                ctx.seen = &seen;
+                ctx.limit = limit;
+                ctx.count = 0;
+                ctx.stop = 0;
+                if (obj_set_is_listpack(sets[0]))
+                    obj_set_each(sets[0], setcard_diff_cb, &ctx);
+                else
+                    rh_each(&sets[0]->members, setcard_diff_cb, &ctx);
+                card = ctx.count;
+            }
+        }
+        rh_destroy(&seen);
+        free(sets);
+        resp_write_integer(out, card);
+        return;
+    }
+
     if (cmd_id == CMD_SINTERCARD) {
         if (argc < 3) {
             wrong_args(out, "sintercard");
@@ -19729,6 +19916,8 @@ static const cmd_entry CMD_TABLE[] = {
     {"hpttl", CMD_HPTTL, 5, -1, 0, 0},
     {"hexpiretime", CMD_HEXPIRETIME, 5, -1, 0, 0},
     {"hpexpiretime", CMD_HPEXPIRETIME, 5, -1, 0, 0},
+    {"sunioncard", CMD_SUNIONCARD, 3, -1, 0, 0},
+    {"sdiffcard", CMD_SDIFFCARD, 3, -1, 0, 0},
 };
 
 static const cmd_entry *cmd_table_entry(uint16_t id)

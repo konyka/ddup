@@ -811,6 +811,41 @@ static void test_sscan(void)
     db_destroy(&d);
 }
 
+
+static void test_sunioncard_sdiffcard(void)
+{
+    db d;
+    resp_buf out;
+    db_init(&d);
+    resp_buf_init(&out);
+
+    exec_cmd(&d, T0, &out, 5, "SADD", "a", "a", "b", "c");
+    exec_cmd(&d, T0, &out, 5, "SADD", "b", "b", "c", "d");
+    exec_cmd(&d, T0, &out, 5, "SADD", "c", "c", "d", "e");
+
+    exec_cmd(&d, T0, &out, 5, "SUNIONCARD", "3", "a", "b", "c");
+    EXPECT(out, ":5\r\n");
+    exec_cmd(&d, T0, &out, 7, "SUNIONCARD", "3", "a", "b", "c", "LIMIT", "2");
+    EXPECT(out, ":2\r\n");
+    exec_cmd(&d, T0, &out, 8, "SUNIONCARD", "3", "a", "missing", "c", "APPROX", "LIMIT", "3");
+    EXPECT(out, ":3\r\n");
+
+    exec_cmd(&d, T0, &out, 5, "SDIFFCARD", "3", "a", "b", "c");
+    EXPECT(out, ":1\r\n");
+    exec_cmd(&d, T0, &out, 7, "SDIFFCARD", "3", "a", "b", "c", "LIMIT", "1");
+    EXPECT(out, ":1\r\n");
+    exec_cmd(&d, T0, &out, 3, "SDIFFCARD", "1", "a");
+    EXPECT(out, ":3\r\n");
+    exec_cmd(&d, T0, &out, 3, "SDIFFCARD", "1", "missing");
+    EXPECT(out, ":0\r\n");
+
+    exec_cmd(&d, T0, &out, 4, "SUNIONCARD", "0", "a");
+    DD_CHECK(out.len > 0 && out.data[0] == '-');
+
+    resp_buf_free(&out);
+    db_destroy(&d);
+}
+
 int main(void)
 {
     DD_RUN(test_set_rejects_unrepresentable_member);
@@ -828,5 +863,6 @@ int main(void)
     DD_RUN(test_set_listpack_encoding);
     DD_RUN(test_set_listpack_limits);
     DD_RUN(test_sscan);
+    DD_RUN(test_sunioncard_sdiffcard);
     return DD_TEST_SUMMARY();
 }

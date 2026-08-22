@@ -9,7 +9,7 @@
 
 | 类别 | 数量 |
 | --- | --- |
-| 缺失顶层命令 | 36 |
+| 缺失顶层命令 | 34 |
 | 整体缺失容器 | 3 |
 | 已实现容器内缺失子命令 | 3 |
 
@@ -27,6 +27,9 @@
   HEXPIRETIME/HPEXPIRETIME`。`obj_hash` 增加独立 `expires` 表，字段
   TTL 为绝对毫秒时间戳；读路径惰性删除过期字段，全量视图先 purge，
   空 hash 自动删除 key。
+- Set 基数：`SUNIONCARD/SDIFFCARD` 支持 `LIMIT` 提前停与 union 的
+  `APPROX` 参数解析；复用 `obj_set` 双编码遍历，临时 `rh_table` 去重，
+  不物化完整结果集。
 
 ## 实现策略（性能优先）
 
@@ -53,7 +56,7 @@
 ## 审计基线（机器断言，勿手改格式）
 
 <!-- AUDIT-BASELINE-START
-missing_top: arcount ardel ardelrange arget argetrange argrep arinfo arinsert arlastitems arlen armget armset arnext arop arring arscan arseek arset backup blmovem delex digest himport hotkeys increx lmovem msetex sdiffcard sflush sunioncard trimslots xackdel xcfgset xdelex xidmprecord xnack
+missing_top: arcount ardel ardelrange arget argetrange argrep arinfo arinsert arlastitems arlen armget armset arnext arop arring arscan arseek arset backup blmovem delex digest himport hotkeys increx lmovem msetex sflush trimslots xackdel xcfgset xdelex xidmprecord xnack
 missing_containers: backup himport hotkeys
 missing_sub: cluster migration
 missing_sub: cluster slot-stats

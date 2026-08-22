@@ -422,10 +422,12 @@ enum {
     CMD_HTTL,
     CMD_HPTTL,
     CMD_HEXPIRETIME,
-    CMD_HPEXPIRETIME
+    CMD_HPEXPIRETIME,
+    CMD_SUNIONCARD,
+    CMD_SDIFFCARD
 };
 
-#define CMD_MAX CMD_HPEXPIRETIME
+#define CMD_MAX CMD_SDIFFCARD
 
 /* Resolve a command name to its stable ID; case-insensitive. */
 uint16_t cmd_resolve(const char *name, size_t len);

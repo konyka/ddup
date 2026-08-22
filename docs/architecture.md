@@ -1197,6 +1197,9 @@ hazard pointer/延迟回收、索引桶 CAS、检查点与恢复的并发协议�
   `-2`/`-1` 区分“无字段”与“无 TTL”。
 - 命令 id 总数已突破原 `CMD_STATS_SLOTS` 128 的上限，扩容为 512；
   CMD_TABLE 与枚举继续只追加尾部。
+- **Set 基数**：`SUNIONCARD` 用临时 `rh_table` 做 union 去重，
+  `SDIFFCARD` 先收集后续集合成员再扫首集合；`LIMIT` 达到即停，
+  `APPROX` 当前按精确基数返回（ddup set 无 HLL 编码）。
 
 ## 目录结构
 

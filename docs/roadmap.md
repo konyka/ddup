@@ -369,3 +369,6 @@
     惰性删除过期字段，普通覆盖写清 TTL，`FNX/FXX/KEEPTTL/PERSIST/
     NX/XX/GT/LT` 语义对齐 Redis 8；命令统计槽位扩容 512。Redis 8.10.1
     审计缺 36 个顶层命令、3 个整体缺失容器、3 个容器子命令（Phase 70）
+  - [x] Redis 8 set 基数：`SUNIONCARD/SDIFFCARD`（`LIMIT` 提前停，
+    `SUNIONCARD APPROX` 精确返回）；Redis 8.10.1 审计缺 34 个顶层命令、
+    3 个整体缺失容器、3 个容器子命令（Phase 71）
