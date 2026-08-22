@@ -72,7 +72,8 @@
     与总线/故障检测只跑在 worker 0，节点/槽位元数据以不可变快照扇出
     到其余 worker，使每个 worker 都能独立给出 MOVED/CLUSTERDOWN；
     master 侧 SYNC/PSYNC 全量同步按 worker 本地序列化后封成 DDUPMT01，
-    聚合/MOVE/EXEC 命令复制推流恰好一次
+    聚合/MOVE/EXEC 命令复制推流恰好一次；FLUSHDB/FLUSHALL/SWAPDB 各
+    worker AOF 按实际变更记录，INFO # Replication 从 worker 0 渲染
 
 - [x] **Phase 13 — 安全与多数据库**
   AUTH（requirepass + NOAUTH 门）、16 逻辑库（SELECT/SWAPDB、session

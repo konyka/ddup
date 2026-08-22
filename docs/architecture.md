@@ -178,7 +178,9 @@
   客户端 key 局部性的负载（hashtag、按用户前缀）零跨线程流量。
 - **持久化**：每 worker 独立 `<dir>/worker-<id>-<file>`；路由任务的
   mutation 经 dirty 计数记录到执行 worker 的 AOF；SAVE/LASTSAVE 广播
-  聚合（LASTSAVE 取 max）；启动时按 worker 重放/加载。
+  聚合（LASTSAVE 取 max）；`FLUSHDB/FLUSHALL/SWAPDB` 在广播归并的
+  home 端与各 follower 都按实际变更记录到本 worker AOF；启动时按
+  worker 重放/加载。
 - **聚合命令**：DBSIZE（求和）、FLUSHDB、SAVE、LASTSAVE（max）、
   SWAPDB、INFO 广播到全部 worker 归并。INFO 走**结构化归并**：每个
   worker 执行内部变体 `INFO __STATS__`（机器格式：标量 `k:v` 行 +
@@ -191,8 +193,9 @@
   SCAN/RANDOMKEY/PSUBSCRIBE/PUNSUBSCRIBE 返回 `-ERR command not
   supported in mt mode`；`SYNC/PSYNC/REPLICAOF/SLAVEOF/CLUSTER` 已由
   worker 0 控制面支持（SYNC/PSYNC 分类到 worker 0，master 侧全量快照
-  见 mt 复制/集群适配）。INFO 仍不含 # Replication 段（mt 副本侧已
-  支持，但 per-worker replication 统计尚未聚合）。
+  见 mt 复制/集群适配）。INFO # Replication 由 home 端从 worker 0 的
+  `repl_info` 渲染（mt master 暴露 connected_slaves/master_repl_offset，
+  mt 副本暴露 master_host/master_link_status）。
 - **并发可靠性**：跨 worker 队列满时，生产者背压重试会**自排空本
   worker 的 inbox/completion 队列**以打破环形等待；drain 按环限批
   （512 条/次）并在有剩余时自 kick，避免持续生产下的 drain 活锁。
