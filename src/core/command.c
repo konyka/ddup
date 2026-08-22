@@ -3846,8 +3846,10 @@ static int cmd_keys_accum(const resp_value *argv, size_t argc, int *have,
     }
     if (cmd_id == CMD_SMOVE || cmd_id == CMD_RENAME ||
         cmd_id == CMD_RENAMENX || cmd_id == CMD_RPOPLPUSH ||
-        cmd_id == CMD_LMOVE || cmd_id == CMD_COPY || cmd_id == CMD_LCS ||
-        cmd_id == CMD_BRPOPLPUSH || cmd_id == CMD_BLMOVE) {
+        cmd_id == CMD_LMOVE || cmd_id == CMD_LMOVEM ||
+        cmd_id == CMD_COPY || cmd_id == CMD_LCS ||
+        cmd_id == CMD_BRPOPLPUSH || cmd_id == CMD_BLMOVE ||
+        cmd_id == CMD_BLMOVEM) {
         for (i = 1; i < argc && i < 3; i++) {
             const char *k;
             size_t kl;
@@ -4265,8 +4267,10 @@ static int cluster_check_ownership(session *s, const resp_value *argv,
     }
     if (cmd_id == CMD_SMOVE || cmd_id == CMD_RENAME ||
         cmd_id == CMD_RENAMENX || cmd_id == CMD_RPOPLPUSH ||
-        cmd_id == CMD_LMOVE || cmd_id == CMD_COPY || cmd_id == CMD_LCS ||
-        cmd_id == CMD_BRPOPLPUSH || cmd_id == CMD_BLMOVE) {
+        cmd_id == CMD_LMOVE || cmd_id == CMD_LMOVEM ||
+        cmd_id == CMD_COPY || cmd_id == CMD_LCS ||
+        cmd_id == CMD_BRPOPLPUSH || cmd_id == CMD_BLMOVE ||
+        cmd_id == CMD_BLMOVEM) {
         for (i = 1; i < argc && i < 3; i++) {
             const char *k;
             size_t kl;
@@ -6210,8 +6214,10 @@ static void command_emit_keys_mode(const resp_value *argv, size_t argc,
     }
     if (cmd_id == CMD_SMOVE || cmd_id == CMD_RENAME ||
         cmd_id == CMD_RENAMENX || cmd_id == CMD_RPOPLPUSH ||
-        cmd_id == CMD_LMOVE || cmd_id == CMD_COPY || cmd_id == CMD_LCS ||
-        cmd_id == CMD_BRPOPLPUSH || cmd_id == CMD_BLMOVE) {
+        cmd_id == CMD_LMOVE || cmd_id == CMD_LMOVEM ||
+        cmd_id == CMD_COPY || cmd_id == CMD_LCS ||
+        cmd_id == CMD_BRPOPLPUSH || cmd_id == CMD_BLMOVE ||
+        cmd_id == CMD_BLMOVEM) {
         for (i = 3; i < argc && i < 5; i++)
             EMIT_KEY(&argv[i]);
         goto done;
@@ -8759,6 +8765,262 @@ static void blocking_list_move_ready(db *d, resp_buf *out, const char *sk,
     }
 }
 
+/* ------------------------------------------------------------------ */
+/* LMOVEM/BLMOVEM multi-element list moves                              */
+/* ------------------------------------------------------------------ */
+
+#define LMOVEM_MODE_DEFAULT 0
+#define LMOVEM_MODE_UPTO    1
+#define LMOVEM_MODE_EXACTLY 2
+#define LMOVEM_ORDER_OBO    0
+#define LMOVEM_ORDER_BULK   1
+
+/* Parse the optional trailer at argv[opt_idx]: [<COUNT|EXACTLY> n <OBO|BULK>].
+ * On success returns 0 and fills the three output parameters. On failure a
+ * reply is written and -1 is returned. */
+static int lmovem_parse_options(const resp_value *argv, size_t argc,
+                                size_t opt_idx, int *mode, long long *count,
+                                int *ordering, resp_buf *out)
+{
+    const char *sel;
+    size_t sel_len;
+    const char *ord;
+    size_t ord_len;
+    if (opt_idx == argc) {
+        *mode = LMOVEM_MODE_DEFAULT;
+        *count = 1;
+        *ordering = LMOVEM_ORDER_BULK;
+        return 0;
+    }
+    if (argc - opt_idx != 3) {
+        resp_write_error(out, ERR_SYNTAX, sizeof(ERR_SYNTAX) - 1);
+        return -1;
+    }
+    if (!arg_str(&argv[opt_idx], &sel, &sel_len))
+        goto lmovem_bad_arg;
+    if (ci_equal(sel, sel_len, "COUNT")) {
+        *mode = LMOVEM_MODE_UPTO;
+    } else if (ci_equal(sel, sel_len, "EXACTLY")) {
+        *mode = LMOVEM_MODE_EXACTLY;
+    } else {
+        resp_write_error(out, ERR_SYNTAX, sizeof(ERR_SYNTAX) - 1);
+        return -1;
+    }
+    if (cmd_parse_ll(&argv[opt_idx + 1], count) == 0 || *count <= 0) {
+        static const char E[] = "ERR count should be greater than 0";
+        resp_write_error(out, E, sizeof(E) - 1);
+        return -1;
+    }
+    if (!arg_str(&argv[opt_idx + 2], &ord, &ord_len))
+        goto lmovem_bad_arg;
+    if (ci_equal(ord, ord_len, "OBO")) {
+        *ordering = LMOVEM_ORDER_OBO;
+    } else if (ci_equal(ord, ord_len, "BULK")) {
+        *ordering = LMOVEM_ORDER_BULK;
+    } else {
+        resp_write_error(out, ERR_SYNTAX, sizeof(ERR_SYNTAX) - 1);
+        return -1;
+    }
+    return 0;
+
+lmovem_bad_arg:
+    resp_write_error(out, "ERR invalid argument type", 24);
+    return -1;
+}
+
+/* Pop tomove elements from src and push them into dst, replying with the
+ * moved elements in destination order. The caller has already verified that
+ * src is a list with at least tomove elements. Destination type is validated
+ * before any source mutation. */
+static void lmovem_move_ready(db *d, resp_buf *out, const char *sk,
+                              size_t skl, const char *dk, size_t dkl,
+                              int src_left, int dst_left, long long tomove,
+                              int ordering, uint64_t now_ms)
+{
+    obj_list *src;
+    obj_list *dst = NULL;
+    char **vals = NULL;
+    size_t *lens = NULL;
+    size_t n = (size_t)tomove;
+    size_t i;
+    int same;
+    uint64_t sbefore;
+    uint64_t dbefore = 0;
+    int rev;
+
+    if (get_list(d, out, sk, skl, 0, now_ms, &src) < 0)
+        return;
+    same = skl == dkl && memcmp(sk, dk, skl) == 0;
+    if (!same) {
+        int rc = get_list(d, out, dk, dkl, 0, now_ms, &dst);
+        if (rc < 0)
+            return;
+        if (rc == 0) {
+            if (oom_blocked(d, out))
+                return;
+            rc = get_list(d, out, dk, dkl, 1, now_ms, &dst);
+            if (rc < 0)
+                return;
+        }
+    } else {
+        dst = src;
+    }
+
+    /* Prevalidate destination push lengths before mutating the source. */
+    {
+        obj_list_iter it;
+        int valid = src_left ? obj_list_first(src, &it)
+                             : obj_list_last(src, &it);
+        for (i = 0; i < n && valid; i++) {
+            size_t el = 0;
+            (void)obj_list_iter_value(&it, &el);
+            if (el > UINT32_MAX) {
+                storage_length_error(out);
+                return;
+            }
+            valid = src_left ? obj_list_iter_next(&it)
+                             : obj_list_iter_prev(&it);
+        }
+    }
+
+    vals = (char **)malloc(n * sizeof(*vals));
+    lens = (size_t *)malloc(n * sizeof(*lens));
+    if (vals == NULL || lens == NULL) {
+        free(vals);
+        free(lens);
+        resp_write_error(out, OOM_MSG, sizeof(OOM_MSG) - 1);
+        return;
+    }
+
+    sbefore = obj_list_mem(src);
+    if (!same)
+        dbefore = obj_list_mem(dst);
+    for (i = 0; i < n; i++) {
+        if (!obj_list_pop(src, src_left, &vals[i], &lens[i])) {
+            storage_length_error(out);
+            goto lmovem_cleanup_vals;
+        }
+    }
+
+    rev = (ordering == LMOVEM_ORDER_OBO) ? dst_left : !src_left;
+    resp_write_array_header(out, n);
+    for (i = 0; i < n; i++) {
+        size_t di = rev ? n - 1 - i : i;
+        resp_write_bulk(out, vals[di], lens[di]);
+    }
+
+    if (dst_left) {
+        for (i = 0; i < n; i++) {
+            size_t si = rev ? i : n - 1 - i;
+            if (obj_list_push(dst, 1, vals[si], lens[si]) != 0) {
+                storage_length_error(out);
+                goto lmovem_cleanup_vals;
+            }
+        }
+    } else {
+        for (i = 0; i < n; i++) {
+            size_t si = rev ? n - 1 - i : i;
+            if (obj_list_push(dst, 0, vals[si], lens[si]) != 0) {
+                storage_length_error(out);
+                goto lmovem_cleanup_vals;
+            }
+        }
+    }
+
+    if (same) {
+        mem_sync(d, sk, skl, sbefore, obj_list_mem(src));
+    } else {
+        mem_sync(d, dk, dkl, dbefore, obj_list_mem(dst));
+        mem_sync(d, sk, skl, sbefore, obj_list_mem(src));
+    }
+
+    if (!same && obj_list_len(src) == 0)
+        db_del_kv(d, sk, skl);
+
+lmovem_cleanup_vals:
+    for (i = 0; i < n; i++) {
+        if (vals[i] != NULL)
+            free(vals[i]);
+    }
+    free(vals);
+    free(lens);
+}
+
+/* Non-blocking LMOVEM. It validates source sufficiency before destination
+ * type, matching Redis: EXACTLY failures do not touch either key. */
+static void lmovem_execute(db *d, resp_buf *out, const resp_value *argv,
+                           size_t argc, uint64_t now_ms)
+{
+    const char *sk, *dk, *sw, *dw;
+    size_t skl, dkl, swl, dwl;
+    int src_left, dst_left;
+    int mode;
+    long long count;
+    int ordering;
+    obj_list *src;
+    int rc;
+    long long srclen;
+    long long tomove;
+
+    if (argc < 5) {
+        wrong_args(out, "lmovem");
+        return;
+    }
+    if (!arg_str(&argv[1], &sk, &skl) ||
+        !arg_str(&argv[2], &dk, &dkl) ||
+        !arg_str(&argv[3], &sw, &swl) ||
+        !arg_str(&argv[4], &dw, &dwl))
+        goto lmovem_bad_type;
+    if (ci_equal(sw, swl, "LEFT")) {
+        src_left = 1;
+    } else if (ci_equal(sw, swl, "RIGHT")) {
+        src_left = 0;
+    } else {
+        resp_write_error(out, ERR_SYNTAX, sizeof(ERR_SYNTAX) - 1);
+        return;
+    }
+    if (ci_equal(dw, dwl, "LEFT")) {
+        dst_left = 1;
+    } else if (ci_equal(dw, dwl, "RIGHT")) {
+        dst_left = 0;
+    } else {
+        resp_write_error(out, ERR_SYNTAX, sizeof(ERR_SYNTAX) - 1);
+        return;
+    }
+    if (!storage_key_ok(skl) || !storage_key_ok(dkl)) {
+        storage_length_error(out);
+        return;
+    }
+    if (lmovem_parse_options(argv, argc, 5, &mode, &count, &ordering,
+                             out) != 0)
+        return;
+
+    rc = get_list(d, out, sk, skl, 0, now_ms, &src);
+    if (rc < 0)
+        return;
+    srclen = rc == 0 ? 0 : (long long)obj_list_len(src);
+
+    if (mode == LMOVEM_MODE_EXACTLY) {
+        if (srclen < count) {
+            write_null_array(out);
+            return;
+        }
+        tomove = count;
+    } else {
+        tomove = count < srclen ? count : srclen;
+    }
+    if (tomove == 0) {
+        write_null_array(out);
+        return;
+    }
+    lmovem_move_ready(d, out, sk, skl, dk, dkl, src_left, dst_left,
+                      tomove, ordering, now_ms);
+    return;
+
+lmovem_bad_type:
+    resp_write_error(out, "ERR invalid argument type", 24);
+}
+
 /* The blocking-command executor shared by first dispatch and server retry.
  * Returns 1 when a reply (or error) has been written and the session should
  * be unblocked; 0 when no key is ready and the session must block. */
@@ -8874,6 +9136,71 @@ static int blocking_pop_try(session *s, const resp_value *argv, size_t argc,
         }
         blocking_list_move_ready(d, out, sk, skl, dk, dkl, src_left,
                                  dst_left, now_ms);
+        return 1;
+    }
+
+    if (cmd_id == CMD_BLMOVEM) {
+        const char *sk, *dk, *sw, *dw;
+        size_t skl, dkl, swl, dwl;
+        int src_left, dst_left;
+        int mode;
+        long long count;
+        int ordering;
+        obj_list *src;
+        int rc;
+        uint64_t srclen;
+        uint64_t needed;
+        long long tomove;
+
+        if (argc < 6) {
+            wrong_args(out, "blmovem");
+            return 1;
+        }
+        if (!arg_str(&argv[1], &sk, &skl) ||
+            !arg_str(&argv[2], &dk, &dkl) ||
+            !arg_str(&argv[3], &sw, &swl) ||
+            !arg_str(&argv[4], &dw, &dwl))
+            goto bad_blocking_arg;
+        if (ci_equal(sw, swl, "LEFT")) {
+            src_left = 1;
+        } else if (ci_equal(sw, swl, "RIGHT")) {
+            src_left = 0;
+        } else {
+            resp_write_error(out, ERR_SYNTAX, sizeof(ERR_SYNTAX) - 1);
+            return 1;
+        }
+        if (ci_equal(dw, dwl, "LEFT")) {
+            dst_left = 1;
+        } else if (ci_equal(dw, dwl, "RIGHT")) {
+            dst_left = 0;
+        } else {
+            resp_write_error(out, ERR_SYNTAX, sizeof(ERR_SYNTAX) - 1);
+            return 1;
+        }
+        if (!storage_key_ok(skl) || !storage_key_ok(dkl)) {
+            storage_length_error(out);
+            return 1;
+        }
+        if (blocking_parse_timeout(&argv[5], now_ms, &deadline, out) != 0)
+            return 1;
+        if (lmovem_parse_options(argv, argc, 6, &mode, &count, &ordering,
+                                 out) != 0)
+            return 1;
+
+        rc = get_list(d, out, sk, skl, 0, now_ms, &src);
+        if (rc < 0)
+            return 1;
+        srclen = rc == 0 ? 0 : obj_list_len(src);
+        needed = mode == LMOVEM_MODE_EXACTLY ? (uint64_t)count : 1;
+        if (srclen < needed) {
+            *deadline_ms = deadline;
+            return 0;
+        }
+        tomove = mode == LMOVEM_MODE_EXACTLY
+                     ? count
+                     : (srclen < (uint64_t)count ? (long long)srclen : count);
+        lmovem_move_ready(d, out, sk, skl, dk, dkl, src_left, dst_left,
+                          tomove, ordering, now_ms);
         return 1;
     }
 
@@ -10351,8 +10678,9 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
 
     if (cmd_id == CMD_BLPOP || cmd_id == CMD_BRPOP ||
         cmd_id == CMD_BRPOPLPUSH || cmd_id == CMD_BLMOVE ||
-        cmd_id == CMD_BLMPOP || cmd_id == CMD_BZPOPMIN ||
-        cmd_id == CMD_BZPOPMAX || cmd_id == CMD_BZMPOP) {
+        cmd_id == CMD_BLMOVEM || cmd_id == CMD_BLMPOP ||
+        cmd_id == CMD_BZPOPMIN || cmd_id == CMD_BZPOPMAX ||
+        cmd_id == CMD_BZMPOP) {
         uint64_t deadline_ms = 0;
         if (blocking_pop_try(s, argv, argc, out, now_ms, &deadline_ms))
             return;
@@ -15332,6 +15660,11 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
         return;
     }
 
+    if (cmd_id == CMD_LMOVEM) {
+        lmovem_execute(d, out, argv, argc, now_ms);
+        return;
+    }
+
     if (cmd_id == CMD_LMOVE) {
         const char *sk, *dk, *sw, *dw;
         size_t skl, dkl, swl, dwl;
@@ -19789,11 +20122,13 @@ static const cmd_entry CMD_TABLE[] = {
     {"rpoplpush", CMD_RPOPLPUSH, 3, 3, 0, CMD_WRITE},
     {"linsert", CMD_LINSERT, 5, 5, 0, CMD_WRITE},
     {"lmove", CMD_LMOVE, 5, 5, 0, CMD_WRITE},
+    {"lmovem", CMD_LMOVEM, 5, -1, 0, CMD_WRITE},
     {"lmpop", CMD_LMPOP, 4, -1, 0, CMD_WRITE},
     {"blpop", CMD_BLPOP, 3, -1, 0, CMD_WRITE},
     {"brpop", CMD_BRPOP, 3, -1, 0, CMD_WRITE},
     {"brpoplpush", CMD_BRPOPLPUSH, 4, 4, 0, CMD_WRITE},
     {"blmove", CMD_BLMOVE, 6, 6, 0, CMD_WRITE},
+    {"blmovem", CMD_BLMOVEM, 6, -1, 0, CMD_WRITE},
     {"blmpop", CMD_BLMPOP, 4, -1, 0, CMD_WRITE},
     {"sintercard", CMD_SINTERCARD, 3, -1, 0, 0},
     {"sinterstore", CMD_SINTERSTORE, 3, -1, 0, CMD_WRITE},
@@ -19932,7 +20267,7 @@ static const cmd_entry *cmd_table_entry(uint16_t id)
 /* Command name -> stable ID hash table                               */
 /* ------------------------------------------------------------------ */
 
-#define CMD_HASH_SIZE 256
+#define CMD_HASH_SIZE 512
 
 typedef struct cmd_hash_slot {
     const char *name;

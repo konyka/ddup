@@ -858,6 +858,115 @@ static void test_lmpop(void)
     db_destroy(&d);
 }
 
+static void test_lmovem_blmovem(void)
+{
+    db d;
+    resp_buf out;
+    db_init(&d);
+    resp_buf_init(&out);
+
+    /* default: move one element and reply as an array */
+    exec_cmd(&d, T0, &out, 4, "RPUSH", "src", "a", "b");
+    EXPECT(out, ":2\r\n");
+    exec_cmd(&d, T0, &out, 5, "LMOVEM", "src", "dst", "LEFT", "RIGHT");
+    EXPECT(out, "*1\r\n$1\r\na\r\n");
+    exec_cmd(&d, T0, &out, 4, "LRANGE", "src", "0", "-1");
+    EXPECT(out, "*1\r\n$1\r\nb\r\n");
+    exec_cmd(&d, T0, &out, 4, "LRANGE", "dst", "0", "-1");
+    EXPECT(out, "*1\r\n$1\r\na\r\n");
+
+    /* COUNT BULK preserves source order when moving left-to-right */
+    exec_cmd(&d, T0, &out, 6, "RPUSH", "s", "a", "b", "c", "d");
+    EXPECT(out, ":4\r\n");
+    exec_cmd(&d, T0, &out, 8, "LMOVEM", "s", "d", "LEFT", "RIGHT",
+             "COUNT", "2", "BULK");
+    EXPECT(out, "*2\r\n$1\r\na\r\n$1\r\nb\r\n");
+    exec_cmd(&d, T0, &out, 4, "LRANGE", "d", "0", "-1");
+    EXPECT(out, "*2\r\n$1\r\na\r\n$1\r\nb\r\n");
+
+    /* OBO to the head reads in reverse pop order */
+    exec_cmd(&d, T0, &out, 6, "RPUSH", "o", "1", "2", "3", "4");
+    EXPECT(out, ":4\r\n");
+    exec_cmd(&d, T0, &out, 8, "LMOVEM", "o", "od", "LEFT", "LEFT",
+             "COUNT", "2", "OBO");
+    EXPECT(out, "*2\r\n$1\r\n2\r\n$1\r\n1\r\n");
+    exec_cmd(&d, T0, &out, 4, "LRANGE", "od", "0", "-1");
+    EXPECT(out, "*2\r\n$1\r\n2\r\n$1\r\n1\r\n");
+
+    /* EXACTLY moves nothing when the source is too short */
+    exec_cmd(&d, T0, &out, 4, "RPUSH", "e", "a", "b");
+    EXPECT(out, ":2\r\n");
+    exec_cmd(&d, T0, &out, 8, "LMOVEM", "e", "ed", "LEFT", "RIGHT",
+             "EXACTLY", "3", "BULK");
+    EXPECT(out, "*-1\r\n");
+    exec_cmd(&d, T0, &out, 4, "LRANGE", "e", "0", "-1");
+    EXPECT(out, "*2\r\n$1\r\na\r\n$1\r\nb\r\n");
+
+    /* EXACTLY with enough elements deletes the emptied source */
+    exec_cmd(&d, T0, &out, 8, "LMOVEM", "e", "ed", "LEFT", "RIGHT",
+             "EXACTLY", "2", "BULK");
+    EXPECT(out, "*2\r\n$1\r\na\r\n$1\r\nb\r\n");
+    exec_cmd(&d, T0, &out, 2, "EXISTS", "e");
+    EXPECT(out, ":0\r\n");
+
+    /* missing source -> null array */
+    exec_cmd(&d, T0, &out, 5, "LMOVEM", "missing", "m", "LEFT", "RIGHT");
+    EXPECT(out, "*-1\r\n");
+
+    /* BLMOVEM ready paths */
+    exec_cmd(&d, T0, &out, 5, "RPUSH", "bs", "x", "y", "z");
+    EXPECT(out, ":3\r\n");
+    exec_cmd(&d, T0, &out, 9, "BLMOVEM", "bs", "bd", "LEFT", "RIGHT",
+             "0", "COUNT", "2", "BULK");
+    EXPECT(out, "*2\r\n$1\r\nx\r\n$1\r\ny\r\n");
+    exec_cmd(&d, T0, &out, 4, "LRANGE", "bd", "0", "-1");
+    EXPECT(out, "*2\r\n$1\r\nx\r\n$1\r\ny\r\n");
+    exec_cmd(&d, T0, &out, 4, "LRANGE", "bs", "0", "-1");
+    EXPECT(out, "*1\r\n$1\r\nz\r\n");
+
+    exec_cmd(&d, T0, &out, 4, "RPUSH", "be", "a", "b");
+    EXPECT(out, ":2\r\n");
+    exec_cmd(&d, T0, &out, 9, "BLMOVEM", "be", "bed", "RIGHT", "LEFT",
+             "0", "EXACTLY", "2", "BULK");
+    EXPECT(out, "*2\r\n$1\r\na\r\n$1\r\nb\r\n");
+    exec_cmd(&d, T0, &out, 4, "LRANGE", "bed", "0", "-1");
+    EXPECT(out, "*2\r\n$1\r\na\r\n$1\r\nb\r\n");
+    exec_cmd(&d, T0, &out, 2, "EXISTS", "be");
+    EXPECT(out, ":0\r\n");
+
+    /* wrong types are rejected without source mutation */
+    exec_cmd(&d, T0, &out, 3, "SET", "str", "v");
+    EXPECT(out, "+OK\r\n");
+    exec_cmd(&d, T0, &out, 5, "LMOVEM", "src", "str", "LEFT", "RIGHT");
+    EXPECT(out,
+           "-WRONGTYPE Operation against a key holding the wrong kind of "
+           "value\r\n");
+    exec_cmd(&d, T0, &out, 5, "LMOVEM", "str", "src", "LEFT", "RIGHT");
+    EXPECT(out,
+           "-WRONGTYPE Operation against a key holding the wrong kind of "
+           "value\r\n");
+
+    /* syntax and arity validation */
+    exec_cmd(&d, T0, &out, 8, "LMOVEM", "src", "dst", "LEFT", "RIGHT",
+             "COUNT", "0", "BULK");
+    EXPECT(out, "-ERR count should be greater than 0\r\n");
+    exec_cmd(&d, T0, &out, 8, "LMOVEM", "src", "dst", "LEFT", "RIGHT",
+             "COUNT", "1", "NOPE");
+    EXPECT(out, "-ERR syntax error\r\n");
+    exec_cmd(&d, T0, &out, 8, "LMOVEM", "src", "dst", "LEFT", "RIGHT",
+             "BULK", "1", "OBO");
+    EXPECT(out, "-ERR syntax error\r\n");
+    exec_cmd(&d, T0, &out, 4, "LMOVEM", "src", "dst", "LEFT");
+    EXPECT(out,
+           "-ERR wrong number of arguments for 'lmovem' command\r\n");
+    exec_cmd(&d, T0, &out, 5, "BLMOVEM", "src", "dst", "LEFT", "RIGHT");
+    EXPECT(out,
+           "-ERR wrong number of arguments for 'blmovem' command\r\n");
+
+    resp_buf_free(&out);
+    db_destroy(&d);
+}
+
 static void test_blocking_ready(void)
 {
     db d;
@@ -1001,6 +1110,7 @@ int main(void)
     DD_RUN(test_linsert);
     DD_RUN(test_lmove);
     DD_RUN(test_lmpop);
+    DD_RUN(test_lmovem_blmovem);
     DD_RUN(test_blocking_ready);
     DD_RUN(test_lpop_rpop_count);
     return DD_TEST_SUMMARY();
