@@ -55,6 +55,19 @@ if(NOT WIN32)
 endif()
 
 # ---------------------------------------------------------------------------
+# Vendored xxHash 0.8.3 (deps/xxhash, BSD-2-Clause; see deps/xxhash/PATCHES.md).
+# Third-party code: NO project warning flags, relaxed C standard.
+# ---------------------------------------------------------------------------
+add_library(ddup_xxhash STATIC deps/xxhash/xxhash.c)
+target_include_directories(ddup_xxhash PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/deps/xxhash")
+set_target_properties(ddup_xxhash PROPERTIES C_STANDARD 99)
+if(MSVC)
+    target_compile_options(ddup_xxhash PRIVATE /W0)
+else()
+    target_compile_options(ddup_xxhash PRIVATE -w)
+endif()
+
+# ---------------------------------------------------------------------------
 # Core library: everything except the server entry point.
 # ---------------------------------------------------------------------------
 set(DDUP_CORE_SOURCES
@@ -100,7 +113,7 @@ function(ddup_configure_core target)
     target_include_directories(${target} PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/src"
         "${CMAKE_CURRENT_SOURCE_DIR}/deps/wyhash")
     ddup_apply_options(${target})
-    target_link_libraries(${target} PUBLIC ddup_lua)
+    target_link_libraries(${target} PUBLIC ddup_lua ddup_xxhash)
     target_compile_definitions(${target} PUBLIC
         DDUP_VERSION_MAJOR=${PROJECT_VERSION_MAJOR}
         DDUP_VERSION_MINOR=${PROJECT_VERSION_MINOR}

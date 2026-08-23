@@ -372,3 +372,6 @@
   - [x] Redis 8 set 基数：`SUNIONCARD/SDIFFCARD`（`LIMIT` 提前停，
     `SUNIONCARD APPROX` 精确返回）；Redis 8.10.1 审计缺 34 个顶层命令、
     3 个整体缺失容器、3 个容器子命令（Phase 71）
+  - [x] Redis 8 字符串安全/原子性增量：`INCREX`、`MSETEX`、`DELEX`、
+    `DIGEST`；覆盖溢出/过期边界、批量前置校验、条件删除、XXH3 固定宽度
+    摘要与 TDD 回归；审计缺口收敛为 23 个顶层命令（Phase 72）

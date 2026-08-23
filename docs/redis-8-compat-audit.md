@@ -9,7 +9,7 @@
 
 | 类别 | 数量 |
 | --- | --- |
-| 缺失顶层命令 | 34 |
+| 缺失顶层命令 | 23 |
 | 整体缺失容器 | 3 |
 | 已实现容器内缺失子命令 | 3 |
 
@@ -17,8 +17,7 @@
 
 1. Redis 8.8 新增 `ARRAY` 类型（18 个 `AR*` 命令）。
 2. Redis 7.4/8.0 hash 字段级 TTL 与 `HGETDEL/HGETEX/HSETEX`（13 个命令）。
-3. Redis 8.2+ 的 stream 精确删除/PEL 控制、集合基数、list 多元素移动、
-   限流计数器和运维/诊断命令。
+3. Redis 8.2+ 的运维/诊断命令，以及少量 Cluster 子命令。
 
 ## 已实现增量
 
@@ -30,6 +29,11 @@
 - Set 基数：`SUNIONCARD/SDIFFCARD` 支持 `LIMIT` 提前停与 union 的
   `APPROX` 参数解析；复用 `obj_set` 双编码遍历，临时 `rh_table` 去重，
   不物化完整结果集。
+- String safety/atomicity tranche: `INCREX` uses checked integer/long-double
+  arithmetic and bounded expiry parsing; `MSETEX` validates the complete batch
+  before mutation and supports `NX/XX/KEEPTTL/EX/PX/EXAT/PXAT`; `DELEX`
+  supports conditional string deletion; `DIGEST` uses vendored XXH3 with
+  fixed-width output. All four commands are covered by TDD tests.
 
 ## 实现策略（性能优先）
 
@@ -56,7 +60,7 @@
 ## 审计基线（机器断言，勿手改格式）
 
 <!-- AUDIT-BASELINE-START
-missing_top: arcount ardel ardelrange arget argetrange argrep arinfo arinsert arlastitems arlen armget armset arnext arop arring arscan arseek arset backup blmovem delex digest himport hotkeys increx lmovem msetex sflush trimslots xackdel xcfgset xdelex xidmprecord xnack
+missing_top: arcount ardel ardelrange arget argetrange argrep arinfo arinsert arlastitems arlen armget armset arnext arop arring arscan arseek arset backup himport hotkeys sflush trimslots
 missing_containers: backup himport hotkeys
 missing_sub: cluster migration
 missing_sub: cluster slot-stats

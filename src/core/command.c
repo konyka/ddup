@@ -7,6 +7,7 @@
  */
 #include "core/command.h"
 
+#include <float.h>
 #include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -24,6 +25,8 @@
 #include "core/tier.h"
 #include "core/migrate.h"
 #include "core/script.h"
+
+#include "xxhash.h"
 
 static void free_obj_cb(const char *key, size_t klen, const char *val,
                         size_t vlen, void *ctx);
@@ -1443,6 +1446,115 @@ static const char ERR_NOT_INT[] = "ERR value is not an integer or out of range";
 static const char ERR_OVERFLOW[] = "ERR increment or decrement would overflow";
 static const char ERR_SYNTAX[] = "ERR syntax error";
 static const char ERR_NOT_FLOAT[] = "ERR value is not a valid float";
+
+/* Bulk-string reply for long double values (RESP2: Redis uses human
+ * formatting rather than a RESP3 double token). */
+static void resp_write_ld_bulk(resp_buf *out, long double v)
+{
+    char buf[5120];
+    int n = snprintf(buf, sizeof(buf), "%.17Lg", v);
+    if (n < 0)
+        n = 0;
+    resp_write_bulk(out, buf, (size_t)n);
+}
+
+/* Redis 8 DIGEST: XXH3_64bits, rendered as 16 lowercase hex digits. */
+static void string_digest(const char *s, size_t len, char out[17])
+{
+    uint64_t h = (uint64_t)XXH3_64bits(s, len);
+    snprintf(out, 17, "%016llx", (unsigned long long)h);
+}
+
+/* Fetch the current (future) TTL of a key. The caller must have already
+ * performed lazy expiration, so any entry in the expires table is live. */
+static int db_get_ttl(db *d, const char *key, size_t klen, uint64_t *when_ms)
+{
+    const char *v;
+    size_t vl;
+    if (!rh_get(&d->expires, key, klen, &v, &vl) || vl != 8)
+        return 0;
+    *when_ms = get_u64(v);
+    return 1;
+}
+
+static void invalid_expire_reply(resp_buf *out, const char *cmd)
+{
+    char msg[96];
+    int n = snprintf(msg, sizeof(msg), "ERR invalid expire time in '%s' command",
+                     cmd);
+    resp_write_error(out, msg, (size_t)n);
+}
+
+/* Parse an EX/PX/EXAT/PXAT value into an absolute millisecond expiry.
+ * Returns 0 after writing the Redis-compatible error reply. */
+static int parse_absolute_expiry(resp_buf *out, const resp_value *v,
+                                 int seconds, int relative, uint64_t now_ms,
+                                 const char *cmd, uint64_t *when_ms)
+{
+    const char *s;
+    size_t sl;
+    long long n;
+    uint64_t when;
+    if (!arg_str(v, &s, &sl))
+        goto bad_arg;
+    if (!parse_i64(s, sl, &n)) {
+        resp_write_error(out, ERR_NOT_INT, sizeof(ERR_NOT_INT) - 1);
+        return 0;
+    }
+    if (n <= 0 || (seconds && n > LLONG_MAX / 1000)) {
+        invalid_expire_reply(out, cmd);
+        return 0;
+    }
+    when = (uint64_t)n;
+    if (seconds)
+        when *= 1000ULL;
+    if (relative) {
+        if (when > UINT64_MAX - now_ms) {
+            invalid_expire_reply(out, cmd);
+            return 0;
+        }
+        when += now_ms;
+    }
+    if (when == 0) {
+        invalid_expire_reply(out, cmd);
+        return 0;
+    }
+    *when_ms = when;
+    return 1;
+
+bad_arg:
+    resp_write_error(out, "ERR invalid argument type", 24);
+    return 0;
+}
+
+/* Signed long long subtraction with overflow detection. */
+static int ll_sub_overflow(long long a, long long b, long long *out)
+{
+    if (b >= 0) {
+        if (a >= 0) {
+            if (a >= b)
+                *out = a - b;
+            else
+                *out = -(b - a);
+        } else {
+            if (a < LLONG_MIN + b)
+                return 1;
+            *out = a - b;
+        }
+    } else {
+        if (a < 0) {
+            if (a >= b)
+                *out = a - b;
+            else
+                *out = -(b - a);
+        } else {
+            if (a > LLONG_MAX + b)
+                return 1;
+            *out = a - b;
+        }
+    }
+    return 0;
+}
 
 /* ------------------------------------------------------------------ */
 /* sorted-set aggregate command helpers (ZUNION/ZINTER/ZDIFF family)   */
@@ -3844,6 +3956,26 @@ static int cmd_keys_accum(const resp_value *argv, size_t argc, int *have,
         }
         return 1;
     }
+    if (cmd_id == CMD_MSETEX) {
+        const char *nv;
+        size_t nvl;
+        long long nk = 0;
+        size_t end;
+        if (argc < 4 || !arg_str(&argv[1], &nv, &nvl) ||
+            !parse_i64(nv, nvl, &nk) || nk <= 0)
+            return 1;
+        end = 2 + (size_t)nk * 2;
+        if (end > argc)
+            end = argc;
+        for (i = 2; i < end; i += 2) {
+            const char *k;
+            size_t kl;
+            if (arg_str(&argv[i], &k, &kl) &&
+                !slot_accum(k, kl, have, slot))
+                return 0;
+        }
+        return 1;
+    }
     if (cmd_id == CMD_SMOVE || cmd_id == CMD_RENAME ||
         cmd_id == CMD_RENAMENX || cmd_id == CMD_RPOPLPUSH ||
         cmd_id == CMD_LMOVE || cmd_id == CMD_LMOVEM ||
@@ -4257,6 +4389,26 @@ static int cluster_check_ownership(session *s, const resp_value *argv,
     }
     if (cmd_id == CMD_MSET) {
         for (i = 1; i + 1 < argc; i += 2) {
+            const char *k;
+            size_t kl;
+            if (arg_str(&argv[i], &k, &kl) &&
+                !db_key_served(d, k, kl, out, now_ms, asking))
+                return 0;
+        }
+        return 1;
+    }
+    if (cmd_id == CMD_MSETEX) {
+        const char *nv;
+        size_t nvl;
+        long long nk = 0;
+        size_t end;
+        if (argc < 4 || !arg_str(&argv[1], &nv, &nvl) ||
+            !parse_i64(nv, nvl, &nk) || nk <= 0)
+            return 1;
+        end = 2 + (size_t)nk * 2;
+        if (end > argc)
+            end = argc;
+        for (i = 2; i < end; i += 2) {
             const char *k;
             size_t kl;
             if (arg_str(&argv[i], &k, &kl) &&
@@ -6209,6 +6361,21 @@ static void command_emit_keys_mode(const resp_value *argv, size_t argc,
     }
     if (cmd_id == CMD_MSET || cmd_id == CMD_MSETNX) {
         for (i = 3; i + 1 < argc; i += 2)
+            EMIT_KEY(&argv[i]);
+        goto done;
+    }
+    if (cmd_id == CMD_MSETEX) {
+        const char *nv;
+        size_t nvl;
+        long long nk = 0;
+        size_t end;
+        if (argc < 5 || !arg_str(&argv[3], &nv, &nvl) ||
+            !parse_i64(nv, nvl, &nk) || nk <= 0)
+            goto done;
+        end = 4 + (size_t)nk * 2;
+        if (end > argc)
+            end = argc;
+        for (i = 4; i < end; i += 2)
             EMIT_KEY(&argv[i]);
         goto done;
     }
@@ -13326,6 +13493,578 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
             return;
         }
         resp_write_bulk(out, buf, (size_t)nl);
+        return;
+    }
+
+    if (cmd_id == CMD_INCREX) {
+        if (argc < 2) {
+            wrong_args(out, "increx");
+            return;
+        }
+        const char *k;
+        size_t kl;
+        if (!arg_str(&argv[1], &k, &kl))
+            goto bad_type;
+        if (!storage_key_ok(kl)) {
+            storage_length_error(out);
+            return;
+        }
+
+        int byfloat = 0;
+        int saturate = 0;
+        int enx = 0;
+        int persist = 0;
+        int have_by = 0;
+        int have_lb = 0;
+        int have_ub = 0;
+        int have_expire = 0;
+        long long incr_ll = 1;
+        long long lb_ll = LLONG_MIN;
+        long long ub_ll = LLONG_MAX;
+        long double incr_ld = 0.0L;
+        long double lb_ld = -LDBL_MAX;
+        long double ub_ld = LDBL_MAX;
+        const resp_value *lbv = NULL;
+        const resp_value *ubv = NULL;
+        const resp_value *expv = NULL;
+        int exp_seconds = 1;
+        int exp_relative = 1;
+        uint64_t expire_ms = 0;
+
+        for (size_t i = 2; i < argc; i++) {
+            const char *tok;
+            size_t tokl;
+            int more = i + 1 < argc;
+            if (!arg_str(&argv[i], &tok, &tokl))
+                goto bad_type;
+            if (ci_equal(tok, tokl, "BYINT") && more && !have_by) {
+                const char *sv;
+                size_t svl;
+                if (!arg_str(&argv[i + 1], &sv, &svl))
+                    goto bad_type;
+                if (!parse_i64(sv, svl, &incr_ll)) {
+                    static const char E[] =
+                        "ERR Increment is not an integer or out of range";
+                    resp_write_error(out, E, sizeof(E) - 1);
+                    return;
+                }
+                have_by = 1;
+                i++;
+            } else if (ci_equal(tok, tokl, "BYFLOAT") && more && !have_by) {
+                const char *sv;
+                size_t svl;
+                if (!arg_str(&argv[i + 1], &sv, &svl))
+                    goto bad_type;
+                if (!parse_ld(sv, svl, &incr_ld)) {
+                    static const char E[] = "ERR Increment is not a valid float";
+                    resp_write_error(out, E, sizeof(E) - 1);
+                    return;
+                }
+                if (isinf(incr_ld)) {
+                    static const char E[] =
+                        "ERR BYFLOAT increment cannot be Infinity";
+                    resp_write_error(out, E, sizeof(E) - 1);
+                    return;
+                }
+                have_by = 1;
+                byfloat = 1;
+                i++;
+            } else if (ci_equal(tok, tokl, "LBOUND") && more && !have_lb) {
+                lbv = &argv[i + 1];
+                have_lb = 1;
+                i++;
+            } else if (ci_equal(tok, tokl, "UBOUND") && more && !have_ub) {
+                ubv = &argv[i + 1];
+                have_ub = 1;
+                i++;
+            } else if (ci_equal(tok, tokl, "SATURATE") && !saturate) {
+                saturate = 1;
+            } else if (ci_equal(tok, tokl, "ENX") && !enx && !persist) {
+                enx = 1;
+            } else if (ci_equal(tok, tokl, "PERSIST") && !have_expire && !enx) {
+                persist = 1;
+                have_expire = 1;
+            } else if (ci_equal(tok, tokl, "EX") && !have_expire && more) {
+                have_expire = 1;
+                exp_seconds = 1;
+                exp_relative = 1;
+                expv = &argv[i + 1];
+                i++;
+            } else if (ci_equal(tok, tokl, "PX") && !have_expire && more) {
+                have_expire = 1;
+                exp_seconds = 0;
+                exp_relative = 1;
+                expv = &argv[i + 1];
+                i++;
+            } else if (ci_equal(tok, tokl, "EXAT") && !have_expire && more) {
+                have_expire = 1;
+                exp_seconds = 1;
+                exp_relative = 0;
+                expv = &argv[i + 1];
+                i++;
+            } else if (ci_equal(tok, tokl, "PXAT") && !have_expire && more) {
+                have_expire = 1;
+                exp_seconds = 0;
+                exp_relative = 0;
+                expv = &argv[i + 1];
+                i++;
+            } else {
+                resp_write_error(out, ERR_SYNTAX, sizeof(ERR_SYNTAX) - 1);
+                return;
+            }
+        }
+
+        if (byfloat) {
+            if (lbv) {
+                const char *s;
+                size_t sl;
+                if (!arg_str(lbv, &s, &sl))
+                    goto bad_type;
+                if (!parse_ld(s, sl, &lb_ld)) {
+                    static const char E[] = "ERR LBOUND is not a valid float";
+                    resp_write_error(out, E, sizeof(E) - 1);
+                    return;
+                }
+            }
+            if (ubv) {
+                const char *s;
+                size_t sl;
+                if (!arg_str(ubv, &s, &sl))
+                    goto bad_type;
+                if (!parse_ld(s, sl, &ub_ld)) {
+                    static const char E[] = "ERR UBOUND is not a valid float";
+                    resp_write_error(out, E, sizeof(E) - 1);
+                    return;
+                }
+            }
+            if (lb_ld > ub_ld) {
+                static const char E[] = "ERR LBOUND can't be greater than UBOUND";
+                resp_write_error(out, E, sizeof(E) - 1);
+                return;
+            }
+        } else {
+            if (lbv) {
+                const char *s;
+                size_t sl;
+                if (!arg_str(lbv, &s, &sl))
+                    goto bad_type;
+                if (!parse_i64(s, sl, &lb_ll)) {
+                    static const char E[] =
+                        "ERR LBOUND is not an integer or out of range";
+                    resp_write_error(out, E, sizeof(E) - 1);
+                    return;
+                }
+            }
+            if (ubv) {
+                const char *s;
+                size_t sl;
+                if (!arg_str(ubv, &s, &sl))
+                    goto bad_type;
+                if (!parse_i64(s, sl, &ub_ll)) {
+                    static const char E[] =
+                        "ERR UBOUND is not an integer or out of range";
+                    resp_write_error(out, E, sizeof(E) - 1);
+                    return;
+                }
+            }
+            if (lb_ll > ub_ll) {
+                static const char E[] = "ERR LBOUND can't be greater than UBOUND";
+                resp_write_error(out, E, sizeof(E) - 1);
+                return;
+            }
+        }
+        if (enx && !have_expire) {
+            static const char E[] = "ERR ENX flag requires an expiration";
+            resp_write_error(out, E, sizeof(E) - 1);
+            return;
+        }
+        if (expv && !parse_absolute_expiry(out, expv, exp_seconds, exp_relative,
+                                          now_ms, "increx", &expire_ms))
+            return;
+
+        const char *v;
+        size_t vl;
+        int exists = db_get(d, k, kl, &v, &vl, now_ms);
+        uint64_t old_expire = 0;
+        int has_ttl = 0;
+        if (exists && db_get_ttl(d, k, kl, &old_expire))
+            has_ttl = 1;
+
+        if (byfloat) {
+            long double cur = 0.0L;
+            if (exists) {
+                const char *s;
+                size_t sl2;
+                if (!as_string(out, v, vl, &s, &sl2))
+                    return;
+                if (!parse_ld(s, sl2, &cur)) {
+                    resp_write_error(out, ERR_NOT_FLOAT,
+                                     sizeof(ERR_NOT_FLOAT) - 1);
+                    return;
+                }
+            }
+            long double old = cur;
+            long double res = cur + incr_ld;
+            int overflow = isinf(res);
+            if (overflow || res > ub_ld || res < lb_ld) {
+                if (!saturate) {
+                    resp_write_array_header(out, 2);
+                    resp_write_ld_bulk(out, old);
+                    resp_write_ld_bulk(out, 0.0L);
+                    return;
+                }
+                if (overflow)
+                    res = incr_ld >= 0.0L ? ub_ld : lb_ld;
+                else
+                    res = res > ub_ld ? ub_ld : lb_ld;
+            }
+            long double delta = res - old;
+            if (isinf(delta)) {
+                static const char E[] = "ERR applied increment would be Infinity";
+                resp_write_error(out, E, sizeof(E) - 1);
+                return;
+            }
+            char fbuf[5120];
+            int n = snprintf(fbuf, sizeof(fbuf), "%.17Lg", res);
+            if (n < 0 || (size_t)n >= sizeof(fbuf)) {
+                static const char E[] = "ERR result is not representable";
+                resp_write_error(out, E, sizeof(E) - 1);
+                return;
+            }
+            if (oom_blocked(d, out))
+                return;
+            if (expire_ms != 0 && expire_ms <= now_ms) {
+                if (exists)
+                    (void)db_del_kv(d, k, kl);
+                return;
+            }
+            if (db_set_string(d, k, kl, fbuf, (size_t)n, now_ms) != 0) {
+                storage_length_error(out);
+                return;
+            }
+            if (persist) {
+                /* db_set_string already cleared any old TTL. */
+            } else if (expire_ms != 0 && (!enx || !has_ttl)) {
+                if (db_set_expiry(d, k, kl, expire_ms) != 0) {
+                    storage_length_error(out);
+                    return;
+                }
+            } else if (has_ttl) {
+                if (db_set_expiry(d, k, kl, old_expire) != 0) {
+                    storage_length_error(out);
+                    return;
+                }
+            }
+            resp_write_array_header(out, 2);
+            resp_write_ld_bulk(out, res);
+            resp_write_ld_bulk(out, delta);
+            return;
+        }
+
+        long long cur = 0;
+        if (exists) {
+            const char *s;
+            size_t sl2;
+            if (!as_string(out, v, vl, &s, &sl2))
+                return;
+            if (!parse_i64(s, sl2, &cur)) {
+                resp_write_error(out, ERR_NOT_INT, sizeof(ERR_NOT_INT) - 1);
+                return;
+            }
+        }
+        long long old = cur;
+        long long res;
+        int overflow = 0;
+        if ((incr_ll > 0 && cur > LLONG_MAX - incr_ll) ||
+            (incr_ll < 0 && cur < LLONG_MIN - incr_ll)) {
+            overflow = 1;
+            res = cur;
+        } else {
+            res = cur + incr_ll;
+        }
+        if (overflow || res > ub_ll || res < lb_ll) {
+            if (!saturate) {
+                resp_write_array_header(out, 2);
+                resp_write_integer(out, old);
+                resp_write_integer(out, 0);
+                return;
+            }
+            if (overflow)
+                res = incr_ll >= 0 ? ub_ll : lb_ll;
+            else
+                res = res > ub_ll ? ub_ll : lb_ll;
+        }
+        long long delta = 0;
+        if (ll_sub_overflow(res, old, &delta)) {
+            static const char E[] = "ERR applied increment would overflow";
+            resp_write_error(out, E, sizeof(E) - 1);
+            return;
+        }
+        char num[24];
+        int n = snprintf(num, sizeof(num), "%lld", res);
+        if (oom_blocked(d, out))
+            return;
+        if (expire_ms != 0 && expire_ms <= now_ms) {
+            if (exists)
+                (void)db_del_kv(d, k, kl);
+            return;
+        }
+        if (db_set_string(d, k, kl, num, (size_t)n, now_ms) != 0) {
+            storage_length_error(out);
+            return;
+        }
+        if (persist) {
+            /* db_set_string already cleared any old TTL. */
+        } else if (expire_ms != 0 && (!enx || !has_ttl)) {
+            if (db_set_expiry(d, k, kl, expire_ms) != 0) {
+                storage_length_error(out);
+                return;
+            }
+        } else if (has_ttl) {
+            if (db_set_expiry(d, k, kl, old_expire) != 0) {
+                storage_length_error(out);
+                return;
+            }
+        }
+        resp_write_array_header(out, 2);
+        resp_write_integer(out, res);
+        resp_write_integer(out, delta);
+        return;
+    }
+
+    if (cmd_id == CMD_MSETEX) {
+        if (argc < 2) {
+            wrong_args(out, "msetex");
+            return;
+        }
+        const char *ns;
+        size_t nsl;
+        long long nk;
+        if (!arg_str(&argv[1], &ns, &nsl)) {
+            goto bad_type;
+        }
+        if (!parse_i64(ns, nsl, &nk) || nk < 1 ||
+            (unsigned long long)nk > ((unsigned long long)SIZE_MAX - 2ULL) / 2ULL) {
+            static const char E[] = "ERR invalid numkeys value";
+            resp_write_error(out, E, sizeof(E) - 1);
+            return;
+        }
+        size_t pair_end = 2 + (size_t)nk * 2;
+        if (pair_end > argc) {
+            static const char E[] = "ERR wrong number of key-value pairs";
+            resp_write_error(out, E, sizeof(E) - 1);
+            return;
+        }
+        int nx = 0;
+        int xx = 0;
+        int keepttl = 0;
+        int have_expire = 0;
+        int exp_seconds = 1;
+        int exp_relative = 1;
+        const resp_value *expv = NULL;
+        uint64_t expire_ms = 0;
+        for (size_t i = pair_end; i < argc; i++) {
+            const char *tok;
+            size_t tokl;
+            int more = i + 1 < argc;
+            if (!arg_str(&argv[i], &tok, &tokl))
+                goto bad_type;
+            if (ci_equal(tok, tokl, "NX") && !nx && !xx) {
+                nx = 1;
+            } else if (ci_equal(tok, tokl, "XX") && !nx && !xx) {
+                xx = 1;
+            } else if (ci_equal(tok, tokl, "KEEPTTL") && !keepttl &&
+                       !have_expire) {
+                keepttl = 1;
+            } else if (ci_equal(tok, tokl, "EX") && !have_expire && more) {
+                have_expire = 1;
+                exp_seconds = 1;
+                exp_relative = 1;
+                expv = &argv[i + 1];
+                i++;
+            } else if (ci_equal(tok, tokl, "PX") && !have_expire && more) {
+                have_expire = 1;
+                exp_seconds = 0;
+                exp_relative = 1;
+                expv = &argv[i + 1];
+                i++;
+            } else if (ci_equal(tok, tokl, "EXAT") && !have_expire && more) {
+                have_expire = 1;
+                exp_seconds = 1;
+                exp_relative = 0;
+                expv = &argv[i + 1];
+                i++;
+            } else if (ci_equal(tok, tokl, "PXAT") && !have_expire && more) {
+                have_expire = 1;
+                exp_seconds = 0;
+                exp_relative = 0;
+                expv = &argv[i + 1];
+                i++;
+            } else {
+                resp_write_error(out, ERR_SYNTAX, sizeof(ERR_SYNTAX) - 1);
+                return;
+            }
+        }
+        if (expv && !parse_absolute_expiry(out, expv, exp_seconds, exp_relative,
+                                          now_ms, "msetex", &expire_ms))
+            return;
+
+        if (crossslot_reject(d, out, argv, argc))
+            return;
+        if (nx || xx) {
+            for (size_t i = 2; i < pair_end; i += 2) {
+                const char *key;
+                size_t keyl;
+                const char *old;
+                size_t oldl;
+                if (!arg_str(&argv[i], &key, &keyl))
+                    goto bad_type;
+                int found = db_get(d, key, keyl, &old, &oldl, now_ms);
+                if ((nx && found) || (xx && !found)) {
+                    resp_write_integer(out, 0);
+                    return;
+                }
+            }
+        }
+        for (size_t i = 2; i < pair_end; i += 2) {
+            const char *key;
+            const char *val;
+            size_t keyl;
+            size_t vall;
+            if (!arg_str(&argv[i], &key, &keyl) ||
+                !arg_str(&argv[i + 1], &val, &vall))
+                goto bad_type;
+            if (!storage_string_ok(keyl, vall)) {
+                storage_length_error(out);
+                return;
+            }
+        }
+        if (oom_blocked(d, out))
+            return;
+        for (size_t i = 2; i < pair_end; i += 2) {
+            const char *key;
+            const char *val;
+            size_t keyl;
+            size_t vall;
+            uint64_t old_expire = 0;
+            int has_ttl = 0;
+            if (!arg_str(&argv[i], &key, &keyl) ||
+                !arg_str(&argv[i + 1], &val, &vall))
+                goto bad_type;
+            db_expire_if_needed(d, key, keyl, now_ms);
+            if (keepttl && db_get_ttl(d, key, keyl, &old_expire))
+                has_ttl = 1;
+            if (db_set_string(d, key, keyl, val, vall, now_ms) != 0) {
+                storage_length_error(out);
+                return;
+            }
+            if (keepttl && has_ttl) {
+                if (db_set_expiry(d, key, keyl, old_expire) != 0) {
+                    storage_length_error(out);
+                    return;
+                }
+            } else if (expire_ms != 0) {
+                if (db_set_expiry(d, key, keyl, expire_ms) != 0) {
+                    storage_length_error(out);
+                    return;
+                }
+            }
+        }
+        resp_write_integer(out, 1);
+        return;
+    }
+
+    if (cmd_id == CMD_DELEX) {
+        if (argc == 2) {
+            const char *k;
+            size_t kl;
+            if (!arg_str(&argv[1], &k, &kl))
+                goto bad_type;
+            db_expire_if_needed(d, k, kl, now_ms);
+            resp_write_integer(out, db_del_kv(d, k, kl));
+            return;
+        }
+        if (argc != 4) {
+            wrong_args(out, "delex");
+            return;
+        }
+        const char *k;
+        const char *cond;
+        const char *match;
+        size_t kl;
+        size_t condl;
+        size_t matchl;
+        if (!arg_str(&argv[1], &k, &kl) || !arg_str(&argv[2], &cond, &condl) ||
+            !arg_str(&argv[3], &match, &matchl))
+            goto bad_type;
+        const char *v;
+        size_t vl;
+        if (!db_get(d, k, kl, &v, &vl, now_ms)) {
+            resp_write_integer(out, 0);
+            return;
+        }
+        const char *s;
+        size_t sl;
+        if (!as_string(out, v, vl, &s, &sl)) {
+            static const char E[] =
+                "ERR Key should be of string type if conditions are specified";
+            out->len = 0;
+            resp_write_error(out, E, sizeof(E) - 1);
+            return;
+        }
+        int should_delete = 0;
+        if (ci_equal(cond, condl, "IFEQ")) {
+            should_delete = (sl == matchl && memcmp(s, match, sl) == 0);
+        } else if (ci_equal(cond, condl, "IFNE")) {
+            should_delete = (sl != matchl || memcmp(s, match, sl) != 0);
+        } else if (ci_equal(cond, condl, "IFDEQ") ||
+                   ci_equal(cond, condl, "IFDNE")) {
+            int want_equal = ci_equal(cond, condl, "IFDEQ");
+            if (matchl != 16) {
+                static const char E[] =
+                    "ERR must be exactly 16 hexadecimal characters";
+                resp_write_error(out, E, sizeof(E) - 1);
+                return;
+            }
+            char digest[17];
+            string_digest(s, sl, digest);
+            int equal = ci_equal(digest, 16, match);
+            should_delete = want_equal ? equal : !equal;
+        } else {
+            static const char E[] =
+                "ERR Invalid condition. Use IFEQ, IFNE, IFDEQ, or IFDNE";
+            resp_write_error(out, E, sizeof(E) - 1);
+            return;
+        }
+        if (should_delete)
+            resp_write_integer(out, db_del_kv(d, k, kl));
+        else
+            resp_write_integer(out, 0);
+        return;
+    }
+
+    if (cmd_id == CMD_DIGEST) {
+        if (argc != 2) {
+            wrong_args(out, "digest");
+            return;
+        }
+        const char *k;
+        size_t kl;
+        if (!arg_str(&argv[1], &k, &kl))
+            goto bad_type;
+        const char *v;
+        size_t vl;
+        if (!db_get(d, k, kl, &v, &vl, now_ms)) {
+            resp_write_bulk(out, NULL, 0);
+            return;
+        }
+        const char *s;
+        size_t sl;
+        if (!as_string(out, v, vl, &s, &sl))
+            return;
+        char digest[17];
+        string_digest(s, sl, digest);
+        resp_write_bulk(out, digest, 16);
         return;
     }
 
@@ -20852,6 +21591,10 @@ static const cmd_entry CMD_TABLE[] = {
     {"hpexpiretime", CMD_HPEXPIRETIME, 5, -1, 0, 0},
     {"sunioncard", CMD_SUNIONCARD, 3, -1, 0, 0},
     {"sdiffcard", CMD_SDIFFCARD, 3, -1, 0, 0},
+    {"increx", CMD_INCREX, 2, -1, 0, CMD_WRITE},
+    {"msetex", CMD_MSETEX, 2, -1, 0, CMD_WRITE},
+    {"delex", CMD_DELEX, 2, -1, 0, CMD_WRITE},
+    {"digest", CMD_DIGEST, 2, 2, 0, 0},
 };
 
 static const cmd_entry *cmd_table_entry(uint16_t id)

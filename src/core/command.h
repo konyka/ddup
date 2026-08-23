@@ -431,10 +431,14 @@ enum {
     CMD_HEXPIRETIME,
     CMD_HPEXPIRETIME,
     CMD_SUNIONCARD,
-    CMD_SDIFFCARD
+    CMD_SDIFFCARD,
+    CMD_INCREX,
+    CMD_MSETEX,
+    CMD_DELEX,
+    CMD_DIGEST
 };
 
-#define CMD_MAX CMD_SDIFFCARD
+#define CMD_MAX CMD_DIGEST
 
 /* Resolve a command name to its stable ID; case-insensitive. */
 uint16_t cmd_resolve(const char *name, size_t len);

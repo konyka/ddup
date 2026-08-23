@@ -1181,6 +1181,18 @@ hazard pointer/延迟回收、索引桶 CAS、检查点与恢复的并发协议�
 
 ## Hash 字段级 TTL（Redis 8 增量）
 
+## Redis 8 string safety tranche
+
+`INCREX` performs checked integer/long-double arithmetic before committing a
+new value, and parses all expiry forms into absolute milliseconds with overflow
+guards. `MSETEX` parses and validates every key/value and condition before any
+write, preserving atomic NX/XX and KEEPTTL behavior. `DELEX` only evaluates
+conditional predicates on string objects and returns a dedicated wrong-type
+error; `DIGEST` uses the vendored XXH3 implementation and emits a fixed 16-byte
+hex digest. These paths avoid per-element temporary allocations and keep the
+mutation boundary after all validation, which is important for crash/AOF
+replay consistency.
+
 - `obj_hash` 在 listpack/rh_table 双编码之外增加独立的 `expires` 表：
   键为 field，值为 8 字节小端绝对过期毫秒时间戳。紧凑编码不会退化为
   逐字段分配；字段 TTL 只在设置时进入额外表，未设置 TTL 的普通 hash

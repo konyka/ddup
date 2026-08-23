@@ -16,7 +16,7 @@
  * out is reset first, so the reply is exactly out.data[0..out.len). */
 static void exec_cmd(db *d, uint64_t now, resp_buf *out, int argc, ...)
 {
-    resp_value argv[8];
+    resp_value argv[16];
     va_list ap;
     int i;
     va_start(ap, argc);
@@ -798,6 +798,291 @@ static void test_lcs(void)
     db_destroy(&d);
 }
 
+static void test_digest(void)
+{
+    db d;
+    resp_buf out;
+    db_init(&d);
+    resp_buf_init(&out);
+
+    exec_cmd(&d, T0, &out, 3, "SET", "k", "hello");
+    EXPECT(out, "+OK\r\n");
+    exec_cmd(&d, T0, &out, 2, "DIGEST", "k");
+    EXPECT(out, "$16\r\n9555e8555c62dcfd\r\n");
+
+    exec_cmd(&d, T0, &out, 3, "SET", "e", "");
+    EXPECT(out, "+OK\r\n");
+    exec_cmd(&d, T0, &out, 2, "DIGEST", "e");
+    EXPECT(out, "$16\r\n2d06800538d394c2\r\n");
+
+    exec_cmd(&d, T0, &out, 2, "DIGEST", "missing");
+    EXPECT(out, "$-1\r\n");
+
+    exec_cmd(&d, T0, &out, 4, "HSET", "h", "f", "v");
+    EXPECT(out, ":1\r\n");
+    exec_cmd(&d, T0, &out, 2, "DIGEST", "h");
+    EXPECT(out, WRONGTYPE_REPLY);
+
+    exec_cmd(&d, T0, &out, 1, "DIGEST");
+    EXPECT(out, "-ERR wrong number of arguments for 'digest' command\r\n");
+
+    resp_buf_free(&out);
+    db_destroy(&d);
+}
+
+static void test_delex(void)
+{
+    db d;
+    resp_buf out;
+    db_init(&d);
+    resp_buf_init(&out);
+
+    /* no condition behaves like DEL */
+    exec_cmd(&d, T0, &out, 3, "SET", "k", "v");
+    EXPECT(out, "+OK\r\n");
+    exec_cmd(&d, T0, &out, 2, "DELEX", "k");
+    EXPECT(out, ":1\r\n");
+    exec_cmd(&d, T0, &out, 2, "EXISTS", "k");
+    EXPECT(out, ":0\r\n");
+    exec_cmd(&d, T0, &out, 2, "DELEX", "missing");
+    EXPECT(out, ":0\r\n");
+
+    /* IFEQ / IFNE compare raw string bytes */
+    exec_cmd(&d, T0, &out, 3, "SET", "s", "match");
+    EXPECT(out, "+OK\r\n");
+    exec_cmd(&d, T0, &out, 4, "DELEX", "s", "IFEQ", "match");
+    EXPECT(out, ":1\r\n");
+    exec_cmd(&d, T0, &out, 2, "EXISTS", "s");
+    EXPECT(out, ":0\r\n");
+
+    exec_cmd(&d, T0, &out, 3, "SET", "s", "match");
+    EXPECT(out, "+OK\r\n");
+    exec_cmd(&d, T0, &out, 4, "DELEX", "s", "IFEQ", "other");
+    EXPECT(out, ":0\r\n");
+    exec_cmd(&d, T0, &out, 2, "GET", "s");
+    EXPECT(out, "$5\r\nmatch\r\n");
+    exec_cmd(&d, T0, &out, 4, "DELEX", "s", "IFNE", "other");
+    EXPECT(out, ":1\r\n");
+    exec_cmd(&d, T0, &out, 2, "EXISTS", "s");
+    EXPECT(out, ":0\r\n");
+
+    /* IFDEQ / IFDNE compare DIGEST hex, case-insensitively */
+    exec_cmd(&d, T0, &out, 3, "SET", "s", "hello");
+    EXPECT(out, "+OK\r\n");
+    exec_cmd(&d, T0, &out, 4, "DELEX", "s", "IFDEQ",
+             "9555E8555C62DCFD");
+    EXPECT(out, ":1\r\n");
+    exec_cmd(&d, T0, &out, 2, "EXISTS", "s");
+    EXPECT(out, ":0\r\n");
+
+    exec_cmd(&d, T0, &out, 3, "SET", "s", "hello");
+    EXPECT(out, "+OK\r\n");
+    exec_cmd(&d, T0, &out, 4, "DELEX", "s", "IFDNE",
+             "0000000000000000");
+    EXPECT(out, ":1\r\n");
+    exec_cmd(&d, T0, &out, 2, "EXISTS", "s");
+    EXPECT(out, ":0\r\n");
+
+    /* invalid digest length and unknown condition */
+    exec_cmd(&d, T0, &out, 3, "SET", "s", "hello");
+    EXPECT(out, "+OK\r\n");
+    exec_cmd(&d, T0, &out, 4, "DELEX", "s", "IFDEQ", "abc");
+    EXPECT(out, "-ERR must be exactly 16 hexadecimal characters\r\n");
+    exec_cmd(&d, T0, &out, 4, "DELEX", "s", "BAD", "x");
+    EXPECT(out, "-ERR Invalid condition. Use IFEQ, IFNE, IFDEQ, or IFDNE\r\n");
+
+    /* conditional delete requires a string key */
+    exec_cmd(&d, T0, &out, 4, "HSET", "h", "f", "v");
+    EXPECT(out, ":1\r\n");
+    exec_cmd(&d, T0, &out, 4, "DELEX", "h", "IFEQ", "v");
+    EXPECT(out, "-ERR Key should be of string type if conditions are specified\r\n");
+
+    exec_cmd(&d, T0, &out, 3, "DELEX", "k", "IFEQ");
+    EXPECT(out, "-ERR wrong number of arguments for 'delex' command\r\n");
+
+    resp_buf_free(&out);
+    db_destroy(&d);
+}
+
+static void test_msetex(void)
+{
+    db d;
+    resp_buf out;
+    db_init(&d);
+    resp_buf_init(&out);
+
+    /* shared relative expiration */
+    exec_cmd(&d, T0, &out, 8, "MSETEX", "2", "k1", "v1", "k2", "v2", "EX", "10");
+    EXPECT(out, ":1\r\n");
+    exec_cmd(&d, T0, &out, 2, "GET", "k1");
+    EXPECT(out, "$2\r\nv1\r\n");
+    exec_cmd(&d, T0, &out, 2, "GET", "k2");
+    EXPECT(out, "$2\r\nv2\r\n");
+    exec_cmd(&d, T0, &out, 2, "PTTL", "k1");
+    EXPECT(out, ":10000\r\n");
+    exec_cmd(&d, T0, &out, 2, "PTTL", "k2");
+    EXPECT(out, ":10000\r\n");
+
+    exec_cmd(&d, T0, &out, 8, "MSETEX", "2", "k1", "v1", "k2", "v2", "PX", "5000");
+    EXPECT(out, ":1\r\n");
+    exec_cmd(&d, T0, &out, 2, "PTTL", "k1");
+    EXPECT(out, ":5000\r\n");
+
+    /* NX validates the whole batch before mutating */
+    exec_cmd(&d, T0, &out, 3, "SET", "k1", "old");
+    EXPECT(out, "+OK\r\n");
+    exec_cmd(&d, T0, &out, 9, "MSETEX", "2", "k1", "new", "k3", "v3", "NX", "EX", "10");
+    EXPECT(out, ":0\r\n");
+    exec_cmd(&d, T0, &out, 2, "GET", "k1");
+    EXPECT(out, "$3\r\nold\r\n");
+    exec_cmd(&d, T0, &out, 2, "EXISTS", "k3");
+    EXPECT(out, ":0\r\n");
+
+    /* XX validates the whole batch before mutating */
+    exec_cmd(&d, T0, &out, 9, "MSETEX", "2", "k3", "v3", "k4", "v4", "XX", "EX", "10");
+    EXPECT(out, ":0\r\n");
+    exec_cmd(&d, T0, &out, 2, "EXISTS", "k3");
+    EXPECT(out, ":0\r\n");
+    exec_cmd(&d, T0, &out, 2, "EXISTS", "k4");
+    EXPECT(out, ":0\r\n");
+
+    /* KEEPTTL preserves each key's existing TTL */
+    exec_cmd(&d, T0, &out, 3, "SET", "k1", "old");
+    EXPECT(out, "+OK\r\n");
+    exec_cmd(&d, T0, &out, 3, "PEXPIRE", "k1", "9000");
+    EXPECT(out, ":1\r\n");
+    exec_cmd(&d, T0, &out, 7, "MSETEX", "2", "k1", "v1", "k5", "v5", "KEEPTTL");
+    EXPECT(out, ":1\r\n");
+    exec_cmd(&d, T0, &out, 2, "PTTL", "k1");
+    EXPECT(out, ":9000\r\n");
+    exec_cmd(&d, T0, &out, 2, "TTL", "k5");
+    EXPECT(out, ":-1\r\n");
+
+    /* numkeys validation and key/value count validation */
+    exec_cmd(&d, T0, &out, 2, "MSETEX", "0");
+    EXPECT(out, "-ERR invalid numkeys value\r\n");
+    exec_cmd(&d, T0, &out, 2, "MSETEX", "-1");
+    EXPECT(out, "-ERR invalid numkeys value\r\n");
+    exec_cmd(&d, T0, &out, 6, "MSETEX", "3", "k1", "v1", "k2", "v2");
+    EXPECT(out, "-ERR wrong number of key-value pairs\r\n");
+    exec_cmd(&d, T0, &out, 5, "MSETEX", "1", "k1", "v1", "EX");
+    EXPECT(out, SYNTAX_REPLY);
+
+    resp_buf_free(&out);
+    db_destroy(&d);
+}
+
+static void test_increx(void)
+{
+    db d;
+    resp_buf out;
+    db_init(&d);
+    resp_buf_init(&out);
+
+    /* default BYINT 1, missing key starts at 0 */
+    exec_cmd(&d, T0, &out, 2, "INCREX", "k");
+    EXPECT(out, "*2\r\n:1\r\n:1\r\n");
+    exec_cmd(&d, T0, &out, 2, "GET", "k");
+    EXPECT(out, "$1\r\n1\r\n");
+
+    exec_cmd(&d, T0, &out, 3, "SET", "k", "10");
+    EXPECT(out, "+OK\r\n");
+    exec_cmd(&d, T0, &out, 4, "INCREX", "k", "BYINT", "5");
+    EXPECT(out, "*2\r\n:15\r\n:5\r\n");
+    exec_cmd(&d, T0, &out, 2, "GET", "k");
+    EXPECT(out, "$2\r\n15\r\n");
+
+    /* out of bound without SATURATE leaves key unchanged */
+    exec_cmd(&d, T0, &out, 3, "SET", "k", "10");
+    EXPECT(out, "+OK\r\n");
+    exec_cmd(&d, T0, &out, 6, "INCREX", "k", "BYINT", "5", "UBOUND", "12");
+    EXPECT(out, "*2\r\n:10\r\n:0\r\n");
+    exec_cmd(&d, T0, &out, 2, "GET", "k");
+    EXPECT(out, "$2\r\n10\r\n");
+
+    /* SATURATE clamps the result */
+    exec_cmd(&d, T0, &out, 7, "INCREX", "k", "BYINT", "5", "UBOUND", "12", "SATURATE");
+    EXPECT(out, "*2\r\n:12\r\n:2\r\n");
+    exec_cmd(&d, T0, &out, 2, "GET", "k");
+    EXPECT(out, "$2\r\n12\r\n");
+
+    exec_cmd(&d, T0, &out, 3, "SET", "k", "10");
+    EXPECT(out, "+OK\r\n");
+    exec_cmd(&d, T0, &out, 7, "INCREX", "k", "BYINT", "5", "UBOUND", "11", "SATURATE");
+    EXPECT(out, "*2\r\n:11\r\n:1\r\n");
+
+    /* integer overflow is rejected by default */
+    exec_cmd(&d, T0, &out, 3, "SET", "k", "9223372036854775807");
+    EXPECT(out, "+OK\r\n");
+    exec_cmd(&d, T0, &out, 4, "INCREX", "k", "BYINT", "1");
+    EXPECT(out, "*2\r\n:9223372036854775807\r\n:0\r\n");
+    exec_cmd(&d, T0, &out, 2, "GET", "k");
+    EXPECT(out, "$19\r\n9223372036854775807\r\n");
+
+    /* BYFLOAT path uses human long-double formatting */
+    exec_cmd(&d, T0, &out, 3, "SET", "k", "2");
+    EXPECT(out, "+OK\r\n");
+    exec_cmd(&d, T0, &out, 4, "INCREX", "k", "BYFLOAT", "1");
+    EXPECT(out, "*2\r\n$1\r\n3\r\n$1\r\n1\r\n");
+    exec_cmd(&d, T0, &out, 2, "GET", "k");
+    EXPECT(out, "$1\r\n3\r\n");
+
+    /* TTL is preserved without an expiration option */
+    exec_cmd(&d, T0, &out, 3, "SET", "k", "1");
+    EXPECT(out, "+OK\r\n");
+    exec_cmd(&d, T0, &out, 3, "PEXPIRE", "k", "9000");
+    EXPECT(out, ":1\r\n");
+    exec_cmd(&d, T0, &out, 2, "INCREX", "k");
+    EXPECT(out, "*2\r\n:2\r\n:1\r\n");
+    exec_cmd(&d, T0, &out, 2, "PTTL", "k");
+    EXPECT(out, ":9000\r\n");
+
+    /* EX updates TTL, PERSIST clears it, ENX only sets when no TTL exists */
+    exec_cmd(&d, T0, &out, 6, "INCREX", "k", "BYINT", "1", "EX", "10");
+    EXPECT(out, "*2\r\n:3\r\n:1\r\n");
+    exec_cmd(&d, T0, &out, 2, "PTTL", "k");
+    EXPECT(out, ":10000\r\n");
+
+    exec_cmd(&d, T0, &out, 5, "INCREX", "k", "BYINT", "1", "PERSIST");
+    EXPECT(out, "*2\r\n:4\r\n:1\r\n");
+    exec_cmd(&d, T0, &out, 2, "TTL", "k");
+    EXPECT(out, ":-1\r\n");
+
+    exec_cmd(&d, T0, &out, 3, "PEXPIRE", "k", "9000");
+    EXPECT(out, ":1\r\n");
+    exec_cmd(&d, T0, &out, 7, "INCREX", "k", "BYINT", "1", "EX", "10", "ENX");
+    EXPECT(out, "*2\r\n:5\r\n:1\r\n");
+    exec_cmd(&d, T0, &out, 2, "PTTL", "k");
+    EXPECT(out, ":9000\r\n");
+
+    exec_cmd(&d, T0, &out, 3, "SET", "n", "0");
+    EXPECT(out, "+OK\r\n");
+    exec_cmd(&d, T0, &out, 5, "INCREX", "n", "EX", "10", "ENX");
+    EXPECT(out, "*2\r\n:1\r\n:1\r\n");
+    exec_cmd(&d, T0, &out, 2, "PTTL", "n");
+    EXPECT(out, ":10000\r\n");
+
+    exec_cmd(&d, T0, &out, 5, "INCREX", "n", "BYINT", "1", "ENX");
+    EXPECT(out, "-ERR ENX flag requires an expiration\r\n");
+
+    /* syntax and type/value errors */
+    exec_cmd(&d, T0, &out, 6, "INCREX", "n", "BYINT", "1", "BYINT", "2");
+    EXPECT(out, SYNTAX_REPLY);
+    exec_cmd(&d, T0, &out, 3, "SET", "bad", "abc");
+    EXPECT(out, "+OK\r\n");
+    exec_cmd(&d, T0, &out, 2, "INCREX", "bad");
+    EXPECT(out, NOT_INT_REPLY);
+    exec_cmd(&d, T0, &out, 4, "INCREX", "bad", "BYFLOAT", "1");
+    EXPECT(out, NOT_FLOAT_REPLY);
+    exec_cmd(&d, T0, &out, 4, "HSET", "h", "f", "v");
+    EXPECT(out, ":1\r\n");
+    exec_cmd(&d, T0, &out, 2, "INCREX", "h");
+    EXPECT(out, WRONGTYPE_REPLY);
+
+    resp_buf_free(&out);
+    db_destroy(&d);
+}
+
 int main(void)
 {
     DD_RUN(test_getdel);
@@ -813,5 +1098,9 @@ int main(void)
     DD_RUN(test_incrby_decrby);
     DD_RUN(test_incrbyfloat);
     DD_RUN(test_lcs);
+    DD_RUN(test_digest);
+    DD_RUN(test_delex);
+    DD_RUN(test_msetex);
+    DD_RUN(test_increx);
     return DD_TEST_SUMMARY();
 }
