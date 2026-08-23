@@ -381,3 +381,5 @@
   - [x] Redis 8 `CLUSTER SLOT-STATS`：实现 `key-count` 的 `SLOTSRANGE` 与
     `ORDERBY/LIMIT/ASC/DESC`，不伪造未维护的 CPU/内存/网络指标；TDD 与
     审计同步（Phase 74）
+  - [x] Redis 8 内部集群迁移命令安全门：注册 `CLUSTER MIGRATION` 与
+    `CLUSTER SYNCSLOTS`，外部会话明确拒绝且不修改迁移/槽元数据（Phase 75）

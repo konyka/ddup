@@ -42,6 +42,9 @@
 - `CLUSTER SLOT-STATS` supports the low-overhead `key-count` metric for
   `SLOTSRANGE` and `ORDERBY [LIMIT] [ASC|DESC]`; memory/CPU/network metrics
   remain explicitly rejected until their accounting model is available.
+- `CLUSTER MIGRATION` and `CLUSTER SYNCSLOTS` are recognized with an
+  internal-client-only security gate; external sessions cannot alter migration
+  state or slot metadata.
 
 ## 实现策略（性能优先）
 
@@ -70,6 +73,4 @@
 <!-- AUDIT-BASELINE-START
 missing_top: arcount ardel ardelrange arget argetrange argrep arinfo arinsert arlastitems arlen armget armset arnext arop arring arscan arseek arset backup himport hotkeys
 missing_containers: backup himport hotkeys
-missing_sub: cluster migration
-missing_sub: cluster syncslots
 AUDIT-BASELINE-END -->

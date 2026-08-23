@@ -20950,6 +20950,18 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
                 wrong_args(out, "cluster");
                 return;
             }
+            if (ci_equal(sub, sl, "SYNCSLOTS")) {
+                resp_write_error(out,
+                                 "ERR CLUSTER SYNCSLOTS subcommands are only allowed for internal clients",
+                                 sizeof("ERR CLUSTER SYNCSLOTS subcommands are only allowed for internal clients") - 1);
+                return;
+            }
+            if (ci_equal(sub, sl, "MIGRATION")) {
+                resp_write_error(out,
+                                 "ERR CLUSTER MIGRATION subcommands are only allowed for internal clients",
+                                 sizeof("ERR CLUSTER MIGRATION subcommands are only allowed for internal clients") - 1);
+                return;
+            }
             if (ci_equal(sub, sl, "INFO") && argc == 2) {
                 char body[384];
                 int covered = 0, fail_slots = 0;
