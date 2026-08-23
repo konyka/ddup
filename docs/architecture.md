@@ -1193,6 +1193,15 @@ hex digest. These paths avoid per-element temporary allocations and keep the
 mutation boundary after all validation, which is important for crash/AOF
 replay consistency.
 
+## Redis 8 cluster slot maintenance
+
+`SFLUSH` parses slot pairs, intersects them with local ownership, collects
+matching keys before deletion, and replies with coalesced flushed ranges.
+`TRIMSLOTS RANGES` rejects any range served by the local node, then removes
+only unserved-slot keys. Collection is separate from mutation so Robin Hood
+table iteration is never invalidated; allocation failure aborts without
+partial deletion.
+
 - `obj_hash` 在 listpack/rh_table 双编码之外增加独立的 `expires` 表：
   键为 field，值为 8 字节小端绝对过期毫秒时间戳。紧凑编码不会退化为
   逐字段分配；字段 TTL 只在设置时进入额外表，未设置 TTL 的普通 hash

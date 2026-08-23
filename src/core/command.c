@@ -703,6 +703,88 @@ static void slot_scan_cb(const char *key, size_t klen, const char *v,
     }
 }
 
+typedef struct slot_key_vec {
+    char **keys;
+    size_t *lens;
+    size_t len;
+    size_t cap;
+    int oom;
+} slot_key_vec;
+
+static void slot_key_collect_cb(const char *key, size_t klen,
+                                const char *v, size_t vlen, void *ctx)
+{
+    slot_key_vec *vec = (slot_key_vec *)ctx;
+    char *copy;
+    (void)v;
+    (void)vlen;
+    if (vec->oom)
+        return;
+    if (vec->len == vec->cap) {
+        size_t ncap = vec->cap == 0 ? 32 : vec->cap * 2;
+        char **nk = (char **)malloc(ncap * sizeof(*nk));
+        size_t *nl = (size_t *)malloc(ncap * sizeof(*nl));
+        if (nk == NULL || nl == NULL) {
+            free(nk);
+            free(nl);
+            vec->oom = 1;
+            return;
+        }
+        if (vec->len != 0) {
+            memcpy(nk, vec->keys, vec->len * sizeof(*nk));
+            memcpy(nl, vec->lens, vec->len * sizeof(*nl));
+        }
+        free(vec->keys);
+        free(vec->lens);
+        vec->keys = nk;
+        vec->lens = nl;
+        vec->cap = ncap;
+    }
+    copy = (char *)malloc(klen == 0 ? 1 : klen);
+    if (copy == NULL) {
+        vec->oom = 1;
+        return;
+    }
+    if (klen != 0)
+        memcpy(copy, key, klen);
+    vec->keys[vec->len] = copy;
+    vec->lens[vec->len] = klen;
+    vec->len++;
+}
+
+static void slot_key_vec_free(slot_key_vec *vec)
+{
+    size_t i;
+    for (i = 0; i < vec->len; i++)
+        free(vec->keys[i]);
+    free(vec->keys);
+    free(vec->lens);
+    memset(vec, 0, sizeof(*vec));
+}
+
+static int slot_range_has(const unsigned char *selected, uint32_t slot)
+{
+    return selected[slot] != 0;
+}
+
+static int slot_flush_db(db *d, const unsigned char *selected)
+{
+    slot_key_vec vec;
+    size_t i;
+    memset(&vec, 0, sizeof(vec));
+    rh_each(&d->table, slot_key_collect_cb, &vec);
+    if (vec.oom) {
+        slot_key_vec_free(&vec);
+        return -1;
+    }
+    for (i = 0; i < vec.len; i++) {
+        if (slot_range_has(selected, hash_slot(vec.keys[i], vec.lens[i])))
+            (void)db_del_kv(d, vec.keys[i], vec.lens[i]);
+    }
+    slot_key_vec_free(&vec);
+    return 0;
+}
+
 static void storage_length_error(resp_buf *out)
 {
     static const char E[] = "ERR key or value length is not representable";
@@ -4325,6 +4407,7 @@ static int cluster_keyless_id(uint16_t cmd_id)
     case CMD_MIGRATE:    case CMD_ASKING:    case CMD_SCRIPT:
     case CMD_KEYS:       case CMD_SCAN:       case CMD_RANDOMKEY:
     case CMD_FLUSHALL:   case CMD_TIME:       case CMD_READONLY:
+    case CMD_SFLUSH:     case CMD_TRIMSLOTS:
     case CMD_READWRITE:  case CMD_ROLE:       case CMD_RESET:
     case CMD_HELLO:       case CMD_PFSELFTEST:
     case CMD_COMMAND:    case CMD_CLIENT:    case CMD_MEMORY:
@@ -15089,6 +15172,146 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
         return;
     }
 
+    if (cmd_id == CMD_SFLUSH) {
+        unsigned char flushed[16384];
+        size_t end = argc;
+        size_t i;
+        int own_idx = -1;
+        memset(flushed, 0, sizeof(flushed));
+        if (!d->cluster_enabled) {
+            resp_write_error(out, "ERR This instance has cluster support disabled", 44);
+            return;
+        }
+        if (argc >= 3) {
+            const char *mode;
+            size_t ml;
+            if (arg_str(&argv[argc - 1], &mode, &ml) &&
+                (ci_equal(mode, ml, "SYNC") || ci_equal(mode, ml, "ASYNC"))) {
+                end--;
+            }
+        }
+        if (end < 3 || ((end - 1) & 1) != 0) {
+            wrong_args(out, "sflush");
+            return;
+        }
+        if (d->slot_owner_dirty)
+            db_rebuild_slot_owner(d);
+        for (i = 0; i < (size_t)d->nnodes; i++) {
+            if (strcmp(d->nodes[i].id, d->node_id) == 0) {
+                own_idx = (int)i;
+                break;
+            }
+        }
+        for (i = 1; i < end; i += 2) {
+            const char *a;
+            const char *b;
+            size_t al;
+            size_t bl;
+            long long first;
+            long long last;
+            if (!arg_str(&argv[i], &a, &al) || !arg_str(&argv[i + 1], &b, &bl) ||
+                !parse_i64(a, al, &first) || !parse_i64(b, bl, &last) ||
+                first < 0 || last >= 16384 || first > last) {
+                resp_write_error(out, "ERR Invalid slot range", 23);
+                return;
+            }
+            for (; first <= last; first++) {
+                uint32_t slot = (uint32_t)first;
+                if (own_idx >= 0 && d->slot_owner[slot] == (uint16_t)own_idx)
+                    flushed[slot] = 1;
+            }
+        }
+        if (slot_flush_db(d, flushed) != 0) {
+            resp_write_error(out, OOM_MSG, sizeof(OOM_MSG) - 1);
+            return;
+        }
+        /* SFLUSH replies with ranges; rebuild it in a temporary buffer to
+         * keep the count exact without materializing keys. */
+        out->len = 0;
+        {
+            size_t nr = 0;
+            for (i = 0; i < 16384; ) {
+                if (!flushed[i]) { i++; continue; }
+                nr++;
+                while (i < 16384 && flushed[i]) i++;
+            }
+            resp_write_array_header(out, nr);
+            for (i = 0; i < 16384; ) {
+                size_t start;
+                if (!flushed[i]) { i++; continue; }
+                start = i++;
+                while (i < 16384 && flushed[i]) i++;
+                resp_write_array_header(out, 2);
+                resp_write_integer(out, (long long)start);
+                resp_write_integer(out, (long long)(i - 1));
+            }
+        }
+        return;
+    }
+
+    if (cmd_id == CMD_TRIMSLOTS) {
+        unsigned char selected[16384];
+        size_t i;
+        long long nr;
+        const char *tok;
+        size_t tl;
+        memset(selected, 0, sizeof(selected));
+        if (!d->cluster_enabled) {
+            resp_write_error(out, "ERR This instance has cluster support disabled", 44);
+            return;
+        }
+        if (argc < 5 || !arg_str(&argv[1], &tok, &tl) ||
+            !ci_equal(tok, tl, "RANGES") || !arg_str(&argv[2], &tok, &tl) ||
+            !parse_i64(tok, tl, &nr) || nr < 1 || nr > 16384 ||
+            argc != 3 + (size_t)nr * 2) {
+            if (argc >= 3 && arg_str(&argv[1], &tok, &tl) &&
+                ci_equal(tok, tl, "RANGES"))
+                resp_write_error(out, "ERR invalid number of ranges", 28);
+            else
+                resp_write_error(out, "ERR missing ranges argument", 27);
+            return;
+        }
+        if (d->slot_owner_dirty)
+            db_rebuild_slot_owner(d);
+        for (i = 0; i < (size_t)nr; i++) {
+            size_t p = 3 + i * 2;
+            const char *a;
+            const char *b;
+            size_t al;
+            size_t bl;
+            long long first;
+            long long last;
+            if (!arg_str(&argv[p], &a, &al) || !arg_str(&argv[p + 1], &b, &bl) ||
+                !parse_i64(a, al, &first) || !parse_i64(b, bl, &last) ||
+                first < 0 || last >= 16384 || first > last) {
+                resp_write_error(out, "ERR Invalid slot range", 23);
+                return;
+            }
+            for (; first <= last; first++) {
+                uint32_t slot = (uint32_t)first;
+                if (d->slot_owner[slot] != 0xFFFFu) {
+                    int idx = d->slot_owner[slot];
+                    if (idx >= 0 && idx < d->nnodes &&
+                        (d->nodes[idx].flags & CLUSTER_NODE_MYSELF)) {
+                        char msg[96];
+                        int n = snprintf(msg, sizeof(msg),
+                                         "ERR the slot %u is served by this node",
+                                         slot);
+                        resp_write_error(out, msg, (size_t)n);
+                        return;
+                    }
+                }
+                selected[slot] = 1;
+            }
+        }
+        if (slot_flush_db(d, selected) != 0) {
+            resp_write_error(out, OOM_MSG, sizeof(OOM_MSG) - 1);
+            return;
+        }
+        resp_write_simple_string(out, "OK", 2);
+        return;
+    }
+
     if (cmd_id == CMD_FLUSHALL) {
         int i;
         if (argc != 1) {
@@ -21595,6 +21818,8 @@ static const cmd_entry CMD_TABLE[] = {
     {"msetex", CMD_MSETEX, 2, -1, 0, CMD_WRITE},
     {"delex", CMD_DELEX, 2, -1, 0, CMD_WRITE},
     {"digest", CMD_DIGEST, 2, 2, 0, 0},
+    {"sflush", CMD_SFLUSH, 3, -1, 0, CMD_WRITE},
+    {"trimslots", CMD_TRIMSLOTS, 5, -1, 0, CMD_WRITE},
 };
 
 static const cmd_entry *cmd_table_entry(uint16_t id)

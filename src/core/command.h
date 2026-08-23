@@ -435,7 +435,9 @@ enum {
     CMD_INCREX,
     CMD_MSETEX,
     CMD_DELEX,
-    CMD_DIGEST
+    CMD_DIGEST,
+    CMD_SFLUSH,
+    CMD_TRIMSLOTS
 };
 
 #define CMD_MAX CMD_DIGEST

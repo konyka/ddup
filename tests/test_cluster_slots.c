@@ -47,6 +47,8 @@ static session *fresh_session(db *d)
     return s; /* myself owns NOTHING (fresh boot semantics) */
 }
 
+static uint32_t pick_slot_key(char *out, int above, int start);
+
 static void info_state(session *s, resp_buf *out, char *buf, size_t cap)
 {
     exec_sess(s, T0, out, 2, "CLUSTER", "INFO");
@@ -186,6 +188,63 @@ static void test_busy_across_nodes(void)
     db_destroy(&d);
 }
 
+static void test_sflush_and_trimslots(void)
+{
+    db d;
+    session *s;
+    resp_buf out;
+    cluster_node *me, *other;
+    char in_key[32], out_key[32];
+    int i;
+    db_init(&d);
+    resp_buf_init(&out);
+    s = fresh_session(&d);
+    (void)pick_slot_key(in_key, 0, 1);
+    (void)pick_slot_key(out_key, 1, 1);
+    d.cluster_enabled = 0;
+    exec_sess(s, T0, &out, 3, "SET", out_key, "out");
+    EXPECT(out, "+OK\r\n");
+    d.cluster_enabled = 1;
+    me = cluster_node_find(&d, TEST_ID);
+    for (i = 0; i < 8192; i++)
+        cluster_slots_set(me->slots, (uint32_t)i, 1);
+    other = cluster_node_add(&d, OTHER_ID);
+    other->flags = CLUSTER_NODE_MASTER;
+    for (i = 8192; i < 16384; i++)
+        cluster_slots_set(other->slots, (uint32_t)i, 1);
+    d.slot_owner_dirty = 1;
+
+    exec_sess(s, T0, &out, 3, "SET", in_key, "in");
+    EXPECT(out, "+OK\r\n");
+
+    /* SFLUSH returns only locally owned intersections and removes keys. */
+    exec_sess(s, T0, &out, 4, "SFLUSH", "0", "8191", "SYNC");
+    EXPECT(out, "*1\r\n*2\r\n:0\r\n:8191\r\n");
+    exec_sess(s, T0, &out, 2, "GET", in_key);
+    EXPECT(out, "$-1\r\n");
+
+    /* TRIMSLOTS cannot remove slots served by this node. */
+    exec_sess(s, T0, &out, 5, "TRIMSLOTS", "RANGES", "1", "0", "10");
+    EXPECT(out, "-ERR the slot 0 is served by this node\r\n");
+
+    /* Unserved ranges may be trimmed, including keys installed locally. */
+    exec_sess(s, T0, &out, 5, "TRIMSLOTS", "RANGES", "1", "8192", "16383");
+    EXPECT(out, "+OK\r\n");
+    d.cluster_enabled = 0;
+    exec_sess(s, T0, &out, 2, "GET", out_key);
+    EXPECT(out, "$-1\r\n");
+    d.cluster_enabled = 1;
+
+    exec_sess(s, T0, &out, 2, "SFLUSH", "0");
+    EXPECT(out, "-ERR wrong number of arguments for 'sflush' command\r\n");
+    exec_sess(s, T0, &out, 4, "TRIMSLOTS", "RANGES", "0", "1");
+    EXPECT(out, "-ERR invalid number of ranges\r\n");
+
+    session_free(s);
+    resp_buf_free(&out);
+    db_destroy(&d);
+}
+
 static void test_moved_basic(void);
 static void test_moved_exec_partial(void);
 static void test_moved_disabled_unaffected(void);
@@ -196,6 +255,7 @@ int main(void)
     DD_RUN(test_delslots);
     DD_RUN(test_setslot);
     DD_RUN(test_busy_across_nodes);
+    DD_RUN(test_sflush_and_trimslots);
     DD_RUN(test_moved_basic);
     DD_RUN(test_moved_exec_partial);
     DD_RUN(test_moved_disabled_unaffected);

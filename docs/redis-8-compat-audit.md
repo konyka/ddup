@@ -9,7 +9,7 @@
 
 | 类别 | 数量 |
 | --- | --- |
-| 缺失顶层命令 | 23 |
+| 缺失顶层命令 | 21 |
 | 整体缺失容器 | 3 |
 | 已实现容器内缺失子命令 | 3 |
 
@@ -34,6 +34,11 @@
   before mutation and supports `NX/XX/KEEPTTL/EX/PX/EXAT/PXAT`; `DELEX`
   supports conditional string deletion; `DIGEST` uses vendored XXH3 with
   fixed-width output. All four commands are covered by TDD tests.
+- Cluster slot maintenance: `SFLUSH` intersects requested ranges with local
+  ownership and returns coalesced flushed ranges; `TRIMSLOTS RANGES` validates
+  ownership before deleting keys from unserved slots. Both paths collect keys
+  before mutation, preserve expiry/accounting invariants, and fail closed on
+  allocation errors.
 
 ## 实现策略（性能优先）
 
@@ -60,7 +65,7 @@
 ## 审计基线（机器断言，勿手改格式）
 
 <!-- AUDIT-BASELINE-START
-missing_top: arcount ardel ardelrange arget argetrange argrep arinfo arinsert arlastitems arlen armget armset arnext arop arring arscan arseek arset backup himport hotkeys sflush trimslots
+missing_top: arcount ardel ardelrange arget argetrange argrep arinfo arinsert arlastitems arlen armget armset arnext arop arring arscan arseek arset backup himport hotkeys
 missing_containers: backup himport hotkeys
 missing_sub: cluster migration
 missing_sub: cluster slot-stats
