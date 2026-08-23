@@ -36,6 +36,9 @@ MSBuild version 18.9.1+a81b43525 for .NET Framework
   Generating Code...
   ddup_lua.vcxproj -> D:\a\ddup\ddup\build\Release\ddup_lua.lib
   Building Custom Rule D:/a/ddup/ddup/CMakeLists.txt
+  xxhash.c
+  ddup_xxhash.vcxproj -> D:\a\ddup\ddup\build\Release\ddup_xxhash.lib
+  Building Custom Rule D:/a/ddup/ddup/CMakeLists.txt
   pal_time.c
   pal_socket.c
   pal_event.c
@@ -48,130 +51,162 @@ MSBuild version 18.9.1+a81b43525 for .NET Framework
   arena.c
   rhtable.c
   command.c
-D:\a\ddup\ddup\src\core\command.c(11267,25): warning C4457: declaration of 's' hides function parameter [D:\a\ddup\ddup\build\ddup_core.vcxproj]
-      D:\a\ddup\ddup\src\core\command.c(11194,39):
+D:\a\ddup\ddup\src\core\command.c(11434,25): warning C4457: declaration of 's' hides function parameter [D:\a\ddup\ddup\build\ddup_core.vcxproj]
+      D:\a\ddup\ddup\src\core\command.c(11361,39):
       see declaration of 's'
   
-D:\a\ddup\ddup\src\core\command.c(11628,21): warning C4457: declaration of 's' hides function parameter [D:\a\ddup\ddup\build\ddup_core.vcxproj]
-      D:\a\ddup\ddup\src\core\command.c(11194,39):
+D:\a\ddup\ddup\src\core\command.c(11795,21): warning C4457: declaration of 's' hides function parameter [D:\a\ddup\ddup\build\ddup_core.vcxproj]
+      D:\a\ddup\ddup\src\core\command.c(11361,39):
       see declaration of 's'
   
-D:\a\ddup\ddup\src\core\command.c(11648,25): warning C4457: declaration of 's' hides function parameter [D:\a\ddup\ddup\build\ddup_core.vcxproj]
-      D:\a\ddup\ddup\src\core\command.c(11194,39):
+D:\a\ddup\ddup\src\core\command.c(11815,25): warning C4457: declaration of 's' hides function parameter [D:\a\ddup\ddup\build\ddup_core.vcxproj]
+      D:\a\ddup\ddup\src\core\command.c(11361,39):
       see declaration of 's'
   
-D:\a\ddup\ddup\src\core\command.c(12290,25): warning C4457: declaration of 's' hides function parameter [D:\a\ddup\ddup\build\ddup_core.vcxproj]
-      D:\a\ddup\ddup\src\core\command.c(11194,39):
+D:\a\ddup\ddup\src\core\command.c(12457,25): warning C4457: declaration of 's' hides function parameter [D:\a\ddup\ddup\build\ddup_core.vcxproj]
+      D:\a\ddup\ddup\src\core\command.c(11361,39):
       see declaration of 's'
   
-D:\a\ddup\ddup\src\core\command.c(12383,25): warning C4457: declaration of 's' hides function parameter [D:\a\ddup\ddup\build\ddup_core.vcxproj]
-      D:\a\ddup\ddup\src\core\command.c(11194,39):
+D:\a\ddup\ddup\src\core\command.c(12550,25): warning C4457: declaration of 's' hides function parameter [D:\a\ddup\ddup\build\ddup_core.vcxproj]
+      D:\a\ddup\ddup\src\core\command.c(11361,39):
       see declaration of 's'
   
-D:\a\ddup\ddup\src\core\command.c(12753,33): warning C4457: declaration of 's' hides function parameter [D:\a\ddup\ddup\build\ddup_core.vcxproj]
-      D:\a\ddup\ddup\src\core\command.c(11194,39):
+D:\a\ddup\ddup\src\core\command.c(12920,33): warning C4457: declaration of 's' hides function parameter [D:\a\ddup\ddup\build\ddup_core.vcxproj]
+      D:\a\ddup\ddup\src\core\command.c(11361,39):
       see declaration of 's'
   
-D:\a\ddup\ddup\src\core\command.c(12845,41): warning C4457: declaration of 's' hides function parameter [D:\a\ddup\ddup\build\ddup_core.vcxproj]
-      D:\a\ddup\ddup\src\core\command.c(11194,39):
+D:\a\ddup\ddup\src\core\command.c(13012,41): warning C4457: declaration of 's' hides function parameter [D:\a\ddup\ddup\build\ddup_core.vcxproj]
+      D:\a\ddup\ddup\src\core\command.c(11361,39):
       see declaration of 's'
   
-D:\a\ddup\ddup\src\core\command.c(12889,37): warning C4457: declaration of 's' hides function parameter [D:\a\ddup\ddup\build\ddup_core.vcxproj]
-      D:\a\ddup\ddup\src\core\command.c(11194,39):
+D:\a\ddup\ddup\src\core\command.c(13056,37): warning C4457: declaration of 's' hides function parameter [D:\a\ddup\ddup\build\ddup_core.vcxproj]
+      D:\a\ddup\ddup\src\core\command.c(11361,39):
       see declaration of 's'
   
-D:\a\ddup\ddup\src\core\command.c(12936,25): warning C4457: declaration of 's' hides function parameter [D:\a\ddup\ddup\build\ddup_core.vcxproj]
-      D:\a\ddup\ddup\src\core\command.c(11194,39):
+D:\a\ddup\ddup\src\core\command.c(13103,25): warning C4457: declaration of 's' hides function parameter [D:\a\ddup\ddup\build\ddup_core.vcxproj]
+      D:\a\ddup\ddup\src\core\command.c(11361,39):
       see declaration of 's'
   
-D:\a\ddup\ddup\src\core\command.c(13007,25): warning C4457: declaration of 's' hides function parameter [D:\a\ddup\ddup\build\ddup_core.vcxproj]
-      D:\a\ddup\ddup\src\core\command.c(11194,39):
+D:\a\ddup\ddup\src\core\command.c(13174,25): warning C4457: declaration of 's' hides function parameter [D:\a\ddup\ddup\build\ddup_core.vcxproj]
+      D:\a\ddup\ddup\src\core\command.c(11361,39):
       see declaration of 's'
   
-D:\a\ddup\ddup\src\core\command.c(13106,29): warning C4457: declaration of 's' hides function parameter [D:\a\ddup\ddup\build\ddup_core.vcxproj]
-      D:\a\ddup\ddup\src\core\command.c(11194,39):
+D:\a\ddup\ddup\src\core\command.c(13273,29): warning C4457: declaration of 's' hides function parameter [D:\a\ddup\ddup\build\ddup_core.vcxproj]
+      D:\a\ddup\ddup\src\core\command.c(11361,39):
       see declaration of 's'
   
-D:\a\ddup\ddup\src\core\command.c(13189,25): warning C4457: declaration of 's' hides function parameter [D:\a\ddup\ddup\build\ddup_core.vcxproj]
-      D:\a\ddup\ddup\src\core\command.c(11194,39):
+D:\a\ddup\ddup\src\core\command.c(13356,25): warning C4457: declaration of 's' hides function parameter [D:\a\ddup\ddup\build\ddup_core.vcxproj]
+      D:\a\ddup\ddup\src\core\command.c(11361,39):
       see declaration of 's'
   
-D:\a\ddup\ddup\src\core\command.c(13254,25): warning C4457: declaration of 's' hides function parameter [D:\a\ddup\ddup\build\ddup_core.vcxproj]
-      D:\a\ddup\ddup\src\core\command.c(11194,39):
+D:\a\ddup\ddup\src\core\command.c(13421,25): warning C4457: declaration of 's' hides function parameter [D:\a\ddup\ddup\build\ddup_core.vcxproj]
+      D:\a\ddup\ddup\src\core\command.c(11361,39):
       see declaration of 's'
   
-D:\a\ddup\ddup\src\core\command.c(13303,29): warning C4457: declaration of 's' hides function parameter [D:\a\ddup\ddup\build\ddup_core.vcxproj]
-      D:\a\ddup\ddup\src\core\command.c(11194,39):
+D:\a\ddup\ddup\src\core\command.c(13470,29): warning C4457: declaration of 's' hides function parameter [D:\a\ddup\ddup\build\ddup_core.vcxproj]
+      D:\a\ddup\ddup\src\core\command.c(11361,39):
       see declaration of 's'
   
-D:\a\ddup\ddup\src\core\command.c(13656,29): warning C4457: declaration of 's' hides function parameter [D:\a\ddup\ddup\build\ddup_core.vcxproj]
-      D:\a\ddup\ddup\src\core\command.c(11194,39):
+D:\a\ddup\ddup\src\core\command.c(13619,29): warning C4457: declaration of 's' hides function parameter [D:\a\ddup\ddup\build\ddup_core.vcxproj]
+      D:\a\ddup\ddup\src\core\command.c(11361,39):
       see declaration of 's'
   
-D:\a\ddup\ddup\src\core\command.c(13988,18): warning C4457: declaration of 's' hides function parameter [D:\a\ddup\ddup\build\ddup_core.vcxproj]
-      D:\a\ddup\ddup\src\core\command.c(11194,39):
+D:\a\ddup\ddup\src\core\command.c(13630,29): warning C4457: declaration of 's' hides function parameter [D:\a\ddup\ddup\build\ddup_core.vcxproj]
+      D:\a\ddup\ddup\src\core\command.c(11361,39):
       see declaration of 's'
   
-D:\a\ddup\ddup\src\core\command.c(15557,30): error C2057: expected constant expression [D:\a\ddup\ddup\build\ddup_core.vcxproj]
-D:\a\ddup\ddup\src\core\command.c(15557,30): error C2466: cannot allocate an array of constant size 0 [D:\a\ddup\ddup\build\ddup_core.vcxproj]
-D:\a\ddup\ddup\src\core\command.c(15557,25): error C2133: 'vals': unknown size [D:\a\ddup\ddup\build\ddup_core.vcxproj]
-D:\a\ddup\ddup\src\core\command.c(15558,25): error C2057: expected constant expression [D:\a\ddup\ddup\build\ddup_core.vcxproj]
-D:\a\ddup\ddup\src\core\command.c(15558,25): error C2466: cannot allocate an array of constant size 0 [D:\a\ddup\ddup\build\ddup_core.vcxproj]
-D:\a\ddup\ddup\src\core\command.c(15558,20): error C2133: 'lens': unknown size [D:\a\ddup\ddup\build\ddup_core.vcxproj]
-D:\a\ddup\ddup\src\core\command.c(15947,27): warning C4456: declaration of 'idx' hides previous local declaration [D:\a\ddup\ddup\build\ddup_core.vcxproj]
-      D:\a\ddup\ddup\src\core\command.c(15911,23):
+D:\a\ddup\ddup\src\core\command.c(13647,29): warning C4457: declaration of 's' hides function parameter [D:\a\ddup\ddup\build\ddup_core.vcxproj]
+      D:\a\ddup\ddup\src\core\command.c(11361,39):
+      see declaration of 's'
+  
+D:\a\ddup\ddup\src\core\command.c(13659,29): warning C4457: declaration of 's' hides function parameter [D:\a\ddup\ddup\build\ddup_core.vcxproj]
+      D:\a\ddup\ddup\src\core\command.c(11361,39):
+      see declaration of 's'
+  
+D:\a\ddup\ddup\src\core\command.c(13696,29): warning C4457: declaration of 's' hides function parameter [D:\a\ddup\ddup\build\ddup_core.vcxproj]
+      D:\a\ddup\ddup\src\core\command.c(11361,39):
+      see declaration of 's'
+  
+D:\a\ddup\ddup\src\core\command.c(13766,25): warning C4457: declaration of 's' hides function parameter [D:\a\ddup\ddup\build\ddup_core.vcxproj]
+      D:\a\ddup\ddup\src\core\command.c(11361,39):
+      see declaration of 's'
+  
+D:\a\ddup\ddup\src\core\command.c(14006,21): warning C4457: declaration of 's' hides function parameter [D:\a\ddup\ddup\build\ddup_core.vcxproj]
+      D:\a\ddup\ddup\src\core\command.c(11361,39):
+      see declaration of 's'
+  
+D:\a\ddup\ddup\src\core\command.c(14061,21): warning C4457: declaration of 's' hides function parameter [D:\a\ddup\ddup\build\ddup_core.vcxproj]
+      D:\a\ddup\ddup\src\core\command.c(11361,39):
+      see declaration of 's'
+  
+D:\a\ddup\ddup\src\core\command.c(14395,29): warning C4457: declaration of 's' hides function parameter [D:\a\ddup\ddup\build\ddup_core.vcxproj]
+      D:\a\ddup\ddup\src\core\command.c(11361,39):
+      see declaration of 's'
+  
+D:\a\ddup\ddup\src\core\command.c(14727,18): warning C4457: declaration of 's' hides function parameter [D:\a\ddup\ddup\build\ddup_core.vcxproj]
+      D:\a\ddup\ddup\src\core\command.c(11361,39):
+      see declaration of 's'
+  
+D:\a\ddup\ddup\src\core\command.c(16296,30): error C2057: expected constant expression [D:\a\ddup\ddup\build\ddup_core.vcxproj]
+D:\a\ddup\ddup\src\core\command.c(16296,30): error C2466: cannot allocate an array of constant size 0 [D:\a\ddup\ddup\build\ddup_core.vcxproj]
+D:\a\ddup\ddup\src\core\command.c(16296,25): error C2133: 'vals': unknown size [D:\a\ddup\ddup\build\ddup_core.vcxproj]
+D:\a\ddup\ddup\src\core\command.c(16297,25): error C2057: expected constant expression [D:\a\ddup\ddup\build\ddup_core.vcxproj]
+D:\a\ddup\ddup\src\core\command.c(16297,25): error C2466: cannot allocate an array of constant size 0 [D:\a\ddup\ddup\build\ddup_core.vcxproj]
+D:\a\ddup\ddup\src\core\command.c(16297,20): error C2133: 'lens': unknown size [D:\a\ddup\ddup\build\ddup_core.vcxproj]
+D:\a\ddup\ddup\src\core\command.c(16686,27): warning C4456: declaration of 'idx' hides previous local declaration [D:\a\ddup\ddup\build\ddup_core.vcxproj]
+      D:\a\ddup\ddup\src\core\command.c(16650,23):
       see declaration of 'idx'
   
-D:\a\ddup\ddup\src\core\command.c(16463,18): warning C4457: declaration of 's' hides function parameter [D:\a\ddup\ddup\build\ddup_core.vcxproj]
-      D:\a\ddup\ddup\src\core\command.c(11194,39):
+D:\a\ddup\ddup\src\core\command.c(17202,18): warning C4457: declaration of 's' hides function parameter [D:\a\ddup\ddup\build\ddup_core.vcxproj]
+      D:\a\ddup\ddup\src\core\command.c(11361,39):
       see declaration of 's'
   
-D:\a\ddup\ddup\src\core\command.c(16496,18): warning C4457: declaration of 's' hides function parameter [D:\a\ddup\ddup\build\ddup_core.vcxproj]
-      D:\a\ddup\ddup\src\core\command.c(11194,39):
+D:\a\ddup\ddup\src\core\command.c(17235,18): warning C4457: declaration of 's' hides function parameter [D:\a\ddup\ddup\build\ddup_core.vcxproj]
+      D:\a\ddup\ddup\src\core\command.c(11361,39):
       see declaration of 's'
   
-D:\a\ddup\ddup\src\core\command.c(16529,18): warning C4457: declaration of 's' hides function parameter [D:\a\ddup\ddup\build\ddup_core.vcxproj]
-      D:\a\ddup\ddup\src\core\command.c(11194,39):
+D:\a\ddup\ddup\src\core\command.c(17268,18): warning C4457: declaration of 's' hides function parameter [D:\a\ddup\ddup\build\ddup_core.vcxproj]
+      D:\a\ddup\ddup\src\core\command.c(11361,39):
       see declaration of 's'
   
-D:\a\ddup\ddup\src\core\command.c(16546,18): warning C4457: declaration of 's' hides function parameter [D:\a\ddup\ddup\build\ddup_core.vcxproj]
-      D:\a\ddup\ddup\src\core\command.c(11194,39):
+D:\a\ddup\ddup\src\core\command.c(17285,18): warning C4457: declaration of 's' hides function parameter [D:\a\ddup\ddup\build\ddup_core.vcxproj]
+      D:\a\ddup\ddup\src\core\command.c(11361,39):
       see declaration of 's'
   
-D:\a\ddup\ddup\src\core\command.c(16570,18): warning C4457: declaration of 's' hides function parameter [D:\a\ddup\ddup\build\ddup_core.vcxproj]
-      D:\a\ddup\ddup\src\core\command.c(11194,39):
+D:\a\ddup\ddup\src\core\command.c(17309,18): warning C4457: declaration of 's' hides function parameter [D:\a\ddup\ddup\build\ddup_core.vcxproj]
+      D:\a\ddup\ddup\src\core\command.c(11361,39):
       see declaration of 's'
   
-D:\a\ddup\ddup\src\core\command.c(16588,18): warning C4457: declaration of 's' hides function parameter [D:\a\ddup\ddup\build\ddup_core.vcxproj]
-      D:\a\ddup\ddup\src\core\command.c(11194,39):
+D:\a\ddup\ddup\src\core\command.c(17327,18): warning C4457: declaration of 's' hides function parameter [D:\a\ddup\ddup\build\ddup_core.vcxproj]
+      D:\a\ddup\ddup\src\core\command.c(11361,39):
       see declaration of 's'
   
-D:\a\ddup\ddup\src\core\command.c(16630,18): warning C4457: declaration of 's' hides function parameter [D:\a\ddup\ddup\build\ddup_core.vcxproj]
-      D:\a\ddup\ddup\src\core\command.c(11194,39):
+D:\a\ddup\ddup\src\core\command.c(17369,18): warning C4457: declaration of 's' hides function parameter [D:\a\ddup\ddup\build\ddup_core.vcxproj]
+      D:\a\ddup\ddup\src\core\command.c(11361,39):
       see declaration of 's'
   
-D:\a\ddup\ddup\src\core\command.c(17057,26): warning C4457: declaration of 's' hides function parameter [D:\a\ddup\ddup\build\ddup_core.vcxproj]
-      D:\a\ddup\ddup\src\core\command.c(11194,39):
+D:\a\ddup\ddup\src\core\command.c(17796,26): warning C4457: declaration of 's' hides function parameter [D:\a\ddup\ddup\build\ddup_core.vcxproj]
+      D:\a\ddup\ddup\src\core\command.c(11361,39):
       see declaration of 's'
   
-D:\a\ddup\ddup\src\core\command.c(19082,35): error C2057: expected constant expression [D:\a\ddup\ddup\build\ddup_core.vcxproj]
-D:\a\ddup\ddup\src\core\command.c(19082,30): error C2466: cannot allocate an array of constant size 0 [D:\a\ddup\ddup\build\ddup_core.vcxproj]
-D:\a\ddup\ddup\src\core\command.c(19082,23): error C2133: 'counts': unknown size [D:\a\ddup\ddup\build\ddup_core.vcxproj]
-D:\a\ddup\ddup\src\core\command.c(19083,38): error C2057: expected constant expression [D:\a\ddup\ddup\build\ddup_core.vcxproj]
-D:\a\ddup\ddup\src\core\command.c(19083,33): error C2466: cannot allocate an array of constant size 0 [D:\a\ddup\ddup\build\ddup_core.vcxproj]
-D:\a\ddup\ddup\src\core\command.c(19083,27): error C2133: 'added': unknown size [D:\a\ddup\ddup\build\ddup_core.vcxproj]
-D:\a\ddup\ddup\src\core\command.c(19178,35): error C2057: expected constant expression [D:\a\ddup\ddup\build\ddup_core.vcxproj]
-D:\a\ddup\ddup\src\core\command.c(19178,30): error C2466: cannot allocate an array of constant size 0 [D:\a\ddup\ddup\build\ddup_core.vcxproj]
-D:\a\ddup\ddup\src\core\command.c(19178,23): error C2133: 'counts': unknown size [D:\a\ddup\ddup\build\ddup_core.vcxproj]
-D:\a\ddup\ddup\src\core\command.c(19179,38): error C2057: expected constant expression [D:\a\ddup\ddup\build\ddup_core.vcxproj]
-D:\a\ddup\ddup\src\core\command.c(19179,33): error C2466: cannot allocate an array of constant size 0 [D:\a\ddup\ddup\build\ddup_core.vcxproj]
-D:\a\ddup\ddup\src\core\command.c(19179,27): error C2133: 'added': unknown size [D:\a\ddup\ddup\build\ddup_core.vcxproj]
-D:\a\ddup\ddup\src\core\command.c(19294,35): error C2057: expected constant expression [D:\a\ddup\ddup\build\ddup_core.vcxproj]
-D:\a\ddup\ddup\src\core\command.c(19294,30): error C2466: cannot allocate an array of constant size 0 [D:\a\ddup\ddup\build\ddup_core.vcxproj]
-D:\a\ddup\ddup\src\core\command.c(19294,23): error C2133: 'counts': unknown size [D:\a\ddup\ddup\build\ddup_core.vcxproj]
-D:\a\ddup\ddup\src\core\command.c(19295,38): error C2057: expected constant expression [D:\a\ddup\ddup\build\ddup_core.vcxproj]
-D:\a\ddup\ddup\src\core\command.c(19295,33): error C2466: cannot allocate an array of constant size 0 [D:\a\ddup\ddup\build\ddup_core.vcxproj]
-D:\a\ddup\ddup\src\core\command.c(19295,27): error C2133: 'added': unknown size [D:\a\ddup\ddup\build\ddup_core.vcxproj]
+D:\a\ddup\ddup\src\core\command.c(19821,35): error C2057: expected constant expression [D:\a\ddup\ddup\build\ddup_core.vcxproj]
+D:\a\ddup\ddup\src\core\command.c(19821,30): error C2466: cannot allocate an array of constant size 0 [D:\a\ddup\ddup\build\ddup_core.vcxproj]
+D:\a\ddup\ddup\src\core\command.c(19821,23): error C2133: 'counts': unknown size [D:\a\ddup\ddup\build\ddup_core.vcxproj]
+D:\a\ddup\ddup\src\core\command.c(19822,38): error C2057: expected constant expression [D:\a\ddup\ddup\build\ddup_core.vcxproj]
+D:\a\ddup\ddup\src\core\command.c(19822,33): error C2466: cannot allocate an array of constant size 0 [D:\a\ddup\ddup\build\ddup_core.vcxproj]
+D:\a\ddup\ddup\src\core\command.c(19822,27): error C2133: 'added': unknown size [D:\a\ddup\ddup\build\ddup_core.vcxproj]
+D:\a\ddup\ddup\src\core\command.c(19917,35): error C2057: expected constant expression [D:\a\ddup\ddup\build\ddup_core.vcxproj]
+D:\a\ddup\ddup\src\core\command.c(19917,30): error C2466: cannot allocate an array of constant size 0 [D:\a\ddup\ddup\build\ddup_core.vcxproj]
+D:\a\ddup\ddup\src\core\command.c(19917,23): error C2133: 'counts': unknown size [D:\a\ddup\ddup\build\ddup_core.vcxproj]
+D:\a\ddup\ddup\src\core\command.c(19918,38): error C2057: expected constant expression [D:\a\ddup\ddup\build\ddup_core.vcxproj]
+D:\a\ddup\ddup\src\core\command.c(19918,33): error C2466: cannot allocate an array of constant size 0 [D:\a\ddup\ddup\build\ddup_core.vcxproj]
+D:\a\ddup\ddup\src\core\command.c(19918,27): error C2133: 'added': unknown size [D:\a\ddup\ddup\build\ddup_core.vcxproj]
+D:\a\ddup\ddup\src\core\command.c(20033,35): error C2057: expected constant expression [D:\a\ddup\ddup\build\ddup_core.vcxproj]
+D:\a\ddup\ddup\src\core\command.c(20033,30): error C2466: cannot allocate an array of constant size 0 [D:\a\ddup\ddup\build\ddup_core.vcxproj]
+D:\a\ddup\ddup\src\core\command.c(20033,23): error C2133: 'counts': unknown size [D:\a\ddup\ddup\build\ddup_core.vcxproj]
+D:\a\ddup\ddup\src\core\command.c(20034,38): error C2057: expected constant expression [D:\a\ddup\ddup\build\ddup_core.vcxproj]
+D:\a\ddup\ddup\src\core\command.c(20034,33): error C2466: cannot allocate an array of constant size 0 [D:\a\ddup\ddup\build\ddup_core.vcxproj]
+D:\a\ddup\ddup\src\core\command.c(20034,27): error C2133: 'added': unknown size [D:\a\ddup\ddup\build\ddup_core.vcxproj]
   buf_pool.c
   tier.c
 D:\a\ddup\ddup\src\core\tier.c(180,15): warning C4996: 'strdup': The POSIX name for this item is deprecated. Instead, use the ISO C and C++ conformant name: _strdup. See online help for details. [D:\a\ddup\ddup\build\ddup_core.vcxproj]
@@ -244,130 +279,162 @@ D:\a\ddup\ddup\src\server\mt_server.c(2980,18): warning C4456: declaration of 's
   arena.c
   rhtable.c
   command.c
-D:\a\ddup\ddup\src\core\command.c(11267,25): warning C4457: declaration of 's' hides function parameter [D:\a\ddup\ddup\build\ddup_core_test.vcxproj]
-      D:\a\ddup\ddup\src\core\command.c(11194,39):
+D:\a\ddup\ddup\src\core\command.c(11434,25): warning C4457: declaration of 's' hides function parameter [D:\a\ddup\ddup\build\ddup_core_test.vcxproj]
+      D:\a\ddup\ddup\src\core\command.c(11361,39):
       see declaration of 's'
   
-D:\a\ddup\ddup\src\core\command.c(11628,21): warning C4457: declaration of 's' hides function parameter [D:\a\ddup\ddup\build\ddup_core_test.vcxproj]
-      D:\a\ddup\ddup\src\core\command.c(11194,39):
+D:\a\ddup\ddup\src\core\command.c(11795,21): warning C4457: declaration of 's' hides function parameter [D:\a\ddup\ddup\build\ddup_core_test.vcxproj]
+      D:\a\ddup\ddup\src\core\command.c(11361,39):
       see declaration of 's'
   
-D:\a\ddup\ddup\src\core\command.c(11648,25): warning C4457: declaration of 's' hides function parameter [D:\a\ddup\ddup\build\ddup_core_test.vcxproj]
-      D:\a\ddup\ddup\src\core\command.c(11194,39):
+D:\a\ddup\ddup\src\core\command.c(11815,25): warning C4457: declaration of 's' hides function parameter [D:\a\ddup\ddup\build\ddup_core_test.vcxproj]
+      D:\a\ddup\ddup\src\core\command.c(11361,39):
       see declaration of 's'
   
-D:\a\ddup\ddup\src\core\command.c(12290,25): warning C4457: declaration of 's' hides function parameter [D:\a\ddup\ddup\build\ddup_core_test.vcxproj]
-      D:\a\ddup\ddup\src\core\command.c(11194,39):
+D:\a\ddup\ddup\src\core\command.c(12457,25): warning C4457: declaration of 's' hides function parameter [D:\a\ddup\ddup\build\ddup_core_test.vcxproj]
+      D:\a\ddup\ddup\src\core\command.c(11361,39):
       see declaration of 's'
   
-D:\a\ddup\ddup\src\core\command.c(12383,25): warning C4457: declaration of 's' hides function parameter [D:\a\ddup\ddup\build\ddup_core_test.vcxproj]
-      D:\a\ddup\ddup\src\core\command.c(11194,39):
+D:\a\ddup\ddup\src\core\command.c(12550,25): warning C4457: declaration of 's' hides function parameter [D:\a\ddup\ddup\build\ddup_core_test.vcxproj]
+      D:\a\ddup\ddup\src\core\command.c(11361,39):
       see declaration of 's'
   
-D:\a\ddup\ddup\src\core\command.c(12753,33): warning C4457: declaration of 's' hides function parameter [D:\a\ddup\ddup\build\ddup_core_test.vcxproj]
-      D:\a\ddup\ddup\src\core\command.c(11194,39):
+D:\a\ddup\ddup\src\core\command.c(12920,33): warning C4457: declaration of 's' hides function parameter [D:\a\ddup\ddup\build\ddup_core_test.vcxproj]
+      D:\a\ddup\ddup\src\core\command.c(11361,39):
       see declaration of 's'
   
-D:\a\ddup\ddup\src\core\command.c(12845,41): warning C4457: declaration of 's' hides function parameter [D:\a\ddup\ddup\build\ddup_core_test.vcxproj]
-      D:\a\ddup\ddup\src\core\command.c(11194,39):
+D:\a\ddup\ddup\src\core\command.c(13012,41): warning C4457: declaration of 's' hides function parameter [D:\a\ddup\ddup\build\ddup_core_test.vcxproj]
+      D:\a\ddup\ddup\src\core\command.c(11361,39):
       see declaration of 's'
   
-D:\a\ddup\ddup\src\core\command.c(12889,37): warning C4457: declaration of 's' hides function parameter [D:\a\ddup\ddup\build\ddup_core_test.vcxproj]
-      D:\a\ddup\ddup\src\core\command.c(11194,39):
+D:\a\ddup\ddup\src\core\command.c(13056,37): warning C4457: declaration of 's' hides function parameter [D:\a\ddup\ddup\build\ddup_core_test.vcxproj]
+      D:\a\ddup\ddup\src\core\command.c(11361,39):
       see declaration of 's'
   
-D:\a\ddup\ddup\src\core\command.c(12936,25): warning C4457: declaration of 's' hides function parameter [D:\a\ddup\ddup\build\ddup_core_test.vcxproj]
-      D:\a\ddup\ddup\src\core\command.c(11194,39):
+D:\a\ddup\ddup\src\core\command.c(13103,25): warning C4457: declaration of 's' hides function parameter [D:\a\ddup\ddup\build\ddup_core_test.vcxproj]
+      D:\a\ddup\ddup\src\core\command.c(11361,39):
       see declaration of 's'
   
-D:\a\ddup\ddup\src\core\command.c(13007,25): warning C4457: declaration of 's' hides function parameter [D:\a\ddup\ddup\build\ddup_core_test.vcxproj]
-      D:\a\ddup\ddup\src\core\command.c(11194,39):
+D:\a\ddup\ddup\src\core\command.c(13174,25): warning C4457: declaration of 's' hides function parameter [D:\a\ddup\ddup\build\ddup_core_test.vcxproj]
+      D:\a\ddup\ddup\src\core\command.c(11361,39):
       see declaration of 's'
   
-D:\a\ddup\ddup\src\core\command.c(13106,29): warning C4457: declaration of 's' hides function parameter [D:\a\ddup\ddup\build\ddup_core_test.vcxproj]
-      D:\a\ddup\ddup\src\core\command.c(11194,39):
+D:\a\ddup\ddup\src\core\command.c(13273,29): warning C4457: declaration of 's' hides function parameter [D:\a\ddup\ddup\build\ddup_core_test.vcxproj]
+      D:\a\ddup\ddup\src\core\command.c(11361,39):
       see declaration of 's'
   
-D:\a\ddup\ddup\src\core\command.c(13189,25): warning C4457: declaration of 's' hides function parameter [D:\a\ddup\ddup\build\ddup_core_test.vcxproj]
-      D:\a\ddup\ddup\src\core\command.c(11194,39):
+D:\a\ddup\ddup\src\core\command.c(13356,25): warning C4457: declaration of 's' hides function parameter [D:\a\ddup\ddup\build\ddup_core_test.vcxproj]
+      D:\a\ddup\ddup\src\core\command.c(11361,39):
       see declaration of 's'
   
-D:\a\ddup\ddup\src\core\command.c(13254,25): warning C4457: declaration of 's' hides function parameter [D:\a\ddup\ddup\build\ddup_core_test.vcxproj]
-      D:\a\ddup\ddup\src\core\command.c(11194,39):
+D:\a\ddup\ddup\src\core\command.c(13421,25): warning C4457: declaration of 's' hides function parameter [D:\a\ddup\ddup\build\ddup_core_test.vcxproj]
+      D:\a\ddup\ddup\src\core\command.c(11361,39):
       see declaration of 's'
   
-D:\a\ddup\ddup\src\core\command.c(13303,29): warning C4457: declaration of 's' hides function parameter [D:\a\ddup\ddup\build\ddup_core_test.vcxproj]
-      D:\a\ddup\ddup\src\core\command.c(11194,39):
+D:\a\ddup\ddup\src\core\command.c(13470,29): warning C4457: declaration of 's' hides function parameter [D:\a\ddup\ddup\build\ddup_core_test.vcxproj]
+      D:\a\ddup\ddup\src\core\command.c(11361,39):
       see declaration of 's'
   
-D:\a\ddup\ddup\src\core\command.c(13656,29): warning C4457: declaration of 's' hides function parameter [D:\a\ddup\ddup\build\ddup_core_test.vcxproj]
-      D:\a\ddup\ddup\src\core\command.c(11194,39):
+D:\a\ddup\ddup\src\core\command.c(13619,29): warning C4457: declaration of 's' hides function parameter [D:\a\ddup\ddup\build\ddup_core_test.vcxproj]
+      D:\a\ddup\ddup\src\core\command.c(11361,39):
       see declaration of 's'
   
-D:\a\ddup\ddup\src\core\command.c(13988,18): warning C4457: declaration of 's' hides function parameter [D:\a\ddup\ddup\build\ddup_core_test.vcxproj]
-      D:\a\ddup\ddup\src\core\command.c(11194,39):
+D:\a\ddup\ddup\src\core\command.c(13630,29): warning C4457: declaration of 's' hides function parameter [D:\a\ddup\ddup\build\ddup_core_test.vcxproj]
+      D:\a\ddup\ddup\src\core\command.c(11361,39):
       see declaration of 's'
   
-D:\a\ddup\ddup\src\core\command.c(15557,30): error C2057: expected constant expression [D:\a\ddup\ddup\build\ddup_core_test.vcxproj]
-D:\a\ddup\ddup\src\core\command.c(15557,30): error C2466: cannot allocate an array of constant size 0 [D:\a\ddup\ddup\build\ddup_core_test.vcxproj]
-D:\a\ddup\ddup\src\core\command.c(15557,25): error C2133: 'vals': unknown size [D:\a\ddup\ddup\build\ddup_core_test.vcxproj]
-D:\a\ddup\ddup\src\core\command.c(15558,25): error C2057: expected constant expression [D:\a\ddup\ddup\build\ddup_core_test.vcxproj]
-D:\a\ddup\ddup\src\core\command.c(15558,25): error C2466: cannot allocate an array of constant size 0 [D:\a\ddup\ddup\build\ddup_core_test.vcxproj]
-D:\a\ddup\ddup\src\core\command.c(15558,20): error C2133: 'lens': unknown size [D:\a\ddup\ddup\build\ddup_core_test.vcxproj]
-D:\a\ddup\ddup\src\core\command.c(15947,27): warning C4456: declaration of 'idx' hides previous local declaration [D:\a\ddup\ddup\build\ddup_core_test.vcxproj]
-      D:\a\ddup\ddup\src\core\command.c(15911,23):
+D:\a\ddup\ddup\src\core\command.c(13647,29): warning C4457: declaration of 's' hides function parameter [D:\a\ddup\ddup\build\ddup_core_test.vcxproj]
+      D:\a\ddup\ddup\src\core\command.c(11361,39):
+      see declaration of 's'
+  
+D:\a\ddup\ddup\src\core\command.c(13659,29): warning C4457: declaration of 's' hides function parameter [D:\a\ddup\ddup\build\ddup_core_test.vcxproj]
+      D:\a\ddup\ddup\src\core\command.c(11361,39):
+      see declaration of 's'
+  
+D:\a\ddup\ddup\src\core\command.c(13696,29): warning C4457: declaration of 's' hides function parameter [D:\a\ddup\ddup\build\ddup_core_test.vcxproj]
+      D:\a\ddup\ddup\src\core\command.c(11361,39):
+      see declaration of 's'
+  
+D:\a\ddup\ddup\src\core\command.c(13766,25): warning C4457: declaration of 's' hides function parameter [D:\a\ddup\ddup\build\ddup_core_test.vcxproj]
+      D:\a\ddup\ddup\src\core\command.c(11361,39):
+      see declaration of 's'
+  
+D:\a\ddup\ddup\src\core\command.c(14006,21): warning C4457: declaration of 's' hides function parameter [D:\a\ddup\ddup\build\ddup_core_test.vcxproj]
+      D:\a\ddup\ddup\src\core\command.c(11361,39):
+      see declaration of 's'
+  
+D:\a\ddup\ddup\src\core\command.c(14061,21): warning C4457: declaration of 's' hides function parameter [D:\a\ddup\ddup\build\ddup_core_test.vcxproj]
+      D:\a\ddup\ddup\src\core\command.c(11361,39):
+      see declaration of 's'
+  
+D:\a\ddup\ddup\src\core\command.c(14395,29): warning C4457: declaration of 's' hides function parameter [D:\a\ddup\ddup\build\ddup_core_test.vcxproj]
+      D:\a\ddup\ddup\src\core\command.c(11361,39):
+      see declaration of 's'
+  
+D:\a\ddup\ddup\src\core\command.c(14727,18): warning C4457: declaration of 's' hides function parameter [D:\a\ddup\ddup\build\ddup_core_test.vcxproj]
+      D:\a\ddup\ddup\src\core\command.c(11361,39):
+      see declaration of 's'
+  
+D:\a\ddup\ddup\src\core\command.c(16296,30): error C2057: expected constant expression [D:\a\ddup\ddup\build\ddup_core_test.vcxproj]
+D:\a\ddup\ddup\src\core\command.c(16296,30): error C2466: cannot allocate an array of constant size 0 [D:\a\ddup\ddup\build\ddup_core_test.vcxproj]
+D:\a\ddup\ddup\src\core\command.c(16296,25): error C2133: 'vals': unknown size [D:\a\ddup\ddup\build\ddup_core_test.vcxproj]
+D:\a\ddup\ddup\src\core\command.c(16297,25): error C2057: expected constant expression [D:\a\ddup\ddup\build\ddup_core_test.vcxproj]
+D:\a\ddup\ddup\src\core\command.c(16297,25): error C2466: cannot allocate an array of constant size 0 [D:\a\ddup\ddup\build\ddup_core_test.vcxproj]
+D:\a\ddup\ddup\src\core\command.c(16297,20): error C2133: 'lens': unknown size [D:\a\ddup\ddup\build\ddup_core_test.vcxproj]
+D:\a\ddup\ddup\src\core\command.c(16686,27): warning C4456: declaration of 'idx' hides previous local declaration [D:\a\ddup\ddup\build\ddup_core_test.vcxproj]
+      D:\a\ddup\ddup\src\core\command.c(16650,23):
       see declaration of 'idx'
   
-D:\a\ddup\ddup\src\core\command.c(16463,18): warning C4457: declaration of 's' hides function parameter [D:\a\ddup\ddup\build\ddup_core_test.vcxproj]
-      D:\a\ddup\ddup\src\core\command.c(11194,39):
+D:\a\ddup\ddup\src\core\command.c(17202,18): warning C4457: declaration of 's' hides function parameter [D:\a\ddup\ddup\build\ddup_core_test.vcxproj]
+      D:\a\ddup\ddup\src\core\command.c(11361,39):
       see declaration of 's'
   
-D:\a\ddup\ddup\src\core\command.c(16496,18): warning C4457: declaration of 's' hides function parameter [D:\a\ddup\ddup\build\ddup_core_test.vcxproj]
-      D:\a\ddup\ddup\src\core\command.c(11194,39):
+D:\a\ddup\ddup\src\core\command.c(17235,18): warning C4457: declaration of 's' hides function parameter [D:\a\ddup\ddup\build\ddup_core_test.vcxproj]
+      D:\a\ddup\ddup\src\core\command.c(11361,39):
       see declaration of 's'
   
-D:\a\ddup\ddup\src\core\command.c(16529,18): warning C4457: declaration of 's' hides function parameter [D:\a\ddup\ddup\build\ddup_core_test.vcxproj]
-      D:\a\ddup\ddup\src\core\command.c(11194,39):
+D:\a\ddup\ddup\src\core\command.c(17268,18): warning C4457: declaration of 's' hides function parameter [D:\a\ddup\ddup\build\ddup_core_test.vcxproj]
+      D:\a\ddup\ddup\src\core\command.c(11361,39):
       see declaration of 's'
   
-D:\a\ddup\ddup\src\core\command.c(16546,18): warning C4457: declaration of 's' hides function parameter [D:\a\ddup\ddup\build\ddup_core_test.vcxproj]
-      D:\a\ddup\ddup\src\core\command.c(11194,39):
+D:\a\ddup\ddup\src\core\command.c(17285,18): warning C4457: declaration of 's' hides function parameter [D:\a\ddup\ddup\build\ddup_core_test.vcxproj]
+      D:\a\ddup\ddup\src\core\command.c(11361,39):
       see declaration of 's'
   
-D:\a\ddup\ddup\src\core\command.c(16570,18): warning C4457: declaration of 's' hides function parameter [D:\a\ddup\ddup\build\ddup_core_test.vcxproj]
-      D:\a\ddup\ddup\src\core\command.c(11194,39):
+D:\a\ddup\ddup\src\core\command.c(17309,18): warning C4457: declaration of 's' hides function parameter [D:\a\ddup\ddup\build\ddup_core_test.vcxproj]
+      D:\a\ddup\ddup\src\core\command.c(11361,39):
       see declaration of 's'
   
-D:\a\ddup\ddup\src\core\command.c(16588,18): warning C4457: declaration of 's' hides function parameter [D:\a\ddup\ddup\build\ddup_core_test.vcxproj]
-      D:\a\ddup\ddup\src\core\command.c(11194,39):
+D:\a\ddup\ddup\src\core\command.c(17327,18): warning C4457: declaration of 's' hides function parameter [D:\a\ddup\ddup\build\ddup_core_test.vcxproj]
+      D:\a\ddup\ddup\src\core\command.c(11361,39):
       see declaration of 's'
   
-D:\a\ddup\ddup\src\core\command.c(16630,18): warning C4457: declaration of 's' hides function parameter [D:\a\ddup\ddup\build\ddup_core_test.vcxproj]
-      D:\a\ddup\ddup\src\core\command.c(11194,39):
+D:\a\ddup\ddup\src\core\command.c(17369,18): warning C4457: declaration of 's' hides function parameter [D:\a\ddup\ddup\build\ddup_core_test.vcxproj]
+      D:\a\ddup\ddup\src\core\command.c(11361,39):
       see declaration of 's'
   
-D:\a\ddup\ddup\src\core\command.c(17057,26): warning C4457: declaration of 's' hides function parameter [D:\a\ddup\ddup\build\ddup_core_test.vcxproj]
-      D:\a\ddup\ddup\src\core\command.c(11194,39):
+D:\a\ddup\ddup\src\core\command.c(17796,26): warning C4457: declaration of 's' hides function parameter [D:\a\ddup\ddup\build\ddup_core_test.vcxproj]
+      D:\a\ddup\ddup\src\core\command.c(11361,39):
       see declaration of 's'
   
-D:\a\ddup\ddup\src\core\command.c(19082,35): error C2057: expected constant expression [D:\a\ddup\ddup\build\ddup_core_test.vcxproj]
-D:\a\ddup\ddup\src\core\command.c(19082,30): error C2466: cannot allocate an array of constant size 0 [D:\a\ddup\ddup\build\ddup_core_test.vcxproj]
-D:\a\ddup\ddup\src\core\command.c(19082,23): error C2133: 'counts': unknown size [D:\a\ddup\ddup\build\ddup_core_test.vcxproj]
-D:\a\ddup\ddup\src\core\command.c(19083,38): error C2057: expected constant expression [D:\a\ddup\ddup\build\ddup_core_test.vcxproj]
-D:\a\ddup\ddup\src\core\command.c(19083,33): error C2466: cannot allocate an array of constant size 0 [D:\a\ddup\ddup\build\ddup_core_test.vcxproj]
-D:\a\ddup\ddup\src\core\command.c(19083,27): error C2133: 'added': unknown size [D:\a\ddup\ddup\build\ddup_core_test.vcxproj]
-D:\a\ddup\ddup\src\core\command.c(19178,35): error C2057: expected constant expression [D:\a\ddup\ddup\build\ddup_core_test.vcxproj]
-D:\a\ddup\ddup\src\core\command.c(19178,30): error C2466: cannot allocate an array of constant size 0 [D:\a\ddup\ddup\build\ddup_core_test.vcxproj]
-D:\a\ddup\ddup\src\core\command.c(19178,23): error C2133: 'counts': unknown size [D:\a\ddup\ddup\build\ddup_core_test.vcxproj]
-D:\a\ddup\ddup\src\core\command.c(19179,38): error C2057: expected constant expression [D:\a\ddup\ddup\build\ddup_core_test.vcxproj]
-D:\a\ddup\ddup\src\core\command.c(19179,33): error C2466: cannot allocate an array of constant size 0 [D:\a\ddup\ddup\build\ddup_core_test.vcxproj]
-D:\a\ddup\ddup\src\core\command.c(19179,27): error C2133: 'added': unknown size [D:\a\ddup\ddup\build\ddup_core_test.vcxproj]
-D:\a\ddup\ddup\src\core\command.c(19294,35): error C2057: expected constant expression [D:\a\ddup\ddup\build\ddup_core_test.vcxproj]
-D:\a\ddup\ddup\src\core\command.c(19294,30): error C2466: cannot allocate an array of constant size 0 [D:\a\ddup\ddup\build\ddup_core_test.vcxproj]
-D:\a\ddup\ddup\src\core\command.c(19294,23): error C2133: 'counts': unknown size [D:\a\ddup\ddup\build\ddup_core_test.vcxproj]
-D:\a\ddup\ddup\src\core\command.c(19295,38): error C2057: expected constant expression [D:\a\ddup\ddup\build\ddup_core_test.vcxproj]
-D:\a\ddup\ddup\src\core\command.c(19295,33): error C2466: cannot allocate an array of constant size 0 [D:\a\ddup\ddup\build\ddup_core_test.vcxproj]
-D:\a\ddup\ddup\src\core\command.c(19295,27): error C2133: 'added': unknown size [D:\a\ddup\ddup\build\ddup_core_test.vcxproj]
+D:\a\ddup\ddup\src\core\command.c(19821,35): error C2057: expected constant expression [D:\a\ddup\ddup\build\ddup_core_test.vcxproj]
+D:\a\ddup\ddup\src\core\command.c(19821,30): error C2466: cannot allocate an array of constant size 0 [D:\a\ddup\ddup\build\ddup_core_test.vcxproj]
+D:\a\ddup\ddup\src\core\command.c(19821,23): error C2133: 'counts': unknown size [D:\a\ddup\ddup\build\ddup_core_test.vcxproj]
+D:\a\ddup\ddup\src\core\command.c(19822,38): error C2057: expected constant expression [D:\a\ddup\ddup\build\ddup_core_test.vcxproj]
+D:\a\ddup\ddup\src\core\command.c(19822,33): error C2466: cannot allocate an array of constant size 0 [D:\a\ddup\ddup\build\ddup_core_test.vcxproj]
+D:\a\ddup\ddup\src\core\command.c(19822,27): error C2133: 'added': unknown size [D:\a\ddup\ddup\build\ddup_core_test.vcxproj]
+D:\a\ddup\ddup\src\core\command.c(19917,35): error C2057: expected constant expression [D:\a\ddup\ddup\build\ddup_core_test.vcxproj]
+D:\a\ddup\ddup\src\core\command.c(19917,30): error C2466: cannot allocate an array of constant size 0 [D:\a\ddup\ddup\build\ddup_core_test.vcxproj]
+D:\a\ddup\ddup\src\core\command.c(19917,23): error C2133: 'counts': unknown size [D:\a\ddup\ddup\build\ddup_core_test.vcxproj]
+D:\a\ddup\ddup\src\core\command.c(19918,38): error C2057: expected constant expression [D:\a\ddup\ddup\build\ddup_core_test.vcxproj]
+D:\a\ddup\ddup\src\core\command.c(19918,33): error C2466: cannot allocate an array of constant size 0 [D:\a\ddup\ddup\build\ddup_core_test.vcxproj]
+D:\a\ddup\ddup\src\core\command.c(19918,27): error C2133: 'added': unknown size [D:\a\ddup\ddup\build\ddup_core_test.vcxproj]
+D:\a\ddup\ddup\src\core\command.c(20033,35): error C2057: expected constant expression [D:\a\ddup\ddup\build\ddup_core_test.vcxproj]
+D:\a\ddup\ddup\src\core\command.c(20033,30): error C2466: cannot allocate an array of constant size 0 [D:\a\ddup\ddup\build\ddup_core_test.vcxproj]
+D:\a\ddup\ddup\src\core\command.c(20033,23): error C2133: 'counts': unknown size [D:\a\ddup\ddup\build\ddup_core_test.vcxproj]
+D:\a\ddup\ddup\src\core\command.c(20034,38): error C2057: expected constant expression [D:\a\ddup\ddup\build\ddup_core_test.vcxproj]
+D:\a\ddup\ddup\src\core\command.c(20034,33): error C2466: cannot allocate an array of constant size 0 [D:\a\ddup\ddup\build\ddup_core_test.vcxproj]
+D:\a\ddup\ddup\src\core\command.c(20034,27): error C2133: 'added': unknown size [D:\a\ddup\ddup\build\ddup_core_test.vcxproj]
   buf_pool.c
   tier.c
 D:\a\ddup\ddup\src\core\tier.c(180,15): warning C4996: 'strdup': The POSIX name for this item is deprecated. Instead, use the ISO C and C++ conformant name: _strdup. See online help for details. [D:\a\ddup\ddup\build\ddup_core_test.vcxproj]
