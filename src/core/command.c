@@ -4422,6 +4422,42 @@ static int cluster_keyless_id(uint16_t cmd_id)
     }
 }
 
+typedef struct cluster_slot_stat_item {
+    uint16_t slot;
+    uint64_t count;
+} cluster_slot_stat_item;
+
+static int cluster_slot_stat_cmp_desc(const void *a, const void *b)
+{
+    const cluster_slot_stat_item *x = (const cluster_slot_stat_item *)a;
+    const cluster_slot_stat_item *y = (const cluster_slot_stat_item *)b;
+    if (x->count < y->count)
+        return 1;
+    if (x->count > y->count)
+        return -1;
+    return (int)x->slot - (int)y->slot;
+}
+
+static int cluster_slot_stat_cmp_asc(const void *a, const void *b)
+{
+    const cluster_slot_stat_item *x = (const cluster_slot_stat_item *)a;
+    const cluster_slot_stat_item *y = (const cluster_slot_stat_item *)b;
+    if (x->count < y->count)
+        return -1;
+    if (x->count > y->count)
+        return 1;
+    return (int)x->slot - (int)y->slot;
+}
+
+static void cluster_slot_count_cb(const char *key, size_t klen,
+                                  const char *v, size_t vlen, void *ctx)
+{
+    uint64_t *counts = (uint64_t *)ctx;
+    (void)v;
+    (void)vlen;
+    counts[hash_slot(key, klen)]++;
+}
+
 /* -MOVED/-CLUSTERDOWN/-ASK check for one command (cluster mode only):
  * extracts the command's key positions and verifies ownership of each.
  * Consumes the session's one-shot ASKING flag. Returns 1 to proceed,
@@ -20794,6 +20830,126 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
             return;
         }
         {
+            if (ci_equal(sub, sl, "SLOT-STATS")) {
+                uint64_t counts[16384];
+                cluster_slot_stat_item items[16384];
+                size_t nitems = 0;
+                int myself = -1;
+                size_t i;
+                memset(counts, 0, sizeof(counts));
+                rh_each(&d->table, cluster_slot_count_cb, counts);
+                if (d->slot_owner_dirty)
+                    db_rebuild_slot_owner(d);
+                for (i = 0; i < (size_t)d->nnodes; i++) {
+                    if (strcmp(d->nodes[i].id, d->node_id) == 0) {
+                        myself = (int)i;
+                        break;
+                    }
+                }
+                if (argc >= 5 && ci_equal(argv[2].str, argv[2].len, "SLOTSRANGE")) {
+                    const char *a;
+                    const char *b;
+                    size_t al;
+                    size_t bl;
+                    long long first;
+                    long long last;
+                    if (argc != 5 || !arg_str(&argv[3], &a, &al) ||
+                        !arg_str(&argv[4], &b, &bl) || !parse_i64(a, al, &first) ||
+                        !parse_i64(b, bl, &last)) {
+                        wrong_args(out, "cluster");
+                        return;
+                    }
+                    if (first < 0 || last >= 16384 || first > last) {
+                        resp_write_error(out, "ERR Invalid slot range", 23);
+                        return;
+                    }
+                    /* The writer needs the exact array length; rebuild via a
+                     * temporary buffer after counting eligible slots. */
+                    {
+                        resp_buf tmp;
+                        size_t eligible = 0;
+                        resp_buf_init(&tmp);
+                        for (i = (size_t)first; i <= (size_t)last; i++)
+                            if (d->slot_owner[i] == (uint16_t)myself)
+                                eligible++;
+                        resp_write_array_header(&tmp, eligible);
+                        for (i = (size_t)first; i <= (size_t)last; i++) {
+                            if (d->slot_owner[i] != (uint16_t)myself)
+                                continue;
+                            resp_write_array_header(&tmp, 2);
+                            resp_write_integer(&tmp, (long long)i);
+                            resp_write_map_header(&tmp, 1);
+                            resp_write_bulk(&tmp, "key-count", 9);
+                            resp_write_integer(&tmp, (long long)counts[i]);
+                        }
+                        out->len = 0;
+                        if (resp_buf_reserve(out, tmp.len) != 0) {
+                            resp_buf_free(&tmp);
+                            resp_write_error(out, OOM_MSG, sizeof(OOM_MSG) - 1);
+                            return;
+                        }
+                        memcpy(out->data, tmp.data, tmp.len);
+                        out->len = tmp.len;
+                        resp_buf_free(&tmp);
+                    }
+                    return;
+                }
+                if (argc >= 4 && ci_equal(argv[2].str, argv[2].len, "ORDERBY")) {
+                    long long limit = 16384;
+                    int desc = 1;
+                    const char *metric;
+                    size_t ml;
+                    if (argc < 4 || !arg_str(&argv[3], &metric, &ml) ||
+                        !ci_equal(metric, ml, "KEY-COUNT")) {
+                        resp_write_error(out, "ERR Unrecognized sort metric for ORDERBY.",
+                                         sizeof("ERR Unrecognized sort metric for ORDERBY.") - 1);
+                        return;
+                    }
+                    for (i = 4; i < argc; i++) {
+                        const char *tok;
+                        size_t tl;
+                        if (!arg_str(&argv[i], &tok, &tl))
+                            goto bad_type;
+                        if (ci_equal(tok, tl, "LIMIT") && i + 1 < argc) {
+                            const char *lv;
+                            size_t ll;
+                            if (!arg_str(&argv[++i], &lv, &ll) ||
+                                !parse_i64(lv, ll, &limit) || limit < 1 || limit > 16384) {
+                                resp_write_error(out, "ERR syntax error", 16);
+                                return;
+                            }
+                        } else if (ci_equal(tok, tl, "ASC")) {
+                            desc = 0;
+                        } else if (ci_equal(tok, tl, "DESC")) {
+                            desc = 1;
+                        } else {
+                            resp_write_error(out, "ERR syntax error", 16);
+                            return;
+                        }
+                    }
+                    for (i = 0; i < 16384; i++) {
+                        if (d->slot_owner[i] == (uint16_t)myself) {
+                            items[nitems].slot = (uint16_t)i;
+                            items[nitems].count = counts[i];
+                            nitems++;
+                        }
+                    }
+                    qsort(items, nitems, sizeof(*items), desc ? cluster_slot_stat_cmp_desc : cluster_slot_stat_cmp_asc);
+                    if ((size_t)limit > nitems)
+                        limit = (long long)nitems;
+                    resp_write_array_header(out, (size_t)limit);
+                    for (i = 0; i < (size_t)limit; i++) {
+                        resp_write_array_header(out, 2);
+                        resp_write_integer(out, items[i].slot);
+                        resp_write_map_header(out, 1);
+                        resp_write_bulk(out, "key-count", 9);
+                        resp_write_integer(out, (long long)items[i].count);
+                    }
+                    return;
+                }
+                wrong_args(out, "cluster");
+                return;
+            }
             if (ci_equal(sub, sl, "INFO") && argc == 2) {
                 char body[384];
                 int covered = 0, fail_slots = 0;

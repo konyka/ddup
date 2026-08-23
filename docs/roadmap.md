@@ -378,3 +378,6 @@
   - [x] Redis 8 集群槽维护：`SFLUSH`（按本节点所有权求交并返回合并范围）
     与 `TRIMSLOTS RANGES`（禁止清理本节点服务槽，未服务槽安全删除）；
     TDD 覆盖边界、错误参数、数据删除与槽所有权（Phase 73）
+  - [x] Redis 8 `CLUSTER SLOT-STATS`：实现 `key-count` 的 `SLOTSRANGE` 与
+    `ORDERBY/LIMIT/ASC/DESC`，不伪造未维护的 CPU/内存/网络指标；TDD 与
+    审计同步（Phase 74）

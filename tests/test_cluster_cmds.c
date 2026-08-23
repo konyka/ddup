@@ -147,6 +147,38 @@ static void test_cluster_slots_and_keyslot(void)
     db_destroy(&d);
 }
 
+static void test_cluster_slot_stats(void)
+{
+    db d;
+    session *s;
+    resp_buf out;
+    db_init(&d);
+    resp_buf_init(&out);
+    s = cluster_session(&d);
+
+    exec_sess(s, T0, &out, 3, "SET", "alpha", "1");
+    EXPECT(out, "+OK\r\n");
+    exec_sess(s, T0, &out, 3, "CLUSTER", "SLOT-STATS", "SLOTSRANGE");
+    EXPECT(out, "-ERR wrong number of arguments for 'cluster' command\r\n");
+
+    exec_sess(s, T0, &out, 5, "CLUSTER", "SLOT-STATS", "SLOTSRANGE", "0", "16383");
+    DD_CHECK(out.len > 0 && out.data[0] == '*');
+    DD_CHECK(strstr(out.data, "key-count") != NULL);
+
+    exec_sess(s, T0, &out, 5, "CLUSTER", "SLOT-STATS", "ORDERBY", "key-count", "LIMIT");
+    EXPECT(out, "-ERR syntax error\r\n");
+    exec_sess(s, T0, &out, 6, "CLUSTER", "SLOT-STATS", "ORDERBY", "key-count", "LIMIT", "1");
+    DD_CHECK(out.len > 0 && out.data[0] == '*');
+    DD_CHECK(strstr(out.data, "key-count") != NULL);
+
+    exec_sess(s, T0, &out, 5, "CLUSTER", "SLOT-STATS", "ORDERBY", "memory-bytes", "LIMIT");
+    EXPECT(out, "-ERR Unrecognized sort metric for ORDERBY.\r\n");
+
+    session_free(s);
+    resp_buf_free(&out);
+    db_destroy(&d);
+}
+
 static void test_count_and_getkeysinslot(void)
 {
     db d;
@@ -267,6 +299,7 @@ int main(void)
     DD_RUN(test_cluster_disabled);
     DD_RUN(test_cluster_info_myid_nodes);
     DD_RUN(test_cluster_slots_and_keyslot);
+    DD_RUN(test_cluster_slot_stats);
     DD_RUN(test_count_and_getkeysinslot);
     DD_RUN(test_cluster_management_subcommands);
     DD_RUN(test_crossslot_basic);

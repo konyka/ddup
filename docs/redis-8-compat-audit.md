@@ -39,6 +39,9 @@
   ownership before deleting keys from unserved slots. Both paths collect keys
   before mutation, preserve expiry/accounting invariants, and fail closed on
   allocation errors.
+- `CLUSTER SLOT-STATS` supports the low-overhead `key-count` metric for
+  `SLOTSRANGE` and `ORDERBY [LIMIT] [ASC|DESC]`; memory/CPU/network metrics
+  remain explicitly rejected until their accounting model is available.
 
 ## 实现策略（性能优先）
 
@@ -68,6 +71,5 @@
 missing_top: arcount ardel ardelrange arget argetrange argrep arinfo arinsert arlastitems arlen armget armset arnext arop arring arscan arseek arset backup himport hotkeys
 missing_containers: backup himport hotkeys
 missing_sub: cluster migration
-missing_sub: cluster slot-stats
 missing_sub: cluster syncslots
 AUDIT-BASELINE-END -->

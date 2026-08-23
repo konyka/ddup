@@ -1202,6 +1202,12 @@ only unserved-slot keys. Collection is separate from mutation so Robin Hood
 table iteration is never invalidated; allocation failure aborts without
 partial deletion.
 
+`CLUSTER SLOT-STATS` currently exposes only `key-count`, which is derived from
+one bounded table scan and filtered by local slot ownership. `SLOTSRANGE` keeps
+slot order; `ORDERBY` uses a fixed 16K-item stack array with deterministic slot
+tie-breaking and optional `LIMIT/ASC/DESC`. CPU, memory, and network metrics
+are rejected until their counters can be maintained consistently.
+
 - `obj_hash` 在 listpack/rh_table 双编码之外增加独立的 `expires` 表：
   键为 field，值为 8 字节小端绝对过期毫秒时间戳。紧凑编码不会退化为
   逐字段分配；字段 TTL 只在设置时进入额外表，未设置 TTL 的普通 hash
