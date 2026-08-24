@@ -391,3 +391,6 @@
   - [x] Redis 8 ARRAY 访问/删除：`ARGETRANGE/ARMGET/ARDEL/ARDELRANGE`；
     稀疏查找保持按请求数量复杂度，删除会同步内存、计数、长度和空对象
     自动回收（Phase 78）
+  - [x] UI 冷却按钮基线：新增无框架控制器、共享动画帧调度器、冷却检测、
+    迟到响应隔离和可访问 HTML 演示；Node/CTest TDD 覆盖成功、拒绝、重复
+    激活和到期动画（Phase 79）

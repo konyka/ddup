@@ -348,6 +348,13 @@ add_custom_target(check
 if(Python3_Interpreter_FOUND)
     ddup_add_test(test_redis_compat_tool tools/test_audit_redis_compat.py)
 endif()
+
+find_program(DDUP_NODE node)
+if(DDUP_NODE)
+    add_test(NAME test_cooldown_button
+             COMMAND ${DDUP_NODE} ${CMAKE_SOURCE_DIR}/ui/test_cooldown_button.js)
+    list(APPEND DDUP_CHECK_DEPS test_cooldown_button)
+endif()
 if(Python3_Interpreter_FOUND AND DEFINED REDIS_COMMANDS_DIR)
     ddup_add_test(test_redis_compat tools/audit_redis_compat.py
                   --redis-json ${REDIS_COMMANDS_DIR}
