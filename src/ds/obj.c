@@ -90,6 +90,8 @@ uint64_t obj_extra_mem(const char *val, size_t vlen)
         return obj_zset_mem((obj_zset *)obj_unpack_ptr(val, vlen));
     case DDUP_OBJ_STREAM:
         return obj_stream_mem((obj_stream *)obj_unpack_ptr(val, vlen));
+    case DDUP_OBJ_ARRAY:
+        return obj_array_mem((obj_array *)obj_unpack_ptr(val, vlen));
     case DDUP_OBJ_TIER:
         return 0; /* tier-ref is accounted by the db entry itself */
     default:
@@ -115,11 +117,99 @@ void obj_free_value(const char *val, size_t vlen)
     case DDUP_OBJ_STREAM:
         obj_stream_free((obj_stream *)obj_unpack_ptr(val, vlen));
         break;
+    case DDUP_OBJ_ARRAY:
+        obj_array_free((obj_array *)obj_unpack_ptr(val, vlen));
+        break;
     case DDUP_OBJ_TIER:
         break; /* no owned object */
     default:
         break;
     }
+}
+
+static void array_key(char key[8], uint64_t index)
+{
+    int i;
+    for (i = 0; i < 8; i++)
+        key[i] = (char)((index >> (8 * i)) & 0xffu);
+}
+
+static uint64_t array_entry_mem(size_t len)
+{
+    return (uint64_t)sizeof(rh_entry) + 16 + 8 + len;
+}
+
+obj_array *obj_array_new(void)
+{
+    obj_array *a = (obj_array *)calloc(1, sizeof(*a));
+    if (a == NULL)
+        return NULL;
+    rh_init(&a->values);
+    a->mem = sizeof(*a);
+    return a;
+}
+
+void obj_array_free(obj_array *a)
+{
+    if (a == NULL)
+        return;
+    rh_destroy(&a->values);
+    free(a);
+}
+
+uint64_t obj_array_mem(const obj_array *a)
+{
+    return a == NULL ? 0 : a->mem;
+}
+
+int obj_array_set(obj_array *a, uint64_t index, const char *const *values,
+                  const size_t *lengths, size_t n, size_t *empty_slots)
+{
+    size_t i;
+    size_t empty = 0;
+    if (a == NULL || values == NULL || lengths == NULL || n == 0 ||
+        index > UINT64_MAX - (uint64_t)n)
+        return -1;
+    for (i = 0; i < n; i++) {
+        if (lengths[i] > UINT32_MAX)
+            return -1;
+    }
+    for (i = 0; i < n; i++) {
+        char key[8];
+        const char *old;
+        size_t old_len;
+        uint64_t idx = index + (uint64_t)i;
+        array_key(key, idx);
+        if (!rh_get(&a->values, key, sizeof(key), &old, &old_len))
+            empty++;
+        if (rh_set(&a->values, key, sizeof(key), values[i], lengths[i]) < 0)
+            return -1;
+        if (old != NULL)
+            a->mem -= array_entry_mem(old_len);
+        a->mem += array_entry_mem(lengths[i]);
+    }
+    a->count += (uint64_t)empty;
+    if (index + (uint64_t)n > a->length)
+        a->length = index + (uint64_t)n;
+    if (empty_slots != NULL)
+        *empty_slots = empty;
+    return 0;
+}
+
+int obj_array_get(obj_array *a, uint64_t index, const char **value,
+                  size_t *length)
+{
+    char key[8];
+    array_key(key, index);
+    return rh_get(&a->values, key, sizeof(key), value, length);
+}
+
+uint64_t obj_array_len(const obj_array *a) { return a == NULL ? 0 : a->length; }
+uint64_t obj_array_count(const obj_array *a) { return a == NULL ? 0 : a->count; }
+void obj_array_each(const obj_array *a, rh_iter_fn fn, void *ctx)
+{
+    if (a != NULL)
+        rh_each(&a->values, fn, ctx);
 }
 
 /* ------------------------------------------------------------------ */

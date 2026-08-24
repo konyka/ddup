@@ -440,10 +440,14 @@ enum {
     CMD_TRIMSLOTS,
     CMD_BACKUP,
     CMD_HIMPORT,
-    CMD_HOTKEYS
+    CMD_HOTKEYS,
+    CMD_ARSET,
+    CMD_ARGET,
+    CMD_ARLEN,
+    CMD_ARCOUNT
 };
 
-#define CMD_MAX CMD_HOTKEYS
+#define CMD_MAX CMD_ARCOUNT
 
 /* Resolve a command name to its stable ID; case-insensitive. */
 uint16_t cmd_resolve(const char *name, size_t len);

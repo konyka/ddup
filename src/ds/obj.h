@@ -30,7 +30,8 @@ enum {
     DDUP_OBJ_SET = 3,
     DDUP_OBJ_ZSET = 4,
     DDUP_OBJ_STREAM = 5,
-    DDUP_OBJ_TIER = 6
+    DDUP_OBJ_TIER = 6,
+    DDUP_OBJ_ARRAY = 7
 };
 
 /* Type tag of a value blob. */
@@ -56,6 +57,24 @@ uint64_t obj_extra_mem(const char *val, size_t vlen);
 
 /* Free the owned object of a value blob (no-op for strings). */
 void obj_free_value(const char *val, size_t vlen);
+
+typedef struct obj_array {
+    rh_table values; /* encoded uint64 index -> raw element bytes */
+    uint64_t length;  /* highest index + 1 */
+    uint64_t count;   /* number of non-empty elements */
+    uint64_t mem;
+} obj_array;
+
+obj_array *obj_array_new(void);
+void obj_array_free(obj_array *a);
+uint64_t obj_array_mem(const obj_array *a);
+int obj_array_set(obj_array *a, uint64_t index, const char *const *values,
+                  const size_t *lengths, size_t n, size_t *empty_slots);
+int obj_array_get(obj_array *a, uint64_t index, const char **value,
+                  size_t *length);
+uint64_t obj_array_len(const obj_array *a);
+uint64_t obj_array_count(const obj_array *a);
+void obj_array_each(const obj_array *a, rh_iter_fn fn, void *ctx);
 
 /* ------------------------------------------------------------------ */
 /* runtime encoding limits                                             */

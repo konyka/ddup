@@ -121,6 +121,26 @@ static void dump_member_cb(const char *m, size_t mlen, const char *v,
         ctx->ok = 0;
 }
 
+static uint64_t array_index_from_key(const char *key)
+{
+    uint64_t index = 0;
+    int i;
+    for (i = 7; i >= 0; i--)
+        index = (index << 8) | (uint64_t)(unsigned char)key[i];
+    return index;
+}
+
+static void dump_array_cb(const char *key, size_t klen, const char *value,
+                          size_t vlen, void *c)
+{
+    save_ctx *ctx = (save_ctx *)c;
+    if (!ctx->ok || klen != 8 || vlen > UINT32_MAX ||
+        buf_u64le(ctx->buf, array_index_from_key(key)) != 0 ||
+        buf_u32le(ctx->buf, (uint32_t)vlen) != 0 ||
+        buf_bytes(ctx->buf, value, vlen) != 0)
+        ctx->ok = 0;
+}
+
 /* append a value's payload (no key/expiry) in the per-type encoding */
 static void write_value_payload(save_ctx *ctx, int tag, const char *val,
                                 size_t vlen)
@@ -304,6 +324,16 @@ static void write_value_payload(save_ctx *ctx, int tag, const char *val,
                 }
             }
         }
+        break;
+    }
+    case DDUP_OBJ_ARRAY: {
+        obj_array *a = (obj_array *)obj_unpack_ptr(val, vlen);
+        if (obj_array_count(a) > UINT32_MAX ||
+            buf_u32le(buf, (uint32_t)obj_array_count(a)) != 0) {
+            ctx->ok = 0;
+            return;
+        }
+        obj_array_each(a, dump_array_cb, ctx);
         break;
     }
     default:
@@ -733,6 +763,28 @@ static char *load_payload(reader *r, int tag, char blob[9], size_t *out_len)
             return NULL;
         }
         obj_pack_ptr(blob, DDUP_OBJ_STREAM, st);
+        *out_len = 9;
+        return NULL;
+    }
+    case DDUP_OBJ_ARRAY: {
+        obj_array *a = obj_array_new();
+        n = rd_u32le(r);
+        for (i = 0; i < n && r->ok; i++) {
+            uint64_t index = rd_u64le(r);
+            uint32_t vl = rd_u32le(r);
+            const char *value = rd_bytes(r, vl);
+            const char *values[1];
+            size_t lengths[1];
+            values[0] = value;
+            lengths[0] = vl;
+            if (r->ok && obj_array_set(a, index, values, lengths, 1, NULL) != 0)
+                r->ok = 0;
+        }
+        if (!r->ok) {
+            obj_array_free(a);
+            return NULL;
+        }
+        obj_pack_ptr(blob, DDUP_OBJ_ARRAY, a);
         *out_len = 9;
         return NULL;
     }

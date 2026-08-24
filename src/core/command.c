@@ -980,6 +980,38 @@ static int get_stream(db *d, resp_buf *out, const char *k, size_t kl,
     return 1;
 }
 
+static int get_array(db *d, resp_buf *out, const char *k, size_t kl,
+                      int create, uint64_t now, obj_array **a)
+{
+    const char *v;
+    size_t vl;
+    if (!db_get(d, k, kl, &v, &vl, now)) {
+        char blob[9];
+        obj_array *na;
+        if (!create)
+            return 0;
+        na = obj_array_new();
+        if (na == NULL) {
+            storage_length_error(out);
+            return -1;
+        }
+        obj_pack_ptr(blob, DDUP_OBJ_ARRAY, na);
+        if (db_set_kv(d, k, kl, blob, 9, now) != 0) {
+            obj_array_free(na);
+            storage_length_error(out);
+            return -1;
+        }
+        *a = na;
+        return 1;
+    }
+    if (obj_tag_of(v, vl) != DDUP_OBJ_ARRAY) {
+        wrongtype(out);
+        return -1;
+    }
+    *a = (obj_array *)obj_unpack_ptr(v, vl);
+    return 1;
+}
+
 /* Strict double parse (strtod, full consumption, NaN rejected). */
 static int parse_double(const char *s, size_t len, double *out)
 {
@@ -3044,6 +3076,7 @@ static const char *obj_type_name(int tag)
     case DDUP_OBJ_SET:    return "set";
     case DDUP_OBJ_ZSET:   return "zset";
     case DDUP_OBJ_STREAM: return "stream";
+    case DDUP_OBJ_ARRAY:  return "array";
     default:              return "none";
 }
 }
@@ -11587,6 +11620,84 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
         }
         resp_write_error(out, "ERR HOTKEYS is not supported by this build",
                          sizeof("ERR HOTKEYS is not supported by this build") - 1);
+        return;
+    }
+
+    if (cmd_id == CMD_ARLEN || cmd_id == CMD_ARCOUNT || cmd_id == CMD_ARGET ||
+        cmd_id == CMD_ARSET) {
+        const char *k;
+        size_t kl;
+        obj_array *a = NULL;
+        int rc;
+        if (!arg_str(&argv[1], &k, &kl))
+            goto bad_type;
+        if (cmd_id == CMD_ARSET) {
+            uint64_t index;
+            const char *is;
+            size_t il;
+            size_t n = argc - 3;
+            const char **vals;
+            size_t *lens;
+            size_t i, empty = 0;
+            if (!arg_str(&argv[2], &is, &il) || !parse_u64(is, il, &index)) {
+                resp_write_error(out, ERR_NOT_INT, sizeof(ERR_NOT_INT) - 1);
+                return;
+            }
+            vals = (const char **)malloc(n * sizeof(*vals));
+            lens = (size_t *)malloc(n * sizeof(*lens));
+            if (vals == NULL || lens == NULL) {
+                free(vals); free(lens);
+                resp_write_error(out, "ERR out of memory", 17);
+                return;
+            }
+            for (i = 0; i < n; i++) {
+                if (!arg_str(&argv[3 + i], &vals[i], &lens[i])) {
+                    free(vals); free(lens); goto bad_type;
+                }
+                if (lens[i] > UINT32_MAX) {
+                    free(vals); free(lens);
+                    storage_length_error(out);
+                    return;
+                }
+            }
+            rc = get_array(d, out, k, kl, 1, now_ms, &a);
+            if (rc < 0) { free(vals); free(lens); return; }
+            {
+                uint64_t before = obj_array_mem(a);
+                if (obj_array_set(a, index, vals, lens, n, &empty) != 0) {
+                    free(vals); free(lens);
+                    resp_write_error(out, "ERR out of memory", 17);
+                    return;
+                }
+                mem_sync(d, k, kl, before, obj_array_mem(a));
+            }
+            free(vals); free(lens);
+            resp_write_integer(out, (long long)empty);
+            return;
+        }
+        rc = get_array(d, out, k, kl, 0, now_ms, &a);
+        if (rc < 0) return;
+        if (cmd_id == CMD_ARLEN) {
+            resp_write_integer(out, rc == 1 ? (long long)obj_array_len(a) : 0);
+            return;
+        }
+        if (cmd_id == CMD_ARCOUNT) {
+            resp_write_integer(out, rc == 1 ? (long long)obj_array_count(a) : 0);
+            return;
+        }
+        {
+            const char *is, *v = NULL;
+            size_t il, vl = 0;
+            uint64_t index;
+            if (!arg_str(&argv[2], &is, &il) || !parse_u64(is, il, &index)) {
+                resp_write_error(out, ERR_NOT_INT, sizeof(ERR_NOT_INT) - 1);
+                return;
+            }
+            if (rc == 1 && obj_array_get(a, index, &v, &vl))
+                resp_write_bulk(out, v, vl);
+            else
+                resp_write_bulk(out, NULL, 0);
+        }
         return;
     }
 
@@ -22050,6 +22161,10 @@ static const cmd_entry CMD_TABLE[] = {
     {"backup", CMD_BACKUP, 2, 2, 0, 0},
     {"himport", CMD_HIMPORT, 2, -1, 0, 0},
     {"hotkeys", CMD_HOTKEYS, 2, -1, 0, 0},
+    {"arset", CMD_ARSET, 4, -1, 0, CMD_WRITE},
+    {"arget", CMD_ARGET, 3, 3, 0, 0},
+    {"arlen", CMD_ARLEN, 2, 2, 0, 0},
+    {"arcount", CMD_ARCOUNT, 2, 2, 0, 0},
 };
 
 static const cmd_entry *cmd_table_entry(uint16_t id)

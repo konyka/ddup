@@ -537,6 +537,8 @@ DBSIZE 为 O(1)，可能计入尚未回收的过期 key。
                    超阈值转 rh_table：member -> 空值）
   DDUP_OBJ_ZSET:   payload = 8 字节指针 -> obj_zset（小对象 listpack，
                    超阈值转 dict + skiplist）
+  DDUP_OBJ_ARRAY:  payload = 8 字节指针 -> obj_array（稀疏 rh_table：
+                   固定宽度 index -> 原始元素字节，length/count 常驻元数据）
 ```
 
 - **所有权**：db 层拥有指针对象。任何覆盖/删除/过期/淘汰/FLUSHDB 路径

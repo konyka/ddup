@@ -9,9 +9,9 @@
 
 | 类别 | 数量 |
 | --- | --- |
-| 缺失顶层命令 | 21 |
-| 整体缺失容器 | 3 |
-| 已实现容器内缺失子命令 | 3 |
+| 缺失顶层命令 | 14 |
+| 整体缺失容器 | 0 |
+| 已实现容器内缺失子命令 | 0 |
 
 缺失集中在三块：
 
@@ -48,6 +48,10 @@
 - `BACKUP`, `HIMPORT`, and `HOTKEYS` are registered with their Redis 8
   subcommand names. `HELP` is side-effect free; operational subcommands return
   explicit unsupported-build errors.
+- ARRAY core: `ARSET/ARGET/ARLEN/ARCOUNT` use a sparse `rh_table` keyed by
+  fixed-width indexes. `ARLEN` and `ARCOUNT` read object metadata in O(1),
+  while `ARSET` validates every input before modifying the object. The type is
+  included in the snapshot encoding, so persisted arrays retain sparse indexes.
 
 ## 实现策略（性能优先）
 
@@ -74,6 +78,6 @@
 ## 审计基线（机器断言，勿手改格式）
 
 <!-- AUDIT-BASELINE-START
-missing_top: arcount ardel ardelrange arget argetrange argrep arinfo arinsert arlastitems arlen armget armset arnext arop arring arscan arseek arset
+missing_top: ardel ardelrange argetrange argrep arinfo arinsert arlastitems armget armset arnext arop arring arscan arseek
 missing_containers:
 AUDIT-BASELINE-END -->
