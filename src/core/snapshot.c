@@ -329,9 +329,18 @@ static void write_value_payload(save_ctx *ctx, int tag, const char *val,
     case DDUP_OBJ_ARRAY: {
         obj_array *a = (obj_array *)obj_unpack_ptr(val, vlen);
         if (obj_array_count(a) > UINT32_MAX ||
-            buf_u32le(buf, (uint32_t)obj_array_count(a)) != 0) {
+            buf_u32le(buf, (uint32_t)obj_array_count(a)) != 0 ||
+            buf_u64le(buf, obj_array_next(a)) != 0 ||
+            buf_u64le(buf, a->ring_size) != 0 ||
+            a->history_len > UINT32_MAX ||
+            buf_u32le(buf, (uint32_t)a->history_len) != 0) {
             ctx->ok = 0;
             return;
+        }
+        {
+            size_t hi;
+            for (hi = 0; hi < a->history_len; hi++)
+                if (buf_u64le(buf, a->history[hi]) != 0) { ctx->ok = 0; return; }
         }
         obj_array_each(a, dump_array_cb, ctx);
         break;
@@ -769,6 +778,15 @@ static char *load_payload(reader *r, int tag, char blob[9], size_t *out_len)
     case DDUP_OBJ_ARRAY: {
         obj_array *a = obj_array_new();
         n = rd_u32le(r);
+        a->next_insert = rd_u64le(r);
+        a->ring_size = rd_u64le(r);
+        {
+            uint32_t hn = rd_u32le(r), hi;
+            for (hi = 0; hi < hn && r->ok; hi++) {
+                uint64_t hv = rd_u64le(r);
+                if (obj_array_history_push(a, hv) != 0) r->ok = 0;
+            }
+        }
         for (i = 0; i < n && r->ok; i++) {
             uint64_t index = rd_u64le(r);
             uint32_t vl = rd_u32le(r);

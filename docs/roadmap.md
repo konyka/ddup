@@ -391,3 +391,7 @@
   - [x] Redis 8 ARRAY 访问/删除：`ARGETRANGE/ARMGET/ARDEL/ARDELRANGE`；
     稀疏查找保持按请求数量复杂度，删除会同步内存、计数、长度和空对象
     自动回收（Phase 78）
+  - [x] Redis 8 ARRAY 完整命令级收尾：`ARMSET/ARNEXT/ARSEEK/ARINSERT/ARRING/
+    ARSCAN/ARINFO/ARLASTITEMS/AROP/ARGREP`；批量写、插入游标、环写、范围
+    扫描、基础聚合和 EXACT/MATCH/GLOB 搜索均以 TDD 覆盖，8.10.1 命令审计
+    缺口清零（Phase 79）

@@ -154,6 +154,7 @@ void obj_array_free(obj_array *a)
     if (a == NULL)
         return;
     rh_destroy(&a->values);
+    free(a->history);
     free(a);
 }
 
@@ -194,6 +195,82 @@ int obj_array_set(obj_array *a, uint64_t index, const char *const *values,
     if (empty_slots != NULL)
         *empty_slots = empty;
     return 0;
+}
+
+int obj_array_set_cursor(obj_array *a, uint64_t index)
+{
+    if (a == NULL) return 0;
+    a->next_insert = index;
+    return 1;
+}
+
+uint64_t obj_array_next(const obj_array *a)
+{
+    return a == NULL ? 0 : a->next_insert;
+}
+
+int obj_array_history_push(obj_array *a, uint64_t index)
+{
+    uint64_t *p;
+    size_t cap;
+    if (a->history_len == a->history_cap) {
+        cap = a->history_cap ? a->history_cap * 2 : 16;
+        if (cap < a->history_cap || cap > SIZE_MAX / sizeof(*p)) return -1;
+        p = (uint64_t *)realloc(a->history, cap * sizeof(*p));
+        if (!p) return -1;
+        a->history = p;
+        a->history_cap = cap;
+    }
+    a->history[a->history_len++] = index;
+    a->mem += sizeof(uint64_t);
+    return 0;
+}
+
+int obj_array_insert(obj_array *a, const char *const *values,
+                     const size_t *lengths, size_t n, uint64_t *last_index)
+{
+    uint64_t start;
+    size_t i;
+    if (!a || !values || !lengths || n == 0 || a->next_insert > UINT64_MAX - n)
+        return -1;
+    start = a->next_insert;
+    if (obj_array_set(a, start, values, lengths, n, NULL) != 0) return -1;
+    for (i = 0; i < n; i++) if (obj_array_history_push(a, start + i) != 0) return -1;
+    a->next_insert = start + n;
+    if (last_index) *last_index = start + n - 1;
+    return 0;
+}
+
+int obj_array_ring(obj_array *a, uint64_t size, const char *const *values,
+                   const size_t *lengths, size_t n, uint64_t *last_index)
+{
+    size_t i;
+    uint64_t last = 0;
+    if (!a || size == 0 || !values || !lengths) return -1;
+    a->ring_size = size;
+    for (i = 0; i < n; i++) {
+        uint64_t index = a->next_insert % size;
+        const char *v = values[i];
+        size_t l = lengths[i];
+        if (obj_array_set(a, index, &v, &l, 1, NULL) != 0) return -1;
+        if (obj_array_history_push(a, index) != 0) return -1;
+        a->next_insert = index + 1;
+        last = index;
+    }
+    if (last_index) *last_index = last;
+    return 0;
+}
+
+size_t obj_array_history(const obj_array *a, uint64_t *out, size_t cap, int rev)
+{
+    size_t n, i;
+    if (!a || !out || cap == 0) return 0;
+    n = a->history_len < cap ? a->history_len : cap;
+    for (i = 0; i < n; i++) {
+        size_t pos = rev ? a->history_len - 1 - i : a->history_len - n + i;
+        out[i] = a->history[pos];
+    }
+    return n;
 }
 
 int obj_array_get(obj_array *a, uint64_t index, const char **value,

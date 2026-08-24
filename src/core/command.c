@@ -11625,7 +11625,11 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
 
     if (cmd_id == CMD_ARLEN || cmd_id == CMD_ARCOUNT || cmd_id == CMD_ARGET ||
         cmd_id == CMD_ARSET || cmd_id == CMD_ARGETRANGE ||
-        cmd_id == CMD_ARMGET || cmd_id == CMD_ARDEL || cmd_id == CMD_ARDELRANGE) {
+        cmd_id == CMD_ARMGET || cmd_id == CMD_ARDEL || cmd_id == CMD_ARDELRANGE ||
+        cmd_id == CMD_ARMSET || cmd_id == CMD_ARNEXT || cmd_id == CMD_ARSEEK ||
+        cmd_id == CMD_ARINSERT || cmd_id == CMD_ARRING || cmd_id == CMD_ARSCAN ||
+        cmd_id == CMD_ARINFO || cmd_id == CMD_ARLASTITEMS || cmd_id == CMD_AROP ||
+        cmd_id == CMD_ARGREP) {
         const char *k;
         size_t kl;
         obj_array *a = NULL;
@@ -11678,6 +11682,104 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
         }
         rc = get_array(d, out, k, kl, 0, now_ms, &a);
         if (rc < 0) return;
+        if (cmd_id == CMD_ARMSET) {
+            size_t pairs = (argc - 2) / 2, i;
+            const char **vals = (const char **)malloc(pairs * sizeof(*vals));
+            size_t *lens = (size_t *)malloc(pairs * sizeof(*lens));
+            uint64_t *idx = (uint64_t *)malloc(pairs * sizeof(*idx));
+            size_t empty = 0;
+            uint64_t before;
+            if (pairs == 0 || ((argc - 2) & 1u) || !vals || !lens || !idx) {
+                free(vals); free(lens); free(idx); resp_write_error(out, "ERR syntax error", 16); return;
+            }
+            for (i = 0; i < pairs; i++) {
+                const char *is; size_t il;
+                if (!arg_str(&argv[2 + i * 2], &is, &il) || !parse_u64(is, il, &idx[i]) ||
+                    !arg_str(&argv[3 + i * 2], &vals[i], &lens[i])) {
+                    free(vals); free(lens); free(idx); resp_write_error(out, ERR_NOT_INT, sizeof(ERR_NOT_INT)-1); return;
+                }
+            }
+            if (rc == 0) { rc = get_array(d, out, k, kl, 1, now_ms, &a); if (rc < 0) { free(vals); free(lens); free(idx); return; } }
+            before = obj_array_mem(a);
+            for (i = 0; i < pairs; i++) {
+                const char *old; size_t oldl;
+                if (!obj_array_get(a, idx[i], &old, &oldl)) empty++;
+                if (obj_array_set(a, idx[i], &vals[i], &lens[i], 1, NULL) != 0) { free(vals); free(lens); free(idx); resp_write_error(out, "ERR out of memory", 17); return; }
+            }
+            mem_sync(d, k, kl, before, obj_array_mem(a));
+            free(vals); free(lens); free(idx); resp_write_integer(out, (long long)empty); return;
+        }
+        if (cmd_id == CMD_ARNEXT) {
+            resp_write_integer(out, rc == 1 ? (long long)obj_array_next(a) : 0); return;
+        }
+        if (cmd_id == CMD_ARSEEK) {
+            const char *is; size_t il; uint64_t index;
+            if (!arg_str(&argv[2], &is, &il) || !parse_u64(is, il, &index)) { resp_write_error(out, ERR_NOT_INT, sizeof(ERR_NOT_INT)-1); return; }
+            if (rc == 0) { resp_write_integer(out, 0); return; }
+            resp_write_integer(out, obj_array_set_cursor(a, index)); return;
+        }
+        if (cmd_id == CMD_ARINSERT || cmd_id == CMD_ARRING) {
+            size_t n = cmd_id == CMD_ARRING ? argc - 4 : argc - 2, i;
+            size_t base = cmd_id == CMD_ARRING ? 3 : 2;
+            const char **vals = (const char **)malloc(n * sizeof(*vals));
+            size_t *lens = (size_t *)malloc(n * sizeof(*lens));
+            uint64_t last = 0, before;
+            if (!vals || !lens || n == 0) { free(vals); free(lens); resp_write_error(out, "ERR out of memory", 17); return; }
+            if (cmd_id == CMD_ARRING) {
+                const char *ss; size_t sl; uint64_t size;
+                if (!arg_str(&argv[2], &ss, &sl) || !parse_u64(ss, sl, &size) || size == 0) { free(vals); free(lens); resp_write_error(out, ERR_NOT_INT, sizeof(ERR_NOT_INT)-1); return; }
+                for (i = 0; i < n; i++) if (!arg_str(&argv[base + i], &vals[i], &lens[i])) { free(vals); free(lens); goto bad_type; }
+                if (rc == 0) { rc = get_array(d, out, k, kl, 1, now_ms, &a); if (rc < 0) { free(vals); free(lens); return; } }
+                before = obj_array_mem(a); if (obj_array_ring(a, size, vals, lens, n, &last) != 0) { free(vals); free(lens); resp_write_error(out, "ERR out of memory", 17); return; }
+            } else {
+                for (i = 0; i < n; i++) if (!arg_str(&argv[base + i], &vals[i], &lens[i])) { free(vals); free(lens); goto bad_type; }
+                if (rc == 0) { rc = get_array(d, out, k, kl, 1, now_ms, &a); if (rc < 0) { free(vals); free(lens); return; } }
+                before = obj_array_mem(a); if (obj_array_insert(a, vals, lens, n, &last) != 0) { free(vals); free(lens); resp_write_error(out, "ERR out of memory", 17); return; }
+            }
+            mem_sync(d, k, kl, before, obj_array_mem(a)); free(vals); free(lens); resp_write_integer(out, (long long)last); return;
+        }
+        if (cmd_id == CMD_ARSCAN) {
+            const char *ss, *es; size_t sl, el; uint64_t start, end, limit = 0;
+            if (!arg_str(&argv[2], &ss, &sl) || !arg_str(&argv[3], &es, &el) || !parse_u64(ss, sl, &start) || !parse_u64(es, el, &end) || end < start) { resp_write_array_header(out, 0); return; }
+            if (argc > 4) { const char *ls; size_t ll; if (argc != 6 || !ci_equal(argv[4].str, argv[4].len, "LIMIT") || !arg_str(&argv[5], &ls, &ll) || !parse_u64(ls, ll, &limit)) { resp_write_error(out, ERR_SYNTAX, sizeof(ERR_SYNTAX)-1); return; } }
+            if (limit == 0 || limit > end - start + 1) limit = end - start + 1;
+            { uint64_t found = 0, pos; for (pos = start; pos <= end && found < limit; pos++) { const char *v; size_t vl; if (rc == 1 && obj_array_get(a, pos, &v, &vl)) found++; if (pos == UINT64_MAX) break; } resp_write_array_header(out, (size_t)found); for (pos = start; pos <= end && found > 0; pos++) { const char *v; size_t vl; if (rc == 1 && obj_array_get(a, pos, &v, &vl)) { resp_write_array_header(out, 2); resp_write_integer(out, (long long)pos); resp_write_bulk(out, v, vl); found--; } if (pos == UINT64_MAX) break; } }
+            return;
+        }
+        if (cmd_id == CMD_ARINFO) {
+            resp_write_array_header(out, 6); resp_write_bulk(out, "count", 5); resp_write_integer(out, rc == 1 ? (long long)obj_array_count(a) : 0); resp_write_bulk(out, "len", 3); resp_write_integer(out, rc == 1 ? (long long)obj_array_len(a) : 0); resp_write_bulk(out, "next-insert-index", 17); resp_write_integer(out, rc == 1 ? (long long)obj_array_next(a) : 0); return;
+        }
+        if (cmd_id == CMD_ARLASTITEMS) {
+            const char *cs; size_t cl; uint64_t count; int rev = 0; size_t i, n; uint64_t *idxs;
+            if (!arg_str(&argv[2], &cs, &cl) || !parse_u64(cs, cl, &count) || count > SIZE_MAX / sizeof(uint64_t)) { resp_write_error(out, ERR_NOT_INT, sizeof(ERR_NOT_INT)-1); return; }
+            if (argc == 4) { if (!ci_equal(argv[3].str, argv[3].len, "REV")) { resp_write_error(out, ERR_SYNTAX, sizeof(ERR_SYNTAX)-1); return; } rev = 1; }
+            idxs = (uint64_t *)malloc((size_t)count * sizeof(*idxs)); n = rc == 1 ? obj_array_history(a, idxs, (size_t)count, rev) : 0; resp_write_array_header(out, n); for (i = 0; i < n; i++) { const char *v; size_t vl; if (obj_array_get(a, idxs[i], &v, &vl)) resp_write_bulk(out, v, vl); else resp_write_bulk(out, NULL, 0); } free(idxs); return;
+        }
+        if (cmd_id == CMD_AROP) {
+            const char *ss, *es, *op; size_t sl, el, ol; uint64_t start, end, i; long long sum = 0, min = 0, max = 0; int have = 0;
+            if (!arg_str(&argv[2], &ss, &sl) || !arg_str(&argv[3], &es, &el) || !parse_u64(ss, sl, &start) || !parse_u64(es, el, &end) || !arg_str(&argv[4], &op, &ol)) { resp_write_error(out, ERR_SYNTAX, sizeof(ERR_SYNTAX)-1); return; }
+            if (ci_equal(op, ol, "USED")) { resp_write_integer(out, rc == 1 ? (long long)obj_array_count(a) : 0); return; }
+            if (ci_equal(op, ol, "MATCH") && argc >= 6) {
+                const char *m; size_t ml; uint64_t c = 0;
+                if (!arg_str(&argv[5], &m, &ml)) { resp_write_error(out, ERR_SYNTAX, sizeof(ERR_SYNTAX)-1); return; }
+                for (i = start; rc == 1 && i <= end; i++) {
+                    const char *v; size_t vl;
+                    if (obj_array_get(a, i, &v, &vl) && vl == ml && memcmp(v, m, ml) == 0) c++;
+                    if (i == UINT64_MAX) break;
+                }
+                resp_write_integer(out, (long long)c);
+                return;
+            }
+            for (i = start; rc == 1 && i <= end; i++) { const char *v; size_t vl; char *ep; long long x; if (obj_array_get(a, i, &v, &vl)) { char buf[128]; if (vl >= sizeof(buf)) continue; memcpy(buf, v, vl); buf[vl] = 0; x = strtoll(buf, &ep, 10); if (*ep) continue; if (!have) min = max = x; if (x < min) min = x; if (x > max) max = x; sum += x; have = 1; } if (i == UINT64_MAX) break; }
+            if (!have) { resp_write_bulk(out, NULL, 0); return; } if (ci_equal(op, ol, "SUM")) resp_write_integer(out, sum); else if (ci_equal(op, ol, "MIN")) resp_write_integer(out, min); else if (ci_equal(op, ol, "MAX")) resp_write_integer(out, max); else resp_write_error(out, ERR_SYNTAX, sizeof(ERR_SYNTAX)-1); return;
+        }
+        if (cmd_id == CMD_ARGREP) {
+            const char *ss, *es, *pred, *needle; size_t sl, el, pl, nl; uint64_t start, end, i, found = 0; int with = 0;
+            if (!arg_str(&argv[2], &ss, &sl) || !arg_str(&argv[3], &es, &el) || !parse_u64(ss, sl, &start) || !parse_u64(es, el, &end) || !arg_str(&argv[4], &pred, &pl) || !arg_str(&argv[5], &needle, &nl)) { resp_write_error(out, ERR_SYNTAX, sizeof(ERR_SYNTAX)-1); return; }
+            for (i = 6; i < argc; i++) if (ci_equal(argv[i].str, argv[i].len, "WITHVALUES")) with = 1;
+            for (i = start; rc == 1 && i <= end; i++) { const char *v; size_t vl; int ok = 0; if (obj_array_get(a, i, &v, &vl)) { if (ci_equal(pred, pl, "EXACT")) ok = vl == nl && memcmp(v, needle, vl) == 0; else if (ci_equal(pred, pl, "GLOB")) ok = ddup_glob_match(needle, nl, v, vl); else if (ci_equal(pred, pl, "MATCH")) ok = vl == nl && memcmp(v, needle, vl) == 0; if (ok) found++; } if (i == UINT64_MAX) break; }
+            resp_write_array_header(out, (size_t)found); for (i = start; rc == 1 && i <= end && found > 0; i++) { const char *v; size_t vl; int ok = 0; if (obj_array_get(a, i, &v, &vl)) { if (ci_equal(pred, pl, "EXACT")) ok = vl == nl && memcmp(v, needle, vl) == 0; else if (ci_equal(pred, pl, "GLOB")) ok = ddup_glob_match(needle, nl, v, vl); else if (ci_equal(pred, pl, "MATCH")) ok = vl == nl && memcmp(v, needle, vl) == 0; if (ok) { if (with) { resp_write_array_header(out, 2); resp_write_integer(out, (long long)i); resp_write_bulk(out, v, vl); } else resp_write_integer(out, (long long)i); found--; } if (i == UINT64_MAX) break; } } return;
+        }
         if (cmd_id == CMD_ARGETRANGE) {
             const char *ss, *es;
             size_t sl, el;
@@ -22233,6 +22335,16 @@ static const cmd_entry CMD_TABLE[] = {
     {"armget", CMD_ARMGET, 3, -1, 0, 0},
     {"ardel", CMD_ARDEL, 3, -1, 0, CMD_WRITE},
     {"ardelrange", CMD_ARDELRANGE, 4, -1, 0, CMD_WRITE},
+    {"armset", CMD_ARMSET, 4, -1, 0, CMD_WRITE},
+    {"arnext", CMD_ARNEXT, 2, 2, 0, 0},
+    {"arseek", CMD_ARSEEK, 3, 3, 0, CMD_WRITE},
+    {"arinsert", CMD_ARINSERT, 3, -1, 0, CMD_WRITE},
+    {"arring", CMD_ARRING, 4, -1, 0, CMD_WRITE},
+    {"arscan", CMD_ARSCAN, 4, -1, 0, 0},
+    {"arinfo", CMD_ARINFO, 2, 3, 0, 0},
+    {"arlastitems", CMD_ARLASTITEMS, 3, 4, 0, 0},
+    {"arop", CMD_AROP, 5, 6, 0, 0},
+    {"argrep", CMD_ARGREP, 6, -1, 0, 0},
 };
 
 static const cmd_entry *cmd_table_entry(uint16_t id)

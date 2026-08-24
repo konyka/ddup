@@ -68,6 +68,31 @@ static void test_array_core(void)
     exec_cmd(&d, &out, 2, "ARCOUNT", "a");
     EXPECT(out, ":1\r\n");
 
+    exec_cmd(&d, &out, 4, "ARMSET", "a", "0", "q");
+    EXPECT(out, ":1\r\n");
+    exec_cmd(&d, &out, 4, "ARMSET", "a", "2", "w");
+    EXPECT(out, ":1\r\n");
+    exec_cmd(&d, &out, 2, "ARNEXT", "a");
+    EXPECT(out, ":0\r\n");
+    exec_cmd(&d, &out, 3, "ARSEEK", "a", "5");
+    EXPECT(out, ":1\r\n");
+    exec_cmd(&d, &out, 2, "ARNEXT", "a");
+    EXPECT(out, ":5\r\n");
+    exec_cmd(&d, &out, 4, "ARINSERT", "a", "i", "j");
+    EXPECT(out, ":6\r\n");
+    exec_cmd(&d, &out, 5, "ARRING", "a", "3", "r");
+    EXPECT(out, ":1\r\n");
+    exec_cmd(&d, &out, 6, "ARSCAN", "a", "0", "8", "LIMIT", "3");
+    EXPECT(out, "*3\r\n*2\r\n:0\r\n$1\r\nq\r\n*2\r\n:1\r\n$1\r\nr\r\n*2\r\n:2\r\n$1\r\nw\r\n");
+    exec_cmd(&d, &out, 2, "ARINFO", "a");
+    DD_CHECK(out.len > 0 && out.data[0] == '*');
+    exec_cmd(&d, &out, 4, "ARLASTITEMS", "a", "2", "REV");
+    DD_CHECK(out.len > 0 && out.data[0] == '*');
+    exec_cmd(&d, &out, 6, "AROP", "a", "0", "20", "MATCH", "r");
+    EXPECT(out, ":1\r\n");
+    exec_cmd(&d, &out, 7, "ARGREP", "a", "0", "20", "EXACT", "r", "WITHVALUES");
+    DD_CHECK(out.len > 0 && out.data[0] == '*');
+
     exec_cmd(&d, &out, 4, "ARSET", "a", "-1", "bad");
     DD_CHECK(out.len > 0 && out.data[0] == '-');
     exec_cmd(&d, &out, 4, "ARSET", "a", "999999999999999999999", "bad");

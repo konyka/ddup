@@ -9,11 +9,11 @@
 
 | 类别 | 数量 |
 | --- | --- |
-| 缺失顶层命令 | 10 |
+| 缺失顶层命令 | 0 |
 | 整体缺失容器 | 0 |
 | 已实现容器内缺失子命令 | 0 |
 
-缺失集中在三块：
+历史缺口集中在三块，当前 Redis 8.10.1 命令级审计已清零：
 
 1. Redis 8.8 新增 `ARRAY` 类型（18 个 `AR*` 命令）。
 2. Redis 7.4/8.0 hash 字段级 TTL 与 `HGETDEL/HGETEX/HSETEX`（13 个命令）。
@@ -54,6 +54,10 @@
   included in the snapshot encoding, so persisted arrays retain sparse indexes.
 - ARRAY access/deletion tranche: `ARGETRANGE`, `ARMGET`, `ARDEL`, and
   `ARDELRANGE` are implemented with sparse lookups and bounded deletion scans.
+- ARRAY completion: `ARMSET`, `ARNEXT`, `ARSEEK`, `ARINSERT`, `ARRING`,
+  `ARSCAN`, `ARINFO`, `ARLASTITEMS`, `AROP`, and `ARGREP` are registered and
+  covered by TDD. Exact/glob predicates and core numeric aggregates are
+  supported; unsupported predicate forms fail explicitly.
 
 ## 实现策略（性能优先）
 
@@ -72,14 +76,14 @@
 
 ## 范围外 / 待后续评估
 
-- `BACKUP`、`HIMPORT`、`HOTKEYS`：Redis 8 管理容器，涉及磁盘/RDB/热点
-  采样；计划作为管理容器最小兼容实现或明确记录差异。
-- `ARGREP RE`：需完整正则引擎；当前优先实现 `EXACT/MATCH/GLOB`，
-  `RE` 返回明确错误或降级，后续引入 PAL 正则抽象。
+- `BACKUP`、`HIMPORT`、`HOTKEYS`：命令级入口已兼容，但实际备份、导入
+  事务和热点采样仍是明确的 unsupported-build 能力。
+- ARRAY 高级语义：当前稀疏对象模型提供命令级安全行为；Redis 内部 dense/
+  sparse slice 统计未伪造，`ARINFO FULL` 返回基础元数据。
 
 ## 审计基线（机器断言，勿手改格式）
 
 <!-- AUDIT-BASELINE-START
-missing_top: argrep arinfo arinsert arlastitems armset arnext arop arring arscan arseek
+missing_top:
 missing_containers:
 AUDIT-BASELINE-END -->

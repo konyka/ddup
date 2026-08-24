@@ -62,6 +62,11 @@ typedef struct obj_array {
     rh_table values; /* encoded uint64 index -> raw element bytes */
     uint64_t length;  /* highest index + 1 */
     uint64_t count;   /* number of non-empty elements */
+    uint64_t next_insert;
+    uint64_t ring_size;
+    uint64_t *history;
+    size_t history_len;
+    size_t history_cap;
     uint64_t mem;
 } obj_array;
 
@@ -74,6 +79,14 @@ int obj_array_get(obj_array *a, uint64_t index, const char **value,
                   size_t *length);
 int obj_array_del(obj_array *a, uint64_t index);
 uint64_t obj_array_del_range(obj_array *a, uint64_t start, uint64_t end);
+int obj_array_set_cursor(obj_array *a, uint64_t index);
+uint64_t obj_array_next(const obj_array *a);
+int obj_array_insert(obj_array *a, const char *const *values,
+                     const size_t *lengths, size_t n, uint64_t *last_index);
+int obj_array_ring(obj_array *a, uint64_t size, const char *const *values,
+                   const size_t *lengths, size_t n, uint64_t *last_index);
+size_t obj_array_history(const obj_array *a, uint64_t *out, size_t cap, int rev);
+int obj_array_history_push(obj_array *a, uint64_t index);
 uint64_t obj_array_len(const obj_array *a);
 uint64_t obj_array_count(const obj_array *a);
 void obj_array_each(const obj_array *a, rh_iter_fn fn, void *ctx);
