@@ -1213,6 +1213,11 @@ are deliberately fail-closed for client sessions. They are recognized for
 compatibility auditing, but require an internal transport hook before any
 future migration state or slot metadata can be changed.
 
+The Redis 8 management containers `BACKUP`, `HIMPORT`, and `HOTKEYS` are
+recognized for protocol compatibility. Their `HELP` paths return an empty,
+side-effect-free response; operational subcommands fail explicitly because
+ddup does not expose Redis's backup, hash-import, or hot-key sampling engines.
+
 - `obj_hash` 在 listpack/rh_table 双编码之外增加独立的 `expires` 表：
   键为 field，值为 8 字节小端绝对过期毫秒时间戳。紧凑编码不会退化为
   逐字段分配；字段 TTL 只在设置时进入额外表，未设置 TTL 的普通 hash

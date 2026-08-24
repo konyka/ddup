@@ -11531,6 +11531,65 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
     if (!cluster_check_ownership(s, argv, argc, out, now_ms))
         return;
 
+    if (cmd_id == CMD_BACKUP) {
+        const char *sub = NULL;
+        size_t sublen = 0;
+        if (argc >= 2 && arg_str(&argv[1], &sub, &sublen)) {
+            if (ci_equal(sub, sublen, "HELP")) {
+                resp_write_array_header(out, 0);
+                return;
+            }
+            if (ci_equal(sub, sublen, "ABORT") || ci_equal(sub, sublen, "CLEANUP") ||
+                ci_equal(sub, sublen, "LIST") || ci_equal(sub, sublen, "SEAL") ||
+                ci_equal(sub, sublen, "START") || ci_equal(sub, sublen, "STATUS")) {
+                resp_write_error(out, "ERR BACKUP is not supported by this build",
+                                 sizeof("ERR BACKUP is not supported by this build") - 1);
+                return;
+            }
+        }
+        resp_write_error(out, "ERR BACKUP is not supported by this build",
+                         sizeof("ERR BACKUP is not supported by this build") - 1);
+        return;
+    }
+    if (cmd_id == CMD_HIMPORT) {
+        const char *sub = NULL;
+        size_t sublen = 0;
+        if (argc >= 2 && arg_str(&argv[1], &sub, &sublen)) {
+            if (ci_equal(sub, sublen, "HELP")) {
+                resp_write_array_header(out, 0);
+                return;
+            }
+            if (ci_equal(sub, sublen, "DISCARD") || ci_equal(sub, sublen, "DISCARDALL") ||
+                ci_equal(sub, sublen, "PREPARE") || ci_equal(sub, sublen, "SET")) {
+                resp_write_error(out, "ERR HIMPORT is not supported by this build",
+                                 sizeof("ERR HIMPORT is not supported by this build") - 1);
+                return;
+            }
+        }
+        resp_write_error(out, "ERR HIMPORT is not supported by this build",
+                         sizeof("ERR HIMPORT is not supported by this build") - 1);
+        return;
+    }
+    if (cmd_id == CMD_HOTKEYS) {
+        const char *sub = NULL;
+        size_t sublen = 0;
+        if (argc >= 2 && arg_str(&argv[1], &sub, &sublen)) {
+            if (ci_equal(sub, sublen, "HELP")) {
+                resp_write_array_header(out, 0);
+                return;
+            }
+            if (ci_equal(sub, sublen, "GET") || ci_equal(sub, sublen, "RESET") ||
+                ci_equal(sub, sublen, "START") || ci_equal(sub, sublen, "STOP")) {
+                resp_write_error(out, "ERR HOTKEYS is not supported by this build",
+                                 sizeof("ERR HOTKEYS is not supported by this build") - 1);
+                return;
+            }
+        }
+        resp_write_error(out, "ERR HOTKEYS is not supported by this build",
+                         sizeof("ERR HOTKEYS is not supported by this build") - 1);
+        return;
+    }
+
     if (cmd_id == CMD_BLPOP || cmd_id == CMD_BRPOP ||
         cmd_id == CMD_BRPOPLPUSH || cmd_id == CMD_BLMOVE ||
         cmd_id == CMD_BLMOVEM || cmd_id == CMD_BLMPOP ||
@@ -21988,6 +22047,9 @@ static const cmd_entry CMD_TABLE[] = {
     {"digest", CMD_DIGEST, 2, 2, 0, 0},
     {"sflush", CMD_SFLUSH, 3, -1, 0, CMD_WRITE},
     {"trimslots", CMD_TRIMSLOTS, 5, -1, 0, CMD_WRITE},
+    {"backup", CMD_BACKUP, 2, 2, 0, 0},
+    {"himport", CMD_HIMPORT, 2, -1, 0, 0},
+    {"hotkeys", CMD_HOTKEYS, 2, -1, 0, 0},
 };
 
 static const cmd_entry *cmd_table_entry(uint16_t id)

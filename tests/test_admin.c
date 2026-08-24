@@ -306,6 +306,24 @@ static void test_config_resetstat_rewrite(void)
     EXPECT_REPLY("-ERR The server is running without a config file\r\n");
 }
 
+static void test_redis8_management_containers(void)
+{
+    cmd(2, "BACKUP", "HELP");
+    EXPECT_REPLY("*0\r\n");
+    cmd(2, "BACKUP", "START");
+    EXPECT_REPLY("-ERR BACKUP is not supported by this build\r\n");
+
+    cmd(2, "HIMPORT", "HELP");
+    EXPECT_REPLY("*0\r\n");
+    cmd(2, "HIMPORT", "START");
+    EXPECT_REPLY("-ERR HIMPORT is not supported by this build\r\n");
+
+    cmd(2, "HOTKEYS", "HELP");
+    EXPECT_REPLY("*0\r\n");
+    cmd(2, "HOTKEYS", "START");
+    EXPECT_REPLY("-ERR HOTKEYS is not supported by this build\r\n");
+}
+
 int main(void)
 {
     setvbuf(stdout, NULL, _IONBF, 0);
@@ -315,6 +333,7 @@ int main(void)
     DD_RUN(test_command_count_list);
     DD_RUN(test_command_info_getkeys);
     DD_RUN(test_config_resetstat_rewrite);
+    DD_RUN(test_redis8_management_containers);
     DD_RUN(test_memory_usage_stats);
     DD_RUN(test_client_name_and_id);
     DD_RUN(test_slowlog);

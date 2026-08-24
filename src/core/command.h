@@ -437,10 +437,13 @@ enum {
     CMD_DELEX,
     CMD_DIGEST,
     CMD_SFLUSH,
-    CMD_TRIMSLOTS
+    CMD_TRIMSLOTS,
+    CMD_BACKUP,
+    CMD_HIMPORT,
+    CMD_HOTKEYS
 };
 
-#define CMD_MAX CMD_DIGEST
+#define CMD_MAX CMD_HOTKEYS
 
 /* Resolve a command name to its stable ID; case-insensitive. */
 uint16_t cmd_resolve(const char *name, size_t len);

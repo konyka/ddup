@@ -45,6 +45,9 @@
 - `CLUSTER MIGRATION` and `CLUSTER SYNCSLOTS` are recognized with an
   internal-client-only security gate; external sessions cannot alter migration
   state or slot metadata.
+- `BACKUP`, `HIMPORT`, and `HOTKEYS` are registered with their Redis 8
+  subcommand names. `HELP` is side-effect free; operational subcommands return
+  explicit unsupported-build errors.
 
 ## 实现策略（性能优先）
 
@@ -71,6 +74,6 @@
 ## 审计基线（机器断言，勿手改格式）
 
 <!-- AUDIT-BASELINE-START
-missing_top: arcount ardel ardelrange arget argetrange argrep arinfo arinsert arlastitems arlen armget armset arnext arop arring arscan arseek arset backup himport hotkeys
-missing_containers: backup himport hotkeys
+missing_top: arcount ardel ardelrange arget argetrange argrep arinfo arinsert arlastitems arlen armget armset arnext arop arring arscan arseek arset
+missing_containers:
 AUDIT-BASELINE-END -->

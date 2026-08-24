@@ -383,3 +383,5 @@
     审计同步（Phase 74）
   - [x] Redis 8 内部集群迁移命令安全门：注册 `CLUSTER MIGRATION` 与
     `CLUSTER SYNCSLOTS`，外部会话明确拒绝且不修改迁移/槽元数据（Phase 75）
+  - [x] Redis 8 管理容器兼容入口：注册 `BACKUP/HIMPORT/HOTKEYS` 及已知
+    子命令名；`HELP` 无副作用，其余操作明确返回不支持错误（Phase 76）
