@@ -388,3 +388,6 @@
   - [x] Redis 8 ARRAY 核心：`ARSET/ARGET/ARLEN/ARCOUNT`；`obj_array` 用
     稀疏索引表提供 O(1) 随机访问和 O(1) 长度/非空计数，支持快照持久化，
     并以 TDD 覆盖缺失键、连续写、边界索引与 WRONGTYPE（Phase 77）
+  - [x] Redis 8 ARRAY 访问/删除：`ARGETRANGE/ARMGET/ARDEL/ARDELRANGE`；
+    稀疏查找保持按请求数量复杂度，删除会同步内存、计数、长度和空对象
+    自动回收（Phase 78）

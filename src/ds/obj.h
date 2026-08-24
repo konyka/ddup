@@ -72,6 +72,8 @@ int obj_array_set(obj_array *a, uint64_t index, const char *const *values,
                   const size_t *lengths, size_t n, size_t *empty_slots);
 int obj_array_get(obj_array *a, uint64_t index, const char **value,
                   size_t *length);
+int obj_array_del(obj_array *a, uint64_t index);
+uint64_t obj_array_del_range(obj_array *a, uint64_t start, uint64_t end);
 uint64_t obj_array_len(const obj_array *a);
 uint64_t obj_array_count(const obj_array *a);
 void obj_array_each(const obj_array *a, rh_iter_fn fn, void *ctx);

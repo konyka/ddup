@@ -9,7 +9,7 @@
 
 | 类别 | 数量 |
 | --- | --- |
-| 缺失顶层命令 | 14 |
+| 缺失顶层命令 | 10 |
 | 整体缺失容器 | 0 |
 | 已实现容器内缺失子命令 | 0 |
 
@@ -52,6 +52,8 @@
   fixed-width indexes. `ARLEN` and `ARCOUNT` read object metadata in O(1),
   while `ARSET` validates every input before modifying the object. The type is
   included in the snapshot encoding, so persisted arrays retain sparse indexes.
+- ARRAY access/deletion tranche: `ARGETRANGE`, `ARMGET`, `ARDEL`, and
+  `ARDELRANGE` are implemented with sparse lookups and bounded deletion scans.
 
 ## 实现策略（性能优先）
 
@@ -78,6 +80,6 @@
 ## 审计基线（机器断言，勿手改格式）
 
 <!-- AUDIT-BASELINE-START
-missing_top: ardel ardelrange argetrange argrep arinfo arinsert arlastitems armget armset arnext arop arring arscan arseek
+missing_top: argrep arinfo arinsert arlastitems armset arnext arop arring arscan arseek
 missing_containers:
 AUDIT-BASELINE-END -->

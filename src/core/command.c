@@ -11624,7 +11624,8 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
     }
 
     if (cmd_id == CMD_ARLEN || cmd_id == CMD_ARCOUNT || cmd_id == CMD_ARGET ||
-        cmd_id == CMD_ARSET) {
+        cmd_id == CMD_ARSET || cmd_id == CMD_ARGETRANGE ||
+        cmd_id == CMD_ARMGET || cmd_id == CMD_ARDEL || cmd_id == CMD_ARDELRANGE) {
         const char *k;
         size_t kl;
         obj_array *a = NULL;
@@ -11677,6 +11678,69 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
         }
         rc = get_array(d, out, k, kl, 0, now_ms, &a);
         if (rc < 0) return;
+        if (cmd_id == CMD_ARGETRANGE) {
+            const char *ss, *es;
+            size_t sl, el;
+            uint64_t start, end, i, n;
+            if (!arg_str(&argv[2], &ss, &sl) || !arg_str(&argv[3], &es, &el) ||
+                !parse_u64(ss, sl, &start) || !parse_u64(es, el, &end)) {
+                resp_write_error(out, ERR_NOT_INT, sizeof(ERR_NOT_INT) - 1);
+                return;
+            }
+            if (end < start || rc == 0) { resp_write_array_header(out, 0); return; }
+            n = end - start + 1;
+            if (n > SIZE_MAX) { resp_write_error(out, "ERR range too large", 20); return; }
+            resp_write_array_header(out, (size_t)n);
+            for (i = 0; i < n; i++) {
+                const char *v; size_t vl;
+                if (obj_array_get(a, start + i, &v, &vl)) resp_write_bulk(out, v, vl);
+                else resp_write_bulk(out, NULL, 0);
+            }
+            return;
+        }
+        if (cmd_id == CMD_ARMGET) {
+            size_t i;
+            resp_write_array_header(out, argc - 2);
+            for (i = 2; i < argc; i++) {
+                const char *is, *v; size_t il, vl; uint64_t index;
+                if (!arg_str(&argv[i], &is, &il) || !parse_u64(is, il, &index)) {
+                    resp_write_error(out, ERR_NOT_INT, sizeof(ERR_NOT_INT) - 1); return;
+                }
+                if (rc == 1 && obj_array_get(a, index, &v, &vl)) resp_write_bulk(out, v, vl);
+                else resp_write_bulk(out, NULL, 0);
+            }
+            return;
+        }
+        if (cmd_id == CMD_ARDEL) {
+            uint64_t deleted = 0; size_t i;
+            uint64_t before = rc == 1 ? obj_array_mem(a) : 0;
+            if (rc == 1) for (i = 2; i < argc; i++) {
+                const char *is; size_t il; uint64_t index;
+                if (!arg_str(&argv[i], &is, &il) || !parse_u64(is, il, &index)) {
+                    resp_write_error(out, ERR_NOT_INT, sizeof(ERR_NOT_INT) - 1); return;
+                }
+                deleted += (uint64_t)obj_array_del(a, index);
+            }
+            if (rc == 1) { mem_sync(d, k, kl, before, obj_array_mem(a)); if (obj_array_count(a) == 0) db_del_kv(d, k, kl); }
+            resp_write_integer(out, (long long)deleted);
+            return;
+        }
+        if (cmd_id == CMD_ARDELRANGE) {
+            uint64_t deleted = 0, before = rc == 1 ? obj_array_mem(a) : 0;
+            size_t i;
+            if (((argc - 2) & 1u) != 0) { wrong_args(out, "ardelrange"); return; }
+            if (rc == 1) for (i = 2; i < argc; i += 2) {
+                const char *ss, *es; size_t sl, el; uint64_t start, end;
+                if (!arg_str(&argv[i], &ss, &sl) || !arg_str(&argv[i + 1], &es, &el) ||
+                    !parse_u64(ss, sl, &start) || !parse_u64(es, el, &end)) {
+                    resp_write_error(out, ERR_NOT_INT, sizeof(ERR_NOT_INT) - 1); return;
+                }
+                deleted += obj_array_del_range(a, start, end);
+            }
+            if (rc == 1) { mem_sync(d, k, kl, before, obj_array_mem(a)); if (obj_array_count(a) == 0) db_del_kv(d, k, kl); }
+            resp_write_integer(out, (long long)deleted);
+            return;
+        }
         if (cmd_id == CMD_ARLEN) {
             resp_write_integer(out, rc == 1 ? (long long)obj_array_len(a) : 0);
             return;
@@ -22165,6 +22229,10 @@ static const cmd_entry CMD_TABLE[] = {
     {"arget", CMD_ARGET, 3, 3, 0, 0},
     {"arlen", CMD_ARLEN, 2, 2, 0, 0},
     {"arcount", CMD_ARCOUNT, 2, 2, 0, 0},
+    {"argetrange", CMD_ARGETRANGE, 4, 4, 0, 0},
+    {"armget", CMD_ARMGET, 3, -1, 0, 0},
+    {"ardel", CMD_ARDEL, 3, -1, 0, CMD_WRITE},
+    {"ardelrange", CMD_ARDELRANGE, 4, -1, 0, CMD_WRITE},
 };
 
 static const cmd_entry *cmd_table_entry(uint16_t id)

@@ -204,6 +204,54 @@ int obj_array_get(obj_array *a, uint64_t index, const char **value,
     return rh_get(&a->values, key, sizeof(key), value, length);
 }
 
+int obj_array_del(obj_array *a, uint64_t index)
+{
+    char key[8];
+    const char *old;
+    size_t old_len;
+    if (a == NULL)
+        return 0;
+    array_key(key, index);
+    if (!rh_get(&a->values, key, sizeof(key), &old, &old_len))
+        return 0;
+    if (!rh_del(&a->values, key, sizeof(key)))
+        return 0;
+    a->mem -= array_entry_mem(old_len);
+    if (a->count > 0)
+        a->count--;
+    return 1;
+}
+
+uint64_t obj_array_del_range(obj_array *a, uint64_t start, uint64_t end)
+{
+    uint64_t deleted = 0;
+    uint64_t i;
+    if (a == NULL || start > end)
+        return 0;
+    /* Sparse arrays make this proportional to the requested span. Bound the
+     * loop to live length so a huge tail range cannot burn CPU. */
+    if (start >= a->length)
+        return 0;
+    if (end >= a->length)
+        end = a->length - 1;
+    for (i = start; i <= end; i++) {
+        if (obj_array_del(a, i))
+            deleted++;
+        if (i == UINT64_MAX)
+            break;
+    }
+    while (a->length > 0) {
+        char key[8];
+        const char *tail;
+        size_t tail_len;
+        array_key(key, a->length - 1);
+        if (rh_get(&a->values, key, sizeof(key), &tail, &tail_len))
+            break;
+        a->length--;
+    }
+    return deleted;
+}
+
 uint64_t obj_array_len(const obj_array *a) { return a == NULL ? 0 : a->length; }
 uint64_t obj_array_count(const obj_array *a) { return a == NULL ? 0 : a->count; }
 void obj_array_each(const obj_array *a, rh_iter_fn fn, void *ctx)

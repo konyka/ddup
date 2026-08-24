@@ -57,6 +57,17 @@ static void test_array_core(void)
     exec_cmd(&d, &out, 3, "ARGET", "a", "1");
     EXPECT(out, "$1\r\nz\r\n");
 
+    exec_cmd(&d, &out, 4, "ARGETRANGE", "a", "0", "3");
+    EXPECT(out, "*4\r\n$-1\r\n$1\r\nz\r\n$1\r\nx\r\n$1\r\ny\r\n");
+    exec_cmd(&d, &out, 5, "ARMGET", "a", "0", "2", "99");
+    EXPECT(out, "*3\r\n$-1\r\n$1\r\nx\r\n$-1\r\n");
+    exec_cmd(&d, &out, 3, "ARDEL", "a", "2");
+    EXPECT(out, ":1\r\n");
+    exec_cmd(&d, &out, 4, "ARDELRANGE", "a", "0", "1");
+    EXPECT(out, ":1\r\n");
+    exec_cmd(&d, &out, 2, "ARCOUNT", "a");
+    EXPECT(out, ":1\r\n");
+
     exec_cmd(&d, &out, 4, "ARSET", "a", "-1", "bad");
     DD_CHECK(out.len > 0 && out.data[0] == '-');
     exec_cmd(&d, &out, 4, "ARSET", "a", "999999999999999999999", "bad");

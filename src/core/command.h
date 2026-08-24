@@ -445,9 +445,13 @@ enum {
     CMD_ARGET,
     CMD_ARLEN,
     CMD_ARCOUNT
+    ,CMD_ARGETRANGE,
+    CMD_ARMGET,
+    CMD_ARDEL,
+    CMD_ARDELRANGE
 };
 
-#define CMD_MAX CMD_ARCOUNT
+#define CMD_MAX CMD_ARDELRANGE
 
 /* Resolve a command name to its stable ID; case-insensitive. */
 uint16_t cmd_resolve(const char *name, size_t len);
