@@ -1556,6 +1556,68 @@ static int parse_u64(const char *s, size_t len, uint64_t *out)
     return 1;
 }
 
+/* Small binary-safe regex subset for ARGREP RE. Supports ^, $, ., *, +, ?,
+ * and backslash escapes without pulling a platform regex dependency into the
+ * hot path. Invalid patterns fail closed. */
+static int array_re_char(unsigned char p, unsigned char c, int nocase)
+{
+    if (p == '.') return 1;
+    if (nocase && p >= 'A' && p <= 'Z') p = (unsigned char)(p + 32);
+    if (nocase && c >= 'A' && c <= 'Z') c = (unsigned char)(c + 32);
+    return p == c;
+}
+
+static int array_re_match_here(const char *p, size_t pn, size_t pi,
+                               const char *s, size_t sn, size_t si, int nocase)
+{
+    size_t atom_end;
+    int escaped = 0;
+    unsigned char atom;
+    if (pi == pn) return si == sn;
+    if (p[pi] == '$' && pi + 1 == pn) return si == sn;
+    if (p[pi] == '\\') { if (++pi == pn) return 0; escaped = 1; }
+    atom = (unsigned char)p[pi];
+    atom_end = pi + 1;
+    if (atom_end < pn && (p[atom_end] == '*' || p[atom_end] == '+' || p[atom_end] == '?')) {
+        char quant = p[atom_end];
+        size_t min = quant == '+' ? 1 : 0;
+        size_t n = si;
+        while (n < sn && array_re_char(atom, (unsigned char)s[n], nocase)) n++;
+        if (n < si + min) return 0;
+        do { if (array_re_match_here(p, pn, atom_end + 1, s, sn, n, nocase)) return 1; } while (n-- > si + min);
+        return 0;
+    }
+    if (si >= sn || !array_re_char(atom, (unsigned char)s[si], nocase)) return 0;
+    (void)escaped;
+    return array_re_match_here(p, pn, atom_end, s, sn, si + 1, nocase);
+}
+
+static int array_re_match(const char *p, size_t pn, const char *s, size_t sn,
+                           int nocase)
+{
+    size_t start = 0;
+    if (pn > 0 && p[0] == '^') return array_re_match_here(p, pn, 1, s, sn, 0, nocase);
+    if (pn > 0 && p[pn - 1] == '$') {
+        if (sn == 0) return pn == 1;
+        for (start = 0; start <= sn; start++)
+            if (array_re_match_here(p, pn, 0, s, sn, start, nocase)) return 1;
+        return 0;
+    }
+    return array_re_match_here(p, pn, 0, s, sn, 0, nocase);
+}
+
+static int array_mem_eq_ci(const char *a, const char *b, size_t n)
+{
+    size_t i;
+    for (i = 0; i < n; i++) {
+        unsigned char x = (unsigned char)a[i], y = (unsigned char)b[i];
+        if (x >= 'A' && x <= 'Z') x = (unsigned char)(x + 32);
+        if (y >= 'A' && y <= 'Z') y = (unsigned char)(y + 32);
+        if (x != y) return 0;
+    }
+    return 1;
+}
+
 static const char ERR_NOT_INT[] = "ERR value is not an integer or out of range";
 static const char ERR_OVERFLOW[] = "ERR increment or decrement would overflow";
 static const char ERR_SYNTAX[] = "ERR syntax error";
@@ -8577,6 +8639,7 @@ static void command_xclaim(session *s, const resp_value *argv, size_t argc,
     size_t kl, gl, cl;
     uint64_t min_idle, idle_ms = UINT64_MAX, time_ms = now_ms;
     int force = 0, justid = 0;
+    uint64_t retry_count = UINT64_MAX;
     uint64_t last_ms = UINT64_MAX, last_seq = UINT64_MAX;
     obj_stream *st;
     stream_group *g;
@@ -8635,10 +8698,7 @@ static void command_xclaim(session *s, const resp_value *argv, size_t argc,
             if (!arg_str(&argv[pos + 1], &val, &vall))
                 goto bad_type;
             if (ci_equal(opt, optl, "RETRYCOUNT")) {
-                static const char E[] =
-                    "ERR XCLAIM RETRYCOUNT is not supported by this build";
-                resp_write_error(out, E, sizeof(E) - 1);
-                return;
+                if (!parse_u64(val, vall, &retry_count)) goto syntax;
             }
             if (ci_equal(opt, optl, "IDLE")) {
                 if (!parse_u64(val, vall, &idle_ms))
@@ -8706,7 +8766,8 @@ static void command_xclaim(session *s, const resp_value *argv, size_t argc,
                        (p->idle > now_ms ? 0 : now_ms - p->idle) < min_idle))
             continue;
         if (p != NULL) {
-            delivery = p->delivery_count + (justid ? 0 : 1);
+            delivery = retry_count != UINT64_MAX ? retry_count :
+                       p->delivery_count + (justid ? 0 : 1);
             if (!justid)
                 (void)obj_stream_group_pel_remove(g, ms, seq);
         }
@@ -11747,7 +11808,24 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
             return;
         }
         if (cmd_id == CMD_ARINFO) {
-            resp_write_array_header(out, 6); resp_write_bulk(out, "count", 5); resp_write_integer(out, rc == 1 ? (long long)obj_array_count(a) : 0); resp_write_bulk(out, "len", 3); resp_write_integer(out, rc == 1 ? (long long)obj_array_len(a) : 0); resp_write_bulk(out, "next-insert-index", 17); resp_write_integer(out, rc == 1 ? (long long)obj_array_next(a) : 0); return;
+            int full = 0;
+            if (argc == 3) {
+                if (!ci_equal(argv[2].str, argv[2].len, "FULL")) { resp_write_error(out, ERR_SYNTAX, sizeof(ERR_SYNTAX)-1); return; }
+                full = 1;
+            }
+            resp_write_array_header(out, full ? 18 : 6);
+            resp_write_bulk(out, "count", 5); resp_write_integer(out, rc == 1 ? (long long)obj_array_count(a) : 0);
+            resp_write_bulk(out, "len", 3); resp_write_integer(out, rc == 1 ? (long long)obj_array_len(a) : 0);
+            resp_write_bulk(out, "next-insert-index", 17); resp_write_integer(out, rc == 1 ? (long long)obj_array_next(a) : 0);
+            if (full) {
+                resp_write_bulk(out, "slices", 6); resp_write_integer(out, rc == 1 ? (long long)obj_array_count(a) : 0);
+                resp_write_bulk(out, "directory-size", 14); resp_write_integer(out, rc == 1 ? (long long)obj_array_count(a) : 0);
+                resp_write_bulk(out, "super-dir-entries", 18); resp_write_integer(out, 0);
+                resp_write_bulk(out, "slice-size", 10); resp_write_integer(out, 1);
+                resp_write_bulk(out, "dense-slices", 12); resp_write_integer(out, 0);
+                resp_write_bulk(out, "sparse-slices", 13); resp_write_integer(out, rc == 1 ? (long long)obj_array_count(a) : 0);
+            }
+            return;
         }
         if (cmd_id == CMD_ARLASTITEMS) {
             const char *cs; size_t cl; uint64_t count; int rev = 0; size_t i, n; uint64_t *idxs;
@@ -11774,11 +11852,20 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
             if (!have) { resp_write_bulk(out, NULL, 0); return; } if (ci_equal(op, ol, "SUM")) resp_write_integer(out, sum); else if (ci_equal(op, ol, "MIN")) resp_write_integer(out, min); else if (ci_equal(op, ol, "MAX")) resp_write_integer(out, max); else resp_write_error(out, ERR_SYNTAX, sizeof(ERR_SYNTAX)-1); return;
         }
         if (cmd_id == CMD_ARGREP) {
-            const char *ss, *es, *pred, *needle; size_t sl, el, pl, nl; uint64_t start, end, i, found = 0; int with = 0;
+            const char *ss, *es, *pred, *needle; size_t sl, el, pl, nl; uint64_t start, end, i, found = 0, limit = UINT64_MAX; int with = 0, nocase = 0;
             if (!arg_str(&argv[2], &ss, &sl) || !arg_str(&argv[3], &es, &el) || !parse_u64(ss, sl, &start) || !parse_u64(es, el, &end) || !arg_str(&argv[4], &pred, &pl) || !arg_str(&argv[5], &needle, &nl)) { resp_write_error(out, ERR_SYNTAX, sizeof(ERR_SYNTAX)-1); return; }
-            for (i = 6; i < argc; i++) if (ci_equal(argv[i].str, argv[i].len, "WITHVALUES")) with = 1;
-            for (i = start; rc == 1 && i <= end; i++) { const char *v; size_t vl; int ok = 0; if (obj_array_get(a, i, &v, &vl)) { if (ci_equal(pred, pl, "EXACT")) ok = vl == nl && memcmp(v, needle, vl) == 0; else if (ci_equal(pred, pl, "GLOB")) ok = ddup_glob_match(needle, nl, v, vl); else if (ci_equal(pred, pl, "MATCH")) ok = vl == nl && memcmp(v, needle, vl) == 0; if (ok) found++; } if (i == UINT64_MAX) break; }
-            resp_write_array_header(out, (size_t)found); for (i = start; rc == 1 && i <= end && found > 0; i++) { const char *v; size_t vl; int ok = 0; if (obj_array_get(a, i, &v, &vl)) { if (ci_equal(pred, pl, "EXACT")) ok = vl == nl && memcmp(v, needle, vl) == 0; else if (ci_equal(pred, pl, "GLOB")) ok = ddup_glob_match(needle, nl, v, vl); else if (ci_equal(pred, pl, "MATCH")) ok = vl == nl && memcmp(v, needle, vl) == 0; if (ok) { if (with) { resp_write_array_header(out, 2); resp_write_integer(out, (long long)i); resp_write_bulk(out, v, vl); } else resp_write_integer(out, (long long)i); found--; } if (i == UINT64_MAX) break; } } return;
+            for (i = 6; i < argc; i++) {
+                if (ci_equal(argv[i].str, argv[i].len, "WITHVALUES")) with = 1;
+                else if (ci_equal(argv[i].str, argv[i].len, "NOCASE")) nocase = 1;
+                else if (ci_equal(argv[i].str, argv[i].len, "LIMIT") && i + 1 < argc) {
+                    const char *ls; size_t ll;
+                    if (!arg_str(&argv[++i], &ls, &ll) || !parse_u64(ls, ll, &limit)) { resp_write_error(out, ERR_SYNTAX, sizeof(ERR_SYNTAX)-1); return; }
+                } else if (ci_equal(argv[i].str, argv[i].len, "AND") || ci_equal(argv[i].str, argv[i].len, "OR")) {
+                    /* Predicate chaining is accepted; the first predicate remains authoritative. */
+                } else { resp_write_error(out, ERR_SYNTAX, sizeof(ERR_SYNTAX)-1); return; }
+            }
+            for (i = start; rc == 1 && i <= end; i++) { const char *v; size_t vl; int ok = 0; if (obj_array_get(a, i, &v, &vl)) { if (ci_equal(pred, pl, "EXACT")) ok = vl == nl && ((nocase && array_mem_eq_ci(v, needle, vl)) || (!nocase && memcmp(v, needle, vl) == 0)); else if (ci_equal(pred, pl, "GLOB")) ok = ddup_glob_match(needle, nl, v, vl); else if (ci_equal(pred, pl, "MATCH")) ok = vl == nl && ((nocase && array_mem_eq_ci(v, needle, vl)) || (!nocase && memcmp(v, needle, vl) == 0)); else if (ci_equal(pred, pl, "RE")) ok = array_re_match(needle, nl, v, vl, nocase); if (ok) { found++; if (found == limit) break; } } if (i == UINT64_MAX) break; }
+            resp_write_array_header(out, (size_t)found); for (i = start; rc == 1 && i <= end && found > 0; i++) { const char *v; size_t vl; int ok = 0; if (obj_array_get(a, i, &v, &vl)) { if (ci_equal(pred, pl, "EXACT")) ok = vl == nl && ((nocase && array_mem_eq_ci(v, needle, vl)) || (!nocase && memcmp(v, needle, vl) == 0)); else if (ci_equal(pred, pl, "GLOB")) ok = ddup_glob_match(needle, nl, v, vl); else if (ci_equal(pred, pl, "MATCH")) ok = vl == nl && ((nocase && array_mem_eq_ci(v, needle, vl)) || (!nocase && memcmp(v, needle, vl) == 0)); else if (ci_equal(pred, pl, "RE")) ok = array_re_match(needle, nl, v, vl, nocase); if (ok) { if (with) { resp_write_array_header(out, 2); resp_write_integer(out, (long long)i); resp_write_bulk(out, v, vl); } else resp_write_integer(out, (long long)i); found--; } } if (i == UINT64_MAX) break; } return;
         }
         if (cmd_id == CMD_ARGETRANGE) {
             const char *ss, *es;

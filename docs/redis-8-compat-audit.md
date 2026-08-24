@@ -58,6 +58,10 @@
   `ARSCAN`, `ARINFO`, `ARLASTITEMS`, `AROP`, and `ARGREP` are registered and
   covered by TDD. Exact/glob predicates and core numeric aggregates are
   supported; unsupported predicate forms fail explicitly.
+- `ARGREP RE` now uses a platform-neutral bounded regex subset (`^`, `$`, `.`,
+  `*`, `+`, `?`, escapes) with `LIMIT`, `NOCASE`, and `WITHVALUES` handling.
+- `XCLAIM RETRYCOUNT` is accepted and applied to the resulting pending entry
+  delivery count instead of being rejected.
 
 ## 实现策略（性能优先）
 
@@ -78,8 +82,8 @@
 
 - `BACKUP`、`HIMPORT`、`HOTKEYS`：命令级入口已兼容，但实际备份、导入
   事务和热点采样仍是明确的 unsupported-build 能力。
-- ARRAY 高级语义：当前稀疏对象模型提供命令级安全行为；Redis 内部 dense/
-  sparse slice 统计未伪造，`ARINFO FULL` 返回基础元数据。
+- ARRAY 高级语义：当前稀疏对象模型提供命令级安全行为；`ARINFO FULL`
+  返回与当前稀疏模型对应的基础目录/切片统计，不伪造 Redis 内部编码细节。
 
 ## 审计基线（机器断言，勿手改格式）
 

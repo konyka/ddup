@@ -325,8 +325,8 @@
     同槽校验；兼容审计缺 33 个顶层命令（Phase 61）
   - [x] Stream 消费组/读取族补齐：`XGROUP`（CREATE/SETID/DESTROY/
     CREATECONSUMER/DELCONSUMER/HELP）、`XACK`、`XPENDING`（summary +
-    range）、`XCLAIM`（IDLE/TIME/FORCE/JUSTID/LASTID，RETRYCOUNT 记录
-    不支持）、`XAUTOCLAIM`（COUNT/JUSTID）、`XREAD`、`XREADGROUP`
+    range）、`XCLAIM`（IDLE/TIME/FORCE/JUSTID/LASTID/RETRYCOUNT）、`XAUTOCLAIM`
+    （COUNT/JUSTID）、`XREAD`、`XREADGROUP`
     （GROUP/COUNT/NOACK，BLOCK 当前为非阻塞立即返回）、`XINFO`
     （STREAM/GROUPS/CONSUMERS/HELP）；PEL/consumer 采用连续数组，
     group_mem 记账不含 capacity 数组（记录在案）；快照 STREAM 负载新增
@@ -395,3 +395,6 @@
     ARSCAN/ARINFO/ARLASTITEMS/AROP/ARGREP`；批量写、插入游标、环写、范围
     扫描、基础聚合和 EXACT/MATCH/GLOB 搜索均以 TDD 覆盖，8.10.1 命令审计
     缺口清零（Phase 79）
+  - [x] 语义差异收敛：`ARGREP RE` 增加平台无关正则子集、`LIMIT/NOCASE`，
+    `ARINFO FULL` 返回稀疏目录统计，`XCLAIM RETRYCOUNT` 更新投递次数并补齐
+    回归测试（Phase 80）

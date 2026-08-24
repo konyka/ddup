@@ -86,12 +86,16 @@ static void test_array_core(void)
     EXPECT(out, "*3\r\n*2\r\n:0\r\n$1\r\nq\r\n*2\r\n:1\r\n$1\r\nr\r\n*2\r\n:2\r\n$1\r\nw\r\n");
     exec_cmd(&d, &out, 2, "ARINFO", "a");
     DD_CHECK(out.len > 0 && out.data[0] == '*');
+    exec_cmd(&d, &out, 3, "ARINFO", "a", "FULL");
+    DD_CHECK(out.len > 0 && out.data[0] == '*');
     exec_cmd(&d, &out, 4, "ARLASTITEMS", "a", "2", "REV");
     DD_CHECK(out.len > 0 && out.data[0] == '*');
     exec_cmd(&d, &out, 6, "AROP", "a", "0", "20", "MATCH", "r");
     EXPECT(out, ":1\r\n");
     exec_cmd(&d, &out, 7, "ARGREP", "a", "0", "20", "EXACT", "r", "WITHVALUES");
     DD_CHECK(out.len > 0 && out.data[0] == '*');
+    exec_cmd(&d, &out, 8, "ARGREP", "a", "0", "20", "RE", "r", "LIMIT", "1");
+    EXPECT(out, "*1\r\n:1\r\n");
 
     exec_cmd(&d, &out, 4, "ARSET", "a", "-1", "bad");
     DD_CHECK(out.len > 0 && out.data[0] == '-');
