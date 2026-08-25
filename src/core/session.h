@@ -148,7 +148,7 @@ typedef struct session {
      * sessions */
     int quit;
     /* Blocking-command state (BLPOP/BRPOP/BRPOPLPUSH/BLMOVE/BLMPOP/
-     * BZPOPMIN/BZPOPMAX/BZMPOP). When blocked, the server stops reading
+     * BZPOPMIN/BZPOPMAX/BZMPOP/XREAD/XREADGROUP). When blocked, the server stops reading
      * further commands from this connection and retries the stored argv
      * through command_blocked_try() as keys become ready or the deadline
      * expires. `blocked_deadline_ms` is wall ms; 0 means block forever. */

@@ -62,6 +62,10 @@
   `*`, `+`, `?`, escapes) with `LIMIT`, `NOCASE`, and `WITHVALUES` handling.
 - `XCLAIM RETRYCOUNT` is accepted and applied to the resulting pending entry
   delivery count instead of being rejected.
+- `XREAD` and `XREADGROUP` implement `BLOCK` using the session blocked state:
+  new stream entries wake the request, finite deadlines return a null array,
+  and `BLOCK 0` waits indefinitely. Readiness checks avoid materializing a
+  response until the request is actually ready.
 
 ## 实现策略（性能优先）
 

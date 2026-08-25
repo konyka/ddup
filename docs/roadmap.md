@@ -327,7 +327,7 @@
     CREATECONSUMER/DELCONSUMER/HELP）、`XACK`、`XPENDING`（summary +
     range）、`XCLAIM`（IDLE/TIME/FORCE/JUSTID/LASTID/RETRYCOUNT）、`XAUTOCLAIM`
     （COUNT/JUSTID）、`XREAD`、`XREADGROUP`
-    （GROUP/COUNT/NOACK，BLOCK 当前为非阻塞立即返回）、`XINFO`
+    （GROUP/COUNT/NOACK/BLOCK，支持 session 阻塞、唤醒、超时及 BLOCK 0）、`XINFO`
     （STREAM/GROUPS/CONSUMERS/HELP）；PEL/consumer 采用连续数组，
     group_mem 记账不含 capacity 数组（记录在案）；快照 STREAM 负载新增
     必选 group 块；st/mt 路由与集群 key 抽取同步；兼容审计缺 25 个
@@ -398,3 +398,7 @@
   - [x] 语义差异收敛：`ARGREP RE` 增加平台无关正则子集、`LIMIT/NOCASE`，
     `ARINFO FULL` 返回稀疏目录统计，`XCLAIM RETRYCOUNT` 更新投递次数并补齐
     回归测试（Phase 80）
+  - [x] Stream 阻塞读取收尾：`XREAD/XREADGROUP BLOCK` 接入统一 session
+    blocked 状态；新 entry readiness 唤醒、deadline 超时和 `BLOCK 0` 均以
+    TDD 覆盖，保持多 stream、COUNT、NOACK、group 游标与 NOGROUP 安全语义
+    （Phase 81）

@@ -57,6 +57,14 @@ static int blocking_pop_try(session *s, const resp_value *argv, size_t argc,
                             resp_buf *out, uint64_t now_ms,
                             uint64_t *deadline_ms);
 static void blocking_timeout_reply(resp_buf *out, uint16_t cmd_id);
+static int ci_equal(const char *a, size_t alen, const char *b);
+static int parse_u64(const char *s, size_t len, uint64_t *out);
+static int db_get(db *d, const char *key, size_t klen, const char **val,
+                  size_t *vlen, uint64_t now_ms);
+static int stream_parse_full_id(const char *s, size_t len, uint64_t *ms,
+                                uint64_t *seq);
+static int stream_id_gt(uint64_t a_ms, uint64_t a_seq, uint64_t b_ms,
+                        uint64_t b_seq);
 
 void db_init(db *d)
 {
@@ -97,6 +105,92 @@ void db_init(db *d)
     d->tier_max_disk_bytes = 0;
     d->tier_io_error = 0;
     d->lua_state = NULL;
+}
+
+/* Detect whether a blocked XREAD/XREADGROUP request can produce at least one
+ * entry without materializing a reply. This keeps polling O(number of streams)
+ * and lets the existing server blocked-session scheduler handle wakeups. */
+static int xread_ready(session *s, const resp_value *argv, size_t argc,
+                       uint64_t now_ms, int group_mode)
+{
+    size_t pos = 1, nkeys, ids_start, k;
+    int streams = 0;
+    const char *group = NULL, *consumer = NULL;
+    size_t gl = 0, cl = 0;
+    db *d = s->d;
+    while (pos < argc) {
+        const char *tok, *val;
+        size_t tl, vl;
+        if (!arg_str(&argv[pos], &tok, &tl)) return -1;
+        if (group_mode && ci_equal(tok, tl, "GROUP")) {
+            if (pos + 2 >= argc || !arg_str(&argv[pos + 1], &group, &gl) ||
+                !arg_str(&argv[pos + 2], &consumer, &cl)) return -1;
+            pos += 3;
+        } else if (ci_equal(tok, tl, "STREAMS")) {
+            streams = 1; pos++; break;
+        } else if (ci_equal(tok, tl, "COUNT") || ci_equal(tok, tl, "BLOCK")) {
+            if (pos + 1 >= argc || !arg_str(&argv[pos + 1], &val, &vl)) return -1;
+            pos += 2;
+        } else if (group_mode && ci_equal(tok, tl, "NOACK")) {
+            pos++;
+        } else return -1;
+    }
+    if (!streams || pos >= argc || ((argc - pos) & 1u) != 0) return -1;
+    nkeys = (argc - pos) / 2;
+    ids_start = pos + nkeys;
+    for (k = 0; k < nkeys; k++) {
+        const char *key, *idv;
+        size_t kl, idl;
+        obj_stream *st;
+        const char *blob;
+        size_t blob_len;
+        uint64_t ms = 0, seq = 0;
+        if (!arg_str(&argv[pos + k], &key, &kl) ||
+            !arg_str(&argv[ids_start + k], &idv, &idl)) return -1;
+        if (!db_get(d, key, kl, &blob, &blob_len, now_ms)) {
+            if (group_mode) return -1;
+            continue;
+        }
+        if (obj_tag_of(blob, blob_len) != DDUP_OBJ_STREAM) return -1;
+        st = (obj_stream *)obj_unpack_ptr(blob, blob_len);
+        if (group_mode) {
+            stream_group *g = obj_stream_group_get(st, group, gl);
+            if (!g) return -1;
+            if (ci_equal(idv, idl, ">")) { ms = g->last_ms; seq = g->last_seq; }
+            else if (!stream_parse_full_id(idv, idl, &ms, &seq)) return -1;
+        } else {
+            if (ci_equal(idv, idl, "$")) { ms = st->last_ms; seq = st->last_seq; }
+            else if (!stream_parse_full_id(idv, idl, &ms, &seq)) return -1;
+        }
+        {
+            size_t first = obj_stream_lower_bound(st, ms, seq);
+            while (first < obj_stream_len(st)) {
+                const stream_entry *e = obj_stream_at(st, first);
+                if (stream_id_gt(e->ms, e->seq, ms, seq)) return 1;
+                first++;
+            }
+        }
+    }
+    (void)consumer; (void)cl;
+    return 0;
+}
+
+static int xread_block_deadline(const resp_value *argv, size_t argc,
+                                uint64_t now_ms, uint64_t *deadline)
+{
+    size_t i;
+    for (i = 1; i + 1 < argc; i++) {
+        const char *tok, *val;
+        size_t tl, vl;
+        uint64_t block;
+        if (!arg_str(&argv[i], &tok, &tl) || !ci_equal(tok, tl, "BLOCK")) continue;
+        if (!arg_str(&argv[i + 1], &val, &vl) || !parse_u64(val, vl, &block)) return -1;
+        if (block == 0) *deadline = 0;
+        else if (block > UINT64_MAX - now_ms) *deadline = UINT64_MAX;
+        else *deadline = now_ms + block;
+        return 1;
+    }
+    return 0;
 }
 
 void db_set_tier(db *d, tier_store *tier, int db_index)
@@ -10413,6 +10507,19 @@ int command_blocked_try(session *s, resp_buf *out, uint64_t now_ms)
         return 0;
     if (s->blocked_deadline_ms != 0 && now_ms >= s->blocked_deadline_ms) {
         blocking_timeout_reply(out, s->blocked_cmd);
+        session_block_clear(s);
+        return 1;
+    }
+    if (s->blocked_cmd == CMD_XREAD || s->blocked_cmd == CMD_XREADGROUP) {
+        int group_mode = s->blocked_cmd == CMD_XREADGROUP;
+        if (!xread_ready(s, s->blocked_argv, s->blocked_argc, now_ms,
+                         group_mode))
+            return 0;
+        if (group_mode)
+            command_xreadgroup(s, s->blocked_argv, s->blocked_argc, out,
+                               now_ms);
+        else
+            command_xread(s, s->blocked_argv, s->blocked_argc, out, now_ms);
         session_block_clear(s);
         return 1;
     }
@@ -21002,11 +21109,27 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
     }
 
     if (cmd_id == CMD_XREAD) {
+        uint64_t deadline = 0;
+        int has_block = xread_block_deadline(argv, argc, now_ms, &deadline);
+        if (has_block < 0) { resp_write_error(out, ERR_SYNTAX, sizeof(ERR_SYNTAX)-1); return; }
+        if (has_block > 0 && xread_ready(s, argv, argc, now_ms, 0) == 0) {
+            if (session_block_start(s, argv, argc, cmd_id, deadline) != 0)
+                resp_write_error(out, "ERR out of memory", 17);
+            return;
+        }
         command_xread(s, argv, argc, out, now_ms);
         return;
     }
 
     if (cmd_id == CMD_XREADGROUP) {
+        uint64_t deadline = 0;
+        int has_block = xread_block_deadline(argv, argc, now_ms, &deadline);
+        if (has_block < 0) { resp_write_error(out, ERR_SYNTAX, sizeof(ERR_SYNTAX)-1); return; }
+        if (has_block > 0 && xread_ready(s, argv, argc, now_ms, 1) == 0) {
+            if (session_block_start(s, argv, argc, cmd_id, deadline) != 0)
+                resp_write_error(out, "ERR out of memory", 17);
+            return;
+        }
         command_xreadgroup(s, argv, argc, out, now_ms);
         return;
     }

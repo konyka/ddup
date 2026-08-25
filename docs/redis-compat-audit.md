@@ -54,7 +54,8 @@
   `redis.register_function` 多函数库格式记录为本次范围外。
 - Stream 核心族已实现 `XADD/XLEN/XRANGE/XREVRANGE/XDEL/XTRIM/XSETID`；
   消费组/读取族已实现 `XGROUP/XACK/XPENDING/XCLAIM/XAUTOCLAIM/XREAD/
-  XREADGROUP/XINFO`；`BLOCK` 当前按非阻塞立即返回处理，记录在案。
+  XREADGROUP/XINFO`；`XREAD/XREADGROUP BLOCK` 使用 session 阻塞态和 server
+  就绪循环，支持新 entry 唤醒、超时 Null array 及 `BLOCK 0` 无限等待。
 - 阻塞 list/zset 族已实现 `BLPOP/BRPOP/BRPOPLPUSH/BLMOVE/BLMPOP/
   BZPOPMIN/BZPOPMAX/BZMPOP`：服务端事件循环持有挂起会话并在 key 就绪或
   超时到期时唤醒；mt 模式暂不路由这些命令（记录在案）。

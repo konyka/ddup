@@ -5,6 +5,7 @@
 #include <string.h>
 
 #include "core/command.h"
+#include "core/session.h"
 #include "core/snapshot.h"
 #include "ds/obj.h"
 #include "test.h"
@@ -25,6 +26,25 @@ static void exec_cmd(db *d, uint64_t now, resp_buf *out, int argc, ...)
     va_end(ap);
     out->len = 0;
     command_execute_at(d, argv, (size_t)argc, out, now);
+}
+
+static void exec_session_cmd(session *s, uint64_t now, resp_buf *out,
+                             int argc, ...)
+{
+    resp_value argv[16];
+    va_list ap;
+    int i;
+    va_start(ap, argc);
+    for (i = 0; i < argc; i++) {
+        const char *arg = va_arg(ap, const char *);
+        memset(&argv[i], 0, sizeof(argv[i]));
+        argv[i].type = RESP_BULK_STRING;
+        argv[i].str = arg;
+        argv[i].len = strlen(arg);
+    }
+    va_end(ap);
+    out->len = 0;
+    session_execute_at(s, argv, (size_t)argc, out, now);
 }
 
 #define EXPECT(out, s) DD_CHECK_MEM((s), strlen(s), (out).data, (out).len)
@@ -470,6 +490,80 @@ static void test_xdelex_xackdel_xnack_xcfgset_xidmprecord(void)
     db_destroy(&d);
 }
 
+static void test_xread_block_timeout_and_wakeup(void)
+{
+    db d;
+    session s;
+    resp_buf out;
+    db_init(&d);
+    session_init(&s, &d);
+    resp_buf_init(&out);
+
+    exec_session_cmd(&s, 1000, &out, 6, "XREAD", "BLOCK", "100",
+                     "STREAMS", "s", "0-0");
+    DD_CHECK_EQ_INT(0, (int)out.len);
+    DD_CHECK_EQ_INT(1, s.blocked);
+    DD_CHECK_EQ_INT(1100, (int)s.blocked_deadline_ms);
+    DD_CHECK_EQ_INT(0, command_blocked_try(&s, &out, 1099));
+    DD_CHECK_EQ_INT(0, (int)out.len);
+    DD_CHECK_EQ_INT(1, command_blocked_try(&s, &out, 1100));
+    EXPECT(out, "*-1\r\n");
+    DD_CHECK_EQ_INT(0, s.blocked);
+
+    exec_session_cmd(&s, 2000, &out, 6, "XREAD", "BLOCK", "0",
+                     "STREAMS", "s", "0-0");
+    DD_CHECK_EQ_INT(1, s.blocked);
+    DD_CHECK_EQ_INT(0, (int)s.blocked_deadline_ms);
+    exec_session_cmd(&s, 2001, &out, 5, "XADD", "s", "1-0", "f", "v");
+    EXPECT(out, "$3\r\n1-0\r\n");
+    out.len = 0;
+    DD_CHECK_EQ_INT(1, command_blocked_try(&s, &out, 2001));
+    EXPECT(out,
+           "*1\r\n*1\r\n"
+           "*2\r\n$3\r\n1-0\r\n*2\r\n$1\r\nf\r\n$1\r\nv\r\n");
+
+    session_release(&s);
+    resp_buf_free(&out);
+    db_destroy(&d);
+}
+
+static void test_xreadgroup_block_wakeup(void)
+{
+    db d;
+    session s;
+    resp_buf out;
+    db_init(&d);
+    session_init(&s, &d);
+    resp_buf_init(&out);
+
+    exec_session_cmd(&s, T0, &out, 9, "XREADGROUP", "GROUP", "missing",
+                     "c", "BLOCK", "100", "STREAMS", "s", ">");
+    DD_CHECK(out.len > 0 && out.data[0] == '-');
+    DD_CHECK_EQ_INT(0, s.blocked);
+
+    exec_session_cmd(&s, T0, &out, 5, "XADD", "s", "1-0", "f", "v");
+    exec_session_cmd(&s, T0, &out, 5, "XGROUP", "CREATE", "s", "g",
+                     "0-0");
+    exec_session_cmd(&s, T0, &out, 7, "XREADGROUP", "GROUP", "g", "c",
+                     "STREAMS", "s", ">");
+    DD_CHECK(out.len > 0 && out.data[0] == '*');
+
+    exec_session_cmd(&s, 100, &out, 9, "XREADGROUP", "GROUP", "g", "c",
+                     "BLOCK", "0", "STREAMS", "s", ">");
+    DD_CHECK_EQ_INT(1, s.blocked);
+    exec_session_cmd(&s, 101, &out, 5, "XADD", "s", "2-0", "f2", "v2");
+    out.len = 0;
+    DD_CHECK_EQ_INT(1, command_blocked_try(&s, &out, 101));
+    EXPECT(out,
+           "*1\r\n*1\r\n"
+           "*2\r\n$3\r\n2-0\r\n*2\r\n$2\r\nf2\r\n$2\r\nv2\r\n");
+    DD_CHECK_EQ_INT(0, s.blocked);
+
+    session_release(&s);
+    resp_buf_free(&out);
+    db_destroy(&d);
+}
+
 int main(void)
 {
     DD_RUN(test_xadd_xlen);
@@ -481,5 +575,7 @@ int main(void)
     DD_RUN(test_xclaim_xautoclaim_xinfo);
     DD_RUN(test_stream_group_snapshot_roundtrip);
     DD_RUN(test_xdelex_xackdel_xnack_xcfgset_xidmprecord);
+    DD_RUN(test_xread_block_timeout_and_wakeup);
+    DD_RUN(test_xreadgroup_block_wakeup);
     return DD_TEST_SUMMARY();
 }
