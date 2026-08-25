@@ -11954,7 +11954,12 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
         size_t sublen = 0;
         if (argc >= 2 && arg_str(&argv[1], &sub, &sublen)) {
             if (ci_equal(sub, sublen, "HELP")) {
-                resp_write_array_header(out, 0);
+                static const char *help[] = {"ABORT", "CLEANUP", "HELP",
+                                             "LIST", "SEAL", "START", "STATUS"};
+                size_t i;
+                resp_write_array_header(out, sizeof(help) / sizeof(help[0]));
+                for (i = 0; i < sizeof(help) / sizeof(help[0]); i++)
+                    resp_write_bulk(out, help[i], strlen(help[i]));
                 return;
             }
             if (ci_equal(sub, sublen, "ABORT") || ci_equal(sub, sublen, "CLEANUP") ||
@@ -11978,7 +11983,11 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
         size_t sublen = 0;
         if (argc >= 2 && arg_str(&argv[1], &sub, &sublen)) {
             if (ci_equal(sub, sublen, "HELP")) {
-                resp_write_array_header(out, 0);
+                static const char *help[] = {"GET", "HELP", "RESET", "START", "STOP"};
+                size_t i;
+                resp_write_array_header(out, sizeof(help) / sizeof(help[0]));
+                for (i = 0; i < sizeof(help) / sizeof(help[0]); i++)
+                    resp_write_bulk(out, help[i], strlen(help[i]));
                 return;
             }
             if (ci_equal(sub, sublen, "GET") || ci_equal(sub, sublen, "RESET") ||

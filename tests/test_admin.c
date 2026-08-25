@@ -311,7 +311,7 @@ static void test_config_resetstat_rewrite(void)
 static void test_redis8_management_containers(void)
 {
     cmd(2, "BACKUP", "HELP");
-    EXPECT_REPLY("*0\r\n");
+    DD_CHECK(strstr(g_out.data, "START") != NULL);
     cmd(2, "BACKUP", "START");
     EXPECT_REPLY("-ERR BACKUP is not supported by this build\r\n");
 
@@ -334,7 +334,7 @@ static void test_redis8_management_containers(void)
     EXPECT_REPLY("-ERR no such fieldset\r\n");
 
     cmd(2, "HOTKEYS", "HELP");
-    EXPECT_REPLY("*0\r\n");
+    DD_CHECK(strstr(g_out.data, "GET") != NULL);
     cmd(2, "HOTKEYS", "START");
     EXPECT_REPLY("-ERR HOTKEYS is not supported by this build\r\n");
 }
