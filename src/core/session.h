@@ -158,6 +158,9 @@ typedef struct session {
      * anything already buffered) has been flushed; no-op for stack
      * sessions */
     int quit;
+    int monitor_enabled;
+    void *monitor_ctx;
+    int (*monitor_start)(void *ctx, struct session *s);
     /* Blocking-command state (BLPOP/BRPOP/BRPOPLPUSH/BLMOVE/BLMPOP/
      * BZPOPMIN/BZPOPMAX/BZMPOP/XREAD/XREADGROUP). When blocked, the server stops reading
      * further commands from this connection and retries the stored argv

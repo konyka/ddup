@@ -11332,14 +11332,18 @@ static void command_failover(session *s, const resp_value *argv, size_t argc,
 static void command_monitor(session *s, const resp_value *argv, size_t argc,
                             resp_buf *out)
 {
-    (void)s;
     if (argc != 1) {
         wrong_args(out, "monitor");
         return;
     }
     (void)argv;
-    static const char E[] = "ERR MONITOR is not supported in this build";
-    resp_write_error(out, E, sizeof(E) - 1);
+    if (s->monitor_start == NULL ||
+        s->monitor_start(s->monitor_ctx, s) != 0) {
+        static const char E[] = "ERR MONITOR is not supported in this build";
+        resp_write_error(out, E, sizeof(E) - 1);
+        return;
+    }
+    resp_write_simple_string(out, "OK", 2);
 }
 
 static void command_acl(session *s, const resp_value *argv, size_t argc,
@@ -22733,7 +22737,7 @@ static const cmd_entry CMD_TABLE[] = {
     {"sflush", CMD_SFLUSH, 3, -1, 0, CMD_WRITE},
     {"trimslots", CMD_TRIMSLOTS, 5, -1, 0, CMD_WRITE},
     {"backup", CMD_BACKUP, 2, 2, 0, 0},
-    {"himport", CMD_HIMPORT, 2, -1, 0, 0},
+    {"himport", CMD_HIMPORT, 2, -1, 0, CMD_WRITE},
     {"hotkeys", CMD_HOTKEYS, 2, -1, 0, 0},
     {"arset", CMD_ARSET, 4, -1, 0, CMD_WRITE},
     {"arget", CMD_ARGET, 3, 3, 0, 0},

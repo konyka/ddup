@@ -125,6 +125,10 @@ struct conn {
     uint64_t pending_offset;
 };
 
+static int srv_monitor_start(void *ctx, session *sess);
+static void srv_monitor_emit(server *srv, const conn *source,
+                             const resp_value *argv, size_t argc);
+
 /* master link states */
 #define LINK_SYNC_SENT 0
 #define LINK_SNAPSHOT 1
@@ -812,6 +816,57 @@ static void srv_deliver_shard(void *owner, const char *ch, size_t chlen,
     resp_write_bulk(&c->out, msg, mlen);
 }
 
+static int srv_monitor_start(void *ctx, session *sess)
+{
+    (void)ctx;
+    if (sess == NULL || sess->monitor_enabled)
+        return sess != NULL ? 0 : -1;
+    sess->monitor_enabled = 1;
+    return 0;
+}
+
+static void monitor_append_quoted(resp_buf *out, const char *s, size_t len)
+{
+    size_t i;
+    if (resp_buf_reserve(out, len * 2 + 2) != 0)
+        return;
+    out->data[out->len++] = '"';
+    for (i = 0; i < len; i++) {
+        unsigned char c = (unsigned char)s[i];
+        if (c == '"' || c == '\\')
+            out->data[out->len++] = '\\';
+        out->data[out->len++] = (c >= 0x20 && c != 0x7f) ? (char)c : '?';
+    }
+    out->data[out->len++] = '"';
+}
+
+static void srv_monitor_emit(server *srv, const conn *source,
+                             const resp_value *argv, size_t argc)
+{
+    size_t i, j;
+    uint64_t now = pal_wall_ms();
+    for (i = 0; i < srv->nconns; i++) {
+        conn *c = srv->conns[i];
+        char head[96];
+        int n;
+        if (c == source || c->sess == NULL || !c->sess->monitor_enabled)
+            continue;
+        n = snprintf(head, sizeof(head), "%llu [0 0.0.0.0] ",
+                     (unsigned long long)now);
+        if (n < 0 || resp_buf_reserve(&c->out, (size_t)n + 3) != 0)
+            continue;
+        memcpy(c->out.data + c->out.len, head, (size_t)n);
+        c->out.len += (size_t)n;
+        for (j = 0; j < argc; j++) {
+            if (j != 0)
+                c->out.data[c->out.len++] = ' ';
+            monitor_append_quoted(&c->out, argv[j].str, argv[j].len);
+        }
+        c->out.data[c->out.len++] = '\r';
+        c->out.data[c->out.len++] = '\n';
+    }
+}
+
 /* Propagation sink for every successfully-applied mutating command:
  * serialize once, then fan out to AOF (if any), the replication backlog
  * and all downstream replica conns (flushed at end of run_once). */
@@ -820,6 +875,7 @@ static void srv_propagate(void *ctx, int db_index, const resp_value *argv,
 {
     server *srv = (server *)ctx;
     size_t i;
+    srv_monitor_emit(srv, NULL, argv, argc);
     if (srv->aof != NULL && !srv->aof_failed)
         srv_aof_log(srv, db_index, argv, argc);
 
@@ -1236,6 +1292,8 @@ static conn *conn_create(server *srv, pal_socket_t fd)
     c->sess->slowlog_len = srv_slowlog_len;
     c->sess->slowlog_get = srv_slowlog_get;
     c->sess->slowlog_reset = srv_slowlog_reset;
+    c->sess->monitor_ctx = srv;
+    c->sess->monitor_start = srv_monitor_start;
     c->sess->bgrewriteaof_ctx = srv;
     c->sess->bgrewriteaof = srv_bgrewriteaof;
     c->sess->cluster_ctx = srv;

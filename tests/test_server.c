@@ -138,6 +138,37 @@ static void test_ping_set_get(void)
     server_destroy(s);
 }
 
+static void test_monitor_stream(void)
+{
+    server *s = make_server();
+    pal_socket_t mon, src;
+    char buf[512];
+    size_t got = 0;
+    int i;
+    DD_CHECK(s != NULL);
+    if (s == NULL)
+        return;
+    mon = connect_client(s);
+    src = connect_client(s);
+    roundtrip(s, mon, "*1\r\n$7\r\nMONITOR\r\n", "+OK\r\n");
+    roundtrip(s, src, "*3\r\n$3\r\nSET\r\n$1\r\nk\r\n$1\r\nv\r\n",
+              "+OK\r\n");
+    for (i = 0; i < 100 && got == 0; i++) {
+        ptrdiff_t n;
+        server_run_once(s, 5);
+        n = pal_recv(mon, buf + got, sizeof(buf) - got - 1);
+        if (n > 0)
+            got += (size_t)n;
+    }
+    buf[got] = '\0';
+    DD_CHECK(got > 0);
+    DD_CHECK(strstr(buf, "SET") != NULL);
+    DD_CHECK(strstr(buf, "\"k\"") != NULL);
+    pal_close(mon);
+    pal_close(src);
+    server_destroy(s);
+}
+
 static void test_pipeline(void)
 {
     server *s = make_server();
@@ -1113,6 +1144,7 @@ static void run_all_tests(void)
 {
     DD_RUN(test_cluster_save_close_failure_preserves_state);
     DD_RUN(test_ping_set_get);
+    DD_RUN(test_monitor_stream);
     DD_RUN(test_pipeline);
     DD_RUN(test_aof_failure_rejects_writes);
     DD_RUN(test_aof_sync_failure_rejects_writes);
