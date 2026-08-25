@@ -408,8 +408,9 @@
     （Phase 81）
   - [x] Redis 8 运行时管理收尾：`HIMPORT PREPARE/SET/DISCARD/DISCARDALL`、
     `HOTKEYS` 生命周期/计数、`BACKUP` 安全快照生命周期和 `MONITOR` 实时
-    命令流以 TDD 覆盖；BACKUP 的增量 MP-AOF 与 HOTKEYS 的 CPU/network
-    top-K 采样引擎仍明确列为范围外
+    命令流以 TDD 覆盖；HOTKEYS top-K 已收敛为预分配、有界 sampled key
+    指标模型，Redis 进程级 CPU/network 计数与 BACKUP 增量 MP-AOF pinning
+    仍明确列为范围外
     （Phase 83）
   - [x] mt 集群路由安全收敛：`ASKING` 不再被误判为不支持命令，按连接
     会话保留一次性标志并交给现有 cluster ownership 检查；其余全库扫描和

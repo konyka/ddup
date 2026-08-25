@@ -1232,9 +1232,11 @@ the live snapshot. It is a synchronous baseline until an incremental MP-AOF
 engine is available. `HOTKEYS` provides a server-wide, low-overhead lifecycle model:
 `START METRICS <count> [CPU|NET] [COUNT k] [DURATION seconds] [SAMPLE ratio]
 [SLOTS ...]`, `STOP`, `RESET`, and `GET` expose active state, sampling ratio,
-collection start time, and command count. It intentionally does not claim
-Redis's CPU/network top-K key ranking until those counters can be maintained
-without adding allocation or lock contention to the command hot path.
+collection start time, command count, and bounded `by-cpu-time-us`/
+`by-net-bytes` key lists. The table is preallocated at START and uses bounded
+sampled command/argument-byte units, so the hot path adds no per-command
+allocation. These units are ddup estimates rather than Redis process CPU/
+network accounting.
 
 - `obj_hash` 在 listpack/rh_table 双编码之外增加独立的 `expires` 表：
   键为 field，值为 8 字节小端绝对过期毫秒时间戳。紧凑编码不会退化为

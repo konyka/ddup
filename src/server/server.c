@@ -135,6 +135,7 @@ static int server_token_eq(const char *s, size_t len, const char *word);
 static int server_parse_ll(const resp_value *v, long long *out);
 static int srv_backup_command(void *ctx, const resp_value *argv, size_t argc,
                               resp_buf *out);
+static void srv_hotkeys_record(server *srv, const resp_value *argv, size_t argc);
 
 /* master link states */
 #define LINK_SYNC_SENT 0
@@ -209,6 +210,11 @@ struct server {
     uint64_t hotkeys_commands;
     uint64_t hotkeys_duration_ms;
     uint64_t hotkeys_sample_ratio;
+    int hotkeys_metric_cpu;
+    int hotkeys_metric_net;
+    uint64_t hotkeys_sampled;
+    size_t hotkeys_capacity;
+    struct hotkey_entry *hotkeys_entries;
     int backup_state;
     char *backup_path;
     uint64_t backup_start_ms;
@@ -262,6 +268,13 @@ struct server {
     server_mt_close_fn mt_close_fn;
     void *route_ctx;
 };
+
+typedef struct hotkey_entry {
+    char key[256];
+    size_t len;
+    uint64_t cpu_us;
+    uint64_t net_bytes;
+} hotkey_entry;
 
 static void conn_close(server *s, size_t idx);
 static int conn_flush(server *s, conn *c);
@@ -899,7 +912,67 @@ static void srv_monitor_emit_session(void *ctx, session *source,
     if (srv->hotkeys_active && argc > 0 && argv[0].str != NULL &&
         !server_token_eq(argv[0].str, argv[0].len, "HOTKEYS"))
         srv->hotkeys_commands++;
+    if (srv->hotkeys_active)
+        srv_hotkeys_record(srv, argv, argc);
     srv_monitor_emit(srv, origin, argv, argc);
+}
+
+static void srv_hotkeys_record(server *srv, const resp_value *argv, size_t argc)
+{
+    const char *key;
+    size_t klen, i, slot = SIZE_MAX;
+    uint64_t net = 0;
+    hotkey_entry *e;
+    uint16_t cmd;
+    if (argc < 2 || argv[0].str == NULL || argv[1].str == NULL ||
+        argv[1].len == 0 || argv[1].len >= sizeof(srv->hotkeys_entries[0].key))
+        return;
+    if (srv->hotkeys_sample_ratio == 0 ||
+        (++srv->hotkeys_sampled % srv->hotkeys_sample_ratio) != 0)
+        return;
+    cmd = cmd_resolve(argv[0].str, argv[0].len);
+    if (cmd == CMD_PING || cmd == CMD_ECHO || cmd == CMD_AUTH ||
+        cmd == CMD_SELECT || cmd == CMD_HELLO || cmd == CMD_COMMAND ||
+        cmd == CMD_CLIENT || cmd == CMD_CONFIG || cmd == CMD_MEMORY ||
+        cmd == CMD_SLOWLOG || cmd == CMD_INFO || cmd == CMD_TIME ||
+        cmd == CMD_ROLE || cmd == CMD_LATENCY || cmd == CMD_SENTINEL ||
+        cmd == CMD_MODULE || cmd == CMD_DEBUG || cmd == CMD_ACL ||
+        cmd == CMD_HOTKEYS || cmd == CMD_BACKUP)
+        return;
+    key = argv[1].str;
+    klen = argv[1].len;
+    for (i = 0; i < argc; i++)
+        if (argv[i].str != NULL)
+            net += (uint64_t)argv[i].len;
+    for (i = 0; i < srv->hotkeys_capacity; i++) {
+        e = &srv->hotkeys_entries[i];
+        if (e->len == klen && memcmp(e->key, key, klen) == 0) {
+            e->cpu_us++;
+            e->net_bytes += net;
+            return;
+        }
+        if (slot == SIZE_MAX && e->len == 0)
+            slot = i;
+    }
+    if (slot == SIZE_MAX && srv->hotkeys_capacity != 0) {
+        uint64_t min = UINT64_MAX;
+        for (i = 0; i < srv->hotkeys_capacity; i++) {
+            uint64_t score = srv->hotkeys_metric_cpu
+                                 ? srv->hotkeys_entries[i].cpu_us
+                                 : srv->hotkeys_entries[i].net_bytes;
+            if (score < min) {
+                min = score;
+                slot = i;
+            }
+        }
+    }
+    if (slot == SIZE_MAX)
+        return;
+    e = &srv->hotkeys_entries[slot];
+    memcpy(e->key, key, klen);
+    e->len = klen;
+    e->cpu_us = 1;
+    e->net_bytes = net;
 }
 
 static int server_token_eq(const char *s, size_t len, const char *word)
@@ -962,6 +1035,7 @@ static int srv_hotkeys_command(void *ctx, const resp_value *argv, size_t argc,
     if (server_token_eq(sub, sl, "START")) {
         uint64_t duration = 0, sample = 1;
         long long metric_count;
+        long long requested_count = 10;
         size_t metrics_seen;
         int cpu = 0, net = 0;
         if (argc < 4 || !server_token_eq(argv[2].str, argv[2].len, "METRICS") ||
@@ -987,7 +1061,7 @@ static int srv_hotkeys_command(void *ctx, const resp_value *argv, size_t argc,
                 long long count;
                 if (!server_parse_ll(&argv[++i], &count) || count < 1)
                     return resp_write_error(out, "ERR syntax error", 16), 0;
-                (void)count;
+                requested_count = count;
                 i++;
             } else if (server_token_eq(tok, len, "DURATION") && i + 1 < argc) {
                 long long seconds;
@@ -1020,12 +1094,26 @@ static int srv_hotkeys_command(void *ctx, const resp_value *argv, size_t argc,
                 return resp_write_error(out, "ERR syntax error", 16), 0;
             }
         }
+        if (requested_count > 4096)
+            requested_count = 4096;
+        {
+            hotkey_entry *entries = (hotkey_entry *)calloc(
+                (size_t)requested_count, sizeof(*entries));
+            if (entries == NULL)
+                return resp_write_error(out, "ERR out of memory", 17), 0;
+            free(srv->hotkeys_entries);
+            srv->hotkeys_entries = entries;
+        }
         srv->hotkeys_active = 1;
         srv->hotkeys_initialized = 1;
         srv->hotkeys_start_ms = pal_wall_ms();
         srv->hotkeys_commands = 0;
         srv->hotkeys_duration_ms = duration;
         srv->hotkeys_sample_ratio = sample;
+        srv->hotkeys_metric_cpu = cpu;
+        srv->hotkeys_metric_net = net;
+        srv->hotkeys_capacity = (size_t)requested_count;
+        srv->hotkeys_sampled = 0;
         resp_write_simple_string(out, "OK", 2);
         return 0;
     }
@@ -1041,6 +1129,12 @@ static int srv_hotkeys_command(void *ctx, const resp_value *argv, size_t argc,
         srv->hotkeys_commands = 0;
         srv->hotkeys_duration_ms = 0;
         srv->hotkeys_sample_ratio = 1;
+        srv->hotkeys_metric_cpu = 0;
+        srv->hotkeys_metric_net = 0;
+        srv->hotkeys_sampled = 0;
+        srv->hotkeys_capacity = 0;
+        free(srv->hotkeys_entries);
+        srv->hotkeys_entries = NULL;
         resp_write_simple_string(out, "OK", 2);
         return 0;
     }
@@ -1052,16 +1146,49 @@ static int srv_hotkeys_command(void *ctx, const resp_value *argv, size_t argc,
             resp_write_null(out);
             return 0;
         }
-        resp_write_array_header(out, 1);
-        resp_write_map_header(out, 4);
+        {
+            size_t pairs = 4 + (srv->hotkeys_metric_cpu ? 1u : 0u) +
+                           (srv->hotkeys_metric_net ? 1u : 0u);
+            size_t i;
+            resp_write_array_header(out, 1);
+            resp_write_map_header(out, pairs);
         resp_write_bulk(out, "tracking-active", 15);
         resp_write_integer(out, srv->hotkeys_active);
         resp_write_bulk(out, "sample-ratio", 12);
         resp_write_integer(out, (long long)srv->hotkeys_sample_ratio);
-        resp_write_bulk(out, "collection-start-time-unix-ms", 31);
+        resp_write_bulk(out, "collection-start-time-unix-ms", 29);
         resp_write_integer(out, (long long)srv->hotkeys_start_ms);
         resp_write_bulk(out, "total-commands", 14);
         resp_write_integer(out, (long long)srv->hotkeys_commands);
+            if (srv->hotkeys_metric_cpu) {
+                resp_write_bulk(out, "by-cpu-time-us", 14);
+                resp_write_array_header(out, srv->hotkeys_capacity * 2u);
+                for (i = 0; i < srv->hotkeys_capacity; i++) {
+                    hotkey_entry *e = &srv->hotkeys_entries[i];
+                    if (e->len == 0) {
+                        resp_write_bulk(out, NULL, 0);
+                        resp_write_integer(out, 0);
+                    } else {
+                        resp_write_bulk(out, e->key, e->len);
+                        resp_write_integer(out, (long long)e->cpu_us);
+                    }
+                }
+            }
+            if (srv->hotkeys_metric_net) {
+                resp_write_bulk(out, "by-net-bytes", 12);
+                resp_write_array_header(out, srv->hotkeys_capacity * 2u);
+                for (i = 0; i < srv->hotkeys_capacity; i++) {
+                    hotkey_entry *e = &srv->hotkeys_entries[i];
+                    if (e->len == 0) {
+                        resp_write_bulk(out, NULL, 0);
+                        resp_write_integer(out, 0);
+                    } else {
+                        resp_write_bulk(out, e->key, e->len);
+                        resp_write_integer(out, (long long)e->net_bytes);
+                    }
+                }
+            }
+        }
         return 0;
     }
     resp_write_error(out, "ERR unknown HOTKEYS subcommand", 30);
@@ -3006,6 +3133,7 @@ void server_destroy(server *s)
         free(s->extra_dbs);
     }
     tier_close(s->tier);
+    free(s->hotkeys_entries);
     free(s->backup_path);
     buf_pool_destroy(&s->pool);
     free(s);
