@@ -336,6 +336,41 @@ static void test_randomkey_aggregates_workers(void)
     pal_socket_cleanup();
 }
 
+static void test_keys_aggregates_workers(void)
+{
+    mt_server *ms;
+    pal_socket_t a;
+    char k0[32], k1[32], req[256], reply[256];
+    size_t n;
+
+    DD_CHECK_EQ_INT(0, pal_socket_init());
+    pick_key_for_worker(0, 2, k0, sizeof(k0));
+    pick_key_for_worker(1, 2, k1, sizeof(k1));
+    ms = mt_server_create("127.0.0.1", 0, 2);
+    DD_CHECK(ms != NULL);
+    DD_CHECK_EQ_INT(0, mt_server_start(ms));
+    a = connect_client(mt_server_port(ms));
+
+    snprintf(req, sizeof(req), "*3\r\n$3\r\nSET\r\n$%zu\r\n%s\r\n$2\r\nv0\r\n",
+             strlen(k0), k0);
+    roundtrip(a, req, "+OK\r\n");
+    snprintf(req, sizeof(req), "*3\r\n$3\r\nSET\r\n$%zu\r\n%s\r\n$2\r\nv1\r\n",
+             strlen(k1), k1);
+    roundtrip(a, req, "+OK\r\n");
+
+    snprintf(req, sizeof(req), "*2\r\n$4\r\nKEYS\r\n$1\r\n*\r\n");
+    n = request_full(a, req, reply, sizeof(reply));
+    DD_CHECK(n > 4);
+    DD_CHECK(reply[0] == '*');
+    DD_CHECK(strstr(reply, k0) != NULL);
+    DD_CHECK(strstr(reply, k1) != NULL);
+
+    pal_close(a);
+    mt_server_stop(ms);
+    mt_server_destroy(ms);
+    pal_socket_cleanup();
+}
+
 static void test_cluster_control_plane_mt(void)
 {
     mt_server *ms;
@@ -2331,6 +2366,7 @@ int main(void)
     DD_RUN(test_pipeline_mixed_targets_keeps_order);
     DD_RUN(test_blocked_commands_in_mt_mode);
     DD_RUN(test_randomkey_aggregates_workers);
+    DD_RUN(test_keys_aggregates_workers);
     DD_RUN(test_cluster_control_plane_mt);
     DD_RUN(test_cluster_state_propagates_to_workers);
     DD_RUN(test_mt_replica_partitions_full_sync);

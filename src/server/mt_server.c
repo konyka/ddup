@@ -293,6 +293,8 @@ struct mt_agg {
     size_t rawlen;
     char *random_key; /* first non-null RANDOMKEY result */
     size_t random_key_len;
+    resp_buf keys_body; /* concatenated RESP bulk elements for KEYS */
+    size_t keys_count;
     int fanout_done;
     int abandoned;
     int finished;
@@ -631,6 +633,7 @@ static void mt_agg_free(mt_agg *agg)
     agg->finished = 1;
     free(agg->raw);
     free(agg->random_key);
+    resp_buf_free(&agg->keys_body);
     free(agg->stats);
     free(agg);
 }
@@ -1381,6 +1384,36 @@ static void mt_agg_accumulate(mt_agg *agg, const resp_buf *part)
                 }
             }
         }
+        else if (agg->cmd == CMD_KEYS && part->data[0] == '*') {
+            const char *eol = (const char *)memchr(part->data, '\n',
+                                                   part->len);
+            const char *body;
+            size_t header_len;
+            long long n = -1;
+            if (eol == NULL || eol <= part->data + 1) {
+                agg->err = 1;
+            } else {
+                header_len = (size_t)(eol - (part->data + 1));
+                if (header_len > 0 && eol[-1] == '\r')
+                    header_len--;
+                if (!mt_parse_ll(part->data + 1, header_len, &n) || n < 0) {
+                    agg->err = 1;
+                } else {
+                    body = eol + 1;
+                    if (agg->keys_count > SIZE_MAX - (size_t)n ||
+                        resp_buf_reserve(&agg->keys_body,
+                                         (size_t)(part->data + part->len - body)) != 0) {
+                        agg->err = 1;
+                    } else {
+                        memcpy(agg->keys_body.data + agg->keys_body.len, body,
+                               (size_t)(part->data + part->len - body));
+                        agg->keys_body.len +=
+                            (size_t)(part->data + part->len - body);
+                        agg->keys_count += (size_t)n;
+                    }
+                }
+            }
+        }
         else if (part->data[0] == ':' && part->len > 2) {
             long long v = strtoll(part->data + 1, NULL, 10);
             if (agg->cmd == CMD_DBSIZE)
@@ -1417,6 +1450,15 @@ static void mt_agg_finish(server *srv, void *conn, mt_conn_state *st,
         else if (agg->cmd == CMD_RANDOMKEY)
             resp_write_bulk(&fin->reply, agg->random_key,
                             agg->random_key_len);
+        else if (agg->cmd == CMD_KEYS) {
+            resp_write_array_header(&fin->reply, agg->keys_count);
+            if (agg->keys_body.len > 0 &&
+                resp_buf_reserve(&fin->reply, agg->keys_body.len) == 0) {
+                memcpy(fin->reply.data + fin->reply.len, agg->keys_body.data,
+                       agg->keys_body.len);
+                fin->reply.len += agg->keys_body.len;
+            }
+        }
         else
             resp_write_simple_string(&fin->reply, "OK", 2);
         mt_reorder_insert(st, fin);
@@ -1452,7 +1494,6 @@ static int mt_is_blocked(uint16_t cmd)
     case CMD_BZPOPMIN:
     case CMD_BZPOPMAX:
     case CMD_BZMPOP:
-    case CMD_KEYS:      /* whole-db scans have no mt routing target */
     case CMD_SCAN:
     case CMD_PSUBSCRIBE:   /* pattern pub/sub is not supported in mt mode */
     case CMD_PUNSUBSCRIBE:
@@ -1629,7 +1670,8 @@ static int mt_is_aggregate(uint16_t cmd)
 {
     return cmd == CMD_DBSIZE || cmd == CMD_FLUSHDB || cmd == CMD_SAVE ||
            cmd == CMD_BGSAVE || cmd == CMD_LASTSAVE || cmd == CMD_SWAPDB ||
-           cmd == CMD_INFO || cmd == CMD_FLUSHALL || cmd == CMD_RANDOMKEY;
+           cmd == CMD_INFO || cmd == CMD_FLUSHALL || cmd == CMD_RANDOMKEY ||
+           cmd == CMD_KEYS;
 }
 
 /* Multi-key commands: every key must map to the same worker (same rule as
@@ -2040,6 +2082,8 @@ static int mt_route_aggregate(worker *home, void *conn,
     agg->cmd = cmd;
     agg->pending = home->ms->nworkers - 1;
     agg->db_index = db_index;
+    if (cmd == CMD_KEYS)
+        resp_buf_init(&agg->keys_body);
 
     /* home part */
     resp_buf_init(&local);
@@ -3027,7 +3071,7 @@ static int mt_route(void *ctx, void *conn, session *sess,
 
     if (cmd == CMD_DBSIZE || cmd == CMD_FLUSHDB || cmd == CMD_SAVE ||
         cmd == CMD_LASTSAVE || cmd == CMD_SWAPDB || cmd == CMD_INFO ||
-        cmd == CMD_FLUSHALL || cmd == CMD_RANDOMKEY) {
+        cmd == CMD_FLUSHALL || cmd == CMD_RANDOMKEY || cmd == CMD_KEYS) {
         mt_batch_flush(home, conn, st);
         return mt_route_aggregate(home, conn, argv, argc, raw, rawlen, cmd,
                                   sess->db_index);

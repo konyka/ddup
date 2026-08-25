@@ -97,8 +97,8 @@
   MP-AOF 增量 pinning/immutable-file 引擎仍是范围外。`HOTKEYS` 已实现安全的生命周期、参数校验、预分配采样表和有界 key 指标列表；Redis 的进程级 CPU/network 计数与共享 hash-template 编码仍未复刻。`HIMPORT` 已实现会话级字段集准备、批量写入和丢弃。
 - ARRAY 高级语义：当前稀疏对象模型提供命令级安全行为；`ARINFO FULL`
   返回与当前稀疏模型对应的基础目录/切片统计，不伪造 Redis 内部编码细节。
-- mt 全库命令：`RANDOMKEY` 已广播到所有 worker 并在 home worker 选择首个
-  非空 bulk 回复；`KEYS`/`SCAN` 仍需专用的结果合并与复合游标协议。
+- mt 全库命令：`KEYS` 已广播到所有 worker 并合并 RESP 数组，`RANDOMKEY`
+  已选择首个非空 bulk 回复；`SCAN` 仍需专用的复合游标协议。
 
 ## 审计基线（机器断言，勿手改格式）
 
