@@ -163,6 +163,9 @@ typedef struct session {
     int (*monitor_start)(void *ctx, struct session *s);
     void (*monitor_emit)(void *ctx, struct session *source,
                          const resp_value *argv, size_t argc);
+    void *hotkeys_ctx;
+    int (*hotkeys_command)(void *ctx, const resp_value *argv, size_t argc,
+                           resp_buf *out);
     /* Blocking-command state (BLPOP/BRPOP/BRPOPLPUSH/BLMOVE/BLMPOP/
      * BZPOPMIN/BZPOPMAX/BZMPOP/XREAD/XREADGROUP). When blocked, the server stops reading
      * further commands from this connection and retries the stored argv

@@ -11990,12 +11990,10 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
                     resp_write_bulk(out, help[i], strlen(help[i]));
                 return;
             }
-            if (ci_equal(sub, sublen, "GET") || ci_equal(sub, sublen, "RESET") ||
-                ci_equal(sub, sublen, "START") || ci_equal(sub, sublen, "STOP")) {
-                resp_write_error(out, "ERR HOTKEYS is not supported by this build",
-                                 sizeof("ERR HOTKEYS is not supported by this build") - 1);
-                return;
-            }
+        }
+        if (s->hotkeys_command != NULL) {
+            (void)s->hotkeys_command(s->hotkeys_ctx, argv, argc, out);
+            return;
         }
         resp_write_error(out, "ERR HOTKEYS is not supported by this build",
                          sizeof("ERR HOTKEYS is not supported by this build") - 1);
@@ -23040,6 +23038,8 @@ void session_execute_at(session *s, const resp_value *argv, size_t argc,
         s->d->cmd_calls[CMD_GET]++;
         if (s->d->maxmemory_policy == DB_POLICY_ALLKEYS_LRU)
             db_evict_if_needed(s->d, now_ms);
+        if (s->monitor_emit != NULL)
+            s->monitor_emit(s->monitor_ctx, s, argv, argc);
         return;
     }
     if (cmd_id == CMD_SET && argc == 3 && s->authed && !s->in_multi &&
@@ -23083,6 +23083,8 @@ void session_execute_at(session *s, const resp_value *argv, size_t argc,
         s->aof_skip = 0;
         if (s->d->maxmemory_policy == DB_POLICY_ALLKEYS_LRU)
             db_evict_if_needed(s->d, now_ms);
+        if (s->monitor_emit != NULL)
+            s->monitor_emit(s->monitor_ctx, s, argv, argc);
         return;
     }
 

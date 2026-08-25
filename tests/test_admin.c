@@ -335,7 +335,7 @@ static void test_redis8_management_containers(void)
 
     cmd(2, "HOTKEYS", "HELP");
     DD_CHECK(strstr(g_out.data, "GET") != NULL);
-    cmd(2, "HOTKEYS", "START");
+    cmd(5, "HOTKEYS", "START", "METRICS", "1", "CPU");
     EXPECT_REPLY("-ERR HOTKEYS is not supported by this build\r\n");
 }
 

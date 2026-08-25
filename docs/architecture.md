@@ -1220,13 +1220,17 @@ compatibility auditing, but require an internal transport hook before any
 future migration state or slot metadata can be changed.
 
 `MONITOR` uses a server-owned subscription flag and appends timestamped,
-quoted command lines to each monitor connection's existing output buffer.
-The Redis 8 management containers `BACKUP`, `HIMPORT`, and `HOTKEYS` are
-recognized for protocol compatibility. `HIMPORT` implements session-local
-fieldsets (`PREPARE`, `SET`, `DISCARD`, `DISCARDALL`) and writes ordinary hash
-objects after validating the whole batch. `BACKUP` and `HOTKEYS` remain explicit
-unsupported-build features because their MP-AOF and sampling engines require
-server-wide state.
+quoted command lines to each monitor connection's existing output buffer. The
+Redis 8 management containers `BACKUP`, `HIMPORT`, and `HOTKEYS` are recognized
+for protocol compatibility. `HIMPORT` implements session-local fieldsets
+(`PREPARE`, `SET`, `DISCARD`, `DISCARDALL`) and writes ordinary hash objects
+after validating the whole batch. `BACKUP` remains an explicit unsupported-build
+feature. `HOTKEYS` provides a server-wide, low-overhead lifecycle model:
+`START METRICS <count> [CPU|NET] [COUNT k] [DURATION seconds] [SAMPLE ratio]
+[SLOTS ...]`, `STOP`, `RESET`, and `GET` expose active state, sampling ratio,
+collection start time, and command count. It intentionally does not claim
+Redis's CPU/network top-K key ranking until those counters can be maintained
+without adding allocation or lock contention to the command hot path.
 
 - `obj_hash` 在 listpack/rh_table 双编码之外增加独立的 `expires` 表：
   键为 field，值为 8 字节小端绝对过期毫秒时间戳。紧凑编码不会退化为

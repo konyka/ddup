@@ -385,7 +385,9 @@
     `CLUSTER SYNCSLOTS`，外部会话明确拒绝且不修改迁移/槽元数据（Phase 75）
   - [x] Redis 8 管理容器：注册 `BACKUP/HIMPORT/HOTKEYS` 及已知子命令名；
     `HIMPORT PREPARE/SET/DISCARD/DISCARDALL` 以 session-local fieldset 和
-    批量 hash 写入实现，`BACKUP/HOTKEYS` 保留明确 unsupported 语义（Phase 82）
+    批量 hash 写入实现；`HOTKEYS` 提供带 DURATION/SAMPLE/SLOTS 校验的
+    server-owned 生命周期与低开销命令计数，`BACKUP` 保留明确 unsupported
+    语义（Phase 82）
   - [x] Redis 8 ARRAY 核心：`ARSET/ARGET/ARLEN/ARCOUNT`；`obj_array` 用
     稀疏索引表提供 O(1) 随机访问和 O(1) 长度/非空计数，支持快照持久化，
     并以 TDD 覆盖缺失键、连续写、边界索引与 WRONGTYPE（Phase 77）
@@ -403,6 +405,7 @@
     blocked 状态；新 entry readiness 唤醒、deadline 超时和 `BLOCK 0` 均以
     TDD 覆盖，保持多 stream、COUNT、NOACK、group 游标与 NOGROUP 安全语义
     （Phase 81）
-  - [x] Redis 8 运行时管理收尾：`HIMPORT PREPARE/SET/DISCARD/DISCARDALL` 和
-    `MONITOR` 实时命令流以 TDD 覆盖；`BACKUP/HOTKEYS` 的 MP-AOF/采样引擎仍
-    明确列为范围外（Phase 83）
+  - [x] Redis 8 运行时管理收尾：`HIMPORT PREPARE/SET/DISCARD/DISCARDALL`、
+    `HOTKEYS` 生命周期/计数和 `MONITOR` 实时命令流以 TDD 覆盖；`BACKUP`
+    的 MP-AOF 与 HOTKEYS 的 CPU/network top-K 采样引擎仍明确列为范围外
+    （Phase 83）

@@ -17,6 +17,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <limits.h>
 
 #include "core/arena.h"
 #include "core/buf_pool.h"
@@ -130,6 +131,8 @@ static void srv_monitor_emit(server *srv, const conn *source,
                              const resp_value *argv, size_t argc);
 static void srv_monitor_emit_session(void *ctx, session *source,
                                      const resp_value *argv, size_t argc);
+static int server_token_eq(const char *s, size_t len, const char *word);
+static int server_parse_ll(const resp_value *v, long long *out);
 
 /* master link states */
 #define LINK_SYNC_SENT 0
@@ -198,6 +201,12 @@ struct server {
     size_t slowlog_len;
     size_t slowlog_cap;
     uint64_t slowlog_next_id;
+    int hotkeys_active;
+    int hotkeys_initialized;
+    uint64_t hotkeys_start_ms;
+    uint64_t hotkeys_commands;
+    uint64_t hotkeys_duration_ms;
+    uint64_t hotkeys_sample_ratio;
     int shutdown_flag;
     int save_sec;               /* automatic snapshot interval, 0 = off */
     uint64_t last_save_check;   /* pal_now_ms of the last interval check */
@@ -873,7 +882,183 @@ static void srv_monitor_emit_session(void *ctx, session *source,
                                      const resp_value *argv, size_t argc)
 {
     conn *origin = source != NULL ? (conn *)source->owner : NULL;
-    srv_monitor_emit((server *)ctx, origin, argv, argc);
+    server *srv = (server *)ctx;
+    if (srv->hotkeys_active && argc > 0 && argv[0].str != NULL &&
+        !server_token_eq(argv[0].str, argv[0].len, "HOTKEYS")) {
+        if (srv->hotkeys_duration_ms != 0 &&
+            pal_wall_ms() - srv->hotkeys_start_ms >= srv->hotkeys_duration_ms)
+            srv->hotkeys_active = 0;
+    }
+    if (srv->hotkeys_active && argc > 0 && argv[0].str != NULL &&
+        !server_token_eq(argv[0].str, argv[0].len, "HOTKEYS"))
+        srv->hotkeys_commands++;
+    srv_monitor_emit(srv, origin, argv, argc);
+}
+
+static int server_token_eq(const char *s, size_t len, const char *word)
+{
+    size_t i, n = strlen(word);
+    if (s == NULL)
+        return 0;
+    if (len != n)
+        return 0;
+    for (i = 0; i < n; i++) {
+        char a = s[i], b = word[i];
+        if (a >= 'a' && a <= 'z') a = (char)(a - 'a' + 'A');
+        if (b >= 'a' && b <= 'z') b = (char)(b - 'a' + 'A');
+        if (a != b) return 0;
+    }
+    return 1;
+}
+
+static int server_parse_ll(const resp_value *v, long long *out)
+{
+    size_t i = 0;
+    int neg = 0;
+    unsigned long long n = 0;
+    if (v == NULL || v->str == NULL || v->len == 0)
+        return 0;
+    if (v->str[0] == '-') {
+        neg = 1;
+        i = 1;
+    }
+    if (i == v->len)
+        return 0;
+    for (; i < v->len; i++) {
+        unsigned digit;
+        if (v->str[i] < '0' || v->str[i] > '9')
+            return 0;
+        digit = (unsigned)(v->str[i] - '0');
+        if (n > 922337203685477580ULL ||
+            (n == 922337203685477580ULL && digit > (neg ? 8u : 7u)))
+            return 0;
+        n = n * 10ULL + digit;
+    }
+    if (neg)
+        *out = n == 9223372036854775808ULL ? LLONG_MIN : -(long long)n;
+    else
+        *out = (long long)n;
+    return 1;
+}
+
+static int srv_hotkeys_command(void *ctx, const resp_value *argv, size_t argc,
+                               resp_buf *out)
+{
+    server *srv = (server *)ctx;
+    const char *sub;
+    size_t sl;
+    size_t i;
+    if (argc < 2 || argv[1].str == NULL)
+        return -1;
+    sub = argv[1].str;
+    sl = argv[1].len;
+    if (server_token_eq(sub, sl, "START")) {
+        uint64_t duration = 0, sample = 1;
+        long long metric_count;
+        size_t metrics_seen;
+        int cpu = 0, net = 0;
+        if (argc < 4 || !server_token_eq(argv[2].str, argv[2].len, "METRICS") ||
+            !server_parse_ll(&argv[3], &metric_count) || metric_count < 1 ||
+            metric_count > 2 || (uint64_t)metric_count > (uint64_t)(argc - 4))
+            return resp_write_error(out, "ERR syntax error", 16), 0;
+        for (metrics_seen = 0; metrics_seen < (size_t)metric_count; metrics_seen++) {
+            const resp_value *metric = &argv[4 + metrics_seen];
+            if (server_token_eq(metric->str, metric->len, "CPU") && !cpu)
+                cpu = 1;
+            else if (server_token_eq(metric->str, metric->len, "NET") && !net)
+                net = 1;
+            else
+                return resp_write_error(out, "ERR syntax error", 16), 0;
+        }
+        i = 4 + (size_t)metric_count;
+        while (i < argc) {
+            const char *tok = argv[i].str;
+            size_t len = argv[i].len;
+            if (server_token_eq(tok, len, "CPU") || server_token_eq(tok, len, "NET")) {
+                i++;
+            } else if (server_token_eq(tok, len, "COUNT") && i + 1 < argc) {
+                long long count;
+                if (!server_parse_ll(&argv[++i], &count) || count < 1)
+                    return resp_write_error(out, "ERR syntax error", 16), 0;
+                (void)count;
+                i++;
+            } else if (server_token_eq(tok, len, "DURATION") && i + 1 < argc) {
+                long long seconds;
+                if (!server_parse_ll(&argv[++i], &seconds) || seconds < 1)
+                    return resp_write_error(out, "ERR syntax error", 16), 0;
+                if ((uint64_t)seconds > UINT64_MAX / 1000ULL)
+                    return resp_write_error(out, "ERR syntax error", 16), 0;
+                duration = (uint64_t)seconds * 1000ULL;
+                i++;
+            } else if (server_token_eq(tok, len, "SAMPLE") && i + 1 < argc) {
+                long long ratio;
+                if (!server_parse_ll(&argv[++i], &ratio) || ratio < 1)
+                    return resp_write_error(out, "ERR syntax error", 16), 0;
+                sample = (uint64_t)ratio;
+                i++;
+            } else if (server_token_eq(tok, len, "SLOTS")) {
+                long long count;
+                size_t j;
+                if (i + 1 >= argc || !server_parse_ll(&argv[++i], &count) || count < 1 ||
+                    (uint64_t)count > (uint64_t)(argc - i - 1))
+                    return resp_write_error(out, "ERR syntax error", 16), 0;
+                for (j = 0; j < (size_t)count; j++) {
+                    long long slot;
+                    if (!server_parse_ll(&argv[i + 1 + j], &slot) ||
+                        slot < 0 || slot > 16383)
+                        return resp_write_error(out, "ERR syntax error", 16), 0;
+                }
+                i += (size_t)count;
+            } else {
+                return resp_write_error(out, "ERR syntax error", 16), 0;
+            }
+        }
+        srv->hotkeys_active = 1;
+        srv->hotkeys_initialized = 1;
+        srv->hotkeys_start_ms = pal_wall_ms();
+        srv->hotkeys_commands = 0;
+        srv->hotkeys_duration_ms = duration;
+        srv->hotkeys_sample_ratio = sample;
+        resp_write_simple_string(out, "OK", 2);
+        return 0;
+    }
+    if (server_token_eq(sub, sl, "STOP")) {
+        srv->hotkeys_active = 0;
+        resp_write_simple_string(out, "OK", 2);
+        return 0;
+    }
+    if (server_token_eq(sub, sl, "RESET")) {
+        srv->hotkeys_active = 0;
+        srv->hotkeys_initialized = 0;
+        srv->hotkeys_start_ms = 0;
+        srv->hotkeys_commands = 0;
+        srv->hotkeys_duration_ms = 0;
+        srv->hotkeys_sample_ratio = 1;
+        resp_write_simple_string(out, "OK", 2);
+        return 0;
+    }
+    if (server_token_eq(sub, sl, "GET")) {
+        if (srv->hotkeys_active && srv->hotkeys_duration_ms != 0 &&
+            pal_wall_ms() - srv->hotkeys_start_ms >= srv->hotkeys_duration_ms)
+            srv->hotkeys_active = 0;
+        if (!srv->hotkeys_initialized) {
+            resp_write_null(out);
+            return 0;
+        }
+        resp_write_array_header(out, 1);
+        resp_write_map_header(out, 4);
+        resp_write_bulk(out, "tracking-active", 15);
+        resp_write_integer(out, srv->hotkeys_active);
+        resp_write_bulk(out, "sample-ratio", 12);
+        resp_write_integer(out, (long long)srv->hotkeys_sample_ratio);
+        resp_write_bulk(out, "collection-start-time-unix-ms", 31);
+        resp_write_integer(out, (long long)srv->hotkeys_start_ms);
+        resp_write_bulk(out, "total-commands", 14);
+        resp_write_integer(out, (long long)srv->hotkeys_commands);
+        return 0;
+    }
+    resp_write_error(out, "ERR unknown HOTKEYS subcommand", 30);
+    return 0;
 }
 
 /* Propagation sink for every successfully-applied mutating command:
@@ -1303,6 +1488,8 @@ static conn *conn_create(server *srv, pal_socket_t fd)
     c->sess->monitor_ctx = srv;
     c->sess->monitor_start = srv_monitor_start;
     c->sess->monitor_emit = srv_monitor_emit_session;
+    c->sess->hotkeys_ctx = srv;
+    c->sess->hotkeys_command = srv_hotkeys_command;
     c->sess->bgrewriteaof_ctx = srv;
     c->sess->bgrewriteaof = srv_bgrewriteaof;
     c->sess->cluster_ctx = srv;
