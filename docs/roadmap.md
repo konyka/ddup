@@ -213,8 +213,8 @@
     （src/ds/glob）、rhtable 游标迭代 rh_scan（主表+rehash 旧表
     虚拟桶下标，回调可删除——字段逐轮重读）；RENAME 对象所有权
     转移经 db_del_kv_keep_obj（免 obj_free 悬垂）；集群同槽/
-    所有权与 mt 路由分类同步（KEYS/SCAN/RANDOMKEY mt 模式不支持，
-    记录在案）（Phase 39）
+    所有权与 mt 路由分类同步；mt 的 `RANDOMKEY` 通过 worker 聚合返回
+    任一非空分片键，`KEYS/SCAN` 仍保留为后续游标聚合项（Phase 39）
   - [x] 字符串扩展命令：GETDEL/GETEX/SETEX/PSETEX/GETSET/SETRANGE/
     GETRANGE/INCRBY/DECRBY/INCRBYFLOAT；INCR/DECR 重构为共用 delta
     路径（溢出判定通用化）；SETRANGE 512MB 上限 + 补零写；

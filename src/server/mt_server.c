@@ -291,6 +291,8 @@ struct mt_agg {
     info_stats *stats; /* INFO: summed machine-format parts (or NULL) */
     char *raw;      /* copied command bytes for aggregate mutation replay */
     size_t rawlen;
+    char *random_key; /* first non-null RANDOMKEY result */
+    size_t random_key_len;
     int fanout_done;
     int abandoned;
     int finished;
@@ -628,6 +630,7 @@ static void mt_agg_free(mt_agg *agg)
     mt_untrack_abandoned_agg(agg->home->ms, agg);
     agg->finished = 1;
     free(agg->raw);
+    free(agg->random_key);
     free(agg->stats);
     free(agg);
 }
@@ -1348,6 +1351,36 @@ static void mt_agg_accumulate(mt_agg *agg, const resp_buf *part)
             agg->err = 1;
         else if (agg->cmd == CMD_INFO && agg->stats != NULL)
             mt_agg_info_accumulate(agg, part->data, part->len);
+        else if (agg->cmd == CMD_RANDOMKEY && part->data[0] == '$') {
+            const char *eol = (const char *)memchr(part->data, '\n',
+                                                   part->len);
+            long long n = -1;
+            const char *payload;
+            size_t plen;
+            if (eol != NULL && eol > part->data + 1) {
+                char num[32];
+                size_t nl = (size_t)(eol - (part->data + 1));
+                if (nl > 0 && nl < sizeof(num)) {
+                    memcpy(num, part->data + 1, nl);
+                    num[nl] = '\0';
+                    n = strtoll(num, NULL, 10);
+                }
+                payload = eol + 1;
+                if (n >= 0 && (unsigned long long)n <=
+                                  (unsigned long long)(part->data + part->len - payload)) {
+                    plen = (size_t)n;
+                    if (agg->random_key == NULL && plen > 0 &&
+                        payload + plen <= part->data + part->len) {
+                        agg->random_key = (char *)malloc(plen);
+                        if (agg->random_key != NULL) {
+                            memcpy(agg->random_key, payload, plen);
+                            agg->random_key_len = plen;
+                        } else
+                            agg->err = 1;
+                    }
+                }
+            }
+        }
         else if (part->data[0] == ':' && part->len > 2) {
             long long v = strtoll(part->data + 1, NULL, 10);
             if (agg->cmd == CMD_DBSIZE)
@@ -1381,6 +1414,9 @@ static void mt_agg_finish(server *srv, void *conn, mt_conn_state *st,
                                 agg->stats, &fin->reply);
         else if (agg->cmd == CMD_DBSIZE || agg->cmd == CMD_LASTSAVE)
             resp_write_integer(&fin->reply, agg->sum);
+        else if (agg->cmd == CMD_RANDOMKEY)
+            resp_write_bulk(&fin->reply, agg->random_key,
+                            agg->random_key_len);
         else
             resp_write_simple_string(&fin->reply, "OK", 2);
         mt_reorder_insert(st, fin);
@@ -1418,7 +1454,6 @@ static int mt_is_blocked(uint16_t cmd)
     case CMD_BZMPOP:
     case CMD_KEYS:      /* whole-db scans have no mt routing target */
     case CMD_SCAN:
-    case CMD_RANDOMKEY:
     case CMD_PSUBSCRIBE:   /* pattern pub/sub is not supported in mt mode */
     case CMD_PUNSUBSCRIBE:
         return 1;
@@ -1594,7 +1629,7 @@ static int mt_is_aggregate(uint16_t cmd)
 {
     return cmd == CMD_DBSIZE || cmd == CMD_FLUSHDB || cmd == CMD_SAVE ||
            cmd == CMD_BGSAVE || cmd == CMD_LASTSAVE || cmd == CMD_SWAPDB ||
-           cmd == CMD_INFO || cmd == CMD_FLUSHALL;
+           cmd == CMD_INFO || cmd == CMD_FLUSHALL || cmd == CMD_RANDOMKEY;
 }
 
 /* Multi-key commands: every key must map to the same worker (same rule as
@@ -2992,7 +3027,7 @@ static int mt_route(void *ctx, void *conn, session *sess,
 
     if (cmd == CMD_DBSIZE || cmd == CMD_FLUSHDB || cmd == CMD_SAVE ||
         cmd == CMD_LASTSAVE || cmd == CMD_SWAPDB || cmd == CMD_INFO ||
-        cmd == CMD_FLUSHALL) {
+        cmd == CMD_FLUSHALL || cmd == CMD_RANDOMKEY) {
         mt_batch_flush(home, conn, st);
         return mt_route_aggregate(home, conn, argv, argc, raw, rawlen, cmd,
                                   sess->db_index);

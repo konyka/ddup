@@ -189,9 +189,10 @@
   expired/evicted/dbsize 求和、按库与按命令 id 合并），再由共享的
   `command_info_render()` 渲染为单份人类可读 INFO（maxmemory/策略/
   cluster 标志取 home worker 值）。
-- **限制（记录在案）**：mt 模式下 SHUTDOWN/MIGRATE/ASKING/KEYS/
-  SCAN/RANDOMKEY/PSUBSCRIBE/PUNSUBSCRIBE 返回 `-ERR command not
-  supported in mt mode`；`SYNC/PSYNC/REPLICAOF/SLAVEOF/CLUSTER` 已由
+- **限制（记录在案）**：mt 模式下 SHUTDOWN/MIGRATE/KEYS/SCAN/
+  PSUBSCRIBE/PUNSUBSCRIBE 返回 `-ERR command not supported in mt mode`；
+  `RANDOMKEY` 广播到各 worker 后由 home worker 返回首个非空 key；
+  `SYNC/PSYNC/REPLICAOF/SLAVEOF/CLUSTER` 已由
   worker 0 控制面支持（SYNC/PSYNC 分类到 worker 0，master 侧全量快照
   见 mt 复制/集群适配）。INFO # Replication 由 home 端从 worker 0 的
   `repl_info` 渲染（mt master 暴露 connected_slaves/master_repl_offset，
