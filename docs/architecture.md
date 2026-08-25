@@ -1224,8 +1224,12 @@ quoted command lines to each monitor connection's existing output buffer. The
 Redis 8 management containers `BACKUP`, `HIMPORT`, and `HOTKEYS` are recognized
 for protocol compatibility. `HIMPORT` implements session-local fieldsets
 (`PREPARE`, `SET`, `DISCARD`, `DISCARDALL`) and writes ordinary hash objects
-after validating the whole batch. `BACKUP` remains an explicit unsupported-build
-feature. `HOTKEYS` provides a server-wide, low-overhead lifecycle model:
+after validating the whole batch. `BACKUP` uses the existing multi-database
+snapshot serializer to create an atomic `.backup` artifact beside the configured
+snapshot path. Its `START/STATUS/SEAL/LIST/ABORT/CLEANUP` state machine is
+server-owned, fail-closed on missing paths or IO errors, and never overwrites
+the live snapshot. It is a synchronous baseline until an incremental MP-AOF
+engine is available. `HOTKEYS` provides a server-wide, low-overhead lifecycle model:
 `START METRICS <count> [CPU|NET] [COUNT k] [DURATION seconds] [SAMPLE ratio]
 [SLOTS ...]`, `STOP`, `RESET`, and `GET` expose active state, sampling ratio,
 collection start time, and command count. It intentionally does not claim

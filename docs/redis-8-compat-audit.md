@@ -46,8 +46,10 @@
   internal-client-only security gate; external sessions cannot alter migration
   state or slot metadata.
 - `MONITOR` streams subsequent commands to subscribed server connections,
-  including GET/SET lean fast paths. `BACKUP` remains an explicit
-  unsupported-build container. `HOTKEYS` implements a server-owned lifecycle
+  including GET/SET lean fast paths. `BACKUP` implements a safe synchronous
+  snapshot-backed lifecycle (`START/STATUS/SEAL/LIST/ABORT/CLEANUP`) using an
+  atomic `.backup` artifact; incremental MP-AOF pinning remains out of scope.
+  `HOTKEYS` implements a server-owned lifecycle
   and low-overhead command counter with Redis 8 START option validation;
   `GET` reports tracking state, sample ratio, start time, and total commands.
   CPU/network top-K key metrics remain intentionally out of scope.
@@ -89,8 +91,8 @@
 
 ## 范围外 / 待后续评估
 
-- `BACKUP`：命令级入口已兼容，但实际 MP-AOF 备份仍是明确的
-  unsupported-build 能力。`HOTKEYS` 已实现安全的生命周期、参数校验和
+- `BACKUP`：已实现基于原子多库快照的安全同步生命周期；Redis 的
+  MP-AOF 增量 pinning/immutable-file 引擎仍是范围外。`HOTKEYS` 已实现安全的生命周期、参数校验和
   命令计数模型；Redis 的 CPU/network top-K 热键采样与共享 hash-template
   编码仍未复刻。`HIMPORT` 已实现会话级字段集准备、批量写入和丢弃。
 - ARRAY 高级语义：当前稀疏对象模型提供命令级安全行为；`ARINFO FULL`

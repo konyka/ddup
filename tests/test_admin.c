@@ -240,6 +240,16 @@ static void test_bgsave_bgrewriteaof(void)
 
     roundtrip(s, c, "*1\r\n$12\r\nBGREWRITEAOF\r\n", "+Background append only file rewriting started\r\n");
 
+    roundtrip(s, c, "*2\r\n$6\r\nBACKUP\r\n$5\r\nSTART\r\n", "+OK\r\n");
+    roundtrip_contains(s, c,
+                       "*2\r\n$6\r\nBACKUP\r\n$6\r\nSTATUS\r\n",
+                       "incrementing");
+    roundtrip(s, c, "*2\r\n$6\r\nBACKUP\r\n$4\r\nSEAL\r\n", "+OK\r\n");
+    roundtrip_contains(s, c,
+                       "*2\r\n$6\r\nBACKUP\r\n$4\r\nLIST\r\n",
+                       ".backup");
+    roundtrip(s, c, "*2\r\n$6\r\nBACKUP\r\n$7\r\nCLEANUP\r\n", "+OK\r\n");
+
     pal_close(c);
     server_destroy(s);
     remove(snap);

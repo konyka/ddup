@@ -133,6 +133,8 @@ static void srv_monitor_emit_session(void *ctx, session *source,
                                      const resp_value *argv, size_t argc);
 static int server_token_eq(const char *s, size_t len, const char *word);
 static int server_parse_ll(const resp_value *v, long long *out);
+static int srv_backup_command(void *ctx, const resp_value *argv, size_t argc,
+                              resp_buf *out);
 
 /* master link states */
 #define LINK_SYNC_SENT 0
@@ -207,6 +209,11 @@ struct server {
     uint64_t hotkeys_commands;
     uint64_t hotkeys_duration_ms;
     uint64_t hotkeys_sample_ratio;
+    int backup_state;
+    char *backup_path;
+    uint64_t backup_start_ms;
+    uint64_t backup_end_ms;
+    char backup_error[128];
     int shutdown_flag;
     int save_sec;               /* automatic snapshot interval, 0 = off */
     uint64_t last_save_check;   /* pal_now_ms of the last interval check */
@@ -1061,6 +1068,140 @@ static int srv_hotkeys_command(void *ctx, const resp_value *argv, size_t argc,
     return 0;
 }
 
+enum {
+    BACKUP_IDLE = 0,
+    BACKUP_PENDING = 1,
+    BACKUP_SNAPSHOT = 2,
+    BACKUP_INCREMENTING = 3,
+    BACKUP_SEALED = 4,
+    BACKUP_FAILED = 5
+};
+
+static const char *backup_state_name(int state)
+{
+    static const char *const names[] = {
+        "idle", "pending", "snapshotting", "incrementing", "sealed", "failed"
+    };
+    return state >= BACKUP_IDLE && state <= BACKUP_FAILED ? names[state] : "failed";
+}
+
+static int srv_backup_command(void *ctx, const resp_value *argv, size_t argc,
+                              resp_buf *out)
+{
+    server *srv = (server *)ctx;
+    const char *sub;
+    size_t len;
+    if (argc < 2 || argv[1].str == NULL ||
+        (argv[1].type != RESP_BULK_STRING && argv[1].type != RESP_SIMPLE_STRING))
+        return resp_write_error(out, "ERR wrong number of arguments", 31), 0;
+    sub = argv[1].str;
+    len = argv[1].len;
+    if (server_token_eq(sub, len, "START")) {
+        if (argc != 2)
+            return resp_write_error(out, "ERR wrong number of arguments", 31), 0;
+        if (srv->backup_state == BACKUP_PENDING ||
+            srv->backup_state == BACKUP_SNAPSHOT ||
+            srv->backup_state == BACKUP_INCREMENTING)
+            return resp_write_error(out, "ERR backup already in progress", 31), 0;
+        if (srv->backup_state == BACKUP_SEALED)
+            return resp_write_error(out, "ERR backup is sealed", 21), 0;
+        if (srv->db.snapshot_path == NULL || srv->db.snapshot_path[0] == '\0') {
+            srv->backup_state = BACKUP_FAILED;
+            snprintf(srv->backup_error, sizeof(srv->backup_error),
+                     "snapshot path not configured");
+            return resp_write_error(out, "ERR snapshot path not configured", 32), 0;
+        }
+        free(srv->backup_path);
+        srv->backup_path = NULL;
+        {
+            size_t n = strlen(srv->db.snapshot_path);
+            srv->backup_path = (char *)malloc(n + sizeof(".backup"));
+            if (srv->backup_path == NULL) {
+                srv->backup_state = BACKUP_FAILED;
+                snprintf(srv->backup_error, sizeof(srv->backup_error), "out of memory");
+                return resp_write_error(out, "ERR out of memory", 17), 0;
+            }
+            memcpy(srv->backup_path, srv->db.snapshot_path, n);
+            memcpy(srv->backup_path + n, ".backup", sizeof(".backup"));
+        }
+        srv->backup_state = BACKUP_SNAPSHOT;
+        srv->backup_start_ms = pal_wall_ms();
+        srv->backup_end_ms = 0;
+        srv->backup_error[0] = '\0';
+        if (snapshot_save_multi(srv, srv_select_db, srv->ndbs,
+                                srv->backup_path) != 0) {
+            srv->backup_state = BACKUP_FAILED;
+            snprintf(srv->backup_error, sizeof(srv->backup_error), "snapshot save failed");
+            return resp_write_error(out, "ERR backup snapshot failed", 28), 0;
+        }
+        srv->backup_state = BACKUP_INCREMENTING;
+        srv->backup_end_ms = pal_wall_ms();
+        resp_write_simple_string(out, "OK", 2);
+        return 0;
+    }
+    if (server_token_eq(sub, len, "STATUS")) {
+        resp_write_map_header(out, 4);
+        resp_write_bulk(out, "state", 5);
+        resp_write_bulk(out, backup_state_name(srv->backup_state),
+                        strlen(backup_state_name(srv->backup_state)));
+        resp_write_bulk(out, "start_time", 10);
+        resp_write_integer(out, (long long)srv->backup_start_ms);
+        resp_write_bulk(out, "end_time", 8);
+        resp_write_integer(out, (long long)srv->backup_end_ms);
+        resp_write_bulk(out, "error", 5);
+        resp_write_bulk(out, srv->backup_error[0] ? srv->backup_error : NULL,
+                        srv->backup_error[0] ? strlen(srv->backup_error) : 0);
+        return 0;
+    }
+    if (server_token_eq(sub, len, "LIST")) {
+        resp_write_array_header(out, srv->backup_path != NULL ? 1 : 0);
+        if (srv->backup_path != NULL)
+            resp_write_bulk(out, srv->backup_path, strlen(srv->backup_path));
+        return 0;
+    }
+    if (server_token_eq(sub, len, "SEAL")) {
+        if (argc != 2)
+            return resp_write_error(out, "ERR wrong number of arguments", 31), 0;
+        if (srv->backup_state != BACKUP_INCREMENTING)
+            return resp_write_error(out, "ERR no pending backup", 22), 0;
+        srv->backup_state = BACKUP_SEALED;
+        resp_write_simple_string(out, "OK", 2);
+        return 0;
+    }
+    if (server_token_eq(sub, len, "ABORT")) {
+        if (argc != 2)
+            return resp_write_error(out, "ERR wrong number of arguments", 31), 0;
+        if (srv->backup_state == BACKUP_SEALED)
+            return resp_write_error(out, "ERR backup is sealed", 21), 0;
+        if (srv->backup_path != NULL)
+            pal_file_unlink(srv->backup_path);
+        free(srv->backup_path);
+        srv->backup_path = NULL;
+        srv->backup_state = BACKUP_IDLE;
+        srv->backup_start_ms = 0;
+        srv->backup_end_ms = 0;
+        srv->backup_error[0] = '\0';
+        resp_write_simple_string(out, "OK", 2);
+        return 0;
+    }
+    if (server_token_eq(sub, len, "CLEANUP")) {
+        if (argc != 2)
+            return resp_write_error(out, "ERR wrong number of arguments", 31), 0;
+        if (srv->backup_state != BACKUP_SEALED)
+            return resp_write_error(out, "ERR no sealed backup", 21), 0;
+        if (srv->backup_path != NULL && pal_file_unlink(srv->backup_path) != 0 &&
+            pal_file_exists(srv->backup_path))
+            return resp_write_error(out, "ERR backup cleanup failed", 27), 0;
+        srv->backup_state = BACKUP_IDLE;
+        free(srv->backup_path);
+        srv->backup_path = NULL;
+        resp_write_simple_string(out, "OK", 2);
+        return 0;
+    }
+    resp_write_error(out, "ERR unknown BACKUP subcommand", 30);
+    return 0;
+}
+
 /* Propagation sink for every successfully-applied mutating command:
  * serialize once, then fan out to AOF (if any), the replication backlog
  * and all downstream replica conns (flushed at end of run_once). */
@@ -1490,6 +1631,8 @@ static conn *conn_create(server *srv, pal_socket_t fd)
     c->sess->monitor_emit = srv_monitor_emit_session;
     c->sess->hotkeys_ctx = srv;
     c->sess->hotkeys_command = srv_hotkeys_command;
+    c->sess->backup_ctx = srv;
+    c->sess->backup_command = srv_backup_command;
     c->sess->bgrewriteaof_ctx = srv;
     c->sess->bgrewriteaof = srv_bgrewriteaof;
     c->sess->cluster_ctx = srv;
@@ -2863,6 +3006,7 @@ void server_destroy(server *s)
         free(s->extra_dbs);
     }
     tier_close(s->tier);
+    free(s->backup_path);
     buf_pool_destroy(&s->pool);
     free(s);
 }
@@ -3083,6 +3227,10 @@ void server_conn_rehome(server *s, void *conn_ptr)
     c->sess->client_ctx = s;
     c->sess->slowlog_ctx = s;
     c->sess->bgrewriteaof_ctx = s;
+    c->sess->hotkeys_ctx = s;
+    c->sess->hotkeys_command = srv_hotkeys_command;
+    c->sess->backup_ctx = s;
+    c->sess->backup_command = srv_backup_command;
     c->sess->aof_ctx = s;
     c->sess->repl = &s->repl;
     c->sess->role = &s->role;

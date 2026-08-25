@@ -11962,13 +11962,20 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
                     resp_write_bulk(out, help[i], strlen(help[i]));
                 return;
             }
-            if (ci_equal(sub, sublen, "ABORT") || ci_equal(sub, sublen, "CLEANUP") ||
-                ci_equal(sub, sublen, "LIST") || ci_equal(sub, sublen, "SEAL") ||
-                ci_equal(sub, sublen, "START") || ci_equal(sub, sublen, "STATUS")) {
-                resp_write_error(out, "ERR BACKUP is not supported by this build",
-                                 sizeof("ERR BACKUP is not supported by this build") - 1);
+            if (s->backup_command != NULL &&
+                (ci_equal(sub, sublen, "ABORT") ||
+                 ci_equal(sub, sublen, "CLEANUP") ||
+                 ci_equal(sub, sublen, "LIST") ||
+                 ci_equal(sub, sublen, "SEAL") ||
+                 ci_equal(sub, sublen, "START") ||
+                 ci_equal(sub, sublen, "STATUS"))) {
+                (void)s->backup_command(s->backup_ctx, argv, argc, out);
                 return;
             }
+        }
+        if (s->backup_command != NULL) {
+            (void)s->backup_command(s->backup_ctx, argv, argc, out);
+            return;
         }
         resp_write_error(out, "ERR BACKUP is not supported by this build",
                          sizeof("ERR BACKUP is not supported by this build") - 1);
@@ -11989,6 +11996,13 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
                 for (i = 0; i < sizeof(help) / sizeof(help[0]); i++)
                     resp_write_bulk(out, help[i], strlen(help[i]));
                 return;
+            }
+            if (ci_equal(sub, sublen, "GET") || ci_equal(sub, sublen, "RESET") ||
+                ci_equal(sub, sublen, "START") || ci_equal(sub, sublen, "STOP")) {
+                if (s->hotkeys_command != NULL) {
+                    (void)s->hotkeys_command(s->hotkeys_ctx, argv, argc, out);
+                    return;
+                }
             }
         }
         if (s->hotkeys_command != NULL) {
