@@ -411,3 +411,6 @@
     命令流以 TDD 覆盖；BACKUP 的增量 MP-AOF 与 HOTKEYS 的 CPU/network
     top-K 采样引擎仍明确列为范围外
     （Phase 83）
+  - [x] mt 集群路由安全收敛：`ASKING` 不再被误判为不支持命令，按连接
+    会话保留一次性标志并交给现有 cluster ownership 检查；其余全库扫描和
+    模式订阅命令仍列为后续聚合路由工作（Phase 84）

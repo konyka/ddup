@@ -1408,7 +1408,6 @@ static int mt_is_blocked(uint16_t cmd)
     switch (cmd) {
     case CMD_SHUTDOWN:
     case CMD_MIGRATE:
-    case CMD_ASKING:
     case CMD_BLPOP:
     case CMD_BRPOP:
     case CMD_BRPOPLPUSH:
@@ -1575,6 +1574,7 @@ static int mt_is_keyless(uint16_t cmd)
     case CMD_READWRITE:
     case CMD_ROLE:
     case CMD_RESET:
+    case CMD_ASKING:
     case CMD_HELLO:
     case CMD_PFSELFTEST:
     case CMD_COMMAND:
