@@ -1077,6 +1077,7 @@ static void command_himport(session *s, const resp_value *argv, size_t argc,
     if (ci_equal(sub, sub_len, "DISCARD")) {
         const char *name;
         size_t name_len, i;
+        int removed = 0;
         if (argc != 3 || !arg_str(&argv[2], &name, &name_len))
             goto syntax;
         for (i = 0; i < s->himport_len; i++) {
@@ -1084,20 +1085,23 @@ static void command_himport(session *s, const resp_value *argv, size_t argc,
                 memcmp(s->himport_sets[i].name, name, name_len) == 0) {
                 himport_fieldset_free(&s->himport_sets[i]);
                 s->himport_sets[i] = s->himport_sets[--s->himport_len];
+                removed = 1;
                 break;
             }
         }
-        resp_write_simple_string(out, "OK", 2);
+        resp_write_integer(out, removed);
         return;
     }
     if (ci_equal(sub, sub_len, "DISCARDALL")) {
         size_t i;
+        size_t removed;
         if (argc != 2)
             goto syntax;
+        removed = s->himport_len;
         for (i = 0; i < s->himport_len; i++)
             himport_fieldset_free(&s->himport_sets[i]);
         s->himport_len = 0;
-        resp_write_simple_string(out, "OK", 2);
+        resp_write_integer(out, (long long)removed);
         return;
     }
     if (ci_equal(sub, sub_len, "SET")) {

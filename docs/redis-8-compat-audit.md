@@ -55,7 +55,8 @@
   lists. ddup reports sampled command/argument-byte units rather than process
   CPU/network counters.
   `HIMPORT PREPARE/SET/DISCARD/DISCARDALL` is implemented with session-local
-  fieldsets and validated batched writes to ordinary hash objects.
+  fieldsets, Redis-compatible integer removal counts for DISCARD/DISCARDALL,
+  and validated batched writes to ordinary hash objects.
 - ARRAY core: `ARSET/ARGET/ARLEN/ARCOUNT` use a sparse `rh_table` keyed by
   fixed-width indexes. `ARLEN` and `ARCOUNT` read object metadata in O(1),
   while `ARSET` validates every input before modifying the object. The type is

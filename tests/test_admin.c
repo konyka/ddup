@@ -339,9 +339,15 @@ static void test_redis8_management_containers(void)
     cmd(5, "HIMPORT", "SET", "broken", "person", "only-one");
     DD_CHECK(g_out.len > 0 && g_out.data[0] == '-');
     cmd(3, "HIMPORT", "DISCARD", "person");
-    EXPECT_REPLY("+OK\r\n");
+    EXPECT_REPLY(":1\r\n");
     cmd(6, "HIMPORT", "SET", "gone", "person", "Ada", "37");
     EXPECT_REPLY("-ERR no such fieldset\r\n");
+    cmd(4, "HIMPORT", "PREPARE", "one", "f");
+    EXPECT_REPLY("+OK\r\n");
+    cmd(4, "HIMPORT", "PREPARE", "two", "g");
+    EXPECT_REPLY("+OK\r\n");
+    cmd(2, "HIMPORT", "DISCARDALL");
+    EXPECT_REPLY(":2\r\n");
 
     cmd(2, "HOTKEYS", "HELP");
     DD_CHECK(strstr(g_out.data, "GET") != NULL);
