@@ -147,7 +147,6 @@ D:\a\ddup\ddup\src\core\command.c(15599,18): warning C4457: declaration of 's' h
       D:\a\ddup\ddup\src\core\command.c(11898,39):
       see declaration of 's'
   
-  buf_pool.c
 D:\a\ddup\ddup\src\core\command.c(17308,30): error C2057: expected constant expression [D:\a\ddup\ddup\build\ddup_core.vcxproj]
 D:\a\ddup\ddup\src\core\command.c(17308,30): error C2466: cannot allocate an array of constant size 0 [D:\a\ddup\ddup\build\ddup_core.vcxproj]
 D:\a\ddup\ddup\src\core\command.c(17308,25): error C2133: 'vals': unknown size [D:\a\ddup\ddup\build\ddup_core.vcxproj]
@@ -208,6 +207,7 @@ D:\a\ddup\ddup\src\core\command.c(21045,23): error C2133: 'counts': unknown size
 D:\a\ddup\ddup\src\core\command.c(21046,38): error C2057: expected constant expression [D:\a\ddup\ddup\build\ddup_core.vcxproj]
 D:\a\ddup\ddup\src\core\command.c(21046,33): error C2466: cannot allocate an array of constant size 0 [D:\a\ddup\ddup\build\ddup_core.vcxproj]
 D:\a\ddup\ddup\src\core\command.c(21046,27): error C2133: 'added': unknown size [D:\a\ddup\ddup\build\ddup_core.vcxproj]
+  buf_pool.c
   tier.c
 D:\a\ddup\ddup\src\core\tier.c(180,15): warning C4996: 'strdup': The POSIX name for this item is deprecated. Instead, use the ISO C and C++ conformant name: _strdup. See online help for details. [D:\a\ddup\ddup\build\ddup_core.vcxproj]
   obj.c
@@ -251,8 +251,12 @@ D:\a\ddup\ddup\src\core\script.c(470,42): warning C4244: 'function': conversion 
   resp_parser.c
   resp_writer.c
   server.c
-D:\a\ddup\ddup\src\server\server.c(4500,17): warning C4456: declaration of 'i' hides previous local declaration [D:\a\ddup\ddup\build\ddup_core.vcxproj]
-      D:\a\ddup\ddup\src\server\server.c(4485,9):
+D:\a\ddup\ddup\src\server\server.c(1152,20): warning C4456: declaration of 'i' hides previous local declaration [D:\a\ddup\ddup\build\ddup_core.vcxproj]
+      D:\a\ddup\ddup\src\server\server.c(1030,12):
+      see declaration of 'i'
+  
+D:\a\ddup\ddup\src\server\server.c(4628,17): warning C4456: declaration of 'i' hides previous local declaration [D:\a\ddup\ddup\build\ddup_core.vcxproj]
+      D:\a\ddup\ddup\src\server\server.c(4613,9):
       see declaration of 'i'
   
   mt_server.c
@@ -479,8 +483,12 @@ D:\a\ddup\ddup\src\core\script.c(470,42): warning C4244: 'function': conversion 
   resp_parser.c
   resp_writer.c
   server.c
-D:\a\ddup\ddup\src\server\server.c(4500,17): warning C4456: declaration of 'i' hides previous local declaration [D:\a\ddup\ddup\build\ddup_core_test.vcxproj]
-      D:\a\ddup\ddup\src\server\server.c(4485,9):
+D:\a\ddup\ddup\src\server\server.c(1152,20): warning C4456: declaration of 'i' hides previous local declaration [D:\a\ddup\ddup\build\ddup_core_test.vcxproj]
+      D:\a\ddup\ddup\src\server\server.c(1030,12):
+      see declaration of 'i'
+  
+D:\a\ddup\ddup\src\server\server.c(4628,17): warning C4456: declaration of 'i' hides previous local declaration [D:\a\ddup\ddup\build\ddup_core_test.vcxproj]
+      D:\a\ddup\ddup\src\server\server.c(4613,9):
       see declaration of 'i'
   
   mt_server.c
