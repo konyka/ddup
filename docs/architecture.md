@@ -1218,6 +1218,8 @@ are deliberately fail-closed for client sessions. They are recognized for
 compatibility auditing, but require an internal transport hook before any
 future migration state or slot metadata can be changed.
 
+`MONITOR` uses a server-owned subscription flag and appends timestamped,
+quoted command lines to each monitor connection's existing output buffer.
 The Redis 8 management containers `BACKUP`, `HIMPORT`, and `HOTKEYS` are
 recognized for protocol compatibility. `HIMPORT` implements session-local
 fieldsets (`PREPARE`, `SET`, `DISCARD`, `DISCARDALL`) and writes ordinary hash

@@ -61,7 +61,8 @@
   超时到期时唤醒；mt 模式暂不路由这些命令（记录在案）。
 - 复制/运维族：已注册 `REPLCONF/FAILOVER/MONITOR/WAIT/WAITAOF`；单机/
   共享无副本语义下 `WAIT/WAITAOF` 返回 0，`FAILOVER` 返回无可副本错误，
-  `MONITOR` 返回明确不支持，`REPLCONF` 仅做握手应答。
+  `MONITOR` 已接入 server 级实时文本流，订阅连接收到后续命令事件；
+  `REPLCONF` 仍仅做握手应答。
 - `LOLWUT` 已实现 `VERSION 5/6` 的最小 ASCII art；`RESTORE/RESTORE-ASKING`
   已支持 `REPLACE/ABSTTL/IDLETIME/FREQ`（IDLETIME/FREQ 仅做参数解析与
   兼容接受，ddup 无 LRU/LFU 对象元数据）。

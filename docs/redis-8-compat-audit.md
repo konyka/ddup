@@ -45,7 +45,8 @@
 - `CLUSTER MIGRATION` and `CLUSTER SYNCSLOTS` are recognized with an
   internal-client-only security gate; external sessions cannot alter migration
   state or slot metadata.
-- `BACKUP` and `HOTKEYS` remain explicit unsupported-build containers.
+- `MONITOR` streams subsequent commands to subscribed server connections.
+  `BACKUP` and `HOTKEYS` remain explicit unsupported-build containers.
   `HIMPORT PREPARE/SET/DISCARD/DISCARDALL` is implemented with session-local
   fieldsets and validated batched writes to ordinary hash objects.
 - ARRAY core: `ARSET/ARGET/ARLEN/ARCOUNT` use a sparse `rh_table` keyed by
