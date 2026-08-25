@@ -93,9 +93,22 @@ void session_watch_clear(session *s)
 
 void session_release(session *s)
 {
+    size_t i, j;
     session_block_clear(s);
     session_queue_clear(s);
     session_watch_clear(s);
+    for (i = 0; i < s->himport_len; i++) {
+        himport_fieldset *fs = &s->himport_sets[i];
+        free(fs->name);
+        for (j = 0; j < fs->count; j++)
+            free(fs->fields[j]);
+        free(fs->fields);
+        free(fs->field_lens);
+    }
+    free(s->himport_sets);
+    s->himport_sets = NULL;
+    s->himport_len = 0;
+    s->himport_cap = 0;
     free(s->queue);
     free(s->watches);
     s->queue = NULL;

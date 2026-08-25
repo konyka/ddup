@@ -45,9 +45,9 @@
 - `CLUSTER MIGRATION` and `CLUSTER SYNCSLOTS` are recognized with an
   internal-client-only security gate; external sessions cannot alter migration
   state or slot metadata.
-- `BACKUP`, `HIMPORT`, and `HOTKEYS` are registered with their Redis 8
-  subcommand names. `HELP` is side-effect free; operational subcommands return
-  explicit unsupported-build errors.
+- `BACKUP` and `HOTKEYS` remain explicit unsupported-build containers.
+  `HIMPORT PREPARE/SET/DISCARD/DISCARDALL` is implemented with session-local
+  fieldsets and validated batched writes to ordinary hash objects.
 - ARRAY core: `ARSET/ARGET/ARLEN/ARCOUNT` use a sparse `rh_table` keyed by
   fixed-width indexes. `ARLEN` and `ARCOUNT` read object metadata in O(1),
   while `ARSET` validates every input before modifying the object. The type is
@@ -84,8 +84,9 @@
 
 ## 范围外 / 待后续评估
 
-- `BACKUP`、`HIMPORT`、`HOTKEYS`：命令级入口已兼容，但实际备份、导入
-  事务和热点采样仍是明确的 unsupported-build 能力。
+- `BACKUP`、`HOTKEYS`：命令级入口已兼容，但实际 MP-AOF 备份和热点采样
+  仍是明确的 unsupported-build 能力。`HIMPORT` 已实现会话级字段集准备、
+  批量写入和丢弃；Redis 的共享 hash-template 编码仍未复刻。
 - ARRAY 高级语义：当前稀疏对象模型提供命令级安全行为；`ARINFO FULL`
   返回与当前稀疏模型对应的基础目录/切片统计，不伪造 Redis 内部编码细节。
 

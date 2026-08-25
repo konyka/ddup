@@ -61,6 +61,10 @@ static int ci_equal(const char *a, size_t alen, const char *b);
 static int parse_u64(const char *s, size_t len, uint64_t *out);
 static int db_get(db *d, const char *key, size_t klen, const char **val,
                   size_t *vlen, uint64_t now_ms);
+static void command_himport(session *s, const resp_value *argv, size_t argc,
+                            resp_buf *out, uint64_t now_ms);
+static void mem_sync(db *d, const char *key, size_t klen, uint64_t before,
+                     uint64_t after);
 static int stream_parse_full_id(const char *s, size_t len, uint64_t *ms,
                                 uint64_t *seq);
 static int stream_id_gt(uint64_t a_ms, uint64_t a_seq, uint64_t b_ms,
@@ -952,6 +956,198 @@ static int get_hash(db *d, resp_buf *out, const char *k, size_t kl, int create,
     }
     *h = (obj_hash *)obj_unpack_ptr(v, vl);
     return 1;
+}
+
+static void himport_fieldset_free(himport_fieldset *fs)
+{
+    size_t i;
+    free(fs->name);
+    for (i = 0; i < fs->count; i++)
+        free(fs->fields[i]);
+    free(fs->fields);
+    free(fs->field_lens);
+    memset(fs, 0, sizeof(*fs));
+}
+
+static himport_fieldset *himport_fieldset_find(session *s, const char *name,
+                                                size_t name_len)
+{
+    size_t i;
+    for (i = 0; i < s->himport_len; i++)
+        if (s->himport_sets[i].name_len == name_len &&
+            memcmp(s->himport_sets[i].name, name, name_len) == 0)
+            return &s->himport_sets[i];
+    return NULL;
+}
+
+static int himport_fieldset_store(session *s, const resp_value *argv,
+                                  size_t argc)
+{
+    const char *name;
+    size_t name_len, count, i;
+    himport_fieldset fresh;
+    himport_fieldset *old;
+    if (argc < 4 || !arg_str(&argv[2], &name, &name_len))
+        return -1;
+    count = argc - 3;
+    memset(&fresh, 0, sizeof(fresh));
+    fresh.name = (char *)malloc(name_len);
+    fresh.fields = (char **)calloc(count, sizeof(*fresh.fields));
+    fresh.field_lens = (size_t *)malloc(count * sizeof(*fresh.field_lens));
+    if ((name_len != 0 && fresh.name == NULL) || fresh.fields == NULL ||
+        fresh.field_lens == NULL)
+        goto oom;
+    memcpy(fresh.name, name, name_len);
+    fresh.name_len = name_len;
+    fresh.count = count;
+    for (i = 0; i < count; i++) {
+        const char *field;
+        size_t field_len, j;
+        if (!arg_str(&argv[i + 3], &field, &field_len))
+            goto invalid;
+        for (j = 0; j < i; j++)
+            if (fresh.field_lens[j] == field_len &&
+                memcmp(fresh.fields[j], field, field_len) == 0)
+                goto invalid;
+        fresh.fields[i] = (char *)malloc(field_len);
+        if (field_len != 0 && fresh.fields[i] == NULL)
+            goto oom;
+        memcpy(fresh.fields[i], field, field_len);
+        fresh.field_lens[i] = field_len;
+    }
+    old = himport_fieldset_find(s, name, name_len);
+    if (old != NULL) {
+        himport_fieldset_free(old);
+        *old = fresh;
+        return 0;
+    }
+    if (s->himport_len == s->himport_cap) {
+        size_t cap = s->himport_cap == 0 ? 4 : s->himport_cap * 2;
+        himport_fieldset *sets;
+        if (cap < s->himport_cap || cap > SIZE_MAX / sizeof(*sets))
+            goto oom;
+        sets = (himport_fieldset *)realloc(s->himport_sets,
+                                           cap * sizeof(*sets));
+        if (sets == NULL)
+            goto oom;
+        s->himport_sets = sets;
+        s->himport_cap = cap;
+    }
+    s->himport_sets[s->himport_len++] = fresh;
+    return 0;
+invalid:
+    himport_fieldset_free(&fresh);
+    return -1;
+oom:
+    himport_fieldset_free(&fresh);
+    return -2;
+}
+
+static void command_himport(session *s, const resp_value *argv, size_t argc,
+                            resp_buf *out, uint64_t now_ms)
+{
+    const char *sub;
+    size_t sub_len;
+    if (argc < 2 || !arg_str(&argv[1], &sub, &sub_len))
+        goto syntax;
+    if (ci_equal(sub, sub_len, "HELP")) {
+        static const char *help[] = {
+            "DISCARD <fieldset>", "DISCARDALL",
+            "PREPARE <fieldset> <field> [field ...]",
+            "SET <key> <fieldset> <value> [value ...]"
+        };
+        size_t i;
+        if (argc != 2)
+            goto syntax;
+        resp_write_array_header(out, sizeof(help) / sizeof(help[0]));
+        for (i = 0; i < sizeof(help) / sizeof(help[0]); i++)
+            resp_write_bulk(out, help[i], strlen(help[i]));
+        return;
+    }
+    if (ci_equal(sub, sub_len, "PREPARE")) {
+        int rc = himport_fieldset_store(s, argv, argc);
+        if (rc == -2)
+            storage_length_error(out);
+        else if (rc != 0)
+            resp_write_error(out, "ERR duplicate or invalid field name", 35);
+        else
+            resp_write_simple_string(out, "OK", 2);
+        return;
+    }
+    if (ci_equal(sub, sub_len, "DISCARD")) {
+        const char *name;
+        size_t name_len, i;
+        if (argc != 3 || !arg_str(&argv[2], &name, &name_len))
+            goto syntax;
+        for (i = 0; i < s->himport_len; i++) {
+            if (s->himport_sets[i].name_len == name_len &&
+                memcmp(s->himport_sets[i].name, name, name_len) == 0) {
+                himport_fieldset_free(&s->himport_sets[i]);
+                s->himport_sets[i] = s->himport_sets[--s->himport_len];
+                break;
+            }
+        }
+        resp_write_simple_string(out, "OK", 2);
+        return;
+    }
+    if (ci_equal(sub, sub_len, "DISCARDALL")) {
+        size_t i;
+        if (argc != 2)
+            goto syntax;
+        for (i = 0; i < s->himport_len; i++)
+            himport_fieldset_free(&s->himport_sets[i]);
+        s->himport_len = 0;
+        resp_write_simple_string(out, "OK", 2);
+        return;
+    }
+    if (ci_equal(sub, sub_len, "SET")) {
+        const char *key, *name;
+        size_t key_len, name_len, i;
+        himport_fieldset *fs;
+        obj_hash *h;
+        uint64_t before;
+        if (argc < 5 || !arg_str(&argv[2], &key, &key_len) ||
+            !arg_str(&argv[3], &name, &name_len))
+            goto syntax;
+        fs = himport_fieldset_find(s, name, name_len);
+        if (fs == NULL) {
+            resp_write_error(out, "ERR no such fieldset", 20);
+            return;
+        }
+        if (argc - 4 != fs->count) {
+            resp_write_error(out, "ERR value count does not match fieldset field count", 48);
+            return;
+        }
+        if (!storage_key_ok(key_len) || oom_blocked(s->d, out))
+            return;
+        for (i = 0; i < fs->count; i++) {
+            const char *value;
+            size_t value_len;
+            if (!arg_str(&argv[i + 4], &value, &value_len) ||
+                !storage_string_ok(fs->field_lens[i], value_len)) {
+                storage_length_error(out);
+                return;
+            }
+        }
+        if (get_hash(s->d, out, key, key_len, 1, now_ms, &h) <= 0)
+            return;
+        before = obj_hash_mem(h);
+        for (i = 0; i < fs->count; i++) {
+            const char *value;
+            size_t value_len;
+            (void)arg_str(&argv[i + 4], &value, &value_len);
+            if (obj_hash_set_at(h, fs->fields[i], fs->field_lens[i], value,
+                                value_len, now_ms, 0) < 0) {
+                storage_length_error(out);
+                return;
+            }
+        }
+        mem_sync(s->d, key, key_len, before, obj_hash_mem(h));
+        resp_write_simple_string(out, "OK", 2);
+        return;
+    }
+syntax:
+    resp_write_error(out, "ERR syntax error", 16);
 }
 
 /* Fetch the list object for key; create when missing && create != 0.
@@ -4224,6 +4420,23 @@ static int cmd_keys_accum(const resp_value *argv, size_t argc, int *have,
             if (arg_str(&argv[i], &k, &kl) &&
                 !slot_accum(k, kl, have, slot))
                 return 0;
+        }
+        return 1;
+    }
+    if (cmd_id == CMD_HIMPORT) {
+        if (argc < 2)
+            return 1;
+        {
+            const char *sub;
+            size_t sl;
+            if (!arg_str(&argv[1], &sub, &sl))
+                return 1;
+            if (ci_equal(sub, sl, "SET") && argc >= 3) {
+                const char *k;
+                size_t kl;
+                if (arg_str(&argv[2], &k, &kl))
+                    return slot_accum(k, kl, have, slot);
+            }
         }
         return 1;
     }
@@ -11753,22 +11966,7 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
         return;
     }
     if (cmd_id == CMD_HIMPORT) {
-        const char *sub = NULL;
-        size_t sublen = 0;
-        if (argc >= 2 && arg_str(&argv[1], &sub, &sublen)) {
-            if (ci_equal(sub, sublen, "HELP")) {
-                resp_write_array_header(out, 0);
-                return;
-            }
-            if (ci_equal(sub, sublen, "DISCARD") || ci_equal(sub, sublen, "DISCARDALL") ||
-                ci_equal(sub, sublen, "PREPARE") || ci_equal(sub, sublen, "SET")) {
-                resp_write_error(out, "ERR HIMPORT is not supported by this build",
-                                 sizeof("ERR HIMPORT is not supported by this build") - 1);
-                return;
-            }
-        }
-        resp_write_error(out, "ERR HIMPORT is not supported by this build",
-                         sizeof("ERR HIMPORT is not supported by this build") - 1);
+        command_himport(s, argv, argc, out, now_ms);
         return;
     }
     if (cmd_id == CMD_HOTKEYS) {

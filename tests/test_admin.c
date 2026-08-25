@@ -14,6 +14,7 @@
 #include "server/server.h"
 
 static db g_db;
+static session g_session;
 static resp_buf g_out;
 static resp_value g_argv[16];
 
@@ -33,7 +34,8 @@ static const char *cmd(int argc, ...)
     }
     va_end(ap);
     g_out.len = 0;
-    command_execute(&g_db, g_argv, (size_t)argc, &g_out);
+    session_execute_at(&g_session, g_argv, (size_t)argc, &g_out,
+                       1000000);
     resp_buf_reserve(&g_out, 1);
     g_out.data[g_out.len] = '\0';
     return g_out.data;
@@ -314,9 +316,22 @@ static void test_redis8_management_containers(void)
     EXPECT_REPLY("-ERR BACKUP is not supported by this build\r\n");
 
     cmd(2, "HIMPORT", "HELP");
-    EXPECT_REPLY("*0\r\n");
-    cmd(2, "HIMPORT", "START");
-    EXPECT_REPLY("-ERR HIMPORT is not supported by this build\r\n");
+    DD_CHECK(g_out.len > 0 && g_out.data[0] == '*');
+    cmd(5, "HIMPORT", "PREPARE", "person", "name", "age");
+    EXPECT_REPLY("+OK\r\n");
+    cmd(6, "HIMPORT", "SET", "alice", "person", "Ada", "37");
+    EXPECT_REPLY("+OK\r\n");
+    /* HIMPORT SET must create a normal, readable hash. */
+    cmd(3, "HGET", "alice", "name");
+    EXPECT_REPLY("$3\r\nAda\r\n");
+    cmd(3, "HGET", "alice", "age");
+    EXPECT_REPLY("$2\r\n37\r\n");
+    cmd(5, "HIMPORT", "SET", "broken", "person", "only-one");
+    DD_CHECK(g_out.len > 0 && g_out.data[0] == '-');
+    cmd(3, "HIMPORT", "DISCARD", "person");
+    EXPECT_REPLY("+OK\r\n");
+    cmd(6, "HIMPORT", "SET", "gone", "person", "Ada", "37");
+    EXPECT_REPLY("-ERR no such fieldset\r\n");
 
     cmd(2, "HOTKEYS", "HELP");
     EXPECT_REPLY("*0\r\n");
@@ -329,6 +344,7 @@ int main(void)
     setvbuf(stdout, NULL, _IONBF, 0);
     DD_CHECK_EQ_INT(0, pal_socket_init());
     db_init(&g_db);
+    session_init(&g_session, &g_db);
     resp_buf_init(&g_out);
     DD_RUN(test_command_count_list);
     DD_RUN(test_command_info_getkeys);
@@ -341,6 +357,7 @@ int main(void)
     DD_RUN(test_container_help);
     DD_RUN(test_lolwut);
     resp_buf_free(&g_out);
+    session_release(&g_session);
     db_destroy(&g_db);
     return DD_TEST_SUMMARY();
 }

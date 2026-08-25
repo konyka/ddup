@@ -383,8 +383,9 @@
     审计同步（Phase 74）
   - [x] Redis 8 内部集群迁移命令安全门：注册 `CLUSTER MIGRATION` 与
     `CLUSTER SYNCSLOTS`，外部会话明确拒绝且不修改迁移/槽元数据（Phase 75）
-  - [x] Redis 8 管理容器兼容入口：注册 `BACKUP/HIMPORT/HOTKEYS` 及已知
-    子命令名；`HELP` 无副作用，其余操作明确返回不支持错误（Phase 76）
+  - [x] Redis 8 管理容器：注册 `BACKUP/HIMPORT/HOTKEYS` 及已知子命令名；
+    `HIMPORT PREPARE/SET/DISCARD/DISCARDALL` 以 session-local fieldset 和
+    批量 hash 写入实现，`BACKUP/HOTKEYS` 保留明确 unsupported 语义（Phase 82）
   - [x] Redis 8 ARRAY 核心：`ARSET/ARGET/ARLEN/ARCOUNT`；`obj_array` 用
     稀疏索引表提供 O(1) 随机访问和 O(1) 长度/非空计数，支持快照持久化，
     并以 TDD 覆盖缺失键、连续写、边界索引与 WRONGTYPE（Phase 77）

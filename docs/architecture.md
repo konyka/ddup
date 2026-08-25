@@ -1219,9 +1219,11 @@ compatibility auditing, but require an internal transport hook before any
 future migration state or slot metadata can be changed.
 
 The Redis 8 management containers `BACKUP`, `HIMPORT`, and `HOTKEYS` are
-recognized for protocol compatibility. Their `HELP` paths return an empty,
-side-effect-free response; operational subcommands fail explicitly because
-ddup does not expose Redis's backup, hash-import, or hot-key sampling engines.
+recognized for protocol compatibility. `HIMPORT` implements session-local
+fieldsets (`PREPARE`, `SET`, `DISCARD`, `DISCARDALL`) and writes ordinary hash
+objects after validating the whole batch. `BACKUP` and `HOTKEYS` remain explicit
+unsupported-build features because their MP-AOF and sampling engines require
+server-wide state.
 
 - `obj_hash` 在 listpack/rh_table 双编码之外增加独立的 `expires` 表：
   键为 field，值为 8 字节小端绝对过期毫秒时间戳。紧凑编码不会退化为

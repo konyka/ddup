@@ -32,6 +32,14 @@ typedef struct watch_entry {
     int db_index;
 } watch_entry;
 
+typedef struct himport_fieldset {
+    char *name;
+    size_t name_len;
+    char **fields;
+    size_t *field_lens;
+    size_t count;
+} himport_fieldset;
+
 /* replication roles (session.repl->role and server role) */
 #define SESSION_ROLE_MASTER 0
 #define SESSION_ROLE_REPLICA 1
@@ -73,6 +81,9 @@ typedef struct session {
     watch_entry *watches;
     size_t nwatch;
     size_t watch_cap;
+    himport_fieldset *himport_sets;
+    size_t himport_len;
+    size_t himport_cap;
     /* pub/sub hooks; ps_ctx/owner are registry- and delivery-side contexts
      * (server-owned). NULL hooks = no pub/sub (stack sessions in tests). */
     void *ps_ctx;
