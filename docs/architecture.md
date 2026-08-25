@@ -253,7 +253,8 @@
   GETKEYS 键位表并按命令写标志返回 `RW/RO` 近似标志。
 - **管理/复制容器**：`WAIT/WAITAOF` 在共享无副本模型下返回 0 或
   `[0,0]`；`REPLCONF` 做握手应答；`FAILOVER` 在无副本时返回明确错误；
-  `MONITOR` 返回明确不支持。`ACL/LATENCY/MODULE/SENTINEL/DEBUG` 注册为
+  `MONITOR` 通过 server-owned subscription stream 输出后续命令事件。
+  `ACL/LATENCY/MODULE/SENTINEL/DEBUG` 注册为
   容器并提供最小空视图或错误应答（无扩展模块、无 ACL 文件、无 Sentinel
   拓扑），避免未知命令中断客户端；所有应答均为冷路径、无热路径分配。
 

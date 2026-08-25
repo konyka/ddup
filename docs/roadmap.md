@@ -403,3 +403,6 @@
     blocked 状态；新 entry readiness 唤醒、deadline 超时和 `BLOCK 0` 均以
     TDD 覆盖，保持多 stream、COUNT、NOACK、group 游标与 NOGROUP 安全语义
     （Phase 81）
+  - [x] Redis 8 运行时管理收尾：`HIMPORT PREPARE/SET/DISCARD/DISCARDALL` 和
+    `MONITOR` 实时命令流以 TDD 覆盖；`BACKUP/HOTKEYS` 的 MP-AOF/采样引擎仍
+    明确列为范围外（Phase 83）
