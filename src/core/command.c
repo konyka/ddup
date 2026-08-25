@@ -23237,6 +23237,8 @@ void session_execute_at(session *s, const resp_value *argv, size_t argc,
         if (s->slowlog_add != NULL)
             s->slowlog_add(s->slowlog_ctx, argv, argc, pal_now_us() - t0,
                            now_ms);
+        if (s->monitor_emit != NULL && cmd_id != CMD_MONITOR)
+            s->monitor_emit(s->monitor_ctx, s, argv, argc);
     }
     if (s->d->tier_io_error) {
         tier_io_reply(out);

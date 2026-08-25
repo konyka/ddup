@@ -128,6 +128,8 @@ struct conn {
 static int srv_monitor_start(void *ctx, session *sess);
 static void srv_monitor_emit(server *srv, const conn *source,
                              const resp_value *argv, size_t argc);
+static void srv_monitor_emit_session(void *ctx, session *source,
+                                     const resp_value *argv, size_t argc);
 
 /* master link states */
 #define LINK_SYNC_SENT 0
@@ -867,6 +869,13 @@ static void srv_monitor_emit(server *srv, const conn *source,
     }
 }
 
+static void srv_monitor_emit_session(void *ctx, session *source,
+                                     const resp_value *argv, size_t argc)
+{
+    conn *origin = source != NULL ? (conn *)source->owner : NULL;
+    srv_monitor_emit((server *)ctx, origin, argv, argc);
+}
+
 /* Propagation sink for every successfully-applied mutating command:
  * serialize once, then fan out to AOF (if any), the replication backlog
  * and all downstream replica conns (flushed at end of run_once). */
@@ -875,7 +884,6 @@ static void srv_propagate(void *ctx, int db_index, const resp_value *argv,
 {
     server *srv = (server *)ctx;
     size_t i;
-    srv_monitor_emit(srv, NULL, argv, argc);
     if (srv->aof != NULL && !srv->aof_failed)
         srv_aof_log(srv, db_index, argv, argc);
 
@@ -1294,6 +1302,7 @@ static conn *conn_create(server *srv, pal_socket_t fd)
     c->sess->slowlog_reset = srv_slowlog_reset;
     c->sess->monitor_ctx = srv;
     c->sess->monitor_start = srv_monitor_start;
+    c->sess->monitor_emit = srv_monitor_emit_session;
     c->sess->bgrewriteaof_ctx = srv;
     c->sess->bgrewriteaof = srv_bgrewriteaof;
     c->sess->cluster_ctx = srv;
