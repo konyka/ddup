@@ -1052,7 +1052,8 @@ DBSIZE 为 O(1)，可能计入尚未回收的过期 key。
   重建全部库：固定魔数 + 每库 8 位十六进制长度前缀（name/code），冷路径
   两遍 `rh_each` 定长后一次分配；RESTORE 支持 `FLUSH/APPEND/REPLACE`
   策略（默认 APPEND，冲突报错，REPLACE 覆盖）。
-  Redis 的 `redis.register_function` 多函数库格式为本次范围外（记录在案）。
+  Redis 的 `redis.register_function` 多函数库格式已支持：LOAD 保留原库源码，
+  FCALL 按函数名通过受限注册拦截器构造执行包装器；plain chunk 库保持兼容。
 - **错误文本**：对齐 Redis 5/6（编译 `Error compiling script (new
   function):`、`-NOSCRIPT`、运行时 `Error running script (call to
   f_<sha>):`，含 `script:N:` 位置前缀）。
@@ -1240,10 +1241,11 @@ engine is available. `HOTKEYS` provides a server-wide, low-overhead lifecycle mo
 `START METRICS <count> [CPU|NET] [COUNT k] [DURATION seconds] [SAMPLE ratio]
 [SLOTS ...]`, `STOP`, `RESET`, and `GET` expose active state, sampling ratio,
 collection start time, command count, and bounded `by-cpu-time-us`/
-`by-net-bytes` key lists. The table is preallocated at START and uses bounded
-sampled command/argument-byte units, so the hot path adds no per-command
-allocation. These units are ddup estimates rather than Redis process CPU/
-network accounting.
+`by-net-bytes` key lists. The table is preallocated at START and uses measured
+dispatch microseconds plus raw request-byte counts when available, so the hot
+path adds no per-command allocation. `SLOTS` filters by Redis CRC16 slot and
+GET returns descending Top-K order; stack-session calls fall back to argument
+bytes when no raw request is attached.
 
 - `obj_hash` 在 listpack/rh_table 双编码之外增加独立的 `expires` 表：
   键为 field，值为 8 字节小端绝对过期毫秒时间戳。紧凑编码不会退化为

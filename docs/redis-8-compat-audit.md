@@ -94,7 +94,7 @@
 ## 范围外 / 待后续评估
 
 - `BACKUP`：已实现基于原子多库快照的安全同步生命周期；Redis 的
-  MP-AOF 增量 pinning/immutable-file 引擎仍是范围外。`HOTKEYS` 已实现安全的生命周期、参数校验、预分配采样表和有界 key 指标列表；Redis 的进程级 CPU/network 计数与共享 hash-template 编码仍未复刻。`HIMPORT` 已实现会话级字段集准备、批量写入和丢弃。
+  MP-AOF 增量 pinning/immutable-file 引擎仍是范围外。`HOTKEYS` 已实现安全生命周期、参数校验、预分配采样表、有界 Top-K、CRC16 `SLOTS` 过滤、实测 dispatch 微秒和原始请求字节计量；共享 hash-template 编码仍未复刻。`HIMPORT` 已实现会话级字段集准备、批量写入和丢弃。
 - ARRAY 高级语义：当前稀疏对象模型提供命令级安全行为；`ARINFO FULL`
   返回与当前稀疏模型对应的基础目录/切片统计，不伪造 Redis 内部编码细节。
 - mt 全库命令：`KEYS` 已广播到所有 worker 并合并 RESP 数组，`RANDOMKEY`

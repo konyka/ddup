@@ -348,7 +348,7 @@
     （Phase 65）
   - [x] 脚本库族：`FCALL/FCALL_RO/FUNCTION`；FUNCTION 以名称保存 Lua 源码，
     FCALL 复用 EVAL 键/参执行，FUNCTION LOAD/DELETE/LIST/FLUSH/STATS/HELP；
-    `redis.register_function` 多函数库格式记录为范围外；兼容审计缺 10 个
+    支持 `redis.register_function` 多函数库格式并按函数名执行；兼容审计缺 10 个
     顶层命令、4 个整体缺失容器、34 个容器子命令（Phase 66）
   - [x] 兼容性收尾：补齐 `CLIENT/CLUSTER/COMMAND/CONFIG/OBJECT/SCRIPT`
     剩余子命令，并注册 `WAIT/WAITAOF/REPLCONF/FAILOVER/MONITOR` 与
@@ -410,9 +410,8 @@
     （Phase 81）
   - [x] Redis 8 运行时管理收尾：`HIMPORT PREPARE/SET/DISCARD/DISCARDALL`、
     `HOTKEYS` 生命周期/计数、`BACKUP` 安全快照生命周期和 `MONITOR` 实时
-    命令流以 TDD 覆盖；HOTKEYS top-K 已收敛为预分配、有界 sampled key
-    指标模型，Redis 进程级 CPU/network 计数与 BACKUP 增量 MP-AOF pinning
-    仍明确列为范围外
+    命令流以 TDD 覆盖；HOTKEYS 已收敛为预分配、有界 Top-K、SLOTS 过滤和
+    实测 dispatch/请求字节指标，BACKUP 增量 MP-AOF pinning 仍明确列为范围外
     （Phase 83）
   - [x] mt 集群路由安全收敛：`ASKING` 不再被误判为不支持命令，按连接
     会话保留一次性标志并交给现有 cluster ownership 检查；其余全库扫描和

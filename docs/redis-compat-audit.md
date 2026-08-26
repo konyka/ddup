@@ -51,7 +51,8 @@
   DUMP/RESTORE [FLUSH|APPEND|REPLACE]/STATS/KILL/HELP`；`DUMP/RESTORE`
   使用 ddup 专用二进制 payload（非 Redis RDB），`KILL` 恒回 `NOTBUSY`。
   当前把库代码按名称保存并按 EVAL 风格执行，Redis 的
-  `redis.register_function` 多函数库格式记录为本次范围外。
+  `redis.register_function` 多函数库格式已支持：LOAD 时保留原库源码，FCALL
+  按注册函数名构造受限执行包装器；plain chunk 库继续兼容。
 - Stream 核心族已实现 `XADD/XLEN/XRANGE/XREVRANGE/XDEL/XTRIM/XSETID`；
   消费组/读取族已实现 `XGROUP/XACK/XPENDING/XCLAIM/XAUTOCLAIM/XREAD/
   XREADGROUP/XINFO`；`XREAD/XREADGROUP BLOCK` 使用 session 阻塞态和 server
