@@ -23166,6 +23166,17 @@ void session_execute_at(session *s, const resp_value *argv, size_t argc,
     size_t nlen = 0;
     uint16_t cmd_id = CMD_ID_UNKNOWN;
     uint64_t dirty_before = s->d->dirty;
+    uint64_t net_bytes = 0;
+    size_t net_i;
+    if (s->raw_cmd != NULL && s->raw_cmd_len != 0) {
+        net_bytes = (uint64_t)s->raw_cmd_len;
+    } else {
+        for (net_i = 0; net_i < argc; net_i++)
+            if (argv[net_i].str != NULL)
+                net_bytes += (uint64_t)argv[net_i].len;
+    }
+    s->last_cmd_net_bytes = net_bytes;
+    s->last_cmd_usecs = 0;
     s->d->tier_io_error = 0;
     if (argc > 0)
         (void)arg_str(&argv[0], &name, &nlen);
@@ -23181,6 +23192,7 @@ void session_execute_at(session *s, const resp_value *argv, size_t argc,
      * the two clock reads cost more than the stat is worth on this path. */
     if (cmd_id == CMD_GET && s->authed && !s->in_multi && s->nsub == 0 &&
         s->nssub == 0 && s->npsub == 0 && !s->d->cluster_enabled) {
+        uint64_t lean_t0 = pal_now_us();
         const char *k;
         size_t kl;
         const char *v;
@@ -23207,6 +23219,7 @@ void session_execute_at(session *s, const resp_value *argv, size_t argc,
         s->d->cmd_calls[CMD_GET]++;
         if (s->d->maxmemory_policy == DB_POLICY_ALLKEYS_LRU)
             db_evict_if_needed(s->d, now_ms);
+        s->last_cmd_usecs = pal_now_us() - lean_t0;
         if (s->monitor_emit != NULL)
             s->monitor_emit(s->monitor_ctx, s, argv, argc);
         return;
@@ -23216,6 +23229,7 @@ void session_execute_at(session *s, const resp_value *argv, size_t argc,
         !s->d->cluster_enabled &&
         (s->role == NULL || *s->role != SESSION_ROLE_REPLICA ||
          s->repl_link)) {
+        uint64_t lean_t0 = pal_now_us();
         const char *k, *v;
         size_t kl, vl;
         if (!arg_str(&argv[1], &k, &kl) || !arg_str(&argv[2], &v, &vl))
@@ -23252,6 +23266,7 @@ void session_execute_at(session *s, const resp_value *argv, size_t argc,
         s->aof_skip = 0;
         if (s->d->maxmemory_policy == DB_POLICY_ALLKEYS_LRU)
             db_evict_if_needed(s->d, now_ms);
+        s->last_cmd_usecs = pal_now_us() - lean_t0;
         if (s->monitor_emit != NULL)
             s->monitor_emit(s->monitor_ctx, s, argv, argc);
         return;
@@ -23407,6 +23422,7 @@ void session_execute_at(session *s, const resp_value *argv, size_t argc,
 #else
         t0 = pal_now_us();
         command_dispatch(s, argv, argc, out, now_ms);
+        s->last_cmd_usecs = pal_now_us() - t0;
         /* commandstats: count every dispatched command (queueing/blocked
          * paths above do not reach here) */
         if (cmd_id != CMD_ID_UNKNOWN && cmd_id < CMD_STATS_SLOTS) {

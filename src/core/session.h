@@ -179,6 +179,9 @@ typedef struct session {
     uint64_t blocked_deadline_ms;
     resp_value *blocked_argv;
     size_t blocked_argc;
+    /* Last dispatched command measurements consumed by server-owned hooks. */
+    uint64_t last_cmd_usecs;
+    uint64_t last_cmd_net_bytes;
     /* CLUSTER MEET hook (server-owned): open a bus conn and send MEET. */
     void *cluster_ctx;
     int (*cluster_meet)(void *ctx, const char *ip, uint16_t port);

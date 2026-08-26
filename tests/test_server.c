@@ -8,6 +8,7 @@
 #include <string.h>
 
 #include "core/buf_pool.h"
+#include "core/hashslot.h"
 #include "pal/pal_event.h"
 #include "pal/pal_file.h"
 #include "pal/pal_iocp.h"
@@ -201,6 +202,7 @@ static void test_hotkeys_sampled_key_metrics(void)
     buf[got] = '\0';
     DD_CHECK(strstr(buf, "by-cpu-time-us") != NULL);
     DD_CHECK(strstr(buf, "foo") != NULL);
+    DD_CHECK(strstr(buf, "by-cpu-time-us") != NULL);
     pal_close(c);
     server_destroy(s);
 }
@@ -243,6 +245,52 @@ static void test_hotkeys_multi_key_commands(void)
     buf[got] = '\0';
     DD_CHECK(strstr(buf, "k1") != NULL);
     DD_CHECK(strstr(buf, "k2") != NULL);
+    pal_close(c);
+    server_destroy(s);
+}
+
+static void test_hotkeys_slots_filter(void)
+{
+    server *s = make_server();
+    pal_socket_t c;
+    char key[32], req[256], setreq[128], buf[2048], slotbuf[16];
+    size_t got = 0;
+    int slot = 0;
+    int i;
+    DD_CHECK(s != NULL);
+    if (s == NULL)
+        return;
+    for (i = 0; i < 10000; i++) {
+        snprintf(key, sizeof(key), "slot-key-%d", i);
+        slot = (int)hash_slot(key, strlen(key));
+        if (slot > 0)
+            break;
+    }
+    c = connect_client(s);
+    snprintf(slotbuf, sizeof(slotbuf), "%d", slot);
+    snprintf(req, sizeof(req),
+             "*10\r\n$7\r\nHOTKEYS\r\n$5\r\nSTART\r\n$7\r\nMETRICS\r\n"
+             "$1\r\n1\r\n$3\r\nCPU\r\n$5\r\nCOUNT\r\n$1\r\n4\r\n"
+             "$5\r\nSLOTS\r\n$1\r\n1\r\n$%zu\r\n%s\r\n",
+             strlen(slotbuf), slotbuf);
+    roundtrip(s, c, req, "+OK\r\n");
+    roundtrip(s, c, "*3\r\n$3\r\nSET\r\n$9\r\nother-key\r\n$1\r\nx\r\n",
+              "+OK\r\n");
+    snprintf(setreq, sizeof(setreq),
+             "*3\r\n$3\r\nSET\r\n$%zu\r\n%s\r\n$1\r\ny\r\n",
+             strlen(key), key);
+    roundtrip(s, c, setreq, "+OK\r\n");
+    roundtrip(s, c, "*2\r\n$7\r\nHOTKEYS\r\n$3\r\nGET\r\n", "");
+    for (i = 0; i < 200 && got < sizeof(buf) - 1; i++) {
+        ptrdiff_t n;
+        server_run_once(s, 5);
+        n = pal_recv(c, buf + got, sizeof(buf) - got - 1);
+        if (n > 0)
+            got += (size_t)n;
+        buf[got] = '\0';
+    }
+    DD_CHECK(strstr(buf, key) != NULL);
+    DD_CHECK(strstr(buf, "other-key") == NULL);
     pal_close(c);
     server_destroy(s);
 }
@@ -1225,6 +1273,7 @@ static void run_all_tests(void)
     DD_RUN(test_monitor_stream);
     DD_RUN(test_hotkeys_sampled_key_metrics);
     DD_RUN(test_hotkeys_multi_key_commands);
+    DD_RUN(test_hotkeys_slots_filter);
     DD_RUN(test_pipeline);
     DD_RUN(test_aof_failure_rejects_writes);
     DD_RUN(test_aof_sync_failure_rejects_writes);

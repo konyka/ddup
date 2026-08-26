@@ -22,6 +22,7 @@
 #include "core/arena.h"
 #include "core/buf_pool.h"
 #include "core/command.h"
+#include "core/hashslot.h"
 #include "core/redbus.h"
 #include "core/session.h"
 #include "core/snapshot.h"
@@ -135,7 +136,8 @@ static int server_token_eq(const char *s, size_t len, const char *word);
 static int server_parse_ll(const resp_value *v, long long *out);
 static int srv_backup_command(void *ctx, const resp_value *argv, size_t argc,
                               resp_buf *out);
-static void srv_hotkeys_record(server *srv, const resp_value *argv, size_t argc);
+static void srv_hotkeys_record(server *srv, const session *source,
+                               const resp_value *argv, size_t argc);
 
 /* master link states */
 #define LINK_SYNC_SENT 0
@@ -215,6 +217,8 @@ struct server {
     uint64_t hotkeys_sampled;
     size_t hotkeys_capacity;
     struct hotkey_entry *hotkeys_entries;
+    int hotkeys_slot_filter;
+    uint8_t hotkeys_slots[16384];
     int backup_state;
     char *backup_path;
     uint64_t backup_start_ms;
@@ -913,19 +917,24 @@ static void srv_monitor_emit_session(void *ctx, session *source,
         !server_token_eq(argv[0].str, argv[0].len, "HOTKEYS"))
         srv->hotkeys_commands++;
     if (srv->hotkeys_active)
-        srv_hotkeys_record(srv, argv, argc);
+        srv_hotkeys_record(srv, source, argv, argc);
     srv_monitor_emit(srv, origin, argv, argc);
 }
 
 static void srv_hotkeys_record_key(server *srv, const resp_value *argv,
-                                   size_t argc, const char *key, size_t klen)
+                                   size_t argc, const session *source,
+                                   const char *key, size_t klen)
 {
     size_t i, slot = SIZE_MAX;
-    uint64_t net = 0;
+    uint64_t net = source != NULL ? source->last_cmd_net_bytes : 0;
     hotkey_entry *e;
     uint16_t cmd;
+    (void)argc;
     if (key == NULL || klen == 0 ||
         klen >= sizeof(srv->hotkeys_entries[0].key))
+        return;
+    if (srv->hotkeys_slot_filter &&
+        !srv->hotkeys_slots[hash_slot(key, klen)])
         return;
     cmd = cmd_resolve(argv[0].str, argv[0].len);
     if (cmd == CMD_PING || cmd == CMD_ECHO || cmd == CMD_AUTH ||
@@ -936,13 +945,12 @@ static void srv_hotkeys_record_key(server *srv, const resp_value *argv,
         cmd == CMD_MODULE || cmd == CMD_DEBUG || cmd == CMD_ACL ||
         cmd == CMD_HOTKEYS || cmd == CMD_BACKUP)
         return;
-    for (i = 0; i < argc; i++)
-        if (argv[i].str != NULL)
-            net += (uint64_t)argv[i].len;
     for (i = 0; i < srv->hotkeys_capacity; i++) {
         e = &srv->hotkeys_entries[i];
         if (e->len == klen && memcmp(e->key, key, klen) == 0) {
-            e->cpu_us++;
+            e->cpu_us += source != NULL && source->last_cmd_usecs != 0
+                             ? source->last_cmd_usecs
+                             : 1;
             e->net_bytes += net;
             return;
         }
@@ -966,11 +974,14 @@ static void srv_hotkeys_record_key(server *srv, const resp_value *argv,
     e = &srv->hotkeys_entries[slot];
     memcpy(e->key, key, klen);
     e->len = klen;
-    e->cpu_us = 1;
+    e->cpu_us = source != NULL && source->last_cmd_usecs != 0
+                    ? source->last_cmd_usecs
+                    : 1;
     e->net_bytes = net;
 }
 
-static void srv_hotkeys_record(server *srv, const resp_value *argv, size_t argc)
+static void srv_hotkeys_record(server *srv, const session *source,
+                               const resp_value *argv, size_t argc)
 {
     uint16_t cmd;
     size_t i;
@@ -983,7 +994,7 @@ static void srv_hotkeys_record(server *srv, const resp_value *argv, size_t argc)
     if (cmd == CMD_MSET || cmd == CMD_MSETNX) {
         for (i = 1; i + 1 < argc; i += 2)
             if (argv[i].str != NULL)
-                srv_hotkeys_record_key(srv, argv, argc, argv[i].str,
+                srv_hotkeys_record_key(srv, argv, argc, source, argv[i].str,
                                        argv[i].len);
         return;
     }
@@ -991,12 +1002,13 @@ static void srv_hotkeys_record(server *srv, const resp_value *argv, size_t argc)
         cmd == CMD_EXISTS || cmd == CMD_TOUCH) {
         for (i = 1; i < argc; i++)
             if (argv[i].str != NULL)
-                srv_hotkeys_record_key(srv, argv, argc, argv[i].str,
+                srv_hotkeys_record_key(srv, argv, argc, source, argv[i].str,
                                        argv[i].len);
         return;
     }
     if (argc >= 2 && argv[1].str != NULL)
-        srv_hotkeys_record_key(srv, argv, argc, argv[1].str, argv[1].len);
+        srv_hotkeys_record_key(srv, argv, argc, source, argv[1].str,
+                               argv[1].len);
 }
 
 static int server_token_eq(const char *s, size_t len, const char *word)
@@ -1062,6 +1074,7 @@ static int srv_hotkeys_command(void *ctx, const resp_value *argv, size_t argc,
         long long requested_count = 10;
         size_t metrics_seen;
         int cpu = 0, net = 0;
+        int slots_seen = 0;
         if (argc < 4 || !server_token_eq(argv[2].str, argv[2].len, "METRICS") ||
             !server_parse_ll(&argv[3], &metric_count) || metric_count < 1 ||
             metric_count > 2 || (uint64_t)metric_count > (uint64_t)(argc - 4))
@@ -1113,7 +1126,16 @@ static int srv_hotkeys_command(void *ctx, const resp_value *argv, size_t argc,
                         slot < 0 || slot > 16383)
                         return resp_write_error(out, "ERR syntax error", 16), 0;
                 }
-                i += (size_t)count;
+                if (!slots_seen) {
+                    memset(srv->hotkeys_slots, 0, sizeof(srv->hotkeys_slots));
+                    slots_seen = 1;
+                }
+                for (j = 0; j < (size_t)count; j++) {
+                    long long slot = 0;
+                    (void)server_parse_ll(&argv[i + 1 + j], &slot);
+                    srv->hotkeys_slots[slot] = 1;
+                }
+                i += (size_t)count + 1u;
             } else {
                 return resp_write_error(out, "ERR syntax error", 16), 0;
             }
@@ -1137,6 +1159,7 @@ static int srv_hotkeys_command(void *ctx, const resp_value *argv, size_t argc,
         srv->hotkeys_metric_cpu = cpu;
         srv->hotkeys_metric_net = net;
         srv->hotkeys_capacity = (size_t)requested_count;
+        srv->hotkeys_slot_filter = slots_seen;
         srv->hotkeys_sampled = 0;
         resp_write_simple_string(out, "OK", 2);
         return 0;
@@ -1157,6 +1180,8 @@ static int srv_hotkeys_command(void *ctx, const resp_value *argv, size_t argc,
         srv->hotkeys_metric_net = 0;
         srv->hotkeys_sampled = 0;
         srv->hotkeys_capacity = 0;
+        srv->hotkeys_slot_filter = 0;
+        memset(srv->hotkeys_slots, 0, sizeof(srv->hotkeys_slots));
         free(srv->hotkeys_entries);
         srv->hotkeys_entries = NULL;
         resp_write_simple_string(out, "OK", 2);
@@ -1174,6 +1199,24 @@ static int srv_hotkeys_command(void *ctx, const resp_value *argv, size_t argc,
             size_t pairs = 4 + (srv->hotkeys_metric_cpu ? 1u : 0u) +
                            (srv->hotkeys_metric_net ? 1u : 0u);
             size_t i;
+            /* Materialize Top-K order once per GET; collection remains a
+             * fixed-capacity, allocation-free hot path. */
+            for (i = 1; i < srv->hotkeys_capacity; i++) {
+                hotkey_entry tmp = srv->hotkeys_entries[i];
+                size_t j = i;
+                uint64_t score = srv->hotkeys_metric_cpu
+                                     ? tmp.cpu_us : tmp.net_bytes;
+                while (j > 0 && srv->hotkeys_entries[j - 1].len != 0 &&
+                       ((srv->hotkeys_metric_cpu &&
+                         srv->hotkeys_entries[j - 1].cpu_us < score) ||
+                        (srv->hotkeys_metric_net &&
+                         !srv->hotkeys_metric_cpu &&
+                         srv->hotkeys_entries[j - 1].net_bytes < score))) {
+                    srv->hotkeys_entries[j] = srv->hotkeys_entries[j - 1];
+                    j--;
+                }
+                srv->hotkeys_entries[j] = tmp;
+            }
             resp_write_array_header(out, 1);
             resp_write_map_header(out, pairs);
         resp_write_bulk(out, "tracking-active", 15);
