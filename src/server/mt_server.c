@@ -1864,6 +1864,9 @@ static int mt_is_single_key(uint16_t cmd)
     case CMD_INCRBY:
     case CMD_DECRBY:
     case CMD_INCRBYFLOAT:
+    case CMD_INCREX:
+    case CMD_DELEX:
+    case CMD_DIGEST:
     case CMD_EXPIRE:
     case CMD_PEXPIRE:
     case CMD_EXPIREAT:
@@ -1889,6 +1892,18 @@ static int mt_is_single_key(uint16_t cmd)
     case CMD_HSETNX:
     case CMD_HSTRLEN:
     case CMD_HRANDFIELD:
+    case CMD_HGETDEL:
+    case CMD_HSETEX:
+    case CMD_HGETEX:
+    case CMD_HEXPIRE:
+    case CMD_HPEXPIRE:
+    case CMD_HEXPIREAT:
+    case CMD_HPEXPIREAT:
+    case CMD_HPERSIST:
+    case CMD_HTTL:
+    case CMD_HPTTL:
+    case CMD_HEXPIRETIME:
+    case CMD_HPEXPIRETIME:
     case CMD_LPUSH:
     case CMD_RPUSH:
     case CMD_LPUSHX:
@@ -1959,6 +1974,24 @@ static int mt_is_single_key(uint16_t cmd)
     case CMD_XAUTOCLAIM:
     case CMD_XINFO:
     case CMD_XSETID:
+    case CMD_ARSET:
+    case CMD_ARGET:
+    case CMD_ARLEN:
+    case CMD_ARCOUNT:
+    case CMD_ARGETRANGE:
+    case CMD_ARMGET:
+    case CMD_ARDEL:
+    case CMD_ARDELRANGE:
+    case CMD_ARMSET:
+    case CMD_ARNEXT:
+    case CMD_ARSEEK:
+    case CMD_ARINSERT:
+    case CMD_ARRING:
+    case CMD_ARSCAN:
+    case CMD_ARINFO:
+    case CMD_ARLASTITEMS:
+    case CMD_AROP:
+    case CMD_ARGREP:
         return 1;
     default:
         return 0;
@@ -2105,7 +2138,18 @@ static int mt_multikey_target(int nworkers, uint16_t cmd,
     }
 
     kend = argc;
-    if (cmd == CMD_SINTERCARD || cmd == CMD_ZUNION || cmd == CMD_ZINTER ||
+    if (cmd == CMD_MSETEX) {
+        long long nk = 0;
+        if (argc < 3 || argv[1].str == NULL ||
+            !mt_parse_ll(argv[1].str, argv[1].len, &nk) || nk <= 0)
+            return MT_LOCAL;
+        kstart = 2;
+        kend = 2 + (size_t)nk * 2;
+        if (kend > argc)
+            kend = argc;
+    }
+    if (cmd == CMD_SINTERCARD || cmd == CMD_SUNIONCARD ||
+        cmd == CMD_SDIFFCARD || cmd == CMD_ZUNION || cmd == CMD_ZINTER ||
         cmd == CMD_ZDIFF || cmd == CMD_ZINTERCARD || cmd == CMD_ZMPOP ||
         cmd == CMD_LMPOP) {
         long long nk = 0;
@@ -2134,6 +2178,8 @@ static int mt_multikey_target(int nworkers, uint16_t cmd,
     for (i = kstart; i < kend; i++) {
         int w;
         if ((cmd == CMD_MSET || cmd == CMD_MSETNX) && (i % 2) == 0)
+            continue; /* value position */
+        if (cmd == CMD_MSETEX && i >= kstart && ((i - kstart) % 2) == 1)
             continue; /* value position */
         if ((cmd == CMD_SMOVE || cmd == CMD_RENAME ||
              cmd == CMD_RENAMENX || cmd == CMD_RPOPLPUSH ||
@@ -2174,6 +2220,7 @@ static int mt_classify(int nworkers, uint16_t cmd, const resp_value *argv,
     case CMD_MGET:
     case CMD_MSET:
     case CMD_MSETNX:
+    case CMD_MSETEX:
     case CMD_DEL:
     case CMD_UNLINK:
     case CMD_EXISTS:
@@ -2197,6 +2244,8 @@ static int mt_classify(int nworkers, uint16_t cmd, const resp_value *argv,
     case CMD_SDIFF:
     case CMD_BITOP:
     case CMD_SINTERCARD:
+    case CMD_SUNIONCARD:
+    case CMD_SDIFFCARD:
     case CMD_SINTERSTORE:
     case CMD_SUNIONSTORE:
     case CMD_SDIFFSTORE:

@@ -431,3 +431,7 @@
   - [x] 运行时 AOF 策略配置：`CONFIG GET/SET appendfsync` 通过 server-owned
     session hook 实时读取/更新 AOF writer，非法策略 fail-closed 并以 TDD
     覆盖（Phase 86）
+  - [x] mt Redis 8 路由收尾：字段 TTL/字符串安全/ARRAY 单 key 命令按 owner
+    worker 分发；`MSETEX`、`SUNIONCARD`、`SDIFFCARD` 按声明 key 位置做
+    同 worker 校验并在跨 worker 时返回 `CROSSSLOT`；新增连接级行为回归
+    （Phase 87）

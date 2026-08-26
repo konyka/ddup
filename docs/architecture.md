@@ -130,7 +130,11 @@
   集群 crc16/hashtag）。单 key 命令（字符串/过期/hash/list/set/zset 全部
   单 key 操作）路由到属主 worker；多 key 命令（MGET/MSET/DEL/UNLINK/
   EXISTS/SMOVE）所有 key 必须同属一个 worker，否则 `-CROSSSLOT`（与集群
-  语义一致）。无 key 命令就地执行；DBSIZE/FLUSHDB/INFO 为广播聚合
+  语义一致）。Redis 8 的 `MSETEX` 按 `numkeys` 解析 key/value 对并忽略
+  选项参数；`SUNIONCARD/SDIFFCARD` 按声明的 `numkeys` 提取集合 key，
+  与其它多 key 命令共享同一 hash-slot 校验。Redis 8 单 key 扩展（字段
+  TTL、`INCREX/DELEX/DIGEST`、ARRAY）统一按首个 key 路由。无 key 命令
+  就地执行；DBSIZE/FLUSHDB/INFO 为广播聚合
   （home 就地一份 + 扇出其余 worker）。
 - **任务与顺序**：跨 worker 命令以**原始 RESP 字节拷贝**打包为 mt_task
   （目标 worker 就地重新解析，避免逐元素深拷贝）；同一 parse pass 内

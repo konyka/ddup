@@ -82,6 +82,10 @@
   new stream entries wake the request, finite deadlines return a null array,
   and `BLOCK 0` waits indefinitely. Readiness checks avoid materializing a
   response until the request is actually ready.
+- mt routing covers the Redis 8 key extensions: single-key hash TTL, string
+  safety, and ARRAY commands are dispatched to the key owner; `MSETEX`,
+  `SUNIONCARD`, and `SDIFFCARD` extract only declared key positions and reject
+  cross-worker requests with Redis-compatible `CROSSSLOT` before execution.
 
 ## 实现策略（性能优先）
 

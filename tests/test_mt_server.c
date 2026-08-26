@@ -257,6 +257,128 @@ static void test_routed_cross_worker_commands(void)
     pal_socket_cleanup();
 }
 
+static void test_redis8_single_key_commands_route_to_owner(void)
+{
+    mt_server *ms;
+    pal_socket_t a, b;
+    char key[64], req[512];
+    char arkey[64];
+
+    DD_CHECK_EQ_INT(0, pal_socket_init());
+    pick_key_for_worker(1, 2, key, sizeof(key));
+    for (int i = 0;; i++) {
+        snprintf(arkey, sizeof(arkey), "array:%d", i);
+        if ((int)(hash_slot(arkey, strlen(arkey)) % 2u) == 1 &&
+            strcmp(arkey, key) != 0)
+            break;
+    }
+    ms = mt_server_create("127.0.0.1", 0, 2);
+    DD_CHECK(ms != NULL);
+    if (ms == NULL)
+        return;
+    DD_CHECK_EQ_INT(0, mt_server_start(ms));
+    a = connect_client(mt_server_port(ms));
+    b = connect_client(mt_server_port(ms));
+    snprintf(req, sizeof(req),
+             "*10\r\n$6\r\nHSETEX\r\n$%zu\r\n%s\r\n$2\r\nEX\r\n$2\r\n10\r\n$6\r\nFIELDS\r\n$1\r\n2\r\n$2\r\nf1\r\n$2\r\nv1\r\n$2\r\nf2\r\n$2\r\nv2\r\n",
+             strlen(key), key);
+    roundtrip(a, req, ":1\r\n");
+    snprintf(req, sizeof(req), "*3\r\n$4\r\nHGET\r\n$%zu\r\n%s\r\n$2\r\nf1\r\n",
+             strlen(key), key);
+    roundtrip(b, req, "$2\r\nv1\r\n");
+
+    snprintf(req, sizeof(req), "*5\r\n$5\r\nARSET\r\n$%zu\r\n%s\r\n$1\r\n2\r\n$1\r\nx\r\n$1\r\ny\r\n",
+             strlen(arkey), arkey);
+    roundtrip(a, req, ":2\r\n");
+    snprintf(req, sizeof(req), "*3\r\n$5\r\nARGET\r\n$%zu\r\n%s\r\n$1\r\n2\r\n",
+             strlen(arkey), arkey);
+    roundtrip(b, req, "$1\r\nx\r\n");
+    pal_close(a);
+    pal_close(b);
+    mt_server_stop(ms);
+    mt_server_destroy(ms);
+    pal_socket_cleanup();
+}
+
+static void test_redis8_multikey_commands_route_to_owner(void)
+{
+    mt_server *ms;
+    pal_socket_t a, b;
+    char k0[32], k0b[32], k1[32], s0[32], s0b[32], req[768];
+
+    DD_CHECK_EQ_INT(0, pal_socket_init());
+    pick_key_for_worker(0, 2, k0, sizeof(k0));
+    for (int i = 0;; i++) {
+        snprintf(k0b, sizeof(k0b), "msetex:%d", i);
+        if ((int)(hash_slot(k0b, strlen(k0b)) % 2u) == 0 &&
+            strcmp(k0b, k0) != 0)
+            break;
+    }
+    pick_key_for_worker(1, 2, k1, sizeof(k1));
+    for (int i = 0;; i++) {
+        snprintf(s0, sizeof(s0), "set-a:%d", i);
+        if ((int)(hash_slot(s0, strlen(s0)) % 2u) == 0 &&
+            strcmp(s0, k0) != 0 && strcmp(s0, k0b) != 0)
+            break;
+    }
+    for (int i = 0;; i++) {
+        snprintf(s0b, sizeof(s0b), "set-b:%d", i);
+        if ((int)(hash_slot(s0b, strlen(s0b)) % 2u) == 0 &&
+            strcmp(s0b, s0) != 0 && strcmp(s0b, k0) != 0 &&
+            strcmp(s0b, k0b) != 0)
+            break;
+    }
+
+    ms = mt_server_create("127.0.0.1", 0, 2);
+    DD_CHECK(ms != NULL);
+    if (ms == NULL)
+        return;
+    DD_CHECK_EQ_INT(0, mt_server_start(ms));
+    a = connect_client(mt_server_port(ms));
+    b = connect_client(mt_server_port(ms));
+
+    /* MSETEX routes by key positions, while ignoring values/options. */
+    snprintf(req, sizeof(req),
+             "*8\r\n$6\r\nMSETEX\r\n$1\r\n2\r\n$%zu\r\n%s\r\n$2\r\nv0\r\n"
+             "$%zu\r\n%s\r\n$2\r\nv1\r\n$2\r\nEX\r\n$2\r\n10\r\n",
+             strlen(k0), k0, strlen(k0b), k0b);
+    roundtrip(a, req, ":1\r\n");
+    snprintf(req, sizeof(req), "*2\r\n$3\r\nGET\r\n$%zu\r\n%s\r\n",
+             strlen(k0b), k0b);
+    roundtrip(b, req, "$2\r\nv1\r\n");
+
+    snprintf(req, sizeof(req),
+             "*6\r\n$6\r\nMSETEX\r\n$1\r\n2\r\n$%zu\r\n%s\r\n$1\r\nx\r\n"
+             "$%zu\r\n%s\r\n$1\r\ny\r\n",
+             strlen(k0), k0, strlen(k1), k1);
+    roundtrip(a, req,
+              "-CROSSSLOT Keys in request don't hash to the same slot\r\n");
+
+    /* Set-cardinality commands use their declared numkeys set. */
+    snprintf(req, sizeof(req), "*4\r\n$4\r\nSADD\r\n$%zu\r\n%s\r\n$1\r\nx\r\n$1\r\ny\r\n",
+             strlen(s0), s0);
+    roundtrip(a, req, ":2\r\n");
+    snprintf(req, sizeof(req), "*4\r\n$4\r\nSADD\r\n$%zu\r\n%s\r\n$1\r\ny\r\n$1\r\nz\r\n",
+             strlen(s0b), s0b);
+    roundtrip(a, req, ":2\r\n");
+    snprintf(req, sizeof(req), "*4\r\n$10\r\nSUNIONCARD\r\n$1\r\n2\r\n$%zu\r\n%s\r\n$%zu\r\n%s\r\n",
+             strlen(s0), s0, strlen(s0b), s0b);
+    roundtrip(b, req, ":3\r\n");
+    snprintf(req, sizeof(req), "*4\r\n$9\r\nSDIFFCARD\r\n$1\r\n2\r\n$%zu\r\n%s\r\n$%zu\r\n%s\r\n",
+             strlen(s0), s0, strlen(s0b), s0b);
+    roundtrip(b, req, ":1\r\n");
+    snprintf(req, sizeof(req), "*4\r\n$10\r\nSUNIONCARD\r\n$1\r\n2\r\n$%zu\r\n%s\r\n$%zu\r\n%s\r\n",
+             strlen(s0), s0, strlen(k1), k1);
+    roundtrip(a, req,
+              "-CROSSSLOT Keys in request don't hash to the same slot\r\n");
+
+    pal_close(a);
+    pal_close(b);
+    mt_server_stop(ms);
+    mt_server_destroy(ms);
+    pal_socket_cleanup();
+}
+
 static void test_pipeline_mixed_targets_keeps_order(void)
 {
     mt_server *ms;
@@ -2732,6 +2854,8 @@ int main(void)
 {
     DD_RUN(test_two_workers_shared_keyspace);
     DD_RUN(test_routed_cross_worker_commands);
+    DD_RUN(test_redis8_single_key_commands_route_to_owner);
+    DD_RUN(test_redis8_multikey_commands_route_to_owner);
     DD_RUN(test_pipeline_mixed_targets_keeps_order);
     DD_RUN(test_blocked_commands_in_mt_mode);
     DD_RUN(test_blocking_pop_cross_worker);
