@@ -131,7 +131,8 @@
   单 key 操作）路由到属主 worker；多 key 命令（MGET/MSET/DEL/UNLINK/
   EXISTS/SMOVE）所有 key 必须同属一个 worker，否则 `-CROSSSLOT`（与集群
   语义一致）。双 key `LMOVE/LMOVEM/COPY` 只检查 source/destination，
-  选项参数不参与槽计算；Redis 8 的 `MSETEX` 按 `numkeys` 解析 key/value 对并忽略
+  选项参数不参与槽计算；`OBJECT` 的子命令参数按 key 位置路由，不在
+  home worker 上错误执行；Redis 8 的 `MSETEX` 按 `numkeys` 解析 key/value 对并忽略
   选项参数；`SUNIONCARD/SDIFFCARD` 按声明的 `numkeys` 提取集合 key，
   与其它多 key 命令共享同一 hash-slot 校验。Redis 8 单 key 扩展（字段
   TTL、`INCREX/DELEX/DIGEST`、ARRAY）统一按首个 key 路由。无 key 命令

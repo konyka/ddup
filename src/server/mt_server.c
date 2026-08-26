@@ -1870,6 +1870,7 @@ static int mt_is_single_key(uint16_t cmd)
     case CMD_INCREX:
     case CMD_DELEX:
     case CMD_DIGEST:
+    case CMD_OBJECT:
     case CMD_EXPIRE:
     case CMD_PEXPIRE:
     case CMD_EXPIREAT:
@@ -2214,7 +2215,8 @@ static int mt_classify(int nworkers, uint16_t cmd, const resp_value *argv,
         cmd == CMD_SLAVEOF || cmd == CMD_SYNC || cmd == CMD_PSYNC)
         return 0; /* worker 0 owns the cluster/replication control plane */
     if (mt_is_single_key(cmd)) {
-        size_t keyidx = (cmd == CMD_XGROUP || cmd == CMD_XINFO) ? 2u : 1u;
+        size_t keyidx = (cmd == CMD_XGROUP || cmd == CMD_XINFO ||
+                         cmd == CMD_OBJECT) ? 2u : 1u;
         if (argc <= keyidx || argv[keyidx].str == NULL)
             return MT_LOCAL; /* arity error: let the local session report it */
         return (int)(hash_slot(argv[keyidx].str, argv[keyidx].len) %

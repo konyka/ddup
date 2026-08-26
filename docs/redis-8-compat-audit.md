@@ -117,6 +117,8 @@
   和模式注册表隔离。
 - mt 的双 key 列表移动 `LMOVEM` 现在与 `LMOVE` 使用相同的 source/destination
   槽校验和 owner 路由，避免把 `LEFT/RIGHT/COUNT` 选项误当作 key。
+- mt 的 `OBJECT` 子命令按 `OBJECT <subcommand> <key>` 的第三个参数提取 key，
+  因而跨连接查询可见正确 owner 上的对象元数据。
 
 ## 审计基线（机器断言，勿手改格式）
 

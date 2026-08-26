@@ -1411,6 +1411,34 @@ static void test_lmovem_same_worker(void)
     pal_socket_cleanup();
 }
 
+static void test_object_key_command_routes_to_owner(void)
+{
+    mt_server *ms;
+    pal_socket_t a, b;
+    char key[32], req[256];
+
+    DD_CHECK_EQ_INT(0, pal_socket_init());
+    pick_key_for_worker(1, 2, key, sizeof(key));
+    ms = mt_server_create("127.0.0.1", 0, 2);
+    DD_CHECK(ms != NULL);
+    if (ms == NULL)
+        return;
+    DD_CHECK_EQ_INT(0, mt_server_start(ms));
+    a = connect_client(mt_server_port(ms));
+    b = connect_client(mt_server_port(ms));
+    snprintf(req, sizeof(req), "*3\r\n$3\r\nSET\r\n$%zu\r\n%s\r\n$1\r\nx\r\n",
+             strlen(key), key);
+    roundtrip(a, req, "+OK\r\n");
+    snprintf(req, sizeof(req), "*3\r\n$6\r\nOBJECT\r\n$8\r\nENCODING\r\n$%zu\r\n%s\r\n",
+             strlen(key), key);
+    roundtrip(b, req, "$3\r\nraw\r\n");
+    pal_close(a);
+    pal_close(b);
+    mt_server_stop(ms);
+    mt_server_destroy(ms);
+    pal_socket_cleanup();
+}
+
 static void test_copy_same_worker(void)
 {
     mt_server *ms;
@@ -2964,6 +2992,7 @@ int main(void)
     DD_RUN(test_multikey_crossslot_rejected);
     DD_RUN(test_smove_same_worker);
     DD_RUN(test_lmovem_same_worker);
+    DD_RUN(test_object_key_command_routes_to_owner);
     DD_RUN(test_copy_same_worker);
     DD_RUN(test_quit_closes_connection_mt);
     DD_RUN(test_aggregate_dbsize_and_flushdb);

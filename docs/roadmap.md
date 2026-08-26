@@ -441,3 +441,6 @@
   - [x] mt 列表移动路由收尾：`LMOVEM` 按 source/destination 双 key 做
     CROSSSLOT 校验，忽略方向、COUNT 和排序选项；新增跨连接 owner 回归
     （Phase 89）
+  - [x] mt 对象元数据路由收尾：`OBJECT ENCODING/REFCOUNT/FREQ/IDLETIME`
+    按第三参数 key 路由到 owner worker；新增跨连接 `OBJECT ENCODING` 回归
+    （Phase 90）
