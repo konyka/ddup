@@ -438,3 +438,6 @@
   - [x] mt sharded pub/sub 收尾：`SSUBSCRIBE/SUNSUBSCRIBE/SPUBLISH` 按频道
     owner worker 路由，独立维护 shard 订阅 kind 并发送 `smessage`；TDD
     覆盖跨 worker 注册、投递和退订（Phase 88）
+  - [x] mt 列表移动路由收尾：`LMOVEM` 按 source/destination 双 key 做
+    CROSSSLOT 校验，忽略方向、COUNT 和排序选项；新增跨连接 owner 回归
+    （Phase 89）

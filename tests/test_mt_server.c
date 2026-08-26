@@ -1380,6 +1380,37 @@ static void test_smove_same_worker(void)
     pal_socket_cleanup();
 }
 
+static void test_lmovem_same_worker(void)
+{
+    mt_server *ms;
+    pal_socket_t a, b;
+    char src[32], dst[32], req[256];
+
+    DD_CHECK_EQ_INT(0, pal_socket_init());
+    pick_two_keys_for_worker(1, 2, src, sizeof(src), dst, sizeof(dst));
+    ms = mt_server_create("127.0.0.1", 0, 2);
+    DD_CHECK(ms != NULL);
+    if (ms == NULL)
+        return;
+    DD_CHECK_EQ_INT(0, mt_server_start(ms));
+    a = connect_client(mt_server_port(ms));
+    b = connect_client(mt_server_port(ms));
+    snprintf(req, sizeof(req), "*4\r\n$5\r\nRPUSH\r\n$%zu\r\n%s\r\n$1\r\na\r\n$1\r\nb\r\n",
+             strlen(src), src);
+    roundtrip(a, req, ":2\r\n");
+    snprintf(req, sizeof(req), "*8\r\n$6\r\nLMOVEM\r\n$%zu\r\n%s\r\n$%zu\r\n%s\r\n$4\r\nLEFT\r\n$5\r\nRIGHT\r\n$5\r\nCOUNT\r\n$1\r\n1\r\n$4\r\nBULK\r\n",
+             strlen(src), src, strlen(dst), dst);
+    roundtrip(b, req, "*1\r\n$1\r\na\r\n");
+    snprintf(req, sizeof(req), "*4\r\n$6\r\nLRANGE\r\n$%zu\r\n%s\r\n$1\r\n0\r\n$2\r\n-1\r\n",
+             strlen(dst), dst);
+    roundtrip(a, req, "*1\r\n$1\r\na\r\n");
+    pal_close(a);
+    pal_close(b);
+    mt_server_stop(ms);
+    mt_server_destroy(ms);
+    pal_socket_cleanup();
+}
+
 static void test_copy_same_worker(void)
 {
     mt_server *ms;
@@ -2932,6 +2963,7 @@ int main(void)
     DD_RUN(test_multikey_same_worker);
     DD_RUN(test_multikey_crossslot_rejected);
     DD_RUN(test_smove_same_worker);
+    DD_RUN(test_lmovem_same_worker);
     DD_RUN(test_copy_same_worker);
     DD_RUN(test_quit_closes_connection_mt);
     DD_RUN(test_aggregate_dbsize_and_flushdb);

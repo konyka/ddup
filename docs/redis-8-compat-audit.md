@@ -115,6 +115,8 @@
   PUBLISH 按 glob 匹配并 fan-out `pmessage`；`SSUBSCRIBE/SUNSUBSCRIBE/
   SPUBLISH` 按 channel owner 路由并 fan-out `smessage`，与普通频道注册表
   和模式注册表隔离。
+- mt 的双 key 列表移动 `LMOVEM` 现在与 `LMOVE` 使用相同的 source/destination
+  槽校验和 owner 路由，避免把 `LEFT/RIGHT/COUNT` 选项误当作 key。
 
 ## 审计基线（机器断言，勿手改格式）
 
