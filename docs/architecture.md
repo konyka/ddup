@@ -189,8 +189,9 @@
   expired/evicted/dbsize 求和、按库与按命令 id 合并），再由共享的
   `command_info_render()` 渲染为单份人类可读 INFO（maxmemory/策略/
   cluster 标志取 home worker 值）。
-- **限制（记录在案）**：mt 模式下 SHUTDOWN/MIGRATE 返回
-  `-ERR command not supported in mt mode`；PSUBSCRIBE/PUNSUBSCRIBE 已由
+- **限制（记录在案）**：mt 模式下 MIGRATE 仍返回
+  `-ERR command not supported in mt mode`；SHUTDOWN 在 home worker 执行
+  server shutdown hook 后协调停止全部 worker；PSUBSCRIBE/PUNSUBSCRIBE 已由
   home worker 注册到模式 owner worker，PUBLISH 使用 Redis glob 规则匹配并
   异步 fan-out `pmessage`，连接关闭和退订会清理模式注册。
   `SCAN` 使用带 worker 索引的复合游标顺序遍历各分片；

@@ -80,6 +80,20 @@ static void roundtrip(pal_socket_t c, const char *req, const char *expected)
     DD_CHECK_MEM(expected, elen, buf, got);
 }
 
+static void send_raw(pal_socket_t c, const char *req)
+{
+    size_t sent = 0, len = strlen(req);
+    uint64_t deadline = pal_now_ms() + 5000;
+    while (sent < len && pal_now_ms() < deadline) {
+        ptrdiff_t n = pal_send(c, req + sent, len - sent);
+        if (n > 0)
+            sent += (size_t)n;
+        else
+            pal_sleep_ms(1);
+    }
+    DD_CHECK_EQ_INT((long long)len, (long long)sent);
+}
+
 /* Find a key that maps to the given worker: worker = hash_slot(key) % nw. */
 static void pick_key_for_worker(int wanted, int nworkers, char *out,
                                 size_t cap)
@@ -278,6 +292,7 @@ static void test_blocked_commands_in_mt_mode(void)
 {
     mt_server *ms;
     pal_socket_t a, b;
+    int i;
 
     DD_CHECK_EQ_INT(0, pal_socket_init());
     ms = mt_server_create("127.0.0.1", 0, 2);
@@ -286,8 +301,6 @@ static void test_blocked_commands_in_mt_mode(void)
     a = connect_client(mt_server_port(ms));
     b = connect_client(mt_server_port(ms));
 
-    roundtrip(a, "*1\r\n$8\r\nSHUTDOWN\r\n",
-              "-ERR command not supported in mt mode\r\n");
     roundtrip(a, "*2\r\n$10\r\nPSUBSCRIBE\r\n$6\r\nnews.*\r\n",
               "*3\r\n$10\r\npsubscribe\r\n$6\r\nnews.*\r\n:1\r\n");
     roundtrip(b, "*3\r\n$7\r\nPUBLISH\r\n$9\r\nnews.tech\r\n$5\r\nhello\r\n",
@@ -298,6 +311,13 @@ static void test_blocked_commands_in_mt_mode(void)
     roundtrip(a, "*1\r\n$6\r\nASKING\r\n", "+OK\r\n");
     /* The session still works for normal commands afterwards. */
     roundtrip(a, "*1\r\n$4\r\nPING\r\n", "+PONG\r\n");
+
+    /* SHUTDOWN is a no-reply command; the coordinated pool stops after the
+     * home worker executes the existing server shutdown hook. */
+    send_raw(a, "*1\r\n$8\r\nSHUTDOWN\r\n");
+    for (i = 0; i < 100 && mt_server_test_running(ms); i++)
+        pal_sleep_ms(5);
+    DD_CHECK_EQ_INT(0, mt_server_test_running(ms));
 
     pal_close(a);
     pal_close(b);

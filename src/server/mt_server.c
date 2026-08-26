@@ -1509,7 +1509,6 @@ static void mt_agg_finish(server *srv, void *conn, mt_conn_state *st,
 static int mt_is_blocked(uint16_t cmd)
 {
     switch (cmd) {
-    case CMD_SHUTDOWN:
     case CMD_MIGRATE:
     case CMD_BLPOP:
     case CMD_BRPOP:
@@ -3416,6 +3415,24 @@ static int mt_route(void *ctx, void *conn, session *sess,
                 mt_reorder_insert(st, t);
                 mt_drain_ready(home->srv, &home->exec_arena, conn, st, 1);
                 mt_cluster_sync(home);
+            }
+        }
+        return 1;
+    }
+
+    if (cmd == CMD_SHUTDOWN) {
+        /* SHUTDOWN has no RESP reply by design. Execute it on the home
+         * worker, then stop the coordinated pool after persistence hooks have
+         * marked the worker for shutdown. */
+        mt_batch_flush(home, conn, st);
+        session_execute(sess, argv, argc, out);
+        if (server_shutdown_requested(home->srv)) {
+            int wi;
+            home->ms->running = 0;
+            for (wi = 0; wi < home->ms->nworkers; wi++) {
+                home->ms->workers[wi].running = 0;
+                if (wi != home->id)
+                    mt_kick(&home->ms->workers[wi]);
             }
         }
         return 1;
