@@ -389,7 +389,8 @@
     `HIMPORT PREPARE/SET/DISCARD/DISCARDALL` 以 session-local fieldset 和
     批量 hash 写入实现；`HOTKEYS` 提供带 DURATION/SAMPLE/SLOTS 校验的
     server-owned 生命周期与低开销命令计数；`BACKUP` 复用原子多库快照实现
-    `START/STATUS/SEAL/LIST/ABORT/CLEANUP`，增量 MP-AOF pinning 保留为后续
+    `START/STATUS/SEAL/LIST/ABORT/CLEANUP`，AOF 模式记录 durable offset 并在
+    SEAL 生成原子 `.backup.aof` 增量文件；MP-AOF immutable pinning 保留为后续
     性能阶段（Phase 82）
   - [x] Redis 8 ARRAY 核心：`ARSET/ARGET/ARLEN/ARCOUNT`；`obj_array` 用
     稀疏索引表提供 O(1) 随机访问和 O(1) 长度/非空计数，支持快照持久化，

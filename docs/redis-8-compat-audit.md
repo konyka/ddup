@@ -48,12 +48,13 @@
 - `MONITOR` streams subsequent commands to subscribed server connections,
   including GET/SET lean fast paths. `BACKUP` implements a safe synchronous
   snapshot-backed lifecycle (`START/STATUS/SEAL/LIST/ABORT/CLEANUP`) using an
-  atomic `.backup` artifact; incremental MP-AOF pinning remains out of scope.
-  `HOTKEYS` implements a server-owned lifecycle, bounded preallocated sampled
+  atomic `.backup` artifact; AOF-enabled backups record a durable baseline offset
+  and SEAL atomically writes a `.backup.aof` delta artifact. Redis MP-AOF
+  immutable-file pinning remains out of scope. `HOTKEYS` implements a server-owned lifecycle, bounded preallocated sampled
   key table, and Redis 8 START option validation; `GET` reports tracking state,
   sample ratio, start time, total commands, and bounded CPU/network-like key
-  lists. ddup reports sampled command/argument-byte units rather than process
-  CPU/network counters.
+  lists. ddup reports measured dispatch microseconds and raw request bytes when
+  available, with stack-session argument-byte fallback.
   `HIMPORT PREPARE/SET/DISCARD/DISCARDALL` is implemented with session-local
   fieldsets, Redis-compatible integer removal counts for DISCARD/DISCARDALL,
   and validated batched writes to ordinary hash objects.
