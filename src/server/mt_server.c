@@ -1708,7 +1708,7 @@ static void mt_agg_finish(server *srv, void *conn, mt_conn_state *st,
 /* ------------------------------------------------------------------ */
 
 #define MT_PASS (-3)      /* not classified: legacy inline path */
-#define MT_BLOCKED (-2)   /* reply -ERR (not supported in mt mode yet) */
+#define MT_BLOCKED (-2)   /* reserved for commands with no safe mt waiter */
 #define MT_LOCAL (-1)     /* keyless: execute on the home worker */
 #define MT_CROSSSLOT (-4) /* multi-key command spans workers */
 
@@ -2152,7 +2152,7 @@ static int mt_multikey_target(int nworkers, uint16_t cmd,
 }
 
 /* Decide where a command runs. Returns a worker id, MT_LOCAL, MT_BLOCKED or
- * MT_PASS. */
+ * MT_PASS. Blocking pop commands return their key owner here. */
 static int mt_classify(int nworkers, uint16_t cmd, const resp_value *argv,
                        size_t argc)
 {
@@ -3603,7 +3603,7 @@ static int mt_route_scan(worker *home, void *conn, mt_conn_state *st,
 
 /* Router installed on every worker's server. Runs on the home worker thread
  * inside conn_process_input. Returns non-zero when the command was handled
- * (locally, blocked, or forwarded). */
+ * (locally, waiter-owned, or forwarded). */
 static int mt_route(void *ctx, void *conn, session *sess,
                     const resp_value *argv, size_t argc, const char *raw,
                     size_t rawlen, resp_buf *out)
@@ -3945,7 +3945,7 @@ static int mt_route(void *ctx, void *conn, session *sess,
         return 1;
     }
 
-    /* Local / blocked / crossslot: any open batch must go out first to keep
+    /* Local / reserved-blocked / crossslot: any open batch must go out first to keep
      * pipeline order (its seqs precede this command's). */
     mt_batch_flush(home, conn, st);
 
