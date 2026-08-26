@@ -1711,13 +1711,14 @@ static void mt_agg_finish(server *srv, void *conn, mt_conn_state *st,
 #define MT_LOCAL (-1)     /* keyless: execute on the home worker */
 #define MT_CROSSSLOT (-4) /* multi-key command spans workers */
 
-static int mt_is_blocked(uint16_t cmd)
+static int mt_is_blocking_pop(uint16_t cmd)
 {
     switch (cmd) {
     case CMD_BLPOP:
     case CMD_BRPOP:
     case CMD_BRPOPLPUSH:
     case CMD_BLMOVE:
+    case CMD_BLMOVEM:
     case CMD_BLMPOP:
     case CMD_BZPOPMIN:
     case CMD_BZPOPMAX:
@@ -1725,6 +1726,75 @@ static int mt_is_blocked(uint16_t cmd)
         return 1;
     default:
         return 0;
+    }
+}
+
+/* Blocking commands execute on one owner worker so the native session
+ * waiter can observe both the list/zset and the writes that wake it. */
+static int mt_blocking_target(int nworkers, uint16_t cmd,
+                              const resp_value *argv, size_t argc)
+{
+    size_t kstart = 1;
+    size_t kend;
+    long long nk;
+
+    switch (cmd) {
+    case CMD_BLPOP:
+    case CMD_BRPOP:
+        if (argc < 3)
+            return MT_LOCAL;
+        kend = argc - 1;
+        break;
+    case CMD_BRPOPLPUSH:
+        if (argc != 4)
+            return MT_LOCAL;
+        kend = 3;
+        break;
+    case CMD_BLMOVE:
+        if (argc != 6)
+            return MT_LOCAL;
+        kend = 3;
+        break;
+    case CMD_BLMOVEM:
+        if (argc < 6)
+            return MT_LOCAL;
+        kend = 3;
+        break;
+    case CMD_BLMPOP:
+    case CMD_BZMPOP:
+        if (argc < 4 || argv[2].str == NULL ||
+            !mt_parse_ll(argv[2].str, argv[2].len, &nk) || nk <= 0)
+            return MT_LOCAL;
+        if ((unsigned long long)nk > (unsigned long long)(argc - 4))
+            return MT_LOCAL;
+        kstart = 3;
+        kend = 3 + (size_t)nk;
+        break;
+    case CMD_BZPOPMIN:
+    case CMD_BZPOPMAX:
+        if (argc < 3)
+            return MT_LOCAL;
+        kend = argc - 1;
+        break;
+    default:
+        return MT_LOCAL;
+    }
+
+    {
+        int target = -2;
+        size_t i;
+        for (i = kstart; i < kend; i++) {
+            int w;
+            if (argv[i].str == NULL)
+                return MT_LOCAL;
+            w = (int)(hash_slot(argv[i].str, argv[i].len) %
+                      (uint32_t)nworkers);
+            if (target == -2)
+                target = w;
+            else if (target != w)
+                return MT_CROSSSLOT;
+        }
+        return target == -2 ? MT_LOCAL : target;
     }
 }
 
@@ -2085,8 +2155,8 @@ static int mt_multikey_target(int nworkers, uint16_t cmd,
 static int mt_classify(int nworkers, uint16_t cmd, const resp_value *argv,
                        size_t argc)
 {
-    if (mt_is_blocked(cmd))
-        return MT_BLOCKED;
+    if (mt_is_blocking_pop(cmd))
+        return mt_blocking_target(nworkers, cmd, argv, argc);
     if (cmd == CMD_MIGRATE)
         return mt_migrate_target(nworkers, argv, argc);
     if (cmd == CMD_CLUSTER || cmd == CMD_REPLICAOF ||
@@ -2112,6 +2182,13 @@ static int mt_classify(int nworkers, uint16_t cmd, const resp_value *argv,
     case CMD_RENAMENX:
     case CMD_RPOPLPUSH:
     case CMD_LMOVE:
+    case CMD_BLMOVE:
+    case CMD_BRPOPLPUSH:
+    case CMD_BLMOVEM:
+    case CMD_BLMPOP:
+    case CMD_BZPOPMIN:
+    case CMD_BZPOPMAX:
+    case CMD_BZMPOP:
     case CMD_LCS:
     case CMD_COPY:
     case CMD_SINTER:

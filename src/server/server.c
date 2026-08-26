@@ -4215,6 +4215,8 @@ static int conn_process_input(server *s, conn *c)
                 off += (size_t)used;
                 if (c->sess->quit)
                     break; /* QUIT handled locally by the routing layer */
+                if (c->sess->blocked)
+                    break; /* routed blocking command owns this connection */
                 continue; /* routed / handled by the mt layer */
             }
         }

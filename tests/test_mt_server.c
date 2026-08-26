@@ -94,6 +94,9 @@ static void send_raw(pal_socket_t c, const char *req)
     DD_CHECK_EQ_INT((long long)len, (long long)sent);
 }
 
+static size_t recv_deadline(pal_socket_t c, char *buf, size_t len,
+                            uint64_t ms);
+
 /* Find a key that maps to the given worker: worker = hash_slot(key) % nw. */
 static void pick_key_for_worker(int wanted, int nworkers, char *out,
                                 size_t cap)
@@ -321,6 +324,93 @@ static void test_blocked_commands_in_mt_mode(void)
 
     pal_close(a);
     pal_close(b);
+    mt_server_stop(ms);
+    mt_server_destroy(ms);
+    pal_socket_cleanup();
+}
+
+static void test_blocking_pop_cross_worker(void)
+{
+    mt_server *ms;
+    pal_socket_t blocked, producer;
+    char key[32], req[256], buf[128];
+    const char *reply = "*2\r\n$%zu\r\n%s\r\n$5\r\nvalue\r\n";
+    size_t n;
+
+    DD_CHECK_EQ_INT(0, pal_socket_init());
+    pick_key_for_worker(1, 2, key, sizeof(key));
+    ms = mt_server_create("127.0.0.1", 0, 2);
+    DD_CHECK(ms != NULL);
+    DD_CHECK_EQ_INT(0, mt_server_start(ms));
+    blocked = connect_client(mt_server_port(ms));
+    producer = connect_client(mt_server_port(ms));
+
+    snprintf(req, sizeof(req), "*3\r\n$5\r\nBLPOP\r\n$%zu\r\n%s\r\n$1\r\n0\r\n",
+             strlen(key), key);
+    send_raw(blocked, req);
+    /* A zero-timeout BLPOP must remain pending until the owner receives data. */
+    DD_CHECK_EQ_INT(0, (long long)recv_deadline(blocked, buf, sizeof(buf), 150));
+
+    snprintf(req, sizeof(req), "*3\r\n$5\r\nLPUSH\r\n$%zu\r\n%s\r\n$5\r\nvalue\r\n",
+             strlen(key), key);
+    roundtrip(producer, req, ":1\r\n");
+    n = recv_deadline(blocked, buf, sizeof(buf), 3000);
+    DD_CHECK(n > 0);
+    if (n > 0) {
+        char expected[128];
+        snprintf(expected, sizeof(expected), reply, strlen(key), key);
+        DD_CHECK_MEM(expected, strlen(expected), buf, n);
+    }
+
+    pal_close(blocked);
+    pal_close(producer);
+    mt_server_stop(ms);
+    mt_server_destroy(ms);
+    pal_socket_cleanup();
+}
+
+static void test_blocking_pop_timeout_and_crossslot(void)
+{
+    mt_server *ms;
+    pal_socket_t a, b;
+    char k0[32], k1[32], req[256], buf[256];
+    size_t n;
+
+    DD_CHECK_EQ_INT(0, pal_socket_init());
+    pick_key_for_worker(0, 2, k0, sizeof(k0));
+    pick_key_for_worker(1, 2, k1, sizeof(k1));
+    ms = mt_server_create("127.0.0.1", 0, 2);
+    DD_CHECK(ms != NULL);
+    DD_CHECK_EQ_INT(0, mt_server_start(ms));
+    a = connect_client(mt_server_port(ms));
+    b = connect_client(mt_server_port(ms));
+
+    snprintf(req, sizeof(req),
+             "*4\r\n$5\r\nBLPOP\r\n$%zu\r\n%s\r\n$%zu\r\n%s\r\n$4\r\n0.05\r\n",
+             strlen(k0), k0, strlen(k1), k1);
+    roundtrip(a, req,
+              "-CROSSSLOT Keys in request don't hash to the same slot\r\n");
+
+    snprintf(req, sizeof(req), "*3\r\n$5\r\nBLPOP\r\n$%zu\r\n%s\r\n$4\r\n0.05\r\n",
+             strlen(k1), k1);
+    send_raw(a, req);
+    n = recv_deadline(a, buf, sizeof(buf), 1000);
+    DD_CHECK(n > 0);
+    if (n > 0)
+        DD_CHECK_MEM("$-1\r\n", 5, buf, n);
+
+    /* A waiter that disconnects must be removed from the owner registry. */
+    snprintf(req, sizeof(req), "*3\r\n$5\r\nBLPOP\r\n$%zu\r\n%s\r\n$1\r\n0\r\n",
+             strlen(k0), k0);
+    send_raw(b, req);
+    DD_CHECK_EQ_INT(0, (long long)recv_deadline(b, buf, sizeof(buf), 100));
+    pal_close(b);
+    pal_sleep_ms(100);
+    snprintf(req, sizeof(req), "*3\r\n$5\r\nLPUSH\r\n$%zu\r\n%s\r\n$1\r\nx\r\n",
+             strlen(k0), k0);
+    roundtrip(a, req, ":1\r\n");
+
+    pal_close(a);
     mt_server_stop(ms);
     mt_server_destroy(ms);
     pal_socket_cleanup();
@@ -2527,6 +2617,8 @@ int main(void)
     DD_RUN(test_routed_cross_worker_commands);
     DD_RUN(test_pipeline_mixed_targets_keeps_order);
     DD_RUN(test_blocked_commands_in_mt_mode);
+    DD_RUN(test_blocking_pop_cross_worker);
+    DD_RUN(test_blocking_pop_timeout_and_crossslot);
     DD_RUN(test_migrate_supported_on_single_mt_worker);
     DD_RUN(test_randomkey_aggregates_workers);
     DD_RUN(test_keys_aggregates_workers);
