@@ -1414,8 +1414,12 @@ static void mt_pubsub_stats_execute(worker *w, mt_task *t)
             if (e->pattern)
                 n++;
         resp_write_integer(&t->reply, (long long)n);
-    } else if (v.items[1].len == 8 &&
-               mt_ci_equal(v.items[1].str, v.items[1].len, "CHANNELS")) {
+    } else if ((v.items[1].len == 8 &&
+                mt_ci_equal(v.items[1].str, v.items[1].len, "CHANNELS")) ||
+               (v.items[1].len == 13 &&
+                mt_ci_equal(v.items[1].str, v.items[1].len,
+                            "SHARDCHANNELS"))) {
+        int shard = v.items[1].len == 13;
         const char *pat = NULL;
         size_t plen = 0;
         if (v.count == 3) {
@@ -1424,11 +1428,13 @@ static void mt_pubsub_stats_execute(worker *w, mt_task *t)
         }
         for (mt_sub_entry *e = w->subs; e != NULL; e = e->next) {
             int seen = 0;
-            if (e->pattern || (pat != NULL &&
+            if ((shard ? e->pattern != 2 : e->pattern != 0) ||
+                (pat != NULL &&
                                !ddup_glob_match(pat, plen, e->ch, e->chlen)))
                 continue;
             for (mt_sub_entry *p = w->subs; p != e; p = p->next)
-                if (!p->pattern && p->chlen == e->chlen &&
+                if ((shard ? p->pattern == 2 : p->pattern == 0) &&
+                    p->chlen == e->chlen &&
                     memcmp(p->ch, e->ch, e->chlen) == 0) {
                     seen = 1;
                     break;
@@ -1439,11 +1445,13 @@ static void mt_pubsub_stats_execute(worker *w, mt_task *t)
         resp_write_array_header(&t->reply, n);
         for (mt_sub_entry *e = w->subs; e != NULL; e = e->next) {
             int seen = 0;
-            if (e->pattern || (pat != NULL &&
+            if ((shard ? e->pattern != 2 : e->pattern != 0) ||
+                (pat != NULL &&
                                !ddup_glob_match(pat, plen, e->ch, e->chlen)))
                 continue;
             for (mt_sub_entry *p = w->subs; p != e; p = p->next)
-                if (!p->pattern && p->chlen == e->chlen &&
+                if ((shard ? p->pattern == 2 : p->pattern == 0) &&
+                    p->chlen == e->chlen &&
                     memcmp(p->ch, e->ch, e->chlen) == 0) {
                     seen = 1;
                     break;
@@ -1451,15 +1459,20 @@ static void mt_pubsub_stats_execute(worker *w, mt_task *t)
             if (!seen)
                 resp_write_bulk(&t->reply, e->ch, e->chlen);
         }
-    } else if (v.items[1].len == 6 &&
-               mt_ci_equal(v.items[1].str, v.items[1].len, "NUMSUB")) {
+    } else if ((v.items[1].len == 6 &&
+                mt_ci_equal(v.items[1].str, v.items[1].len, "NUMSUB")) ||
+               (v.items[1].len == 11 &&
+                mt_ci_equal(v.items[1].str, v.items[1].len,
+                            "SHARDNUMSUB"))) {
+        int shard = v.items[1].len == 11;
         resp_write_array_header(&t->reply, (v.count - 2) * 2);
         for (i = 2; i < v.count; i++) {
             long long count = 0;
             if (v.items[i].str == NULL)
                 continue;
             for (mt_sub_entry *e = w->subs; e != NULL; e = e->next)
-                if (!e->pattern && e->chlen == v.items[i].len &&
+                if ((shard ? e->pattern == 2 : e->pattern == 0) &&
+                    e->chlen == v.items[i].len &&
                     memcmp(e->ch, v.items[i].str, e->chlen) == 0)
                     count++;
             resp_write_bulk(&t->reply, v.items[i].str, v.items[i].len);
@@ -2615,7 +2628,11 @@ static int mt_route_aggregate(worker *home, void *conn,
             agg->pubsub_mode = 1;
         else if (mt_ci_equal(argv[1].str, argv[1].len, "CHANNELS"))
             agg->pubsub_mode = 2;
+        else if (mt_ci_equal(argv[1].str, argv[1].len, "SHARDCHANNELS"))
+            agg->pubsub_mode = 2;
         else if (mt_ci_equal(argv[1].str, argv[1].len, "NUMSUB"))
+            agg->pubsub_mode = 3;
+        else if (mt_ci_equal(argv[1].str, argv[1].len, "SHARDNUMSUB"))
             agg->pubsub_mode = 3;
         else
             return 0;

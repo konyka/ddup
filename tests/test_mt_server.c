@@ -483,7 +483,6 @@ static void test_blocking_pop_cross_worker(void)
         snprintf(expected, sizeof(expected), reply, strlen(key), key);
         DD_CHECK_MEM(expected, strlen(expected), buf, n);
     }
-
     pal_close(blocked);
     pal_close(producer);
     mt_server_stop(ms);
@@ -2131,6 +2130,14 @@ static void test_sharded_pubsub_cross_worker(void)
                  strlen(ch), ch);
         DD_CHECK_MEM(expected, strlen(expected), buf, n);
     }
+    snprintf(req, sizeof(req), "*3\r\n$6\r\nPUBSUB\r\n$11\r\nSHARDNUMSUB\r\n$%zu\r\n%s\r\n",
+             strlen(ch), ch);
+    snprintf(buf, sizeof(buf), "*2\r\n$%zu\r\n%s\r\n:1\r\n",
+             strlen(ch), ch);
+    roundtrip(pub, req, buf);
+    snprintf(req, sizeof(req), "*2\r\n$6\r\nPUBSUB\r\n$13\r\nSHARDCHANNELS\r\n");
+    snprintf(buf, sizeof(buf), "*1\r\n$%zu\r\n%s\r\n", strlen(ch), ch);
+    roundtrip(pub, req, buf);
     snprintf(req, sizeof(req), "*1\r\n$12\r\nSUNSUBSCRIBE\r\n");
     snprintf(buf, sizeof(buf), "*3\r\n$12\r\nsunsubscribe\r\n$%zu\r\n%s\r\n:0\r\n",
              strlen(ch), ch);
