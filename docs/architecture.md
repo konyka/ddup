@@ -659,8 +659,8 @@ DBSIZE 为 O(1)，可能计入尚未回收的过期 key。
   （pubsub_channels/channel_nsub/numpat；无钩子的栈 session 回空/0），
   NUMPAT 由 server 侧 numpats 计数器维护。订阅确认帧计数为
   nsub+nssub+npsub 总和。mt 模式模式订阅使用 worker-local pattern registry；
-  PUBSUB 自查子命令在 mt 下与
-  SHARDCHANNELS 一致走 MT_PASS 本地执行（数据为本 worker 视角，记录在案）。
+  PUBSUB CHANNELS/NUMSUB/NUMPAT 由 home worker 广播到全部 worker 后归并，
+  CHANNELS 去重、NUMSUB 按频道求和、NUMPAT 求和，保持全局视图。
 
 ## 持久化（Phase 6）
 

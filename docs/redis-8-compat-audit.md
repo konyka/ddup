@@ -54,7 +54,7 @@
   segment-reclamation path. `HOTKEYS` implements a server-owned lifecycle, bounded preallocated sampled
   key table, and Redis 8 START option validation; `GET` reports tracking state,
   sample ratio, start time, total commands, and bounded CPU/network-like key
-  lists. ddup reports measured dispatch microseconds and raw request bytes when
+  lists with independent CPU and NET rankings. ddup reports measured dispatch microseconds and raw request bytes when
   available, with stack-session argument-byte fallback.
   `HIMPORT PREPARE/SET/DISCARD/DISCARDALL` is implemented with session-local
   fieldsets, Redis-compatible integer removal counts for DISCARD/DISCARDALL,

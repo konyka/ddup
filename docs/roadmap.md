@@ -233,7 +233,8 @@
   - [x] 模式订阅：PSUBSCRIBE/PUNSUBSCRIBE + PUBSUB CHANNELS/NUMSUB/
     NUMPAT；第三张注册表 rh_table patterns，PUBLISH 线性扫 pattern
     表 glob 匹配投递 pmessage；mt 模式使用 worker-local pattern registry
-    和异步 pmessage fan-out
+    和异步 pmessage fan-out；PUBSUB CHANNELS/NUMSUB/NUMPAT 在 mt 模式
+    广播归并为全局视图
     （Phase 43）
   - [x] 收尾与耐久性：QUIT 回 +OK 后经 send-then-close 断连（双后端
     + mt）；AOF appendfsync always|everysec|no（pal_file_sync：
@@ -413,7 +414,8 @@
   - [x] Redis 8 运行时管理收尾：`HIMPORT PREPARE/SET/DISCARD/DISCARDALL`、
     `HOTKEYS` 生命周期/计数、`BACKUP` 安全快照生命周期和 `MONITOR` 实时
     命令流以 TDD 覆盖；HOTKEYS 已收敛为预分配、有界 Top-K、SLOTS 过滤和
-    实测 dispatch/请求字节指标，BACKUP durable delta 生命周期已完成；Redis
+    实测 dispatch/请求字节指标，CPU/NET 双指标独立 Top-K 排序，BACKUP
+    durable delta 生命周期已完成；Redis
     内部 hash-template/MP-AOF segment 编码不改变 ddup 外部语义
     （Phase 83）
   - [x] mt 集群路由安全收敛：`ASKING` 不再被误判为不支持命令，按连接
