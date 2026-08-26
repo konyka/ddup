@@ -2098,6 +2098,51 @@ static void test_pubsub_cross_worker(void)
     pal_socket_cleanup();
 }
 
+static void test_sharded_pubsub_cross_worker(void)
+{
+    mt_server *ms;
+    pal_socket_t sub, pub;
+    char ch[32], req[256], buf[256];
+    size_t n;
+
+    DD_CHECK_EQ_INT(0, pal_socket_init());
+    pick_key_for_worker(1, 2, ch, sizeof(ch));
+    ms = mt_server_create("127.0.0.1", 0, 2);
+    DD_CHECK(ms != NULL);
+    if (ms == NULL)
+        return;
+    DD_CHECK_EQ_INT(0, mt_server_start(ms));
+    sub = connect_client(mt_server_port(ms));
+    pub = connect_client(mt_server_port(ms));
+
+    snprintf(req, sizeof(req), "*2\r\n$10\r\nSSUBSCRIBE\r\n$%zu\r\n%s\r\n",
+             strlen(ch), ch);
+    snprintf(buf, sizeof(buf), "*3\r\n$10\r\nssubscribe\r\n$%zu\r\n%s\r\n:1\r\n",
+             strlen(ch), ch);
+    roundtrip(sub, req, buf);
+    snprintf(req, sizeof(req), "*3\r\n$8\r\nSPUBLISH\r\n$%zu\r\n%s\r\n$5\r\nhello\r\n",
+             strlen(ch), ch);
+    roundtrip(pub, req, ":1\r\n");
+    n = recv_deadline(sub, buf, sizeof(buf), 3000);
+    DD_CHECK(n > 0);
+    if (n > 0) {
+        char expected[256];
+        snprintf(expected, sizeof(expected), "*3\r\n$8\r\nsmessage\r\n$%zu\r\n%s\r\n$5\r\nhello\r\n",
+                 strlen(ch), ch);
+        DD_CHECK_MEM(expected, strlen(expected), buf, n);
+    }
+    snprintf(req, sizeof(req), "*1\r\n$12\r\nSUNSUBSCRIBE\r\n");
+    snprintf(buf, sizeof(buf), "*3\r\n$12\r\nsunsubscribe\r\n$%zu\r\n%s\r\n:0\r\n",
+             strlen(ch), ch);
+    roundtrip(sub, req, buf);
+
+    pal_close(sub);
+    pal_close(pub);
+    mt_server_stop(ms);
+    mt_server_destroy(ms);
+    pal_socket_cleanup();
+}
+
 static void test_unsubscribe_stops_delivery(void)
 {
     mt_server *ms;
@@ -2873,6 +2918,7 @@ int main(void)
     DD_RUN(test_mt_info_replication);
     DD_RUN(test_mt_swapdb_replicates_once_three_workers);
     DD_RUN(test_pubsub_cross_worker);
+    DD_RUN(test_sharded_pubsub_cross_worker);
     DD_RUN(test_unsubscribe_stops_delivery);
     DD_RUN(test_pubsub_conn_close_unsubscribes);
     DD_RUN(test_pubsub_introspection_aggregates_workers);

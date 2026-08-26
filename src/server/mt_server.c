@@ -1073,23 +1073,13 @@ static int mt_pending_inc_if_open(worker *home, mt_conn_state *st)
 /* pub/sub: home-side subscription bookkeeping                          */
 /* ------------------------------------------------------------------ */
 
-static mt_conn_sub *mt_conn_sub_find(mt_conn_state *st, const char *ch,
-                                     size_t chlen)
+static mt_conn_sub *mt_conn_sub_find_kind(mt_conn_state *st, const char *ch,
+                                          size_t chlen, int kind)
 {
     mt_conn_sub *s;
     for (s = st->subs; s != NULL; s = s->next)
-        if (s->chlen == chlen && memcmp(s->ch, ch, chlen) == 0)
-            return s;
-    return NULL;
-}
-
-static mt_conn_sub *mt_conn_sub_find_pattern(mt_conn_state *st,
-                                             const char *pat, size_t plen)
-{
-    mt_conn_sub *s;
-    for (s = st->subs; s != NULL; s = s->next)
-        if (s->pattern && s->chlen == plen &&
-            memcmp(s->ch, pat, plen) == 0)
+        if (s->pattern == kind && s->chlen == chlen &&
+            memcmp(s->ch, ch, chlen) == 0)
             return s;
     return NULL;
 }
@@ -3395,7 +3385,8 @@ static int mt_route_subscribe_kind(worker *home, void *conn, mt_conn_state *st,
                                    const resp_value *argv, size_t argc,
                                    uint64_t seq, resp_buf *out, int pattern)
 {
-    const char *verb = pattern ? "psubscribe" : "subscribe";
+    const char *verb = pattern == 1 ? "psubscribe" :
+                       (pattern == 2 ? "ssubscribe" : "subscribe");
     resp_buf reply;
     size_t i;
     if (argc < 2) {
@@ -3411,8 +3402,7 @@ static int mt_route_subscribe_kind(worker *home, void *conn, mt_conn_state *st,
             continue;
         owner = (int)(hash_slot(argv[i].str, argv[i].len) %
                       (uint32_t)home->ms->nworkers);
-        if ((pattern ? mt_conn_sub_find_pattern(st, argv[i].str, argv[i].len)
-                     : mt_conn_sub_find(st, argv[i].str, argv[i].len)) == NULL) {
+        if (mt_conn_sub_find_kind(st, argv[i].str, argv[i].len, pattern) == NULL) {
             if (mt_conn_sub_add(st, argv[i].str, argv[i].len, owner,
                                 pattern) == 0)
                 mt_pubsub_register(home, conn, st, argv[i].str,
@@ -3437,7 +3427,8 @@ static int mt_route_unsubscribe_kind(worker *home, void *conn, mt_conn_state *st
                                      const resp_value *argv, size_t argc,
                                      uint64_t seq, resp_buf *out, int pattern)
 {
-    const char *verb = pattern ? "punsubscribe" : "unsubscribe";
+    const char *verb = pattern == 1 ? "punsubscribe" :
+                       (pattern == 2 ? "sunsubscribe" : "unsubscribe");
     resp_buf reply;
     int emitted = 0;
     resp_buf_init(&reply);
@@ -3446,11 +3437,8 @@ static int mt_route_unsubscribe_kind(worker *home, void *conn, mt_conn_state *st
         for (i = 1; i < argc; i++) {
             if (argv[i].str == NULL)
                 continue;
-            mt_conn_sub *found = pattern
-                                     ? mt_conn_sub_find_pattern(st, argv[i].str,
-                                                                 argv[i].len)
-                                     : mt_conn_sub_find(st, argv[i].str,
-                                                        argv[i].len);
+            mt_conn_sub *found = mt_conn_sub_find_kind(st, argv[i].str,
+                                                       argv[i].len, pattern);
             if (found != NULL && mt_conn_sub_remove(st, argv[i].str,
                                                     argv[i].len, pattern)) {
                 int owner = (int)(hash_slot(argv[i].str, argv[i].len) %
@@ -3528,10 +3516,14 @@ static void mt_publish_execute(worker *owner_w, mt_task *t)
         worker *sh;
         mt_conn_state *sst;
         mt_task *d;
-        if ((!e->pattern && (e->chlen != v.items[1].len ||
-                             memcmp(e->ch, v.items[1].str, e->chlen) != 0)) ||
-            (e->pattern && !ddup_glob_match(e->ch, e->chlen,
-                                            v.items[1].str, v.items[1].len)))
+        if (t->pubsub_pattern == 2 ? e->pattern != 2
+                                   : e->pattern == 2)
+            continue;
+        if (e->pattern == 1 && !ddup_glob_match(e->ch, e->chlen,
+                                                v.items[1].str, v.items[1].len))
+            continue;
+        if (e->pattern != 1 && (e->chlen != v.items[1].len ||
+                                memcmp(e->ch, v.items[1].str, e->chlen) != 0))
             continue;
         sh = &owner_w->ms->workers[e->home_id];
         sst = (mt_conn_state *)server_conn_mt_state(e->conn);
@@ -3550,12 +3542,14 @@ static void mt_publish_execute(worker *owner_w, mt_task *t)
         d->kind = MT_TASK_PUSH;
         d->pubsub_pattern = e->pattern;
         d->pending_owned = 1;
-        resp_write_array_header(&d->reply, e->pattern ? 4 : 3);
-        if (e->pattern)
+        resp_write_array_header(&d->reply, e->pattern == 1 ? 4 : 3);
+        if (e->pattern == 1)
             resp_write_bulk(&d->reply, "pmessage", 8);
+        else if (e->pattern == 2)
+            resp_write_bulk(&d->reply, "smessage", 8);
         else
             resp_write_bulk(&d->reply, "message", 7);
-        if (e->pattern)
+        if (e->pattern == 1)
             resp_write_bulk(&d->reply, e->ch, e->chlen);
         resp_write_bulk(&d->reply, v.items[1].str, v.items[1].len);
         resp_write_bulk(&d->reply,
@@ -3570,7 +3564,7 @@ static void mt_publish_execute(worker *owner_w, mt_task *t)
 static int mt_route_publish(worker *home, void *conn, mt_conn_state *st,
                             const resp_value *argv, size_t argc,
                             const char *raw, size_t rawlen, uint64_t seq,
-                            resp_buf *out)
+                            resp_buf *out, int kind)
 {
     static const char arity[] =
         "-ERR wrong number of arguments for 'publish' command\r\n";
@@ -3593,6 +3587,7 @@ static int mt_route_publish(worker *home, void *conn, mt_conn_state *st,
         return 1;
     }
     t->kind = MT_TASK_PUBLISH;
+    t->pubsub_pattern = kind;
     if (owner == home->id) {
         mt_publish_execute(home, t);
         mt_reorder_insert(st, t);
@@ -3793,7 +3788,8 @@ static int mt_route(void *ctx, void *conn, session *sess,
 
     if (cmd == CMD_SUBSCRIBE || cmd == CMD_UNSUBSCRIBE ||
         cmd == CMD_PSUBSCRIBE || cmd == CMD_PUNSUBSCRIBE ||
-        cmd == CMD_PUBLISH) {
+        cmd == CMD_SSUBSCRIBE || cmd == CMD_SUNSUBSCRIBE ||
+        cmd == CMD_PUBLISH || cmd == CMD_SPUBLISH) {
         uint64_t seq;
         mt_batch_flush(home, conn, st);
         seq = st->seq_next++;
@@ -3809,8 +3805,14 @@ static int mt_route(void *ctx, void *conn, session *sess,
         if (cmd == CMD_PUNSUBSCRIBE)
             return mt_route_unsubscribe_kind(home, conn, st, argv, argc, seq,
                                              out, 1);
+        if (cmd == CMD_SSUBSCRIBE)
+            return mt_route_subscribe_kind(home, conn, st, argv, argc, seq,
+                                           out, 2);
+        if (cmd == CMD_SUNSUBSCRIBE)
+            return mt_route_unsubscribe_kind(home, conn, st, argv, argc, seq,
+                                             out, 2);
         return mt_route_publish(home, conn, st, argv, argc, raw, rawlen,
-                                seq, out);
+                                seq, out, cmd == CMD_SPUBLISH ? 2 : 0);
     }
 
     if (cmd == CMD_DBSIZE || cmd == CMD_FLUSHDB || cmd == CMD_SAVE ||
@@ -4680,13 +4682,9 @@ static void mt_drain_completions(worker *w)
                  * outside the command sequence (pushes are async) */
                 if (st != NULL) {
                     int deliver = !st->closing && t->ncmds == 1 &&
-                                  (t->pubsub_pattern
-                                       ? mt_conn_sub_find_pattern(
-                                             st, t->cmds[0].raw,
-                                             t->cmds[0].len) != NULL
-                                       : mt_conn_sub_find(
-                                             st, t->cmds[0].raw,
-                                             t->cmds[0].len) != NULL);
+                                  mt_conn_sub_find_kind(
+                                      st, t->cmds[0].raw, t->cmds[0].len,
+                                      t->pubsub_pattern) != NULL;
                     if (deliver) {
     (void)server_conn_out_append(w->srv, conn, t->reply.data, t->reply.len);
                         mt_mark_flush(conn, st);

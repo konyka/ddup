@@ -435,3 +435,6 @@
     worker 分发；`MSETEX`、`SUNIONCARD`、`SDIFFCARD` 按声明 key 位置做
     同 worker 校验并在跨 worker 时返回 `CROSSSLOT`；新增连接级行为回归
     （Phase 87）
+  - [x] mt sharded pub/sub 收尾：`SSUBSCRIBE/SUNSUBSCRIBE/SPUBLISH` 按频道
+    owner worker 路由，独立维护 shard 订阅 kind 并发送 `smessage`；TDD
+    覆盖跨 worker 注册、投递和退订（Phase 88）

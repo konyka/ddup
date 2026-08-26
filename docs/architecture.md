@@ -667,7 +667,10 @@ DBSIZE 为 O(1)，可能计入尚未回收的过期 key。
   NUMPAT 由 server 侧 numpats 计数器维护。订阅确认帧计数为
   nsub+nssub+npsub 总和。mt 模式模式订阅使用 worker-local pattern registry；
   PUBSUB CHANNELS/NUMSUB/NUMPAT 由 home worker 广播到全部 worker 后归并，
-  CHANNELS 去重、NUMSUB 按频道求和、NUMPAT 求和，保持全局视图。
+  CHANNELS 去重、NUMSUB 按频道求和、NUMPAT 求和，保持全局视图。Redis
+  sharded pub/sub（SSUBSCRIBE/SUNSUBSCRIBE/SPUBLISH）复用按 channel owner
+  的路由和异步 fan-out，但使用独立 kind 与 `smessage` 帧，避免与普通频道
+  或模式订阅混淆。
 
 ## 持久化（Phase 6）
 
