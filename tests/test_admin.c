@@ -251,6 +251,19 @@ static void test_bgsave_bgrewriteaof(void)
                        "*2\r\n$6\r\nBACKUP\r\n$4\r\nLIST\r\n",
                        ".backup");
     DD_CHECK(pal_file_exists("test_admin_snapshot.ddr.backup.aof"));
+    {
+        pal_file *delta = pal_file_open_read("test_admin_snapshot.ddr.backup.aof");
+        char delta_buf[256];
+        ptrdiff_t n = delta != NULL ? pal_file_read(delta, delta_buf,
+                                                     sizeof(delta_buf) - 1) : -1;
+        if (delta != NULL)
+            pal_file_close(delta);
+        DD_CHECK(n > 0);
+        if (n > 0) {
+            delta_buf[n] = '\0';
+            DD_CHECK(strstr(delta_buf, "backup-k") != NULL);
+        }
+    }
     roundtrip(s, c, "*2\r\n$6\r\nBACKUP\r\n$7\r\nCLEANUP\r\n", "+OK\r\n");
 
     pal_close(c);
