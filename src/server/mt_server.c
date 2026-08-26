@@ -1493,15 +1493,21 @@ static int mt_pubsub_channel_add(mt_agg *agg, const char *ch, size_t len)
     if (agg->pubsub_channel_count == agg->pubsub_channel_cap) {
         size_t cap = agg->pubsub_channel_cap == 0 ? 8 :
                      agg->pubsub_channel_cap * 2;
-        char **nc = (char **)realloc(agg->pubsub_channels,
-                                     cap * sizeof(*nc));
-        size_t *nl = (size_t *)realloc(agg->pubsub_channel_lens,
-                                       cap * sizeof(*nl));
+        char **nc = (char **)malloc(cap * sizeof(*nc));
+        size_t *nl = (size_t *)malloc(cap * sizeof(*nl));
         if (nc == NULL || nl == NULL) {
             free(nc);
             free(nl);
             return -1;
         }
+        if (agg->pubsub_channel_count != 0) {
+            memcpy(nc, agg->pubsub_channels,
+                   agg->pubsub_channel_count * sizeof(*nc));
+            memcpy(nl, agg->pubsub_channel_lens,
+                   agg->pubsub_channel_count * sizeof(*nl));
+        }
+        free(agg->pubsub_channels);
+        free(agg->pubsub_channel_lens);
         agg->pubsub_channels = nc;
         agg->pubsub_channel_lens = nl;
         agg->pubsub_channel_cap = cap;
