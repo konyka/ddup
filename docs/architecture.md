@@ -678,8 +678,9 @@ DBSIZE 为 O(1)，可能计入尚未回收的过期 key。
   Windows FlushFileBuffers）；everysec 单线程 wall-ms 节流、每秒至多
   一次且仅在有实际落盘字节时（不用 Redis 的 bio 线程，记录在案）；
   优雅退出在非 no 模式下保底最后 sync 一次。sync 失败与写/flush
-  失败共用 fail-closed 闩锁。CONFIG GET/SET 未接 appendfsync
-  （在 server/aof 层而非 db 层，需新跨层 hook，记录在案）。
+  失败共用 fail-closed 闩锁。CONFIG GET/SET appendfsync 通过
+  server-owned session hook 更新当前 AOF writer；其它 server 级参数仍不
+  下沉到 db 层。
    EXEC 按逐条命令记录（不写 MULTI 包装）。启动时 `appendonly yes` 且文件
    存在则先重放（容忍截断尾部）；损坏或无效命令帧会 fail closed，且重放
    先在临时 db 上完成，失败时不修改现有数据。运行中 AOF 写入/flush 失败

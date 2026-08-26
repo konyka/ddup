@@ -96,6 +96,8 @@ void server_load_nodes(server *s, const char *path);
 #ifdef DDUP_TESTING
 /* Invoke the nodes.conf save path without waiting for its periodic timer. */
 void server_test_cluster_nodes_save(server *s);
+/* Exercise the server-owned CONFIG appendfsync hook without a socket. */
+int server_test_config_appendfsync(const char *value, resp_buf *out);
 #endif
 /* Node failure timeout in ms (default 15000; tests can shrink it). */
 void server_set_node_timeout(server *s, uint64_t ms);

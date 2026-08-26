@@ -1785,6 +1785,71 @@ static int srv_psync(void *ctx, session *sess, const char *replid,
     return 0;
 }
 
+static int srv_ci_equal(const char *a, size_t alen, const char *b)
+{
+    size_t i, blen = strlen(b);
+    if (alen != blen)
+        return 0;
+    for (i = 0; i < alen; i++) {
+        char ca = a[i], cb = b[i];
+        if (ca >= 'A' && ca <= 'Z') ca = (char)(ca + ('a' - 'A'));
+        if (cb >= 'A' && cb <= 'Z') cb = (char)(cb + ('a' - 'A'));
+        if (ca != cb) return 0;
+    }
+    return 1;
+}
+
+/* CONFIG parameters that live on server rather than in a logical db. */
+static int srv_config_command(void *ctx, const char *sub, size_t sub_len,
+                              const char *param, size_t param_len,
+                              const char *value, size_t value_len,
+                              resp_buf *out)
+{
+    server *srv = (server *)ctx;
+    (void)sub;
+    (void)sub_len;
+    if (!srv_ci_equal(param, param_len, "appendfsync"))
+        return 0;
+    if (value == NULL) {
+        const char *mode = srv->aof_fsync_mode == AOF_FSYNC_ALWAYS
+                               ? "always"
+                               : srv->aof_fsync_mode == AOF_FSYNC_NO
+                                     ? "no"
+                                     : "everysec";
+        resp_write_array_header(out, 2);
+        resp_write_bulk(out, "appendfsync", 11);
+        resp_write_bulk(out, mode, strlen(mode));
+        return 1;
+    }
+    if (srv_ci_equal(value, value_len, "always"))
+        srv->aof_fsync_mode = AOF_FSYNC_ALWAYS;
+    else if (srv_ci_equal(value, value_len, "everysec"))
+        srv->aof_fsync_mode = AOF_FSYNC_EVERYSEC;
+    else if (srv_ci_equal(value, value_len, "no"))
+        srv->aof_fsync_mode = AOF_FSYNC_NO;
+    else {
+        static const char E[] =
+            "ERR invalid argument for CONFIG SET 'appendfsync'";
+        resp_write_error(out, E, sizeof(E) - 1);
+        return 1;
+    }
+    if (srv->aof != NULL)
+        aof_set_fsync_mode(srv->aof, srv->aof_fsync_mode);
+    resp_write_simple_string(out, "OK", 2);
+    return 1;
+}
+
+#ifdef DDUP_TESTING
+int server_test_config_appendfsync(const char *value, resp_buf *out)
+{
+    server s;
+    memset(&s, 0, sizeof(s));
+    s.aof_fsync_mode = AOF_FSYNC_EVERYSEC;
+    return srv_config_command(&s, "GET", 3, "appendfsync", 11, value,
+                              value == NULL ? 0 : strlen(value), out);
+}
+#endif
+
 static conn *conn_create(server *srv, pal_socket_t fd)
 {
     conn *c = (conn *)calloc(1, sizeof(*c));
@@ -1885,6 +1950,8 @@ static conn *conn_create(server *srv, pal_socket_t fd)
     c->sess->backup_command = srv_backup_command;
     c->sess->bgrewriteaof_ctx = srv;
     c->sess->bgrewriteaof = srv_bgrewriteaof;
+    c->sess->config_ctx = srv;
+    c->sess->config_command = srv_config_command;
     c->sess->cluster_ctx = srv;
     c->sess->cluster_meet = srv_cluster_meet;
     c->sess->cluster_replicate = srv_replicaof;

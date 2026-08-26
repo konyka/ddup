@@ -16387,6 +16387,10 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
             }
             if (!arg_str(&argv[2], &p, &pl))
                 goto bad_type;
+            if (s->config_command != NULL &&
+                s->config_command(s->config_ctx, sub, sl, p, pl, NULL, 0,
+                                  out) > 0)
+                return;
             if (ci_equal(p, pl, "maxmemory")) {
                 char num[24];
                 int nl2 = snprintf(num, sizeof(num), "%llu",
@@ -16452,6 +16456,10 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
             }
             if (!arg_str(&argv[2], &p, &pl) || !arg_str(&argv[3], &v, &vl2))
                 goto bad_type;
+            if (s->config_command != NULL &&
+                s->config_command(s->config_ctx, sub, sl, p, pl, v, vl2,
+                                  out) > 0)
+                return;
             if (ci_equal(p, pl, "maxmemory")) {
                 long long mv;
                 if (!parse_i64(v, vl2, &mv)) {

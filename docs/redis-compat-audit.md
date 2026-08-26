@@ -73,6 +73,8 @@
   回归测试锁定。
 - KEYS/SCAN 的 glob 匹配器对未闭合字符类按 Redis 的 fail-closed 规则处理，
   避免把畸形模式误当作字面前缀。
+- `CONFIG GET/SET appendfsync` 已接入 server-owned AOF hook：运行时读取当前
+  `always/everysec/no` 策略并立即更新 writer，非法值返回明确错误。
 - 管理族已注册 `ACL/DEBUG/LATENCY/MODULE/SENTINEL`：ACL 提供最小
   anonymous/default 视图，LATENCY 返回空事件集，MODULE 无扩展返回加载
   错误，SENTINEL 提供空拓扑视图，DEBUG 仅接受诊断参数。

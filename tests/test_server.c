@@ -437,6 +437,23 @@ static void test_aof_sync_failure_rejects_writes(void)
     remove(path);
 }
 
+static void test_config_appendfsync_hook(void)
+{
+    resp_buf out;
+    resp_buf_init(&out);
+    DD_CHECK_EQ_INT(1, server_test_config_appendfsync(NULL, &out));
+    DD_CHECK_MEM("*2\r\n$11\r\nappendfsync\r\n$8\r\neverysec\r\n", 36,
+                 out.data, out.len);
+    out.len = 0;
+    DD_CHECK_EQ_INT(1, server_test_config_appendfsync("always", &out));
+    DD_CHECK_MEM("+OK\r\n", 5, out.data, out.len);
+    out.len = 0;
+    DD_CHECK_EQ_INT(1, server_test_config_appendfsync("sometimes", &out));
+    DD_CHECK_MEM("-ERR invalid argument for CONFIG SET 'appendfsync'\r\n",
+                 52, out.data, out.len);
+    resp_buf_free(&out);
+}
+
 static void test_eventless_loop_flushes_aof(void)
 {
     static const char path[] = "test_server_aof_eventless.aof";
@@ -1319,6 +1336,7 @@ static void run_all_tests(void)
     DD_RUN(test_pipeline);
     DD_RUN(test_aof_failure_rejects_writes);
     DD_RUN(test_aof_sync_failure_rejects_writes);
+    DD_RUN(test_config_appendfsync_hook);
     DD_RUN(test_eventless_loop_flushes_aof);
     DD_RUN(test_mget_missing_key);
     DD_RUN(test_unknown_command);

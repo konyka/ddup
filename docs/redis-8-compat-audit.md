@@ -37,6 +37,8 @@
 - Redis-compatible string read-modify-write semantics preserve absolute key TTL
   for `INCR/DECR/INCRBY/DECRBY/INCRBYFLOAT/APPEND`; SET-style overwrites retain
   their documented TTL-clearing behavior.
+- Runtime `CONFIG GET/SET appendfsync` now updates the active server AOF writer
+  (`always`, `everysec`, or `no`) and rejects invalid policies atomically.
 - Cluster slot maintenance: `SFLUSH` intersects requested ranges with local
   ownership and returns coalesced flushed ranges; `TRIMSLOTS RANGES` validates
   ownership before deleting keys from unserved slots. Both paths collect keys

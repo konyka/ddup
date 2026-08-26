@@ -428,3 +428,6 @@
     以注入时钟 TDD 覆盖过期保留与边界行为（Phase 84）
   - [x] glob 边界语义收敛：未闭合 `[` 字符类按 Redis
     `stringmatchlen` fail-closed，补充二进制安全回归测试（Phase 85）
+  - [x] 运行时 AOF 策略配置：`CONFIG GET/SET appendfsync` 通过 server-owned
+    session hook 实时读取/更新 AOF writer，非法策略 fail-closed 并以 TDD
+    覆盖（Phase 86）

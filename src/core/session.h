@@ -228,6 +228,12 @@ typedef struct session {
     void (*slowlog_reset)(void *ctx);
     void *bgrewriteaof_ctx;
     void (*bgrewriteaof)(void *ctx, resp_buf *out);
+    /* Server-level CONFIG parameters that cannot be represented in db. */
+    void *config_ctx;
+    int (*config_command)(void *ctx, const char *sub, size_t sub_len,
+                          const char *param, size_t param_len,
+                          const char *value, size_t value_len,
+                          resp_buf *out);
 } session;
 
 void session_init(session *s, db *d);
