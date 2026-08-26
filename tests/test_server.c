@@ -225,9 +225,9 @@ static void test_hotkeys_multi_key_commands(void)
               "+OK\r\n");
     roundtrip(s, c, "*3\r\n$4\r\nMGET\r\n$2\r\nk1\r\n$2\r\nk2\r\n",
               "*2\r\n$2\r\nv1\r\n$2\r\nv2\r\n");
-    roundtrip(s, c, "*4\r\n$3\r\nDEL\r\n$2\r\nk1\r\n$2\r\nk2\r\n",
+    roundtrip(s, c, "*3\r\n$3\r\nDEL\r\n$2\r\nk1\r\n$2\r\nk2\r\n",
               ":2\r\n");
-    roundtrip(s, c, "*4\r\n$6\r\nEXISTS\r\n$2\r\nk1\r\n$2\r\nk2\r\n",
+    roundtrip(s, c, "*3\r\n$6\r\nEXISTS\r\n$2\r\nk1\r\n$2\r\nk2\r\n",
               ":0\r\n");
     roundtrip(s, c, "*2\r\n$7\r\nHOTKEYS\r\n$3\r\nGET\r\n", "");
     for (i = 0; i < 1000 && got < sizeof(buf) - 1; i++) {
