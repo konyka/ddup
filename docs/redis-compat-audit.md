@@ -68,6 +68,9 @@
 - `LOLWUT` 已实现 `VERSION 5/6` 的最小 ASCII art；`RESTORE/RESTORE-ASKING`
   已支持 `REPLACE/ABSTTL/IDLETIME/FREQ`（IDLETIME/FREQ 仅做参数解析与
   兼容接受，ddup 无 LRU/LFU 对象元数据）。
+- 字符串读改写命令 `INCR/DECR/INCRBY/DECRBY/INCRBYFLOAT/APPEND` 保留
+  key 的绝对 TTL；SET 风格覆盖（包括 `GETSET`）清除旧 TTL，已由注入时钟
+  回归测试锁定。
 - 管理族已注册 `ACL/DEBUG/LATENCY/MODULE/SENTINEL`：ACL 提供最小
   anonymous/default 视图，LATENCY 返回空事件集，MODULE 无扩展返回加载
   错误，SENTINEL 提供空拓扑视图，DEBUG 仅接受诊断参数。

@@ -226,20 +226,20 @@ static void test_overwrite_clears_ttl(void)
     exec_cmd(&d, T0, &out, 2, "TTL", "k");
     EXPECT(out, ":-1\r\n");
 
-    /* INCR/APPEND (read-modify-write) also clear the expiry */
+    /* Redis preserves TTL for read-modify-write string commands. */
     exec_cmd(&d, T0, &out, 5, "SET", "n", "1", "EX", "100");
     EXPECT(out, "+OK\r\n");
     exec_cmd(&d, T0, &out, 2, "INCR", "n");
     EXPECT(out, ":2\r\n");
     exec_cmd(&d, T0, &out, 2, "TTL", "n");
-    EXPECT(out, ":-1\r\n");
+    EXPECT(out, ":100\r\n");
 
     exec_cmd(&d, T0, &out, 5, "SET", "s", "ab", "EX", "100");
     EXPECT(out, "+OK\r\n");
     exec_cmd(&d, T0, &out, 3, "APPEND", "s", "cd");
     EXPECT(out, ":4\r\n");
     exec_cmd(&d, T0, &out, 2, "TTL", "s");
-    EXPECT(out, ":-1\r\n");
+    EXPECT(out, ":100\r\n");
 
     /* DEL removes key and expiry together */
     exec_cmd(&d, T0, &out, 5, "SET", "z", "1", "EX", "100");

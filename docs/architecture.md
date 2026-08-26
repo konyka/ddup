@@ -532,7 +532,8 @@ DEBUG ｜ LATENCY ｜ MODULE ｜ SENTINEL ｜
 LOLWUT(VERSION 5/6) ｜ INFO（内部变体 INFO __STATS__ 供 mt 聚合）
 
 注：TTL 返回值四舍五入（(rem+500)/1000，同 Redis）；PTTL 精确到 ms。
-INCR/APPEND 在本实现中清除 TTL（与 Redis 保留 TTL 不同，有意简化）。
+INCR/DECR/INCRBY/DECRBY/INCRBYFLOAT 与 APPEND 采用 Redis 的读改写语义，
+保留 key 的绝对 TTL；SET/GETSET/SETEX 等 SET 风格覆盖仍会清除旧 TTL。
 DBSIZE 为 O(1)，可能计入尚未回收的过期 key。
 
 ## 对象存储模型（Phase 5.1）

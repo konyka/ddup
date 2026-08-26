@@ -2,8 +2,8 @@
  *
  * Expiration model: `db.expires` maps key -> 8-byte absolute wall-ms expiry.
  * All key lookups go through db_get()/db_expire_if_needed() so expired keys
- * are treated as missing (lazy expiration). Overwriting or deleting a key
- * clears its expiry (SET/INCR/APPEND/MSET/DEL semantics here).
+ * are treated as missing (lazy expiration). SET-style overwrites clear an
+ * expiry, while Redis read-modify-write string commands preserve it.
  */
 #include "core/command.h"
 
@@ -375,7 +375,8 @@ static int db_set_kv(db *d, const char *key, size_t klen, const char *val,
  * one allocation, no temporary concatenation. Strings have no extra
  * object memory, so accounting skips obj_extra_mem. */
 static int db_set_kv_string(db *d, const char *key, size_t klen,
-                            const char *val, size_t vlen, uint64_t now_ms)
+                            const char *val, size_t vlen, uint64_t now_ms,
+                            int keep_ttl)
 {
     char *old_kv;
     size_t old_vlen;
@@ -387,7 +388,7 @@ static int db_set_kv_string(db *d, const char *key, size_t klen,
                         lru_clock(now_ms), &old_kv, &old_vlen);
     if (set_rc < 0)
         return -1;
-    if (rh_size(&d->expires) > 0) {
+    if (!keep_ttl && rh_size(&d->expires) > 0) {
         const char *old;
         size_t oldl;
         if (rh_get(&d->expires, key, klen, &old, &oldl)) {
@@ -417,7 +418,15 @@ static int db_set_kv_string(db *d, const char *key, size_t klen,
 static int db_set_string(db *d, const char *key, size_t klen,
                          const char *val, size_t vlen, uint64_t now_ms)
 {
-    return db_set_kv_string(d, key, klen, val, vlen, now_ms);
+    return db_set_kv_string(d, key, klen, val, vlen, now_ms, 0);
+}
+
+/* Read-modify-write string commands retain the key's absolute expiry. */
+static int db_set_string_keep_ttl(db *d, const char *key, size_t klen,
+                                  const char *val, size_t vlen,
+                                  uint64_t now_ms)
+{
+    return db_set_kv_string(d, key, klen, val, vlen, now_ms, 1);
 }
 
 /* Delete key and expiry (and any owned object). Returns 1 if existed. */
@@ -13525,7 +13534,7 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
         int nl = snprintf(num, sizeof(num), "%lld", cur);
         if (oom_blocked(d, out))
             return;
-        if (db_set_string(d, k, kl, num, (size_t)nl, now_ms) != 0) {
+        if (db_set_string_keep_ttl(d, k, kl, num, (size_t)nl, now_ms) != 0) {
             storage_length_error(out);
             return;
         }
@@ -13566,7 +13575,7 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
             memcpy(tmp.data, os, osl);
             memcpy(tmp.data + osl, v, vl);
             tmp.len = osl + vl;
-            if (db_set_string(d, k, kl, tmp.data, tmp.len, now_ms) != 0) {
+            if (db_set_string_keep_ttl(d, k, kl, tmp.data, tmp.len, now_ms) != 0) {
                 resp_buf_free(&tmp);
                 storage_length_error(out);
                 return;
@@ -14332,7 +14341,7 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
                 resp_write_bulk(out, NULL, 0);
             }
         }
-        /* db_set_string discards any TTL (SET semantics) */
+        /* GETSET is SET-style and intentionally clears any TTL. */
         if (db_set_string(d, k, kl, v, vl, now_ms) != 0) {
             storage_length_error(out);
             return;
@@ -14540,7 +14549,7 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
         nl = snprintf(buf, sizeof(buf), "%.17Lg", res);
         if (oom_blocked(d, out))
             return;
-        if (db_set_string(d, k, kl, buf, (size_t)nl, now_ms) != 0) {
+        if (db_set_string_keep_ttl(d, k, kl, buf, (size_t)nl, now_ms) != 0) {
             storage_length_error(out);
             return;
         }

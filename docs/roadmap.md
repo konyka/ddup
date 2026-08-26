@@ -423,3 +423,6 @@
     MIGRATE 已按源 key hash 路由到 source worker，并复用有界网络迁移逻辑；
     IOCP/io_uring-op 不安全迁移场景返回明确错误；mt SHUTDOWN 已实现
     home-worker shutdown hook 与全池协调停止
+  - [x] Redis 字符串 TTL 语义收敛：`INCR/DECR/INCRBY/DECRBY/INCRBYFLOAT`
+    与 `APPEND` 的读改写路径保留绝对过期时间，SET 风格覆盖仍清除 TTL；
+    以注入时钟 TDD 覆盖过期保留与边界行为（Phase 84）

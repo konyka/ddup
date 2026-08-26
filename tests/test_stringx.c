@@ -493,12 +493,12 @@ static void test_incrby_decrby(void)
     exec_cmd(&d, T0, &out, 3, "INCRBY", "k", "-20");
     EXPECT(out, ":-11\r\n");
 
-    /* TTL is discarded (INCR/APPEND semantics here) */
+    /* Redis preserves TTL across numeric read-modify-write commands. */
     exec_cmd(&d, T0, &out, 3, "PEXPIRE", "k", "100000");
     exec_cmd(&d, T0, &out, 3, "INCRBY", "k", "1");
     EXPECT(out, ":-10\r\n");
     exec_cmd(&d, T0, &out, 2, "TTL", "k");
-    EXPECT(out, ":-1\r\n");
+    EXPECT(out, ":100\r\n");
 
     /* unparseable delta or current value */
     exec_cmd(&d, T0, &out, 3, "INCRBY", "k", "foo");
