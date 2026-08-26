@@ -99,7 +99,8 @@
   返回与当前稀疏模型对应的基础目录/切片统计，不伪造 Redis 内部编码细节。
 - mt 全库命令：`KEYS` 已广播到所有 worker 并合并 RESP 数组，`RANDOMKEY`
   已选择首个非空 bulk 回复，`SCAN` 使用带 worker 索引的复合游标顺序
-  遍历分片；模式订阅仍需 mt 专用注册表与 `pmessage` fan-out。
+  遍历分片；mt `PSUBSCRIBE/PUNSUBSCRIBE` 使用 worker-local 模式注册表，
+  PUBLISH 按 glob 匹配并 fan-out `pmessage`。
 
 ## 审计基线（机器断言，勿手改格式）
 

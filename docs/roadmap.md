@@ -232,7 +232,8 @@
     逐层定位，同分假定与 Redis 一致不校验）（Phase 42）
   - [x] 模式订阅：PSUBSCRIBE/PUNSUBSCRIBE + PUBSUB CHANNELS/NUMSUB/
     NUMPAT；第三张注册表 rh_table patterns，PUBLISH 线性扫 pattern
-    表 glob 匹配投递 pmessage；mt 模式模式订阅仍保留为后续生命周期项
+    表 glob 匹配投递 pmessage；mt 模式使用 worker-local pattern registry
+    和异步 pmessage fan-out
     （Phase 43）
   - [x] 收尾与耐久性：QUIT 回 +OK 后经 send-then-close 断连（双后端
     + mt）；AOF appendfsync always|everysec|no（pal_file_sync：
@@ -415,4 +416,4 @@
     （Phase 83）
   - [x] mt 集群路由安全收敛：`ASKING` 不再被误判为不支持命令，按连接
     会话保留一次性标志并交给现有 cluster ownership 检查；其余全库扫描和
-    模式订阅命令仍列为后续聚合路由工作（Phase 84）
+    SHUTDOWN/MIGRATE 仍列为后续生命周期工作（Phase 84）

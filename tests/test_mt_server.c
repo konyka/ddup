@@ -277,26 +277,30 @@ static void test_pipeline_mixed_targets_keeps_order(void)
 static void test_blocked_commands_in_mt_mode(void)
 {
     mt_server *ms;
-    pal_socket_t a;
+    pal_socket_t a, b;
 
     DD_CHECK_EQ_INT(0, pal_socket_init());
     ms = mt_server_create("127.0.0.1", 0, 2);
     DD_CHECK(ms != NULL);
     DD_CHECK_EQ_INT(0, mt_server_start(ms));
     a = connect_client(mt_server_port(ms));
+    b = connect_client(mt_server_port(ms));
 
     roundtrip(a, "*1\r\n$8\r\nSHUTDOWN\r\n",
               "-ERR command not supported in mt mode\r\n");
-    /* pattern subscriptions are not supported in mt mode (Phase 43) */
     roundtrip(a, "*2\r\n$10\r\nPSUBSCRIBE\r\n$6\r\nnews.*\r\n",
-              "-ERR command not supported in mt mode\r\n");
+              "*3\r\n$10\r\npsubscribe\r\n$6\r\nnews.*\r\n:1\r\n");
+    roundtrip(b, "*3\r\n$7\r\nPUBLISH\r\n$9\r\nnews.tech\r\n$5\r\nhello\r\n",
+              ":1\r\n");
     roundtrip(a, "*1\r\n$12\r\nPUNSUBSCRIBE\r\n",
-              "-ERR command not supported in mt mode\r\n");
+              "*4\r\n$8\r\npmessage\r\n$6\r\nnews.*\r\n$9\r\nnews.tech\r\n$5\r\nhello\r\n"
+              "*3\r\n$12\r\npunsubscribe\r\n$6\r\nnews.*\r\n:0\r\n");
     roundtrip(a, "*1\r\n$6\r\nASKING\r\n", "+OK\r\n");
     /* The session still works for normal commands afterwards. */
     roundtrip(a, "*1\r\n$4\r\nPING\r\n", "+PONG\r\n");
 
     pal_close(a);
+    pal_close(b);
     mt_server_stop(ms);
     mt_server_destroy(ms);
     pal_socket_cleanup();

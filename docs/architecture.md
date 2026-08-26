@@ -189,8 +189,10 @@
   expired/evicted/dbsize 求和、按库与按命令 id 合并），再由共享的
   `command_info_render()` 渲染为单份人类可读 INFO（maxmemory/策略/
   cluster 标志取 home worker 值）。
-- **限制（记录在案）**：mt 模式下 SHUTDOWN/MIGRATE/
-  PSUBSCRIBE/PUNSUBSCRIBE 返回 `-ERR command not supported in mt mode`；
+- **限制（记录在案）**：mt 模式下 SHUTDOWN/MIGRATE 返回
+  `-ERR command not supported in mt mode`；PSUBSCRIBE/PUNSUBSCRIBE 已由
+  home worker 注册到模式 owner worker，PUBLISH 使用 Redis glob 规则匹配并
+  异步 fan-out `pmessage`，连接关闭和退订会清理模式注册。
   `SCAN` 使用带 worker 索引的复合游标顺序遍历各分片；
   `KEYS` 广播并合并各 worker 的 RESP 数组，`RANDOMKEY` 广播后由 home
   worker 返回首个非空 key；
@@ -654,8 +656,8 @@ DBSIZE 为 O(1)，可能计入尚未回收的过期 key。
   可接受，记录于此）。PUBSUB CHANNELS/NUMSUB/NUMPAT 走 session 钩子
   （pubsub_channels/channel_nsub/numpat；无钩子的栈 session 回空/0），
   NUMPAT 由 server 侧 numpats 计数器维护。订阅确认帧计数为
-  nsub+nssub+npsub 总和。mt 模式不支持模式订阅（PSUBSCRIBE/
-  PUNSUBSCRIBE 进 mt_is_blocked）；PUBSUB 自查子命令在 mt 下与
+  nsub+nssub+npsub 总和。mt 模式模式订阅使用 worker-local pattern registry；
+  PUBSUB 自查子命令在 mt 下与
   SHARDCHANNELS 一致走 MT_PASS 本地执行（数据为本 worker 视角，记录在案）。
 
 ## 持久化（Phase 6）
