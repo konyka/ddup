@@ -155,6 +155,7 @@ typedef struct mt_sub_entry {
 #define MT_TASK_REPL_STREAM 12 /* fire-and-forget central replication append */
 #define MT_TASK_REPL_SNAPSHOT 13 /* serialize one worker's db for full sync */
 #define MT_TASK_SCAN 14       /* SCAN routed with a composite cursor */
+#define MT_TASK_PUBSUB_STATS 15 /* PUBSUB introspection aggregate part */
 #define MT_MAX_LOGICAL_DBS 16
 
 #define MT_SCAN_TAG UINT64_C(0x8000000000000000)
@@ -309,6 +310,17 @@ struct mt_agg {
     int fanout_done;
     int abandoned;
     int finished;
+    int pubsub_mode; /* 1 NUMPAT, 2 CHANNELS, 3 NUMSUB */
+    char *pubsub_pattern;
+    size_t pubsub_pattern_len;
+    char **pubsub_names;
+    size_t *pubsub_name_lens;
+    long long *pubsub_counts;
+    size_t pubsub_name_count;
+    char **pubsub_channels;
+    size_t *pubsub_channel_lens;
+    size_t pubsub_channel_count;
+    size_t pubsub_channel_cap;
 };
 
 static void mt_untrack_abandoned_agg(mt_server *ms, mt_agg *agg);
@@ -644,6 +656,22 @@ static void mt_agg_free(mt_agg *agg)
     agg->finished = 1;
     free(agg->raw);
     free(agg->random_key);
+    free(agg->pubsub_pattern);
+    if (agg->pubsub_names != NULL) {
+        size_t i;
+        for (i = 0; i < agg->pubsub_name_count; i++)
+            free(agg->pubsub_names[i]);
+    }
+    free(agg->pubsub_names);
+    free(agg->pubsub_name_lens);
+    free(agg->pubsub_counts);
+    if (agg->pubsub_channels != NULL) {
+        size_t i;
+        for (i = 0; i < agg->pubsub_channel_count; i++)
+            free(agg->pubsub_channels[i]);
+    }
+    free(agg->pubsub_channels);
+    free(agg->pubsub_channel_lens);
     resp_buf_free(&agg->keys_body);
     free(agg->stats);
     free(agg);
@@ -1372,6 +1400,121 @@ static void mt_agg_info_accumulate(mt_agg *agg, const char *data, size_t len)
     }
 }
 
+static void mt_pubsub_stats_execute(worker *w, mt_task *t)
+{
+    resp_value v;
+    arena ar;
+    ptrdiff_t used;
+    size_t i;
+    size_t n = 0;
+    arena_init(&ar, 1024);
+    used = t->cmds != NULL && t->ncmds == 1
+               ? resp_parse(t->cmds[0].raw, t->cmds[0].len, &v, &ar)
+               : -1;
+    if (used < 0 || used != (ptrdiff_t)t->cmds[0].len ||
+        v.type != RESP_ARRAY || v.count < 2 || v.items[1].str == NULL) {
+        resp_write_error(&t->reply, "ERR Protocol error", 18);
+        arena_destroy(&ar);
+        return;
+    }
+    if (v.items[1].len == 6 &&
+        mt_ci_equal(v.items[1].str, v.items[1].len, "NUMPAT")) {
+        for (mt_sub_entry *e = w->subs; e != NULL; e = e->next)
+            if (e->pattern)
+                n++;
+        resp_write_integer(&t->reply, (long long)n);
+    } else if (v.items[1].len == 8 &&
+               mt_ci_equal(v.items[1].str, v.items[1].len, "CHANNELS")) {
+        const char *pat = NULL;
+        size_t plen = 0;
+        if (v.count == 3) {
+            pat = v.items[2].str;
+            plen = v.items[2].len;
+        }
+        for (mt_sub_entry *e = w->subs; e != NULL; e = e->next) {
+            int seen = 0;
+            if (e->pattern || (pat != NULL &&
+                               !ddup_glob_match(pat, plen, e->ch, e->chlen)))
+                continue;
+            for (mt_sub_entry *p = w->subs; p != e; p = p->next)
+                if (!p->pattern && p->chlen == e->chlen &&
+                    memcmp(p->ch, e->ch, e->chlen) == 0) {
+                    seen = 1;
+                    break;
+                }
+            if (!seen)
+                n++;
+        }
+        resp_write_array_header(&t->reply, n);
+        for (mt_sub_entry *e = w->subs; e != NULL; e = e->next) {
+            int seen = 0;
+            if (e->pattern || (pat != NULL &&
+                               !ddup_glob_match(pat, plen, e->ch, e->chlen)))
+                continue;
+            for (mt_sub_entry *p = w->subs; p != e; p = p->next)
+                if (!p->pattern && p->chlen == e->chlen &&
+                    memcmp(p->ch, e->ch, e->chlen) == 0) {
+                    seen = 1;
+                    break;
+                }
+            if (!seen)
+                resp_write_bulk(&t->reply, e->ch, e->chlen);
+        }
+    } else if (v.items[1].len == 6 &&
+               mt_ci_equal(v.items[1].str, v.items[1].len, "NUMSUB")) {
+        resp_write_array_header(&t->reply, (v.count - 2) * 2);
+        for (i = 2; i < v.count; i++) {
+            long long count = 0;
+            if (v.items[i].str == NULL)
+                continue;
+            for (mt_sub_entry *e = w->subs; e != NULL; e = e->next)
+                if (!e->pattern && e->chlen == v.items[i].len &&
+                    memcmp(e->ch, v.items[i].str, e->chlen) == 0)
+                    count++;
+            resp_write_bulk(&t->reply, v.items[i].str, v.items[i].len);
+            resp_write_integer(&t->reply, count);
+        }
+    } else {
+        resp_write_error(&t->reply, "ERR Unknown PUBSUB subcommand", 27);
+    }
+    arena_destroy(&ar);
+}
+
+static int mt_pubsub_channel_add(mt_agg *agg, const char *ch, size_t len)
+{
+    size_t i;
+    char *copy;
+    if (len == 0)
+        return 0;
+    for (i = 0; i < agg->pubsub_channel_count; i++)
+        if (agg->pubsub_channel_lens[i] == len &&
+            memcmp(agg->pubsub_channels[i], ch, len) == 0)
+            return 0;
+    if (agg->pubsub_channel_count == agg->pubsub_channel_cap) {
+        size_t cap = agg->pubsub_channel_cap == 0 ? 8 :
+                     agg->pubsub_channel_cap * 2;
+        char **nc = (char **)realloc(agg->pubsub_channels,
+                                     cap * sizeof(*nc));
+        size_t *nl = (size_t *)realloc(agg->pubsub_channel_lens,
+                                       cap * sizeof(*nl));
+        if (nc == NULL || nl == NULL) {
+            free(nc);
+            free(nl);
+            return -1;
+        }
+        agg->pubsub_channels = nc;
+        agg->pubsub_channel_lens = nl;
+        agg->pubsub_channel_cap = cap;
+    }
+    copy = (char *)malloc(len);
+    if (copy == NULL)
+        return -1;
+    memcpy(copy, ch, len);
+    agg->pubsub_channels[agg->pubsub_channel_count] = copy;
+    agg->pubsub_channel_lens[agg->pubsub_channel_count++] = len;
+    return 0;
+}
+
 static void mt_agg_accumulate(mt_agg *agg, const resp_buf *part)
 {
     if (part->data != NULL && part->len > 0) {
@@ -1439,6 +1582,43 @@ static void mt_agg_accumulate(mt_agg *agg, const resp_buf *part)
                 }
             }
         }
+        else if (agg->cmd == CMD_PUBSUB && agg->pubsub_mode != 0) {
+            arena ar;
+            resp_value v;
+            ptrdiff_t used;
+            arena_init(&ar, 1024);
+            used = resp_parse(part->data, part->len, &v, &ar);
+            if (used != (ptrdiff_t)part->len)
+                agg->err = 1;
+            else if (agg->pubsub_mode == 1 && v.type == RESP_INTEGER)
+                agg->sum += v.integer;
+            else if (agg->pubsub_mode == 2 && v.type == RESP_ARRAY) {
+                size_t i;
+                for (i = 0; i < v.count; i++)
+                    if (v.items[i].str != NULL &&
+                        mt_pubsub_channel_add(agg, v.items[i].str,
+                                              v.items[i].len) != 0)
+                        agg->err = 1;
+            } else if (agg->pubsub_mode == 3 && v.type == RESP_ARRAY) {
+                size_t i;
+                for (i = 0; i + 1 < v.count; i += 2) {
+                    size_t j;
+                    if (v.items[i].str == NULL ||
+                        v.items[i + 1].type != RESP_INTEGER)
+                        continue;
+                    for (j = 0; j < agg->pubsub_name_count; j++)
+                        if (agg->pubsub_name_lens[j] == v.items[i].len &&
+                            memcmp(agg->pubsub_names[j], v.items[i].str,
+                                   v.items[i].len) == 0) {
+                            agg->pubsub_counts[j] += v.items[i + 1].integer;
+                            break;
+                        }
+                }
+            } else {
+                agg->err = 1;
+            }
+            arena_destroy(&ar);
+        }
         else if (part->data[0] == ':' && part->len > 2) {
             long long v = strtoll(part->data + 1, NULL, 10);
             if (agg->cmd == CMD_DBSIZE)
@@ -1482,6 +1662,25 @@ static void mt_agg_finish(server *srv, void *conn, mt_conn_state *st,
                 memcpy(fin->reply.data + fin->reply.len, agg->keys_body.data,
                        agg->keys_body.len);
                 fin->reply.len += agg->keys_body.len;
+            }
+        }
+        else if (agg->cmd == CMD_PUBSUB && agg->pubsub_mode == 1) {
+            resp_write_integer(&fin->reply, agg->sum);
+        }
+        else if (agg->cmd == CMD_PUBSUB && agg->pubsub_mode == 2) {
+            size_t i;
+            resp_write_array_header(&fin->reply, agg->pubsub_channel_count);
+            for (i = 0; i < agg->pubsub_channel_count; i++)
+                resp_write_bulk(&fin->reply, agg->pubsub_channels[i],
+                                agg->pubsub_channel_lens[i]);
+        }
+        else if (agg->cmd == CMD_PUBSUB && agg->pubsub_mode == 3) {
+            size_t i;
+            resp_write_array_header(&fin->reply, agg->pubsub_name_count * 2);
+            for (i = 0; i < agg->pubsub_name_count; i++) {
+                resp_write_bulk(&fin->reply, agg->pubsub_names[i],
+                                agg->pubsub_name_lens[i]);
+                resp_write_integer(&fin->reply, agg->pubsub_counts[i]);
             }
         }
         else
@@ -2258,6 +2457,43 @@ static int mt_route_aggregate(worker *home, void *conn,
             agg->rawlen = rawlen;
         }
     }
+    if (cmd == CMD_PUBSUB) {
+        if (argc < 2 || argv[1].str == NULL)
+            return 0;
+        if (mt_ci_equal(argv[1].str, argv[1].len, "NUMPAT"))
+            agg->pubsub_mode = 1;
+        else if (mt_ci_equal(argv[1].str, argv[1].len, "CHANNELS"))
+            agg->pubsub_mode = 2;
+        else if (mt_ci_equal(argv[1].str, argv[1].len, "NUMSUB"))
+            agg->pubsub_mode = 3;
+        else
+            return 0;
+        if (agg->pubsub_mode == 3 && argc > 2) {
+            size_t i;
+            agg->pubsub_name_count = argc - 2;
+            agg->pubsub_names = (char **)calloc(agg->pubsub_name_count,
+                                                 sizeof(char *));
+            agg->pubsub_name_lens = (size_t *)calloc(agg->pubsub_name_count,
+                                                      sizeof(size_t));
+            agg->pubsub_counts = (long long *)calloc(agg->pubsub_name_count,
+                                                      sizeof(long long));
+            if (agg->pubsub_names == NULL || agg->pubsub_name_lens == NULL ||
+                agg->pubsub_counts == NULL) {
+                mt_agg_free(agg);
+                return 0;
+            }
+            for (i = 0; i < agg->pubsub_name_count; i++) {
+                agg->pubsub_names[i] = (char *)malloc(argv[i + 2].len);
+                if (agg->pubsub_names[i] == NULL) {
+                    mt_agg_free(agg);
+                    return 0;
+                }
+                memcpy(agg->pubsub_names[i], argv[i + 2].str,
+                       argv[i + 2].len);
+                agg->pubsub_name_lens[i] = argv[i + 2].len;
+            }
+        }
+    }
     agg->conn = conn;
     agg->home = home;
     agg->seq = seq;
@@ -2269,7 +2505,18 @@ static int mt_route_aggregate(worker *home, void *conn,
 
     /* home part */
     resp_buf_init(&local);
-    if (cmd == CMD_INFO) {
+    if (cmd == CMD_PUBSUB) {
+        mt_task local_task;
+        memset(&local_task, 0, sizeof(local_task));
+        local_task.ncmds = 1;
+        local_task.cmds = mt_blob_one(raw, rawlen);
+        resp_buf_init(&local_task.reply);
+        if (local_task.cmds != NULL)
+            mt_pubsub_stats_execute(home, &local_task);
+        mt_agg_accumulate(agg, &local_task.reply);
+        mt_blobs_free(local_task.cmds, 1);
+        resp_buf_free(&local_task.reply);
+    } else if (cmd == CMD_INFO) {
         mt_info_exec(home, &local);
     } else if (cmd == CMD_FLUSHALL) {
         mt_flushall_exec(home, db_index, &local);
@@ -2301,7 +2548,9 @@ static int mt_route_aggregate(worker *home, void *conn,
         mt_cmd_blob *blob;
         if (i == home->id)
             continue;
-        if (cmd == CMD_INFO)
+        if (cmd == CMD_PUBSUB)
+            blob = mt_blob_one(raw, rawlen);
+        else if (cmd == CMD_INFO)
             blob = mt_blob_one(MT_INFO_STATS_REQ,
                                sizeof(MT_INFO_STATS_REQ) - 1);
         else
@@ -2310,6 +2559,8 @@ static int mt_route_aggregate(worker *home, void *conn,
             t = mt_task_new(conn, home, seq, 1, 1, blob);
         if (t != NULL) {
             t->agg = agg;
+            if (cmd == CMD_PUBSUB)
+                t->kind = MT_TASK_PUBSUB_STATS;
             t->db_index = db_index;
             mt_pending_inc(home, st);
             t->pending_owned = 1;
@@ -3380,7 +3631,8 @@ static int mt_route(void *ctx, void *conn, session *sess,
 
     if (cmd == CMD_DBSIZE || cmd == CMD_FLUSHDB || cmd == CMD_SAVE ||
         cmd == CMD_LASTSAVE || cmd == CMD_SWAPDB || cmd == CMD_INFO ||
-        cmd == CMD_FLUSHALL || cmd == CMD_RANDOMKEY || cmd == CMD_KEYS) {
+        cmd == CMD_FLUSHALL || cmd == CMD_RANDOMKEY || cmd == CMD_KEYS ||
+        cmd == CMD_PUBSUB) {
         mt_batch_flush(home, conn, st);
         return mt_route_aggregate(home, conn, argv, argc, raw, rawlen, cmd,
                                   sess->db_index);
@@ -4004,6 +4256,8 @@ static void mt_exec_task(worker *w, mt_task *t)
         /* falls through to the completion push (empty reply) */
     } else if (t->kind == MT_TASK_PUBLISH) {
         mt_publish_execute(w, t);
+    } else if (t->kind == MT_TASK_PUBSUB_STATS) {
+        mt_pubsub_stats_execute(w, t);
     } else if (t->kind == MT_TASK_WATCH) {
         /* read versions for every watched key; they ride back
          * out-of-band with the +OK reply */

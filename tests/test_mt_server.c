@@ -1834,6 +1834,57 @@ static void test_pubsub_conn_close_unsubscribes(void)
     pal_socket_cleanup();
 }
 
+static void test_pubsub_introspection_aggregates_workers(void)
+{
+    mt_server *ms;
+    pal_socket_t a, b, c;
+    char ch0[32], ch1[32], req[256], buf[512];
+    size_t n;
+
+    DD_CHECK_EQ_INT(0, pal_socket_init());
+    pick_key_for_worker(0, 2, ch0, sizeof(ch0));
+    pick_key_for_worker(1, 2, ch1, sizeof(ch1));
+    ms = mt_server_create("127.0.0.1", 0, 2);
+    DD_CHECK(ms != NULL);
+    DD_CHECK_EQ_INT(0, mt_server_start(ms));
+    a = connect_client(mt_server_port(ms));
+    b = connect_client(mt_server_port(ms));
+    c = connect_client(mt_server_port(ms));
+
+    snprintf(req, sizeof(req), "*2\r\n$9\r\nSUBSCRIBE\r\n$%zu\r\n%s\r\n",
+             strlen(ch0), ch0);
+    n = request_full(a, req, buf, sizeof(buf));
+    DD_CHECK(strstr(buf, "subscribe") != NULL);
+    snprintf(req, sizeof(req), "*2\r\n$9\r\nSUBSCRIBE\r\n$%zu\r\n%s\r\n",
+             strlen(ch1), ch1);
+    n = request_full(b, req, buf, sizeof(buf));
+    DD_CHECK(strstr(buf, "subscribe") != NULL);
+    /* Complete the variable channel/count replies with a focused query. */
+    snprintf(req, sizeof(req), "*3\r\n$6\r\nPUBSUB\r\n$6\r\nNUMSUB\r\n$%zu\r\n%s\r\n",
+             strlen(ch0), ch0);
+    n = request_full(a, req, buf, sizeof(buf));
+    DD_CHECK(n > 0);
+    DD_CHECK(strstr(buf, ch0) != NULL);
+    DD_CHECK(strstr(buf, ":1\r\n") != NULL);
+
+    roundtrip(c, "*2\r\n$10\r\nPSUBSCRIBE\r\n$6\r\nnews.*\r\n",
+              "*3\r\n$10\r\npsubscribe\r\n$6\r\nnews.*\r\n:1\r\n");
+    roundtrip(a, "*2\r\n$6\r\nPUBSUB\r\n$6\r\nNUMPAT\r\n", ":1\r\n");
+
+    snprintf(req, sizeof(req), "*3\r\n$6\r\nPUBSUB\r\n$8\r\nCHANNELS\r\n$1\r\n*\r\n");
+    n = request_full(a, req, buf, sizeof(buf));
+    DD_CHECK(n > 0);
+    DD_CHECK(strstr(buf, ch0) != NULL);
+    DD_CHECK(strstr(buf, ch1) != NULL);
+
+    pal_close(a);
+    pal_close(b);
+    pal_close(c);
+    mt_server_stop(ms);
+    mt_server_destroy(ms);
+    pal_socket_cleanup();
+}
+
 static void test_aof_persistence_mt(void)
 {
     mt_server *ms;
@@ -2490,6 +2541,7 @@ int main(void)
     DD_RUN(test_pubsub_cross_worker);
     DD_RUN(test_unsubscribe_stops_delivery);
     DD_RUN(test_pubsub_conn_close_unsubscribes);
+    DD_RUN(test_pubsub_introspection_aggregates_workers);
     DD_RUN(test_multikey_same_worker);
     DD_RUN(test_multikey_crossslot_rejected);
     DD_RUN(test_smove_same_worker);
