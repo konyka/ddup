@@ -307,8 +307,23 @@ static void test_fcall_function(void)
     exec_sess(s, T0, &out, 3, "FCALL_RO", "mylib", "0");
     EXPECT(out, "*0\r\n");
 
+    /* Redis-style libraries register multiple callable functions. */
+    exec_sess(s, T0, &out, 3, "FUNCTION", "LOAD",
+              "#!lua name=multi\n"
+              "redis.register_function{function_name='bump', "
+              "callback=function(keys,args) return redis.call('INCRBY', "
+              "keys[1], args[1]) end}\n"
+              "redis.register_function{function_name='pair', "
+              "callback=function(keys,args) return {keys[1], args[1]} end}");
+    EXPECT(out, "$5\r\nmulti\r\n");
+    exec_sess(s, T0, &out, 5, "FCALL", "bump", "1", "counter", "3");
+    EXPECT(out, ":3\r\n");
+    exec_sess(s, T0, &out, 5, "FCALL", "pair", "1", "key-a", "arg-a");
+    EXPECT(out, "*2\r\n$5\r\nkey-a\r\n$5\r\narg-a\r\n");
+
     exec_sess(s, T0, &out, 2, "FUNCTION", "LIST");
-    EXPECT(out, "*1\r\n$5\r\nmylib\r\n");
+    DD_CHECK(strstr(out.data, "mylib") != NULL);
+    DD_CHECK(strstr(out.data, "multi") != NULL);
     exec_sess(s, T0, &out, 3, "FUNCTION", "DELETE", "mylib");
     EXPECT(out, "+OK\r\n");
     exec_sess(s, T0, &out, 4, "FCALL", "mylib", "1", "k", "arg");

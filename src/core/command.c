@@ -10779,6 +10779,128 @@ static int function_parse_lib(const char *code, size_t codelen,
     return 0;
 }
 
+/* Locate a Redis-style register_function entry without executing untrusted
+ * library code.  The full Lua parser remains the authority at FCALL time;
+ * this narrow scan only maps function names to their owning library. */
+static int function_source_has_name(const char *src, size_t len,
+                                    const char *name, size_t namelen)
+{
+    static const char marker[] = "function_name";
+    size_t i;
+    for (i = 0; i + sizeof(marker) - 1 <= len; i++) {
+        size_t p;
+        char quote;
+        if (memcmp(src + i, marker, sizeof(marker) - 1) != 0)
+            continue;
+        p = i + sizeof(marker) - 1;
+        while (p < len && (src[p] == ' ' || src[p] == '\t' ||
+                           src[p] == '\r' || src[p] == '\n'))
+            p++;
+        if (p >= len || src[p++] != '=')
+            continue;
+        while (p < len && (src[p] == ' ' || src[p] == '\t' ||
+                           src[p] == '\r' || src[p] == '\n'))
+            p++;
+        if (p >= len || (src[p] != '\'' && src[p] != '"'))
+            continue;
+        quote = src[p++];
+        if (namelen > len - p || memcmp(src + p, name, namelen) != 0)
+            continue;
+        p += namelen;
+        if (p < len && src[p] == quote)
+            return 1;
+    }
+    return 0;
+}
+
+typedef struct function_find_ctx {
+    const char *name;
+    size_t namelen;
+    const char *code;
+    size_t codelen;
+} function_find_ctx;
+
+static void function_find_cb(const char *key, size_t klen,
+                             const char *val, size_t vlen, void *arg)
+{
+    function_find_ctx *c = (function_find_ctx *)arg;
+    (void)key;
+    (void)klen;
+    if (c->code == NULL && function_source_has_name(val, vlen,
+                                                    c->name, c->namelen)) {
+        c->code = val;
+        c->codelen = vlen;
+    }
+}
+
+static int function_append(char *dst, size_t cap, size_t *pos,
+                           const char *src, size_t len)
+{
+    if (*pos > cap || len > cap - *pos)
+        return -1;
+    memcpy(dst + *pos, src, len);
+    *pos += len;
+    return 0;
+}
+
+static int function_append_lua_string(char *dst, size_t cap, size_t *pos,
+                                      const char *src, size_t len)
+{
+    size_t i;
+    if (function_append(dst, cap, pos, "'", 1) != 0)
+        return -1;
+    for (i = 0; i < len; i++) {
+        char ch = src[i];
+        if (ch == '\\' || ch == '\'') {
+            if (function_append(dst, cap, pos, "\\", 1) != 0)
+                return -1;
+        }
+        if (function_append(dst, cap, pos, &ch, 1) != 0)
+            return -1;
+    }
+    return function_append(dst, cap, pos, "'", 1);
+}
+
+/* Wrap a multi-function library as one ordinary Lua chunk.  The registration
+ * hook is restored even when library initialization raises an error. */
+static char *function_build_wrapper(const char *body, size_t bodylen,
+                                    const char *name, size_t namelen,
+                                    size_t *outlen)
+{
+    static const char prefix[] =
+        "local __ddup_old_register=redis.register_function\n"
+        "local __ddup_funcs={}\n"
+        "redis.register_function=function(spec)\n"
+        " if type(spec)~='table' or type(spec.function_name)~='string' "
+        "or type(spec.callback)~='function' then error('invalid function spec') end\n"
+        " __ddup_funcs[spec.function_name]=spec.callback\n"
+        "end\n"
+        "local __ddup_ok,__ddup_err=pcall(function()\n";
+    static const char middle[] =
+        "\nend)\nredis.register_function=__ddup_old_register\n"
+        "if not __ddup_ok then error(__ddup_err) end\n"
+        "local __ddup_fn=__ddup_funcs[";
+    static const char suffix[] =
+        "]\nif __ddup_fn==nil then error('Function not found') end\n"
+        "return __ddup_fn(KEYS,ARGV)\n";
+    size_t cap = sizeof(prefix) - 1 + bodylen + sizeof(middle) - 1 +
+                 namelen * 2 + sizeof(suffix) + 8;
+    char *buf = (char *)malloc(cap);
+    size_t pos = 0;
+    if (buf == NULL)
+        return NULL;
+    if (function_append(buf, cap, &pos, prefix, sizeof(prefix) - 1) != 0 ||
+        function_append(buf, cap, &pos, body, bodylen) != 0 ||
+        function_append(buf, cap, &pos, middle, sizeof(middle) - 1) != 0 ||
+        function_append_lua_string(buf, cap, &pos, name, namelen) != 0 ||
+        function_append(buf, cap, &pos, suffix, sizeof(suffix) - 1) != 0) {
+        free(buf);
+        return NULL;
+    }
+    *outlen = pos;
+    return buf;
+}
+
 typedef struct function_lib_list_ctx {
     resp_buf *out;
     const char *pat;
@@ -13087,6 +13209,10 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
         size_t codelen;
         const char *body, *lib;
         size_t bodylen, liblen;
+        const char *multi_code = NULL;
+        size_t multi_codelen = 0;
+        char *wrapper = NULL;
+        size_t wrapper_len = 0;
         long long numkeys;
         char sha[41];
         char err[256];
@@ -13119,9 +13245,21 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
             return;
         }
         if (!rh_get(&d->function_libs, fname, fnamel, &code, &codelen)) {
-            static const char E[] = "ERR Function not found";
-            resp_write_error(out, E, sizeof(E) - 1);
-            return;
+            function_find_ctx fc;
+            fc.name = fname;
+            fc.namelen = fnamel;
+            fc.code = NULL;
+            fc.codelen = 0;
+            rh_each(&d->function_libs, function_find_cb, &fc);
+            if (fc.code == NULL) {
+                static const char E[] = "ERR Function not found";
+                resp_write_error(out, E, sizeof(E) - 1);
+                return;
+            }
+            multi_code = fc.code;
+            multi_codelen = fc.codelen;
+            code = multi_code;
+            codelen = multi_codelen;
         }
         if (function_parse_lib(code, codelen, &body, &bodylen, &lib,
                                &liblen) != 0) {
@@ -13131,13 +13269,26 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
         }
         (void)lib;
         (void)liblen;
+        if (multi_code != NULL) {
+            wrapper = function_build_wrapper(body, bodylen, fname, fnamel,
+                                             &wrapper_len);
+            if (wrapper == NULL) {
+                static const char E[] = "ERR out of memory";
+                resp_write_error(out, E, sizeof(E) - 1);
+                return;
+            }
+            body = wrapper;
+            bodylen = wrapper_len;
+        }
         if (script_load(d, body, bodylen, sha, err, sizeof(err)) != 0) {
             char ebuf[384];
             int n = snprintf(ebuf, sizeof(ebuf),
                              "ERR Error compiling function: %s", err);
             resp_write_error(out, ebuf, (size_t)n);
+            free(wrapper);
             return;
         }
+        free(wrapper);
         s->aof_skip = 1;
         s->in_ro_script += is_ro;
         script_exec(s, sha, argv + 3, (size_t)numkeys,
