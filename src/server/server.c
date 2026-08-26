@@ -917,18 +917,15 @@ static void srv_monitor_emit_session(void *ctx, session *source,
     srv_monitor_emit(srv, origin, argv, argc);
 }
 
-static void srv_hotkeys_record(server *srv, const resp_value *argv, size_t argc)
+static void srv_hotkeys_record_key(server *srv, const resp_value *argv,
+                                   size_t argc, const char *key, size_t klen)
 {
-    const char *key;
-    size_t klen, i, slot = SIZE_MAX;
+    size_t i, slot = SIZE_MAX;
     uint64_t net = 0;
     hotkey_entry *e;
     uint16_t cmd;
-    if (argc < 2 || argv[0].str == NULL || argv[1].str == NULL ||
-        argv[1].len == 0 || argv[1].len >= sizeof(srv->hotkeys_entries[0].key))
-        return;
-    if (srv->hotkeys_sample_ratio == 0 ||
-        (++srv->hotkeys_sampled % srv->hotkeys_sample_ratio) != 0)
+    if (key == NULL || klen == 0 ||
+        klen >= sizeof(srv->hotkeys_entries[0].key))
         return;
     cmd = cmd_resolve(argv[0].str, argv[0].len);
     if (cmd == CMD_PING || cmd == CMD_ECHO || cmd == CMD_AUTH ||
@@ -939,8 +936,6 @@ static void srv_hotkeys_record(server *srv, const resp_value *argv, size_t argc)
         cmd == CMD_MODULE || cmd == CMD_DEBUG || cmd == CMD_ACL ||
         cmd == CMD_HOTKEYS || cmd == CMD_BACKUP)
         return;
-    key = argv[1].str;
-    klen = argv[1].len;
     for (i = 0; i < argc; i++)
         if (argv[i].str != NULL)
             net += (uint64_t)argv[i].len;
@@ -973,6 +968,35 @@ static void srv_hotkeys_record(server *srv, const resp_value *argv, size_t argc)
     e->len = klen;
     e->cpu_us = 1;
     e->net_bytes = net;
+}
+
+static void srv_hotkeys_record(server *srv, const resp_value *argv, size_t argc)
+{
+    uint16_t cmd;
+    size_t i;
+    if (argc < 2 || argv[0].str == NULL)
+        return;
+    if (srv->hotkeys_sample_ratio == 0 ||
+        (++srv->hotkeys_sampled % srv->hotkeys_sample_ratio) != 0)
+        return;
+    cmd = cmd_resolve(argv[0].str, argv[0].len);
+    if (cmd == CMD_MSET || cmd == CMD_MSETNX) {
+        for (i = 1; i + 1 < argc; i += 2)
+            if (argv[i].str != NULL)
+                srv_hotkeys_record_key(srv, argv, argc, argv[i].str,
+                                       argv[i].len);
+        return;
+    }
+    if (cmd == CMD_MGET || cmd == CMD_DEL || cmd == CMD_UNLINK ||
+        cmd == CMD_EXISTS || cmd == CMD_TOUCH) {
+        for (i = 1; i < argc; i++)
+            if (argv[i].str != NULL)
+                srv_hotkeys_record_key(srv, argv, argc, argv[i].str,
+                                       argv[i].len);
+        return;
+    }
+    if (argc >= 2 && argv[1].str != NULL)
+        srv_hotkeys_record_key(srv, argv, argc, argv[1].str, argv[1].len);
 }
 
 static int server_token_eq(const char *s, size_t len, const char *word)

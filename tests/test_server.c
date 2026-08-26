@@ -205,6 +205,48 @@ static void test_hotkeys_sampled_key_metrics(void)
     server_destroy(s);
 }
 
+static void test_hotkeys_multi_key_commands(void)
+{
+    server *s = make_server();
+    pal_socket_t c;
+    char buf[2048];
+    size_t got = 0;
+    int i;
+    DD_CHECK(s != NULL);
+    if (s == NULL)
+        return;
+    c = connect_client(s);
+    roundtrip(s, c,
+              "*9\r\n$7\r\nHOTKEYS\r\n$5\r\nSTART\r\n$7\r\nMETRICS\r\n"
+              "$1\r\n1\r\n$3\r\nCPU\r\n$5\r\nCOUNT\r\n$1\r\n8\r\n$6\r\nSAMPLE\r\n$1\r\n1\r\n",
+              "+OK\r\n");
+    roundtrip(s, c,
+              "*5\r\n$4\r\nMSET\r\n$2\r\nk1\r\n$2\r\nv1\r\n$2\r\nk2\r\n$2\r\nv2\r\n",
+              "+OK\r\n");
+    roundtrip(s, c, "*3\r\n$4\r\nMGET\r\n$2\r\nk1\r\n$2\r\nk2\r\n",
+              "*2\r\n$2\r\nv1\r\n$2\r\nv2\r\n");
+    roundtrip(s, c, "*4\r\n$3\r\nDEL\r\n$2\r\nk1\r\n$2\r\nk2\r\n",
+              ":2\r\n");
+    roundtrip(s, c, "*4\r\n$6\r\nEXISTS\r\n$2\r\nk1\r\n$2\r\nk2\r\n",
+              ":0\r\n");
+    roundtrip(s, c, "*2\r\n$7\r\nHOTKEYS\r\n$3\r\nGET\r\n", "");
+    for (i = 0; i < 1000 && got < sizeof(buf) - 1; i++) {
+        ptrdiff_t n;
+        server_run_once(s, 5);
+        n = pal_recv(c, buf + got, sizeof(buf) - got - 1);
+        if (n > 0)
+            got += (size_t)n;
+        buf[got] = '\0';
+        if (strstr(buf, "k1") != NULL && strstr(buf, "k2") != NULL)
+            break;
+    }
+    buf[got] = '\0';
+    DD_CHECK(strstr(buf, "k1") != NULL);
+    DD_CHECK(strstr(buf, "k2") != NULL);
+    pal_close(c);
+    server_destroy(s);
+}
+
 static void test_pipeline(void)
 {
     server *s = make_server();
@@ -1182,6 +1224,7 @@ static void run_all_tests(void)
     DD_RUN(test_ping_set_get);
     DD_RUN(test_monitor_stream);
     DD_RUN(test_hotkeys_sampled_key_metrics);
+    DD_RUN(test_hotkeys_multi_key_commands);
     DD_RUN(test_pipeline);
     DD_RUN(test_aof_failure_rejects_writes);
     DD_RUN(test_aof_sync_failure_rejects_writes);
