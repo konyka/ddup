@@ -1200,24 +1200,33 @@ static int srv_hotkeys_command(void *ctx, const resp_value *argv, size_t argc,
         {
             size_t pairs = 4 + (srv->hotkeys_metric_cpu ? 1u : 0u) +
                            (srv->hotkeys_metric_net ? 1u : 0u);
-            size_t i;
-            /* Materialize Top-K order once per GET; collection remains a
-             * fixed-capacity, allocation-free hot path. */
+            size_t i, j;
+            size_t cap = srv->hotkeys_capacity == 0 ? 1 : srv->hotkeys_capacity;
+            size_t cpu_order[cap];
+            size_t net_order[cap];
+            for (i = 0; i < srv->hotkeys_capacity; i++) {
+                cpu_order[i] = i;
+                net_order[i] = i;
+            }
+            /* Sort independent metric views without mutating collection state. */
             for (i = 1; i < srv->hotkeys_capacity; i++) {
-                hotkey_entry tmp = srv->hotkeys_entries[i];
-                size_t j = i;
-                uint64_t score = srv->hotkeys_metric_cpu
-                                     ? tmp.cpu_us : tmp.net_bytes;
-                while (j > 0 && srv->hotkeys_entries[j - 1].len != 0 &&
-                       ((srv->hotkeys_metric_cpu &&
-                         srv->hotkeys_entries[j - 1].cpu_us < score) ||
-                        (srv->hotkeys_metric_net &&
-                         !srv->hotkeys_metric_cpu &&
-                         srv->hotkeys_entries[j - 1].net_bytes < score))) {
-                    srv->hotkeys_entries[j] = srv->hotkeys_entries[j - 1];
+                size_t ci = cpu_order[i], ni = net_order[i];
+                j = i;
+                while (j > 0 &&
+                       srv->hotkeys_entries[cpu_order[j - 1]].cpu_us <
+                           srv->hotkeys_entries[ci].cpu_us) {
+                    cpu_order[j] = cpu_order[j - 1];
                     j--;
                 }
-                srv->hotkeys_entries[j] = tmp;
+                cpu_order[j] = ci;
+                j = i;
+                while (j > 0 &&
+                       srv->hotkeys_entries[net_order[j - 1]].net_bytes <
+                           srv->hotkeys_entries[ni].net_bytes) {
+                    net_order[j] = net_order[j - 1];
+                    j--;
+                }
+                net_order[j] = ni;
             }
             resp_write_array_header(out, 1);
             resp_write_map_header(out, pairs);
@@ -1233,7 +1242,7 @@ static int srv_hotkeys_command(void *ctx, const resp_value *argv, size_t argc,
                 resp_write_bulk(out, "by-cpu-time-us", 14);
                 resp_write_array_header(out, srv->hotkeys_capacity * 2u);
                 for (i = 0; i < srv->hotkeys_capacity; i++) {
-                    hotkey_entry *e = &srv->hotkeys_entries[i];
+                    hotkey_entry *e = &srv->hotkeys_entries[cpu_order[i]];
                     if (e->len == 0) {
                         resp_write_bulk(out, NULL, 0);
                         resp_write_integer(out, 0);
@@ -1247,7 +1256,7 @@ static int srv_hotkeys_command(void *ctx, const resp_value *argv, size_t argc,
                 resp_write_bulk(out, "by-net-bytes", 12);
                 resp_write_array_header(out, srv->hotkeys_capacity * 2u);
                 for (i = 0; i < srv->hotkeys_capacity; i++) {
-                    hotkey_entry *e = &srv->hotkeys_entries[i];
+                    hotkey_entry *e = &srv->hotkeys_entries[net_order[i]];
                     if (e->len == 0) {
                         resp_write_bulk(out, NULL, 0);
                         resp_write_integer(out, 0);

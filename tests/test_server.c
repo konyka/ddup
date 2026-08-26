@@ -295,6 +295,47 @@ static void test_hotkeys_slots_filter(void)
     server_destroy(s);
 }
 
+static void test_hotkeys_independent_metric_order(void)
+{
+    server *s = make_server();
+    pal_socket_t c;
+    char buf[4096];
+    size_t got = 0;
+    int i;
+    const char *cpu, *net;
+    DD_CHECK(s != NULL);
+    if (s == NULL)
+        return;
+    c = connect_client(s);
+    roundtrip(s, c,
+              "*8\r\n$7\r\nHOTKEYS\r\n$5\r\nSTART\r\n$7\r\nMETRICS\r\n"
+              "$1\r\n2\r\n$3\r\nCPU\r\n$3\r\nNET\r\n$5\r\nCOUNT\r\n$1\r\n2\r\n",
+              "+OK\r\n");
+    roundtrip(s, c, "*3\r\n$3\r\nSET\r\n$1\r\na\r\n$1\r\nx\r\n",
+              "+OK\r\n");
+    roundtrip(s, c, "*3\r\n$3\r\nSET\r\n$7\r\nlongkey\r\n$1\r\ny\r\n",
+              "+OK\r\n");
+    roundtrip(s, c, "*2\r\n$7\r\nHOTKEYS\r\n$3\r\nGET\r\n", "");
+    for (i = 0; i < 200 && got < sizeof(buf) - 1; i++) {
+        ptrdiff_t n;
+        server_run_once(s, 5);
+        n = pal_recv(c, buf + got, sizeof(buf) - got - 1);
+        if (n > 0)
+            got += (size_t)n;
+        buf[got] = '\0';
+    }
+    cpu = strstr(buf, "by-cpu-time-us");
+    net = strstr(buf, "by-net-bytes");
+    DD_CHECK(cpu != NULL);
+    DD_CHECK(net != NULL);
+    if (cpu != NULL && net != NULL) {
+        DD_CHECK(strstr(cpu, "a") < strstr(cpu, "longkey"));
+        DD_CHECK(strstr(net, "longkey") < strstr(net, "a"));
+    }
+    pal_close(c);
+    server_destroy(s);
+}
+
 static void test_pipeline(void)
 {
     server *s = make_server();
@@ -1274,6 +1315,7 @@ static void run_all_tests(void)
     DD_RUN(test_hotkeys_sampled_key_metrics);
     DD_RUN(test_hotkeys_multi_key_commands);
     DD_RUN(test_hotkeys_slots_filter);
+    DD_RUN(test_hotkeys_independent_metric_order);
     DD_RUN(test_pipeline);
     DD_RUN(test_aof_failure_rejects_writes);
     DD_RUN(test_aof_sync_failure_rejects_writes);
