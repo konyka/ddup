@@ -3046,10 +3046,14 @@ static int mt_txn_exec(worker *home, void *conn, mt_conn_state *st,
     static const char err_execabort[] =
         "-EXECABORT Transaction discarded because of: keys hash to "
         "different slots\r\n";
+    static const char err_blocked[] =
+        "-EXECABORT Transaction discarded because of: blocking command "
+        "cannot run in mt transaction\r\n";
     static const char err_oom[] = "-ERR out of memory\r\n";
     arena ar;
     int target = -1;
     int bad = 0;
+    int blocked = 0;
     size_t i;
     mt_task *t;
 
@@ -3079,6 +3083,13 @@ static int mt_txn_exec(worker *home, void *conn, mt_conn_state *st,
             bad = 1;
             break;
         }
+        if (mt_is_blocking_pop(c)) {
+            /* A blocked waiter owns the live connection/session and cannot
+             * be replayed safely inside a sessionless EXEC task. */
+            bad = 1;
+            blocked = 1;
+            break;
+        }
         tg = mt_classify(home->ms->nworkers, c, v.items, v.count);
         if (tg == MT_BLOCKED || tg == MT_PASS || tg == MT_CROSSSLOT) {
             bad = 1;
@@ -3105,8 +3116,11 @@ static int mt_txn_exec(worker *home, void *conn, mt_conn_state *st,
         st->in_multi = 0;
         mt_mq_clear(st);
         mt_watches_clear(home, st);
-        mt_reply_local(home, conn, st, seq, err_execabort,
-                       sizeof(err_execabort) - 1, out);
+        mt_reply_local(home, conn, st, seq,
+                       blocked ? err_blocked : err_execabort,
+                       blocked ? sizeof(err_blocked) - 1
+                               : sizeof(err_execabort) - 1,
+                       out);
         return 1;
     }
     if (target == -1)
@@ -3885,6 +3899,18 @@ static int mt_route(void *ctx, void *conn, session *sess,
      * target into one task (flushed on target change / local command /
      * end of the parse loop). */
     if (target >= 0 && target != home->id) {
+        if (mt_is_blocking_pop(cmd) &&
+            (st->pending != 0 || st->reorder != NULL || st->batch_n != 0 ||
+             st->in_multi || st->nwatch != 0 || st->subs != NULL ||
+             st->watch_pending != 0)) {
+            static const char blocked_state[] =
+                "-ERR blocking commands require an idle migratable mt "
+                "connection\r\n";
+            mt_batch_flush(home, conn, st);
+            mt_reply_local(home, conn, st, seq, blocked_state,
+                           sizeof(blocked_state) - 1, out);
+            return 1;
+        }
         if (cmd == CMD_MIGRATE &&
             (server_backend(home->srv) == SERVER_BACKEND_IOCP ||
              server_backend(home->srv) == SERVER_BACKEND_IOURING_OP)) {

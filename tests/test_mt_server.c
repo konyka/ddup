@@ -410,6 +410,15 @@ static void test_blocking_pop_timeout_and_crossslot(void)
              strlen(k0), k0);
     roundtrip(a, req, ":1\r\n");
 
+    /* A blocked waiter cannot be embedded in a sessionless EXEC replay. */
+    roundtrip(a, "*1\r\n$5\r\nMULTI\r\n", "+OK\r\n");
+    snprintf(req, sizeof(req), "*3\r\n$5\r\nBLPOP\r\n$%zu\r\n%s\r\n$1\r\n0\r\n",
+             strlen(k1), k1);
+    roundtrip(a, req, "+QUEUED\r\n");
+    roundtrip(a, "*1\r\n$4\r\nEXEC\r\n",
+              "-EXECABORT Transaction discarded because of: blocking command "
+              "cannot run in mt transaction\r\n");
+
     pal_close(a);
     mt_server_stop(ms);
     mt_server_destroy(ms);

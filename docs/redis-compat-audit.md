@@ -59,7 +59,8 @@
   就绪循环，支持新 entry 唤醒、超时 Null array 及 `BLOCK 0` 无限等待。
 - 阻塞 list/zset 族已实现 `BLPOP/BRPOP/BRPOPLPUSH/BLMOVE/BLMPOP/
   BZPOPMIN/BZPOPMAX/BZMPOP`：服务端事件循环持有挂起会话并在 key 就绪或
-  超时到期时唤醒；mt 模式暂不路由这些命令（记录在案）。
+  超时到期时唤醒；mt 模式将空闲连接迁移到 key owner 后复用同一 waiter，
+  pipeline/事务或不可迁移后端返回明确安全错误。
 - 复制/运维族：已注册 `REPLCONF/FAILOVER/MONITOR/WAIT/WAITAOF`；单机/
   共享无副本语义下 `WAIT/WAITAOF` 返回 0，`FAILOVER` 返回无可副本错误，
   `MONITOR` 已接入 server 级实时文本流，订阅连接收到后续命令事件；
