@@ -227,8 +227,16 @@ int aof_copy_delta(aof *a, uint64_t offset, const char *path)
             goto done;
         if (n == 0)
             break;
-        if (pal_file_write(dst, buf, (size_t)n) != n)
-            goto done;
+        {
+            size_t off = 0;
+            while (off < (size_t)n) {
+                ptrdiff_t w = pal_file_write(dst, buf + off,
+                                             (size_t)n - off);
+                if (w <= 0)
+                    goto done;
+                off += (size_t)w;
+            }
+        }
     }
     if (pal_file_flush(dst) != 0 || pal_file_sync(dst) != 0)
         goto done;
