@@ -321,6 +321,20 @@ static void test_fcall_function(void)
     exec_sess(s, T0, &out, 5, "FCALL", "pair", "1", "key-a", "arg-a");
     EXPECT(out, "*2\r\n$5\r\nkey-a\r\n$5\r\narg-a\r\n");
 
+    /* Names in comments/strings must not become callable registrations. */
+    exec_sess(s, T0, &out, 3, "FUNCTION", "LOAD",
+              "#!lua name=lex\n"
+              "-- redis.register_function{function_name='ghost', callback=function() return 1 end}\n"
+              "local text=\"function_name='phantom'\"\n"
+              "redis.register_function{function_name='real', callback=function() return text end}");
+    EXPECT(out, "$3\r\nlex\r\n");
+    exec_sess(s, T0, &out, 3, "FCALL", "real", "0");
+    EXPECT(out, "$23\r\nfunction_name='phantom'\r\n");
+    exec_sess(s, T0, &out, 3, "FCALL", "ghost", "0");
+    DD_CHECK(out.len > 0 && out.data[0] == '-');
+    exec_sess(s, T0, &out, 3, "FCALL", "phantom", "0");
+    DD_CHECK(out.len > 0 && out.data[0] == '-');
+
     exec_sess(s, T0, &out, 2, "FUNCTION", "LIST");
     DD_CHECK(strstr(out.data, "mylib") != NULL);
     DD_CHECK(strstr(out.data, "multi") != NULL);

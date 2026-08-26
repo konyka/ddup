@@ -437,6 +437,92 @@ static void test_migrate_supported_on_single_mt_worker(void)
     pal_socket_cleanup();
 }
 
+typedef struct mt_target_runner {
+    server *srv;
+    volatile int running;
+    pal_thread thread;
+} mt_target_runner;
+
+static void *mt_target_runner_main(void *arg)
+{
+    mt_target_runner *r = (mt_target_runner *)arg;
+    while (r->running)
+        (void)server_run_once(r->srv, 5);
+    return NULL;
+}
+
+static size_t mt_target_request(pal_socket_t c, const char *req, char *buf,
+                                size_t cap)
+{
+    size_t sent = 0, got = 0;
+    uint64_t deadline = pal_now_ms() + 5000;
+    while (sent < strlen(req) && pal_now_ms() < deadline) {
+        ptrdiff_t n = pal_send(c, req + sent, strlen(req) - sent);
+        if (n > 0)
+            sent += (size_t)n;
+        else
+            pal_sleep_ms(1);
+    }
+    while (got < cap - 1 && pal_now_ms() < deadline) {
+        ptrdiff_t n = pal_recv(c, buf + got, cap - 1 - got);
+        if (n > 0) {
+            got += (size_t)n;
+            if (got >= 2 && memcmp(buf + got - 2, "\r\n", 2) == 0)
+                break;
+        } else {
+            pal_sleep_ms(1);
+        }
+    }
+    buf[got] = '\0';
+    return got;
+}
+
+static void test_migrate_cross_worker_external_target(void)
+{
+    mt_server *ms;
+    server *target;
+    mt_target_runner runner;
+    pal_socket_t src, dst;
+    char key[32], port[16], req[512], buf[256];
+    DD_CHECK_EQ_INT(0, pal_socket_init());
+    pick_key_for_worker(1, 2, key, sizeof(key));
+    target = server_create_ex("127.0.0.1", 0, SERVER_BACKEND_SELECT);
+    DD_CHECK(target != NULL);
+    runner.srv = target;
+    runner.running = 1;
+    DD_CHECK_EQ_INT(0, pal_thread_create(&runner.thread,
+                                         mt_target_runner_main, &runner));
+    ms = mt_server_create("127.0.0.1", 0, 2);
+    DD_CHECK(ms != NULL);
+    DD_CHECK_EQ_INT(0, mt_server_start(ms));
+    src = connect_client(mt_server_port(ms));
+    snprintf(req, sizeof(req), "*3\r\n$3\r\nSET\r\n$%zu\r\n%s\r\n$5\r\nvalue\r\n",
+             strlen(key), key);
+    roundtrip(src, req, "+OK\r\n");
+    snprintf(port, sizeof(port), "%u", (unsigned)server_port(target));
+    snprintf(req, sizeof(req),
+             "*6\r\n$7\r\nMIGRATE\r\n$9\r\n127.0.0.1\r\n$%zu\r\n%s\r\n"
+             "$%zu\r\n%s\r\n$1\r\n0\r\n$4\r\n1000\r\n",
+             strlen(port), port, strlen(key), key);
+    roundtrip(src, req, "+OK\r\n");
+    dst = connect_client(server_port(target));
+    snprintf(req, sizeof(req), "*2\r\n$3\r\nGET\r\n$%zu\r\n%s\r\n",
+             strlen(key), key);
+    DD_CHECK(mt_target_request(dst, req, buf, sizeof(buf)) > 0);
+    DD_CHECK(strstr(buf, "$5\r\nvalue\r\n") != NULL);
+    snprintf(req, sizeof(req), "*2\r\n$6\r\nEXISTS\r\n$%zu\r\n%s\r\n",
+             strlen(key), key);
+    roundtrip(src, req, ":0\r\n");
+    pal_close(src);
+    pal_close(dst);
+    mt_server_stop(ms);
+    mt_server_destroy(ms);
+    runner.running = 0;
+    (void)pal_thread_join(&runner.thread, NULL);
+    server_destroy(target);
+    pal_socket_cleanup();
+}
+
 static void test_randomkey_aggregates_workers(void)
 {
     mt_server *ms;
@@ -2642,6 +2728,7 @@ int main(void)
     DD_RUN(test_blocking_pop_cross_worker);
     DD_RUN(test_blocking_pop_timeout_and_crossslot);
     DD_RUN(test_migrate_supported_on_single_mt_worker);
+    DD_RUN(test_migrate_cross_worker_external_target);
     DD_RUN(test_randomkey_aggregates_workers);
     DD_RUN(test_keys_aggregates_workers);
     DD_RUN(test_scan_composite_cursor_across_workers);

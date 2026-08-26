@@ -255,7 +255,8 @@
   BZMPOP` 在命令分发层记录 `session.blocked`（key 列表、截止时间、重放
   argv 深拷贝），server 就绪循环经 `command_blocked_try` 在数据可读或超时
   到期时重试；mt 模式将连接亲和迁移到 key owner 后复用同一等待器，支持
-  跨 worker 唤醒、超时和断连清理。
+  跨 worker 唤醒、超时和断连清理；IOCP/io_uring-op 的连接迁移受重叠
+  recv 生命周期限制，阻塞 pop 返回明确的 migratable-connection 错误。
 - **容器子命令补全**：`CLIENT/CLUSTER/COMMAND/CONFIG/OBJECT/SCRIPT` 的
   Redis 7.2.15 子命令名全部注册；`COMMAND GETKEYSANDFLAGS` 复用既有
   GETKEYS 键位表并按命令写标志返回 `RW/RO` 近似标志。

@@ -10750,10 +10750,9 @@ int command_blocked_try(session *s, resp_buf *out, uint64_t now_ms)
     return 1;
 }
 
-/* Minimal FUNCTION library code is `#!lua name=<lib>` followed by a plain
- * Lua chunk (EVAL-style KEYS/ARGV globals). Redis's `redis.register_function`
- * multi-function libraries are documented as outside this compatibility
- * pass; FCALL runs the named library chunk with the supplied keys/args. */
+/* FUNCTION accepts both the legacy `#!lua name=<lib>` plain chunk and Redis
+ * multi-function libraries using redis.register_function. FCALL resolves a
+ * registered function name without executing library initialization twice. */
 static int function_parse_lib(const char *code, size_t codelen,
                               const char **body, size_t *bodylen,
                               const char **lib, size_t *liblen)
@@ -10790,6 +10789,32 @@ static int function_source_has_name(const char *src, size_t len,
     for (i = 0; i + sizeof(marker) - 1 <= len; i++) {
         size_t p;
         char quote;
+        if (src[i] == '-' && i + 1 < len && src[i + 1] == '-') {
+            i += 2;
+            if (i + 1 < len && src[i] == '[' && src[i + 1] == '[') {
+                i += 2;
+                while (i + 1 < len && !(src[i] == ']' && src[i + 1] == ']'))
+                    i++;
+                if (i + 1 < len)
+                    i++;
+            } else {
+                while (i < len && src[i] != '\n')
+                    i++;
+            }
+            continue;
+        }
+        if (src[i] == '\'' || src[i] == '"') {
+            quote = src[i++];
+            while (i < len) {
+                if (src[i] == '\\' && i + 1 < len) {
+                    i += 2;
+                    continue;
+                }
+                if (src[i++] == quote)
+                    break;
+            }
+            continue;
+        }
         if (memcmp(src + i, marker, sizeof(marker) - 1) != 0)
             continue;
         p = i + sizeof(marker) - 1;

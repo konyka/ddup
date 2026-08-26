@@ -3846,6 +3846,17 @@ static int mt_route(void *ctx, void *conn, session *sess,
 
     seq = st->seq_next++;
 
+    if (mt_is_blocking_pop(cmd) && target >= 0 && target != home->id &&
+        (server_backend(home->srv) == SERVER_BACKEND_IOCP ||
+         server_backend(home->srv) == SERVER_BACKEND_IOURING_OP)) {
+        static const char blocked_backend[] =
+            "-ERR blocking commands require a migratable mt connection\r\n";
+        mt_batch_flush(home, conn, st);
+        mt_reply_local(home, conn, st, seq, blocked_backend,
+                       sizeof(blocked_backend) - 1, out);
+        return 1;
+    }
+
     /* A remote COPY gets a full worker-local session so DB <n> is honored
      * even when the connection cannot be migrated (pipeline/proactor). */
     if (cmd == CMD_COPY && target >= 0 && target != home->id) {
