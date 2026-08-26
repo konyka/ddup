@@ -416,5 +416,6 @@
     （Phase 83）
   - [x] mt 集群路由安全收敛：`ASKING` 不再被误判为不支持命令，按连接
     会话保留一次性标志并交给现有 cluster ownership 检查；其余全库扫描和
-    MIGRATE 仍列为后续跨网络生命周期工作（Phase 84）；mt SHUTDOWN 已实现
+    MIGRATE 已按源 key hash 路由到 source worker，并复用有界网络迁移逻辑；
+    IOCP/io_uring-op 不安全迁移场景返回明确错误；mt SHUTDOWN 已实现
     home-worker shutdown hook 与全池协调停止
