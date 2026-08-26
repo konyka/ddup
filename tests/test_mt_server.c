@@ -371,6 +371,72 @@ static void test_keys_aggregates_workers(void)
     pal_socket_cleanup();
 }
 
+static void test_scan_composite_cursor_across_workers(void)
+{
+    mt_server *ms;
+    pal_socket_t a;
+    char k0[32], k1[32], req[256], reply[512];
+    unsigned long long cursor = 0;
+    int seen0 = 0, seen1 = 0, rounds;
+
+    DD_CHECK_EQ_INT(0, pal_socket_init());
+    pick_key_for_worker(0, 2, k0, sizeof(k0));
+    pick_key_for_worker(1, 2, k1, sizeof(k1));
+    ms = mt_server_create("127.0.0.1", 0, 2);
+    DD_CHECK(ms != NULL);
+    DD_CHECK_EQ_INT(0, mt_server_start(ms));
+    a = connect_client(mt_server_port(ms));
+
+    snprintf(req, sizeof(req), "*3\r\n$3\r\nSET\r\n$%zu\r\n%s\r\n$2\r\nv0\r\n",
+             strlen(k0), k0);
+    roundtrip(a, req, "+OK\r\n");
+    snprintf(req, sizeof(req), "*3\r\n$3\r\nSET\r\n$%zu\r\n%s\r\n$2\r\nv1\r\n",
+             strlen(k1), k1);
+    roundtrip(a, req, "+OK\r\n");
+
+    for (rounds = 0; rounds < 32; rounds++) {
+        int n;
+        char cursor_text[32];
+        char *eol;
+        char *cursor_start;
+        snprintf(cursor_text, sizeof(cursor_text), "%llu", cursor);
+        n = snprintf(req, sizeof(req),
+                     "*4\r\n$4\r\nSCAN\r\n$%zu\r\n%llu\r\n$5\r\nCOUNT\r\n$1\r\n1\r\n",
+                     strlen(cursor_text), cursor);
+        DD_CHECK(n > 0 && (size_t)n < sizeof(req));
+        n = (int)request_full(a, req, reply, sizeof(reply));
+        DD_CHECK(n > 8 && reply[0] == '*');
+        eol = strstr(reply, "\r\n");
+        DD_CHECK(eol != NULL);
+        if (eol == NULL)
+            break;
+        cursor_start = eol + 2;
+        eol = strstr(cursor_start, "\r\n");
+        DD_CHECK(eol != NULL);
+        if (eol == NULL)
+            break;
+        cursor_start = eol + 2;
+        eol = strstr(cursor_start, "\r\n");
+        DD_CHECK(eol != NULL);
+        if (eol == NULL)
+            break;
+        cursor = strtoull(cursor_start, NULL, 10);
+        if (strstr(reply, k0) != NULL)
+            seen0 = 1;
+        if (strstr(reply, k1) != NULL)
+            seen1 = 1;
+        if (cursor == 0)
+            break;
+    }
+    DD_CHECK(seen0 && seen1);
+    DD_CHECK_EQ_INT(0, (long long)cursor);
+
+    pal_close(a);
+    mt_server_stop(ms);
+    mt_server_destroy(ms);
+    pal_socket_cleanup();
+}
+
 static void test_cluster_control_plane_mt(void)
 {
     mt_server *ms;
@@ -2367,6 +2433,7 @@ int main(void)
     DD_RUN(test_blocked_commands_in_mt_mode);
     DD_RUN(test_randomkey_aggregates_workers);
     DD_RUN(test_keys_aggregates_workers);
+    DD_RUN(test_scan_composite_cursor_across_workers);
     DD_RUN(test_cluster_control_plane_mt);
     DD_RUN(test_cluster_state_propagates_to_workers);
     DD_RUN(test_mt_replica_partitions_full_sync);

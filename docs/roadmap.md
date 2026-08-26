@@ -214,8 +214,8 @@
     虚拟桶下标，回调可删除——字段逐轮重读）；RENAME 对象所有权
     转移经 db_del_kv_keep_obj（免 obj_free 悬垂）；集群同槽/
     所有权与 mt 路由分类同步；mt 的 `KEYS` 广播合并 RESP 数组，
-    `RANDOMKEY` 聚合返回任一非空分片键，`SCAN` 仍保留为复合游标项
-    （Phase 39）
+    `RANDOMKEY` 聚合返回任一非空分片键，`SCAN` 使用带 worker 索引的
+    复合游标顺序遍历分片（Phase 39）
   - [x] 字符串扩展命令：GETDEL/GETEX/SETEX/PSETEX/GETSET/SETRANGE/
     GETRANGE/INCRBY/DECRBY/INCRBYFLOAT；INCR/DECR 重构为共用 delta
     路径（溢出判定通用化）；SETRANGE 512MB 上限 + 补零写；
@@ -232,8 +232,8 @@
     逐层定位，同分假定与 Redis 一致不校验）（Phase 42）
   - [x] 模式订阅：PSUBSCRIBE/PUNSUBSCRIBE + PUBSUB CHANNELS/NUMSUB/
     NUMPAT；第三张注册表 rh_table patterns，PUBLISH 线性扫 pattern
-    表 glob 匹配投递 pmessage（记录在案）；mt 模式不支持模式订阅
-    （进 mt_is_blocked，记录在案）（Phase 43）
+    表 glob 匹配投递 pmessage；mt 模式模式订阅仍保留为后续生命周期项
+    （Phase 43）
   - [x] 收尾与耐久性：QUIT 回 +OK 后经 send-then-close 断连（双后端
     + mt）；AOF appendfsync always|everysec|no（pal_file_sync：
     fsync/FlushFileBuffers；everysec 单线程节流；sync 失败并入

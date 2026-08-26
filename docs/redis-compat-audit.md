@@ -72,7 +72,7 @@
 
 ## D. 项目范围外 / 明确不实施
 
-- mt 模式 `KEYS/RANDOMKEY` 已通过 worker 广播聚合；`SHUTDOWN/MIGRATE/SCAN/PSUBSCRIBE/PUNSUBSCRIBE` 仍记录为不支持；`ASKING` 已在每个 worker 的本地会话安全门中支持一次性标志；`SYNC/PSYNC/REPLICAOF/SLAVEOF/CLUSTER` 已由 worker 0 控制面适配（`mt_is_blocked` 当前清单：SHUTDOWN、MIGRATE、SCAN、PSUBSCRIBE、PUNSUBSCRIBE）。
+- mt 模式 `KEYS/RANDOMKEY/SCAN` 已通过 worker 路由或聚合；`SHUTDOWN/MIGRATE/PSUBSCRIBE/PUNSUBSCRIBE` 仍记录为不支持；`ASKING` 已在每个 worker 的本地会话安全门中支持一次性标志；`SYNC/PSYNC/REPLICAOF/SLAVEOF/CLUSTER` 已由 worker 0 控制面适配（`mt_is_blocked` 当前清单：SHUTDOWN、MIGRATE、PSUBSCRIBE、PUNSUBSCRIBE）。
 - Garnet/单机缓存存储不适配项（如分布式锁脚本、阻塞语义），不在本次兼容目标内。
 
 ## 审计基线（机器断言，勿手改格式）

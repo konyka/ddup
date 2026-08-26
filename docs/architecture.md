@@ -189,8 +189,9 @@
   expired/evicted/dbsize 求和、按库与按命令 id 合并），再由共享的
   `command_info_render()` 渲染为单份人类可读 INFO（maxmemory/策略/
   cluster 标志取 home worker 值）。
-- **限制（记录在案）**：mt 模式下 SHUTDOWN/MIGRATE/SCAN/
+- **限制（记录在案）**：mt 模式下 SHUTDOWN/MIGRATE/
   PSUBSCRIBE/PUNSUBSCRIBE 返回 `-ERR command not supported in mt mode`；
+  `SCAN` 使用带 worker 索引的复合游标顺序遍历各分片；
   `KEYS` 广播并合并各 worker 的 RESP 数组，`RANDOMKEY` 广播后由 home
   worker 返回首个非空 key；
   `SYNC/PSYNC/REPLICAOF/SLAVEOF/CLUSTER` 已由
@@ -1138,8 +1139,9 @@ hazard pointer/延迟回收、索引桶 CAS、检查点与恢复的并发协议�
   TTL 随 blob 搬迁；两 key 的 WATCH 版本都 bump。集群模式两 key 须
   同槽（-CROSSSLOT），mt 按两 key 同 worker 路由（同 SMOVE）。
 - **KEYS/SCAN/RANDOMKEY 的作用域**：集群模式只覆盖本节点本地数据
-  （Redis 行为）；**mt 模式不支持**（`-ERR command not supported in
-  mt mode`，记录在案——全库扫描与 shared-nothing 分片语义冲突）。
+  （Redis 行为）；mt 模式下 `KEYS`/`RANDOMKEY` 聚合各分片，`SCAN`
+  通过复合游标顺序遍历各 worker；每次请求只访问一个分片，避免全库
+  结果物化和跨线程共享 hash 表。
   RANDOMKEY 为占用桶随机探测（≤100 次）+ 顺序兜底，不保证均匀分布。
 - **字符串扩展**：GETDEL/GETSET 先把旧值拷入回复再删除/覆盖（零
   额外分配）；INCR/DECR 重构为共用 delta 路径（INCRBY/DECRBY 加入，

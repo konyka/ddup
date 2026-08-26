@@ -151,7 +151,12 @@ typedef struct mt_sub_entry {
 #define MT_TASK_RESTORE 11     /* full-sync restore one key on a worker */
 #define MT_TASK_REPL_STREAM 12 /* fire-and-forget central replication append */
 #define MT_TASK_REPL_SNAPSHOT 13 /* serialize one worker's db for full sync */
+#define MT_TASK_SCAN 14       /* SCAN routed with a composite cursor */
 #define MT_MAX_LOGICAL_DBS 16
+
+#define MT_SCAN_TAG UINT64_C(0x8000000000000000)
+#define MT_SCAN_WORKER_SHIFT 56
+#define MT_SCAN_LOCAL_MASK UINT64_C(0x00ffffffffffffff)
 
 typedef struct mt_task {
     struct mt_task *next; /* reorder-buffer link (queue nodes wrap tasks) */
@@ -167,6 +172,8 @@ typedef struct mt_task {
     int pending_owned;    /* home pending count held by this task */
     int db_index;         /* logical db the task executes against (SELECT) */
     int repl_worker_id;   /* MT_TASK_REPL_SNAPSHOT source worker id */
+    int scan_worker;      /* worker selected by a composite SCAN cursor */
+    int scan_nworkers;
     uint64_t task_expire_ms; /* MT_TASK_RESTORE absolute expiry (0 = none) */
     cluster_state *cluster_state; /* MT_TASK_CLUSTER_SYNC payload */
     /* WATCH result: 2 slots per key (version, epoch), filled on the owner */
@@ -1494,7 +1501,6 @@ static int mt_is_blocked(uint16_t cmd)
     case CMD_BZPOPMIN:
     case CMD_BZPOPMAX:
     case CMD_BZMPOP:
-    case CMD_SCAN:
     case CMD_PSUBSCRIBE:   /* pattern pub/sub is not supported in mt mode */
     case CMD_PUNSUBSCRIBE:
         return 1;
@@ -1907,6 +1913,131 @@ static mt_cmd_blob *mt_blob_one(const char *raw, size_t len)
     return b;
 }
 
+/* Parse the decimal cursor accepted by SCAN without narrowing it through a
+ * signed type. The high bit is reserved for the mt composite-cursor tag. */
+static int mt_scan_parse_u64(const char *s, size_t len, uint64_t *out)
+{
+    size_t i;
+    uint64_t v = 0;
+    if (s == NULL || len == 0)
+        return 0;
+    for (i = 0; i < len; i++) {
+        uint64_t digit;
+        if (s[i] < '0' || s[i] > '9')
+            return 0;
+        digit = (uint64_t)(s[i] - '0');
+        if (v > (UINT64_MAX - digit) / UINT64_C(10))
+            return 0;
+        v = v * UINT64_C(10) + digit;
+    }
+    *out = v;
+    return 1;
+}
+
+static uint64_t mt_scan_encode_cursor(int worker_id, uint64_t local,
+                                      int nworkers)
+{
+    if (worker_id < 0 || worker_id >= nworkers || worker_id > 127 ||
+        local > MT_SCAN_LOCAL_MASK)
+        return 0;
+    return MT_SCAN_TAG | ((uint64_t)(unsigned)worker_id <<
+                          MT_SCAN_WORKER_SHIFT) | local;
+}
+
+/* Rebuild SCAN's request with a worker-local cursor. The MATCH/COUNT options
+ * remain byte-for-byte equivalent, while the original global cursor is not
+ * exposed to the target worker. */
+static mt_cmd_blob *mt_scan_blob(const resp_value *argv, size_t argc,
+                                 uint64_t local_cursor)
+{
+    resp_buf b;
+    char cursor[32];
+    int n;
+    size_t i;
+    mt_cmd_blob *blob;
+
+    resp_buf_init(&b);
+    resp_write_array_header(&b, argc);
+    for (i = 0; i < argc; i++) {
+        if (i == 1) {
+            n = snprintf(cursor, sizeof(cursor), "%llu",
+                         (unsigned long long)local_cursor);
+            if (n < 0 || (size_t)n >= sizeof(cursor)) {
+                resp_buf_free(&b);
+                return NULL;
+            }
+            resp_write_bulk(&b, cursor, (size_t)n);
+        } else {
+            resp_write_value(&b, &argv[i]);
+        }
+    }
+    if (b.data == NULL || b.len == 0) {
+        resp_buf_free(&b);
+        return NULL;
+    }
+    blob = (mt_cmd_blob *)malloc(sizeof(*blob));
+    if (blob == NULL) {
+        resp_buf_free(&b);
+        return NULL;
+    }
+    blob->raw = b.data;
+    blob->len = b.len;
+    return blob;
+}
+
+/* Convert a worker-local SCAN reply back to the connection's composite
+ * cursor. Only the cursor bulk is rewritten; the key array is copied through
+ * the RESP value writer without parsing or reallocating individual keys. */
+static void mt_scan_rewrite_reply(worker *home, mt_task *t)
+{
+    arena *ar;
+    resp_value v;
+    resp_buf rebuilt;
+    uint64_t local_next;
+    uint64_t global_next;
+    ptrdiff_t used;
+    char cursor_text[32];
+    int n;
+
+    if (home == NULL || t == NULL || t->reply.data == NULL ||
+        t->reply.len == 0 || t->scan_nworkers <= 0)
+        return;
+    if (t->reply.data[0] == '-')
+        return;
+    ar = &home->exec_arena;
+    arena_reset(ar);
+    used = resp_parse(t->reply.data, t->reply.len, &v, ar);
+    if (used != (ptrdiff_t)t->reply.len || v.type != RESP_ARRAY ||
+        v.count != 2 || v.items[0].str == NULL ||
+        v.items[1].type != RESP_ARRAY ||
+        !mt_scan_parse_u64(v.items[0].str, v.items[0].len, &local_next))
+        return;
+
+    if (local_next != 0) {
+        global_next = mt_scan_encode_cursor(t->scan_worker, local_next,
+                                            t->scan_nworkers);
+    } else if (t->scan_worker + 1 < t->scan_nworkers) {
+        global_next = mt_scan_encode_cursor(t->scan_worker + 1, 0,
+                                            t->scan_nworkers);
+    } else {
+        global_next = 0;
+    }
+    n = snprintf(cursor_text, sizeof(cursor_text), "%llu",
+                 (unsigned long long)global_next);
+    if (n < 0 || (size_t)n >= sizeof(cursor_text))
+        return;
+    resp_buf_init(&rebuilt);
+    resp_write_array_header(&rebuilt, 2);
+    resp_write_bulk(&rebuilt, cursor_text, (size_t)n);
+    resp_write_value(&rebuilt, &v.items[1]);
+    if (rebuilt.data == NULL) {
+        resp_buf_free(&rebuilt);
+        return;
+    }
+    resp_buf_free(&t->reply);
+    t->reply = rebuilt;
+}
+
 
 /* Execute SWAPDB on one worker: swap the two logical dbs directly (the
  * sessionless path used by the aggregate home part and drain-2). */
@@ -2173,6 +2304,8 @@ static mt_task *mt_pool_task_new(worker *home)
     t->nwatch_out = 0;
     t->exec_watches = NULL;
     t->nexec_watches = 0;
+    t->scan_worker = 0;
+    t->scan_nworkers = 0;
     t->reply.len = 0;
     t->pool_next = NULL;
     return t;
@@ -2937,6 +3070,64 @@ static int mt_route_publish(worker *home, void *conn, mt_conn_state *st,
     return 1;
 }
 
+/* Route one SCAN call to the shard encoded in its composite cursor. A
+ * malformed cursor returns 0 so the normal session path preserves Redis's
+ * syntax/type error wording. */
+static int mt_route_scan(worker *home, void *conn, mt_conn_state *st,
+                         const resp_value *argv, size_t argc, uint64_t seq,
+                         int db_index, resp_buf *out)
+{
+    uint64_t cursor;
+    uint64_t local_cursor;
+    int target;
+    mt_cmd_blob *blob;
+    mt_task *t;
+
+    if (argc < 2 || argv[1].str == NULL ||
+        !mt_scan_parse_u64(argv[1].str, argv[1].len, &cursor))
+        return 0;
+    if (cursor == 0) {
+        target = 0;
+        local_cursor = 0;
+    } else if ((cursor & MT_SCAN_TAG) != 0) {
+        target = (int)((cursor >> MT_SCAN_WORKER_SHIFT) & UINT64_C(0x7f));
+        local_cursor = cursor & MT_SCAN_LOCAL_MASK;
+        if (target < 0 || target >= home->ms->nworkers)
+            return 0;
+    } else {
+        /* Accept a plain Redis cursor as a worker-0 cursor for compatibility
+         * with clients that reconnect to an mt server mid-iteration. */
+        target = 0;
+        local_cursor = cursor;
+    }
+    if (local_cursor > MT_SCAN_LOCAL_MASK)
+        return 0;
+
+    mt_batch_flush(home, conn, st);
+    blob = mt_scan_blob(argv, argc, local_cursor);
+    if (blob == NULL) {
+        mt_reply_local(home, conn, st, seq, "-ERR out of memory\r\n", 18,
+                       out);
+        return 1;
+    }
+    t = mt_task_new(conn, home, seq, 1, 1, blob);
+    if (t == NULL) {
+        mt_blobs_free(blob, 1);
+        mt_reply_local(home, conn, st, seq, "-ERR out of memory\r\n", 18,
+                       out);
+        return 1;
+    }
+    t->kind = MT_TASK_SCAN;
+    t->scan_worker = target;
+    t->scan_nworkers = home->ms->nworkers;
+    t->db_index = db_index;
+    mt_pending_inc(home, st);
+    t->pending_owned = 1;
+    mt_push_task(home, &home->ms->workers[target].inbox[home->id], t,
+                 &home->ms->workers[target]);
+    return 1;
+}
+
 /* Router installed on every worker's server. Runs on the home worker thread
  * inside conn_process_input. Returns non-zero when the command was handled
  * (locally, blocked, or forwarded). */
@@ -3052,6 +3243,15 @@ static int mt_route(void *ctx, void *conn, session *sess,
         mt_batch_flush(home, conn, st);
         return mt_route_txn(home, conn, st, argv, argc, raw, rawlen, cmd,
                             sess->db_index, st->seq_next++, out);
+    }
+
+    if (cmd == CMD_SCAN) {
+        seq = st->seq_next++;
+        if (mt_route_scan(home, conn, st, argv, argc, seq, sess->db_index,
+                          out))
+            return 1;
+        st->seq_next--; /* malformed SCAN remains on the normal path */
+        return 0;
     }
 
     if (cmd == CMD_SUBSCRIBE || cmd == CMD_UNSUBSCRIBE ||
@@ -3866,6 +4066,8 @@ static void mt_drain_completions(worker *w)
                 mt_task_free(t);
                 continue;
             }
+            if (t->kind == MT_TASK_SCAN)
+                mt_scan_rewrite_reply(w, t);
             if (t->agg != NULL) {
                 /* broadcast part: accumulate and finish when complete */
                 mt_agg *agg = t->agg;
