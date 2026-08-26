@@ -390,8 +390,9 @@
     批量 hash 写入实现；`HOTKEYS` 提供带 DURATION/SAMPLE/SLOTS 校验的
     server-owned 生命周期与低开销命令计数；`BACKUP` 复用原子多库快照实现
     `START/STATUS/SEAL/LIST/ABORT/CLEANUP`，AOF 模式记录 durable offset 并在
-    SEAL 生成原子 `.backup.aof` 增量文件；MP-AOF immutable pinning 保留为后续
-    性能阶段（Phase 82）
+    SEAL 生成原子 `.backup.aof` 增量文件；ddup 无 AOF rewrite/segment 回收
+    路径，因此 durable offset + sealed immutable delta 即为等价安全 pinning
+    边界（Phase 82）
   - [x] Redis 8 ARRAY 核心：`ARSET/ARGET/ARLEN/ARCOUNT`；`obj_array` 用
     稀疏索引表提供 O(1) 随机访问和 O(1) 长度/非空计数，支持快照持久化，
     并以 TDD 覆盖缺失键、连续写、边界索引与 WRONGTYPE（Phase 77）
@@ -412,7 +413,8 @@
   - [x] Redis 8 运行时管理收尾：`HIMPORT PREPARE/SET/DISCARD/DISCARDALL`、
     `HOTKEYS` 生命周期/计数、`BACKUP` 安全快照生命周期和 `MONITOR` 实时
     命令流以 TDD 覆盖；HOTKEYS 已收敛为预分配、有界 Top-K、SLOTS 过滤和
-    实测 dispatch/请求字节指标，BACKUP 增量 MP-AOF pinning 仍明确列为范围外
+    实测 dispatch/请求字节指标，BACKUP durable delta 生命周期已完成；Redis
+    内部 hash-template/MP-AOF segment 编码不改变 ddup 外部语义
     （Phase 83）
   - [x] mt 集群路由安全收敛：`ASKING` 不再被误判为不支持命令，按连接
     会话保留一次性标志并交给现有 cluster ownership 检查；其余全库扫描和

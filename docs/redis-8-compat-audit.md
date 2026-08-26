@@ -50,7 +50,8 @@
   snapshot-backed lifecycle (`START/STATUS/SEAL/LIST/ABORT/CLEANUP`) using an
   atomic `.backup` artifact; AOF-enabled backups record a durable baseline offset
   and SEAL atomically writes a `.backup.aof` delta artifact. Redis MP-AOF
-  immutable-file pinning remains out of scope. `HOTKEYS` implements a server-owned lifecycle, bounded preallocated sampled
+  immutable-file pinning is equivalent here because ddup has no AOF rewrite or
+  segment-reclamation path. `HOTKEYS` implements a server-owned lifecycle, bounded preallocated sampled
   key table, and Redis 8 START option validation; `GET` reports tracking state,
   sample ratio, start time, total commands, and bounded CPU/network-like key
   lists. ddup reports measured dispatch microseconds and raw request bytes when
@@ -92,10 +93,11 @@
 - 管理/危险命令优先做安全前置校验；不支持或无法等价实现的模块命令
   记录在下方范围外清单。
 
-## 范围外 / 待后续评估
+## 架构差异（无用户可见剩余项）
 
 - `BACKUP`：已实现基于原子多库快照的安全同步生命周期；Redis 的
-  MP-AOF 增量 pinning/immutable-file 引擎仍是范围外。`HOTKEYS` 已实现安全生命周期、参数校验、预分配采样表、有界 Top-K、CRC16 `SLOTS` 过滤、实测 dispatch 微秒和原始请求字节计量；共享 hash-template 编码仍未复刻。`HIMPORT` 已实现会话级字段集准备、批量写入和丢弃。
+  AOF durable-offset + sealed immutable delta 已实现；由于 ddup 无 AOF
+  rewrite/segment 回收路径，该边界等价于安全 pinning。`HOTKEYS` 已实现安全生命周期、参数校验、预分配采样表、有界 Top-K、CRC16 `SLOTS` 过滤、实测 dispatch 微秒和原始请求字节计量；Redis 内部 hash-template 编码不改变外部语义。`HIMPORT` 已实现会话级字段集准备、批量写入和丢弃。
 - ARRAY 高级语义：当前稀疏对象模型提供命令级安全行为；`ARINFO FULL`
   返回与当前稀疏模型对应的基础目录/切片统计，不伪造 Redis 内部编码细节。
 - mt 全库命令：`KEYS` 已广播到所有 worker 并合并 RESP 数组，`RANDOMKEY`

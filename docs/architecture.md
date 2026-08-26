@@ -1240,7 +1240,8 @@ snapshot path. Its `START/STATUS/SEAL/LIST/ABORT/CLEANUP` state machine is
 server-owned, fail-closed on missing paths or IO errors, and never overwrites
 the live snapshot. With AOF enabled, START records a durable byte offset and
 SEAL atomically copies the append-only delta into a `.backup.aof` artifact;
-Redis MP-AOF immutable-file pinning remains outside scope. `HOTKEYS` provides a server-wide, low-overhead lifecycle model:
+Because ddup has no AOF rewrite/segment-reclamation path, this durable offset
+plus immutable delta is the equivalent safe pinning boundary. `HOTKEYS` provides a server-wide, low-overhead lifecycle model:
 `START METRICS <count> [CPU|NET] [COUNT k] [DURATION seconds] [SAMPLE ratio]
 [SLOTS ...]`, `STOP`, `RESET`, and `GET` expose active state, sampling ratio,
 collection start time, command count, and bounded `by-cpu-time-us`/
