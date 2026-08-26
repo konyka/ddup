@@ -326,6 +326,27 @@ static void test_blocked_commands_in_mt_mode(void)
     pal_socket_cleanup();
 }
 
+static void test_migrate_supported_on_single_mt_worker(void)
+{
+    mt_server *ms;
+    pal_socket_t a;
+    char req[256];
+    DD_CHECK_EQ_INT(0, pal_socket_init());
+    ms = mt_server_create("127.0.0.1", 0, 1);
+    DD_CHECK(ms != NULL);
+    DD_CHECK_EQ_INT(0, mt_server_start(ms));
+    a = connect_client(mt_server_port(ms));
+    roundtrip(a, "*3\r\n$3\r\nSET\r\n$1\r\nk\r\n$1\r\nv\r\n",
+              "+OK\r\n");
+    snprintf(req, sizeof(req),
+             "*6\r\n$7\r\nMIGRATE\r\n$9\r\n127.0.0.1\r\n$1\r\n1\r\n$1\r\nk\r\n$1\r\n5\r\n$4\r\n1000\r\n");
+    roundtrip(a, req, "-ERR DB index is out of range\r\n");
+    pal_close(a);
+    mt_server_stop(ms);
+    mt_server_destroy(ms);
+    pal_socket_cleanup();
+}
+
 static void test_randomkey_aggregates_workers(void)
 {
     mt_server *ms;
@@ -2455,6 +2476,7 @@ int main(void)
     DD_RUN(test_routed_cross_worker_commands);
     DD_RUN(test_pipeline_mixed_targets_keeps_order);
     DD_RUN(test_blocked_commands_in_mt_mode);
+    DD_RUN(test_migrate_supported_on_single_mt_worker);
     DD_RUN(test_randomkey_aggregates_workers);
     DD_RUN(test_keys_aggregates_workers);
     DD_RUN(test_scan_composite_cursor_across_workers);

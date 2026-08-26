@@ -1509,7 +1509,6 @@ static void mt_agg_finish(server *srv, void *conn, mt_conn_state *st,
 static int mt_is_blocked(uint16_t cmd)
 {
     switch (cmd) {
-    case CMD_MIGRATE:
     case CMD_BLPOP:
     case CMD_BRPOP:
     case CMD_BRPOPLPUSH:
@@ -1522,6 +1521,40 @@ static int mt_is_blocked(uint16_t cmd)
     default:
         return 0;
     }
+}
+
+/* MIGRATE reads one source key or a KEYS tail. All source keys must remain on
+ * one shard; connection affinity then rehomes the connection before the
+ * command executes with the full server-owned session hooks. */
+static int mt_migrate_target(int nworkers, const resp_value *argv,
+                             size_t argc)
+{
+    size_t first = 3, end = 4, i;
+    int target = -2;
+    if (argc < 6)
+        return MT_LOCAL;
+    for (i = 6; i < argc; i++) {
+        if (argv[i].str != NULL && argv[i].len == 4 &&
+            mt_ci_equal(argv[i].str, argv[i].len, "KEYS")) {
+            first = i + 1;
+            end = argc;
+            break;
+        }
+    }
+    if (first >= argc || end > argc)
+        return MT_LOCAL;
+    for (i = first; i < end; i++) {
+        int w;
+        if (argv[i].str == NULL)
+            return MT_LOCAL;
+        w = (int)(hash_slot(argv[i].str, argv[i].len) %
+                  (uint32_t)nworkers);
+        if (target == -2)
+            target = w;
+        else if (target != w)
+            return MT_CROSSSLOT;
+    }
+    return target == -2 ? MT_LOCAL : target;
 }
 
 static int mt_is_single_key(uint16_t cmd)
@@ -1680,6 +1713,7 @@ static int mt_is_keyless(uint16_t cmd)
     case CMD_SLOWLOG:
     case CMD_BGREWRITEAOF:
     case CMD_QUIT:
+    case CMD_SHUTDOWN:
     case CMD_LOLWUT:
         return 1;
     default:
@@ -1848,6 +1882,8 @@ static int mt_classify(int nworkers, uint16_t cmd, const resp_value *argv,
 {
     if (mt_is_blocked(cmd))
         return MT_BLOCKED;
+    if (cmd == CMD_MIGRATE)
+        return mt_migrate_target(nworkers, argv, argc);
     if (cmd == CMD_CLUSTER || cmd == CMD_REPLICAOF ||
         cmd == CMD_SLAVEOF || cmd == CMD_SYNC || cmd == CMD_PSYNC)
         return 0; /* worker 0 owns the cluster/replication control plane */
@@ -3420,13 +3456,38 @@ static int mt_route(void *ctx, void *conn, session *sess,
         return 1;
     }
 
-    if (cmd == CMD_SHUTDOWN) {
-        /* SHUTDOWN has no RESP reply by design. Execute it on the home
-         * worker, then stop the coordinated pool after persistence hooks have
-         * marked the worker for shutdown. */
+    target = mt_classify(home->ms->nworkers, cmd, argv, argc);
+    if (target == MT_PASS)
+        return 0; /* legacy inline path (SINTER/SUNION/SDIFF for now) */
+
+    if (cmd == CMD_MIGRATE && target == MT_CROSSSLOT) {
         mt_batch_flush(home, conn, st);
-        session_execute(sess, argv, argc, out);
-        if (server_shutdown_requested(home->srv)) {
+        seq = st->seq_next++;
+        mt_reply_local(home, conn, st, seq, crossslot_msg,
+                       sizeof(crossslot_msg) - 1, out);
+        return 1;
+    }
+
+    if (cmd == CMD_SHUTDOWN || (cmd == CMD_MIGRATE && target == home->id)) {
+        /* SHUTDOWN has no RESP reply. MIGRATE executes on the source shard
+         * with server-owned networking hooks and a bounded timeout. */
+        mt_batch_flush(home, conn, st);
+        seq = st->seq_next++;
+        if (seq == st->seq_write) {
+            session_execute(sess, argv, argc, out);
+            st->seq_write++;
+        } else {
+            mt_task *t = mt_task_new(conn, home, seq, 1, 0, NULL);
+            if (t == NULL) {
+                resp_write_error(out, "ERR out of memory", 17);
+                st->seq_write++;
+            } else {
+                session_execute(sess, argv, argc, &t->reply);
+                mt_reorder_insert(st, t);
+                mt_drain_ready(home->srv, &home->exec_arena, conn, st, 1);
+            }
+        }
+        if (cmd == CMD_SHUTDOWN && server_shutdown_requested(home->srv)) {
             int wi;
             home->ms->running = 0;
             for (wi = 0; wi < home->ms->nworkers; wi++) {
@@ -3438,16 +3499,22 @@ static int mt_route(void *ctx, void *conn, session *sess,
         return 1;
     }
 
-    target = mt_classify(home->ms->nworkers, cmd, argv, argc);
-    if (target == MT_PASS)
-        return 0; /* legacy inline path (SINTER/SUNION/SDIFF for now) */
-
     seq = st->seq_next++;
 
     /* Forward to the owning worker: merge consecutive commands for the same
      * target into one task (flushed on target change / local command /
      * end of the parse loop). */
     if (target >= 0 && target != home->id) {
+        if (cmd == CMD_MIGRATE &&
+            (server_backend(home->srv) == SERVER_BACKEND_IOCP ||
+             server_backend(home->srv) == SERVER_BACKEND_IOURING_OP)) {
+            static const char migrate_msg[] =
+                "-ERR MIGRATE requires a migratable mt connection\r\n";
+            mt_batch_flush(home, conn, st);
+            mt_reply_local(home, conn, st, seq, migrate_msg,
+                           sizeof(migrate_msg) - 1, out);
+            return 1;
+        }
         /* connection-key affinity: a clean connection migrates once to the
          * worker owning its keys (the current command stays unconsumed in
          * the receive buffer and is re-processed by the new home).
