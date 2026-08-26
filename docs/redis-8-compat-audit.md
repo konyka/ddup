@@ -34,6 +34,9 @@
   before mutation and supports `NX/XX/KEEPTTL/EX/PX/EXAT/PXAT`; `DELEX`
   supports conditional string deletion; `DIGEST` uses vendored XXH3 with
   fixed-width output. All four commands are covered by TDD tests.
+- Redis-compatible string read-modify-write semantics preserve absolute key TTL
+  for `INCR/DECR/INCRBY/DECRBY/INCRBYFLOAT/APPEND`; SET-style overwrites retain
+  their documented TTL-clearing behavior.
 - Cluster slot maintenance: `SFLUSH` intersects requested ranges with local
   ownership and returns coalesced flushed ranges; `TRIMSLOTS RANGES` validates
   ownership before deleting keys from unserved slots. Both paths collect keys
