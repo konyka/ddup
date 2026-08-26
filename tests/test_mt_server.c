@@ -1207,13 +1207,35 @@ static void test_copy_same_worker(void)
     roundtrip(a, req,
               "-CROSSSLOT Keys in request don't hash to the same slot\r\n");
 
-    /* cross-db COPY is rejected in mt mode (documented limitation) */
+    /* cross-db COPY is executed by a full worker-local session and must
+     * preserve the source while installing the serialized value in DB 1. */
     snprintf(req, sizeof(req),
              "*5\r\n$4\r\nCOPY\r\n$%zu\r\n%s\r\n$%zu\r\n%s\r\n$2\r\nDB\r\n"
              "$1\r\n1\r\n",
              strlen(ka), ka, strlen(kb), kb);
-    roundtrip(a, req,
-              "-ERR COPY across databases is not supported in mt mode\r\n");
+    roundtrip(a, req, ":1\r\n");
+    roundtrip(a, "*2\r\n$6\r\nSELECT\r\n$1\r\n1\r\n", "+OK\r\n");
+    snprintf(req, sizeof(req), "*2\r\n$3\r\nGET\r\n$%zu\r\n%s\r\n",
+             strlen(kb), kb);
+    roundtrip(a, req, "$2\r\nv1\r\n");
+    roundtrip(a, "*2\r\n$6\r\nSELECT\r\n$1\r\n0\r\n", "+OK\r\n");
+    snprintf(req, sizeof(req), "*2\r\n$3\r\nGET\r\n$%zu\r\n%s\r\n",
+             strlen(ka), ka);
+    roundtrip(a, req, "$2\r\nv1\r\n");
+
+    /* The same full-session path is required when COPY DB is queued in
+     * MULTI/EXEC. */
+    roundtrip(a, "*1\r\n$5\r\nMULTI\r\n", "+OK\r\n");
+    snprintf(req, sizeof(req),
+             "*6\r\n$4\r\nCOPY\r\n$%zu\r\n%s\r\n$%zu\r\n%s\r\n$2\r\nDB\r\n$1\r\n1\r\n$7\r\nREPLACE\r\n",
+             strlen(ka), ka, strlen(kb), kb);
+    roundtrip(a, req, "+QUEUED\r\n");
+    roundtrip(a, "*1\r\n$4\r\nEXEC\r\n", "*1\r\n:1\r\n");
+    roundtrip(a, "*2\r\n$6\r\nSELECT\r\n$1\r\n1\r\n", "+OK\r\n");
+    snprintf(req, sizeof(req), "*2\r\n$3\r\nGET\r\n$%zu\r\n%s\r\n",
+             strlen(kb), kb);
+    roundtrip(a, req, "$2\r\nv1\r\n");
+    roundtrip(a, "*2\r\n$6\r\nSELECT\r\n$1\r\n0\r\n", "+OK\r\n");
 
     pal_close(a);
     mt_server_stop(ms);

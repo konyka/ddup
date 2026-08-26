@@ -156,6 +156,7 @@ typedef struct mt_sub_entry {
 #define MT_TASK_REPL_SNAPSHOT 13 /* serialize one worker's db for full sync */
 #define MT_TASK_SCAN 14       /* SCAN routed with a composite cursor */
 #define MT_TASK_PUBSUB_STATS 15 /* PUBSUB introspection aggregate part */
+#define MT_TASK_COPY 16       /* COPY with full logical-DB selection hooks */
 #define MT_MAX_LOGICAL_DBS 16
 
 #define MT_SCAN_TAG UINT64_C(0x8000000000000000)
@@ -2442,6 +2443,34 @@ static int mt_move_exec(worker *w, int log_db_index, const resp_value *v,
     return changed;
 }
 
+/* COPY may name a destination logical DB. Execute it with the worker's
+ * selection hook instead of the sessionless one-db routed path. */
+static int mt_copy_exec_server(server *srv, int log_db_index,
+                               const resp_value *v, resp_buf *dst)
+{
+    session sess;
+    uint64_t dirty_before;
+    int changed = 0;
+    session_init(&sess, server_db_at(srv, log_db_index));
+    sess.sel_ctx = srv;
+    sess.sel_fn = server_select_db;
+    sess.sel_ndbs = server_ndbs(srv);
+    dirty_before = sess.d->dirty;
+    session_execute_at(&sess, v->items, v->count, dst, pal_wall_ms());
+    if (sess.d->dirty != dirty_before) {
+        server_aof_log_cmd(srv, log_db_index, v->items, v->count);
+        changed = 1;
+    }
+    session_release(&sess);
+    return changed;
+}
+
+static int mt_copy_exec(worker *w, int log_db_index, const resp_value *v,
+                        resp_buf *dst)
+{
+    return mt_copy_exec_server(w->srv, log_db_index, v, dst);
+}
+
 /* Execute INFO __STATS__ on this worker with a stack session that sees all
  * of the worker's logical dbs (the sessionless task path only covers the
  * caller's selected db). */
@@ -2915,6 +2944,15 @@ static void mt_exec_on_db(server *srv, mt_task *t, arena *ar)
             continue;
         }
         dirty_before = d->dirty;
+        if (v.count >= 3 && v.items[0].str != NULL &&
+            v.items[0].len == 4 &&
+            mt_ci_equal(v.items[0].str, v.items[0].len, "copy")) {
+            if (mt_copy_exec_server(srv, t->db_index, &v, &t->reply))
+                server_repl_stream_forward(srv, t->db_index,
+                                           t->cmds[i].raw,
+                                           t->cmds[i].len);
+            continue;
+        }
         command_execute_at(d, v.items, v.count, &t->reply, pal_wall_ms());
         /* EXEC logs the applied commands individually (no MULTI wrapper) */
         if (d->dirty != dirty_before) {
@@ -3721,34 +3759,6 @@ static int mt_route(void *ctx, void *conn, session *sess,
                                   sess->db_index);
     }
 
-    /* COPY across logical dbs is rejected in mt mode: routed tasks execute
-     * sessionless against one worker db, so the DB option could not be
-     * honored (documented limitation). DB <current> is a same-db copy and
-     * routes normally. */
-    if (cmd == CMD_COPY) {
-        size_t i;
-        for (i = 3; i + 1 < argc; i++) {
-            long long dbi;
-            if (argv[i].str == NULL ||
-                !mt_ci_equal(argv[i].str, argv[i].len, "db"))
-                continue;
-            if (argv[i + 1].str != NULL &&
-                mt_parse_ll(argv[i + 1].str, argv[i + 1].len, &dbi) &&
-                dbi != sess->db_index) {
-                static const char msg[] =
-                    "-ERR COPY across databases is not supported in mt "
-                    "mode\r\n";
-                uint64_t lseq;
-                mt_batch_flush(home, conn, st);
-                lseq = st->seq_next++;
-                mt_reply_local(home, conn, st, lseq, msg, sizeof(msg) - 1,
-                               out);
-                return 1;
-            }
-            break;
-        }
-    }
-
     if (cmd == CMD_REPLICAOF || cmd == CMD_SLAVEOF) {
         mt_batch_flush(home, conn, st);
         seq = st->seq_next++;
@@ -3835,6 +3845,30 @@ static int mt_route(void *ctx, void *conn, session *sess,
     }
 
     seq = st->seq_next++;
+
+    /* A remote COPY gets a full worker-local session so DB <n> is honored
+     * even when the connection cannot be migrated (pipeline/proactor). */
+    if (cmd == CMD_COPY && target >= 0 && target != home->id) {
+        mt_task *t;
+        mt_cmd_blob *blob;
+        mt_batch_flush(home, conn, st);
+        blob = mt_blob_one(raw, rawlen);
+        t = blob != NULL ? mt_task_new(conn, home, seq, 1, 1, blob) : NULL;
+        if (t == NULL) {
+            if (blob != NULL)
+                mt_blobs_free(blob, 1);
+            mt_reply_local(home, conn, st, seq, "-ERR out of memory\r\n",
+                           18, out);
+            return 1;
+        }
+        t->kind = MT_TASK_COPY;
+        t->db_index = sess->db_index;
+        mt_pending_inc(home, st);
+        t->pending_owned = 1;
+        mt_push_task(home, &home->ms->workers[target].inbox[home->id], t,
+                     &home->ms->workers[target]);
+        return 1;
+    }
 
     /* Forward to the owning worker: merge consecutive commands for the same
      * target into one task (flushed on target change / local command /
@@ -4411,6 +4445,15 @@ static void mt_exec_task(worker *w, mt_task *t)
                                                t->cmds[ci].len);
                 continue;
             }
+            if (v.count >= 3 && v.items[0].str != NULL &&
+                v.items[0].len == 4 &&
+                mt_ci_equal(v.items[0].str, v.items[0].len, "copy")) {
+                if (mt_copy_exec(w, t->db_index, &v, &t->reply))
+                    server_repl_stream_forward(w->srv, t->db_index,
+                                               t->cmds[ci].raw,
+                                               t->cmds[ci].len);
+                continue;
+            }
             /* INFO __STATS__ (aggregation fan-out): machine-format snapshot
              * over all of this worker's logical dbs */
             if (v.count == 2 && v.items[0].str != NULL &&
@@ -4429,9 +4472,9 @@ static void mt_exec_task(worker *w, mt_task *t)
                 mt_flushall_exec(w, t->db_index, &t->reply);
                 continue;
             }
-            dirty_before = d->dirty;
-            command_execute_at(d, v.items, v.count, &t->reply,
-                               pal_wall_ms());
+        dirty_before = d->dirty;
+        command_execute_at(d, v.items, v.count, &t->reply,
+                           pal_wall_ms());
             /* sessionless path: log applied mutations to the
              * worker's own AOF */
             if (d->dirty != dirty_before)

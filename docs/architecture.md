@@ -254,7 +254,8 @@
 - **阻塞 pop 族**：`BLPOP/BRPOP/BRPOPLPUSH/BLMOVE/BLMPOP/BZPOPMIN/BZPOPMAX/
   BZMPOP` 在命令分发层记录 `session.blocked`（key 列表、截止时间、重放
   argv 深拷贝），server 就绪循环经 `command_blocked_try` 在数据可读或超时
-  到期时重试；mt 模式不路由这些命令（记录在案）。
+  到期时重试；mt 模式将连接亲和迁移到 key owner 后复用同一等待器，支持
+  跨 worker 唤醒、超时和断连清理。
 - **容器子命令补全**：`CLIENT/CLUSTER/COMMAND/CONFIG/OBJECT/SCRIPT` 的
   Redis 7.2.15 子命令名全部注册；`COMMAND GETKEYSANDFLAGS` 复用既有
   GETKEYS 键位表并按命令写标志返回 `RW/RO` 近似标志。
@@ -1190,9 +1191,8 @@ hazard pointer/延迟回收、索引桶 CAS、检查点与恢复的并发协议�
   拷贝——裸 blob 拷贝对 hash/list/set/zset 的指针对象会造成跨 key
   别名（double-free/UAF），记录在案。TTL 以绝对时刻语义搬迁；AOF/
   复制自包含（argv 自带 DB 选项，重放经 SELECT 前缀恢复）。集群
-  两 key 同槽；mt 下拒绝跨库（任务栈 session 无多库钩子，AOF
-  dirty 检查只覆盖源库，`-ERR COPY across databases is not
-  supported in mt mode`，记录在案）。
+  两 key 同槽；mt 下按源 key 路由到 owner worker，并使用带逻辑库选择钩子的
+  栈 session 执行 `DB n`，确保源库/目标库都正确更新并记录 AOF。
 
 ## Hash 字段级 TTL（Redis 8 增量）
 

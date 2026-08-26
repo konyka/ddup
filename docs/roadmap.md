@@ -241,7 +241,7 @@
     fsync/FlushFileBuffers；everysec 单线程节流；sync 失败并入
     fail-closed 闩锁）；SET KEEPTTL/GET 选项；COPY 命令（DUMP/
     RESTORE 序列化深拷贝——裸 blob 对指针对象有别名风险，记录在案；
-    mt 拒绝跨库）（Phase 44）
+    mt 已支持跨库 COPY 的 worker-local 多库 session）（Phase 44）
   - [x] 紧凑编码：Redis 7 兼容 listpack（src/ds/listpack）+ quicklist
     重写 list 存储（每节点 ≤128 条目 listpack，端点分裂/空节点摘除，
     迭代器访问）；hash/zset 小对象 listpack 双编码（128 条目 / 64 字节
