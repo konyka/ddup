@@ -2969,6 +2969,7 @@ static int mt_route_unsubscribe_kind(worker *home, void *conn, mt_conn_state *st
 {
     const char *verb = pattern ? "punsubscribe" : "unsubscribe";
     resp_buf reply;
+    int emitted = 0;
     resp_buf_init(&reply);
     if (argc >= 2) {
         size_t i;
@@ -2993,7 +2994,7 @@ static int mt_route_unsubscribe_kind(worker *home, void *conn, mt_conn_state *st
     } else {
         /* unsubscribe everything */
         if (st->subs == NULL) {
-            mt_write_sub_reply(&reply, verb, sizeof(verb) - 1, NULL, 0, 0);
+            mt_write_sub_reply(&reply, verb, strlen(verb), NULL, 0, 0);
         } else {
             mt_conn_sub *prev = NULL;
             mt_conn_sub *cur = st->subs;
@@ -3008,6 +3009,7 @@ static int mt_route_unsubscribe_kind(worker *home, void *conn, mt_conn_state *st
                                      cur->owner, pattern);
                 mt_write_sub_reply(&reply, verb, strlen(verb), cur->ch,
                                    cur->chlen, st->nsub - 1);
+                emitted = 1;
                 if (prev != NULL)
                     prev->next = next;
                 else
@@ -3018,6 +3020,9 @@ static int mt_route_unsubscribe_kind(worker *home, void *conn, mt_conn_state *st
                 free(cur);
                 cur = next;
             }
+            if (!emitted)
+                mt_write_sub_reply(&reply, verb, strlen(verb), NULL, 0,
+                                   st->nsub);
         }
     }
     mt_reply_local(home, conn, st, seq, reply.data, reply.len, out);
