@@ -71,6 +71,13 @@ aof *aof_open(const char *path)
         free(a);
         return NULL;
     }
+    a->path = (char *)malloc(strlen(path) + 1);
+    if (a->path == NULL) {
+        pal_file_close(a->f);
+        free(a);
+        return NULL;
+    }
+    memcpy(a->path, path, strlen(path) + 1);
     resp_buf_init(&a->pending);
     a->write_fn = pal_file_write;
     a->fsync_mode = AOF_FSYNC_EVERYSEC;
@@ -179,7 +186,67 @@ void aof_close(aof *a)
         (void)a->sync_fn(a->f);
     pal_file_close(a->f);
     resp_buf_free(&a->pending);
+    free(a->path);
     free(a);
+}
+
+uint64_t aof_durable_offset(aof *a)
+{
+    if (a == NULL || a->failed || aof_flush(a) != 0)
+        return UINT64_MAX;
+    return pal_file_tell(a->f);
+}
+
+int aof_copy_delta(aof *a, uint64_t offset, const char *path)
+{
+    pal_file *src = NULL;
+    pal_file *dst = NULL;
+    char *tmp = NULL;
+    char buf[65536];
+    ptrdiff_t n;
+    int rc = -1;
+    size_t plen;
+    if (a == NULL || a->path == NULL || path == NULL ||
+        aof_durable_offset(a) == UINT64_MAX)
+        return -1;
+    src = pal_file_open_read(a->path);
+    if (src == NULL || pal_file_seek(src, offset) != 0)
+        goto done;
+    plen = strlen(path);
+    tmp = (char *)malloc(plen + 5);
+    if (tmp == NULL)
+        goto done;
+    memcpy(tmp, path, plen);
+    memcpy(tmp + plen, ".tmp", 5);
+    dst = pal_file_open_write(tmp);
+    if (dst == NULL)
+        goto done;
+    for (;;) {
+        n = pal_file_read(src, buf, sizeof(buf));
+        if (n < 0)
+            goto done;
+        if (n == 0)
+            break;
+        if (pal_file_write(dst, buf, (size_t)n) != n)
+            goto done;
+    }
+    if (pal_file_flush(dst) != 0 || pal_file_sync(dst) != 0)
+        goto done;
+    if (pal_file_close(dst) != 0)
+        goto done;
+    dst = NULL;
+    if (pal_file_rename(tmp, path) != 0)
+        goto done;
+    rc = 0;
+done:
+    if (dst != NULL)
+        pal_file_close(dst);
+    if (src != NULL)
+        pal_file_close(src);
+    if (rc != 0 && tmp != NULL)
+        (void)pal_file_unlink(tmp);
+    free(tmp);
+    return rc;
 }
 
 static int aof_replay_impl(session *s, db *d, const char *path)

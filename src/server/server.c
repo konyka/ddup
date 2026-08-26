@@ -221,6 +221,8 @@ struct server {
     uint8_t hotkeys_slots[16384];
     int backup_state;
     char *backup_path;
+    char *backup_aof_path;
+    uint64_t backup_aof_offset;
     uint64_t backup_start_ms;
     uint64_t backup_end_ms;
     char backup_error[128];
@@ -1307,6 +1309,9 @@ static int srv_backup_command(void *ctx, const resp_value *argv, size_t argc,
         }
         free(srv->backup_path);
         srv->backup_path = NULL;
+        free(srv->backup_aof_path);
+        srv->backup_aof_path = NULL;
+        srv->backup_aof_offset = UINT64_MAX;
         {
             size_t n = strlen(srv->db.snapshot_path);
             srv->backup_path = (char *)malloc(n + sizeof(".backup"));
@@ -1317,6 +1322,23 @@ static int srv_backup_command(void *ctx, const resp_value *argv, size_t argc,
             }
             memcpy(srv->backup_path, srv->db.snapshot_path, n);
             memcpy(srv->backup_path + n, ".backup", sizeof(".backup"));
+        }
+        if (srv->aof != NULL) {
+            srv->backup_aof_offset = aof_durable_offset(srv->aof);
+            if (srv->backup_aof_offset == UINT64_MAX) {
+                srv->backup_state = BACKUP_FAILED;
+                snprintf(srv->backup_error, sizeof(srv->backup_error),
+                         "aof flush failed");
+                return resp_write_error(out, "ERR backup AOF flush failed", 28), 0;
+            }
+            srv->backup_aof_path = (char *)malloc(strlen(srv->backup_path) + 5);
+            if (srv->backup_aof_path == NULL) {
+                srv->backup_state = BACKUP_FAILED;
+                snprintf(srv->backup_error, sizeof(srv->backup_error),
+                         "out of memory");
+                return resp_write_error(out, "ERR out of memory", 17), 0;
+            }
+            sprintf(srv->backup_aof_path, "%s.aof", srv->backup_path);
         }
         srv->backup_state = BACKUP_SNAPSHOT;
         srv->backup_start_ms = pal_wall_ms();
@@ -1347,10 +1369,15 @@ static int srv_backup_command(void *ctx, const resp_value *argv, size_t argc,
                         srv->backup_error[0] ? strlen(srv->backup_error) : 0);
         return 0;
     }
-    if (server_token_eq(sub, len, "LIST")) {
-        resp_write_array_header(out, srv->backup_path != NULL ? 1 : 0);
+        if (server_token_eq(sub, len, "LIST")) {
+        size_t count = (srv->backup_path != NULL ? 1u : 0u) +
+                       (srv->backup_aof_path != NULL ? 1u : 0u);
+        resp_write_array_header(out, count);
         if (srv->backup_path != NULL)
             resp_write_bulk(out, srv->backup_path, strlen(srv->backup_path));
+        if (srv->backup_aof_path != NULL)
+            resp_write_bulk(out, srv->backup_aof_path,
+                            strlen(srv->backup_aof_path));
         return 0;
     }
     if (server_token_eq(sub, len, "SEAL")) {
@@ -1358,6 +1385,14 @@ static int srv_backup_command(void *ctx, const resp_value *argv, size_t argc,
             return resp_write_error(out, "ERR wrong number of arguments", 31), 0;
         if (srv->backup_state != BACKUP_INCREMENTING)
             return resp_write_error(out, "ERR no pending backup", 22), 0;
+        if (srv->backup_aof_path != NULL &&
+            aof_copy_delta(srv->aof, srv->backup_aof_offset,
+                           srv->backup_aof_path) != 0) {
+            srv->backup_state = BACKUP_FAILED;
+            snprintf(srv->backup_error, sizeof(srv->backup_error),
+                     "aof delta copy failed");
+            return resp_write_error(out, "ERR backup AOF seal failed", 27), 0;
+        }
         srv->backup_state = BACKUP_SEALED;
         resp_write_simple_string(out, "OK", 2);
         return 0;
@@ -1369,8 +1404,13 @@ static int srv_backup_command(void *ctx, const resp_value *argv, size_t argc,
             return resp_write_error(out, "ERR backup is sealed", 21), 0;
         if (srv->backup_path != NULL)
             pal_file_unlink(srv->backup_path);
+        if (srv->backup_aof_path != NULL)
+            pal_file_unlink(srv->backup_aof_path);
         free(srv->backup_path);
         srv->backup_path = NULL;
+        free(srv->backup_aof_path);
+        srv->backup_aof_path = NULL;
+        srv->backup_aof_offset = UINT64_MAX;
         srv->backup_state = BACKUP_IDLE;
         srv->backup_start_ms = 0;
         srv->backup_end_ms = 0;
@@ -1386,9 +1426,16 @@ static int srv_backup_command(void *ctx, const resp_value *argv, size_t argc,
         if (srv->backup_path != NULL && pal_file_unlink(srv->backup_path) != 0 &&
             pal_file_exists(srv->backup_path))
             return resp_write_error(out, "ERR backup cleanup failed", 27), 0;
+        if (srv->backup_aof_path != NULL &&
+            pal_file_unlink(srv->backup_aof_path) != 0 &&
+            pal_file_exists(srv->backup_aof_path))
+            return resp_write_error(out, "ERR backup AOF cleanup failed", 31), 0;
         srv->backup_state = BACKUP_IDLE;
         free(srv->backup_path);
         srv->backup_path = NULL;
+        free(srv->backup_aof_path);
+        srv->backup_aof_path = NULL;
+        srv->backup_aof_offset = UINT64_MAX;
         resp_write_simple_string(out, "OK", 2);
         return 0;
     }
@@ -3202,6 +3249,7 @@ void server_destroy(server *s)
     tier_close(s->tier);
     free(s->hotkeys_entries);
     free(s->backup_path);
+    free(s->backup_aof_path);
     buf_pool_destroy(&s->pool);
     free(s);
 }

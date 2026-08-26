@@ -244,15 +244,19 @@ static void test_bgsave_bgrewriteaof(void)
     roundtrip_contains(s, c,
                        "*2\r\n$6\r\nBACKUP\r\n$6\r\nSTATUS\r\n",
                        "incrementing");
+    roundtrip(s, c, "*3\r\n$3\r\nSET\r\n$8\r\nbackup-k\r\n$1\r\nv\r\n",
+              "+OK\r\n");
     roundtrip(s, c, "*2\r\n$6\r\nBACKUP\r\n$4\r\nSEAL\r\n", "+OK\r\n");
     roundtrip_contains(s, c,
                        "*2\r\n$6\r\nBACKUP\r\n$4\r\nLIST\r\n",
                        ".backup");
+    DD_CHECK(pal_file_exists("test_admin_snapshot.ddr.backup.aof"));
     roundtrip(s, c, "*2\r\n$6\r\nBACKUP\r\n$7\r\nCLEANUP\r\n", "+OK\r\n");
 
     pal_close(c);
     server_destroy(s);
     remove(snap);
+    remove("test_admin_snapshot.ddr.backup.aof");
     remove(path);
 }
 

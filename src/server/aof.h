@@ -28,6 +28,7 @@
 
 typedef struct aof {
     pal_file *f;
+    char *path;
     resp_buf pending; /* serialized commands not yet flushed to the file */
     ptrdiff_t (*write_fn)(pal_file *f, const void *buf, size_t n);
     int failed; /* write result was ambiguous; do not retry buffered bytes */
@@ -50,6 +51,12 @@ void aof_set_fsync_mode(aof *a, int mode);
  * -1 on a latched failure (a sync failure latches exactly like a flush
  * failure: fail-closed). */
 int aof_flush(aof *a);
+
+/* Flush and return the durable append offset. */
+uint64_t aof_durable_offset(aof *a);
+
+/* Atomically copy bytes appended after offset into path. */
+int aof_copy_delta(aof *a, uint64_t offset, const char *path);
 
 /* Replace the writer for deterministic short-write/error tests. */
 void aof_test_set_write_fn(
