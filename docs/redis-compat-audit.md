@@ -71,6 +71,8 @@
 - 字符串读改写命令 `INCR/DECR/INCRBY/DECRBY/INCRBYFLOAT/APPEND` 保留
   key 的绝对 TTL；SET 风格覆盖（包括 `GETSET`）清除旧 TTL，已由注入时钟
   回归测试锁定。
+- KEYS/SCAN 的 glob 匹配器对未闭合字符类按 Redis 的 fail-closed 规则处理，
+  避免把畸形模式误当作字面前缀。
 - 管理族已注册 `ACL/DEBUG/LATENCY/MODULE/SENTINEL`：ACL 提供最小
   anonymous/default 视图，LATENCY 返回空事件集，MODULE 无扩展返回加载
   错误，SENTINEL 提供空拓扑视图，DEBUG 仅接受诊断参数。

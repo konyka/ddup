@@ -2,8 +2,8 @@
  *
  * Supported: '*' (any run), '?' (one char), '[...]' classes with ranges
  * and '^' negation, '\' escaping (also inside classes). An unterminated
- * '[' class is treated as a literal '[' (documented simplification: Redis
- * matches nothing for most unterminated classes). */
+ * '[' classes fail closed when unterminated, matching Redis
+ * stringmatchlen behavior. */
 #ifndef DDUP_GLOB_H
 #define DDUP_GLOB_H
 

@@ -1133,8 +1133,8 @@ hazard pointer/延迟回收、索引桶 CAS、检查点与恢复的并发协议�
 
 - **glob 匹配器**（src/ds/glob.{h,c}）：Redis stringmatchlen 语义
   （`*`、`?`、`[...]` 含范围与 `[^...]` 取反、`\x` 转义），供 KEYS 与
-  SCAN MATCH 使用。记录在案的偏离：未终结的 `[` 按字面字符处理
-  （Redis 几乎必然不匹配），取反只支持 `^`（Redis 7 行为）。
+  SCAN MATCH 使用。未终结的 `[` fail-closed（与 Redis 一致），取反只
+  支持 `^`（Redis 7 行为）。
 - **rh_scan 游标迭代**（src/core/rhtable）：游标 = 虚拟桶下标，主表
   `[0, cap)` + rehash 在飞时旧表 `[cap, cap+old_cap)`；返回 0 表示
   迭代完。回调可删除条目（惰性过期）——每轮重读表字段，旧表被迁移

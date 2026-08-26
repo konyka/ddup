@@ -71,14 +71,8 @@ int ddup_glob_match(const char *pat, size_t plen, const char *str,
                 }
             }
             if (!closed) {
-                /* unterminated class: '[' is a literal */
-                if (slen == 0 || str[0] != '[')
-                    return 0;
-                str++;
-                slen--;
-                pat++;
-                plen--;
-                break;
+                /* Redis fails closed when a character class is unterminated. */
+                return 0;
             }
             if (not)
                 match = !match;

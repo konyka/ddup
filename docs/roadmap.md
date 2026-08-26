@@ -426,3 +426,5 @@
   - [x] Redis 字符串 TTL 语义收敛：`INCR/DECR/INCRBY/DECRBY/INCRBYFLOAT`
     与 `APPEND` 的读改写路径保留绝对过期时间，SET 风格覆盖仍清除 TTL；
     以注入时钟 TDD 覆盖过期保留与边界行为（Phase 84）
+  - [x] glob 边界语义收敛：未闭合 `[` 字符类按 Redis
+    `stringmatchlen` fail-closed，补充二进制安全回归测试（Phase 85）

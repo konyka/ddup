@@ -88,6 +88,14 @@ static void test_escapes(void)
     DD_CHECK(m("[\\[]", "[") == 1);
 }
 
+static void test_unterminated_class_fails_closed(void)
+{
+    /* Redis stringmatchlen rejects a class without a closing bracket. */
+    DD_CHECK(m("[", "[") == 0);
+    DD_CHECK(m("[abc", "a") == 0);
+    DD_CHECK(m("prefix[abc", "prefixa") == 0);
+}
+
 static void test_binary_safe(void)
 {
     const char pat[] = {'a', '*', 'c'};
@@ -104,6 +112,7 @@ int main(void)
     DD_RUN(test_class);
     DD_RUN(test_negated_class);
     DD_RUN(test_escapes);
+    DD_RUN(test_unterminated_class_fails_closed);
     DD_RUN(test_binary_safe);
     return DD_TEST_SUMMARY();
 }
