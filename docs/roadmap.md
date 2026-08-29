@@ -444,3 +444,6 @@
   - [x] mt 对象元数据路由收尾：`OBJECT ENCODING/REFCOUNT/FREQ/IDLETIME`
     按第三参数 key 路由到 owner worker；新增跨连接 `OBJECT ENCODING` 回归
     （Phase 90）
+  - [x] mt Stream 扩展路由收尾：`XDELEX/XACKDEL/XNACK` 纳入单 key owner
+    分类，按 stream key 跨 worker 转发并保持流水线顺序；新增删除、消费组
+    和重投递控制命令的跨连接 TDD 回归（Phase 91）

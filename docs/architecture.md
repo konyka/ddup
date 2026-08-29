@@ -135,7 +135,8 @@
   home worker 上错误执行；Redis 8 的 `MSETEX` 按 `numkeys` 解析 key/value 对并忽略
   选项参数；`SUNIONCARD/SDIFFCARD` 按声明的 `numkeys` 提取集合 key，
   与其它多 key 命令共享同一 hash-slot 校验。Redis 8 单 key 扩展（字段
-  TTL、`INCREX/DELEX/DIGEST`、ARRAY）统一按首个 key 路由。无 key 命令
+  TTL、`INCREX/DELEX/DIGEST`、ARRAY、Stream 扩展（`XDELEX/XACKDEL/XNACK`）
+  统一按首个 key 路由；group/投递状态仅在 stream owner worker 修改。无 key 命令
   就地执行；DBSIZE/FLUSHDB/INFO 为广播聚合
   （home 就地一份 + 扇出其余 worker）。
 - **任务与顺序**：跨 worker 命令以**原始 RESP 字节拷贝**打包为 mt_task

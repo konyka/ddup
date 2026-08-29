@@ -86,6 +86,9 @@
   safety, and ARRAY commands are dispatched to the key owner; `MSETEX`,
   `SUNIONCARD`, and `SDIFFCARD` extract only declared key positions and reject
   cross-worker requests with Redis-compatible `CROSSSLOT` before execution.
+- mt Stream extension commands `XDELEX`, `XACKDEL`, and `XNACK` are classified
+  as single-key operations and dispatched by stream-key ownership; group and
+  delivery-state mutations therefore execute atomically on the owning worker.
 
 ## 实现策略（性能优先）
 

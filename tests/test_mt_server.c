@@ -1439,6 +1439,62 @@ static void test_object_key_command_routes_to_owner(void)
     pal_socket_cleanup();
 }
 
+static void test_stream_extension_commands_route_to_owner(void)
+{
+    mt_server *ms;
+    pal_socket_t a, b;
+    char key[32], home_key[32], req[320];
+    uint64_t tasks_before, tasks_after;
+
+    DD_CHECK_EQ_INT(0, pal_socket_init());
+    pick_key_for_worker(1, 2, key, sizeof(key));
+    pick_key_for_worker(0, 2, home_key, sizeof(home_key));
+    ms = mt_server_create("127.0.0.1", 0, 2);
+    DD_CHECK(ms != NULL);
+    if (ms == NULL)
+        return;
+    DD_CHECK_EQ_INT(0, mt_server_start(ms));
+    a = connect_client(mt_server_port(ms));
+    b = connect_client(mt_server_port(ms));
+    /* Bind both connections to worker 0 so operations on the worker-1
+     * stream must use the routed-task path instead of connection migration. */
+    snprintf(req, sizeof(req), "*3\r\n$3\r\nSET\r\n$%zu\r\n%s\r\n$1\r\nx\r\n",
+             strlen(home_key), home_key);
+    roundtrip(a, req, "+OK\r\n");
+    roundtrip(b, req, "+OK\r\n");
+    snprintf(req, sizeof(req), "*5\r\n$4\r\nXADD\r\n$%zu\r\n%s\r\n$3\r\n1-0\r\n$1\r\nf\r\n$1\r\nv\r\n",
+             strlen(key), key);
+    roundtrip(a, req, "$3\r\n1-0\r\n");
+    tasks_before = mt_server_tasks_executed(ms);
+    snprintf(req, sizeof(req), "*5\r\n$6\r\nXDELEX\r\n$%zu\r\n%s\r\n$3\r\nIDS\r\n$1\r\n1\r\n$3\r\n1-0\r\n",
+             strlen(key), key);
+    roundtrip(b, req, "*1\r\n:1\r\n");
+    tasks_after = mt_server_tasks_executed(ms);
+    DD_CHECK(tasks_after > tasks_before);
+    /* The remaining Redis 8 stream control commands must take the same
+     * owner route, including their group-aware argument layouts. */
+    snprintf(req, sizeof(req), "*5\r\n$4\r\nXADD\r\n$%zu\r\n%s\r\n$3\r\n2-0\r\n$1\r\nf\r\n$1\r\nv\r\n",
+             strlen(key), key);
+    roundtrip(a, req, "$3\r\n2-0\r\n");
+    snprintf(req, sizeof(req), "*5\r\n$6\r\nXGROUP\r\n$6\r\nCREATE\r\n$%zu\r\n%s\r\n$1\r\ng\r\n$3\r\n0-0\r\n",
+             strlen(key), key);
+    roundtrip(a, req, "+OK\r\n");
+    snprintf(req, sizeof(req), "*6\r\n$7\r\nXACKDEL\r\n$%zu\r\n%s\r\n$1\r\ng\r\n$3\r\nIDS\r\n$1\r\n1\r\n$3\r\n2-0\r\n",
+             strlen(key), key);
+    roundtrip(b, req, "*1\r\n:-1\r\n");
+    snprintf(req, sizeof(req), "*7\r\n$5\r\nXNACK\r\n$%zu\r\n%s\r\n$1\r\ng\r\n$4\r\nFAIL\r\n$3\r\nIDS\r\n$1\r\n1\r\n$3\r\n2-0\r\n",
+             strlen(key), key);
+    roundtrip(a, req, ":0\r\n");
+    snprintf(req, sizeof(req), "*2\r\n$4\r\nXLEN\r\n$%zu\r\n%s\r\n",
+             strlen(key), key);
+    roundtrip(a, req, ":1\r\n");
+    pal_close(a);
+    pal_close(b);
+    mt_server_stop(ms);
+    mt_server_destroy(ms);
+    pal_socket_cleanup();
+}
+
 static void test_copy_same_worker(void)
 {
     mt_server *ms;
@@ -2993,6 +3049,7 @@ int main(void)
     DD_RUN(test_smove_same_worker);
     DD_RUN(test_lmovem_same_worker);
     DD_RUN(test_object_key_command_routes_to_owner);
+    DD_RUN(test_stream_extension_commands_route_to_owner);
     DD_RUN(test_copy_same_worker);
     DD_RUN(test_quit_closes_connection_mt);
     DD_RUN(test_aggregate_dbsize_and_flushdb);

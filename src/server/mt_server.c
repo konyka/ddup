@@ -1970,12 +1970,15 @@ static int mt_is_single_key(uint16_t cmd)
     case CMD_XRANGE:
     case CMD_XREVRANGE:
     case CMD_XDEL:
+    case CMD_XDELEX:
     case CMD_XTRIM:
     case CMD_XGROUP:
     case CMD_XACK:
+    case CMD_XACKDEL:
     case CMD_XPENDING:
     case CMD_XCLAIM:
     case CMD_XAUTOCLAIM:
+    case CMD_XNACK:
     case CMD_XINFO:
     case CMD_XSETID:
     case CMD_ARSET:
