@@ -447,3 +447,6 @@
   - [x] mt Stream 扩展路由收尾：`XDELEX/XACKDEL/XNACK` 纳入单 key owner
     分类，按 stream key 跨 worker 转发并保持流水线顺序；新增删除、消费组
     和重投递控制命令的跨连接 TDD 回归（Phase 91）
+  - [x] 可移植性与输入安全收尾：C99 静态断言降级避免局部 typedef 警告；
+    `nodes.conf` 节点地址解析在发布前校验可表示长度，超长地址 fail-closed，
+    端口范围校验，并以 C99/默认标准 TDD 回归验证（Phase 92）

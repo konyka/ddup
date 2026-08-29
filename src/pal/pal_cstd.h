@@ -16,9 +16,11 @@
 #if DDUP_HAS_C_STATIC_ASSERT
 #  define ddup_static_assert(expr, msg) _Static_assert(expr, msg)
 #else
-#  define DDUP_GLUE(a, b) a ## b
+#  define DDUP_GLUE_INNER(a, b) a ## b
+#  define DDUP_GLUE(a, b) DDUP_GLUE_INNER(a, b)
 #  define ddup_static_assert(expr, msg) \
-     typedef char DDUP_GLUE(_ddup_static_assert_, __LINE__)[(expr) ? 1 : -1]
+     enum { DDUP_GLUE(_ddup_static_assert_, __LINE__) = \
+                1 / ((expr) ? 1 : 0) }
 #endif
 
 /* -------------------------------------------------------------------------- */

@@ -10,6 +10,26 @@
 
 #include "pal/pal_time.h"
 
+static int parse_u16_token(const char *s, uint16_t *out)
+{
+    uint32_t value = 0;
+    size_t i;
+
+    if (s == NULL || *s == '\0')
+        return -1;
+    for (i = 0; s[i] != '\0'; i++) {
+        unsigned digit;
+        if (s[i] < '0' || s[i] > '9')
+            return -1;
+        digit = (unsigned)(s[i] - '0');
+        if (value > (UINT16_MAX - digit) / 10u)
+            return -1;
+        value = value * 10u + digit;
+    }
+    *out = (uint16_t)value;
+    return 0;
+}
+
 void cluster_gen_id(char out[41])
 {
     static const char hex[] = "0123456789abcdef";
@@ -459,7 +479,7 @@ int cluster_nodes_render(struct db *d, resp_buf *out)
 int cluster_nodes_parse_line(struct db *d, const char *line, size_t len)
 {
     char id[41], ip[64], flags[64], slots[512], addr[128], master[41];
-    unsigned port = 0, bus = 0;
+    uint16_t port = 0, bus = 0;
     unsigned long long ping, pong, epoch;
     cluster_node *n;
     int used;
@@ -535,23 +555,34 @@ int cluster_nodes_parse_line(struct db *d, const char *line, size_t len)
         (void)used;
     }
 
-    n = cluster_node_add(d, id);
-    if (n == NULL)
-        return -1;
-    /* addr: ip:port@busport */
+    /* addr: ip:port@busport; reject truncation rather than silently
+     * accepting a node address that cannot be represented locally. */
     {
         char *colon = strchr(addr, ':');
         char *at = strchr(addr, '@');
+        char *port_text = colon != NULL ? colon + 1 : NULL;
+        size_t ip_len = colon != NULL ? (size_t)(colon - addr) : strlen(addr);
+        if (ip_len >= sizeof(ip))
+            return -1;
+        if (at != NULL && (colon == NULL || at < colon))
+            return -1;
         if (colon != NULL)
             *colon = '\0';
         if (at != NULL) {
             *at = '\0';
-            bus = (unsigned)strtoul(at + 1, NULL, 10);
+            if (parse_u16_token(at + 1, &bus) != 0)
+                return -1;
         }
-        if (colon != NULL)
-            port = (unsigned)strtoul(colon + 1, NULL, 10);
-        snprintf(n->ip, sizeof(n->ip), "%s", addr);
+        if (colon != NULL && parse_u16_token(port_text, &port) != 0)
+            return -1;
+        memcpy(ip, addr, ip_len);
+        ip[ip_len] = '\0';
     }
+    /* Do not publish a node until every bounded field has been validated. */
+    n = cluster_node_add(d, id);
+    if (n == NULL)
+        return -1;
+    memcpy(n->ip, ip, strlen(ip) + 1);
     n->port = (uint16_t)port;
     n->bus_port = (uint16_t)bus;
     n->flags = flags_parse(flags, strlen(flags));

@@ -915,3 +915,10 @@ member 视图；SINTER/SUNION/SDIFF 的求值遍历改走 obj_set_each，
 不引入额外 per-command 分配或跨 worker 锁。目标 worker 继续一次解析并在
 本地 stream/PEL 索引上完成修改，home worker 只负责有序回复。此次改动未改变
 数据结构或复制格式，因此没有可归因的新基准数字；完整 mt 回归为 5288 checks。
+
+## Phase 92：C99 与节点输入安全
+
+本阶段不改变数据面热路径：C99 静态断言回退从 typedef 改为编译期枚举
+表达式，避免函数作用域的 unused-typedef 诊断；nodes.conf 地址长度校验只
+发生在启动/配置解析路径。未产生吞吐变化，C99 `test_cstd` 32 checks 与
+`test_cluster_nodes` 44 checks 均通过。

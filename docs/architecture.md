@@ -848,7 +848,9 @@ DBSIZE 为 O(1)，可能计入尚未回收的过期 key。
   ⇒ A 经由 B 的 gossip 负载学会 C。
 - **节点表**：db 内置 32 节点表（id/ip/port@bus/flags/槽位图/last_seen），
   nodes.conf 多行格式 render/parse 双向序列化；每 10s 脏检测持久化
-  （原子 rename），启动时先装载再覆盖 myself 条目。
+  （原子 rename），启动时先装载再覆盖 myself 条目。解析先校验地址长度
+  和所有有界字段，再发布节点表项；超长地址、非数字或超出 `uint16_t`
+  范围的端口 fail-closed，避免截断/回绕后产生不可寻址或错误路由的节点。
 - **故障检测**：NODE_TIMEOUT 默认 15s（测试可调；必须大于 1s 的 gossip
   周期，否则在线节点会在 PING 间隔内被误标）；超时标记 PFAIL +
   disconnected 链路位。PFAIL→FAIL 的法定人数语义、cluster_state 规则

@@ -75,7 +75,6 @@ static void test_render_parse_roundtrip(void)
 {
     db d, d2;
     resp_buf buf;
-    char ip[64];
     db_init(&d);
     db_init(&d2);
     cluster_nodes_init(&d);
@@ -85,12 +84,12 @@ static void test_render_parse_roundtrip(void)
     {
         cluster_node *n1 = cluster_node_add(&d, ID1);
         cluster_node *n2 = cluster_node_add(&d, ID2);
-        snprintf(n1->ip, sizeof(n1->ip), "127.0.0.1");
+        memcpy(n1->ip, "127.0.0.1", sizeof("127.0.0.1"));
         n1->port = 7001;
         n1->bus_port = 17001;
         n1->flags = CLUSTER_NODE_MYSELF | CLUSTER_NODE_MASTER;
         memset(n1->slots, 0xFF, sizeof(n1->slots));
-        snprintf(n2->ip, sizeof(n2->ip), "127.0.0.1");
+        memcpy(n2->ip, "127.0.0.1", sizeof("127.0.0.1"));
         n2->port = 7002;
         n2->bus_port = 17002;
         n2->flags = CLUSTER_NODE_MASTER | CLUSTER_NODE_HANDSHAKE;
@@ -134,14 +133,20 @@ static void test_render_parse_roundtrip(void)
     /* ip with bus port renders as ip:port@busport */
     {
         cluster_node *n3 = cluster_node_add(&d, ID3);
-        snprintf(n3->ip, sizeof(n3->ip), "10.0.0.9");
+        DD_CHECK(n3 != NULL);
+        if (n3 == NULL) {
+            resp_buf_free(&buf);
+            db_destroy(&d2);
+            db_destroy(&d);
+            return;
+        }
+        memcpy(n3->ip, "10.0.0.9", sizeof("10.0.0.9"));
         n3->port = 7003;
         n3->bus_port = 17003;
         buf.len = 0;
         DD_CHECK_EQ_INT(0, cluster_nodes_render(&d, &buf));
         DD_CHECK(buf.len > 0);
         DD_CHECK(strstr((char *)buf.data, "10.0.0.9:7003@17003") != NULL);
-        (void)ip;
     }
 
     resp_buf_free(&buf);
@@ -173,6 +178,39 @@ static void test_render_reserve_failure_leaves_output_unchanged(void)
     db_destroy(&d);
 }
 
+static void test_parse_rejects_unrepresentable_address(void)
+{
+    db d;
+    char line[256];
+    const char suffix[] = " :7000@17000 master - 0 0 1 connected -";
+    size_t i;
+
+    db_init(&d);
+    cluster_nodes_init(&d);
+    for (i = 0; i < 70; i++)
+        line[40 + i] = 'a';
+    memcpy(line, ID1, 40);
+    memcpy(line + 110, suffix, sizeof(suffix) - 1);
+    DD_CHECK_EQ_INT(-1, cluster_nodes_parse_line(&d, line,
+                                                 110 + sizeof(suffix) - 1));
+    DD_CHECK_EQ_INT(0, d.nnodes);
+    db_destroy(&d);
+}
+
+static void test_parse_rejects_out_of_range_ports(void)
+{
+    db d;
+    const char line[] =
+        "0123456789012345678901234567890123456789 "
+        "127.0.0.1:70000@17000 master - 0 0 1 connected -";
+
+    db_init(&d);
+    cluster_nodes_init(&d);
+    DD_CHECK_EQ_INT(-1, cluster_nodes_parse_line(&d, line, sizeof(line) - 1));
+    DD_CHECK_EQ_INT(0, d.nnodes);
+    db_destroy(&d);
+}
+
 int main(void)
 {
     DD_RUN(test_node_add_find);
@@ -180,5 +218,7 @@ int main(void)
     DD_RUN(test_slots_render);
     DD_RUN(test_render_parse_roundtrip);
     DD_RUN(test_render_reserve_failure_leaves_output_unchanged);
+    DD_RUN(test_parse_rejects_unrepresentable_address);
+    DD_RUN(test_parse_rejects_out_of_range_ports);
     return DD_TEST_SUMMARY();
 }
