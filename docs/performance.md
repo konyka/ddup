@@ -907,3 +907,11 @@ cmd_resolve 名字样本），故无热路径 A/B 数字。复杂度注记：lis
 SPOP/SRANDMEMBER 在 listpack 模式按随机下标直取，不再先收集全体
 member 视图；SINTER/SUNION/SDIFF 的求值遍历改走 obj_set_each，
 结果集仍是临时 rh_table（去重语义不变）。
+
+## Phase 91：Stream 扩展 owner 路由
+
+`XDELEX`、`XACKDEL`、`XNACK` 在 mt 热路径中仅增加常量时间的命令分类
+分支；key hash、任务合并和 completion 顺序机制与既有 Stream 命令共用，
+不引入额外 per-command 分配或跨 worker 锁。目标 worker 继续一次解析并在
+本地 stream/PEL 索引上完成修改，home worker 只负责有序回复。此次改动未改变
+数据结构或复制格式，因此没有可归因的新基准数字；完整 mt 回归为 5288 checks。
