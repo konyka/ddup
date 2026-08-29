@@ -4685,14 +4685,19 @@ static void mt_drain_completions(worker *w)
                 }
                 continue;
             }
-            conn = t->conn;
-            st = (mt_conn_state *)server_conn_mt_state(conn);
             if (t->kind == MT_TASK_RESTORE) {
                 if (t->home == w && w->ms->snapshot_pending > 0)
                     w->ms->snapshot_pending--;
                 mt_task_free(t);
                 continue;
             }
+            conn = t->conn;
+            if (conn == NULL) {
+                /* Fire-and-forget completions have no owning connection. */
+                mt_task_free(t);
+                continue;
+            }
+            st = (mt_conn_state *)server_conn_mt_state(conn);
             if (t->kind == MT_TASK_SUB) {
                 /* registration round trip finished: just release the ref */
                 mt_task_free(t);

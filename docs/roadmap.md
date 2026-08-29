@@ -450,3 +450,7 @@
   - [x] 可移植性与输入安全收尾：C99 静态断言降级避免局部 typedef 警告；
     `nodes.conf` 节点地址解析在发布前校验可表示长度，超长地址 fail-closed，
     端口范围校验，并以 C99/默认标准 TDD 回归验证（Phase 92）
+  - [x] mt 全量复制完成通知安全收敛：`MT_TASK_RESTORE` 使用无连接的 barrier
+    完成任务，completion drain 先递减快照 pending 再读取连接状态，消除
+    hardening 并发下的空指针解引用；全量 mt 回归与 hardening 定向回归通过
+    （Phase 93）

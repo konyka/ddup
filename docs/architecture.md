@@ -443,7 +443,9 @@ proactor——提交 IORING_OP_RECV/SEND/ACCEPT 操作本身，完成携带结�
     worker 0 就地序列化自身分片并排空 completion 环收集各分片，再经
     `snapshot_serialize_multi_buffers()` 封成单帧 `DDUPMT01` 发给副本。
     副本加载器按逻辑库合并所有分片（与 master 的 shared-nothing 分片
-    解耦）。
+    解耦）。`MT_TASK_RESTORE` 完成通知不绑定客户端连接；home worker 在
+    completion drain 中先处理该 barrier，再访问连接状态，避免全量同步期间
+    对空连接指针解引用，并保证 `snapshot_pending` 计数在所有平台一致收敛。
   - **复制推流恰好一次**：普通路由命令由执行 worker 把原始 RESP 字节
     投递到 worker 0 的中央 backlog；`FLUSHDB/FLUSHALL/SWAPDB` 等广播
     聚合命令只由 home 端在全部 worker 成功归并后转发一次（follower

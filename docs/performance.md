@@ -922,3 +922,10 @@ member 视图；SINTER/SUNION/SDIFF 的求值遍历改走 obj_set_each，
 表达式，避免函数作用域的 unused-typedef 诊断；nodes.conf 地址长度校验只
 发生在启动/配置解析路径。未产生吞吐变化，C99 `test_cstd` 32 checks 与
 `test_cluster_nodes` 44 checks 均通过。
+
+## Phase 93：mt 全量复制完成通知
+
+`MT_TASK_RESTORE` 的 completion 仍为 O(1) barrier 计数路径；由于该任务不携带
+客户端连接，drain 逻辑在读取连接状态前完成专用分支，避免异常解引用且不增加
+热路径分配、锁或网络往返。hardening 下 `test_mt_server` 定向回归通过（61.61s），
+默认/C99 全量 CTest 保持全绿。
