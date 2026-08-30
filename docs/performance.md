@@ -929,3 +929,17 @@ member 视图；SINTER/SUNION/SDIFF 的求值遍历改走 obj_set_each，
 客户端连接，drain 逻辑在读取连接状态前完成专用分支，避免异常解引用且不增加
 热路径分配、锁或网络往返。hardening 下 `test_mt_server` 定向回归通过（61.61s），
 默认/C99 全量 CTest 保持全绿。
+
+## Phase 94：集群少数派可用性门控
+
+`CLUSTER INFO` 在既有 16384 槽覆盖扫描中同步统计持槽 master 总数和可达数，
+不增加额外遍历或分配；状态判定为 `covered && !FAIL && reachable >=
+masters / 2 + 1`。该路径属于低频管理命令，数据面 key 路由的 O(1) owner
+缓存不变。两主、三主少数派场景均以 TDD 覆盖。
+
+## Phase 95：C99 多线程原子降级
+
+强制 C99 构建在 GCC/Clang 下使用 `__atomic` 内建，在 MSVC 下使用 Interlocked
+原语；只有没有任何编译器原子内建的平台才退回单线程实现。这样不改变 C11
+热路径指令，同时避免 mt 复制状态在 C99 构建中发生数据竞争。`test_cstd`
+新增四线程百万次增量回归并通过。

@@ -92,6 +92,14 @@ void db_init(db *d)
     memset(d->slot_importing, 0xFF, sizeof(d->slot_importing));
     d->slot_owner_dirty = 1;
     d->cluster_changes = 0;
+    d->cluster_state_cache_changes = 0;
+    d->cluster_state_cache_signature = 0;
+    d->cluster_state_cache_valid = 0;
+    d->cluster_state_cache_ok = 0;
+    d->cluster_state_cache_covered = 0;
+    d->cluster_state_cache_masters = 0;
+    d->cluster_state_cache_reachable = 0;
+    d->cluster_state_cache_fail_slots = 0;
     d->cluster_current_epoch = 1;
     d->cluster_node_timeout_ms = 15000; /* Redis default node-timeout */
     d->fail_broadcast_id[0] = '\0';
@@ -4769,13 +4777,25 @@ static int db_key_served(db *d, const char *key, size_t klen, resp_buf *out,
         db_rebuild_slot_owner(d);
     idx = d->slot_owner[slot];
     if (idx == 0xFFFFu) {
-        if (asking && d->slot_importing[slot] != 0xFFFFu)
-            return 1;
+        if (asking && d->slot_importing[slot] != 0xFFFFu) {
+            /* ASKING targets an importing owner when no local owner exists. */
+            idx = d->slot_importing[slot];
+            if (idx >= (uint32_t)d->nnodes)
+                idx = 0xFFFFu;
+        }
+        if (idx != 0xFFFFu)
+            goto state_check;
         {
             static const char E[] = "CLUSTERDOWN Hash slot not served";
             resp_write_error(out, E, sizeof(E) - 1);
             return 0;
         }
+    }
+state_check:
+    if (cluster_state_is_minority(d)) {
+        static const char E[] = "CLUSTERDOWN The cluster is down";
+        resp_write_error(out, E, sizeof(E) - 1);
+        return 0;
     }
     if (d->nodes[idx].flags & CLUSTER_NODE_MYSELF) {
         uint16_t mt = d->slot_migrating[slot];
@@ -21930,29 +21950,11 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
             }
             if (ci_equal(sub, sl, "INFO") && argc == 2) {
                 char body[384];
-                int covered = 0, fail_slots = 0;
-                int i, sl2;
-                uint8_t bm[2048];
+                int covered;
                 const char *state;
-                memset(bm, 0, sizeof(bm));
-                for (i = 0; i < d->nnodes; i++) {
-                    /* only a quorum-confirmed FAIL holder fails the
-                     * state; suspicion (PFAIL/disconnected) does not */
-                    if (d->nodes[i].flags & CLUSTER_NODE_FAIL) {
-                        for (sl2 = 0; sl2 < 16384 && !fail_slots; sl2++)
-                            if (cluster_slots_get(d->nodes[i].slots,
-                                                  (uint32_t)sl2))
-                                fail_slots = 1;
-                    }
-                    for (sl2 = 0; sl2 < 16384; sl2++)
-                        if (cluster_slots_get(d->nodes[i].slots,
-                                              (uint32_t)sl2) &&
-                            !cluster_slots_get(bm, (uint32_t)sl2)) {
-                            cluster_slots_set(bm, (uint32_t)sl2, 1);
-                            covered++;
-                        }
-                }
-                state = (covered == 16384 && !fail_slots) ? "ok" : "fail";
+                (void)cluster_state_is_ok(d);
+                covered = d->cluster_state_cache_covered;
+                state = cluster_state_is_ok(d) ? "ok" : "fail";
                 {
                     cluster_node *me = cluster_myself(d);
                     int nb = snprintf(

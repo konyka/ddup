@@ -1,8 +1,10 @@
-/* cluster.h - single-node cluster mode: node identity.
+/* cluster.h - cluster node identity, topology, and failure state.
  *
  * The node id is a stable 40-hex-char identifier, generated on first boot
  * and persisted in the cluster config file (Redis nodes.conf style, single
- * line). Multi-node gossip/MEET/migration is explicitly out of scope.
+ * line). Multi-node gossip/MEET/migration are supported by the server
+ * control plane; this header also exposes the shared metadata snapshot used
+ * by mt workers.
  */
 #ifndef DDUP_CLUSTER_H
 #define DDUP_CLUSTER_H
@@ -22,7 +24,7 @@
 #define CLUSTER_NODE_PFAIL        (1u << 6) /* local suspicion (fail?) */
 #define CLUSTER_NODE_FAIL         (1u << 7) /* quorum-confirmed (fail) */
 
-/* node table cap (documented; single node table per db) */
+/* node table cap (bounded for predictable memory use) */
 #define CLUSTER_MAX_NODES 32
 
 /* one failure report: `reporter` claims the node is down, valid for
@@ -90,6 +92,13 @@ cluster_node *cluster_node_add(struct db *d, const char *id);
 
 /* the node flagged MYSELF, or NULL */
 cluster_node *cluster_myself(struct db *d);
+
+/* Return whether the cluster can safely serve data-plane commands. The
+ * result is cached across unchanged topology/flag generations. */
+int cluster_state_is_ok(struct db *d);
+/* Return whether all slots are covered but this view has lost its master
+ * majority. Incomplete coverage keeps the historical per-slot error. */
+int cluster_state_is_minority(struct db *d);
 
 /* Copy cluster metadata out of / into a db (data tables are untouched). */
 void cluster_state_snapshot(const struct db *d, cluster_state *out);

@@ -48,6 +48,14 @@ typedef struct db {
     uint16_t slot_migrating[16384]; /* per slot: target node idx, 0xFFFF none */
     uint16_t slot_importing[16384]; /* per slot: source node idx, 0xFFFF none */
     uint64_t cluster_changes;   /* bumped on any node-table mutation */
+    uint64_t cluster_state_cache_changes;
+    uint64_t cluster_state_cache_signature;
+    int cluster_state_cache_valid;
+    int cluster_state_cache_ok;
+    int cluster_state_cache_covered;
+    int cluster_state_cache_masters;
+    int cluster_state_cache_reachable;
+    int cluster_state_cache_fail_slots;
     uint64_t cluster_current_epoch; /* max config epoch seen (starts 1) */
     uint64_t cluster_node_timeout_ms; /* failure detection + report window */
     uint64_t last_vote_epoch;   /* failover: last epoch we voted for */

@@ -39,6 +39,11 @@
   their documented TTL-clearing behavior.
 - Runtime `CONFIG GET/SET appendfsync` now updates the active server AOF writer
   (`always`, `everysec`, or `no`) and rejects invalid policies atomically.
+- `CLUSTER INFO` also enforces Redis minority-partition availability: besides
+  slot coverage and FAIL holders, serving masters must be reachable by majority;
+  a fully covered minority partition therefore fails closed.
+- Forced C99 builds retain thread-safe mt replication state: GCC/Clang use
+  compiler `__atomic` primitives and MSVC uses Interlocked operations.
 - Cluster slot maintenance: `SFLUSH` intersects requested ranges with local
   ownership and returns coalesced flushed ranges; `TRIMSLOTS RANGES` validates
   ownership before deleting keys from unserved slots. Both paths collect keys

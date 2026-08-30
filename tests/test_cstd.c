@@ -2,6 +2,7 @@
 #include "test.h"
 
 #include "pal/pal_cstd.h"
+#include "pal/pal_thread.h"
 #include <stdlib.h>
 
 static void test_capability_macros_are_boolean(void)
@@ -121,6 +122,42 @@ static void test_atomic_basic(void)
     DD_CHECK_EQ_INT(18, ddup_atomic_load(&atomic_counter, ddup_memory_order_relaxed));
 }
 
+typedef struct atomic_worker_ctx {
+    ddup_atomic_int *value;
+    int iterations;
+} atomic_worker_ctx;
+
+static void *atomic_worker(void *arg)
+{
+    atomic_worker_ctx *ctx = (atomic_worker_ctx *)arg;
+    int i;
+    for (i = 0; i < ctx->iterations; i++)
+        (void)ddup_atomic_fetch_add(ctx->value, 1,
+                                    ddup_memory_order_relaxed);
+    return NULL;
+}
+
+static void test_atomic_concurrent(void)
+{
+    enum { THREADS = 4, ITERATIONS = 250000 };
+    pal_thread threads[THREADS];
+    atomic_worker_ctx ctx;
+    int i;
+
+    ddup_atomic_init(&atomic_counter, 0);
+    ctx.value = &atomic_counter;
+    ctx.iterations = ITERATIONS;
+    for (i = 0; i < THREADS; i++) {
+        DD_CHECK_EQ_INT(0, pal_thread_create(&threads[i], atomic_worker,
+                                             &ctx));
+    }
+    for (i = 0; i < THREADS; i++)
+        DD_CHECK_EQ_INT(0, pal_thread_join(&threads[i], NULL));
+    DD_CHECK_EQ_INT(THREADS * ITERATIONS,
+                    ddup_atomic_load(&atomic_counter,
+                                     ddup_memory_order_relaxed));
+}
+
 int main(void)
 {
     DD_RUN(test_capability_macros_are_boolean);
@@ -132,5 +169,6 @@ int main(void)
     DD_RUN(test_constexpr);
     DD_RUN(test_checked_arithmetic);
     DD_RUN(test_atomic_basic);
+    DD_RUN(test_atomic_concurrent);
     return DD_TEST_SUMMARY();
 }

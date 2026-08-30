@@ -149,18 +149,45 @@ typedef atomic_int ddup_atomic_int;
 #  define ddup_atomic_fetch_add(p, v, mo) atomic_fetch_add_explicit(p, v, mo)
 #  define ddup_atomic_fetch_sub(p, v, mo) atomic_fetch_sub_explicit(p, v, mo)
 #else
+#  if defined(__GNUC__) || defined(__clang__)
 typedef int ddup_atomic_int;
-#  define ddup_memory_order_relaxed 0
-#  define ddup_memory_order_acquire 1
-#  define ddup_memory_order_release 2
-#  define ddup_memory_order_seq_cst 3
-/* C99 fallback: single-thread semantics. A future multi-threaded backend
- * will need to add locking here or use compiler intrinsics. */
-#  define ddup_atomic_init(p, v) (*(p) = (v))
-#  define ddup_atomic_load(p, mo) (*(p))
-#  define ddup_atomic_store(p, v, mo) (*(p) = (v))
-#  define ddup_atomic_fetch_add(p, v, mo) ((*(p) += (v)) - (v))
-#  define ddup_atomic_fetch_sub(p, v, mo) ((*(p) -= (v)) + (v))
+#    define ddup_memory_order_relaxed __ATOMIC_RELAXED
+#    define ddup_memory_order_acquire __ATOMIC_ACQUIRE
+#    define ddup_memory_order_release __ATOMIC_RELEASE
+#    define ddup_memory_order_seq_cst __ATOMIC_SEQ_CST
+#    define ddup_atomic_init(p, v) __atomic_store_n((p), (v), __ATOMIC_RELAXED)
+#    define ddup_atomic_load(p, mo) __atomic_load_n((p), (mo))
+#    define ddup_atomic_store(p, v, mo) __atomic_store_n((p), (v), (mo))
+#    define ddup_atomic_fetch_add(p, v, mo) __atomic_fetch_add((p), (v), (mo))
+#    define ddup_atomic_fetch_sub(p, v, mo) __atomic_fetch_sub((p), (v), (mo))
+#  elif defined(_MSC_VER)
+#    include <intrin.h>
+typedef volatile long ddup_atomic_int;
+#    define ddup_memory_order_relaxed 0
+#    define ddup_memory_order_acquire 0
+#    define ddup_memory_order_release 0
+#    define ddup_memory_order_seq_cst 0
+#    define ddup_atomic_init(p, v) _InterlockedExchange((p), (long)(v))
+#    define ddup_atomic_load(p, mo) _InterlockedCompareExchange((p), 0, 0)
+#    define ddup_atomic_store(p, v, mo) _InterlockedExchange((p), (long)(v))
+#    define ddup_atomic_fetch_add(p, v, mo) \
+        _InterlockedExchangeAdd((p), (long)(v))
+#    define ddup_atomic_fetch_sub(p, v, mo) \
+        _InterlockedExchangeAdd((p), -(long)(v))
+#  else
+typedef int ddup_atomic_int;
+#    define ddup_memory_order_relaxed 0
+#    define ddup_memory_order_acquire 1
+#    define ddup_memory_order_release 2
+#    define ddup_memory_order_seq_cst 3
+/* Last-resort C99 fallback: only safe when the platform has no compiler
+ * atomic primitive and the caller is single-threaded. */
+#    define ddup_atomic_init(p, v) (*(p) = (v))
+#    define ddup_atomic_load(p, mo) (*(p))
+#    define ddup_atomic_store(p, v, mo) (*(p) = (v))
+#    define ddup_atomic_fetch_add(p, v, mo) ((*(p) += (v)) - (v))
+#    define ddup_atomic_fetch_sub(p, v, mo) ((*(p) -= (v)) + (v))
+#  endif
 #endif
 
 #endif /* DDUP_PAL_CSTD_H */

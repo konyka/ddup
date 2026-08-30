@@ -1,6 +1,6 @@
 /* test_cluster_pfail.c - PFAIL suspicion state, failure reports with a
- * validity window, gossip report wiring, and PFAIL-vs-FAIL semantics in
- * cluster_state evaluation. */
+ * validity window, gossip report wiring, minority availability, and
+ * PFAIL-vs-FAIL semantics in cluster_state evaluation. */
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -169,7 +169,7 @@ static void test_direct_frame_clears_flags(void)
 }
 
 /* ------------------------------------------------------------------ */
-/* cluster_state: PFAIL alone keeps state ok; FAIL fails it           */
+/* cluster_state: coverage, reachability, and FAIL state gates        */
 /* ------------------------------------------------------------------ */
 static void exec_sess(session *s, uint64_t now, resp_buf *out, int argc, ...)
 {
@@ -212,15 +212,60 @@ static void test_state_pfail_vs_fail(void)
     exec_sess(s, T0, &out, 2, "CLUSTER", "INFO");
     DD_CHECK(strstr(out.data, "cluster_state:ok\r\n") != NULL);
 
-    /* suspicion (even with the link-state bit) does not fail the state */
-    x->flags |= CLUSTER_NODE_PFAIL | CLUSTER_NODE_DISCONNECTED;
+    /* PFAIL alone does not reduce availability while the link is live. */
+    x->flags |= CLUSTER_NODE_PFAIL;
     exec_sess(s, T0, &out, 2, "CLUSTER", "INFO");
     DD_CHECK(strstr(out.data, "cluster_state:ok\r\n") != NULL);
+
+    /* Once the link is disconnected, the covered two-master view is a
+     * minority partition and must fail closed before FAIL quorum. */
+    x->flags |= CLUSTER_NODE_DISCONNECTED;
+    exec_sess(s, T0, &out, 2, "CLUSTER", "INFO");
+    DD_CHECK(strstr(out.data, "cluster_state:fail\r\n") != NULL);
 
     /* objective FAIL on a slot holder does */
     x->flags |= CLUSTER_NODE_FAIL;
     exec_sess(s, T0, &out, 2, "CLUSTER", "INFO");
     DD_CHECK(strstr(out.data, "cluster_state:fail\r\n") != NULL);
+
+    session_free(s);
+    resp_buf_free(&out);
+    db_destroy(&d);
+}
+
+/* A covered cluster still fails closed when the local partition can reach
+ * fewer than a majority of slot-serving masters. */
+static void test_state_minority_partition(void)
+{
+    db d;
+    session *s;
+    resp_buf out;
+    cluster_node *me, *b, *c;
+    uint32_t sl;
+
+    db_init(&d);
+    resp_buf_init(&out);
+    s = session_create(&d);
+    d.cluster_enabled = 1;
+    me = mknode(&d, ME, CLUSTER_NODE_MYSELF | CLUSTER_NODE_MASTER);
+    b = mknode(&d, NB, CLUSTER_NODE_MASTER);
+    c = mknode(&d, NC, CLUSTER_NODE_MASTER);
+    for (sl = 0; sl < 5461; sl++)
+        cluster_slots_set(me->slots, sl, 1);
+    for (sl = 5461; sl < 10923; sl++)
+        cluster_slots_set(b->slots, sl, 1);
+    for (sl = 10923; sl < 16384; sl++)
+        cluster_slots_set(c->slots, sl, 1);
+    d.slot_owner_dirty = 1;
+
+    /* Coverage alone is insufficient when two of three masters are lost. */
+    b->flags |= CLUSTER_NODE_DISCONNECTED;
+    c->flags |= CLUSTER_NODE_DISCONNECTED;
+    exec_sess(s, T0, &out, 2, "CLUSTER", "INFO");
+    DD_CHECK(strstr(out.data, "cluster_state:fail\r\n") != NULL);
+    exec_sess(s, T0, &out, 3, "SET", "minority-key", "v");
+    DD_CHECK(strstr(out.data, "-CLUSTERDOWN The cluster is down\r\n") !=
+             NULL);
 
     session_free(s);
     resp_buf_free(&out);
@@ -608,9 +653,8 @@ static void test_two_master_deadlock(void)
      * slotless MEET-time record and the quorum math degenerates) */
     DD_CHECK(wait_nodes3(a, b, NULL, cb, "0-8191", buf, sizeof(buf)));
 
-    /* a goes silent: with only 2 masters the majority is 2, and the dead
-     * one cannot report -- b suspects (fail?) but never confirms (fail,)
-     * and keeps the state ok on a's covered slots */
+    /* a goes silent: with only 2 masters the majority is 2, so b enters
+     * minority-partition CLUSTERDOWN even though no FAIL quorum exists. */
     DD_CHECK(wait_nodes3(b, NULL, NULL, cb, "fail?", buf, sizeof(buf)));
     dl = pal_now_ms() + 5000;
     while (pal_now_ms() < dl)
@@ -619,7 +663,7 @@ static void test_two_master_deadlock(void)
                   "fail?", buf, sizeof(buf)));
     DD_CHECK(strstr(buf, ",fail ") == NULL);
     DD_CHECK(ask3(b, NULL, NULL, cb, "*2\r\n$7\r\nCLUSTER\r\n$4\r\nINFO\r\n",
-                  "cluster_state:ok\r\n", buf, sizeof(buf)));
+                  "cluster_state:fail\r\n", buf, sizeof(buf)));
 
     pal_close(cb);
     pal_close(ca);
@@ -635,6 +679,7 @@ int main(void)
     DD_RUN(test_gossip_pfail_report);
     DD_RUN(test_direct_frame_clears_flags);
     DD_RUN(test_state_pfail_vs_fail);
+    DD_RUN(test_state_minority_partition);
     DD_RUN(test_quorum_promotion);
     DD_RUN(test_fail_frames);
     DD_RUN(test_quorum_fail_e2e);

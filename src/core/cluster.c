@@ -965,6 +965,82 @@ cluster_node *cluster_myself(struct db *d)
     return NULL;
 }
 
+static uint64_t cluster_state_signature(const struct db *d)
+{
+    uint64_t sig = 1469598103934665603ULL;
+    int i;
+    for (i = 0; i < d->nnodes; i++) {
+        sig ^= (uint64_t)d->nodes[i].flags;
+        sig *= 1099511628211ULL;
+        sig ^= d->nodes[i].epoch;
+        sig *= 1099511628211ULL;
+    }
+    sig ^= (uint64_t)(unsigned)d->slot_owner_dirty;
+    sig *= 1099511628211ULL;
+    return sig;
+}
+
+int cluster_state_is_ok(struct db *d)
+{
+    uint64_t sig;
+    uint8_t covered[2048];
+    int covered_count = 0;
+    int masters = 0, reachable = 0, fail_slots = 0;
+    int i, s;
+
+    if (d == NULL || !d->cluster_enabled)
+        return 1;
+    sig = cluster_state_signature(d);
+    if (d->cluster_state_cache_valid &&
+        d->cluster_state_cache_changes == d->cluster_changes &&
+        d->cluster_state_cache_signature == sig)
+        return d->cluster_state_cache_ok;
+
+    memset(covered, 0, sizeof(covered));
+    for (i = 0; i < d->nnodes; i++) {
+        int serves = 0;
+        for (s = 0; s < 16384; s++) {
+            if (!cluster_slots_get(d->nodes[i].slots, (uint32_t)s))
+                continue;
+            serves = 1;
+            if (d->nodes[i].flags & CLUSTER_NODE_FAIL)
+                fail_slots = 1;
+            if (!cluster_slots_get(covered, (uint32_t)s)) {
+                cluster_slots_set(covered, (uint32_t)s, 1);
+                covered_count++;
+            }
+        }
+        if ((d->nodes[i].flags & CLUSTER_NODE_MASTER) && serves) {
+            masters++;
+            if (!(d->nodes[i].flags &
+                  (CLUSTER_NODE_FAIL | CLUSTER_NODE_DISCONNECTED)))
+                reachable++;
+        }
+    }
+    d->cluster_state_cache_changes = d->cluster_changes;
+    d->cluster_state_cache_signature = sig;
+    d->cluster_state_cache_valid = 1;
+    d->cluster_state_cache_covered = covered_count;
+    d->cluster_state_cache_masters = masters;
+    d->cluster_state_cache_reachable = reachable;
+    d->cluster_state_cache_fail_slots = fail_slots;
+    d->cluster_state_cache_ok = covered_count == 16384 && !fail_slots &&
+                                masters > 0 &&
+                                reachable >= masters / 2 + 1;
+    return d->cluster_state_cache_ok;
+}
+
+int cluster_state_is_minority(struct db *d)
+{
+    (void)cluster_state_is_ok(d);
+    return d != NULL && d->cluster_enabled &&
+           d->cluster_state_cache_covered == 16384 &&
+           d->cluster_state_cache_fail_slots == 0 &&
+           d->cluster_state_cache_masters > 0 &&
+           d->cluster_state_cache_reachable <
+               d->cluster_state_cache_masters / 2 + 1;
+}
+
 void cluster_state_snapshot(const struct db *d, cluster_state *out)
 {
     if (d == NULL || out == NULL)
@@ -1008,6 +1084,7 @@ void cluster_state_restore(struct db *d, const cluster_state *in)
     memcpy(d->slot_importing, in->slot_importing,
            sizeof(d->slot_importing));
     d->cluster_changes = in->cluster_changes;
+    d->cluster_state_cache_valid = 0;
     d->cluster_current_epoch = in->cluster_current_epoch;
     d->cluster_node_timeout_ms = in->cluster_node_timeout_ms;
     d->last_vote_epoch = in->last_vote_epoch;

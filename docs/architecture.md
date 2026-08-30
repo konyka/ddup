@@ -50,7 +50,7 @@
 
 | 能力 | 宏 | 启用标准 | C99 降级 |
 |---|---|---|---|
-| 原子操作 | `DDUP_HAS_C_ATOMICS` | C11 | 单线程语义占位（多线程场景后续加锁或 intrinsics） |
+| 原子操作 | `DDUP_HAS_C_ATOMICS` | C11 | GCC/Clang `__atomic` 或 MSVC Interlocked；仅无原子内建的平台保留单线程降级 |
 | 线程头 | `DDUP_HAS_C_THREADS` | C11 | 平台原生线程（PAL 封装） |
 | 对齐 | `DDUP_HAS_C_ALIGNAS` | C11 | `__attribute__((aligned))` / `__declspec(align)` |
 | 静态断言 | `DDUP_HAS_C_STATIC_ASSERT` | C11 | 数组大小技巧 |
@@ -817,7 +817,7 @@ DBSIZE 为 O(1)，可能计入尚未回收的过期 key。
 ## 单节点集群模式（Phase 7.7）
 
 - **范围**：兼容 Redis cluster-enabled 的单节点形态，独占 16384 个槽。
-  多节点 gossip/MEET/迁移为后续工作。
+  多节点扩展在后续 Phase 7.8a–7.10 完成；本节保留单节点初始部署语义。
 - **hash slot**：`slot = crc16(hashtag) % 16384`（CRC16-XMODEM，表驱位运算；
   hashtag 取首个非空 `{}` 内容，规则同 Redis）。
 - **节点身份**：`cluster-enabled yes` 时首次启动生成 40 位 hex node id 并
@@ -962,14 +962,16 @@ DBSIZE 为 O(1)，可能计入尚未回收的过期 key。
   PFAIL、记 fail_time），未知节点容忍忽略，myself 永不标记。提升
   评估点在 gossip 接收与本地怀疑设置两处（Redis 只在前者；后者是
   为确定性加的，记录在案）。
-- **cluster_state 新规**：只有 FAIL 持有者使状态 fail；PFAIL 节点
-  的槽仍计入覆盖、不影响状态（Redis 的 minority-partition 规则
-  ——可达 master 不足半数即 fail——未实现，记录在案）。
+- **cluster_state 新规**：槽覆盖不完整或存在 FAIL 持有者时状态为 fail；
+  此外，按 Redis minority-partition 规则，持槽 master 的可达数低于多数派
+  （`masters / 2 + 1`）时即使槽仍被完整覆盖也 fail-closed。PFAIL 本身不
+  计为 FAIL，但其 disconnected 链路会降低可达 master 数。
 - **failover 门控**：ddup 自动提升与 redis 模式投票轮（AUTH_REQUEST
   授权方 likewise）都要求 master 为 FAIL；仅 PFAIL/失联不再触发任何
   选举。
 - **局限（记录在案）**：2 个 master 的集群永远无法自动 FAIL
-  （majority=2 而死者无法投票，Redis 相同）；本地怀疑要求曾有的
+  （majority=2 而死者无法投票，Redis 相同），但少数派分区仍会使
+  `cluster_state:fail`；本地怀疑要求曾有的
   直连接触——ddup 不会自动向 gossip 学到的节点建总线连接（Redis
   由 clusterCron 全互联），部分网状拓扑里无直连的节点对不能互相
   怀疑，自动 FAIL 需要全互联 MEET（测试拓扑即如此）。

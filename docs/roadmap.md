@@ -454,3 +454,9 @@
     完成任务，completion drain 先递减快照 pending 再读取连接状态，消除
     hardening 并发下的空指针解引用；全量 mt 回归与 hardening 定向回归通过
     （Phase 93）
+  - [x] 集群少数派可用性门控：`CLUSTER INFO` 同时校验槽覆盖、FAIL 持有者和
+    持槽 master 多数派可达性；完整覆盖但多数派失联时 fail-closed，并以
+    两主/三主 TDD 回归锁定，保留两主无法自动 FAIL 的投票语义（Phase 94）
+  - [x] C99 原子降级安全收敛：GCC/Clang 使用 `__atomic`，MSVC 使用
+    Interlocked，补充 PAL 原子封装四线程并发 TDD，避免强制 C99 mt 复制状态
+    的数据竞争（Phase 95）

@@ -426,8 +426,8 @@ typedef int ddup_atomic_int;
 #  define ddup_memory_order_release 2
 #  define ddup_memory_order_seq_cst 3
 
-/* C99 fallback：非线程安全占位，仅保证单线程语义正确。
- * 若未来启用多线程 IO，需要在此接入 pal_mutex 或平台原子内建。 */
+/* C99 fallback：优先使用编译器原子内建；无内建的平台才保留单线程降级。
+ * ddup 的 PAL 线程安全构建应在此类平台上显式禁用 mt。 */
 #  define ddup_atomic_init(p, v) (*(p) = (v))
 #  define ddup_atomic_load(p, mo) (*(p))
 #  define ddup_atomic_store(p, v, mo) (*(p) = (v))
@@ -437,7 +437,8 @@ typedef int ddup_atomic_int;
 #endif
 ```
 
-备注：C99 fallback 目前仅用于单线程语义；文档中需说明后续多线程场景会加锁。
+备注：GCC/Clang 和 MSVC 的 C99 构建分别使用 `__atomic`/Interlocked，保证
+多线程 mt 状态安全；无原子内建的平台仍需显式限制为单线程。
 
 - [ ] **Step 3: 运行测试并确认通过**
 
@@ -507,7 +508,7 @@ Expected: 无相关警告。
 
 | 能力 | 宏 | C 标准 | C99 降级 |
 |---|---|---|---|
-| 原子操作 | `DDUP_HAS_C_ATOMICS` | C11 `<stdatomic.h>` | 单线程语义占位（多线程场景后续加锁） |
+| 原子操作 | `DDUP_HAS_C_ATOMICS` | C11 `<stdatomic.h>` | GCC/Clang `__atomic` 或 MSVC Interlocked；无内建时单线程降级 |
 | 线程 | `DDUP_HAS_C_THREADS` | C11 `<threads.h>` | 平台原生线程（PAL 封装） |
 | 对齐 | `DDUP_HAS_C_ALIGNAS` | C11 | `__attribute__((aligned))` / `__declspec(align)` |
 | 静态断言 | `DDUP_HAS_C_STATIC_ASSERT` | C11 | 数组大小技巧 |
