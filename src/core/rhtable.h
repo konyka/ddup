@@ -29,6 +29,7 @@ typedef struct rh_table {
     rh_entry *slots;
     size_t cap;          /* power of two */
     size_t size;         /* live entries (both tables while migrating) */
+    size_t grow_at;      /* cached size threshold for the next resize */
     /* incremental rehash state */
     rh_entry *old_slots;
     size_t old_cap;

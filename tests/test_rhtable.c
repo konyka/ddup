@@ -121,6 +121,26 @@ static void test_capacity_arithmetic_overflow(void)
     DD_CHECK_EQ_INT(32, (long long)cap);
 }
 
+static void test_cached_growth_threshold(void)
+{
+    rh_table t;
+    char key[16];
+    int i;
+
+    rh_init(&t);
+    DD_CHECK_EQ_INT(13, (long long)t.grow_at);
+    for (i = 0; i < 13; i++) {
+        int n = snprintf(key, sizeof(key), "k%d", i);
+        DD_CHECK_EQ_INT(0, rh_set(&t, key, (size_t)n, "v", 1));
+    }
+    DD_CHECK_EQ_INT(16, (long long)t.cap);
+    DD_CHECK_EQ_INT(13, (long long)t.grow_at);
+    DD_CHECK_EQ_INT(0, rh_set(&t, "k13", 3, "v", 1));
+    DD_CHECK_EQ_INT(32, (long long)t.cap);
+    DD_CHECK_EQ_INT(27, (long long)t.grow_at);
+    rh_destroy(&t);
+}
+
 static void test_delete(void)
 {
     rh_table t;
@@ -462,6 +482,7 @@ static void bench_throughput(void)
 int main(void)
 {
     DD_RUN(test_capacity_arithmetic_overflow);
+    DD_RUN(test_cached_growth_threshold);
     DD_RUN(test_set_get);
     DD_RUN(test_overwrite);
     DD_RUN(test_set_ex);

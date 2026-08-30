@@ -58,6 +58,13 @@ static uint64_t rh_hash(const char *key, size_t len)
 #endif
 }
 
+/* Keep load-factor arithmetic off the insert hot path. */
+static size_t rh_growth_limit(size_t cap)
+{
+    return (cap / RH_MAX_LOAD_DEN) * RH_MAX_LOAD_NUM +
+           ((cap % RH_MAX_LOAD_DEN) * RH_MAX_LOAD_NUM) / RH_MAX_LOAD_DEN;
+}
+
 static rh_entry *rh_alloc_slots(size_t cap)
 {
     size_t bytes;
@@ -80,6 +87,7 @@ void rh_init(rh_table *t)
     t->slots = rh_alloc_slots(RH_INIT_CAP);
     t->cap = RH_INIT_CAP;
     t->size = 0;
+    t->grow_at = rh_growth_limit(RH_INIT_CAP);
     t->old_slots = NULL;
     t->old_cap = 0;
     t->old_live = 0;
@@ -197,13 +205,9 @@ static inline void rh_migrate_some(rh_table *t)
 
 static void rh_maybe_grow(rh_table *t)
 {
-    size_t load_limit;
     if (t->old_slots)
         return; /* already migrating; new cap has headroom */
-    load_limit = (t->cap / RH_MAX_LOAD_DEN) * RH_MAX_LOAD_NUM +
-                 ((t->cap % RH_MAX_LOAD_DEN) * RH_MAX_LOAD_NUM) /
-                     RH_MAX_LOAD_DEN;
-    if (t->size < SIZE_MAX && t->size + 1 <= load_limit)
+    if (t->size < SIZE_MAX && t->size + 1 <= t->grow_at)
         return;
     size_t new_cap;
     if (rh_grow_capacity(t->cap, &new_cap) != 0) {
@@ -217,6 +221,7 @@ static void rh_maybe_grow(rh_table *t)
     t->migrate_pos = 0;
     t->slots = new_slots;
     t->cap = new_cap;
+    t->grow_at = rh_growth_limit(new_cap);
 }
 
 #ifdef DDUP_TESTING

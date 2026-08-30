@@ -953,3 +953,20 @@ io_uring op-mode 新增有界 64×256 KiB 注册发送缓冲池；发送路径�
 内核仍持有 DMA 引用时复用内存。基准数字待在目标 NIC/内核上做 A/B 测量；
 本阶段先以 `test_iouring_op` 的真实 loopback SEND_ZC 回归和 `test_server`
 三后端集成回归锁定安全性。
+
+## Phase 99：哈希表扩容阈值缓存
+
+`rh_table` 在初始化和完成扩容时计算并缓存 85% load threshold，
+`rh_maybe_grow()` 的插入热路径只保留一次整数比较，避免每次插入重复执行
+除法/乘法。扩容时机、增量迁移、查找和删除语义不变；新增
+`test_cached_growth_threshold` 锁定阈值更新行为。
+
+本机 Release 构建（Linux，300k 命令/阶段，16B value）两次运行中位数：
+
+| 测试 | ops/s |
+| --- | ---: |
+| SET（冷，含插入） | 3.90M |
+| GET（热） | 4.85M |
+
+该优化减少扩容判断的算术指令，收益会随插入比例增加而放大；基准受 CPU
+频率和系统负载影响，数字用于同机 A/B 趋势比较。
