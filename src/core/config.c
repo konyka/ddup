@@ -196,6 +196,17 @@ int config_apply(ddup_config *cfg, const char *key, const char *value)
     if (key_eq(key, "tls-key-file"))
         return copy_str(cfg->tls_key_file, sizeof(cfg->tls_key_file),
                         value);
+    if (key_eq(key, "tls-replication")) {
+        if (key_eq(value, "yes") || key_eq(value, "1"))
+            cfg->tls_replication = 1;
+        else if (key_eq(value, "no") || key_eq(value, "0"))
+            cfg->tls_replication = 0;
+        else
+            return -1;
+        return 0;
+    }
+    if (key_eq(key, "tls-ca-file"))
+        return copy_str(cfg->tls_ca_file, sizeof(cfg->tls_ca_file), value);
     if (key_eq(key, "io")) {
         if (!key_eq(value, "select") && !key_eq(value, "iocp") &&
             !key_eq(value, "iouring") && !key_eq(value, "iouring-op"))
@@ -284,6 +295,13 @@ int config_validate(const ddup_config *cfg, char *err, size_t errcap)
             cfg->repl_max_snapshot_bytes) {
         snprintf(err, errcap,
                  "repl-max-snapshot-bytes must be between 1 and SIZE_MAX bytes");
+        return -1;
+    }
+    if (cfg->tls_replication && cfg->tls_ca_file[0] != '\0' &&
+        !file_readable(cfg->tls_ca_file)) {
+        snprintf(err, errcap,
+                 "tls-replication is set but tls-ca-file '%s' is not readable",
+                 cfg->tls_ca_file);
         return -1;
     }
     if (cfg->tls_port == 0)

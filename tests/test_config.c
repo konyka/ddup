@@ -257,6 +257,20 @@ static void test_validate_tls(void)
     remove(TMP_CONF);
 }
 
+static void test_tls_replication_options(void)
+{
+    ddup_config cfg;
+    char err[256];
+    config_init(&cfg);
+    DD_CHECK_EQ_INT(0, config_apply(&cfg, "tls-replication", "yes"));
+    DD_CHECK_EQ_INT(1, cfg.tls_replication);
+    DD_CHECK_EQ_INT(0, config_apply(&cfg, "tls-ca-file", "ca.pem"));
+    DD_CHECK_STR("ca.pem", cfg.tls_ca_file);
+    DD_CHECK_EQ_INT(-1, config_validate(&cfg, err, sizeof(err)));
+    DD_CHECK(strstr(err, "tls-ca-file") != NULL);
+    DD_CHECK_EQ_INT(-1, config_apply(&cfg, "tls-replication", "maybe"));
+}
+
 static void test_repl_backlog_size(void)
 {
     ddup_config cfg;
@@ -318,6 +332,7 @@ int main(void)
     DD_RUN(test_io_backend_values);
     DD_RUN(test_io_threads);
     DD_RUN(test_validate_tls);
+    DD_RUN(test_tls_replication_options);
     DD_RUN(test_repl_backlog_size);
     DD_RUN(test_resource_limit_validation);
     DD_RUN(test_listpack_threshold_keys);

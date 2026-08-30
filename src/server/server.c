@@ -84,6 +84,7 @@ struct conn {
     pal_socket_t fd;
     pal_tls *tls; /* NULL for plain connections */
     int tls_handshaking; /* non-blocking handshake in progress */
+    int tls_client;       /* outbound client-side TLS handshake */
     uint64_t id;        /* CLIENT ID / CLIENT LIST */
     char name[64];      /* CLIENT SETNAME / GETNAME */
     size_t name_len;
@@ -148,6 +149,7 @@ static void srv_hotkeys_record(server *srv, const session *source,
 #define LINK_STREAMING 2
 #define LINK_SNAP_HDR 3 /* PSYNC FULLRESYNC: snapshot frame header next */
 #define LINK_CONNECTING 4 /* async connect in flight (readiness backend) */
+#define LINK_TLS_HANDSHAKE 5 /* TCP connected, outbound TLS in progress */
 
 /* SLOWLOG ring: newest entries are appended at the tail and read backwards. */
 typedef struct slowlog_entry {
@@ -176,6 +178,8 @@ struct server {
     pal_socket_t listen_fd;
     pal_socket_t tls_listen_fd; /* PAL_SOCKET_INVALID when TLS is off */
     pal_tls_ctx *tls_ctx;
+    pal_tls_ctx *repl_tls_ctx;
+    int repl_tls;
     uint16_t tls_port;
     /* cluster bus (second listener on port+10000) */
     pal_socket_t bus_listen_fd;
@@ -1576,6 +1580,36 @@ static int srv_replicaof(void *ctx, const char *host, uint16_t port)
     return repl_link_connect(srv);
 }
 
+int server_set_replica_tls(server *s, int enabled, const char *ca_file)
+{
+    pal_tls_ctx *ctx = NULL;
+    if (s == NULL)
+        return -1;
+    if (!enabled) {
+        if (s->master_link != NULL)
+            repl_link_close(s);
+        if (s->repl_tls_ctx != NULL)
+            pal_tls_ctx_free(s->repl_tls_ctx);
+        s->repl_tls_ctx = NULL;
+        s->repl_tls = 0;
+        return 0;
+    }
+    if (srv_proactor(s))
+        return -1; /* TLS link uses readiness read/write semantics. */
+    ctx = pal_tls_ctx_new_client(ca_file);
+    if (ctx == NULL)
+        return -1;
+    /* A live master link retains its TLS context through SSL, but it would
+     * keep the old transport policy. Reconnect so the change is atomic. */
+    if (s->master_link != NULL)
+        repl_link_close(s);
+    if (s->repl_tls_ctx != NULL)
+        pal_tls_ctx_free(s->repl_tls_ctx);
+    s->repl_tls_ctx = ctx;
+    s->repl_tls = 1;
+    return 0;
+}
+
 int server_replicaof(server *s, const char *host, uint16_t port)
 {
     return srv_replicaof(s, host, port);
@@ -2130,6 +2164,16 @@ static int repl_link_connect(server *srv)
     }
     c->is_master_link = 1;
     c->sess->repl_link = 1;
+    /* An in-progress nonblocking TCP connection cannot start TLS yet. */
+    if (srv->repl_tls && cr == 1) {
+        c->tls = pal_tls_new(srv->repl_tls_ctx, fd);
+        if (c->tls == NULL) {
+            conn_free(c);
+            return -1;
+        }
+        c->tls_client = 1;
+        c->tls_handshaking = 1;
+    }
     if (srv->nconns == srv->cap) {
         size_t ncap = srv->cap == 0 ? 16 : srv->cap * 2;
         conn **nc = (conn **)realloc(srv->conns, ncap * sizeof(*nc));
@@ -2157,11 +2201,30 @@ static int repl_link_connect(server *srv)
     }
     srv->master_link = c;
     if (cr == 1) {
-        if (repl_link_queue_psync(srv, c) != 0) {
+        if (srv->repl_tls) {
+            int hs = pal_tls_connect_handshake_nb(c->tls);
+            if (hs < 0) {
+                repl_link_close(srv);
+                return -1;
+            }
+            if (hs == 1) {
+                c->tls_handshaking = 0;
+                if (repl_link_queue_psync(srv, c) != 0) {
+                    repl_link_close(srv);
+                    return -1;
+                }
+                (void)conn_flush(srv, c);
+            } else {
+                c->link_state = LINK_TLS_HANDSHAKE;
+                if (pal_loop_mod(srv->loop, c->fd, 1, hs == 2, c) != 0) {
+                    repl_link_close(srv);
+                    return -1;
+                }
+            }
+        } else if (repl_link_queue_psync(srv, c) != 0) {
             repl_link_close(srv);
             return -1;
-        }
-        if (srv_proactor(srv))
+        } else if (srv_proactor(srv))
             kick_flush(srv, c); /* ship the PSYNC via the proactor */
     } else {
         c->link_state = LINK_CONNECTING; /* PSYNC on writability */
@@ -3317,6 +3380,7 @@ void server_destroy(server *s)
         pal_close(s->tls_listen_fd);
     }
     pal_tls_ctx_free(s->tls_ctx);
+    pal_tls_ctx_free(s->repl_tls_ctx);
     if (s->loop != NULL)
         pal_loop_free(s->loop);
     rh_destroy(&s->channels);
@@ -4987,12 +5051,60 @@ service_io:
                         conn_close(s, idx); /* retry timer reconnects */
                         continue;
                     }
+                    if (s->repl_tls) {
+                        int hs;
+                        c->tls = pal_tls_new(s->repl_tls_ctx, c->fd);
+                        if (c->tls == NULL) {
+                            conn_close(s, idx);
+                            continue;
+                        }
+                        c->tls_client = 1;
+                        c->tls_handshaking = 1;
+                        c->link_state = LINK_TLS_HANDSHAKE;
+                        hs = pal_tls_connect_handshake_nb(c->tls);
+                        if (hs < 0) {
+                            conn_close(s, idx);
+                            continue;
+                        }
+                        if (hs == 1) {
+                            c->tls_handshaking = 0;
+                            if (repl_link_queue_psync(s, c) != 0) {
+                                conn_close(s, idx);
+                                continue;
+                            }
+                            pal_loop_mod(s->loop, c->fd, 1, 1, c);
+                            (void)conn_flush(s, c);
+                        } else {
+                            pal_loop_mod(s->loop, c->fd, 1, hs == 2, c);
+                        }
+                        continue;
+                    }
                     if (repl_link_queue_psync(s, c) != 0) {
                         conn_close(s, idx);
                         continue;
                     }
                     pal_loop_mod(s->loop, c->fd, 1, 0, c);
                     (void)conn_flush(s, c); /* ship the PSYNC */
+                    continue;
+                }
+                if (c->link_state == LINK_TLS_HANDSHAKE) {
+                    int hs = pal_tls_connect_handshake_nb(c->tls);
+                    if (hs < 0) {
+                        conn_close(s, idx);
+                        continue;
+                    }
+                    if (hs == 1) {
+                        c->tls_handshaking = 0;
+                        c->link_state = LINK_SYNC_SENT;
+                        if (repl_link_queue_psync(s, c) != 0) {
+                            conn_close(s, idx);
+                            continue;
+                        }
+                        pal_loop_mod(s->loop, c->fd, 1, 1, c);
+                        (void)conn_flush(s, c);
+                    } else {
+                        pal_loop_mod(s->loop, c->fd, 1, hs == 2, c);
+                    }
                     continue;
                 }
                 repl_link_service(s, c);

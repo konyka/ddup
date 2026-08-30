@@ -256,6 +256,71 @@ static void test_tls_server_roundtrip(void)
     pal_socket_cleanup();
 }
 
+static void test_tls_replication_master_link(void)
+{
+    server *master;
+    server *replica;
+    pal_socket_t client = PAL_SOCKET_INVALID;
+    uint16_t tls_port;
+    char buf[128];
+    ptrdiff_t n;
+    int i;
+
+    DD_CHECK_EQ_INT(0, pal_socket_init());
+    master = server_create("127.0.0.1", 0);
+    replica = server_create("127.0.0.1", 0);
+    DD_CHECK(master != NULL && replica != NULL);
+    if (master == NULL || replica == NULL)
+        goto cleanup;
+    DD_CHECK_EQ_INT(0, server_enable_tls(master, "127.0.0.1", 0,
+                                         DDUP_TEST_CERT_DIR "/cert.pem",
+                                         DDUP_TEST_CERT_DIR "/key.pem"));
+    tls_port = server_tls_port(master);
+    DD_CHECK(tls_port != 0);
+    DD_CHECK_EQ_INT(0, server_set_replica_tls(replica, 1,
+                                               DDUP_TEST_CERT_DIR "/cert.pem"));
+    DD_CHECK_EQ_INT(0, server_replicaof(replica, "127.0.0.1", tls_port));
+
+    for (i = 0; i < 1000; i++) {
+        server_run_once(master, 1);
+        server_run_once(replica, 1);
+        if (server_repl_info(replica)->link_up)
+            break;
+    }
+    DD_CHECK(server_repl_info(replica)->link_up != 0);
+    client = pal_tcp_connect("127.0.0.1", server_port(master));
+    DD_CHECK(client != PAL_SOCKET_INVALID);
+    if (client == PAL_SOCKET_INVALID)
+        goto cleanup;
+    DD_CHECK_EQ_INT(0, pal_set_nonblocking(client, 1));
+    DD_CHECK_EQ_INT(27, pal_send(client,
+                                 "*3\r\n$3\r\nSET\r\n$1\r\nt\r\n$1\r\n1\r\n",
+                                 27));
+    for (i = 0; i < 1000; i++) {
+        server_run_once(master, 1);
+        server_run_once(replica, 1);
+        if (server_repl_info(replica)->master_replid[0] != '\0')
+            break;
+    }
+    for (i = 0; i < 100; i++) {
+        n = pal_recv(client, buf, sizeof(buf));
+        if (n > 0 || (n < 0 && !pal_would_block(pal_socket_error())))
+            break;
+        server_run_once(master, 1);
+    }
+    client = PAL_SOCKET_INVALID;
+    DD_CHECK(server_repl_info(replica)->link_up != 0);
+
+cleanup:
+    if (client != PAL_SOCKET_INVALID)
+        pal_close(client);
+    if (replica != NULL)
+        server_destroy(replica);
+    if (master != NULL)
+        server_destroy(master);
+    pal_socket_cleanup();
+}
+
 /* ------------------------------------------------------------------ */
 /* mt (thread-per-core) TLS: acceptor owns the TLS listener, workers own  */
 /* per-worker contexts and drive the handshake in their own event loop.   */
@@ -397,6 +462,7 @@ int main(void)
     DD_RUN(test_tls_rejects_lengths_over_int_max);
     DD_RUN(test_tls_init_is_thread_safe);
     DD_RUN(test_tls_server_roundtrip);
+    DD_RUN(test_tls_replication_master_link);
     DD_RUN(test_mt_tls_roundtrip);
     return DD_TEST_SUMMARY();
 }
