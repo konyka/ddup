@@ -1,34 +1,37 @@
 + sudo apt-get update
 Get:1 file:/etc/apt/apt-mirrors.txt Mirrorlist [144 B]
-Hit:4 https://packages.microsoft.com/repos/azure-cli noble InRelease
-Get:7 https://packages.microsoft.com/ubuntu/24.04/prod noble InRelease [3600 B]
+Get:6 https://packages.microsoft.com/repos/azure-cli noble InRelease [3564 B]
 Hit:2 http://azure.archive.ubuntu.com/ubuntu noble InRelease
+Get:7 https://packages.microsoft.com/ubuntu/24.04/prod noble InRelease [3600 B]
 Get:3 http://azure.archive.ubuntu.com/ubuntu noble-updates InRelease [126 kB]
-Get:5 http://azure.archive.ubuntu.com/ubuntu noble-backports InRelease [126 kB]
-Get:6 http://azure.archive.ubuntu.com/ubuntu noble-security InRelease [126 kB]
+Get:4 http://azure.archive.ubuntu.com/ubuntu noble-backports InRelease [126 kB]
+Get:5 http://azure.archive.ubuntu.com/ubuntu noble-security InRelease [126 kB]
 Get:8 https://dl.google.com/linux/chrome-stable/deb stable InRelease [2548 B]
-Get:9 https://packages.microsoft.com/ubuntu/24.04/prod noble/main amd64 Packages [318 kB]
-Get:10 https://packages.microsoft.com/ubuntu/24.04/prod noble/main arm64 Packages [278 kB]
-Get:11 http://azure.archive.ubuntu.com/ubuntu noble-updates/main amd64 Packages [1190 kB]
-Get:12 http://azure.archive.ubuntu.com/ubuntu noble-updates/main Translation-en [282 kB]
-Get:13 http://azure.archive.ubuntu.com/ubuntu noble-updates/main amd64 Components [181 kB]
-Get:14 http://azure.archive.ubuntu.com/ubuntu noble-updates/universe amd64 Packages [1683 kB]
-Get:15 http://azure.archive.ubuntu.com/ubuntu noble-updates/universe Translation-en [335 kB]
-Get:16 http://azure.archive.ubuntu.com/ubuntu noble-updates/universe amd64 Components [388 kB]
-Get:17 http://azure.archive.ubuntu.com/ubuntu noble-updates/restricted amd64 Packages [1424 kB]
-Get:18 http://azure.archive.ubuntu.com/ubuntu noble-updates/restricted Translation-en [323 kB]
-Get:19 http://azure.archive.ubuntu.com/ubuntu noble-updates/multiverse Translation-en [12.6 kB]
+Get:9 https://packages.microsoft.com/ubuntu/24.04/prod noble/main arm64 Packages [381 kB]
+Get:10 https://packages.microsoft.com/ubuntu/24.04/prod noble/main armhf Packages [12.5 kB]
+Get:11 https://packages.microsoft.com/ubuntu/24.04/prod noble/main amd64 Packages [427 kB]
+Get:12 http://azure.archive.ubuntu.com/ubuntu noble-updates/main amd64 Packages [1230 kB]
+Get:13 http://azure.archive.ubuntu.com/ubuntu noble-updates/main Translation-en [287 kB]
+Get:14 http://azure.archive.ubuntu.com/ubuntu noble-updates/main amd64 Components [180 kB]
+Get:15 http://azure.archive.ubuntu.com/ubuntu noble-updates/universe amd64 Packages [1689 kB]
+Get:16 http://azure.archive.ubuntu.com/ubuntu noble-updates/universe Translation-en [338 kB]
+Get:17 http://azure.archive.ubuntu.com/ubuntu noble-updates/universe amd64 Components [388 kB]
+Get:18 http://azure.archive.ubuntu.com/ubuntu noble-updates/restricted amd64 Packages [1486 kB]
+Get:19 http://azure.archive.ubuntu.com/ubuntu noble-updates/restricted Translation-en [339 kB]
 Get:20 http://azure.archive.ubuntu.com/ubuntu noble-updates/multiverse amd64 Components [940 B]
-Get:21 http://azure.archive.ubuntu.com/ubuntu noble-backports/main amd64 Components [5772 B]
+Get:21 http://azure.archive.ubuntu.com/ubuntu noble-backports/main amd64 Components [5744 B]
 Get:22 http://azure.archive.ubuntu.com/ubuntu noble-backports/universe amd64 Components [12.6 kB]
-Get:23 http://azure.archive.ubuntu.com/ubuntu noble-security/main amd64 Packages [930 kB]
-Get:24 http://azure.archive.ubuntu.com/ubuntu noble-security/main Translation-en [201 kB]
+Get:23 http://azure.archive.ubuntu.com/ubuntu noble-security/main amd64 Packages [972 kB]
+Get:24 http://azure.archive.ubuntu.com/ubuntu noble-security/main Translation-en [206 kB]
 Get:25 http://azure.archive.ubuntu.com/ubuntu noble-security/main amd64 Components [46.4 kB]
-Get:26 http://azure.archive.ubuntu.com/ubuntu noble-security/universe amd64 Components [76.2 kB]
-Get:27 http://azure.archive.ubuntu.com/ubuntu noble-security/restricted amd64 Packages [1320 kB]
-Get:28 http://azure.archive.ubuntu.com/ubuntu noble-security/restricted Translation-en [302 kB]
-Get:29 https://dl.google.com/linux/chrome-stable/deb stable/main amd64 Packages [1412 B]
-Fetched 9695 kB in 1s (8190 kB/s)
+Get:26 http://azure.archive.ubuntu.com/ubuntu noble-security/universe amd64 Packages [1203 kB]
+Get:27 http://azure.archive.ubuntu.com/ubuntu noble-security/universe Translation-en [241 kB]
+Get:28 http://azure.archive.ubuntu.com/ubuntu noble-security/universe amd64 Components [76.3 kB]
+Get:29 http://azure.archive.ubuntu.com/ubuntu noble-security/restricted amd64 Packages [1392 kB]
+Get:30 http://azure.archive.ubuntu.com/ubuntu noble-security/restricted Translation-en [321 kB]
+Get:31 http://azure.archive.ubuntu.com/ubuntu noble-security/multiverse Translation-en [11.1 kB]
+Get:32 https://dl.google.com/linux/chrome-stable/deb stable/main amd64 Packages [1406 B]
+Fetched 11.6 MB in 1s (8013 kB/s)
 Reading package lists...
 + apt-cache policy redis-server redis-tools
 redis-server:
@@ -59,7 +62,7 @@ Suggested packages:
   ruby-redis
 The following NEW packages will be installed:
   libjemalloc2 liblzf1 redis-server redis-tools
-0 upgraded, 4 newly installed, 0 to remove and 1 not upgraded.
+0 upgraded, 4 newly installed, 0 to remove and 38 not upgraded.
 Need to get 1482 kB of archives.
 After this operation, 7568 kB of additional disk space will be used.
 Get:1 file:/etc/apt/apt-mirrors.txt Mirrorlist [144 B]
@@ -67,9 +70,9 @@ Get:2 http://azure.archive.ubuntu.com/ubuntu noble/universe amd64 libjemalloc2 a
 Get:3 http://azure.archive.ubuntu.com/ubuntu noble/universe amd64 liblzf1 amd64 3.6-4 [7624 B]
 Get:4 http://azure.archive.ubuntu.com/ubuntu noble-updates/universe amd64 redis-tools amd64 5:7.0.15-1ubuntu0.24.04.4 [1166 kB]
 Get:5 http://azure.archive.ubuntu.com/ubuntu noble-updates/universe amd64 redis-server amd64 5:7.0.15-1ubuntu0.24.04.4 [51.7 kB]
-Fetched 1482 kB in 4s (400 kB/s)
+Fetched 1482 kB in 0s (9759 kB/s)
 Selecting previously unselected package libjemalloc2:amd64.
-(Reading database ... (Reading database ... 5%(Reading database ... 10%(Reading database ... 15%(Reading database ... 20%(Reading database ... 25%(Reading database ... 30%(Reading database ... 35%(Reading database ... 40%(Reading database ... 45%(Reading database ... 50%(Reading database ... 55%(Reading database ... 60%(Reading database ... 65%(Reading database ... 70%(Reading database ... 75%(Reading database ... 80%(Reading database ... 85%(Reading database ... 90%(Reading database ... 95%(Reading database ... 100%(Reading database ... 203139 files and directories currently installed.)
+(Reading database ... (Reading database ... 5%(Reading database ... 10%(Reading database ... 15%(Reading database ... 20%(Reading database ... 25%(Reading database ... 30%(Reading database ... 35%(Reading database ... 40%(Reading database ... 45%(Reading database ... 50%(Reading database ... 55%(Reading database ... 60%(Reading database ... 65%(Reading database ... 70%(Reading database ... 75%(Reading database ... 80%(Reading database ... 85%(Reading database ... 90%(Reading database ... 95%(Reading database ... 100%(Reading database ... 203385 files and directories currently installed.)
 Preparing to unpack .../libjemalloc2_5.3.0-2build1_amd64.deb ...
 Unpacking libjemalloc2:amd64 (5.3.0-2build1) ...
 Selecting previously unselected package liblzf1:amd64.
@@ -133,187 +136,97 @@ No VM guests are running outdated hypervisor (qemu) binaries on this host.
 -- Performing Test CMAKE_HAVE_LIBC_PTHREAD - Success
 -- Found Threads: TRUE
 -- ddup: TLS enabled (OpenSSL 3.0.13)
--- Configuring done (13.7s)
--- Generating done (0.1s)
+-- Configuring done (12.6s)
+-- Generating done (0.2s)
 -- Build files have been written to: /home/runner/work/ddup/ddup/build
 + cmake --build build
-[  1%] Building C object CMakeFiles/ddup_lua.dir/deps/lua/lapi.c.o
+[  0%] Building C object CMakeFiles/ddup_lua.dir/deps/lua/lapi.c.o
 [  1%] Building C object CMakeFiles/ddup_lua.dir/deps/lua/lauxlib.c.o
-[  2%] Building C object CMakeFiles/ddup_lua.dir/deps/lua/lbaselib.c.o
+[  1%] Building C object CMakeFiles/ddup_lua.dir/deps/lua/lbaselib.c.o
 [  2%] Building C object CMakeFiles/ddup_lua.dir/deps/lua/lcode.c.o
-[  3%] Building C object CMakeFiles/ddup_lua.dir/deps/lua/ldblib.c.o
-[  3%] Building C object CMakeFiles/ddup_lua.dir/deps/lua/ldebug.c.o
-[  4%] Building C object CMakeFiles/ddup_lua.dir/deps/lua/ldo.c.o
-[  4%] Building C object CMakeFiles/ddup_lua.dir/deps/lua/ldump.c.o
-[  5%] Building C object CMakeFiles/ddup_lua.dir/deps/lua/lfunc.c.o
-[  5%] Building C object CMakeFiles/ddup_lua.dir/deps/lua/lgc.c.o
-[  6%] Building C object CMakeFiles/ddup_lua.dir/deps/lua/linit.c.o
-[  7%] Building C object CMakeFiles/ddup_lua.dir/deps/lua/liolib.c.o
-[  7%] Building C object CMakeFiles/ddup_lua.dir/deps/lua/llex.c.o
-[  8%] Building C object CMakeFiles/ddup_lua.dir/deps/lua/lmathlib.c.o
-[  8%] Building C object CMakeFiles/ddup_lua.dir/deps/lua/lmem.c.o
-[  9%] Building C object CMakeFiles/ddup_lua.dir/deps/lua/loadlib.c.o
-[  9%] Building C object CMakeFiles/ddup_lua.dir/deps/lua/lobject.c.o
-[ 10%] Building C object CMakeFiles/ddup_lua.dir/deps/lua/lopcodes.c.o
-[ 10%] Building C object CMakeFiles/ddup_lua.dir/deps/lua/loslib.c.o
-[ 11%] Building C object CMakeFiles/ddup_lua.dir/deps/lua/lparser.c.o
-[ 11%] Building C object CMakeFiles/ddup_lua.dir/deps/lua/lstate.c.o
-[ 12%] Building C object CMakeFiles/ddup_lua.dir/deps/lua/lstring.c.o
-[ 12%] Building C object CMakeFiles/ddup_lua.dir/deps/lua/lstrlib.c.o
-[ 13%] Building C object CMakeFiles/ddup_lua.dir/deps/lua/ltable.c.o
-[ 14%] Building C object CMakeFiles/ddup_lua.dir/deps/lua/ltablib.c.o
-[ 14%] Building C object CMakeFiles/ddup_lua.dir/deps/lua/ltm.c.o
-[ 15%] Building C object CMakeFiles/ddup_lua.dir/deps/lua/lundump.c.o
-[ 15%] Building C object CMakeFiles/ddup_lua.dir/deps/lua/lvm.c.o
-[ 16%] Building C object CMakeFiles/ddup_lua.dir/deps/lua/lzio.c.o
-[ 16%] Linking C static library libddup_lua.a
-[ 16%] Built target ddup_lua
-[ 16%] Building C object CMakeFiles/ddup_core.dir/src/pal/pal_time.c.o
-[ 17%] Building C object CMakeFiles/ddup_core.dir/src/pal/pal_socket.c.o
-[ 17%] Building C object CMakeFiles/ddup_core.dir/src/pal/pal_event.c.o
-[ 18%] Building C object CMakeFiles/ddup_core.dir/src/pal/pal_file.c.o
-[ 19%] Building C object CMakeFiles/ddup_core.dir/src/pal/pal_tls.c.o
-[ 19%] Building C object CMakeFiles/ddup_core.dir/src/pal/pal_iocp.c.o
-[ 20%] Building C object CMakeFiles/ddup_core.dir/src/pal/pal_iouring_op.c.o
-[ 20%] Building C object CMakeFiles/ddup_core.dir/src/pal/pal_thread.c.o
-[ 21%] Building C object CMakeFiles/ddup_core.dir/src/pal/pal_wakeup.c.o
-[ 21%] Building C object CMakeFiles/ddup_core.dir/src/core/arena.c.o
-[ 22%] Building C object CMakeFiles/ddup_core.dir/src/core/rhtable.c.o
-[ 22%] Building C object CMakeFiles/ddup_core.dir/src/core/command.c.o
-[ 23%] Building C object CMakeFiles/ddup_core.dir/src/core/buf_pool.c.o
-[ 23%] Building C object CMakeFiles/ddup_core.dir/src/ds/obj.c.o
-[ 24%] Building C object CMakeFiles/ddup_core.dir/src/ds/skiplist.c.o
-[ 24%] Building C object CMakeFiles/ddup_core.dir/src/core/session.c.o
-[ 25%] Building C object CMakeFiles/ddup_core.dir/src/core/config.c.o
-[ 26%] Building C object CMakeFiles/ddup_core.dir/src/core/snapshot.c.o
-[ 26%] Building C object CMakeFiles/ddup_core.dir/src/core/crc64.c.o
-[ 27%] Building C object CMakeFiles/ddup_core.dir/src/core/migrate.c.o
-[ 27%] Building C object CMakeFiles/ddup_core.dir/src/core/sha1.c.o
-[ 28%] Building C object CMakeFiles/ddup_core.dir/src/core/script.c.o
-[ 28%] Building C object CMakeFiles/ddup_core.dir/src/core/redbus.c.o
-[ 29%] Building C object CMakeFiles/ddup_core.dir/src/core/hashslot.c.o
-[ 29%] Building C object CMakeFiles/ddup_core.dir/src/core/cluster.c.o
-[ 30%] Building C object CMakeFiles/ddup_core.dir/src/resp/resp_parser.c.o
-[ 30%] Building C object CMakeFiles/ddup_core.dir/src/resp/resp_writer.c.o
-[ 31%] Building C object CMakeFiles/ddup_core.dir/src/server/server.c.o
-[ 31%] Building C object CMakeFiles/ddup_core.dir/src/server/mt_server.c.o
-[ 32%] Building C object CMakeFiles/ddup_core.dir/src/server/aof.c.o
-[ 33%] Building C object CMakeFiles/ddup_core.dir/src/server/repl.c.o
-[ 33%] Linking C static library libddup_core.a
-[ 33%] Built target ddup_core
-[ 33%] Building C object CMakeFiles/ddup-server.dir/src/main.c.o
-[ 34%] Linking C executable ddup-server
-[ 34%] Built target ddup-server
-[ 34%] Building C object CMakeFiles/ddup-bench.dir/bench/ddup-bench.c.o
-[ 35%] Linking C executable ddup-bench
-[ 35%] Built target ddup-bench
-[ 35%] Building C object CMakeFiles/bench_core.dir/bench/bench_core.c.o
-[ 36%] Linking C executable bench_core
-[ 36%] Built target bench_core
-[ 36%] Building C object CMakeFiles/ddup-reshard.dir/tools/ddup-reshard.c.o
-[ 37%] Building C object CMakeFiles/ddup-reshard.dir/tools/reshard_args.c.o
-[ 37%] Building C object CMakeFiles/ddup-reshard.dir/tools/reshard_client.c.o
-[ 38%] Linking C executable ddup-reshard
-[ 38%] Built target ddup-reshard
-[ 38%] Building C object CMakeFiles/test_pal.dir/tests/test_pal.c.o
-[ 39%] Linking C executable test_pal
-[ 39%] Built target test_pal
-[ 39%] Building C object CMakeFiles/test_pal_thread.dir/tests/test_pal_thread.c.o
-[ 40%] Linking C executable test_pal_thread
-[ 40%] Built target test_pal_thread
-[ 40%] Building C object CMakeFiles/test_pal_wakeup.dir/tests/test_pal_wakeup.c.o
-[ 41%] Linking C executable test_pal_wakeup
-[ 41%] Built target test_pal_wakeup
-[ 42%] Building C object CMakeFiles/test_spsc.dir/tests/test_spsc.c.o
-[ 42%] Linking C executable test_spsc
-[ 42%] Built target test_spsc
-[ 43%] Building C object CMakeFiles/test_mt_server.dir/tests/test_mt_server.c.o
-[ 43%] Linking C executable test_mt_server
-[ 43%] Built target test_mt_server
-[ 44%] Building C object CMakeFiles/test_cstd.dir/tests/test_cstd.c.o
-[ 44%] Linking C executable test_cstd
-[ 44%] Built target test_cstd
-[ 45%] Building C object CMakeFiles/test_cmdid.dir/tests/test_cmdid.c.o
-[ 45%] Linking C executable test_cmdid
-[ 45%] Built target test_cmdid
-[ 46%] Building C object CMakeFiles/test_buf_pool.dir/tests/test_buf_pool.c.o
-[ 46%] Linking C executable test_buf_pool
-[ 46%] Built target test_buf_pool
-[ 47%] Building C object CMakeFiles/test_socket.dir/tests/test_socket.c.o
-[ 47%] Linking C executable test_socket
-[ 47%] Built target test_socket
-[ 47%] Building C object CMakeFiles/test_event.dir/tests/test_event.c.o
-[ 48%] Linking C executable test_event
-[ 48%] Built target test_event
-[ 48%] Building C object CMakeFiles/test_server.dir/tests/test_server.c.o
-[ 49%] Linking C executable test_server
-[ 49%] Built target test_server
-[ 50%] Building C object CMakeFiles/test_arena.dir/tests/test_arena.c.o
-[ 50%] Linking C executable test_arena
-[ 50%] Built target test_arena
-[ 50%] Building C object CMakeFiles/test_resp_parser.dir/tests/test_resp_parser.c.o
-[ 51%] Linking C executable test_resp_parser
-[ 51%] Built target test_resp_parser
-[ 51%] Building C object CMakeFiles/test_resp_writer.dir/tests/test_resp_writer.c.o
-[ 52%] Linking C executable test_resp_writer
-[ 52%] Built target test_resp_writer
-[ 53%] Building C object CMakeFiles/test_resp3.dir/tests/test_resp3.c.o
-[ 54%] Linking C executable test_resp3
-[ 54%] Built target test_resp3
-[ 54%] Building C object CMakeFiles/test_rhtable.dir/tests/test_rhtable.c.o
-[ 55%] Linking C executable test_rhtable
-[ 55%] Built target test_rhtable
-[ 56%] Building C object CMakeFiles/test_command.dir/tests/test_command.c.o
-[ 56%] Linking C executable test_command
-[ 56%] Built target test_command
-[ 56%] Building C object CMakeFiles/test_expire.dir/tests/test_expire.c.o
-[ 57%] Linking C executable test_expire
-[ 57%] Built target test_expire
-[ 57%] Building C object CMakeFiles/test_eviction.dir/tests/test_eviction.c.o
-[ 58%] Linking C executable test_eviction
-[ 58%] Built target test_eviction
-[ 58%] Building C object CMakeFiles/test_hash.dir/tests/test_hash.c.o
-[ 59%] Linking C executable test_hash
-[ 59%] Built target test_hash
-[ 60%] Building C object CMakeFiles/test_list.dir/tests/test_list.c.o
-[ 60%] Linking C executable test_list
-[ 60%] Built target test_list
-[ 61%] Building C object CMakeFiles/test_skiplist.dir/tests/test_skiplist.c.o
-[ 61%] Linking C executable test_skiplist
-[ 61%] Built target test_skiplist
-[ 62%] Building C object CMakeFiles/test_set.dir/tests/test_set.c.o
-[ 62%] Linking C executable test_set
-[ 62%] Built target test_set
-[ 63%] Building C object CMakeFiles/test_zset.dir/tests/test_zset.c.o
-[ 64%] Linking C executable test_zset
-[ 64%] Built target test_zset
-[ 64%] Building C object CMakeFiles/test_session.dir/tests/test_session.c.o
-[ 65%] Linking C executable test_session
-[ 65%] Built target test_session
-[ 66%] Building C object CMakeFiles/test_multidb.dir/tests/test_multidb.c.o
-[ 67%] Linking C executable test_multidb
-[ 67%] Built target test_multidb
-[ 68%] Building C object CMakeFiles/test_multi.dir/tests/test_multi.c.o
-[ 68%] Linking C executable test_multi
-[ 68%] Built target test_multi
-[ 68%] Building C object CMakeFiles/test_pubsub.dir/tests/test_pubsub.c.o
-[ 69%] Linking C executable test_pubsub
-[ 69%] Built target test_pubsub
-[ 69%] Building C object CMakeFiles/test_pubsub_shard.dir/tests/test_pubsub_shard.c.o
-[ 70%] Linking C executable test_pubsub_shard
-[ 70%] Built target test_pubsub_shard
-[ 71%] Building C object CMakeFiles/test_config.dir/tests/test_config.c.o
-[ 71%] Linking C executable test_config
-[ 71%] Built target test_config
-[ 72%] Building C object CMakeFiles/test_aof.dir/tests/test_aof.c.o
-/home/runner/work/ddup/ddup/tests/test_aof.c: In function ‘test_aof_flush_preserves_pending_on_flush_failure’:
-/home/runner/work/ddup/ddup/tests/test_aof.c:435:5: warning: implicit declaration of function ‘pal_file_test_fail_next_flush’ [-Wimplicit-function-declaration]
-  435 |     pal_file_test_fail_next_flush();
-      |     ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-[ 72%] Linking C executable test_aof
-/usr/bin/ld: /tmp/ccXmdXdS.ltrans0.ltrans.o: in function `main':
-<artificial>:(.text.startup+0xbf7): undefined reference to `pal_file_test_fail_next_flush'
-collect2: error: ld returned 1 exit status
-gmake[2]: *** [CMakeFiles/test_aof.dir/build.make:105: test_aof] Error 1
-gmake[1]: *** [CMakeFiles/Makefile2:1458: CMakeFiles/test_aof.dir/all] Error 2
+[  2%] Building C object CMakeFiles/ddup_lua.dir/deps/lua/ldblib.c.o
+[  2%] Building C object CMakeFiles/ddup_lua.dir/deps/lua/ldebug.c.o
+[  3%] Building C object CMakeFiles/ddup_lua.dir/deps/lua/ldo.c.o
+[  3%] Building C object CMakeFiles/ddup_lua.dir/deps/lua/ldump.c.o
+[  4%] Building C object CMakeFiles/ddup_lua.dir/deps/lua/lfunc.c.o
+[  4%] Building C object CMakeFiles/ddup_lua.dir/deps/lua/lgc.c.o
+[  4%] Building C object CMakeFiles/ddup_lua.dir/deps/lua/linit.c.o
+[  5%] Building C object CMakeFiles/ddup_lua.dir/deps/lua/liolib.c.o
+[  5%] Building C object CMakeFiles/ddup_lua.dir/deps/lua/llex.c.o
+[  5%] Building C object CMakeFiles/ddup_lua.dir/deps/lua/lmathlib.c.o
+[  6%] Building C object CMakeFiles/ddup_lua.dir/deps/lua/lmem.c.o
+[  6%] Building C object CMakeFiles/ddup_lua.dir/deps/lua/loadlib.c.o
+[  7%] Building C object CMakeFiles/ddup_lua.dir/deps/lua/lobject.c.o
+[  7%] Building C object CMakeFiles/ddup_lua.dir/deps/lua/lopcodes.c.o
+[  7%] Building C object CMakeFiles/ddup_lua.dir/deps/lua/loslib.c.o
+[  8%] Building C object CMakeFiles/ddup_lua.dir/deps/lua/lparser.c.o
+[  8%] Building C object CMakeFiles/ddup_lua.dir/deps/lua/lstate.c.o
+[  9%] Building C object CMakeFiles/ddup_lua.dir/deps/lua/lstring.c.o
+[  9%] Building C object CMakeFiles/ddup_lua.dir/deps/lua/lstrlib.c.o
+[  9%] Building C object CMakeFiles/ddup_lua.dir/deps/lua/ltable.c.o
+[ 10%] Building C object CMakeFiles/ddup_lua.dir/deps/lua/ltablib.c.o
+[ 10%] Building C object CMakeFiles/ddup_lua.dir/deps/lua/ltm.c.o
+[ 11%] Building C object CMakeFiles/ddup_lua.dir/deps/lua/lundump.c.o
+[ 11%] Building C object CMakeFiles/ddup_lua.dir/deps/lua/lvm.c.o
+[ 11%] Building C object CMakeFiles/ddup_lua.dir/deps/lua/lzio.c.o
+[ 12%] Linking C static library libddup_lua.a
+[ 12%] Built target ddup_lua
+[ 12%] Building C object CMakeFiles/ddup_xxhash.dir/deps/xxhash/xxhash.c.o
+[ 12%] Linking C static library libddup_xxhash.a
+[ 12%] Built target ddup_xxhash
+[ 13%] Building C object CMakeFiles/ddup_core.dir/src/pal/pal_time.c.o
+[ 13%] Building C object CMakeFiles/ddup_core.dir/src/pal/pal_socket.c.o
+[ 14%] Building C object CMakeFiles/ddup_core.dir/src/pal/pal_event.c.o
+[ 14%] Building C object CMakeFiles/ddup_core.dir/src/pal/pal_file.c.o
+[ 14%] Building C object CMakeFiles/ddup_core.dir/src/pal/pal_tls.c.o
+[ 15%] Building C object CMakeFiles/ddup_core.dir/src/pal/pal_iocp.c.o
+[ 15%] Building C object CMakeFiles/ddup_core.dir/src/pal/pal_iouring_op.c.o
+[ 15%] Building C object CMakeFiles/ddup_core.dir/src/pal/pal_thread.c.o
+[ 16%] Building C object CMakeFiles/ddup_core.dir/src/pal/pal_wakeup.c.o
+[ 16%] Building C object CMakeFiles/ddup_core.dir/src/core/arena.c.o
+[ 17%] Building C object CMakeFiles/ddup_core.dir/src/core/rhtable.c.o
+[ 17%] Building C object CMakeFiles/ddup_core.dir/src/core/command.c.o
+[ 17%] Building C object CMakeFiles/ddup_core.dir/src/core/buf_pool.c.o
+[ 18%] Building C object CMakeFiles/ddup_core.dir/src/core/tier.c.o
+[ 18%] Building C object CMakeFiles/ddup_core.dir/src/ds/obj.c.o
+[ 19%] Building C object CMakeFiles/ddup_core.dir/src/ds/glob.c.o
+[ 19%] Building C object CMakeFiles/ddup_core.dir/src/ds/listpack.c.o
+[ 19%] Building C object CMakeFiles/ddup_core.dir/src/ds/quicklist.c.o
+[ 20%] Building C object CMakeFiles/ddup_core.dir/src/ds/skiplist.c.o
+[ 20%] Building C object CMakeFiles/ddup_core.dir/src/ds/stream.c.o
+[ 21%] Building C object CMakeFiles/ddup_core.dir/src/core/session.c.o
+[ 21%] Building C object CMakeFiles/ddup_core.dir/src/core/config.c.o
+/home/runner/work/ddup/ddup/src/core/config.c: In function ‘config_apply’:
+/home/runner/work/ddup/ddup/src/core/config.c:201:16: error: ‘ddup_config’ has no member named ‘tls_replication’
+  201 |             cfg->tls_replication = 1;
+      |                ^~
+/home/runner/work/ddup/ddup/src/core/config.c:203:16: error: ‘ddup_config’ has no member named ‘tls_replication’
+  203 |             cfg->tls_replication = 0;
+      |                ^~
+/home/runner/work/ddup/ddup/src/core/config.c:209:30: error: ‘ddup_config’ has no member named ‘tls_ca_file’; did you mean ‘tls_cert_file’?
+  209 |         return copy_str(cfg->tls_ca_file, sizeof(cfg->tls_ca_file), value);
+      |                              ^~~~~~~~~~~
+      |                              tls_cert_file
+/home/runner/work/ddup/ddup/src/core/config.c:209:55: error: ‘ddup_config’ has no member named ‘tls_ca_file’; did you mean ‘tls_cert_file’?
+  209 |         return copy_str(cfg->tls_ca_file, sizeof(cfg->tls_ca_file), value);
+      |                                                       ^~~~~~~~~~~
+      |                                                       tls_cert_file
+/home/runner/work/ddup/ddup/src/core/config.c: In function ‘config_validate’:
+/home/runner/work/ddup/ddup/src/core/config.c:300:12: error: ‘ddup_config’ has no member named ‘tls_replication’
+  300 |     if (cfg->tls_replication && cfg->tls_ca_file[0] != '\0' &&
+      |            ^~
+/home/runner/work/ddup/ddup/src/core/config.c:300:38: error: ‘ddup_config’ has no member named ‘tls_ca_file’; did you mean ‘tls_cert_file’?
+  300 |     if (cfg->tls_replication && cfg->tls_ca_file[0] != '\0' &&
+      |                                      ^~~~~~~~~~~
+      |                                      tls_cert_file
+/home/runner/work/ddup/ddup/src/core/config.c:301:29: error: ‘ddup_config’ has no member named ‘tls_ca_file’; did you mean ‘tls_cert_file’?
+  301 |         !file_readable(cfg->tls_ca_file)) {
+      |                             ^~~~~~~~~~~
+      |                             tls_cert_file
+/home/runner/work/ddup/ddup/src/core/config.c:304:23: error: ‘ddup_config’ has no member named ‘tls_ca_file’; did you mean ‘tls_cert_file’?
+  304 |                  cfg->tls_ca_file);
+      |                       ^~~~~~~~~~~
+      |                       tls_cert_file
+gmake[2]: *** [CMakeFiles/ddup_core.dir/build.make:373: CMakeFiles/ddup_core.dir/src/core/config.c.o] Error 1
+gmake[1]: *** [CMakeFiles/Makefile2:384: CMakeFiles/ddup_core.dir/all] Error 2
 gmake: *** [Makefile:101: all] Error 2
