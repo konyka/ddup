@@ -467,3 +467,6 @@
     fixed SEND/SEND_ZC API 和通知后释放语义；服务器通过
     `DDUP_IOU_SEND_ZC=1` 显式启用，槽位耗尽或 UAPI/运行时不支持时安全回落
     普通发送（Phase 97）
+  - [x] TLS 复制 master link：新增客户端 TLS PAL、非阻塞 outbound 握手、
+    `tls-replication`/`tls-ca-file` 配置和 mt passthrough；TLS 复制强制
+    readiness backend，证书校验由 CA 文件显式开启（Phase 98）

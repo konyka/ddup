@@ -120,6 +120,9 @@ void server_graceful_stop(server *s);
 /* Point this server at a master (host/port), or promote it when host is
  * NULL (REPLICAOF NO ONE). Returns 0 on success. */
 int server_replicaof(server *s, const char *host, uint16_t port);
+/* Enable TLS for outbound master links. Must be called before
+ * server_replicaof; returns -1 for proactor backends or unavailable TLS. */
+int server_set_replica_tls(server *s, int enabled, const char *ca_file);
 
 /* Replace the replica-side full-snapshot loader. mt_server installs this
  * so a full SYNC is partitioned across the worker pool instead of being

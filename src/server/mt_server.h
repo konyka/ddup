@@ -76,6 +76,7 @@ void mt_server_set_bus_protocol(mt_server *ms, int proto);
  * across the worker pool; the command stream is routed like client traffic.
  * Returns 0 on success, -1 when the initial connect fails. */
 int mt_server_replicaof(mt_server *ms, const char *host, uint16_t port);
+int mt_server_set_replica_tls(mt_server *ms, int enabled, const char *ca_file);
 
 /* TLS alongside the plain listener: the acceptor owns a second (TLS)
  * listener and tags accepted fds; each worker wraps them with its own TLS

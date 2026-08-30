@@ -99,7 +99,7 @@ int main(int argc, char **argv)
         int mt_backend = SERVER_BACKEND_SELECT;
         /* worker backend: IOCP on Windows, io_uring when asked, readiness
          * otherwise; TLS needs the readiness backend */
-        if (cfg.tls_port == 0) {
+        if (cfg.tls_port == 0 && !cfg.tls_replication) {
             if (strcmp(cfg.io, "iouring") == 0) {
                 mt_backend = SERVER_BACKEND_IOURING;
             } else {
@@ -198,6 +198,15 @@ int main(int argc, char **argv)
             printf("cluster: enabled, node %s\n", nid);
         }
         if (cfg.replicaof_port > 0) {
+            if (cfg.tls_replication &&
+                mt_server_set_replica_tls(ms, 1,
+                                          cfg.tls_ca_file[0] != '\0' ?
+                                          cfg.tls_ca_file : NULL) != 0) {
+                fprintf(stderr, "failed to enable TLS for master link\n");
+                mt_server_destroy(ms);
+                pal_socket_cleanup();
+                return 1;
+            }
             if (mt_server_replicaof(ms, cfg.replicaof_host,
                                     cfg.replicaof_port) != 0)
                 fprintf(stderr,
@@ -250,9 +259,11 @@ int main(int argc, char **argv)
             else
                 backend = SERVER_BACKEND_SELECT;
         }
-        if (cfg.tls_port > 0 && (backend == SERVER_BACKEND_IOCP ||
+        if ((cfg.tls_port > 0 || cfg.tls_replication) &&
+            (backend == SERVER_BACKEND_IOCP ||
                                  backend == SERVER_BACKEND_IOURING_OP)) {
-            printf("note: TLS is unsupported on proactor backends; "
+            printf("note: TLS listener/replication is unsupported on "
+                   "proactor backends; "
                    "using readiness\n");
             backend = SERVER_BACKEND_SELECT;
         }
@@ -368,6 +379,15 @@ int main(int argc, char **argv)
         printf("cluster: enabled, node %s\n", nid);
     }
     if (cfg.replicaof_port > 0) {
+        if (cfg.tls_replication &&
+            server_set_replica_tls(s, 1,
+                                   cfg.tls_ca_file[0] != '\0' ?
+                                   cfg.tls_ca_file : NULL) != 0) {
+            fprintf(stderr, "failed to enable TLS for master link\n");
+            server_destroy(s);
+            pal_socket_cleanup();
+            return 1;
+        }
         if (server_replicaof(s, cfg.replicaof_host, cfg.replicaof_port) !=
             0)
             fprintf(stderr,

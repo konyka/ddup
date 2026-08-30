@@ -27,6 +27,8 @@ typedef struct ddup_config {
     uint16_t tls_port;        /* 0 = off */
     char tls_cert_file[512];
     char tls_key_file[512];
+    int tls_replication;       /* outbound master link TLS */
+    char tls_ca_file[512];     /* optional CA bundle; empty disables verify */
     char io[16]; /* "" = auto (iocp on Windows, select elsewhere) */
     int io_threads;                /* 1 = single-threaded (default); >1 = mt worker pool */
     char requirepass[128];         /* "" = auth disabled (Redis requirepass) */

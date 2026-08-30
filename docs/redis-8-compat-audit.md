@@ -48,6 +48,10 @@
   `SEND_ZC` when `DDUP_IOU_SEND_ZC=1`; notification CQEs pin buffers until
   kernel completion, while unsupported kernels and pool exhaustion fall back
   to ordinary SEND without changing the wire protocol.
+- Outbound replication supports TLS with non-blocking client handshakes;
+  `tls-replication yes` enables it and `tls-ca-file` enables peer verification.
+  TLS replication forces the readiness backend because the existing proactor
+  contract does not carry TLS WANT_READ/WANT_WRITE state.
 - Cluster slot maintenance: `SFLUSH` intersects requested ranges with local
   ownership and returns coalesced flushed ranges; `TRIMSLOTS RANGES` validates
   ownership before deleting keys from unserved slots. Both paths collect keys

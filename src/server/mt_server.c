@@ -5240,6 +5240,13 @@ int mt_server_replicaof(mt_server *ms, const char *host, uint16_t port)
     return 0;
 }
 
+int mt_server_set_replica_tls(mt_server *ms, int enabled, const char *ca_file)
+{
+    if (ms == NULL || ms->nworkers == 0)
+        return -1;
+    return server_set_replica_tls(ms->workers[0].srv, enabled, ca_file);
+}
+
 int mt_server_enable_tls(mt_server *ms, const char *host, uint16_t port,
                          const char *cert_file, const char *key_file)
 {

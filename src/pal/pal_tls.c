@@ -86,6 +86,33 @@ pal_tls_ctx *pal_tls_ctx_new(const char *cert_file, const char *key_file)
     return c;
 }
 
+pal_tls_ctx *pal_tls_ctx_new_client(const char *ca_file)
+{
+    pal_tls_ctx *c;
+    SSL_CTX *ctx;
+    pal_tls_lib_init();
+    c = (pal_tls_ctx *)calloc(1, sizeof(*c));
+    if (c == NULL)
+        return NULL;
+    ctx = SSL_CTX_new(TLS_client_method());
+    if (ctx == NULL) {
+        free(c);
+        return NULL;
+    }
+    SSL_CTX_set_min_proto_version(ctx, TLS1_2_VERSION);
+    if (ca_file != NULL && SSL_CTX_load_verify_locations(ctx, ca_file, NULL) != 1) {
+        SSL_CTX_free(ctx);
+        free(c);
+        return NULL;
+    }
+    if (ca_file == NULL)
+        SSL_CTX_set_verify(ctx, SSL_VERIFY_NONE, NULL);
+    else
+        SSL_CTX_set_verify(ctx, SSL_VERIFY_PEER, NULL);
+    c->ctx = ctx;
+    return c;
+}
+
 void pal_tls_ctx_free(pal_tls_ctx *ctx)
 {
     if (ctx == NULL)
@@ -121,6 +148,20 @@ int pal_tls_accept_handshake(pal_tls *t)
 int pal_tls_handshake_nb(pal_tls *t)
 {
     int rc = SSL_accept(t->ssl);
+    int err;
+    if (rc == 1)
+        return 1;
+    err = SSL_get_error(t->ssl, rc);
+    if (err == SSL_ERROR_WANT_READ)
+        return 0;
+    if (err == SSL_ERROR_WANT_WRITE)
+        return 2;
+    return -1;
+}
+
+int pal_tls_connect_handshake_nb(pal_tls *t)
+{
+    int rc = SSL_connect(t->ssl);
     int err;
     if (rc == 1)
         return 1;
@@ -187,6 +228,12 @@ pal_tls_ctx *pal_tls_ctx_new(const char *cert_file, const char *key_file)
     return NULL;
 }
 
+pal_tls_ctx *pal_tls_ctx_new_client(const char *ca_file)
+{
+    (void)ca_file;
+    return NULL;
+}
+
 void pal_tls_ctx_free(pal_tls_ctx *ctx)
 {
     (void)ctx;
@@ -206,6 +253,11 @@ int pal_tls_accept_handshake(pal_tls *t)
 }
 
 int pal_tls_handshake_nb(pal_tls *t)
+{
+    (void)t;
+    return -1;
+}
+int pal_tls_connect_handshake_nb(pal_tls *t)
 {
     (void)t;
     return -1;

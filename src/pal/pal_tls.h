@@ -24,6 +24,9 @@ typedef struct pal_tls pal_tls;
 /* Load cert/key (PEM), TLS 1.2+. NULL on error (and always when
  * DDUP_HAS_TLS=0). */
 pal_tls_ctx *pal_tls_ctx_new(const char *cert_file, const char *key_file);
+/* Client context. When ca_file is NULL, peer certificates are not verified;
+ * deployments that require authentication should provide a CA bundle. */
+pal_tls_ctx *pal_tls_ctx_new_client(const char *ca_file);
 void pal_tls_ctx_free(pal_tls_ctx *ctx);
 
 pal_tls *pal_tls_new(pal_tls_ctx *ctx, pal_socket_t fd);
@@ -32,6 +35,8 @@ int pal_tls_accept_handshake(pal_tls *t);
 /* Non-blocking handshake step (fd must be non-blocking):
  * 1 = done, 0 = want-read, 2 = want-write, -1 = error. */
 int pal_tls_handshake_nb(pal_tls *t);
+/* Non-blocking client-side handshake step (same return contract). */
+int pal_tls_connect_handshake_nb(pal_tls *t);
 /* > 0 bytes read, 0 clean close, -1 error (incl. unclean close),
  * -2 would-block (WANT_READ/WANT_WRITE on a non-blocking fd). */
 ptrdiff_t pal_tls_read(pal_tls *t, void *buf, size_t n);

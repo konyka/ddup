@@ -759,8 +759,11 @@ DBSIZE 为 O(1)，可能计入尚未回收的过期 key。
 - **独立端口**：`tls-port`（默认 0=off）与明文端口并行监听；配置校验
   `config_validate()` 要求 cert/key 文件可读。conn 增加 `pal_tls*`，
   server 的所有读写经 conn_read/conn_write 包装分发到 TLS 或明文。
-- **简化（记录在案）**：accept 上的握手为非阻塞式（事件循环内分步完成）；
-  复制 master link 暂不支持 TLS。
+- **握手与复制链路**：accept 与 outbound master link 的 TLS 握手均为非阻塞式，
+  在 readiness 事件循环内分步完成；`tls-replication yes` 启用副本到 master
+  的加密链路，可选 `tls-ca-file` 开启证书校验。无 CA 时仅关闭证书校验（仍
+  使用 TLS 1.2+），适合自签名内网证书；生产环境应配置 CA。TLS 复制会强制
+  readiness backend，IOCP/io_uring-op 不承载该连接。
 - **Windows 状态（Phase 18 已解决）**：此前 test_tls 在 Windows CI 被禁用，
   根因是测试自身缺陷——plain 端口对照连接用阻塞 socket，首个 pal_recv
   在服务器处理前永久阻塞（Windows 上稳定复现，POSIX 靠时序侥幸通过），
