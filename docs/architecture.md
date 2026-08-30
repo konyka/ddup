@@ -909,7 +909,9 @@ DBSIZE 为 O(1)，可能计入尚未回收的过期 key。
 - **-ASK 与 ASKING**：迁移源端槽属 myself 但键已不在 → `-ASK <slot>
   <ip>:<port>`（键仍在则照常服务）。导入端槽属他人但 slot_importing
   匹配时，客户端先发 ASKING（+OK，置一次性 session 标志），下一条
-  命令豁免所有权检查一次，随后标志被消费、恢复 -MOVED。
+  命令豁免所有权检查一次，随后标志被消费、恢复 -MOVED。非法或过期的
+  导入 owner 索引会 fail-closed 返回 `CLUSTERDOWN Hash slot not served`，
+  禁止越界访问节点表。
 
 ## 副本与故障转移（Phase 7.10，多节点第四部分）
 

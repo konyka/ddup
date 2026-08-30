@@ -460,3 +460,6 @@
   - [x] C99 原子降级安全收敛：GCC/Clang 使用 `__atomic`，MSVC 使用
     Interlocked，补充 PAL 原子封装四线程并发 TDD，避免强制 C99 mt 复制状态
     的数据竞争（Phase 95）
+  - [x] 迁移元数据防御性回归：`ASKING` 遇到非法 `IMPORTING` owner 索引时
+    fail-closed 返回 `CLUSTERDOWN Hash slot not served`，并补充默认/C99
+    构建的越界解引用回归测试（Phase 96）

@@ -269,6 +269,28 @@ static void test_asking_bypass(void)
     db_destroy(&d);
 }
 
+static void test_asking_invalid_import_owner(void)
+{
+    db d;
+    session *s;
+    resp_buf out;
+
+    db_init(&d);
+    resp_buf_init(&out);
+    s = fresh_session(&d);
+
+    /* Corrupt metadata must fail closed instead of indexing past nodes[]. */
+    d.slot_importing[FOO_SLOT] = (uint16_t)CLUSTER_MAX_NODES;
+    exec_sess(s, T0, &out, 1, "ASKING");
+    EXPECT(out, "+OK\r\n");
+    exec_sess(s, T0, &out, 2, "GET", "foo");
+    EXPECT(out, "-CLUSTERDOWN Hash slot not served\r\n");
+
+    session_free(s);
+    resp_buf_free(&out);
+    db_destroy(&d);
+}
+
 static void test_restore_asking_cluster(void)
 {
     db d;
@@ -527,6 +549,7 @@ int main(void)
     DD_RUN(test_setslot_importing);
     DD_RUN(test_ask_redirect);
     DD_RUN(test_asking_bypass);
+    DD_RUN(test_asking_invalid_import_owner);
     DD_RUN(test_restore_asking_cluster);
     DD_RUN(test_wire_full_flow);
     return DD_TEST_SUMMARY();
