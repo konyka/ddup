@@ -51,6 +51,8 @@ typedef struct pal_iouring_event {
                           -1 otherwise (single-shot recv / other ops) */
     int op_done;       /* 0 = multishot request still armed (more CQEs will
                           follow for it); 1 = the request completed */
+    int notif;         /* SEND_ZC completion notification (buffer is now safe
+                          to release); 0 for the initial send completion */
 } pal_iouring_event;
 
 typedef struct pal_iouring pal_iouring;
@@ -92,6 +94,19 @@ int pal_iouring_recv(pal_iouring *p, pal_socket_t fd, void *buf, size_t cap,
                      void *userdata);
 int pal_iouring_send(pal_iouring *p, pal_socket_t fd, const void *buf,
                      size_t n, void *userdata);
+
+/* Registered/fixed send-buffer pool. Buffers remain pinned until released by
+ * the caller after the matching SEND completion (or zero-copy notification).
+ * The pool is optional and returns -1 when the kernel UAPI/runtime rejects
+ * registered buffers. */
+int pal_iouring_enable_sbuf(pal_iouring *p, unsigned count, size_t size);
+int pal_iouring_sbuf_active(const pal_iouring *p);
+void *pal_iouring_sbuf_acquire(pal_iouring *p, int *bid);
+void pal_iouring_sbuf_release(pal_iouring *p, int bid);
+int pal_iouring_send_fixed(pal_iouring *p, pal_socket_t fd, int bid,
+                           size_t offset, size_t n, void *userdata);
+int pal_iouring_send_zc_fixed(pal_iouring *p, pal_socket_t fd, int bid,
+                              size_t offset, size_t n, void *userdata);
 
 /* Provided-buffer ring + multishot recv (Phase 33).
  * pal_iouring_enable_pbuf registers a page-aligned ring of `count`

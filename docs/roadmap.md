@@ -463,3 +463,7 @@
   - [x] 迁移元数据防御性回归：`ASKING` 遇到非法 `IMPORTING` owner 索引时
     fail-closed 返回 `CLUSTERDOWN Hash slot not served`，并补充默认/C99
     构建的越界解引用回归测试（Phase 96）
+  - [x] io_uring 固定发送缓冲与 SEND_ZC：PAL 注册有界 `iovec` 槽位，提供
+    fixed SEND/SEND_ZC API 和通知后释放语义；服务器通过
+    `DDUP_IOU_SEND_ZC=1` 显式启用，槽位耗尽或 UAPI/运行时不支持时安全回落
+    普通发送（Phase 97）

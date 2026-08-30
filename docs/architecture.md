@@ -400,11 +400,14 @@ proactor——提交 IORING_OP_RECV/SEND/ACCEPT 操作本身，完成携带结�
   每次必泵；该模式下 pal_iouring_post 仅允许属主线程调用——st 模式
   本就无人跨线程投递）。setup 失败即重试裸 flags。env 门控
   （DDUP_IOU_SQPOLL=1 / DDUP_IOU_DEFER=1），默认关。
-- **未做（记录在案）**：registered/fixed send buffers 与 SEND_ZC——
-  sbuf 按需 realloc 与注册缓冲的固定地址模型冲突（每次扩容要注销
-  重注册），loopback 上 pin 开销相对拷贝本身微小；SEND_ZC 的通知
-  CQE 对与缓冲生命周期规则同 sbuf 复用模式不兼容。评估结论：收益
-  不确定、复杂度实在，跳过（详见 performance.md Phase 33）。
+- **registered/fixed send buffers 与 SEND_ZC（Phase 97）**：
+  `pal_iouring_enable_sbuf()` 注册有界固定大小的 `iovec` 池，
+  `pal_iouring_sbuf_acquire/release()` 以互斥保护槽位生命周期；
+  `pal_iouring_send_fixed()` 使用 `IORING_RECVSEND_FIXED_BUF`，
+  `pal_iouring_send_zc_fixed()` 使用 `IORING_OP_SEND_ZC` 并报告通知 CQE。
+  服务器端由 `DDUP_IOU_SEND_ZC=1` 显式启用 64 个 256 KiB 槽位；无可用槽位、
+  UAPI 缺失或运行时拒绝时自动回落普通 SEND。初始 SEND CQE 仅确认已发送字节，
+  直到 `IORING_CQE_F_NOTIF` 通知到达才释放固定槽位，避免 zero-copy UAF。
 
 ## mt 生产化（Phase 15）
 

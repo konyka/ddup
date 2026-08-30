@@ -50,6 +50,7 @@
 
 /* IOCP backend: single send chunk cap per overlapped WSASend. */
 #define IOCP_SEND_CHUNK (256 * 1024)
+#define IOU_SBUF_COUNT 64
 
 /* io_uring op-mode multishot recv (Phase 33): provided-buffer ring of
  * 256 x 64KB slabs shared by all conns of this server. 64KB slots match
@@ -92,6 +93,8 @@ struct conn {
     int zombie;          /* closed with ops in flight: freed at 0 pending */
     int zombie_mt_free;  /* zombie whose owner (mt layer) released it */
     int send_outstanding;
+    int send_fixed_id;          /* registered io_uring SEND_ZC slot */
+    int send_zc_notif_pending;  /* buffer remains pinned until notification */
     int close_after_send; /* QUIT / protocol error: reply reaches the peer
                              before the connection is closed */
     /* detached send buffer: out's allocation moves here at kick_flush time
@@ -255,6 +258,7 @@ struct server {
     pal_iocp *iocp;
     pal_iouring *iou;
     int iou_ms; /* io_uring op-mode: multishot recv + pbuf ring active */
+    int iou_send_zc; /* optional registered-buffer SEND_ZC path */
     conn **zombies; /* conns closed with ops in flight, freed when drained */
     size_t nzombies;
     size_t zombie_cap;
@@ -1857,6 +1861,7 @@ static conn *conn_create(server *srv, pal_socket_t fd)
         return NULL;
     c->fd = fd;
     c->srv = srv;
+    c->send_fixed_id = -1;
     c->id = srv->next_client_id++;
     c->name_len = 0;
     c->sess = session_create(&srv->db);
@@ -2704,6 +2709,11 @@ server *server_create_ex(const char *host, uint16_t port, int backend)
         s->iou = pal_iouring_create_ex(iou_flags);
         if (s->iou == NULL)
             s->backend = SERVER_BACKEND_SELECT; /* unavailable: fall back */
+        else if (getenv("DDUP_IOU_SEND_ZC") != NULL &&
+                 strcmp(getenv("DDUP_IOU_SEND_ZC"), "0") != 0 &&
+                 pal_iouring_enable_sbuf(s->iou, IOU_SBUF_COUNT,
+                                         IOCP_SEND_CHUNK) == 0)
+            s->iou_send_zc = 1;
     }
     if (s->backend == SERVER_BACKEND_IOCP) {
         s->listen_fd = pal_iocp_listen(s->iocp, host, port, &s->port, NULL);
@@ -4362,6 +4372,21 @@ static void kick_flush(server *s, conn *c)
     if (n > IOCP_SEND_CHUNK)
         n = IOCP_SEND_CHUNK;
     s->io.writes++;
+    if (s->iou_send_zc && c->send_fixed_id < 0 && n <= IOCP_SEND_CHUNK) {
+        void *fixed = pal_iouring_sbuf_acquire(s->iou, &c->send_fixed_id);
+        if (fixed != NULL) {
+            memcpy(fixed, c->sbuf + c->sbuf_sent, n);
+            if (pal_iouring_send_zc_fixed(s->iou, c->fd,
+                                          c->send_fixed_id, 0, n, c) >= 0) {
+                c->send_zc_notif_pending = 1;
+                c->send_outstanding = 1;
+                c->pending_ops++;
+                return;
+            }
+            pal_iouring_sbuf_release(s->iou, c->send_fixed_id);
+            c->send_fixed_id = -1;
+        }
+    }
     if (pro_send(s, c->fd, c->sbuf + c->sbuf_sent, n, c) >= 0) {
         c->send_outstanding = 1;
         c->pending_ops++;
@@ -4433,6 +4458,7 @@ static int server_run_once_proactor(server *s, int timeout_ms)
         int err;     /* errno when bytes == -1 (io_uring), else 0 */
         int buf_id;  /* io_uring pbuf ring slot, -1 otherwise */
         int op_done; /* 0 = multishot request still armed (IOCP: always 1) */
+        int notif;   /* SEND_ZC buffer-release notification */
     } pro_event;
     pro_event evs[SERVER_MAX_EVENTS];
     int nev;
@@ -4449,6 +4475,7 @@ static int server_run_once_proactor(server *s, int timeout_ms)
             evs[i].err = 0;
             evs[i].buf_id = -1;
             evs[i].op_done = 1;
+            evs[i].notif = 0;
         }
     } else {
         pal_iouring_event raw[SERVER_MAX_EVENTS];
@@ -4461,6 +4488,7 @@ static int server_run_once_proactor(server *s, int timeout_ms)
             evs[i].err = raw[i].err;
             evs[i].buf_id = raw[i].buf_id;
             evs[i].op_done = raw[i].op_done;
+            evs[i].notif = raw[i].notif;
         }
     }
     if (nev <= 0) {
@@ -4506,6 +4534,11 @@ static int server_run_once_proactor(server *s, int timeout_ms)
              * and only the final CQE retires the pending op. */
             if (ev->buf_id >= 0)
                 pal_iouring_recycle(s->iou, ev->buf_id);
+            if (ev->notif && c->send_fixed_id >= 0) {
+                pal_iouring_sbuf_release(s->iou, c->send_fixed_id);
+                c->send_fixed_id = -1;
+                c->send_zc_notif_pending = 0;
+            }
             if (ev->op_done)
                 c->pending_ops--;
             if (c->pending_ops <= 0 && c->zombie_mt_free) {
@@ -4525,7 +4558,9 @@ static int server_run_once_proactor(server *s, int timeout_ms)
                 break;
         if (idx == s->nconns)
             continue; /* closed earlier within this iteration */
-        if (ev->op_done)
+        if (ev->op_done &&
+            !(ev->op == PAL_IOCP_SEND && c->send_zc_notif_pending &&
+              !ev->notif))
             c->pending_ops--;
 
         if (ev->op == PAL_IOCP_RECV) {
@@ -4674,14 +4709,24 @@ static int server_run_once_proactor(server *s, int timeout_ms)
                 continue;
             }
         } else if (ev->op == PAL_IOCP_SEND) {
-            c->send_outstanding = 0;
             if (ev->bytes < 0) {
+                if (c->send_fixed_id >= 0) {
+                    pal_iouring_sbuf_release(s->iou, c->send_fixed_id);
+                    c->send_fixed_id = -1;
+                    c->send_zc_notif_pending = 0;
+                }
+                c->send_outstanding = 0;
+                if (c->send_zc_notif_pending)
+                    c->pending_ops--;
                 conn_close(s, idx);
                 continue;
             }
-            s->io.bytes_written += (uint64_t)ev->bytes;
-            c->sbuf_sent += (size_t)ev->bytes;
-            if (c->sbuf_sent >= c->sbuf_len) {
+            if (!ev->notif) {
+                s->io.bytes_written += (uint64_t)ev->bytes;
+                c->sbuf_sent += (size_t)ev->bytes;
+            }
+            if (c->sbuf_sent >= c->sbuf_len &&
+                (!c->send_zc_notif_pending || ev->notif)) {
                 /* detached buffer fully sent: return it to the pool */
                 if (c->sbuf_pool_size > 0)
                     buf_pool_put(&s->pool, c->sbuf, c->sbuf_pool_size);
@@ -4692,6 +4737,16 @@ static int server_run_once_proactor(server *s, int timeout_ms)
                 c->sbuf_sent = 0;
                 c->sbuf_pool_size = 0;
             }
+            if (ev->notif && c->send_fixed_id >= 0) {
+                pal_iouring_sbuf_release(s->iou, c->send_fixed_id);
+                c->send_fixed_id = -1;
+                c->send_zc_notif_pending = 0;
+                c->send_outstanding = 0;
+            } else if (!c->send_zc_notif_pending) {
+                c->send_outstanding = 0;
+            }
+            if (c->send_zc_notif_pending && !ev->notif)
+                continue;
             if (c->close_after_send && c->sbuf == NULL && c->out.len == 0) {
                 conn_close(s, idx);
                 continue;

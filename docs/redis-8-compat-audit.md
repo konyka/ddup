@@ -44,6 +44,10 @@
   a fully covered minority partition therefore fails closed.
 - Forced C99 builds retain thread-safe mt replication state: GCC/Clang use
   compiler `__atomic` primitives and MSVC uses Interlocked operations.
+- io_uring op-mode optionally uses registered/fixed send buffers and
+  `SEND_ZC` when `DDUP_IOU_SEND_ZC=1`; notification CQEs pin buffers until
+  kernel completion, while unsupported kernels and pool exhaustion fall back
+  to ordinary SEND without changing the wire protocol.
 - Cluster slot maintenance: `SFLUSH` intersects requested ranges with local
   ownership and returns coalesced flushed ranges; `TRIMSLOTS RANGES` validates
   ownership before deleting keys from unserved slots. Both paths collect keys

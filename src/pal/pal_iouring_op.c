@@ -21,6 +21,7 @@
 #include <sys/mman.h>
 #include <sys/socket.h>
 #include <sys/syscall.h>
+#include <sys/uio.h>
 
 #include "pal/pal_thread.h"
 
@@ -46,6 +47,21 @@
 #endif
 #ifndef IORING_ASYNC_CANCEL_ANY
 #define IORING_ASYNC_CANCEL_ANY (1U << 2)
+#endif
+#ifndef IORING_OP_SEND_ZC
+#define IORING_OP_SEND_ZC 47
+#endif
+#ifndef IORING_RECVSEND_FIXED_BUF
+#define IORING_RECVSEND_FIXED_BUF (1U << 2)
+#endif
+#ifndef IORING_SEND_ZC_REPORT_USAGE
+#define IORING_SEND_ZC_REPORT_USAGE (1U << 3)
+#endif
+#ifndef IORING_CQE_F_NOTIF
+#define IORING_CQE_F_NOTIF (1U << 3)
+#endif
+#ifndef IORING_UNREGISTER_BUFFERS
+#define IORING_UNREGISTER_BUFFERS 1
 #endif
 /* CMake probes the complete registered-pbuf UAPI. Default off for builds
  * that compile this source outside the project configuration. */
@@ -110,6 +126,12 @@ struct pal_iouring {
     iou_timeout *timeout_pool;
     iou_timeout *timeout_free;
     int pbuf_registered;
+    void *sbuf_data;
+    struct iovec *sbuf_iov;
+    unsigned char *sbuf_busy;
+    unsigned sbuf_count;
+    size_t sbuf_size;
+    int sbuf_registered;
     int test_fail_wake_once;
 };
 
@@ -217,6 +239,7 @@ pal_iouring *pal_iouring_create(void)
 void pal_iouring_free(pal_iouring *r)
 {
     int keep_pbuf = 0;
+    int keep_sbuf = 0;
     if (r == NULL)
         return;
     /* The owner must have stopped submitters/reapers before teardown. Keep
@@ -241,6 +264,14 @@ void pal_iouring_free(pal_iouring *r)
         }
     }
 #endif
+    if (r->sbuf_registered) {
+        if (iou_cancel_all_locked(r) != 0 ||
+            syscall(__NR_io_uring_register, r->ring_fd,
+                    IORING_UNREGISTER_BUFFERS, NULL, 0) != 0)
+            keep_sbuf = 1;
+        else
+            r->sbuf_registered = 0;
+    }
     /* The cancel completion is observed before the ring and its registered
      * memory are released. This is required for multishot pbuf receives. */
     close(r->ring_fd);
@@ -249,6 +280,11 @@ void pal_iouring_free(pal_iouring *r)
     if (!keep_pbuf) {
         free(r->pbuf_ring);
         free(r->pbuf_data);
+    }
+    if (!keep_sbuf) {
+        free(r->sbuf_iov);
+        free(r->sbuf_busy);
+        free(r->sbuf_data);
     }
     free(r->timeout_pool);
     pal_mutex_unlock(&r->lock);
@@ -515,6 +551,143 @@ int pal_iouring_send(pal_iouring *r, pal_socket_t fd, const void *buf,
     rc = iou_publish_sqe(r, tail);
     pal_mutex_unlock(&r->lock);
     return rc;
+}
+
+static int iou_send_fixed_common(pal_iouring *r, pal_socket_t fd, int bid,
+                                 size_t offset, size_t n, void *userdata,
+                                 int zc)
+{
+    struct io_uring_sqe *sqe;
+    unsigned tail;
+    int rc;
+    pal_mutex_lock(&r->lock);
+    if (!r->sbuf_registered || bid < 0 || (unsigned)bid >= r->sbuf_count ||
+        offset > r->sbuf_size || n > r->sbuf_size - offset) {
+        pal_mutex_unlock(&r->lock);
+        return -1;
+    }
+    sqe = iou_reserve_sqe(r, &tail);
+    if (sqe == NULL) {
+        pal_mutex_unlock(&r->lock);
+        return -1;
+    }
+    sqe->opcode = zc ? IORING_OP_SEND_ZC : IORING_OP_SEND;
+    sqe->fd = (int)fd;
+    sqe->addr = (unsigned long long)(uintptr_t)(r->sbuf_iov[bid].iov_base) +
+                (unsigned long long)offset;
+    sqe->len = (unsigned)n;
+    sqe->msg_flags = MSG_NOSIGNAL;
+    sqe->ioprio = IORING_RECVSEND_FIXED_BUF;
+    if (zc)
+        sqe->ioprio |= IORING_SEND_ZC_REPORT_USAGE;
+    sqe->buf_index = (unsigned short)bid;
+    sqe->user_data = (unsigned long long)(uintptr_t)userdata |
+                     (unsigned long long)PAL_IOURING_SEND;
+    rc = iou_publish_sqe(r, tail);
+    pal_mutex_unlock(&r->lock);
+    return rc;
+}
+
+int pal_iouring_send_fixed(pal_iouring *r, pal_socket_t fd, int bid,
+                           size_t offset, size_t n, void *userdata)
+{
+    return iou_send_fixed_common(r, fd, bid, offset, n, userdata, 0);
+}
+
+int pal_iouring_send_zc_fixed(pal_iouring *r, pal_socket_t fd, int bid,
+                              size_t offset, size_t n, void *userdata)
+{
+    return iou_send_fixed_common(r, fd, bid, offset, n, userdata, 1);
+}
+
+int pal_iouring_enable_sbuf(pal_iouring *r, unsigned count, size_t size)
+{
+    struct iovec *iov = NULL;
+    unsigned char *busy = NULL;
+    char *data = NULL;
+    unsigned i;
+    struct iovec *reg_iov;
+
+    if (r == NULL || count == 0 || count > UINT16_MAX || size == 0 ||
+        size > UINT32_MAX || (size_t)count > SIZE_MAX / size)
+        return -1;
+    pal_mutex_lock(&r->lock);
+    if (r->sbuf_registered) {
+        pal_mutex_unlock(&r->lock);
+        return 0;
+    }
+    iov = (struct iovec *)calloc(count, sizeof(*iov));
+    busy = (unsigned char *)calloc(count, sizeof(*busy));
+    data = (char *)malloc((size_t)count * size);
+    if (iov == NULL || busy == NULL || data == NULL)
+        goto fail;
+    for (i = 0; i < count; i++) {
+        iov[i].iov_base = data + (size_t)i * size;
+        iov[i].iov_len = size;
+    }
+    reg_iov = iov;
+    if (syscall(__NR_io_uring_register, r->ring_fd,
+                IORING_REGISTER_BUFFERS, reg_iov, count) != 0)
+        goto fail;
+    r->sbuf_iov = iov;
+    r->sbuf_busy = busy;
+    r->sbuf_data = data;
+    r->sbuf_count = count;
+    r->sbuf_size = size;
+    r->sbuf_registered = 1;
+    pal_mutex_unlock(&r->lock);
+    return 0;
+fail:
+    free(iov);
+    free(busy);
+    free(data);
+    pal_mutex_unlock(&r->lock);
+    return -1;
+}
+
+int pal_iouring_sbuf_active(const pal_iouring *r)
+{
+    int active;
+    if (r == NULL)
+        return 0;
+    pal_mutex_lock((pal_mutex *)&r->lock);
+    active = r->sbuf_registered;
+    pal_mutex_unlock((pal_mutex *)&r->lock);
+    return active;
+}
+
+void *pal_iouring_sbuf_acquire(pal_iouring *r, int *bid)
+{
+    unsigned i;
+    void *buf = NULL;
+    if (r == NULL || bid == NULL)
+        return NULL;
+    *bid = -1;
+    pal_mutex_lock(&r->lock);
+    if (!r->sbuf_registered)
+        goto done;
+    for (i = 0; i < r->sbuf_count; i++) {
+        if (r->sbuf_busy[i] != 0)
+            continue;
+        r->sbuf_busy[i] = 1;
+        *bid = (int)i;
+        buf = r->sbuf_iov[i].iov_base;
+        break;
+    }
+done:
+    pal_mutex_unlock(&r->lock);
+    return buf;
+}
+
+void pal_iouring_sbuf_release(pal_iouring *r, int bid)
+{
+    if (r == NULL)
+        return;
+    pal_mutex_lock(&r->lock);
+    if (r->sbuf_registered && bid >= 0 &&
+        (unsigned)bid < r->sbuf_count)
+        r->sbuf_busy[bid] = 0;
+    pal_mutex_unlock(&r->lock);
 }
 
 int pal_iouring_enable_pbuf(pal_iouring *r, unsigned count, size_t size)
@@ -796,6 +969,7 @@ int pal_iouring_wait(pal_iouring *r, pal_iouring_event *evs, int max,
             ev->err = cqe->res < 0 ? -cqe->res : 0;
             /* F_MORE: the underlying multishot request is still armed */
             ev->op_done = (cqe->flags & IORING_CQE_F_MORE) ? 0 : 1;
+            ev->notif = (cqe->flags & IORING_CQE_F_NOTIF) != 0;
 #if PAL_IOU_HAVE_PBUF
             ev->buf_id = (cqe->flags & IORING_CQE_F_BUFFER)
                              ? (int)(cqe->flags >> IORING_CQE_BUFFER_SHIFT)
@@ -878,6 +1052,39 @@ int pal_iouring_send(pal_iouring *p, pal_socket_t fd, const void *buf,
 {
     (void)p; (void)fd; (void)buf; (void)n; (void)userdata;
     return -1;
+}
+int pal_iouring_send_fixed(pal_iouring *p, pal_socket_t fd, int bid,
+                           size_t offset, size_t n, void *userdata)
+{
+    (void)p; (void)fd; (void)bid; (void)offset; (void)n; (void)userdata;
+    return -1;
+}
+int pal_iouring_send_zc_fixed(pal_iouring *p, pal_socket_t fd, int bid,
+                              size_t offset, size_t n, void *userdata)
+{
+    (void)p; (void)fd; (void)bid; (void)offset; (void)n; (void)userdata;
+    return -1;
+}
+int pal_iouring_enable_sbuf(pal_iouring *p, unsigned count, size_t size)
+{
+    (void)p; (void)count; (void)size;
+    return -1;
+}
+int pal_iouring_sbuf_active(const pal_iouring *p)
+{
+    (void)p;
+    return 0;
+}
+void *pal_iouring_sbuf_acquire(pal_iouring *p, int *bid)
+{
+    (void)p;
+    if (bid != NULL)
+        *bid = -1;
+    return NULL;
+}
+void pal_iouring_sbuf_release(pal_iouring *p, int bid)
+{
+    (void)p; (void)bid;
 }
 int pal_iouring_wait(pal_iouring *p, pal_iouring_event *evs, int max,
                      int timeout_ms)

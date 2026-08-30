@@ -943,3 +943,13 @@ masters / 2 + 1`。该路径属于低频管理命令，数据面 key 路由的 O
 原语；只有没有任何编译器原子内建的平台才退回单线程实现。这样不改变 C11
 热路径指令，同时避免 mt 复制状态在 C99 构建中发生数据竞争。`test_cstd`
 新增四线程百万次增量回归并通过。
+
+## Phase 97：io_uring 固定发送缓冲与 SEND_ZC
+
+io_uring op-mode 新增有界 64×256 KiB 注册发送缓冲池；发送路径仅在设置
+`DDUP_IOU_SEND_ZC=1` 且槽位可用时启用，槽位不足或内核拒绝 `SEND_ZC` 时
+回落现有 detached-buffer SEND，不增加失败重试或额外网络往返。固定缓冲
+生命周期由初始发送 CQE 与 `IORING_CQE_F_NOTIF` 双事件共同驱动，避免在
+内核仍持有 DMA 引用时复用内存。基准数字待在目标 NIC/内核上做 A/B 测量；
+本阶段先以 `test_iouring_op` 的真实 loopback SEND_ZC 回归和 `test_server`
+三后端集成回归锁定安全性。

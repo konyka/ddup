@@ -15,6 +15,106 @@
 #define PBUF_SIZE 4096
 #define PBUF_ROUNDS 8
 #define PBUF_PAGE_BOUNDARY_COUNT 256
+#define SBUF_COUNT 4
+#define SBUF_SIZE 4096
+
+static int wait_for_accept(pal_iouring *p, pal_socket_t listener,
+                           pal_iouring_event *ev);
+
+static void test_registered_send_buffers(void)
+{
+    pal_iouring *p = pal_iouring_create();
+    int bid = -1;
+    void *buf;
+    int held_id[SBUF_COUNT];
+    int i;
+
+    DD_CHECK(p != NULL);
+    if (p == NULL)
+        return;
+    if (pal_iouring_enable_sbuf(p, SBUF_COUNT, SBUF_SIZE) != 0) {
+        printf("registered send buffers unsupported; skipping\n");
+        pal_iouring_free(p);
+        return;
+    }
+    DD_CHECK_EQ_INT(1, pal_iouring_sbuf_active(p));
+    buf = pal_iouring_sbuf_acquire(p, &bid);
+    DD_CHECK(buf != NULL);
+    DD_CHECK(bid >= 0 && bid < SBUF_COUNT);
+    if (buf != NULL)
+        memset(buf, 'x', SBUF_SIZE);
+    pal_iouring_sbuf_release(p, bid);
+    for (i = 0; i < SBUF_COUNT; i++)
+        DD_CHECK(pal_iouring_sbuf_acquire(p, &held_id[i]) != NULL);
+    DD_CHECK(pal_iouring_sbuf_acquire(p, &bid) == NULL);
+    for (i = 0; i < SBUF_COUNT; i++)
+        pal_iouring_sbuf_release(p, held_id[i]);
+    pal_iouring_free(p);
+}
+
+static void test_send_zc_fixed_completion(void)
+{
+    pal_iouring *p = pal_iouring_create();
+    pal_iouring_event ev;
+    pal_socket_t listener = PAL_SOCKET_INVALID;
+    pal_socket_t client = PAL_SOCKET_INVALID;
+    pal_socket_t server = PAL_SOCKET_INVALID;
+    uint16_t port = 0;
+    int bid = -1;
+    static long long zc_tag;
+    char recv_buf[32];
+    void *buf;
+    int got_send = 0, got_notif = 0;
+
+    DD_CHECK(p != NULL);
+    if (p == NULL)
+        return;
+    if (pal_iouring_enable_sbuf(p, 1, SBUF_SIZE) != 0) {
+        printf("registered send buffers unsupported; skipping SEND_ZC\n");
+        pal_iouring_free(p);
+        return;
+    }
+    listener = pal_iouring_listen(p, "127.0.0.1", 0, &port, NULL);
+    DD_CHECK(listener != PAL_SOCKET_INVALID);
+    if (listener == PAL_SOCKET_INVALID)
+        goto cleanup;
+    client = pal_tcp_connect("127.0.0.1", port);
+    DD_CHECK(client != PAL_SOCKET_INVALID);
+    if (client == PAL_SOCKET_INVALID)
+        goto cleanup;
+    DD_CHECK_EQ_INT(1, wait_for_accept(p, listener, &ev));
+    server = ev.fd;
+    buf = pal_iouring_sbuf_acquire(p, &bid);
+    DD_CHECK(buf != NULL);
+    if (buf == NULL)
+        goto cleanup;
+    memcpy(buf, "hello-zc", 8);
+    DD_CHECK_EQ_INT(0, pal_iouring_send_zc_fixed(p, server, bid, 0, 8,
+                                                  &zc_tag));
+    while (!got_notif) {
+        DD_CHECK_EQ_INT(1, pal_iouring_wait(p, &ev, 1, 2000));
+        if (ev.op != PAL_IOURING_SEND)
+            continue;
+        if (ev.notif)
+            got_notif = 1;
+        else
+            got_send = 1;
+    }
+    DD_CHECK_EQ_INT(1, got_send);
+    DD_CHECK_EQ_INT(1, got_notif);
+    DD_CHECK_EQ_INT(8, pal_recv(client, recv_buf, sizeof(recv_buf)));
+    DD_CHECK_MEM("hello-zc", 8, recv_buf, 8);
+    pal_iouring_sbuf_release(p, bid);
+
+cleanup:
+    if (server != PAL_SOCKET_INVALID)
+        pal_iouring_close(p, server);
+    if (client != PAL_SOCKET_INVALID)
+        pal_close(client);
+    if (listener != PAL_SOCKET_INVALID)
+        pal_close(listener);
+    pal_iouring_free(p);
+}
 
 static void test_pbuf_validation_and_recycle(void)
 {
@@ -382,6 +482,8 @@ cleanup:
 
 int main(void)
 {
+    DD_RUN(test_registered_send_buffers);
+    DD_RUN(test_send_zc_fixed_completion);
     pal_iouring *probe;
 
     DD_CHECK_EQ_INT(0, pal_socket_init());
