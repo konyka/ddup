@@ -97,6 +97,10 @@ static void test_bulk_length_fast_parser_contract(void)
     DD_CHECK(parse(leading_zero) == (ptrdiff_t)strlen(leading_zero));
     DD_CHECK_EQ_INT(1, g_v.len);
     DD_CHECK(g_v.str[0] == 'x');
+
+    p = "000000000000";
+    DD_CHECK(resp_test_bulk_len(p, p + 12, &out) == 0);
+    DD_CHECK_EQ_INT(0, out);
 }
 
 static void test_bulk_string(void)

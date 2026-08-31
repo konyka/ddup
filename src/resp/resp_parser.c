@@ -115,6 +115,7 @@ static int parse_bulk_len(const char *p, const char *end, long long *out)
         return 0;
     }
 
+    p = first;
     unsigned long long value = 0;
     for (; p < end; p++) {
         if (*p < '0' || *p > '9')
