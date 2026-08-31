@@ -1021,6 +1021,13 @@ bulk string、array、map、set 和 push 的长度字段改用专用非负解析
 与 Phase 101 的 35.7M–39.2M / 40.6M–44.6M 重叠，未宣称可归因的端到端
 吞吐提升；主要收益是短长度分支减少和超长输入早拒绝。
 
+## Phase 103：RESP 长度前导零兼容性修复
+
+长度位数早拒绝现在只计算去除前导零后的有效数字位数，避免误伤历史上
+可接受的填充格式（例如 `$000000000001`）。数值累加仍对 1 GiB 上限做
+最终校验，超长有效数字继续在扫描前拒绝；新增回归覆盖填充长度与空值
+边界，未改变热路径的分支结构。
+
 ## Phase 104：RESP 整数解析快速分支
 
 `parse_ll` 现在先去除前导零，再按有效数字位数分层：少于 19 位的常见
@@ -1051,14 +1058,7 @@ bulk 长度解析在完成前导零识别后，从首个有效数字开始累加
 | integer RESP parser | 73.8M–76.7M |
 | integer RESP writer | 92.2M–104.1M |
 
-The benchmark was subsequently corrected to precompute sample lengths, removing
-the per-iteration `strlen()` cost. Repeated 1M-command runs measured
-`68.4M–80.6M ops/s` for the parser and `97.3M–100.1M ops/s` for the writer;
-the wider range reflects host scheduling noise.
-
-## Phase 103：RESP 长度前导零兼容性修复
-
-长度位数早拒绝现在只计算去除前导零后的有效数字位数，避免误伤历史上
-可接受的填充格式（例如 `$000000000001`）。数值累加仍对 1 GiB 上限做
-最终校验，超长有效数字继续在扫描前拒绝；新增回归覆盖填充长度与空值
-边界，未改变热路径的分支结构。
+基准随后校准为预计算样本长度，移除循环内的 `strlen()` 开销。重复 1M
+次运行测得
+parser `68.4M–80.6M ops/s`、writer `97.3M–100.1M ops/s`；较宽的范围
+来自主机调度噪声。
