@@ -50,6 +50,29 @@ static void test_integer_overflow_is_error(void)
     DD_CHECK(parse(":-9223372036854775809\r\n") == -1);
 }
 
+static void test_bulk_length_fast_parser_contract(void)
+{
+    long long out = 123;
+    const char *p = "0";
+    DD_CHECK(resp_test_bulk_len(p, p + 1, &out) == 0);
+    DD_CHECK_EQ_INT(0, out);
+
+    p = "1048576";
+    DD_CHECK(resp_test_bulk_len(p, p + 7, &out) == 0);
+    DD_CHECK_EQ_INT(1048576, out);
+
+    p = "-1";
+    DD_CHECK(resp_test_bulk_len(p, p + 2, &out) == 0);
+    DD_CHECK_EQ_INT(-1, out);
+
+    p = "-2";
+    DD_CHECK(resp_test_bulk_len(p, p + 2, &out) == -1);
+    p = "12x";
+    DD_CHECK(resp_test_bulk_len(p, p + 3, &out) == -1);
+    p = "1073741825"; /* RESP_MAX_ARRAY_LEN + 1 */
+    DD_CHECK(resp_test_bulk_len(p, p + 10, &out) == -1);
+}
+
 static void test_bulk_string(void)
 {
     DD_CHECK(parse("$5\r\nhello\r\n") == 11);
@@ -181,6 +204,7 @@ int main(void)
     DD_RUN(test_error);
     DD_RUN(test_integer);
     DD_RUN(test_integer_overflow_is_error);
+    DD_RUN(test_bulk_length_fast_parser_contract);
     DD_RUN(test_bulk_string);
     DD_RUN(test_null_bulk_string);
     DD_RUN(test_array);

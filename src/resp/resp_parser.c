@@ -65,6 +65,43 @@ static int parse_ll(const char *p, const char *end, long long *out)
     return 0;
 }
 
+/* Bulk and aggregate lengths are non-negative (apart from the RESP2 null
+ * bulk/array marker -1) and capped by the protocol sanity limit. Keeping a
+ * size_t accumulator avoids the signed-overflow checks needed for integers. */
+static int parse_bulk_len(const char *p, const char *end, long long *out)
+{
+    if (p == end)
+        return -1;
+    if (*p == '-') {
+        if (end - p == 2 && p[1] == '1') {
+            *out = -1;
+            return 0;
+        }
+        return -1;
+    }
+
+    size_t value = 0;
+    for (; p < end; p++) {
+        if (*p < '0' || *p > '9')
+            return -1;
+        size_t digit = (size_t)(*p - '0');
+        if (value > (size_t)RESP_MAX_ARRAY_LEN / 10 ||
+            (value == (size_t)RESP_MAX_ARRAY_LEN / 10 &&
+             digit > (size_t)RESP_MAX_ARRAY_LEN % 10))
+            return -1;
+        value = value * 10 + digit;
+    }
+    *out = (long long)value;
+    return 0;
+}
+
+#ifdef DDUP_TESTING
+int resp_test_bulk_len(const char *p, const char *end, long long *out)
+{
+    return parse_bulk_len(p, end, out);
+}
+#endif
+
 /* Parse one value starting at *pos (absolute pointers into the buffer).
  * Returns 1 on success, 0 incomplete, -1 protocol error. On success *pos is
  * advanced past the value. */
@@ -163,7 +200,7 @@ static int parse_at(const char *start, const char *end, const char **pos,
         if (!crlf)
             return 0;
         long long blen;
-        if (parse_ll(p, crlf, &blen) != 0)
+        if (parse_bulk_len(p, crlf, &blen) != 0)
             return -1;
         if (type == '$' && blen == -1) {
             out->type = RESP_BULK_STRING;
@@ -198,7 +235,7 @@ static int parse_at(const char *start, const char *end, const char **pos,
         if (!crlf)
             return 0;
         long long count;
-        if (parse_ll(p, crlf, &count) != 0)
+        if (parse_bulk_len(p, crlf, &count) != 0)
             return -1;
         if (type == '*' && count == -1) {
             out->type = RESP_ARRAY;
@@ -245,7 +282,7 @@ static int parse_at(const char *start, const char *end, const char **pos,
                     const char *payload;
                     if (!bcrlf)
                         return 0;
-                    if (parse_ll(bp, bcrlf, &blen) != 0)
+                    if (parse_bulk_len(bp, bcrlf, &blen) != 0)
                         return -1;
                     it->is_null = 0;
                     if (blen == -1) { /* null bulk */
