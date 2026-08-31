@@ -80,9 +80,18 @@ static int parse_bulk_len(const char *p, const char *end, long long *out)
         return -1;
     }
 
-    size_t digits = (size_t)(end - p);
-    if (digits > 10)
+    /* Ignore leading zeroes when applying the decimal-width guard. RESP
+     * clients historically emit padded lengths, and those remain valid. */
+    const char *first = p;
+    while (first < end && *first == '0')
+        first++;
+    size_t significant_digits = (size_t)(end - first);
+    if (significant_digits > 10)
         return -1;
+    if (p == end) {
+        *out = 0;
+        return 0;
+    }
 
     unsigned long long value = 0;
     for (; p < end; p++) {

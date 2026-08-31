@@ -73,6 +73,13 @@ static void test_bulk_length_fast_parser_contract(void)
     DD_CHECK(resp_test_bulk_len(p, p + 10, &out) == -1);
     p = "99999999999"; /* reject overlong lengths before scanning all digits */
     DD_CHECK(resp_test_bulk_len(p, p + 11, &out) == -1);
+
+    /* Leading zeroes are accepted by the historical signed parser and by
+     * Redis clients; the fast path must not turn them into a regression. */
+    const char *leading_zero = "$000000000001\r\nx\r\n";
+    DD_CHECK(parse(leading_zero) == (ptrdiff_t)strlen(leading_zero));
+    DD_CHECK_EQ_INT(1, g_v.len);
+    DD_CHECK(g_v.str[0] == 'x');
 }
 
 static void test_bulk_string(void)
