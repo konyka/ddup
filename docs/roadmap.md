@@ -472,3 +472,5 @@
     readiness backend，证书校验由 CA 文件显式开启（Phase 98）
   - [x] 哈希表扩容阈值缓存：初始化/扩容时预计算 85% load threshold，
     移除插入热路径上的重复整数除法与乘法，并以 TDD 锁定扩容时机（Phase 99）
+  - [x] 整数 RESP 写出优化：两位数字查表减少十进制转换除法，并以边界
+    TDD 锁定 `0`/`UINT64_MAX` 格式化结果（Phase 100）

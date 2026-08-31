@@ -85,16 +85,42 @@ static int buf_append(resp_buf *b, const char *s, size_t n)
 /* Fast unsigned-to-decimal; returns number of bytes written (max 20). */
 static size_t u64_to_str(char *out, unsigned long long v)
 {
+    static const char digits100[] =
+        "00010203040506070809"
+        "10111213141516171819"
+        "20212223242526272829"
+        "30313233343536373839"
+        "40414243444546474849"
+        "50515253545556575859"
+        "60616263646566676869"
+        "70717273747576777879"
+        "80818283848586878889"
+        "90919293949596979899";
     char tmp[20];
     size_t n = 0;
-    do {
-        tmp[n++] = (char)('0' + v % 10);
-        v /= 10;
-    } while (v);
+    while (v >= 100) {
+        unsigned long long rem = v % 100;
+        v /= 100;
+        tmp[n++] = digits100[rem * 2 + 1];
+        tmp[n++] = digits100[rem * 2];
+    }
+    if (v < 10)
+        tmp[n++] = (char)('0' + v);
+    else {
+        tmp[n++] = digits100[v * 2 + 1];
+        tmp[n++] = digits100[v * 2];
+    }
     for (size_t i = 0; i < n; i++)
         out[i] = tmp[n - 1 - i];
     return n;
 }
+
+#ifdef DDUP_TESTING
+size_t resp_test_u64_to_str(char *out, unsigned long long v)
+{
+    return u64_to_str(out, v);
+}
+#endif
 
 static size_t ll_to_str(char *out, long long v)
 {

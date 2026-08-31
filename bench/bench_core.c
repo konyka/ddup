@@ -100,6 +100,26 @@ static double bench_buf_pool(long n)
                      : (double)n;
 }
 
+/* Benchmark the integer RESP writer with a warmed output buffer. */
+static double bench_integer_writer(long n)
+{
+    resp_buf out;
+    long k;
+    uint64_t t0, t1;
+
+    resp_buf_init(&out);
+    resp_buf_reserve(&out, 32);
+    t0 = pal_now_us();
+    for (k = 0; k < n; k++) {
+        out.len = 0;
+        resp_write_integer(&out, (long long)(k * 7919ULL));
+    }
+    t1 = pal_now_us();
+    resp_buf_free(&out);
+    return (t1 > t0) ? (double)n / ((double)(t1 - t0) / 1000000.0)
+                     : (double)n;
+}
+
 /* Parse-only phase: isolate parser cost from command dispatch/storage. */
 static double run_parse_phase(arena *ar, const char *buf, size_t len)
 {
@@ -201,6 +221,8 @@ int main(int argc, char **argv)
            bench_cmd_resolve(n));
     printf("buf_pool get/put (64 KiB):    %12.0f ops/s\n",
            bench_buf_pool(n));
+    printf("integer RESP writer:           %12.0f ops/s\n",
+           bench_integer_writer(n));
 
     session_free(s);
     db_destroy(&d);

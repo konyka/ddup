@@ -29,6 +29,11 @@ void resp_buf_free(resp_buf *b);
  * or capacity growth would overflow; the buffer is unchanged on failure. */
 int resp_buf_reserve(resp_buf *b, size_t n);
 
+#ifdef DDUP_TESTING
+/* Test hook for the integer formatter's exact wire representation. */
+size_t resp_test_u64_to_str(char *out, unsigned long long v);
+#endif
+
 void resp_write_simple_string(resp_buf *b, const char *s, size_t len);
 void resp_write_error(resp_buf *b, const char *s, size_t len);
 void resp_write_integer(resp_buf *b, long long v);

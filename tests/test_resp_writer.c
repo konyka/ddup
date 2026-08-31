@@ -50,6 +50,19 @@ static void test_scalars(void)
     resp_buf_free(&b);
 }
 
+static void test_integer_formatter_boundaries(void)
+{
+    char out[32];
+    size_t n;
+
+    n = resp_test_u64_to_str(out, 0ULL);
+    DD_CHECK_EQ_INT(1, (long long)n);
+    DD_CHECK_MEM("0", 1, out, n);
+    n = resp_test_u64_to_str(out, 18446744073709551615ULL);
+    DD_CHECK_EQ_INT(20, (long long)n);
+    DD_CHECK_MEM("18446744073709551615", 20, out, n);
+}
+
 static void test_resp3_scalars(void)
 {
     resp_buf b;
@@ -258,6 +271,7 @@ static void test_resp_buf_reserve_overflow(void)
 int main(void)
 {
     DD_RUN(test_scalars);
+    DD_RUN(test_integer_formatter_boundaries);
     DD_RUN(test_resp3_scalars);
     DD_RUN(test_roundtrip_random);
     DD_RUN(test_roundtrip_nested_command);
