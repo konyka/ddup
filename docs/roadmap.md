@@ -493,3 +493,5 @@
     和填充极限输入，默认/C99/hardening parser 均通过（Phase 108）
   - [x] RESP 整数解析属性回归：通过完整 wire 覆盖 `-128..128` 步进值及
     `LLONG_MIN/MAX` 边界，共 919 checks（Phase 109）
+  - [x] 解析基准多轮中位数：同一 Release 构建连续 5 次取中位数，记录
+    parse-only 与 integer parser/writer 的稳定趋势数据（Phase 110）

@@ -1075,3 +1075,10 @@ parser `68.4M–80.6M ops/s`、writer `97.3M–100.1M ops/s`；较宽的范围
 `-128..128` 的步进值和 `LLONG_MIN/MAX` 附近边界，共 919 项检查。该套
 测试不改变运行时路径，用于防止后续解析器优化只通过内部辅助函数而遗漏
 协议层行为。
+
+## Phase 110：解析基准多轮中位数
+
+为避免单次运行误导，使用同一 Release 构建连续运行 5 次（每次 1M
+样本）并取中位数：parse-only SET `36.8M ops/s`、parse-only GET
+`42.4M ops/s`、integer RESP parser `79.7M ops/s`、integer RESP writer
+`99.6M ops/s`。各项离散度仍受主机调度影响，数据仅用于同机趋势比较。
