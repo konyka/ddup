@@ -120,6 +120,33 @@ static double bench_integer_writer(long n)
                      : (double)n;
 }
 
+/* Benchmark RESP integer parsing independently from bulk command parsing. */
+static double bench_integer_parser(long n)
+{
+    static const char *samples[] = {":0\r\n", ":42\r\n", ":-42\r\n",
+                                    ":9223372036854775807\r\n"};
+    arena ar;
+    volatile long long sink = 0;
+    long k;
+    uint64_t t0, t1;
+
+    arena_init(&ar, 256);
+    t0 = pal_now_us();
+    for (k = 0; k < n; k++) {
+        resp_value v;
+        const char *sample = samples[(size_t)k & 3U];
+        if (resp_parse(sample, strlen(sample), &v, &ar) <= 0)
+            exit(1);
+        sink ^= v.integer;
+        arena_reset(&ar);
+    }
+    t1 = pal_now_us();
+    arena_destroy(&ar);
+    (void)sink;
+    return (t1 > t0) ? (double)n / ((double)(t1 - t0) / 1000000.0)
+                     : (double)n;
+}
+
 /* Parse-only phase: isolate parser cost from command dispatch/storage. */
 static double run_parse_phase(arena *ar, const char *buf, size_t len)
 {
@@ -223,6 +250,8 @@ int main(int argc, char **argv)
            bench_buf_pool(n));
     printf("integer RESP writer:           %12.0f ops/s\n",
            bench_integer_writer(n));
+    printf("integer RESP parser:           %12.0f ops/s\n",
+           bench_integer_parser(n));
 
     session_free(s);
     db_destroy(&d);
