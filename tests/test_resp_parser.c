@@ -2,6 +2,7 @@
 #include "test.h"
 
 #include <limits.h>
+#include <stdio.h>
 #include <stdint.h>
 #include <string.h>
 
@@ -76,6 +77,32 @@ static void test_integer_fast_parser_contract(void)
     p = "-0000000000000000000";
     DD_CHECK(resp_test_parse_integer(p, p + 20, &out) == 0);
     DD_CHECK_EQ_INT(0, out);
+}
+
+static void test_integer_property_samples(void)
+{
+    char wire[64];
+    int i;
+
+    for (i = -128; i <= 128; i++) {
+        int n = snprintf(wire, sizeof(wire), ":%d\r\n", i * 7919);
+        DD_CHECK(n > 0 && (size_t)n < sizeof(wire));
+        DD_CHECK(parse(wire) == n);
+        DD_CHECK_EQ_INT((long long)i * 7919, g_v.integer);
+    }
+
+    {
+        static const long long edges[] = {
+            LLONG_MIN, LLONG_MIN + 1, -1000000000000000000LL,
+            -1, 0, 1, 1000000000000000000LL, LLONG_MAX - 1, LLONG_MAX};
+        size_t j;
+        for (j = 0; j < sizeof(edges) / sizeof(edges[0]); j++) {
+            int n = snprintf(wire, sizeof(wire), ":%lld\r\n", edges[j]);
+            DD_CHECK(n > 0 && (size_t)n < sizeof(wire));
+            DD_CHECK(parse(wire) == n);
+            DD_CHECK_EQ_INT(edges[j], g_v.integer);
+        }
+    }
 }
 
 static void test_bulk_length_fast_parser_contract(void)
@@ -246,6 +273,7 @@ int main(void)
     DD_RUN(test_integer);
     DD_RUN(test_integer_overflow_is_error);
     DD_RUN(test_integer_fast_parser_contract);
+    DD_RUN(test_integer_property_samples);
     DD_RUN(test_bulk_length_fast_parser_contract);
     DD_RUN(test_bulk_string);
     DD_RUN(test_null_bulk_string);

@@ -491,3 +491,5 @@
     干扰并记录校准后的测量范围（Phase 107）
   - [x] RESP 整数边界回归扩展：覆盖 `LLONG_MAX/MIN`、正负溢出、`-0`
     和填充极限输入，默认/C99/hardening parser 均通过（Phase 108）
+  - [x] RESP 整数解析属性回归：通过完整 wire 覆盖 `-128..128` 步进值及
+    `LLONG_MIN/MAX` 边界，共 919 checks（Phase 109）
