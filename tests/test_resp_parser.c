@@ -71,6 +71,8 @@ static void test_bulk_length_fast_parser_contract(void)
     DD_CHECK(resp_test_bulk_len(p, p + 3, &out) == -1);
     p = "1073741825"; /* RESP_MAX_ARRAY_LEN + 1 */
     DD_CHECK(resp_test_bulk_len(p, p + 10, &out) == -1);
+    p = "99999999999"; /* reject overlong lengths before scanning all digits */
+    DD_CHECK(resp_test_bulk_len(p, p + 11, &out) == -1);
 }
 
 static void test_bulk_string(void)

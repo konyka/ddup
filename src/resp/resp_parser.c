@@ -80,17 +80,18 @@ static int parse_bulk_len(const char *p, const char *end, long long *out)
         return -1;
     }
 
-    size_t value = 0;
+    size_t digits = (size_t)(end - p);
+    if (digits > 10)
+        return -1;
+
+    unsigned long long value = 0;
     for (; p < end; p++) {
         if (*p < '0' || *p > '9')
             return -1;
-        size_t digit = (size_t)(*p - '0');
-        if (value > (size_t)RESP_MAX_ARRAY_LEN / 10 ||
-            (value == (size_t)RESP_MAX_ARRAY_LEN / 10 &&
-             digit > (size_t)RESP_MAX_ARRAY_LEN % 10))
-            return -1;
-        value = value * 10 + digit;
+        value = value * 10ULL + (unsigned long long)(*p - '0');
     }
+    if (value > (unsigned long long)RESP_MAX_ARRAY_LEN)
+        return -1;
     *out = (long long)value;
     return 0;
 }
