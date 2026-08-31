@@ -1,6 +1,7 @@
 /* test_resp_parser.c - RESP2 parser tests (written before the implementation). */
 #include "test.h"
 
+#include <limits.h>
 #include <stdint.h>
 #include <string.h>
 
@@ -42,12 +43,28 @@ static void test_integer(void)
 
     DD_CHECK(parse(":-42\r\n") == 6);
     DD_CHECK_EQ_INT(-42, g_v.integer);
+
+    DD_CHECK(parse(":00042\r\n") == 8);
+    DD_CHECK_EQ_INT(42, g_v.integer);
+    DD_CHECK(parse(":-00042\r\n") == 9);
+    DD_CHECK_EQ_INT(-42, g_v.integer);
 }
 
 static void test_integer_overflow_is_error(void)
 {
     DD_CHECK(parse(":9223372036854775808\r\n") == -1);
     DD_CHECK(parse(":-9223372036854775809\r\n") == -1);
+}
+
+static void test_integer_fast_parser_contract(void)
+{
+    long long out = 0;
+    const char *p = "00000000000000000042";
+    DD_CHECK(resp_test_parse_integer(p, p + 20, &out) == 0);
+    DD_CHECK_EQ_INT(42, out);
+    p = "-9223372036854775808";
+    DD_CHECK(resp_test_parse_integer(p, p + 20, &out) == 0);
+    DD_CHECK_EQ_INT(LLONG_MIN, out);
 }
 
 static void test_bulk_length_fast_parser_contract(void)
@@ -213,6 +230,7 @@ int main(void)
     DD_RUN(test_error);
     DD_RUN(test_integer);
     DD_RUN(test_integer_overflow_is_error);
+    DD_RUN(test_integer_fast_parser_contract);
     DD_RUN(test_bulk_length_fast_parser_contract);
     DD_RUN(test_bulk_string);
     DD_RUN(test_null_bulk_string);

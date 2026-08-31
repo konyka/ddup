@@ -24,6 +24,7 @@ ptrdiff_t resp_parse(const char *buf, size_t len, resp_value *out, arena *a);
 #ifdef DDUP_TESTING
 int resp_test_aggregate_bytes(size_t slots, size_t *bytes);
 int resp_test_bulk_len(const char *p, const char *end, long long *out);
+int resp_test_parse_integer(const char *p, const char *end, long long *out);
 #endif
 
 #endif /* DDUP_RESP_PARSER_H */

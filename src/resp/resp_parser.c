@@ -37,7 +37,6 @@ int resp_test_aggregate_bytes(size_t slots, size_t *bytes)
 static int parse_ll(const char *p, const char *end, long long *out)
 {
     int neg = 0;
-    unsigned long long v = 0;
     if (p == end)
         return -1;
     if (*p == '-') {
@@ -46,15 +45,38 @@ static int parse_ll(const char *p, const char *end, long long *out)
     }
     if (p == end)
         return -1;
-    for (; p < end; p++) {
-        if (*p < '0' || *p > '9')
-            return -1;
-        unsigned digit = (unsigned)(*p - '0');
-        if (v > (unsigned long long)LLONG_MAX / 10 ||
-            (v == (unsigned long long)LLONG_MAX / 10 &&
-             digit > (unsigned)(LLONG_MAX % 10) + (neg ? 1u : 0u)))
-            return -1;
-        v = v * 10 + digit;
+
+    /* Strip padding before selecting the common short-integer path. */
+    while (p < end && *p == '0')
+        p++;
+    if (p == end) {
+        *out = 0;
+        return 0;
+    }
+
+    size_t digits = (size_t)(end - p);
+    if (digits > 19)
+        return -1;
+
+    unsigned long long v = 0;
+    if (digits < 19) {
+        for (; p < end; p++) {
+            if (*p < '0' || *p > '9')
+                return -1;
+            v = v * 10ULL + (unsigned long long)(*p - '0');
+        }
+    } else {
+        const unsigned long long limit =
+            (unsigned long long)LLONG_MAX + (neg ? 1ULL : 0ULL);
+        for (; p < end; p++) {
+            if (*p < '0' || *p > '9')
+                return -1;
+            unsigned digit = (unsigned)(*p - '0');
+            if (v > limit / 10ULL ||
+                (v == limit / 10ULL && digit > (unsigned)(limit % 10ULL)))
+                return -1;
+            v = v * 10ULL + (unsigned long long)digit;
+        }
     }
     if (neg)
         *out = (v == (unsigned long long)LLONG_MAX + 1ULL)
@@ -109,6 +131,10 @@ static int parse_bulk_len(const char *p, const char *end, long long *out)
 int resp_test_bulk_len(const char *p, const char *end, long long *out)
 {
     return parse_bulk_len(p, end, out);
+}
+int resp_test_parse_integer(const char *p, const char *end, long long *out)
+{
+    return parse_ll(p, end, out);
 }
 #endif
 
