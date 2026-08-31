@@ -1051,6 +1051,11 @@ bulk 长度解析在完成前导零识别后，从首个有效数字开始累加
 | integer RESP parser | 73.8M–76.7M |
 | integer RESP writer | 92.2M–104.1M |
 
+The benchmark was subsequently corrected to precompute sample lengths, removing
+the per-iteration `strlen()` cost. Repeated 1M-command runs measured
+`68.4M–80.6M ops/s` for the parser and `97.3M–100.1M ops/s` for the writer;
+the wider range reflects host scheduling noise.
+
 ## Phase 103：RESP 长度前导零兼容性修复
 
 长度位数早拒绝现在只计算去除前导零后的有效数字位数，避免误伤历史上

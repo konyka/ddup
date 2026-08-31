@@ -125,6 +125,7 @@ static double bench_integer_parser(long n)
 {
     static const char *samples[] = {":0\r\n", ":42\r\n", ":-42\r\n",
                                     ":9223372036854775807\r\n"};
+    static const size_t sample_lens[] = {4, 5, 6, 22};
     arena ar;
     volatile long long sink = 0;
     long k;
@@ -134,8 +135,9 @@ static double bench_integer_parser(long n)
     t0 = pal_now_us();
     for (k = 0; k < n; k++) {
         resp_value v;
-        const char *sample = samples[(size_t)k & 3U];
-        if (resp_parse(sample, strlen(sample), &v, &ar) <= 0)
+        size_t sample_idx = (size_t)k & 3U;
+        const char *sample = samples[sample_idx];
+        if (resp_parse(sample, sample_lens[sample_idx], &v, &ar) <= 0)
             exit(1);
         sink ^= v.integer;
         arena_reset(&ar);

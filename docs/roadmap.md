@@ -487,3 +487,5 @@
     直接返回 0；补充填充/全零回归（Phase 105）
   - [x] 整数 RESP 解析微基准：`bench_core` 增加真实 parser 循环，覆盖
     短正/负数及 `LLONG_MAX`，用于后续 A/B 测量（Phase 106）
+  - [x] 整数 parser 微基准校准：样本长度预计算，移除循环内 `strlen()`
+    干扰并记录校准后的测量范围（Phase 107）
