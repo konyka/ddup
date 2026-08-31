@@ -65,6 +65,17 @@ static void test_integer_fast_parser_contract(void)
     p = "-9223372036854775808";
     DD_CHECK(resp_test_parse_integer(p, p + 20, &out) == 0);
     DD_CHECK_EQ_INT(LLONG_MIN, out);
+
+    p = "9223372036854775807";
+    DD_CHECK(resp_test_parse_integer(p, p + 19, &out) == 0);
+    DD_CHECK_EQ_INT(LLONG_MAX, out);
+    p = "9223372036854775808";
+    DD_CHECK(resp_test_parse_integer(p, p + 19, &out) == -1);
+    p = "-9223372036854775809";
+    DD_CHECK(resp_test_parse_integer(p, p + 20, &out) == -1);
+    p = "-0000000000000000000";
+    DD_CHECK(resp_test_parse_integer(p, p + 20, &out) == 0);
+    DD_CHECK_EQ_INT(0, out);
 }
 
 static void test_bulk_length_fast_parser_contract(void)

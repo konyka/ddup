@@ -489,3 +489,5 @@
     短正/负数及 `LLONG_MAX`，用于后续 A/B 测量（Phase 106）
   - [x] 整数 parser 微基准校准：样本长度预计算，移除循环内 `strlen()`
     干扰并记录校准后的测量范围（Phase 107）
+  - [x] RESP 整数边界回归扩展：覆盖 `LLONG_MAX/MIN`、正负溢出、`-0`
+    和填充极限输入，默认/C99/hardening parser 均通过（Phase 108）
