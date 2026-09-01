@@ -1110,6 +1110,10 @@ DBSIZE 为 O(1)，可能计入尚未回收的过期 key。
   worker 的库上；路由按 argv[1] 决策（脚本串），不保证 KEYS[1] 属主
   恰为本 worker——mt 下脚本应只操作单槽亲和或自包含的数据（测试覆盖
   单 worker 内 SET+GET）。
+- **聚合 OOM fail-closed**：`DBSIZE/FLUSHDB/FLUSHALL/INFO/KEYS` 等跨 worker
+  聚合必须先建立 fan-out 描述符；若分配失败，直接返回 `ERR out of memory`，
+  不得退化为 home worker 本地执行，避免广播变更只清理一个分片而造成数据
+  不一致。描述符分配失败不触碰任何 worker 数据。
 
 ## 架构对比：分片存储 + 消息路由（ddup mt）vs 共享存储（Garnet/Tsavorite）
 

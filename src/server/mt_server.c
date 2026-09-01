@@ -280,6 +280,7 @@ struct mt_server {
     int fail_completion_pushes;
     int fail_completion_worker;
     int fail_completion_consumed;
+    int fail_aggregate_allocs;
     int cluster_enabled; /* worker 0 owns the cluster bus/gossip */
     int replica_mode;    /* worker 0 is an outbound replica link */
     ddup_atomic_int repl_synced; /* full-sync restore finished */
@@ -2625,7 +2626,18 @@ static int mt_route_aggregate(worker *home, void *conn,
     }
     seq = st->seq_next++;
 
-    agg = (mt_agg *)calloc(1, sizeof(*agg));
+    /* Allocation failure must fail closed: a home-only fallback would make
+     * broadcast mutations such as FLUSHDB silently partial. */
+    {
+        int inject_fail = 0;
+        pal_mutex_lock(&home->ms->abandoned_agg_mu);
+        if (home->ms->fail_aggregate_allocs > 0) {
+            home->ms->fail_aggregate_allocs--;
+            inject_fail = 1;
+        }
+        pal_mutex_unlock(&home->ms->abandoned_agg_mu);
+        agg = inject_fail ? NULL : (mt_agg *)calloc(1, sizeof(*agg));
+    }
     if (agg != NULL && cmd == CMD_INFO) {
         agg->stats = (info_stats *)calloc(1, sizeof(*agg->stats));
         if (agg->stats == NULL) {
@@ -2634,10 +2646,9 @@ static int mt_route_aggregate(worker *home, void *conn,
         }
     }
     if (agg == NULL) {
-        /* OOM: degrade to the home-worker answer. */
+        /* Never execute an aggregate locally after allocation failure. */
         resp_buf_init(&local);
-        command_execute_at(server_db_at(home->srv, db_index), argv, argc,
-                           &local, pal_wall_ms());
+        resp_write_error(&local, "ERR out of memory", 17);
         (void)server_conn_out_append(home->srv, conn, local.data, local.len);
         resp_buf_free(&local);
         st->seq_write++;
@@ -5134,6 +5145,15 @@ int mt_server_abandoned_aggregate_count(const mt_server *ms)
     n = (int)ms->nabandoned_aggs;
     pal_mutex_unlock((pal_mutex *)&ms->abandoned_agg_mu);
     return n;
+}
+
+void mt_server_fail_next_aggregate_allocs(mt_server *ms, int n)
+{
+    if (ms == NULL)
+        return;
+    pal_mutex_lock(&ms->abandoned_agg_mu);
+    ms->fail_aggregate_allocs = n > 0 ? n : 0;
+    pal_mutex_unlock(&ms->abandoned_agg_mu);
 }
 
 void mt_server_test_set_aof_write_fn(

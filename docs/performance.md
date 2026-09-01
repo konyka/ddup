@@ -59,6 +59,7 @@
 | 2026-08-05 | Phase 12 PSYNC | 副本断线追平（同上，backlog 部分重同步） | 同上 | 0.03s（~2.1x） | - | 仅 backlog 尾部 100 条命令，无快照/清库；收益随数据集与写入量放大 |
 | 2026-08-05 | Phase 13 commandstats | 计时开销 A/B（bench_core，启用 vs DDUP_NO_CMDSTATS） | Windows 11, clang 22.1.6, -O3+LTO | 差异 <1%（噪声内） | - | 每命令 2× pal_now_us（实测单次 ~19.5ns）+ 两次数组累加 |
 | 2026-08-05 | Phase 13 commandstats | pal_now_us 微基准 | 同上 | ~19.5 ns/call | - | QueryPerformanceCounter 封装 |
+| 2026-09-01 | Phase 128 MT aggregate OOM | fail-closed guard | Linux, Release | 无额外热路径分配；仅聚合命令执行一次受 mutex 保护的故障注入计数检查 | 防止 OOM 时错误的 home-only fallback |
 
 Phase 12 说明：PSYNC 的收益不在 loopback 小数据集（绝对值几十毫秒），
 而在大数据集 + 高写入场景——全量重同步成本 = 快照序列化 + 全量传输 +

@@ -1795,6 +1795,48 @@ static void test_aggregate_dbsize_and_flushdb(void)
     pal_socket_cleanup();
 }
 
+static void test_aggregate_alloc_failure_fails_closed(void)
+{
+    mt_server *ms;
+    pal_socket_t a, b;
+    char k0[32], k1[32], req[160];
+
+    DD_CHECK_EQ_INT(0, pal_socket_init());
+    pick_key_for_worker(0, 2, k0, sizeof(k0));
+    pick_key_for_worker(1, 2, k1, sizeof(k1));
+    ms = mt_server_create("127.0.0.1", 0, 2);
+    DD_CHECK(ms != NULL);
+    if (ms == NULL)
+        return;
+    DD_CHECK_EQ_INT(0, mt_server_start(ms));
+    a = connect_client(mt_server_port(ms));
+    b = connect_client(mt_server_port(ms));
+
+    snprintf(req, sizeof(req), "*3\r\n$3\r\nSET\r\n$%zu\r\n%s\r\n$1\r\nx\r\n",
+             strlen(k0), k0);
+    roundtrip(a, req, "+OK\r\n");
+    snprintf(req, sizeof(req), "*3\r\n$3\r\nSET\r\n$%zu\r\n%s\r\n$1\r\ny\r\n",
+             strlen(k1), k1);
+    roundtrip(b, req, "+OK\r\n");
+
+    mt_server_fail_next_aggregate_allocs(ms, 1);
+    roundtrip(a, "*1\r\n$7\r\nFLUSHDB\r\n", "-ERR out of memory\r\n");
+
+    /* The failed broadcast must not partially flush either shard. */
+    snprintf(req, sizeof(req), "*2\r\n$3\r\nGET\r\n$%zu\r\n%s\r\n",
+             strlen(k0), k0);
+    roundtrip(a, req, "$1\r\nx\r\n");
+    snprintf(req, sizeof(req), "*2\r\n$3\r\nGET\r\n$%zu\r\n%s\r\n",
+             strlen(k1), k1);
+    roundtrip(a, req, "$1\r\ny\r\n");
+
+    pal_close(a);
+    pal_close(b);
+    mt_server_stop(ms);
+    mt_server_destroy(ms);
+    pal_socket_cleanup();
+}
+
 static void test_set_algebra_same_slot_routing(void)
 {
     mt_server *ms;
@@ -3074,6 +3116,7 @@ int main(void)
     DD_RUN(test_copy_same_worker);
     DD_RUN(test_quit_closes_connection_mt);
     DD_RUN(test_aggregate_dbsize_and_flushdb);
+    DD_RUN(test_aggregate_alloc_failure_fails_closed);
     DD_RUN(test_info_aggregation);
     DD_RUN(test_three_worker_aggregate_completion);
     DD_RUN(test_two_worker_aggregate_completion_push_failure);

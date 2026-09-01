@@ -39,6 +39,8 @@ uint64_t mt_server_pool_hits(const mt_server *ms);
 void mt_server_fail_next_completion_pushes(mt_server *ms, int n);
 int mt_server_completion_pushes_consumed(const mt_server *ms);
 int mt_server_abandoned_aggregate_count(const mt_server *ms);
+/* Test seam: force the next n aggregate descriptors to fail allocation. */
+void mt_server_fail_next_aggregate_allocs(mt_server *ms, int n);
 
 /* Test seams for coordinated AOF-failure shutdown. */
 void mt_server_test_set_aof_write_fn(

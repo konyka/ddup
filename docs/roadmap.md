@@ -547,3 +547,6 @@
   - [x] mt 槽维护安全闸：`SFLUSH` 与 `TRIMSLOTS` 在缺少跨 worker 广播
     事务时显式返回 `ERR command not supported in mt mode`，禁止仅在 home
     worker 局部删除而造成静默数据不一致（Phase 127）
+  - [x] mt 聚合内存不足 fail-closed：`DBSIZE/FLUSHDB/FLUSHALL/INFO/KEYS` 等
+    聚合描述符分配失败时统一返回 `ERR out of memory`，禁止退化为 home worker
+    局部执行；新增故障注入测试验证 `FLUSHDB` 不会部分清理（Phase 128）
