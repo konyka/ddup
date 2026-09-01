@@ -507,3 +507,6 @@
   - [x] 命令哈希一次性发布：PAL 增加跨 C11/C99/Windows 的 compare-exchange
     封装，`cmd_hash` 使用 acquire/release 状态机安全发布，避免 mt 首次解析
     命令时并发构建表（Phase 114）
+  - [x] Windows QPC 频率缓存并发安全：计时 PAL 使用原子 once-publish 状态机
+    发布 `QueryPerformanceFrequency` 结果，失败时安全回落到非零频率；新增
+    多线程首次计时回归（Phase 115）

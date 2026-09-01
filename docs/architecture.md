@@ -236,6 +236,8 @@
   分发入口用 `pal_now_us()` 计时累加；INFO # Commandstats 输出 Redis
   风格 `cmdstat_<name>:calls=,usec=,usec_per_call=`。A/B 实测开销 <1%
   （pal_now_us 单次 ~19.5ns）；`DDUP_NO_CMDSTATS` 编译开关可完全移除。
+  Windows QPC 频率缓存通过 PAL 原子 once-publish 状态发布，避免并发首用
+  观察到未初始化频率。
 
 ## 服务端自省与 SLOWLOG（Phase 60）
 

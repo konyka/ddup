@@ -6,6 +6,7 @@
 #include "pal/pal_platform.h"
 #include "pal/pal_simd.h"
 #include "pal/pal_time.h"
+#include "pal/pal_thread.h"
 
 #if DDUP_OS_LINUX
 #include <signal.h>
@@ -42,6 +43,42 @@ static void test_us_at_least_ms_resolution(void)
     /* us reading must be consistent with the earlier ms reading. */
     DD_CHECK(us >= ms * 1000ULL);
     DD_CHECK(us < (ms + 1000ULL) * 1000ULL); /* generous 1s slack */
+}
+
+typedef struct time_worker_ctx {
+    uint64_t last;
+    int failures;
+} time_worker_ctx;
+
+static void *time_worker(void *arg)
+{
+    time_worker_ctx *ctx = (time_worker_ctx *)arg;
+    int i;
+    ctx->last = pal_now_us();
+    for (i = 0; i < 100000; i++) {
+        uint64_t now = pal_now_us();
+        if (now < ctx->last)
+            ctx->failures++;
+        ctx->last = now;
+    }
+    return NULL;
+}
+
+static void test_time_concurrent_first_use(void)
+{
+    enum { THREADS = 8 };
+    pal_thread threads[THREADS];
+    time_worker_ctx ctx[THREADS];
+    int i;
+
+    memset(ctx, 0, sizeof(ctx));
+    for (i = 0; i < THREADS; i++)
+        DD_CHECK_EQ_INT(0, pal_thread_create(&threads[i], time_worker,
+                                             &ctx[i]));
+    for (i = 0; i < THREADS; i++)
+        DD_CHECK_EQ_INT(0, pal_thread_join(&threads[i], NULL));
+    for (i = 0; i < THREADS; i++)
+        DD_CHECK_EQ_INT(0, ctx[i].failures);
 }
 
 static void test_wall_clock_sane(void)
@@ -178,6 +215,7 @@ int main(void)
     DD_RUN(test_c_std_detected);
     DD_RUN(test_monotonic_non_decreasing);
     DD_RUN(test_us_at_least_ms_resolution);
+    DD_RUN(test_time_concurrent_first_use);
     DD_RUN(test_wall_clock_sane);
 #if DDUP_OS_LINUX
     DD_RUN(test_sleep_completes_after_signal);

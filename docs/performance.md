@@ -1106,6 +1106,13 @@ load 读取。这样消除多 worker 首次 `cmd_resolve()` 的并发写表竞�
 一次 acquire load。`bench_core` 当前 Release 观测 `cmd_resolve (mixed)` 为
 约 `100.6M ops/s`，与历史 83M 级基线相比仍在同机编译/调度波动范围内。
 
+## Phase 115：Windows QPC 频率缓存并发安全
+
+Windows PAL 的 `QueryPerformanceFrequency` 缓存改为原子 once-publish 状态机，
+避免并发首用时的普通标志数据竞争；查询失败或异常非正频率时使用非零安全回落
+值。POSIX 路径和稳态 QPC 读取未改变，本阶段不宣称吞吐变化；`test_pal` 新增
+8 线程首次计时回归，默认/C99/hardening 构建均保持通过。
+
 ## Phase 112：CRC16 路由表并发安全
 
 `hash_slot()` 使用的 CRC16 表改为编译期 `static const` 数据，移除首次调用

@@ -1,6 +1,7 @@
 /* pal_time.c - monotonic clock implementation. */
 #include "pal/pal_time.h"
 #include "pal/pal_platform.h"
+#include "pal/pal_cstd.h"
 
 #if DDUP_OS_WINDOWS
 
@@ -9,10 +10,21 @@
 static uint64_t pal_qpc_freq(void)
 {
     static LARGE_INTEGER freq;
-    static int initialized = 0;
-    if (!initialized) {
-        QueryPerformanceFrequency(&freq);
-        initialized = 1;
+    static ddup_atomic_int state = 0;
+    int current = ddup_atomic_load(&state, ddup_memory_order_acquire);
+
+    if (current != 2) {
+        int expected = 0;
+        if (ddup_atomic_compare_exchange(&state, &expected, 1,
+                                         ddup_memory_order_acquire)) {
+            if (!QueryPerformanceFrequency(&freq) || freq.QuadPart <= 0)
+                freq.QuadPart = 1;
+            ddup_atomic_store(&state, 2, ddup_memory_order_release);
+        } else {
+            while (ddup_atomic_load(&state,
+                                    ddup_memory_order_acquire) != 2)
+                ;
+        }
     }
     return (uint64_t)freq.QuadPart;
 }
