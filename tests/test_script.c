@@ -3,7 +3,41 @@
 
 #include "core/script.h"
 #include "core/sha1.h"
+#include "pal/pal_thread.h"
 #include "test.h"
+
+typedef struct script_init_thread_arg {
+    int loops;
+} script_init_thread_arg;
+
+static void *script_init_thread(void *arg)
+{
+    script_init_thread_arg *a = (script_init_thread_arg *)arg;
+    int i;
+    for (i = 0; i < a->loops; i++) {
+        db d;
+        db_init(&d);
+        db_destroy(&d);
+    }
+    return NULL;
+}
+
+static void test_command_fn_once_publish(void)
+{
+    enum { THREADS = 8 };
+    pal_thread threads[THREADS];
+    script_init_thread_arg arg;
+    int i;
+
+    DD_CHECK_EQ_INT(0, script_test_command_ready());
+    arg.loops = 32;
+    for (i = 0; i < THREADS; i++)
+        DD_CHECK_EQ_INT(0, pal_thread_create(&threads[i], script_init_thread,
+                                             &arg));
+    for (i = 0; i < THREADS; i++)
+        DD_CHECK_EQ_INT(0, pal_thread_join(&threads[i], NULL));
+    DD_CHECK_EQ_INT(1, script_test_command_ready());
+}
 
 static void test_sha1_vectors(void)
 {
@@ -152,6 +186,7 @@ static void test_flush(void)
 
 int main(void)
 {
+    DD_RUN(test_command_fn_once_publish);
     DD_RUN(test_sha1_vectors);
     DD_RUN(test_cache_load_hit_miss);
     DD_RUN(test_cache_sha_validation);

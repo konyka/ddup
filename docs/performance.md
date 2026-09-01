@@ -1140,3 +1140,11 @@ Windows PAL 的 `QueryPerformanceFrequency` 缓存改为原子 once-publish 状�
 候选比较；长度相同的黑名单最多比较两个字符串（`evalsha`/`eval_ro` 和
 `psubscribe`/`evalsha_ro`）。大小写不敏感语义和拒绝文本不变。测试钩子统计
 候选探测次数，锁定非匹配长度为 0，覆盖所有禁调命令及混合大小写回归。
+
+## Phase 119：脚本命令桥接一次性发布
+
+进程级 `g_cmd_fn` 从普通重复写入改为 PAL 原子 once-publish：首个
+`db_init()` 发布命令桥接，其余初始化只进行 acquire 检查并等待发布完成。
+脚本执行路径同样 acquire 检查后再读取函数指针，消除 mt/运行时临时 DB 初始化
+与脚本执行并发时的数据竞争；稳态仅增加一次原子加载，不增加分配或锁。
+`test_script` 以 8 线程、每线程 32 次 DB 初始化/销毁回归发布状态。

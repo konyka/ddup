@@ -1074,6 +1074,9 @@ DBSIZE 为 O(1)，可能计入尚未回收的过期 key。
   math 库——无 io/os/debug/package，脚本无法触达文件系统与进程。
 - **脚本缓存**：db 内 sha1（自研 FIPS 180-1 实现）小写 hex → Lua registry
   引用；命中不重编译，SCRIPT FLUSH 全部 unref。
+- **命令桥接发布**：`script_set_command_fn()` 使用 PAL acquire/release
+  一次性发布状态机；并发初始化多个 DB 时仅首个线程写入函数指针，其余线程
+  等待已发布状态，脚本执行者以 acquire 读取，避免运行时初始化数据竞争。
 - **桥**：`redis.call`/`redis.pcall` 把命令（字符串/数字参数）送回客户端
   命令所用的同一 command_dispatch，单条 RESP 回复再转回 Lua 值；返回值
   按 Redis 规则转换（number→:int、string→bulk、table 数组遇 nil 止、

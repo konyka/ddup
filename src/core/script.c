@@ -8,6 +8,8 @@
 #include "core/arena.h"
 #include "core/session.h"
 #include "core/sha1.h"
+#include "pal/pal_cstd.h"
+#include "pal/pal_thread.h"
 #include "pal/pal_time.h"
 #include "lua.h"
 #include "lauxlib.h"
@@ -197,9 +199,15 @@ void script_cleanup(db *d)
 /* ------------------------------------------------------------------ */
 
 static script_command_fn g_cmd_fn = NULL;
+static ddup_atomic_int g_cmd_state = 0; /* 0=unpublished, 1=publishing, 2=ready */
 
 #ifdef DDUP_TESTING
 static unsigned script_blocked_probe_count;
+
+int script_test_command_ready(void)
+{
+    return ddup_atomic_load(&g_cmd_state, ddup_memory_order_acquire) == 2;
+}
 
 void script_test_reset_blocked_probes(void)
 {
@@ -214,7 +222,22 @@ unsigned script_test_blocked_probes(void)
 
 void script_set_command_fn(script_command_fn fn)
 {
-    g_cmd_fn = fn;
+    int state;
+    int expected;
+    if (fn == NULL)
+        return;
+    state = ddup_atomic_load(&g_cmd_state, ddup_memory_order_acquire);
+    if (state == 2)
+        return;
+    expected = 0;
+    if (ddup_atomic_compare_exchange(&g_cmd_state, &expected, 1,
+                                     ddup_memory_order_acquire)) {
+        g_cmd_fn = fn;
+        ddup_atomic_store(&g_cmd_state, 2, ddup_memory_order_release);
+        return;
+    }
+    while (ddup_atomic_load(&g_cmd_state, ddup_memory_order_acquire) != 2)
+        pal_thread_yield();
 }
 
 /* case-insensitive compare (command.c's ci_equal is file-local). */
@@ -319,7 +342,8 @@ static int lua_redis_generic(lua_State *L, int raise_error)
     uint64_t dirty_before;
     int i;
 
-    if (g_cmd_fn == NULL)
+    if (ddup_atomic_load(&g_cmd_state, ddup_memory_order_acquire) != 2 ||
+        g_cmd_fn == NULL)
         return luaL_error(L, "scripting engine not initialized");
     if (argc < 1)
         return luaL_error(

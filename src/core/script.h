@@ -52,6 +52,7 @@ void script_set_command_fn(script_command_fn fn);
 #ifdef DDUP_TESTING
 void script_test_reset_blocked_probes(void);
 unsigned script_test_blocked_probes(void);
+int script_test_command_ready(void);
 #endif
 
 /* Run a cached script: binds KEYS (argv[0..nkeys)) and ARGV (the rest),
