@@ -364,10 +364,16 @@ static int parse_at(const char *start, const char *end, const char **pos,
 ptrdiff_t resp_parse(const char *buf, size_t len, resp_value *out, arena *a)
 {
     const char *pos = buf;
+    arena_mark mark;
+    arena_mark_get(a, &mark);
     int r = parse_at(buf, buf + len, &pos, out, a, 0);
-    if (r < 0)
+    if (r < 0) {
+        arena_rewind(a, &mark);
         return -1;
-    if (r == 0)
+    }
+    if (r == 0) {
+        arena_rewind(a, &mark);
         return 0;
+    }
     return pos - buf;
 }

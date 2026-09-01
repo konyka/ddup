@@ -86,6 +86,28 @@ static void test_zero_size_alloc(void)
     arena_destroy(&a);
 }
 
+static void test_mark_rewind_preserves_prior_allocations(void)
+{
+    arena a;
+    arena_mark mark;
+    unsigned char *prior;
+    unsigned char *spec;
+
+    arena_init(&a, 128);
+    prior = (unsigned char *)arena_alloc(&a, 8);
+    DD_CHECK(prior != NULL);
+    prior[0] = 0x5a;
+    arena_mark_get(&a, &mark);
+    spec = (unsigned char *)arena_alloc(&a, 64);
+    DD_CHECK(spec != NULL);
+    if (spec != NULL)
+        memset(spec, 0xa5, 64);
+    arena_rewind(&a, &mark);
+    DD_CHECK(prior[0] == 0x5a);
+    DD_CHECK(arena_alloc(&a, 64) == spec);
+    arena_destroy(&a);
+}
+
 int main(void)
 {
     DD_RUN(test_alloc_returns_aligned_distinct);
@@ -95,5 +117,6 @@ int main(void)
     DD_RUN(test_reset_allows_reuse);
     DD_RUN(test_many_allocs);
     DD_RUN(test_zero_size_alloc);
+    DD_RUN(test_mark_rewind_preserves_prior_allocations);
     return DD_TEST_SUMMARY();
 }

@@ -1155,6 +1155,9 @@ hazard pointer/延迟回收、索引桶 CAS、检查点与恢复的并发协议�
 - **arena**：对齐上调与块尺寸（`sizeof(block) + cap + 对齐余量`）全程
   验算，溢出返回 NULL 且不触碰 arena 状态（事务性）；对齐 padding
   计入 `used`，大块请求同样保证 16 字节对齐。
+- **解析 checkpoint**：`arena_mark_get/arena_rewind` 允许流式解析在不完整
+  或协议错误时回滚本次 speculative allocations；新增块保留在 arena 供后续
+  请求复用，既避免半包重解析的内存累积，也不引入热路径逐次 malloc/free。
 - **失败原子性**：resp 解析先填本地聚合再一次性提交 `*out`；
   `session_queue_push`/`zsl_insert` 改为返回错误码，调用方失败即报错
   且不产生副作用；nodes.conf 落盘在 close/rename 失败时保留

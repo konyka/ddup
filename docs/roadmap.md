@@ -521,3 +521,6 @@
   - [x] Lua 命令桥接一次性发布：`g_cmd_fn` 通过 PAL acquire/release 状态机
     安全发布，避免并发 DB 初始化与脚本执行的数据竞争；新增 8 线程发布回归
     （Phase 119）
+  - [x] RESP 流式解析 arena 回滚：不完整聚合或协议错误返回前回滚本次
+    speculative allocations，保留块用于复用，避免恶意半包重解析持续增长；
+    新增重复不完整聚合与 arena mark/rewind TDD（Phase 120）

@@ -1148,3 +1148,11 @@ Windows PAL 的 `QueryPerformanceFrequency` 缓存改为原子 once-publish 状�
 脚本执行路径同样 acquire 检查后再读取函数指针，消除 mt/运行时临时 DB 初始化
 与脚本执行并发时的数据竞争；稳态仅增加一次原子加载，不增加分配或锁。
 `test_script` 以 8 线程、每线程 32 次 DB 初始化/销毁回归发布状态。
+
+## Phase 120：RESP 流式解析 arena 回滚
+
+`resp_parse()` 在解析前记录 arena checkpoint；遇到不完整输入或协议错误时
+回滚本次聚合元素数组及递归临时分配，但保留已申请的块作为后续请求的 warm
+容量。这样同一个恶意半包反复触发解析不会令连接 arena 的 `used` 累积，也不
+增加完整命令的额外分配或释放。`test_resp_parser` 重复 100 次不完整聚合并
+锁定块数量/已用字节稳定，`test_arena` 覆盖 mark/rewind 保留既有分配。

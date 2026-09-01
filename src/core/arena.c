@@ -65,6 +65,23 @@ void *arena_alloc(arena *a, size_t n)
     return p;
 }
 
+void arena_mark_get(const arena *a, arena_mark *mark)
+{
+    mark->head = a->head;
+    mark->used = a->head != NULL ? a->head->used : 0;
+}
+
+void arena_rewind(arena *a, const arena_mark *mark)
+{
+    arena_block *b = a->head;
+    while (b != NULL && b != mark->head) {
+        b->used = 0;
+        b = b->next;
+    }
+    if (mark->head != NULL)
+        mark->head->used = mark->used;
+}
+
 void arena_reset(arena *a)
 {
     for (arena_block *b = a->head; b; b = b->next)

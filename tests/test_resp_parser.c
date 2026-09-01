@@ -215,6 +215,44 @@ static void test_incomplete_returns_zero(void)
     DD_CHECK(parse(":") == 0);
 }
 
+static size_t arena_block_count(const arena *a)
+{
+    size_t n = 0;
+    const arena_block *b;
+    for (b = a->head; b != NULL; b = b->next)
+        n++;
+    return n;
+}
+
+static size_t arena_used_bytes(const arena *a)
+{
+    size_t n = 0;
+    const arena_block *b;
+    for (b = a->head; b != NULL; b = b->next)
+        n += b->used;
+    return n;
+}
+
+static void test_incomplete_aggregate_does_not_accumulate_arena(void)
+{
+    static const char wire[] = "*4\r\n$1\r\na\r\n$1\r\nb\r\n";
+    arena a;
+    resp_value v;
+    size_t blocks, used;
+    int i;
+
+    arena_init(&a, 256);
+    DD_CHECK(resp_parse(wire, sizeof(wire) - 1, &v, &a) == 0);
+    blocks = arena_block_count(&a);
+    used = arena_used_bytes(&a);
+    for (i = 0; i < 100; i++) {
+        DD_CHECK(resp_parse(wire, sizeof(wire) - 1, &v, &a) == 0);
+        DD_CHECK_EQ_INT((long long)blocks, (long long)arena_block_count(&a));
+        DD_CHECK_EQ_INT((long long)used, (long long)arena_used_bytes(&a));
+    }
+    arena_destroy(&a);
+}
+
 static void test_protocol_errors(void)
 {
     DD_CHECK(parse("?bad\r\n") == -1);      /* unknown type byte */
@@ -282,6 +320,7 @@ int main(void)
     DD_RUN(test_nested_array);
     DD_RUN(test_null_and_empty_array);
     DD_RUN(test_incomplete_returns_zero);
+    DD_RUN(test_incomplete_aggregate_does_not_accumulate_arena);
     DD_RUN(test_protocol_errors);
     DD_RUN(test_pipelined_consumes_one_value);
     DD_RUN(test_streaming_byte_by_byte);
