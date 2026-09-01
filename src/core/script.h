@@ -49,6 +49,11 @@ typedef void (*script_command_fn)(struct session *s, const resp_value *argv,
                                   uint64_t now_ms);
 void script_set_command_fn(script_command_fn fn);
 
+#ifdef DDUP_TESTING
+void script_test_reset_blocked_probes(void);
+unsigned script_test_blocked_probes(void);
+#endif
+
 /* Run a cached script: binds KEYS (argv[0..nkeys)) and ARGV (the rest),
  * pcalls the chunk and converts the Lua return value to a RESP reply.
  * sha1 may be either case. NOSCRIPT guard included (callers pre-check). */

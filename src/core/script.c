@@ -198,6 +198,20 @@ void script_cleanup(db *d)
 
 static script_command_fn g_cmd_fn = NULL;
 
+#ifdef DDUP_TESTING
+static unsigned script_blocked_probe_count;
+
+void script_test_reset_blocked_probes(void)
+{
+    script_blocked_probe_count = 0;
+}
+
+unsigned script_test_blocked_probes(void)
+{
+    return script_blocked_probe_count;
+}
+#endif
+
 void script_set_command_fn(script_command_fn fn)
 {
     g_cmd_fn = fn;
@@ -208,6 +222,9 @@ static int script_ci_equal(const char *a, size_t alen, const char *b,
                            size_t blen)
 {
     size_t i;
+#ifdef DDUP_TESTING
+    script_blocked_probe_count++;
+#endif
     if (blen != alen)
         return 0;
     for (i = 0; i < alen; i++) {
@@ -222,32 +239,32 @@ static int script_ci_equal(const char *a, size_t alen, const char *b,
     return 1;
 }
 
-typedef struct script_blocked_name {
-    const char *name;
-    size_t len;
-} script_blocked_name;
-
 /* Commands scripts may not invoke (documented). Keeping lengths beside the
  * literals avoids a strlen call for every redis.call() command. */
 static int name_blocked(const char *n, size_t nl)
 {
-    static const script_blocked_name bl[] = {
-        {"eval", sizeof("eval") - 1},
-        {"evalsha", sizeof("evalsha") - 1},
-        {"script", sizeof("script") - 1},
-        {"subscribe", sizeof("subscribe") - 1},
-        {"psubscribe", sizeof("psubscribe") - 1},
-        {"unsubscribe", sizeof("unsubscribe") - 1},
-        {"punsubscribe", sizeof("punsubscribe") - 1},
-        {"shutdown", sizeof("shutdown") - 1},
-        {"eval_ro", sizeof("eval_ro") - 1},
-        {"evalsha_ro", sizeof("evalsha_ro") - 1},
-    };
-    size_t i;
-    for (i = 0; i < sizeof(bl) / sizeof(bl[0]); i++)
-        if (script_ci_equal(n, nl, bl[i].name, bl[i].len))
-            return 1;
-    return 0;
+    switch (nl) {
+    case 4:
+        return script_ci_equal(n, nl, "eval", sizeof("eval") - 1);
+    case 6:
+        return script_ci_equal(n, nl, "script", sizeof("script") - 1);
+    case 7:
+        return script_ci_equal(n, nl, "evalsha", sizeof("evalsha") - 1) ||
+               script_ci_equal(n, nl, "eval_ro", sizeof("eval_ro") - 1);
+    case 8:
+        return script_ci_equal(n, nl, "shutdown", sizeof("shutdown") - 1);
+    case 9:
+        return script_ci_equal(n, nl, "subscribe", sizeof("subscribe") - 1);
+    case 10:
+        return script_ci_equal(n, nl, "psubscribe", sizeof("psubscribe") - 1) ||
+               script_ci_equal(n, nl, "evalsha_ro", sizeof("evalsha_ro") - 1);
+    case 11:
+        return script_ci_equal(n, nl, "unsubscribe", sizeof("unsubscribe") - 1);
+    case 12:
+        return script_ci_equal(n, nl, "punsubscribe", sizeof("punsubscribe") - 1);
+    default:
+        return 0;
+    }
 }
 
 /* RESP reply of an effect command -> Lua value */

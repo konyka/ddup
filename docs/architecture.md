@@ -1079,7 +1079,8 @@ DBSIZE 为 O(1)，可能计入尚未回收的过期 key。
   按 Redis 规则转换（number→:int、string→bulk、table 数组遇 nil 止、
   true→:1、nil/false→null bulk、{ok=}→简单串、{err=}→错误）。
   禁调名单（记录在案）：EVAL 族、SUBSCRIBE 族、SHUTDOWN；黑名单词长与
-  常量一起发布，检查时无需重复扫描静态字符串。
+  常量一起发布，检查时无需重复扫描静态字符串，并先按输入长度分桶，
+  使明显不匹配的命令零次候选比较。
 - **效果复制**（Redis 5+ 语义，记录在案）：redis.call 的写命令经既有
   dirty 钩子**逐条**写入 AOF/backlog/副本流（记录 SET 而非 EVAL）；EVAL
   argv 本身经 `session.aof_skip` 抑制（含 MULTI 队列逐项）。

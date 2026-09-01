@@ -504,6 +504,13 @@ static void test_blocked_command_name_matrix(void)
     db_init(&d);
     resp_buf_init(&out);
     s = session_create(&d);
+    script_test_reset_blocked_probes();
+    exec_sess(s, T0, &out, 3, "EVAL", "return redis.call('GET')", "0");
+    DD_CHECK_EQ_INT(0, script_test_blocked_probes());
+    script_test_reset_blocked_probes();
+    exec_sess(s, T0, &out, 3, "EVAL",
+              "return redis.call('EVALSHA_RO')", "0");
+    DD_CHECK(script_test_blocked_probes() <= 2);
     for (i = 0; i < sizeof(names) / sizeof(names[0]); i++) {
         int n = snprintf(script, sizeof(script), "return redis.call('%s')",
                          names[i]);
