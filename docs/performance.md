@@ -1098,6 +1098,14 @@ parser `68.4M–80.6M ops/s`、writer `97.3M–100.1M ops/s`；较宽的范围
 输入字节一次表查找；本阶段的主要收益是并发首次校验无数据竞争，并缩短冷启动
 路径。`test_dump` 增加 8 线程并发校验回归，完整 DUMP/RESTORE 测试保持通过。
 
+## Phase 114：命令哈希一次性发布
+
+`cmd_hash` 初始化改用 PAL 原子 compare-exchange 状态机（`0=未初始化`、
+`1=构建中`、`2=已发布`），构建线程以 release store 发布，解析线程以 acquire
+load 读取。这样消除多 worker 首次 `cmd_resolve()` 的并发写表竞态；稳态仅增加
+一次 acquire load。`bench_core` 当前 Release 观测 `cmd_resolve (mixed)` 为
+约 `100.6M ops/s`，与历史 83M 级基线相比仍在同机编译/调度波动范围内。
+
 ## Phase 112：CRC16 路由表并发安全
 
 `hash_slot()` 使用的 CRC16 表改为编译期 `static const` 数据，移除首次调用

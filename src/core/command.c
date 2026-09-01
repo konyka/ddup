@@ -16,6 +16,7 @@
 #include "ds/obj.h"
 #include "ds/glob.h"
 #include "pal/pal_time.h"
+#include "pal/pal_cstd.h"
 
 #include <math.h>
 
@@ -23000,7 +23001,8 @@ typedef struct cmd_hash_slot {
 } cmd_hash_slot;
 
 static cmd_hash_slot cmd_hash[CMD_HASH_SIZE];
-static int cmd_hash_inited = 0;
+/* 0 = uninitialized, 1 = one thread building, 2 = published/ready. */
+static ddup_atomic_int cmd_hash_state = 0;
 
 static uint32_t cmd_hash_fn(const char *s, size_t len)
 {
@@ -23015,10 +23017,9 @@ static uint32_t cmd_hash_fn(const char *s, size_t len)
     return h;
 }
 
-static void cmd_hash_init(void)
+static void cmd_hash_build(void)
 {
     size_t i;
-    if (cmd_hash_inited) return;
     memset(cmd_hash, 0, sizeof(cmd_hash));
     for (i = 0; i < sizeof(CMD_TABLE) / sizeof(CMD_TABLE[0]); i++) {
         const cmd_entry *e = &CMD_TABLE[i];
@@ -23030,14 +23031,38 @@ static void cmd_hash_init(void)
         cmd_hash[idx].nlen = (uint8_t)strlen(e->name);
         cmd_hash[idx].id = e->id;
     }
-    cmd_hash_inited = 1;
+}
+
+static void cmd_hash_ensure(void)
+{
+    int state = ddup_atomic_load(&cmd_hash_state,
+                                 ddup_memory_order_acquire);
+    if (state == 2)
+        return;
+
+    {
+        int expected = 0;
+        if (ddup_atomic_compare_exchange(&cmd_hash_state, &expected, 1,
+                                         ddup_memory_order_acquire)) {
+            cmd_hash_build();
+            ddup_atomic_store(&cmd_hash_state, 2,
+                              ddup_memory_order_release);
+            return;
+        }
+    }
+
+    /* Another thread owns the build. The table is tiny and this path is only
+     * reachable during first use; acquire loads publish all slot writes. */
+    while (ddup_atomic_load(&cmd_hash_state,
+                            ddup_memory_order_acquire) != 2)
+        ;
 }
 
 uint16_t cmd_resolve(const char *name, size_t len)
 {
     uint32_t h;
     size_t idx;
-    if (!cmd_hash_inited) cmd_hash_init();
+    cmd_hash_ensure();
     if (len == 0 || len > 255) return CMD_ID_UNKNOWN;
     h = cmd_hash_fn(name, len);
     idx = h & (CMD_HASH_SIZE - 1);

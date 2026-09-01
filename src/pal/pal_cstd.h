@@ -148,6 +148,8 @@ typedef atomic_int ddup_atomic_int;
 #  define ddup_atomic_store(p, v, mo) atomic_store_explicit(p, v, mo)
 #  define ddup_atomic_fetch_add(p, v, mo) atomic_fetch_add_explicit(p, v, mo)
 #  define ddup_atomic_fetch_sub(p, v, mo) atomic_fetch_sub_explicit(p, v, mo)
+#  define ddup_atomic_compare_exchange(p, expected, desired, mo) \
+    atomic_compare_exchange_strong_explicit((p), (expected), (desired), (mo), (mo))
 #else
 #  if defined(__GNUC__) || defined(__clang__)
 typedef int ddup_atomic_int;
@@ -160,6 +162,8 @@ typedef int ddup_atomic_int;
 #    define ddup_atomic_store(p, v, mo) __atomic_store_n((p), (v), (mo))
 #    define ddup_atomic_fetch_add(p, v, mo) __atomic_fetch_add((p), (v), (mo))
 #    define ddup_atomic_fetch_sub(p, v, mo) __atomic_fetch_sub((p), (v), (mo))
+#    define ddup_atomic_compare_exchange(p, expected, desired, mo) \
+        __atomic_compare_exchange_n((p), (expected), (desired), 0, (mo), (mo))
 #  elif defined(_MSC_VER)
 #    include <intrin.h>
 typedef volatile long ddup_atomic_int;
@@ -174,6 +178,18 @@ typedef volatile long ddup_atomic_int;
         _InterlockedExchangeAdd((p), (long)(v))
 #    define ddup_atomic_fetch_sub(p, v, mo) \
         _InterlockedExchangeAdd((p), -(long)(v))
+static inline int ddup_atomic_compare_exchange_impl(
+    volatile long *p, int *expected, int desired)
+{
+    long old = _InterlockedCompareExchange(p, (long)desired,
+                                           (long)*expected);
+    if (old == (long)*expected)
+        return 1;
+    *expected = (int)old;
+    return 0;
+}
+#    define ddup_atomic_compare_exchange(p, expected, desired, mo) \
+        ddup_atomic_compare_exchange_impl((p), (expected), (desired))
 #  else
 typedef int ddup_atomic_int;
 #    define ddup_memory_order_relaxed 0
@@ -187,6 +203,18 @@ typedef int ddup_atomic_int;
 #    define ddup_atomic_store(p, v, mo) (*(p) = (v))
 #    define ddup_atomic_fetch_add(p, v, mo) ((*(p) += (v)) - (v))
 #    define ddup_atomic_fetch_sub(p, v, mo) ((*(p) -= (v)) + (v))
+static inline int ddup_atomic_compare_exchange_impl(
+    ddup_atomic_int *p, int *expected, int desired)
+{
+    if (*p == *expected) {
+        *p = desired;
+        return 1;
+    }
+    *expected = *p;
+    return 0;
+}
+#    define ddup_atomic_compare_exchange(p, expected, desired, mo) \
+        ddup_atomic_compare_exchange_impl((p), (expected), (desired))
 #  endif
 #endif
 

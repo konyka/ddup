@@ -62,7 +62,7 @@
 | 溢出算术 | `DDUP_HAS_C_STDCKDINT` | C23 | `__builtin_*_overflow` / `long long` 分支检测 |
 | _BitInt | `DDUP_HAS_C_BITINT` | C23 | 不可用 |
 
-上层代码统一包含 `src/pal/pal_cstd.h`，使用 `ddup_*` 前缀宏（如 `ddup_static_assert`、`ddup_alignas`、`ddup_atomic_*`、`ddup_add_overflow`），不再直接依赖具体 C 标准。平台和编译器能力统一经 `src/pal/pal_platform.h` 暴露：`DDUP_HAS_C_ATOMICS` 探测仅在 CMake 未定义时生效，`DDUP_HAS_WYHASH` 控制哈希实现是否使用宽乘法；核心目录不再直接检查工具链/架构预定义宏。
+上层代码统一包含 `src/pal/pal_cstd.h`，使用 `ddup_*` 前缀宏（如 `ddup_static_assert`、`ddup_alignas`、`ddup_atomic_*`、`ddup_atomic_compare_exchange`、`ddup_add_overflow`），不再直接依赖具体 C 标准。平台和编译器能力统一经 `src/pal/pal_platform.h` 暴露：`DDUP_HAS_C_ATOMICS` 探测仅在 CMake 未定义时生效，`DDUP_HAS_WYHASH` 控制哈希实现是否使用宽乘法；核心目录不再直接检查工具链/架构预定义宏。
 
 ## 命令 ID 表与缓冲池（Phase 9）
 

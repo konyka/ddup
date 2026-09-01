@@ -504,3 +504,6 @@
   - [x] CRC64 校验表并发安全：将 DUMP/RESTORE CRC64 表从无同步懒初始化改为
     编译期只读表，消除并发校验数据竞争并保留链式 CRC 语义；新增多线程回归
     （Phase 113）
+  - [x] 命令哈希一次性发布：PAL 增加跨 C11/C99/Windows 的 compare-exchange
+    封装，`cmd_hash` 使用 acquire/release 状态机安全发布，避免 mt 首次解析
+    命令时并发构建表（Phase 114）

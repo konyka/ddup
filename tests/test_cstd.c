@@ -128,6 +128,23 @@ static void test_atomic_basic(void)
     DD_CHECK_EQ_INT(18, ddup_atomic_load(&atomic_counter, ddup_memory_order_relaxed));
 }
 
+static void test_atomic_compare_exchange(void)
+{
+    ddup_atomic_int value;
+    int expected;
+
+    ddup_atomic_init(&value, 0);
+    expected = 0;
+    DD_CHECK(ddup_atomic_compare_exchange(&value, &expected, 1,
+                                          ddup_memory_order_seq_cst));
+    DD_CHECK_EQ_INT(1, ddup_atomic_load(&value, ddup_memory_order_seq_cst));
+    expected = 0;
+    DD_CHECK(!ddup_atomic_compare_exchange(&value, &expected, 2,
+                                           ddup_memory_order_seq_cst));
+    DD_CHECK_EQ_INT(1, expected);
+    DD_CHECK_EQ_INT(1, ddup_atomic_load(&value, ddup_memory_order_seq_cst));
+}
+
 typedef struct atomic_worker_ctx {
     ddup_atomic_int *value;
     int iterations;
@@ -175,6 +192,7 @@ int main(void)
     DD_RUN(test_constexpr);
     DD_RUN(test_checked_arithmetic);
     DD_RUN(test_atomic_basic);
+    DD_RUN(test_atomic_compare_exchange);
     DD_RUN(test_atomic_concurrent);
     return DD_TEST_SUMMARY();
 }
