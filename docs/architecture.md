@@ -1266,11 +1266,12 @@ only unserved-slot keys. Collection is separate from mutation so Robin Hood
 table iteration is never invalidated; allocation failure aborts without
 partial deletion.
 
-`CLUSTER SLOT-STATS` currently exposes only `key-count`, which is derived from
-one bounded table scan and filtered by local slot ownership. `SLOTSRANGE` keeps
-slot order; `ORDERBY` uses a fixed 16K-item stack array with deterministic slot
-tie-breaking and optional `LIMIT/ASC/DESC`. CPU, memory, and network metrics
-are rejected until their counters can be maintained consistently.
+`CLUSTER SLOT-STATS` exposes `key-count` and `memory-bytes`, both derived from
+one bounded table scan and filtered by local slot ownership. Memory includes the
+database entry estimate plus owned object payload bytes, with saturating addition.
+`SLOTSRANGE` keeps slot order; `ORDERBY` uses a fixed 16K-item stack array with
+deterministic slot tie-breaking and optional `LIMIT/ASC/DESC`. CPU and network
+metrics remain rejected until per-slot counters can be maintained consistently.
 
 The internal migration commands `CLUSTER MIGRATION` and `CLUSTER SYNCSLOTS`
 are deliberately fail-closed for client sessions. They are recognized for

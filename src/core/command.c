@@ -4861,15 +4861,21 @@ static int cluster_keyless_id(uint16_t cmd_id)
 typedef struct cluster_slot_stat_item {
     uint16_t slot;
     uint64_t count;
+    uint64_t metric;
 } cluster_slot_stat_item;
+
+typedef struct cluster_slot_stats {
+    uint64_t counts[16384];
+    uint64_t memory[16384];
+} cluster_slot_stats;
 
 static int cluster_slot_stat_cmp_desc(const void *a, const void *b)
 {
     const cluster_slot_stat_item *x = (const cluster_slot_stat_item *)a;
     const cluster_slot_stat_item *y = (const cluster_slot_stat_item *)b;
-    if (x->count < y->count)
+    if (x->metric < y->metric)
         return 1;
-    if (x->count > y->count)
+    if (x->metric > y->metric)
         return -1;
     return (int)x->slot - (int)y->slot;
 }
@@ -4878,9 +4884,9 @@ static int cluster_slot_stat_cmp_asc(const void *a, const void *b)
 {
     const cluster_slot_stat_item *x = (const cluster_slot_stat_item *)a;
     const cluster_slot_stat_item *y = (const cluster_slot_stat_item *)b;
-    if (x->count < y->count)
+    if (x->metric < y->metric)
         return -1;
-    if (x->count > y->count)
+    if (x->metric > y->metric)
         return 1;
     return (int)x->slot - (int)y->slot;
 }
@@ -4888,10 +4894,19 @@ static int cluster_slot_stat_cmp_asc(const void *a, const void *b)
 static void cluster_slot_count_cb(const char *key, size_t klen,
                                   const char *v, size_t vlen, void *ctx)
 {
-    uint64_t *counts = (uint64_t *)ctx;
-    (void)v;
-    (void)vlen;
-    counts[hash_slot(key, klen)]++;
+    struct cluster_slot_stats *stats = (struct cluster_slot_stats *)ctx;
+    uint16_t slot = hash_slot(key, klen);
+    uint64_t bytes = entry_bytes(klen, vlen);
+    uint64_t extra = obj_extra_mem(v, vlen);
+    stats->counts[slot]++;
+    if (UINT64_MAX - stats->memory[slot] < bytes)
+        stats->memory[slot] = UINT64_MAX;
+    else
+        stats->memory[slot] += bytes;
+    if (UINT64_MAX - stats->memory[slot] < extra)
+        stats->memory[slot] = UINT64_MAX;
+    else
+        stats->memory[slot] += extra;
 }
 
 /* -MOVED/-CLUSTERDOWN/-ASK check for one command (cluster mode only):
@@ -21818,13 +21833,13 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
         }
         {
             if (ci_equal(sub, sl, "SLOT-STATS")) {
-                uint64_t counts[16384];
+                cluster_slot_stats stats;
                 cluster_slot_stat_item items[16384];
                 size_t nitems = 0;
                 int myself = -1;
                 size_t i;
-                memset(counts, 0, sizeof(counts));
-                rh_each(&d->table, cluster_slot_count_cb, counts);
+                memset(&stats, 0, sizeof(stats));
+                rh_each(&d->table, cluster_slot_count_cb, &stats);
                 if (d->slot_owner_dirty)
                     db_rebuild_slot_owner(d);
                 for (i = 0; i < (size_t)d->nnodes; i++) {
@@ -21865,9 +21880,11 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
                                 continue;
                             resp_write_array_header(&tmp, 2);
                             resp_write_integer(&tmp, (long long)i);
-                            resp_write_map_header(&tmp, 1);
+                            resp_write_map_header(&tmp, 2);
                             resp_write_bulk(&tmp, "key-count", 9);
-                            resp_write_integer(&tmp, (long long)counts[i]);
+                            resp_write_integer(&tmp, (long long)stats.counts[i]);
+                            resp_write_bulk(&tmp, "memory-bytes", 12);
+                            resp_write_integer(&tmp, (long long)stats.memory[i]);
                         }
                         out->len = 0;
                         if (resp_buf_reserve(out, tmp.len) != 0) {
@@ -21887,7 +21904,8 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
                     const char *metric;
                     size_t ml;
                     if (argc < 4 || !arg_str(&argv[3], &metric, &ml) ||
-                        !ci_equal(metric, ml, "KEY-COUNT")) {
+                        (!ci_equal(metric, ml, "KEY-COUNT") &&
+                         !ci_equal(metric, ml, "MEMORY-BYTES"))) {
                         resp_write_error(out, "ERR Unrecognized sort metric for ORDERBY.",
                                          sizeof("ERR Unrecognized sort metric for ORDERBY.") - 1);
                         return;
@@ -21917,7 +21935,10 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
                     for (i = 0; i < 16384; i++) {
                         if (d->slot_owner[i] == (uint16_t)myself) {
                             items[nitems].slot = (uint16_t)i;
-                            items[nitems].count = counts[i];
+                            items[nitems].count = stats.counts[i];
+                            items[nitems].metric = ci_equal(metric, ml, "MEMORY-BYTES")
+                                                       ? stats.memory[i]
+                                                       : stats.counts[i];
                             nitems++;
                         }
                     }
@@ -21929,8 +21950,13 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
                         resp_write_array_header(out, 2);
                         resp_write_integer(out, items[i].slot);
                         resp_write_map_header(out, 1);
-                        resp_write_bulk(out, "key-count", 9);
-                        resp_write_integer(out, (long long)items[i].count);
+                        if (ci_equal(metric, ml, "MEMORY-BYTES")) {
+                            resp_write_bulk(out, "memory-bytes", 12);
+                            resp_write_integer(out, (long long)items[i].metric);
+                        } else {
+                            resp_write_bulk(out, "key-count", 9);
+                            resp_write_integer(out, (long long)items[i].metric);
+                        }
                     }
                     return;
                 }

@@ -1164,3 +1164,11 @@ Windows PAL 的 `QueryPerformanceFrequency` 缓存改为原子 once-publish 状�
 头部的半包，直接返回不完整，不申请百万级数组；输入继续到达并满足下界后
 才进入原有解析与分配流程。该检查是整数除法和一次分支，不改变完整请求
 的 wire 语义，并显著降低超大半包的瞬时内存风险。
+
+## Phase 122：CLUSTER SLOT-STATS memory-bytes
+
+`CLUSTER SLOT-STATS` 在一次 `rh_each()` 扫描中同时累计每个槽的 key 数和
+`memory-bytes`（主表 entry 估算 + `obj_extra_mem` 对象负载），避免为第二个
+指标重复遍历数据库。累加采用饱和逻辑，异常超大对象不会回绕成小值；
+`SLOTSRANGE` 输出两个统计字段，`ORDERBY memory-bytes` 复用固定 16K 栈数组
+和确定性槽位排序。CPU/network 指标继续 fail-closed，直到建立逐槽计量模型。

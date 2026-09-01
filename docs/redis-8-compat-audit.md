@@ -69,9 +69,10 @@ python3 tools/audit_redis_compat.py \
   ownership before deleting keys from unserved slots. Both paths collect keys
   before mutation, preserve expiry/accounting invariants, and fail closed on
   allocation errors.
-- `CLUSTER SLOT-STATS` supports the low-overhead `key-count` metric for
-  `SLOTSRANGE` and `ORDERBY [LIMIT] [ASC|DESC]`; memory/CPU/network metrics
-  remain explicitly rejected until their accounting model is available.
+- `CLUSTER SLOT-STATS` supports low-overhead `key-count` and `memory-bytes`
+  metrics for `SLOTSRANGE` and `ORDERBY [LIMIT] [ASC|DESC]`; CPU/network
+  metrics remain explicitly rejected until their per-slot accounting model is
+  available.
 - `CLUSTER MIGRATION` and `CLUSTER SYNCSLOTS` are recognized with an
   internal-client-only security gate; external sessions cannot alter migration
   state or slot metadata.

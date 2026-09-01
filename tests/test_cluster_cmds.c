@@ -172,7 +172,10 @@ static void test_cluster_slot_stats(void)
     DD_CHECK(strstr(out.data, "key-count") != NULL);
 
     exec_sess(s, T0, &out, 5, "CLUSTER", "SLOT-STATS", "ORDERBY", "memory-bytes", "LIMIT");
-    EXPECT(out, "-ERR Unrecognized sort metric for ORDERBY.\r\n");
+    EXPECT(out, "-ERR syntax error\r\n");
+    exec_sess(s, T0, &out, 6, "CLUSTER", "SLOT-STATS", "ORDERBY", "memory-bytes", "LIMIT", "1");
+    DD_CHECK(out.len > 0 && out.data[0] == '*');
+    DD_CHECK(strstr(out.data, "memory-bytes") != NULL);
 
     session_free(s);
     resp_buf_free(&out);

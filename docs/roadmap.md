@@ -527,3 +527,6 @@
   - [x] RESP 超大聚合预分配门控：按每个子项至少 3 字节的输入下界，在
     arena 分配前拒绝明显不完整的百万级聚合头；新增不分配回归，避免半包
     触发与输入无关的大内存申请（Phase 121）
+  - [x] `CLUSTER SLOT-STATS memory-bytes`：复用单次 key 表扫描，按槽统计
+    entry 与对象额外内存并以饱和加法防溢出；支持 `SLOTSRANGE` 输出和
+    `ORDERBY memory-bytes`，CPU/network 因缺少逐槽计量仍显式拒绝（Phase 122）
