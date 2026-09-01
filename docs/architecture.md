@@ -826,7 +826,9 @@ DBSIZE 为 O(1)，可能计入尚未回收的过期 key。
 - **范围**：兼容 Redis cluster-enabled 的单节点形态，独占 16384 个槽。
   多节点扩展在后续 Phase 7.8a–7.10 完成；本节保留单节点初始部署语义。
 - **hash slot**：`slot = crc16(hashtag) % 16384`（CRC16-XMODEM，表驱位运算；
-  hashtag 取首个非空 `{}` 内容，规则同 Redis）。
+  hashtag 取首个非空 `{}` 内容，规则同 Redis）。CRC 表是编译期初始化的
+  `static const` 数据，避免多 worker 首次路由时的懒初始化数据竞争；核心
+  路由路径无需一次性初始化分支。
 - **节点身份**：`cluster-enabled yes` 时首次启动生成 40 位 hex node id 并
   写入 `cluster-config-file`（Redis nodes.conf 风格单行），重启复用。
 - **命令族**：CLUSTER INFO/MYID/NODES/SLOTS/KEYSLOT/COUNTKEYSINSLOT/
