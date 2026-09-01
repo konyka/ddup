@@ -1082,3 +1082,11 @@ parser `68.4M–80.6M ops/s`、writer `97.3M–100.1M ops/s`；较宽的范围
 样本）并取中位数：parse-only SET `36.8M ops/s`、parse-only GET
 `42.4M ops/s`、integer RESP parser `79.7M ops/s`、integer RESP writer
 `99.6M ops/s`。各项离散度仍受主机调度影响，数据仅用于同机趋势比较。
+
+## Phase 111：PAL 哈希能力探测收口
+
+将 wyhash 所需的宽乘法能力判断从 `src/core/rhtable.c` 移入
+`src/pal/pal_platform.h` 的 `DDUP_HAS_WYHASH`。运行时哈希算法与数据面未改变：
+支持宽乘法的目标继续使用 wyhash，其余目标继续使用 FNV-1a + fmix64 回退，
+因此本阶段不宣称吞吐变化。新增能力宏布尔值测试，确保默认和 C99 构建保持
+一致的编译路径。

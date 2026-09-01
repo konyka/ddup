@@ -51,6 +51,7 @@
 | 能力 | 宏 | 启用标准 | C99 降级 |
 |---|---|---|---|
 | 原子操作 | `DDUP_HAS_C_ATOMICS` | C11 | GCC/Clang `__atomic` 或 MSVC Interlocked；仅无原子内建的平台保留单线程降级 |
+| wyhash 宽乘法 | `DDUP_HAS_WYHASH` | 编译器/目标能力 | FNV-1a + fmix64 回退 |
 | 线程头 | `DDUP_HAS_C_THREADS` | C11 | 平台原生线程（PAL 封装） |
 | 对齐 | `DDUP_HAS_C_ALIGNAS` | C11 | `__attribute__((aligned))` / `__declspec(align)` |
 | 静态断言 | `DDUP_HAS_C_STATIC_ASSERT` | C11 | 数组大小技巧 |
@@ -61,7 +62,7 @@
 | 溢出算术 | `DDUP_HAS_C_STDCKDINT` | C23 | `__builtin_*_overflow` / `long long` 分支检测 |
 | _BitInt | `DDUP_HAS_C_BITINT` | C23 | 不可用 |
 
-上层代码统一包含 `src/pal/pal_cstd.h`，使用 `ddup_*` 前缀宏（如 `ddup_static_assert`、`ddup_alignas`、`ddup_atomic_*`、`ddup_add_overflow`），不再直接依赖具体 C 标准。`pal_platform.h` 中遗留的 `DDUP_HAS_C_ATOMICS` 探测仅在 CMake 未定义时生效，避免与构建期探测冲突。
+上层代码统一包含 `src/pal/pal_cstd.h`，使用 `ddup_*` 前缀宏（如 `ddup_static_assert`、`ddup_alignas`、`ddup_atomic_*`、`ddup_add_overflow`），不再直接依赖具体 C 标准。平台和编译器能力统一经 `src/pal/pal_platform.h` 暴露：`DDUP_HAS_C_ATOMICS` 探测仅在 CMake 未定义时生效，`DDUP_HAS_WYHASH` 控制哈希实现是否使用宽乘法；核心目录不再直接检查工具链/架构预定义宏。
 
 ## 命令 ID 表与缓冲池（Phase 9）
 

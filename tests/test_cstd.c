@@ -2,8 +2,13 @@
 #include "test.h"
 
 #include "pal/pal_cstd.h"
+#include "pal/pal_platform.h"
 #include "pal/pal_thread.h"
 #include <stdlib.h>
+
+#ifndef DDUP_HAS_WYHASH
+#error "pal_platform.h must define DDUP_HAS_WYHASH"
+#endif
 
 static void test_capability_macros_are_boolean(void)
 {
@@ -17,6 +22,7 @@ static void test_capability_macros_are_boolean(void)
     DD_CHECK(DDUP_HAS_C_CONSTEXPR == 0 || DDUP_HAS_C_CONSTEXPR == 1);
     DD_CHECK(DDUP_HAS_C_STDCKDINT == 0 || DDUP_HAS_C_STDCKDINT == 1);
     DD_CHECK(DDUP_HAS_C_BITINT == 0 || DDUP_HAS_C_BITINT == 1);
+    DD_CHECK(DDUP_HAS_WYHASH == 0 || DDUP_HAS_WYHASH == 1);
 }
 
 /* Compile-time assertions at file scope: some compilers warn about an unused

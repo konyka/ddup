@@ -58,4 +58,15 @@
 #  endif
 #endif
 
+/* wyhash uses a wide multiply when the compiler/target exposes one.  Keep
+ * this capability decision in PAL so core code does not inspect toolchain or
+ * architecture predefined macros directly. */
+#ifndef DDUP_HAS_WYHASH
+#  if defined(__SIZEOF_INT128__) || (defined(_MSC_VER) && defined(_M_X64))
+#    define DDUP_HAS_WYHASH 1
+#  else
+#    define DDUP_HAS_WYHASH 0
+#  endif
+#endif
+
 #endif /* DDUP_PAL_PLATFORM_H */

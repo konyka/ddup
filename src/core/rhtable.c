@@ -1,5 +1,6 @@
 /* rhtable.c - Robin Hood hash table with incremental rehash; see rhtable.h. */
 #include "core/rhtable.h"
+#include "pal/pal_platform.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -34,14 +35,13 @@ static int rh_grow_capacity(size_t cap, size_t *new_cap)
 /* hash: wyhash (final v4, vendored in deps/wyhash) on platforms with  */
 /* a 128-bit multiply; FNV-1a 64 + fmix64 fallback elsewhere.          */
 /* ------------------------------------------------------------------ */
-#if defined(__SIZEOF_INT128__) || (defined(_MSC_VER) && defined(_M_X64))
-#define RH_HAS_WYHASH 1
+#if DDUP_HAS_WYHASH
 #include "wyhash.h"
 #endif
 
 static uint64_t rh_hash(const char *key, size_t len)
 {
-#ifdef RH_HAS_WYHASH
+#if DDUP_HAS_WYHASH
     return wyhash(key, len, 0, _wyp);
 #else
     uint64_t h = 14695981039346656037ULL;

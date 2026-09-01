@@ -495,3 +495,6 @@
     `LLONG_MIN/MAX` 边界，共 919 checks（Phase 109）
   - [x] 解析基准多轮中位数：同一 Release 构建连续 5 次取中位数，记录
     parse-only 与 integer parser/writer 的稳定趋势数据（Phase 110）
+  - [x] PAL 能力探测收口：新增布尔宏 `DDUP_HAS_WYHASH`，集中管理宽乘法
+    编译器/目标能力检测，哈希表核心仅依赖 PAL 宏并补充 C99/默认构建测试
+    （Phase 111）
