@@ -13,6 +13,18 @@
 | 整体缺失容器 | 0 |
 | 已实现容器内缺失子命令 | 0 |
 
+最近一次本地复核（2026-09-01）：
+
+```sh
+python3 tools/audit_redis_compat.py \
+  --redis-json /home/timeshift/opensource/redis-8.10.1/src/commands \
+  --tag 8.10.1 --repo .
+```
+
+输出确认 Redis 命令条目 459、JSON 文件 459，ddup 顶层命令 290，
+缺失顶层命令/容器/子命令均为 0。该命令为只读检查，可在源目录位置变化时
+替换 `--redis-json` 路径后重复执行。
+
 历史缺口集中在三块，当前 Redis 8.10.1 命令级审计已清零：
 
 1. Redis 8.8 新增 `ARRAY` 类型（18 个 `AR*` 命令）。
