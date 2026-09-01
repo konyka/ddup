@@ -252,6 +252,11 @@ static void test_object_metadata_and_getkeysflags(void)
     EXPECT_REPLY("*1\r\n*2\r\n$1\r\nk\r\n$2\r\nRW\r\n");
     cmd(4, "COMMAND", "GETKEYSANDFLAGS", "GET", "k");
     EXPECT_REPLY("*1\r\n*2\r\n$1\r\nk\r\n$2\r\nRO\r\n");
+    cmd(7, "COMMAND", "GETKEYS", "EVAL_RO", "return 1", "2", "k1",
+        "k2");
+    EXPECT_REPLY("*2\r\n$2\r\nk1\r\n$2\r\nk2\r\n");
+    cmd(6, "COMMAND", "GETKEYS", "FCALL_RO", "fn", "1", "k1");
+    EXPECT_REPLY("*1\r\n$2\r\nk1\r\n");
 }
 
 static void test_server_management_commands(void)

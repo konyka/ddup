@@ -69,10 +69,14 @@ python3 tools/audit_redis_compat.py \
   ownership before deleting keys from unserved slots. Both paths collect keys
   before mutation, preserve expiry/accounting invariants, and fail closed on
   allocation errors.
-- `CLUSTER SLOT-STATS` supports low-overhead `key-count` and `memory-bytes`
-  metrics for `SLOTSRANGE` and `ORDERBY [LIMIT] [ASC|DESC]`; CPU/network
-  metrics remain explicitly rejected until their per-slot accounting model is
-  available.
+- `CLUSTER SLOT-STATS` supports low-overhead `key-count`, `memory-bytes`,
+  `cpu-usec`, `network-bytes-in`, and `network-bytes-out` metrics for
+  `SLOTSRANGE` and `ORDERBY [LIMIT] [ASC|DESC]`. CPU/network values are
+  cumulative per-slot counters attributed only to commands with an unambiguous
+  single hash slot; keyless, topology, and cross-slot requests are excluded.
+- Script key extraction is aligned for `EVAL_RO/EVALSHA_RO` and
+  `FCALL/FCALL_RO`; cluster routing and `COMMAND GETKEYS` use the declared
+  `numkeys` positions rather than treating the script/function name as a key.
 - `CLUSTER MIGRATION` and `CLUSTER SYNCSLOTS` are recognized with an
   internal-client-only security gate; external sessions cannot alter migration
   state or slot metadata.

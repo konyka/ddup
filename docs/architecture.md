@@ -1273,7 +1273,10 @@ updated at the session dispatch boundary only when cluster mode is enabled; the
 command key extractor must resolve exactly one slot, so topology/keyless commands
 are excluded and cross-slot requests cannot be attributed ambiguously. Counters
 use saturating addition and are cumulative for the lifetime of the logical DB.
-`SLOTSRANGE` keeps slot order; `ORDERBY` uses a fixed 16K-item stack array with
+The same key-position extractor covers `EVAL/EVALSHA` read-only variants and
+`FCALL/FCALL_RO` (`numkeys` followed by keys), keeping cluster routing,
+`COMMAND GETKEYS`, and telemetry consistent. `SLOTSRANGE` keeps slot order;
+`ORDERBY` uses a fixed 16K-item stack array with
 deterministic slot tie-breaking and optional `LIMIT/ASC/DESC`. The accounting is
 lock-free in the single-owner DB model and adds no allocation to the command hot
 path.

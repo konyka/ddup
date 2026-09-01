@@ -1182,3 +1182,7 @@ Windows PAL 的 `QueryPerformanceFrequency` 缓存改为原子 once-publish 状�
 字节之和；出站字节使用本次命令追加到回复缓冲区的增量。计数器预置在
 `db` 内，无热路径分配，使用饱和加法防止长时间运行溢出。`ORDERBY` 仍使用
 固定 16K 项数组，故不会引入新的按请求堆分配。
+
+本阶段同时统一脚本命令的 key 位置：`EVAL_RO/EVALSHA_RO` 和
+`FCALL/FCALL_RO` 均按 `numkeys` 提取后续 key，避免把脚本/函数名误计为槽
+或路由 key；`COMMAND GETKEYS` 复用同一位置约定。

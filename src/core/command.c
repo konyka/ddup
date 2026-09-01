@@ -73,6 +73,19 @@ static int stream_id_gt(uint64_t a_ms, uint64_t a_seq, uint64_t b_ms,
 static int cmd_keys_accum(const resp_value *argv, size_t argc, int *have,
                           uint32_t *slot);
 
+static uint64_t command_wire_bytes(const resp_value *argv, size_t argc)
+{
+    uint64_t total = 0;
+    size_t i;
+    for (i = 0; i < argc; i++) {
+        uint64_t n = (uint64_t)argv[i].len;
+        if (UINT64_MAX - total < n)
+            return UINT64_MAX;
+        total += n;
+    }
+    return total;
+}
+
 void db_init(db *d)
 {
     script_set_command_fn(command_dispatch);
@@ -4519,7 +4532,8 @@ static int cmd_keys_accum(const resp_value *argv, size_t argc, int *have,
         long long nk = 0;
         size_t end;
         if (argc < 4 || !arg_str(&argv[2], &nv, &nvl) ||
-            !parse_i64(nv, nvl, &nk) || nk <= 0)
+            !parse_i64(nv, nvl, &nk) || nk <= 0 ||
+            (uint64_t)nk > (uint64_t)(argc - 3))
             return 1;
         end = 3 + (size_t)nk;
         if (end > argc)
@@ -4673,13 +4687,16 @@ static int cmd_keys_accum(const resp_value *argv, size_t argc, int *have,
             return 0;
         return 1;
     }
-    if (cmd_id == CMD_EVAL || cmd_id == CMD_EVALSHA) {
+    if (cmd_id == CMD_EVAL || cmd_id == CMD_EVALSHA ||
+        cmd_id == CMD_EVAL_RO || cmd_id == CMD_EVALSHA_RO ||
+        cmd_id == CMD_FCALL || cmd_id == CMD_FCALL_RO) {
         const char *nv;
         size_t nvl;
         long long nk = 0;
         size_t end;
         if (argc < 4 || !arg_str(&argv[2], &nv, &nvl) ||
-            !parse_i64(nv, nvl, &nk) || nk <= 0)
+            !parse_i64(nv, nvl, &nk) || nk <= 0 ||
+            (uint64_t)nk > (uint64_t)(argc - 3))
             return 1;
         end = 3 + (size_t)nk;
         if (end > argc)
@@ -4872,9 +4889,9 @@ typedef struct cluster_slot_stat_item {
 typedef struct cluster_slot_stats {
     uint64_t counts[16384];
     uint64_t memory[16384];
-    uint64_t cpu_usecs[16384];
-    uint64_t net_in[16384];
-    uint64_t net_out[16384];
+    const uint64_t *cpu_usecs;
+    const uint64_t *net_in;
+    const uint64_t *net_out;
 } cluster_slot_stats;
 
 static void cluster_slot_add(uint64_t *dst, uint64_t value)
@@ -5055,7 +5072,8 @@ static int cluster_check_ownership(session *s, const resp_value *argv,
         long long nk = 0;
         size_t end;
         if (argc < 4 || !arg_str(&argv[2], &nv, &nvl) ||
-            !parse_i64(nv, nvl, &nk) || nk <= 0)
+            !parse_i64(nv, nvl, &nk) || nk <= 0 ||
+            (uint64_t)nk > (uint64_t)(argc - 3))
             return 1;
         end = 3 + (size_t)nk;
         if (end > argc)
@@ -5132,14 +5150,17 @@ static int cluster_check_ownership(session *s, const resp_value *argv,
             return 0;
         return 1;
     }
-    if (cmd_id == CMD_EVAL || cmd_id == CMD_EVALSHA) {
-        /* keys are argv[3..3+numkeys); numkeys validated by the dispatch */
+    if (cmd_id == CMD_EVAL || cmd_id == CMD_EVALSHA ||
+        cmd_id == CMD_EVAL_RO || cmd_id == CMD_EVALSHA_RO ||
+        cmd_id == CMD_FCALL || cmd_id == CMD_FCALL_RO) {
+        /* keys are argv[3..3+numkeys); reject truncated/overflowing counts. */
         const char *nv;
         size_t nvl;
         long long nk = 0;
         size_t end;
         if (argc < 4 || !arg_str(&argv[2], &nv, &nvl) ||
-            !parse_i64(nv, nvl, &nk) || nk <= 0)
+            !parse_i64(nv, nvl, &nk) || nk <= 0 ||
+            (uint64_t)nk > (uint64_t)(argc - 3))
             return 1;
         end = 3 + (size_t)nk;
         if (end > argc)
@@ -6962,6 +6983,24 @@ static void command_emit_keys_mode(const resp_value *argv, size_t argc,
         cmd_id == CMD_SUNIONSTORE || cmd_id == CMD_SDIFFSTORE ||
         cmd_id == CMD_BITOP) {
         for (i = 3; i < argc; i++)
+            EMIT_KEY(&argv[i]);
+        goto done;
+    }
+    if (cmd_id == CMD_EVAL || cmd_id == CMD_EVALSHA ||
+        cmd_id == CMD_EVAL_RO || cmd_id == CMD_EVALSHA_RO ||
+        cmd_id == CMD_FCALL || cmd_id == CMD_FCALL_RO) {
+        const char *nv;
+        size_t nvl;
+        long long nk = 0;
+        size_t end;
+        if (argc < 5 || !arg_str(&argv[4], &nv, &nvl) ||
+            !parse_i64(nv, nvl, &nk) || nk <= 0 ||
+            (uint64_t)nk > (uint64_t)(argc - 5))
+            goto done;
+        end = 5 + (size_t)nk;
+        if (end > argc)
+            end = argc;
+        for (i = 5; i < end; i++)
             EMIT_KEY(&argv[i]);
         goto done;
     }
@@ -21875,13 +21914,10 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
                 int myself = -1;
                 size_t i;
                 memset(&stats, 0, sizeof(stats));
+                stats.cpu_usecs = d->slot_cpu_usecs;
+                stats.net_in = d->slot_net_bytes_in;
+                stats.net_out = d->slot_net_bytes_out;
                 rh_each(&d->table, cluster_slot_count_cb, &stats);
-                memcpy(stats.cpu_usecs, d->slot_cpu_usecs,
-                       sizeof(stats.cpu_usecs));
-                memcpy(stats.net_in, d->slot_net_bytes_in,
-                       sizeof(stats.net_in));
-                memcpy(stats.net_out, d->slot_net_bytes_out,
-                       sizeof(stats.net_out));
                 if (d->slot_owner_dirty)
                     db_rebuild_slot_owner(d);
                 for (i = 0; i < (size_t)d->nnodes; i++) {
@@ -23280,9 +23316,15 @@ static void exec_transaction(session *s, resp_buf *out, uint64_t now_ms)
         uint64_t dirty_before = s->d->dirty;
         resp_write_array_header(out, s->queue_len);
         for (i = 0; i < s->queue_len; i++) {
+            size_t cmd_out_before = out->len;
+            uint64_t cmd_usecs;
 #ifdef DDUP_NO_CMDSTATS
+            uint64_t cmd_t0 = 0;
+            if (s->d->cluster_enabled)
+                cmd_t0 = pal_now_us();
             command_dispatch(s, s->queue[i].argv, s->queue[i].argc, out,
                              now_ms);
+            cmd_usecs = s->d->cluster_enabled ? pal_now_us() - cmd_t0 : 0;
 #else
             uint64_t t0 = pal_now_us();
             const char *qn = NULL;
@@ -23298,7 +23340,13 @@ static void exec_transaction(session *s, resp_buf *out, uint64_t now_ms)
                 s->d->cmd_calls[qid]++;
                 s->d->cmd_usecs[qid] += pal_now_us() - t0;
             }
+            cmd_usecs = pal_now_us() - t0;
 #endif
+            cluster_slot_record(s, s->queue[i].argv, s->queue[i].argc,
+                                cmd_usecs,
+                                command_wire_bytes(s->queue[i].argv,
+                                                   s->queue[i].argc),
+                                (uint64_t)(out->len - cmd_out_before));
             /* EVAL flags itself: its effects are logged, not its argv */
             s->queue[i].skip_log = s->aof_skip;
             s->aof_skip = 0;

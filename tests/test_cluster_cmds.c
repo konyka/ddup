@@ -152,9 +152,31 @@ static void test_cluster_slot_stats(void)
     db d;
     session *s;
     resp_buf out;
+    uint32_t txn_slot;
     db_init(&d);
     resp_buf_init(&out);
     s = cluster_session(&d);
+
+    txn_slot = hash_slot("txn", 3);
+    exec_sess(s, T0, &out, 1, "MULTI");
+    EXPECT(out, "+OK\r\n");
+    exec_sess(s, T0, &out, 3, "SET", "txn", "1");
+    EXPECT(out, "+QUEUED\r\n");
+    exec_sess(s, T0, &out, 1, "EXEC");
+    EXPECT(out, "*1\r\n+OK\r\n");
+    DD_CHECK(d.slot_cpu_usecs[txn_slot] > 0);
+    DD_CHECK(d.slot_net_bytes_in[txn_slot] > 0);
+    DD_CHECK(d.slot_net_bytes_out[txn_slot] > 0);
+
+    exec_sess(s, T0, &out, 5, "EVAL_RO", "return 1", "1", "foo", "x");
+    EXPECT(out, ":1\r\n");
+    DD_CHECK(d.slot_cpu_usecs[hash_slot("foo", 3)] > 0);
+    exec_sess(s, T0, &out, 3, "FUNCTION", "LOAD",
+              "#!lua name=slotlib\nreturn KEYS[1]");
+    EXPECT(out, "$7\r\nslotlib\r\n");
+    exec_sess(s, T0, &out, 4, "FCALL_RO", "slotlib", "1", "fkey");
+    EXPECT(out, "$4\r\nfkey\r\n");
+    DD_CHECK(d.slot_cpu_usecs[hash_slot("fkey", 4)] > 0);
 
     exec_sess(s, T0, &out, 3, "SET", "alpha", "1");
     EXPECT(out, "+OK\r\n");

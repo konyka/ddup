@@ -534,3 +534,6 @@
     边界累计 `cpu-usec`、`network-bytes-in/out`，仅归属可解析为单槽的
     数据命令；支持 `SLOTSRANGE`、`ORDERBY`、`LIMIT`、`ASC/DESC`，计数器
     饱和且无额外热路径分配（Phase 123）
+  - [x] 脚本 key 位置统一：`EVAL_RO/EVALSHA_RO`、`FCALL/FCALL_RO` 纳入
+    集群跨槽校验、路由和 `COMMAND GETKEYS`，按 `numkeys` 提取真实 key，
+    防止将脚本/函数名误作为数据 key（Phase 124）
