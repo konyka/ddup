@@ -510,3 +510,6 @@
   - [x] Windows QPC 频率缓存并发安全：计时 PAL 使用原子 once-publish 状态机
     发布 `QueryPerformanceFrequency` 结果，失败时安全回落到非零频率；新增
     多线程首次计时回归（Phase 115）
+  - [x] io_uring 固定发送槽位轮转提示：sbuf acquire 维护下一个探测槽位，
+    连续周转避免从槽位 0 重复扫描忙槽位；互斥内原子式 busy 标记和
+    SEND_ZC 通知回收语义不变，并以轮转顺序 TDD 锁定（Phase 116）

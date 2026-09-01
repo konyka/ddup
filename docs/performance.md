@@ -687,10 +687,16 @@ DDUP_IOU_SQPOLL=1 / DDUP_IOU_DEFER=1，默认关。DEFER 模式下 wait
 每次必泵 enter（taskwork 只在 enter 跑），pal_iouring_post 限属主
 线程。
 
-**3. registered send buffers / SEND_ZC：评估后不做**。sbuf 按需
-realloc 与注册缓冲固定地址模型冲突（扩容=注销重注册）；loopback 上
-页 pin 开销相对拷贝本身微小；SEND_ZC 的通知 CQE 对与缓冲生命周期
-规则同 sbuf 复用模式不兼容。复杂度实在、收益不确定。
+**3. registered send buffers / SEND_ZC（Phase 97）**：sbuf 使用有界固定
+大小池，按需启用，不做运行时扩容；`SEND_ZC` 的通知 CQE 到达前保持槽位
+占用，确保内核 DMA 引用不会观察到复用内存。内核或 UAPI 不支持时回落普通
+SEND。Phase 116 增加轮转提示游标，连续周转时从上次成功槽位的下一个位置
+开始扫描，避免重复检查低编号忙槽位；分配仍受互斥保护，最坏扫描复杂度为
+O(count)，不改变协议和回收语义。
+
+Phase 116 的 TDD 回归验证 4 槽池连续 acquire/release 返回 0、1、2 的轮转
+顺序；Linux io_uring 不可用时测试安全跳过。该优化减少高占用池的无效探测，
+收益与同时在用槽位数成正比，建议在目标内核/NIC 上用 `ddup-bench` 做 A/B。
 
 **A/B 数字**（bench.yml：7776 = op repost 基线 DDUP_IOU_RECV_MS=0；
 7777 = 全栈 multishot(+64KB 槽)+SQPOLL+DEFER；同窗口对比才有效，

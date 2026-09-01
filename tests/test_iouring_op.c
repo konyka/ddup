@@ -52,6 +52,34 @@ static void test_registered_send_buffers(void)
     pal_iouring_free(p);
 }
 
+static void test_registered_send_buffer_rotation(void)
+{
+    pal_iouring *p = pal_iouring_create();
+    int first = -1;
+    int second = -1;
+    int third = -1;
+
+    DD_CHECK(p != NULL);
+    if (p == NULL)
+        return;
+    if (pal_iouring_enable_sbuf(p, SBUF_COUNT, SBUF_SIZE) != 0) {
+        printf("registered send buffers unsupported; skipping rotation\n");
+        pal_iouring_free(p);
+        return;
+    }
+    DD_CHECK(pal_iouring_sbuf_acquire(p, &first) != NULL);
+    pal_iouring_sbuf_release(p, first);
+    DD_CHECK(pal_iouring_sbuf_acquire(p, &second) != NULL);
+    pal_iouring_sbuf_release(p, second);
+    DD_CHECK(pal_iouring_sbuf_acquire(p, &third) != NULL);
+    pal_iouring_sbuf_release(p, third);
+    /* Reuse advances through the pool instead of rescanning slot zero. */
+    DD_CHECK_EQ_INT(0, first);
+    DD_CHECK_EQ_INT(1, second);
+    DD_CHECK_EQ_INT(2, third);
+    pal_iouring_free(p);
+}
+
 static void test_send_zc_fixed_completion(void)
 {
     pal_iouring *p = pal_iouring_create();
@@ -483,6 +511,7 @@ cleanup:
 int main(void)
 {
     DD_RUN(test_registered_send_buffers);
+    DD_RUN(test_registered_send_buffer_rotation);
     DD_RUN(test_send_zc_fixed_completion);
     pal_iouring *probe;
 

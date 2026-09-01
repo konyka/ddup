@@ -130,6 +130,7 @@ struct pal_iouring {
     struct iovec *sbuf_iov;
     unsigned char *sbuf_busy;
     unsigned sbuf_count;
+    unsigned sbuf_hint;  /* next slot to probe, reducing repeated busy scans */
     size_t sbuf_size;
     int sbuf_registered;
     int test_fail_wake_once;
@@ -659,6 +660,7 @@ int pal_iouring_sbuf_active(const pal_iouring *r)
 void *pal_iouring_sbuf_acquire(pal_iouring *r, int *bid)
 {
     unsigned i;
+    unsigned start;
     void *buf = NULL;
     if (r == NULL || bid == NULL)
         return NULL;
@@ -666,12 +668,19 @@ void *pal_iouring_sbuf_acquire(pal_iouring *r, int *bid)
     pal_mutex_lock(&r->lock);
     if (!r->sbuf_registered)
         goto done;
+    start = r->sbuf_hint;
+    if (start >= r->sbuf_count)
+        start = 0;
     for (i = 0; i < r->sbuf_count; i++) {
-        if (r->sbuf_busy[i] != 0)
+        unsigned slot = start + i;
+        if (slot >= r->sbuf_count)
+            slot -= r->sbuf_count;
+        if (r->sbuf_busy[slot] != 0)
             continue;
-        r->sbuf_busy[i] = 1;
-        *bid = (int)i;
-        buf = r->sbuf_iov[i].iov_base;
+        r->sbuf_busy[slot] = 1;
+        *bid = (int)slot;
+        buf = r->sbuf_iov[slot].iov_base;
+        r->sbuf_hint = (slot + 1u == r->sbuf_count) ? 0u : slot + 1u;
         break;
     }
 done:

@@ -411,6 +411,10 @@ proactor——提交 IORING_OP_RECV/SEND/ACCEPT 操作本身，完成携带结�
   服务器端由 `DDUP_IOU_SEND_ZC=1` 显式启用 64 个 256 KiB 槽位；无可用槽位、
   UAPI 缺失或运行时拒绝时自动回落普通 SEND。初始 SEND CQE 仅确认已发送字节，
   直到 `IORING_CQE_F_NOTIF` 通知到达才释放固定槽位，避免 zero-copy UAF。
+- **固定发送槽位轮转提示（Phase 116）**：
+  `sbuf_acquire` 从上次成功槽位的下一个位置开始探测，并在成功后推进游标；
+  仍在同一互斥内完成 busy 标记，保持槽位所有权和 SEND_ZC 通知生命周期不变。
+  在槽位持续周转时避免每次从槽位 0 重复扫描已占用项，最坏情况仍为 O(count)。
 
 ## mt 生产化（Phase 15）
 
