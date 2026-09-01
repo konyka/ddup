@@ -1156,3 +1156,11 @@ Windows PAL 的 `QueryPerformanceFrequency` 缓存改为原子 once-publish 状�
 容量。这样同一个恶意半包反复触发解析不会令连接 arena 的 `used` 累积，也不
 增加完整命令的额外分配或释放。`test_resp_parser` 重复 100 次不完整聚合并
 锁定块数量/已用字节稳定，`test_arena` 覆盖 mark/rewind 保留既有分配。
+
+## Phase 121：RESP 超大聚合预分配门控
+
+聚合解析在申请 `resp_value` 数组前检查当前输入是否至少包含每个子项的
+3 字节最小 RESP 表示（如空 simple string）。对于 `*1000000\r\n` 这类只有
+头部的半包，直接返回不完整，不申请百万级数组；输入继续到达并满足下界后
+才进入原有解析与分配流程。该检查是整数除法和一次分支，不改变完整请求
+的 wire 语义，并显著降低超大半包的瞬时内存风险。

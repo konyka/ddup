@@ -1158,6 +1158,9 @@ hazard pointer/延迟回收、索引桶 CAS、检查点与恢复的并发协议�
 - **解析 checkpoint**：`arena_mark_get/arena_rewind` 允许流式解析在不完整
   或协议错误时回滚本次 speculative allocations；新增块保留在 arena 供后续
   请求复用，既避免半包重解析的内存累积，也不引入热路径逐次 malloc/free。
+- **聚合预分配门控**：在申请聚合 `resp_value` 数组前，按每个子项至少 3
+  字节的 RESP 下界检查当前输入；明显不完整的超大聚合头直接返回 0，避免
+  半包请求触发与实际输入无关的巨额预分配。
 - **失败原子性**：resp 解析先填本地聚合再一次性提交 `*out`；
   `session_queue_push`/`zsl_insert` 改为返回错误码，调用方失败即报错
   且不产生副作用；nodes.conf 落盘在 close/rename 失败时保留

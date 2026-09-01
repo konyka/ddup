@@ -297,6 +297,11 @@ static int parse_at(const char *start, const char *end, const char **pos,
                                     : RESP_PUSH;
         aggregate.count = slots;
         const char *cur = crlf + 2;
+        /* Every RESP child needs at least three bytes (for example `+\r\n`).
+         * Do not reserve a potentially enormous item array until the current
+         * input contains enough bytes to make progress toward all children. */
+        if (slots > (size_t)(end - cur) / 3)
+            return 0;
         if (slots > 0) {
             size_t i = 0;
             size_t bytes;

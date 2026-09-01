@@ -253,6 +253,18 @@ static void test_incomplete_aggregate_does_not_accumulate_arena(void)
     arena_destroy(&a);
 }
 
+static void test_large_incomplete_aggregate_does_not_preallocate(void)
+{
+    static const char wire[] = "*1000000\r\n";
+    arena a;
+    resp_value v;
+
+    arena_init(&a, 256);
+    DD_CHECK(resp_parse(wire, sizeof(wire) - 1, &v, &a) == 0);
+    DD_CHECK(a.head == NULL);
+    arena_destroy(&a);
+}
+
 static void test_protocol_errors(void)
 {
     DD_CHECK(parse("?bad\r\n") == -1);      /* unknown type byte */
@@ -321,6 +333,7 @@ int main(void)
     DD_RUN(test_null_and_empty_array);
     DD_RUN(test_incomplete_returns_zero);
     DD_RUN(test_incomplete_aggregate_does_not_accumulate_arena);
+    DD_RUN(test_large_incomplete_aggregate_does_not_preallocate);
     DD_RUN(test_protocol_errors);
     DD_RUN(test_pipelined_consumes_one_value);
     DD_RUN(test_streaming_byte_by_byte);
