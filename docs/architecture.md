@@ -893,7 +893,9 @@ DBSIZE 为 O(1)，可能计入尚未回收的过期 key。
 - **DUMP/RESTORE**：DUMP 返回单键二进制 payload（`u16 版本(1) + u8 类型 +
   值负载 + u64 CRC64`，复用 snapshot 的分类型编码；CRC 覆盖此前全部字节，
   采用反射 ECMA 多项式 0xC96C5795D7870F42、全 1 初值/异或出（CRC-64/XZ
-  参数，"123456789" 校验值 0x995DC9BBDF1939FA）。RESTORE key ttl-ms
+  参数，"123456789" 校验值 0x995DC9BBDF1939FA）。CRC64 查找表为编译期
+  `static const` 数据，避免多 worker 首次 DUMP/RESTORE 时的初始化竞态。
+  RESTORE key ttl-ms
   payload [REPLACE] [ABSTTL] [IDLETIME n] [FREQ n]：ttl 默认是相对毫秒
   （0=不过期），ABSTTL 时改为绝对 Unix ms；IDLETIME/FREQ 仅解析接受
   （无 LRU/LFU 对象元数据）。payload 截断/坏 CRC/版本不符 →

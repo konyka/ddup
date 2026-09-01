@@ -7,6 +7,7 @@
 #include "core/crc64.h"
 #include "core/session.h"
 #include "core/snapshot.h"
+#include "pal/pal_thread.h"
 #include "test.h"
 
 #define T0 1000000ULL
@@ -145,6 +146,38 @@ static void test_crc64_vector(void)
     uint64_t split = crc64(crc64(0, "1234", 4), "56789", 5);
     DD_CHECK_EQ_INT(0x995DC9BBDF1939FALL, (long long)whole);
     DD_CHECK_EQ_INT((long long)whole, (long long)split);
+}
+
+typedef struct crc64_worker_ctx {
+    int failures;
+} crc64_worker_ctx;
+
+static void *crc64_worker(void *arg)
+{
+    crc64_worker_ctx *ctx = (crc64_worker_ctx *)arg;
+    int i;
+    for (i = 0; i < 100000; i++) {
+        if (crc64(0, "123456789", 9) != 0x995DC9BBDF1939FAULL)
+            ctx->failures++;
+    }
+    return NULL;
+}
+
+static void test_crc64_concurrent_initialization(void)
+{
+    enum { THREADS = 8 };
+    pal_thread threads[THREADS];
+    crc64_worker_ctx ctx[THREADS];
+    int i;
+
+    memset(ctx, 0, sizeof(ctx));
+    for (i = 0; i < THREADS; i++)
+        DD_CHECK_EQ_INT(0, pal_thread_create(&threads[i], crc64_worker,
+                                             &ctx[i]));
+    for (i = 0; i < THREADS; i++)
+        DD_CHECK_EQ_INT(0, pal_thread_join(&threads[i], NULL));
+    for (i = 0; i < THREADS; i++)
+        DD_CHECK_EQ_INT(0, ctx[i].failures);
 }
 
 static void test_dump_missing(void)
@@ -463,6 +496,7 @@ static void test_restore_asking(void)
 
 int main(void)
 {
+    DD_RUN(test_crc64_concurrent_initialization);
     DD_RUN(test_crc64_vector);
     DD_RUN(test_dump_missing);
     DD_RUN(test_payload_layout);
