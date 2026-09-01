@@ -488,6 +488,40 @@ static void test_error_texts(void)
     db_destroy(&d);
 }
 
+static void test_blocked_command_name_matrix(void)
+{
+    static const char *const names[] = {
+        "eval",       "evalsha",   "script",    "subscribe",
+        "psubscribe", "unsubscribe", "punsubscribe", "shutdown",
+        "eval_ro",    "evalsha_ro",
+    };
+    db d;
+    session *s;
+    resp_buf out;
+    char script[96];
+    size_t i;
+
+    db_init(&d);
+    resp_buf_init(&out);
+    s = session_create(&d);
+    for (i = 0; i < sizeof(names) / sizeof(names[0]); i++) {
+        int n = snprintf(script, sizeof(script), "return redis.call('%s')",
+                         names[i]);
+        DD_CHECK(n > 0 && (size_t)n < sizeof(script));
+        exec_sess(s, T0, &out, 3, "EVAL", script, "0");
+        out.data[out.len] = '\0';
+        DD_CHECK(strstr(out.data, "not allowed from scripts") != NULL);
+    }
+    /* The comparison remains case-insensitive for RESP clients. */
+    exec_sess(s, T0, &out, 3, "EVAL",
+              "return redis.call('SuBsCrIbE')", "0");
+    out.data[out.len] = '\0';
+    DD_CHECK(strstr(out.data, "not allowed from scripts") != NULL);
+    session_free(s);
+    resp_buf_free(&out);
+    db_destroy(&d);
+}
+
 static void test_pcall_captures(void)
 {
     db d;
@@ -656,6 +690,7 @@ int main(void)
     DD_RUN(test_fcall_function);
     DD_RUN(test_function_dump_restore);
     DD_RUN(test_error_texts);
+    DD_RUN(test_blocked_command_name_matrix);
     DD_RUN(test_pcall_captures);
     DD_RUN(test_aof_records_effects);
     DD_RUN(test_mt_eval);

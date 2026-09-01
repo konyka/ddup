@@ -203,11 +203,12 @@ void script_set_command_fn(script_command_fn fn)
     g_cmd_fn = fn;
 }
 
-/* case-insensitive compare (command.c's ci_equal is file-local) */
-static int script_ci_equal(const char *a, size_t alen, const char *b)
+/* case-insensitive compare (command.c's ci_equal is file-local). */
+static int script_ci_equal(const char *a, size_t alen, const char *b,
+                           size_t blen)
 {
     size_t i;
-    if (strlen(b) != alen)
+    if (blen != alen)
         return 0;
     for (i = 0; i < alen; i++) {
         char x = a[i], y = b[i];
@@ -221,17 +222,30 @@ static int script_ci_equal(const char *a, size_t alen, const char *b)
     return 1;
 }
 
-/* commands scripts may not invoke (documented) */
+typedef struct script_blocked_name {
+    const char *name;
+    size_t len;
+} script_blocked_name;
+
+/* Commands scripts may not invoke (documented). Keeping lengths beside the
+ * literals avoids a strlen call for every redis.call() command. */
 static int name_blocked(const char *n, size_t nl)
 {
-    static const char *const BL[] = {
-        "eval",       "evalsha",   "script",    "subscribe",
-        "psubscribe", "unsubscribe", "punsubscribe", "shutdown",
-        "eval_ro",    "evalsha_ro",
+    static const script_blocked_name bl[] = {
+        {"eval", sizeof("eval") - 1},
+        {"evalsha", sizeof("evalsha") - 1},
+        {"script", sizeof("script") - 1},
+        {"subscribe", sizeof("subscribe") - 1},
+        {"psubscribe", sizeof("psubscribe") - 1},
+        {"unsubscribe", sizeof("unsubscribe") - 1},
+        {"punsubscribe", sizeof("punsubscribe") - 1},
+        {"shutdown", sizeof("shutdown") - 1},
+        {"eval_ro", sizeof("eval_ro") - 1},
+        {"evalsha_ro", sizeof("evalsha_ro") - 1},
     };
     size_t i;
-    for (i = 0; i < sizeof(BL) / sizeof(BL[0]); i++)
-        if (script_ci_equal(n, nl, BL[i]))
+    for (i = 0; i < sizeof(bl) / sizeof(bl[0]); i++)
+        if (script_ci_equal(n, nl, bl[i].name, bl[i].len))
             return 1;
     return 0;
 }
