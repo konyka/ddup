@@ -2221,6 +2221,11 @@ static int mt_multikey_target(int nworkers, uint16_t cmd,
 static int mt_classify(int nworkers, uint16_t cmd, const resp_value *argv,
                        size_t argc)
 {
+    /* These commands mutate slot-selected keys across all worker DBs. Until
+     * a broadcast mutation path is available, reject rather than partially
+     * applying them on the connection's home worker. */
+    if (cmd == CMD_SFLUSH || cmd == CMD_TRIMSLOTS)
+        return MT_BLOCKED;
     if (mt_is_blocking_pop(cmd))
         return mt_blocking_target(nworkers, cmd, argv, argc);
     if (cmd == CMD_MIGRATE)

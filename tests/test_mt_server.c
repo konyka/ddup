@@ -826,6 +826,12 @@ static void test_cluster_control_plane_mt(void)
     roundtrip(a, req, expected);
     roundtrip(b, req, expected);
 
+    /* Slot-wide destructive commands must not run on one shard only. */
+    roundtrip(a, "*3\r\n$6\r\nSFLUSH\r\n$1\r\n0\r\n$2\r\n10\r\n",
+              "-ERR command not supported in mt mode\r\n");
+    roundtrip(a, "*5\r\n$9\r\nTRIMSLOTS\r\n$6\r\nRANGES\r\n$1\r\n1\r\n$1\r\n0\r\n$2\r\n10\r\n",
+              "-ERR command not supported in mt mode\r\n");
+
     /* REPLICAOF NO ONE is now handled by the worker-0 control plane. */
     roundtrip(a, "*3\r\n$9\r\nREPLICAOF\r\n$2\r\nNO\r\n$3\r\nONE\r\n",
               "+OK\r\n");

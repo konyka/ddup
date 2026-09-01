@@ -544,3 +544,6 @@
     `FCALL/FCALL_RO` 按声明的 `numkeys` 转发到目标 worker，跨 worker
     请求拒绝为 `CROSSSLOT`，并以真实 socket 回归验证脚本写入可见性
     （Phase 126）
+  - [x] mt 槽维护安全闸：`SFLUSH` 与 `TRIMSLOTS` 在缺少跨 worker 广播
+    事务时显式返回 `ERR command not supported in mt mode`，禁止仅在 home
+    worker 局部删除而造成静默数据不一致（Phase 127）

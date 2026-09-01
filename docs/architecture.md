@@ -205,6 +205,9 @@
   异步 fan-out `pmessage`，连接关闭和退订会清理模式注册。
   `SCAN` 使用带 worker 索引的复合游标顺序遍历各分片；
   `KEYS` 广播并合并各 worker 的 RESP 数组，`RANDOMKEY` 广播后由 home
+  worker 选择结果。`SFLUSH`/`TRIMSLOTS` 目前在 mt 模式显式拒绝；它们会
+  影响所有 worker 分片，未建立广播事务前不允许只在 home worker 局部执行，
+  避免静默部分删除造成数据不一致。
   worker 返回首个非空 key；
   `SYNC/PSYNC/REPLICAOF/SLAVEOF/CLUSTER` 已由
   worker 0 控制面支持（SYNC/PSYNC 分类到 worker 0，master 侧全量快照

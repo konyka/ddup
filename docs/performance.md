@@ -1171,7 +1171,7 @@ Windows PAL 的 `QueryPerformanceFrequency` 缓存改为原子 once-publish 状�
 `memory-bytes`（主表 entry 估算 + `obj_extra_mem` 对象负载），避免为第二个
 指标重复遍历数据库。累加采用饱和逻辑，异常超大对象不会回绕成小值；
 `SLOTSRANGE` 输出两个统计字段，`ORDERBY memory-bytes` 复用固定 16K 栈数组
-和确定性槽位排序。CPU/network 指标继续 fail-closed，直到建立逐槽计量模型。
+和确定性槽位排序。CPU/network 指标在下一阶段通过独立逐槽计数器提供。
 
 ## Phase 123：CLUSTER SLOT-STATS CPU/network counters
 
@@ -1194,3 +1194,6 @@ Windows PAL 的 `QueryPerformanceFrequency` 缓存改为原子 once-publish 状�
 mt 路由器现在也按 `numkeys` 处理 `EVAL/EVALSHA/EVAL_RO/EVALSHA_RO` 和
 `FCALL/FCALL_RO`，把脚本执行转发到 key owner；错误计数或缺失 key 参数
 留在 home worker 交给核心命令做标准错误校验，避免路由层改变协议语义。
+
+`SFLUSH` 和 `TRIMSLOTS` 在 mt 模式走 fail-closed 拒绝分支，不会在单个
+home worker 上做部分槽删除；待跨 worker 广播事务具备原子提交/回滚后再启用。
