@@ -30,7 +30,7 @@
 -- Performing Test CMAKE_HAVE_LIBC_PTHREAD - Success
 -- Found Threads: TRUE
 -- ddup: TLS enabled (OpenSSL 3.0.13)
--- Configuring done (19.4s)
+-- Configuring done (10.9s)
 -- Generating done (0.1s)
 -- Build files have been written to: /home/runner/work/ddup/ddup/build
 [  0%] Building C object CMakeFiles/ddup_lua.dir/deps/lua/lapi.c.o
@@ -1039,12 +1039,6 @@ In function ‘snprintf’,
 /usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
    54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
       |          ^
-In function ‘snprintf’,
-    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:423:9,
-    inlined from ‘obj_set_convert’ at /home/runner/work/ddup/ddup/src/ds/obj.c:963:35:
-/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
-   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
-      |          ^
 In function ‘memcpy’,
     inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:143:5,
     inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:138:13,
@@ -1052,6 +1046,12 @@ In function ‘memcpy’,
     inlined from ‘command_client’ at /home/runner/work/ddup/ddup/src/core/command.c:7217:13:
 /usr/include/x86_64-linux-gnu/bits/string_fortified.h:29:10: warning: ‘__builtin_memcpy’ reading 29 bytes from a region of size 28 [-Wstringop-overread]
    29 |   return __builtin___memcpy_chk (__dest, __src, __len,
+      |          ^
+In function ‘snprintf’,
+    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:423:9,
+    inlined from ‘obj_set_convert’ at /home/runner/work/ddup/ddup/src/ds/obj.c:963:35:
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
+   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
       |          ^
 In function ‘snprintf’,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:423:9,
