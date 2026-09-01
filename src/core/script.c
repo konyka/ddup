@@ -228,12 +228,11 @@ static int script_ci_equal(const char *a, size_t alen, const char *b,
     if (blen != alen)
         return 0;
     for (i = 0; i < alen; i++) {
-        char x = a[i], y = b[i];
+        char x = a[i];
         if (x >= 'A' && x <= 'Z')
             x = (char)(x + 32);
-        if (y >= 'A' && y <= 'Z')
-            y = (char)(y + 32);
-        if (x != y)
+        /* Blacklist literals are lowercase, so only normalize the input. */
+        if (x != b[i])
             return 0;
     }
     return 1;
