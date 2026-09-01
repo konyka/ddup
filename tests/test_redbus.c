@@ -49,7 +49,7 @@ static size_t build_fixture(char *f)
     put64be(f + 32, 0);          /* offset */
     memset(f + 40, 'a', 40);     /* sender */
     f[80] = 0x03;                /* myslots: slots 0,1 */
-    f[80 + 2047] = 0x80;         /* slot 16383 */
+    f[80 + 2047] = (char)0x80;    /* slot 16383 */
     /* slaveof @2128: zeros (master) */
     memcpy(f + 2168, "127.0.0.1", 9);
     put16be(f + 2248, 17001);    /* cport */
@@ -127,7 +127,7 @@ static void test_fixture_decode(void)
     DD_CHECK_EQ_INT(-1,
                     redbus_handle_frame(&d, frame, REDBUS_HDR_LEN - 1,
                                         &reply, T0, NULL));
-    frame[4] = 0xFF; /* corrupt totlen */
+    frame[4] = (char)0xFF; /* corrupt totlen */
     DD_CHECK_EQ_INT(-1, redbus_handle_frame(&d, frame, flen, &reply, T0, NULL));
 
     resp_buf_free(&reply);
