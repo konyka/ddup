@@ -1186,3 +1186,7 @@ Windows PAL 的 `QueryPerformanceFrequency` 缓存改为原子 once-publish 状�
 本阶段同时统一脚本命令的 key 位置：`EVAL_RO/EVALSHA_RO` 和
 `FCALL/FCALL_RO` 均按 `numkeys` 提取后续 key，避免把脚本/函数名误计为槽
 或路由 key；`COMMAND GETKEYS` 复用同一位置约定。
+
+集群 ownership 检查同步覆盖 `MSETNX`、`HIMPORT SET`、`SUNIONCARD` 和
+`SDIFFCARD`，保持多节点路由与跨槽提取器一致；这些分支只增加参数解析，
+不改变单节点命令热路径。

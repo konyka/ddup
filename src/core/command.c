@@ -5010,7 +5010,7 @@ static int cluster_check_ownership(session *s, const resp_value *argv,
         }
         return 1;
     }
-    if (cmd_id == CMD_MSET) {
+    if (cmd_id == CMD_MSET || cmd_id == CMD_MSETNX) {
         for (i = 1; i + 1 < argc; i += 2) {
             const char *k;
             size_t kl;
@@ -5019,6 +5019,17 @@ static int cluster_check_ownership(session *s, const resp_value *argv,
                 return 0;
         }
         return 1;
+    }
+    if (cmd_id == CMD_HIMPORT) {
+        const char *sub;
+        size_t subl;
+        const char *k;
+        size_t kl;
+        if (argc < 3 || !arg_str(&argv[1], &sub, &subl) ||
+            !ci_equal(sub, subl, "SET") ||
+            !arg_str(&argv[2], &k, &kl))
+            return 1;
+        return db_key_served(d, k, kl, out, now_ms, asking);
     }
     if (cmd_id == CMD_MSETEX) {
         const char *nv;
@@ -5087,7 +5098,8 @@ static int cluster_check_ownership(session *s, const resp_value *argv,
         }
         return 1;
     }
-    if (cmd_id == CMD_SINTERCARD) {
+    if (cmd_id == CMD_SINTERCARD || cmd_id == CMD_SUNIONCARD ||
+        cmd_id == CMD_SDIFFCARD) {
         /* keys are argv[2..2+numkeys); numkeys validated by the dispatch */
         const char *nv;
         size_t nvl;

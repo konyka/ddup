@@ -351,6 +351,7 @@ static void test_crossslot_setops_watch(void);
 static void test_crossslot_exec(void);
 static void test_crossslot_disabled_allows(void);
 static void test_crossslot_copy(void);
+static void test_cluster_variant_key_routing(void);
 
 int main(void)
 {
@@ -366,6 +367,7 @@ int main(void)
     DD_RUN(test_crossslot_copy);
     DD_RUN(test_crossslot_exec);
     DD_RUN(test_crossslot_disabled_allows);
+    DD_RUN(test_cluster_variant_key_routing);
     return DD_TEST_SUMMARY();
 }
 
@@ -507,6 +509,49 @@ static void test_crossslot_disabled_allows(void)
     exec_sess(s, T0, &out, 3, "MGET", "a", "b");
     EXPECT(out, "*2\r\n$1\r\n1\r\n$1\r\n2\r\n");
 
+    session_free(s);
+    resp_buf_free(&out);
+    db_destroy(&d);
+}
+
+static void test_cluster_variant_key_routing(void)
+{
+    db d;
+    session *s;
+    resp_buf out;
+    cluster_node *me;
+    cluster_node *other;
+    uint32_t slot = hash_slot("{route}", 7);
+    char moved[128];
+
+    db_init(&d);
+    resp_buf_init(&out);
+    s = cluster_session(&d);
+    me = cluster_myself(&d);
+    other = cluster_node_add(&d, "abcdefabcdefabcdefabcdefabcdefabcdefabcd");
+    DD_CHECK(me != NULL && other != NULL);
+    if (me == NULL || other == NULL)
+        goto done;
+    snprintf(other->ip, sizeof(other->ip), "10.0.0.2");
+    other->port = 7778;
+    other->bus_port = 17778;
+    other->flags = CLUSTER_NODE_MASTER;
+    cluster_slots_set(me->slots, slot, 0);
+    cluster_slots_set(other->slots, slot, 1);
+    d.cluster_changes++;
+    d.slot_owner_dirty = 1;
+    snprintf(moved, sizeof(moved), "-MOVED %u 10.0.0.2:7778\r\n", slot);
+
+    exec_sess(s, T0, &out, 5, "MSETNX", "{route}.a", "1", "{route}.b", "2");
+    EXPECT(out, moved);
+    exec_sess(s, T0, &out, 4, "HIMPORT", "PREPARE", "route", "field");
+    EXPECT(out, "+OK\r\n");
+    exec_sess(s, T0, &out, 5, "HIMPORT", "SET", "{route}", "route", "v");
+    EXPECT(out, moved);
+    exec_sess(s, T0, &out, 4, "SUNIONCARD", "2", "{route}.a", "{route}.b");
+    EXPECT(out, moved);
+
+done:
     session_free(s);
     resp_buf_free(&out);
     db_destroy(&d);

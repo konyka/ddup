@@ -537,3 +537,6 @@
   - [x] 脚本 key 位置统一：`EVAL_RO/EVALSHA_RO`、`FCALL/FCALL_RO` 纳入
     集群跨槽校验、路由和 `COMMAND GETKEYS`，按 `numkeys` 提取真实 key，
     防止将脚本/函数名误作为数据 key（Phase 124）
+  - [x] 集群路由 key 提取补全：`MSETNX`、`HIMPORT SET`、`SUNIONCARD`、
+    `SDIFFCARD` 纳入 ownership 检查，避免多节点模式下将参数或子命令误作
+    key 导致错误 `MOVED` 或漏检（Phase 125）
