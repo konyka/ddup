@@ -1190,3 +1190,7 @@ Windows PAL 的 `QueryPerformanceFrequency` 缓存改为原子 once-publish 状�
 集群 ownership 检查同步覆盖 `MSETNX`、`HIMPORT SET`、`SUNIONCARD` 和
 `SDIFFCARD`，保持多节点路由与跨槽提取器一致；这些分支只增加参数解析，
 不改变单节点命令热路径。
+
+mt 路由器现在也按 `numkeys` 处理 `EVAL/EVALSHA/EVAL_RO/EVALSHA_RO` 和
+`FCALL/FCALL_RO`，把脚本执行转发到 key owner；错误计数或缺失 key 参数
+留在 home worker 交给核心命令做标准错误校验，避免路由层改变协议语义。

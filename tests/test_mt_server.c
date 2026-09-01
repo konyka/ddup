@@ -367,6 +367,21 @@ static void test_redis8_multikey_commands_route_to_owner(void)
     snprintf(req, sizeof(req), "*4\r\n$9\r\nSDIFFCARD\r\n$1\r\n2\r\n$%zu\r\n%s\r\n$%zu\r\n%s\r\n",
              strlen(s0), s0, strlen(s0b), s0b);
     roundtrip(b, req, ":1\r\n");
+
+    /* Script commands with declared keys must execute on that key owner. */
+    {
+        static const char script[] =
+            "return redis.call('SET', KEYS[1], ARGV[1])";
+        snprintf(req, sizeof(req),
+             "*5\r\n$4\r\nEVAL\r\n$%zu\r\n%s\r\n"
+             "$1\r\n1\r\n$%zu\r\n%s\r\n$5\r\nvalue\r\n",
+             strlen(script), script, strlen(k1), k1);
+    }
+    roundtrip(a, req, "$2\r\nOK\r\n");
+    snprintf(req, sizeof(req), "*2\r\n$3\r\nGET\r\n$%zu\r\n%s\r\n",
+             strlen(k1), k1);
+    roundtrip(b, req, "$5\r\nvalue\r\n");
+
     snprintf(req, sizeof(req), "*4\r\n$10\r\nSUNIONCARD\r\n$1\r\n2\r\n$%zu\r\n%s\r\n$%zu\r\n%s\r\n",
              strlen(s0), s0, strlen(k1), k1);
     roundtrip(a, req,

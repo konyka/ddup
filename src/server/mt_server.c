@@ -2145,6 +2145,17 @@ static int mt_multikey_target(int nworkers, uint16_t cmd,
     }
 
     kend = argc;
+    if (cmd == CMD_EVAL || cmd == CMD_EVALSHA ||
+        cmd == CMD_EVAL_RO || cmd == CMD_EVALSHA_RO ||
+        cmd == CMD_FCALL || cmd == CMD_FCALL_RO) {
+        long long nk = 0;
+        if (argc < 4 || argv[2].str == NULL ||
+            !mt_parse_ll(argv[2].str, argv[2].len, &nk) || nk <= 0 ||
+            (unsigned long long)nk > (unsigned long long)(argc - 3))
+            return MT_LOCAL;
+        kstart = 3;
+        kend = 3 + (size_t)nk;
+    }
     if (cmd == CMD_MSETEX) {
         long long nk = 0;
         if (argc < 3 || argv[1].str == NULL ||
@@ -2277,6 +2288,12 @@ static int mt_classify(int nworkers, uint16_t cmd, const resp_value *argv,
     case CMD_GEORADIUSBYMEMBER:
     case CMD_XREAD:
     case CMD_XREADGROUP:
+    case CMD_EVAL:
+    case CMD_EVALSHA:
+    case CMD_EVAL_RO:
+    case CMD_EVALSHA_RO:
+    case CMD_FCALL:
+    case CMD_FCALL_RO:
         return mt_multikey_target(nworkers, cmd, argv, argc);
     default:
         break;

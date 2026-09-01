@@ -540,3 +540,7 @@
   - [x] 集群路由 key 提取补全：`MSETNX`、`HIMPORT SET`、`SUNIONCARD`、
     `SDIFFCARD` 纳入 ownership 检查，避免多节点模式下将参数或子命令误作
     key 导致错误 `MOVED` 或漏检（Phase 125）
+  - [x] mt 脚本 owner 路由：`EVAL/EVALSHA/EVAL_RO/EVALSHA_RO` 与
+    `FCALL/FCALL_RO` 按声明的 `numkeys` 转发到目标 worker，跨 worker
+    请求拒绝为 `CROSSSLOT`，并以真实 socket 回归验证脚本写入可见性
+    （Phase 126）

@@ -1276,6 +1276,8 @@ use saturating addition and are cumulative for the lifetime of the logical DB.
 The same key-position extractor covers `EVAL/EVALSHA` read-only variants and
 `FCALL/FCALL_RO` (`numkeys` followed by keys), keeping cluster routing,
 `COMMAND GETKEYS`, and telemetry consistent. `SLOTSRANGE` keeps slot order;
+The mt server applies the same declared-key rule when forwarding script
+commands, while malformed counts stay on the home worker for normal validation.
 `ORDERBY` uses a fixed 16K-item stack array with
 deterministic slot tie-breaking and optional `LIMIT/ASC/DESC`. The accounting is
 lock-free in the single-owner DB model and adds no allocation to the command hot
