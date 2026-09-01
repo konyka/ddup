@@ -81,6 +81,10 @@ typedef struct db {
      * (indexed by CMD_* id, room to spare) */
     uint64_t cmd_calls[CMD_STATS_SLOTS];
     uint64_t cmd_usecs[CMD_STATS_SLOTS];
+    /* Per-slot command telemetry; updated only in cluster mode. */
+    uint64_t slot_cpu_usecs[16384];
+    uint64_t slot_net_bytes_in[16384];
+    uint64_t slot_net_bytes_out[16384];
 } db;
 
 void db_init(db *d);

@@ -177,6 +177,20 @@ static void test_cluster_slot_stats(void)
     DD_CHECK(out.len > 0 && out.data[0] == '*');
     DD_CHECK(strstr(out.data, "memory-bytes") != NULL);
 
+    exec_sess(s, T0, &out, 5, "CLUSTER", "SLOT-STATS", "ORDERBY", "cpu-usec", "LIMIT");
+    EXPECT(out, "-ERR syntax error\r\n");
+    exec_sess(s, T0, &out, 6, "CLUSTER", "SLOT-STATS", "ORDERBY", "cpu-usec", "LIMIT", "1");
+    DD_CHECK(out.len > 0 && out.data[0] == '*');
+    DD_CHECK(strstr(out.data, "cpu-usec") != NULL);
+
+    exec_sess(s, T0, &out, 6, "CLUSTER", "SLOT-STATS", "ORDERBY", "network-bytes-in", "LIMIT", "1");
+    DD_CHECK(out.len > 0 && out.data[0] == '*');
+    DD_CHECK(strstr(out.data, "network-bytes-in") != NULL);
+
+    exec_sess(s, T0, &out, 6, "CLUSTER", "SLOT-STATS", "ORDERBY", "network-bytes-out", "LIMIT", "1");
+    DD_CHECK(out.len > 0 && out.data[0] == '*');
+    DD_CHECK(strstr(out.data, "network-bytes-out") != NULL);
+
     session_free(s);
     resp_buf_free(&out);
     db_destroy(&d);

@@ -70,6 +70,8 @@ static int stream_parse_full_id(const char *s, size_t len, uint64_t *ms,
                                 uint64_t *seq);
 static int stream_id_gt(uint64_t a_ms, uint64_t a_seq, uint64_t b_ms,
                         uint64_t b_seq);
+static int cmd_keys_accum(const resp_value *argv, size_t argc, int *have,
+                          uint32_t *slot);
 
 void db_init(db *d)
 {
@@ -118,6 +120,9 @@ void db_init(db *d)
     d->tier_max_disk_bytes = 0;
     d->tier_io_error = 0;
     d->lua_state = NULL;
+    memset(d->slot_cpu_usecs, 0, sizeof(d->slot_cpu_usecs));
+    memset(d->slot_net_bytes_in, 0, sizeof(d->slot_net_bytes_in));
+    memset(d->slot_net_bytes_out, 0, sizeof(d->slot_net_bytes_out));
 }
 
 /* Detect whether a blocked XREAD/XREADGROUP request can produce at least one
@@ -4867,7 +4872,38 @@ typedef struct cluster_slot_stat_item {
 typedef struct cluster_slot_stats {
     uint64_t counts[16384];
     uint64_t memory[16384];
+    uint64_t cpu_usecs[16384];
+    uint64_t net_in[16384];
+    uint64_t net_out[16384];
 } cluster_slot_stats;
+
+static void cluster_slot_add(uint64_t *dst, uint64_t value)
+{
+    if (UINT64_MAX - *dst < value)
+        *dst = UINT64_MAX;
+    else
+        *dst += value;
+}
+
+static void cluster_slot_record(session *s, const resp_value *argv,
+                                size_t argc, uint64_t usecs,
+                                uint64_t net_in, uint64_t net_out)
+{
+    int have = 0;
+    uint32_t slot = 0;
+    uint16_t cmd_id;
+    if (s == NULL || s->d == NULL || !s->d->cluster_enabled ||
+        argv == NULL || argc == 0 || argv[0].str == NULL)
+        return;
+    cmd_id = cmd_resolve(argv[0].str, argv[0].len);
+    if (cmd_id == CMD_CLUSTER)
+        return; /* SLOT-STATS and topology commands have no data key. */
+    if (!cmd_keys_accum(argv, argc, &have, &slot) || !have || slot >= 16384)
+        return;
+    cluster_slot_add(&s->d->slot_cpu_usecs[slot], usecs);
+    cluster_slot_add(&s->d->slot_net_bytes_in[slot], net_in);
+    cluster_slot_add(&s->d->slot_net_bytes_out[slot], net_out);
+}
 
 static int cluster_slot_stat_cmp_desc(const void *a, const void *b)
 {
@@ -21840,6 +21876,12 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
                 size_t i;
                 memset(&stats, 0, sizeof(stats));
                 rh_each(&d->table, cluster_slot_count_cb, &stats);
+                memcpy(stats.cpu_usecs, d->slot_cpu_usecs,
+                       sizeof(stats.cpu_usecs));
+                memcpy(stats.net_in, d->slot_net_bytes_in,
+                       sizeof(stats.net_in));
+                memcpy(stats.net_out, d->slot_net_bytes_out,
+                       sizeof(stats.net_out));
                 if (d->slot_owner_dirty)
                     db_rebuild_slot_owner(d);
                 for (i = 0; i < (size_t)d->nnodes; i++) {
@@ -21880,11 +21922,17 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
                                 continue;
                             resp_write_array_header(&tmp, 2);
                             resp_write_integer(&tmp, (long long)i);
-                            resp_write_map_header(&tmp, 2);
+                            resp_write_map_header(&tmp, 5);
                             resp_write_bulk(&tmp, "key-count", 9);
                             resp_write_integer(&tmp, (long long)stats.counts[i]);
                             resp_write_bulk(&tmp, "memory-bytes", 12);
                             resp_write_integer(&tmp, (long long)stats.memory[i]);
+                            resp_write_bulk(&tmp, "cpu-usec", 8);
+                            resp_write_integer(&tmp, (long long)stats.cpu_usecs[i]);
+                            resp_write_bulk(&tmp, "network-bytes-in", 17);
+                            resp_write_integer(&tmp, (long long)stats.net_in[i]);
+                            resp_write_bulk(&tmp, "network-bytes-out", 18);
+                            resp_write_integer(&tmp, (long long)stats.net_out[i]);
                         }
                         out->len = 0;
                         if (resp_buf_reserve(out, tmp.len) != 0) {
@@ -21905,7 +21953,10 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
                     size_t ml;
                     if (argc < 4 || !arg_str(&argv[3], &metric, &ml) ||
                         (!ci_equal(metric, ml, "KEY-COUNT") &&
-                         !ci_equal(metric, ml, "MEMORY-BYTES"))) {
+                         !ci_equal(metric, ml, "MEMORY-BYTES") &&
+                         !ci_equal(metric, ml, "CPU-USEC") &&
+                         !ci_equal(metric, ml, "NETWORK-BYTES-IN") &&
+                         !ci_equal(metric, ml, "NETWORK-BYTES-OUT"))) {
                         resp_write_error(out, "ERR Unrecognized sort metric for ORDERBY.",
                                          sizeof("ERR Unrecognized sort metric for ORDERBY.") - 1);
                         return;
@@ -21936,9 +21987,16 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
                         if (d->slot_owner[i] == (uint16_t)myself) {
                             items[nitems].slot = (uint16_t)i;
                             items[nitems].count = stats.counts[i];
-                            items[nitems].metric = ci_equal(metric, ml, "MEMORY-BYTES")
-                                                       ? stats.memory[i]
-                                                       : stats.counts[i];
+                            if (ci_equal(metric, ml, "MEMORY-BYTES"))
+                                items[nitems].metric = stats.memory[i];
+                            else if (ci_equal(metric, ml, "CPU-USEC"))
+                                items[nitems].metric = stats.cpu_usecs[i];
+                            else if (ci_equal(metric, ml, "NETWORK-BYTES-IN"))
+                                items[nitems].metric = stats.net_in[i];
+                            else if (ci_equal(metric, ml, "NETWORK-BYTES-OUT"))
+                                items[nitems].metric = stats.net_out[i];
+                            else
+                                items[nitems].metric = stats.counts[i];
                             nitems++;
                         }
                     }
@@ -21952,6 +22010,15 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
                         resp_write_map_header(out, 1);
                         if (ci_equal(metric, ml, "MEMORY-BYTES")) {
                             resp_write_bulk(out, "memory-bytes", 12);
+                            resp_write_integer(out, (long long)items[i].metric);
+                        } else if (ci_equal(metric, ml, "CPU-USEC")) {
+                            resp_write_bulk(out, "cpu-usec", 8);
+                            resp_write_integer(out, (long long)items[i].metric);
+                        } else if (ci_equal(metric, ml, "NETWORK-BYTES-IN")) {
+                            resp_write_bulk(out, "network-bytes-in", 17);
+                            resp_write_integer(out, (long long)items[i].metric);
+                        } else if (ci_equal(metric, ml, "NETWORK-BYTES-OUT")) {
+                            resp_write_bulk(out, "network-bytes-out", 18);
                             resp_write_integer(out, (long long)items[i].metric);
                         } else {
                             resp_write_bulk(out, "key-count", 9);
@@ -23288,6 +23355,7 @@ void session_execute_at(session *s, const resp_value *argv, size_t argc,
     if (cmd_id == CMD_GET && s->authed && !s->in_multi && s->nsub == 0 &&
         s->nssub == 0 && s->npsub == 0 && !s->d->cluster_enabled) {
         uint64_t lean_t0 = pal_now_us();
+        size_t out_before = out->len;
         const char *k;
         size_t kl;
         const char *v;
@@ -23315,6 +23383,9 @@ void session_execute_at(session *s, const resp_value *argv, size_t argc,
         if (s->d->maxmemory_policy == DB_POLICY_ALLKEYS_LRU)
             db_evict_if_needed(s->d, now_ms);
         s->last_cmd_usecs = pal_now_us() - lean_t0;
+        cluster_slot_record(s, argv, argc, s->last_cmd_usecs,
+                            s->last_cmd_net_bytes,
+                            (uint64_t)(out->len - out_before));
         if (s->monitor_emit != NULL)
             s->monitor_emit(s->monitor_ctx, s, argv, argc);
         return;
@@ -23325,6 +23396,7 @@ void session_execute_at(session *s, const resp_value *argv, size_t argc,
         (s->role == NULL || *s->role != SESSION_ROLE_REPLICA ||
          s->repl_link)) {
         uint64_t lean_t0 = pal_now_us();
+        size_t out_before = out->len;
         const char *k, *v;
         size_t kl, vl;
         if (!arg_str(&argv[1], &k, &kl) || !arg_str(&argv[2], &v, &vl))
@@ -23362,6 +23434,9 @@ void session_execute_at(session *s, const resp_value *argv, size_t argc,
         if (s->d->maxmemory_policy == DB_POLICY_ALLKEYS_LRU)
             db_evict_if_needed(s->d, now_ms);
         s->last_cmd_usecs = pal_now_us() - lean_t0;
+        cluster_slot_record(s, argv, argc, s->last_cmd_usecs,
+                            s->last_cmd_net_bytes,
+                            (uint64_t)(out->len - out_before));
         if (s->monitor_emit != NULL)
             s->monitor_emit(s->monitor_ctx, s, argv, argc);
         return;
@@ -23510,10 +23585,13 @@ void session_execute_at(session *s, const resp_value *argv, size_t argc,
 
     {
         uint64_t t0 = 0;
+        size_t out_before = out->len;
 #ifdef DDUP_NO_CMDSTATS
-        if (s->slowlog_add != NULL)
+        if (s->slowlog_add != NULL || s->d->cluster_enabled)
             t0 = pal_now_us();
         command_dispatch(s, argv, argc, out, now_ms);
+        if (s->d->cluster_enabled)
+            s->last_cmd_usecs = pal_now_us() - t0;
 #else
         t0 = pal_now_us();
         command_dispatch(s, argv, argc, out, now_ms);
@@ -23530,6 +23608,9 @@ void session_execute_at(session *s, const resp_value *argv, size_t argc,
                            now_ms);
         if (s->monitor_emit != NULL && cmd_id != CMD_MONITOR)
             s->monitor_emit(s->monitor_ctx, s, argv, argc);
+        cluster_slot_record(s, argv, argc, s->last_cmd_usecs,
+                            s->last_cmd_net_bytes,
+                            (uint64_t)(out->len - out_before));
     }
     if (s->d->tier_io_error) {
         tier_io_reply(out);

@@ -530,3 +530,7 @@
   - [x] `CLUSTER SLOT-STATS memory-bytes`：复用单次 key 表扫描，按槽统计
     entry 与对象额外内存并以饱和加法防溢出；支持 `SLOTSRANGE` 输出和
     `ORDERBY memory-bytes`，CPU/network 因缺少逐槽计量仍显式拒绝（Phase 122）
+  - [x] `CLUSTER SLOT-STATS` CPU/network 指标：在 cluster session dispatch
+    边界累计 `cpu-usec`、`network-bytes-in/out`，仅归属可解析为单槽的
+    数据命令；支持 `SLOTSRANGE`、`ORDERBY`、`LIMIT`、`ASC/DESC`，计数器
+    饱和且无额外热路径分配（Phase 123）

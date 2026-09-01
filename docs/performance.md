@@ -1172,3 +1172,13 @@ Windows PAL 的 `QueryPerformanceFrequency` 缓存改为原子 once-publish 状�
 指标重复遍历数据库。累加采用饱和逻辑，异常超大对象不会回绕成小值；
 `SLOTSRANGE` 输出两个统计字段，`ORDERBY memory-bytes` 复用固定 16K 栈数组
 和确定性槽位排序。CPU/network 指标继续 fail-closed，直到建立逐槽计量模型。
+
+## Phase 123：CLUSTER SLOT-STATS CPU/network counters
+
+在 session dispatch 收尾处增加逐槽 `cpu-usec`、`network-bytes-in` 和
+`network-bytes-out` 累计。仅 cluster DB 启用该记账，并复用已有的
+`cmd_keys_accum()` 提取单一 hash slot；无 key、跨槽或拓扑命令 fail-closed，
+避免伪造归属。入站字节优先使用原始 RESP 帧长度，栈 session 回退为 argv
+字节之和；出站字节使用本次命令追加到回复缓冲区的增量。计数器预置在
+`db` 内，无热路径分配，使用饱和加法防止长时间运行溢出。`ORDERBY` 仍使用
+固定 16K 项数组，故不会引入新的按请求堆分配。

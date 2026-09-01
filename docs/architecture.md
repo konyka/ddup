@@ -1266,12 +1266,17 @@ only unserved-slot keys. Collection is separate from mutation so Robin Hood
 table iteration is never invalidated; allocation failure aborts without
 partial deletion.
 
-`CLUSTER SLOT-STATS` exposes `key-count` and `memory-bytes`, both derived from
-one bounded table scan and filtered by local slot ownership. Memory includes the
-database entry estimate plus owned object payload bytes, with saturating addition.
+`CLUSTER SLOT-STATS` exposes `key-count`, `memory-bytes`, `cpu-usec`,
+`network-bytes-in`, and `network-bytes-out`. Key and memory values come from one
+bounded table scan filtered by local slot ownership. CPU/network counters are
+updated at the session dispatch boundary only when cluster mode is enabled; the
+command key extractor must resolve exactly one slot, so topology/keyless commands
+are excluded and cross-slot requests cannot be attributed ambiguously. Counters
+use saturating addition and are cumulative for the lifetime of the logical DB.
 `SLOTSRANGE` keeps slot order; `ORDERBY` uses a fixed 16K-item stack array with
-deterministic slot tie-breaking and optional `LIMIT/ASC/DESC`. CPU and network
-metrics remain rejected until per-slot counters can be maintained consistently.
+deterministic slot tie-breaking and optional `LIMIT/ASC/DESC`. The accounting is
+lock-free in the single-owner DB model and adds no allocation to the command hot
+path.
 
 The internal migration commands `CLUSTER MIGRATION` and `CLUSTER SYNCSLOTS`
 are deliberately fail-closed for client sessions. They are recognized for
