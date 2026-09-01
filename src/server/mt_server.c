@@ -2038,6 +2038,17 @@ static int mt_is_keyless(uint16_t cmd)
     }
 }
 
+/* MEMORY USAGE is the one MEMORY subcommand that reads a data key. */
+static int mt_memory_target(int nworkers, const resp_value *argv,
+                            size_t argc)
+{
+    if (argc >= 3 && argv[1].str != NULL && argv[2].str != NULL &&
+        mt_ci_equal(argv[1].str, argv[1].len, "USAGE"))
+        return (int)(hash_slot(argv[2].str, argv[2].len) %
+                     (uint32_t)nworkers);
+    return MT_LOCAL;
+}
+
 static int mt_is_aggregate(uint16_t cmd)
 {
     return cmd == CMD_DBSIZE || cmd == CMD_FLUSHDB || cmd == CMD_SAVE ||
@@ -2227,6 +2238,16 @@ static int mt_classify(int nworkers, uint16_t cmd, const resp_value *argv,
      * applying them on the connection's home worker. */
     if (cmd == CMD_SFLUSH || cmd == CMD_TRIMSLOTS)
         return MT_BLOCKED;
+    if (cmd == CMD_HIMPORT) {
+        /* PREPARE/DISCARD are session-local; SET needs the fieldset state,
+         * which cannot be reconstructed by a sessionless remote task. */
+        if (argc >= 2 && argv[1].str != NULL &&
+            mt_ci_equal(argv[1].str, argv[1].len, "SET"))
+            return MT_BLOCKED;
+        return MT_LOCAL;
+    }
+    if (cmd == CMD_MEMORY)
+        return mt_memory_target(nworkers, argv, argc);
     if (mt_is_blocking_pop(cmd))
         return mt_blocking_target(nworkers, cmd, argv, argc);
     if (cmd == CMD_MIGRATE)

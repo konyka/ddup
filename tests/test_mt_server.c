@@ -843,6 +843,52 @@ static void test_cluster_control_plane_mt(void)
     pal_socket_cleanup();
 }
 
+static void test_himport_cross_worker_fails_closed(void)
+{
+    mt_server *ms;
+    pal_socket_t a;
+    char key[32], req[256];
+
+    DD_CHECK_EQ_INT(0, pal_socket_init());
+    pick_key_for_worker(1, 2, key, sizeof(key));
+    ms = mt_server_create("127.0.0.1", 0, 2);
+    DD_CHECK(ms != NULL);
+    if (ms == NULL)
+        return;
+    DD_CHECK_EQ_INT(0, mt_server_start(ms));
+    a = connect_client(mt_server_port(ms));
+
+    /* Fieldsets are connection-local and cannot be replayed sessionlessly. */
+    roundtrip(a, "*4\r\n$7\r\nHIMPORT\r\n$7\r\nPREPARE\r\n$2\r\nfs\r\n$1\r\nf\r\n",
+              "+OK\r\n");
+    snprintf(req, sizeof(req),
+             "*5\r\n$7\r\nHIMPORT\r\n$3\r\nSET\r\n$%zu\r\n%s\r\n$2\r\nfs\r\n$1\r\nv\r\n",
+             strlen(key), key);
+    roundtrip(a, req, "-ERR command not supported in mt mode\r\n");
+
+    /* No partial write on the home shard or the key owner. */
+    snprintf(req, sizeof(req), "*2\r\n$6\r\nEXISTS\r\n$%zu\r\n%s\r\n",
+             strlen(key), key);
+    roundtrip(a, req, ":0\r\n");
+
+    /* MEMORY USAGE is key-scoped and must follow the owning worker. */
+    snprintf(req, sizeof(req), "*3\r\n$3\r\nSET\r\n$%zu\r\n%s\r\n$1\r\nx\r\n",
+             strlen(key), key);
+    roundtrip(a, req, "+OK\r\n");
+    snprintf(req, sizeof(req), "*3\r\n$6\r\nMEMORY\r\n$5\r\nUSAGE\r\n$%zu\r\n%s\r\n",
+             strlen(key), key);
+    {
+        char reply[128];
+        size_t got = request_full(a, req, reply, sizeof(reply));
+        DD_CHECK(got > 3 && reply[0] == ':');
+    }
+
+    pal_close(a);
+    mt_server_stop(ms);
+    mt_server_destroy(ms);
+    pal_socket_cleanup();
+}
+
 static void pick_key_for_slot(int wanted, char *out, size_t cap)
 {
     int i;
@@ -3096,6 +3142,7 @@ int main(void)
     DD_RUN(test_keys_aggregates_workers);
     DD_RUN(test_scan_composite_cursor_across_workers);
     DD_RUN(test_cluster_control_plane_mt);
+    DD_RUN(test_himport_cross_worker_fails_closed);
     DD_RUN(test_cluster_state_propagates_to_workers);
     DD_RUN(test_mt_replica_partitions_full_sync);
     DD_RUN(test_mt_master_serves_replica_full_sync);

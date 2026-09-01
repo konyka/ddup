@@ -550,3 +550,6 @@
   - [x] mt 聚合内存不足 fail-closed：`DBSIZE/FLUSHDB/FLUSHALL/INFO/KEYS` 等
     聚合描述符分配失败时统一返回 `ERR out of memory`，禁止退化为 home worker
     局部执行；新增故障注入测试验证 `FLUSHDB` 不会部分清理（Phase 128）
+  - [x] mt session-local 安全路由：`HIMPORT SET` 在无法携带连接 fieldset
+    到远端 worker 时 fail-closed；`MEMORY USAGE <key>` 补齐 key-owner 路由，
+    并在 Cluster ownership 检查中识别该 key（Phase 129）

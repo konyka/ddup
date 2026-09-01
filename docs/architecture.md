@@ -1114,6 +1114,11 @@ DBSIZE 为 O(1)，可能计入尚未回收的过期 key。
   聚合必须先建立 fan-out 描述符；若分配失败，直接返回 `ERR out of memory`，
   不得退化为 home worker 本地执行，避免广播变更只清理一个分片而造成数据
   不一致。描述符分配失败不触碰任何 worker 数据。
+- **MT session-local 命令**：`HIMPORT PREPARE/DISCARD/DISCARDALL` 只维护当前
+  连接的 fieldset；`HIMPORT SET` 若需要访问其他 worker 的 key 会显式返回
+  `ERR command not supported in mt mode`，避免把无状态任务发送到远端后丢失
+  fieldset。`MEMORY USAGE <key>` 则按 key owner 路由，其余 MEMORY 子命令
+  保持 worker-local。
 
 ## 架构对比：分片存储 + 消息路由（ddup mt）vs 共享存储（Garnet/Tsavorite）
 

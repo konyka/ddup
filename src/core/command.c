@@ -4992,6 +4992,19 @@ static int cluster_check_ownership(session *s, const resp_value *argv,
     }
     if (cmd_id == CMD_RESTORE_ASKING)
         asking = 1; /* RESTORE-ASKING implies a one-shot ASKING */
+    if (cmd_id == CMD_MEMORY) {
+        /* MEMORY USAGE addresses a key; the other subcommands are node-local. */
+        const char *sub;
+        size_t subl;
+        if (argc >= 3 && arg_str(&argv[1], &sub, &subl) &&
+            ci_equal(sub, subl, "USAGE")) {
+            const char *k;
+            size_t kl;
+            if (arg_str(&argv[2], &k, &kl))
+                return db_key_served(d, k, kl, out, now_ms, asking);
+        }
+        return 1;
+    }
     if (cluster_keyless_id(cmd_id))
         return 1;
     if (cmd_id == CMD_MGET || cmd_id == CMD_DEL ||
