@@ -1133,6 +1133,9 @@ DBSIZE 为 O(1)，可能计入尚未回收的过期 key。
   RESTORE` 采用控制面 fan-out，在每个 worker 的 Lua/函数缓存上执行；home
   worker 汇总第一个成功 RESP 回复。这样后续按数据 key owner 路由的
   `EVALSHA/FCALL` 不会因缓存只存在于连接所在 worker 而返回 `NOSCRIPT`。
+- 广播任务沿用现有 completion/reorder 顺序和错误聚合；任一 worker 执行失败
+  时整体返回统一错误，不向客户端暴露某个分片已成功、另一个分片失败的
+  部分状态。
 
 ## 架构对比：分片存储 + 消息路由（ddup mt）vs 共享存储（Garnet/Tsavorite）
 

@@ -567,3 +567,5 @@
   - [x] mt 脚本缓存广播：`SCRIPT LOAD/FLUSH` 与 `FUNCTION LOAD/DELETE/FLUSH/
     RESTORE` fan-out 到所有 worker，保证后续 `EVALSHA/FCALL` owner 路由可见；
     新增真实 socket 回归验证目标 worker 执行已加载脚本（Phase 134）
+  - [x] mt 脚本广播错误收敛：聚合 completion 使用现有流水线顺序，任一
+    worker 失败时整体 fail-closed，避免返回脚本缓存的部分成功状态（Phase 135）
