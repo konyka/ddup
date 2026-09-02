@@ -318,6 +318,46 @@ static void test_acl_dryrun_rejects_unknown_user(void)
     db_destroy(&d);
 }
 
+static void test_acl_genpass_is_secure_and_bounded(void)
+{
+    db d;
+    session s;
+    resp_value defv[2] = {rv("ACL"), rv("GENPASS")};
+    resp_value bitsv[3] = {rv("ACL"), rv("GENPASS"), rv("16")};
+    resp_buf out;
+    db_init(&d);
+    session_init(&s, &d);
+    memcpy(s.acl_username, "default", 8);
+    resp_buf_init(&out);
+    session_execute_at(&s, defv, 2, &out, 0);
+    DD_CHECK(strncmp(out.data, "$64\r\n", 5) == 0);
+    DD_CHECK(strspn(out.data + 5, "0123456789abcdef") >= 64);
+    out.len = 0; if (out.data != NULL) out.data[0] = '\0';
+    session_execute_at(&s, bitsv, 3, &out, 0);
+    DD_CHECK(strncmp(out.data, "$4\r\n", 4) == 0);
+    DD_CHECK(strspn(out.data + 4, "0123456789abcdef") >= 4);
+    resp_buf_free(&out);
+    session_release(&s);
+    db_destroy(&d);
+}
+
+static void test_acl_genpass_rejects_invalid_bits(void)
+{
+    db d;
+    session s;
+    resp_value argv[3] = {rv("ACL"), rv("GENPASS"), rv("0")};
+    resp_buf out;
+    db_init(&d);
+    session_init(&s, &d);
+    memcpy(s.acl_username, "default", 8);
+    resp_buf_init(&out);
+    session_execute_at(&s, argv, 3, &out, 0);
+    DD_CHECK(strstr(out.data, "positive number") != NULL);
+    resp_buf_free(&out);
+    session_release(&s);
+    db_destroy(&d);
+}
+
 int main(void)
 {
     DD_RUN(test_acl_users);
@@ -338,5 +378,7 @@ int main(void)
     DD_RUN(test_acl_cat_rejects_unknown_category);
     DD_RUN(test_acl_dryrun_reports_effective_authorization);
     DD_RUN(test_acl_dryrun_rejects_unknown_user);
+    DD_RUN(test_acl_genpass_is_secure_and_bounded);
+    DD_RUN(test_acl_genpass_rejects_invalid_bits);
     return DD_TEST_SUMMARY();
 }

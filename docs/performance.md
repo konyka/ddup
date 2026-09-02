@@ -1288,6 +1288,12 @@ and reject unknown categories before touching command metadata.
 one bounded user lookup, command-ID resolution, and the existing bitset/key
 pattern authorization check; it never executes or allocates command state.
 
+### Phase 159: secure ACL password generation
+
+`ACL GENPASS` uses the platform secure RNG only on the cold management path.
+Generation is bounded to 4096 bits and converts directly into a stack buffer;
+normal command dispatch has no added work, locks, or allocations.
+
 ### Phase 154: ACL generation invalidation
 
 Each fixed ACL user slot carries a monotonic generation. Sessions cache the

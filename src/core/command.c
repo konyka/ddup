@@ -17,6 +17,7 @@
 #include "ds/obj.h"
 #include "ds/glob.h"
 #include "pal/pal_time.h"
+#include "pal/pal_platform.h"
 #include "pal/pal_cstd.h"
 
 #include <math.h>
@@ -11813,9 +11814,36 @@ static void command_acl(session *s, const resp_value *argv, size_t argc,
         return;
     }
     if (ci_equal(sub, sl, "GENPASS") && (argc == 2 || argc == 3)) {
-        static const char zeros[] =
-            "0000000000000000000000000000000000000000000000000000000000000000";
-        resp_write_bulk(out, zeros, 64);
+        unsigned char bytes[512];
+        char pass[1024];
+        long bits = 256;
+        size_t chars, i;
+        if (argc == 3) {
+            const char *bp; size_t bl;
+            if (!arg_str(&argv[2], &bp, &bl) || bl == 0 || bl > 10)
+                goto bad;
+            bits = 0;
+            for (i = 0; i < bl; i++) {
+                if (bp[i] < '0' || bp[i] > '9' || bits > 4096)
+                    goto bad;
+                bits = bits * 10 + (long)(bp[i] - '0');
+            }
+        }
+        if (bits <= 0 || bits > 4096) {
+            resp_write_error(out, "ERR ACL GENPASS argument must be the number of bits for the output password, a positive number up to 4096", 109);
+            return;
+        }
+        chars = ((size_t)bits + 3) / 4;
+        if (pal_secure_random(bytes, (chars + 1) / 2) != 0) {
+            resp_write_error(out, "ERR secure random source unavailable", 36);
+            return;
+        }
+        for (i = 0; i < chars; i++) {
+            unsigned char b = bytes[i / 2];
+            unsigned char nib = (i & 1) ? (unsigned char)(b & 15) : (unsigned char)(b >> 4);
+            pass[i] = "0123456789abcdef"[nib];
+        }
+        resp_write_bulk(out, pass, chars);
         return;
     }
     if (ci_equal(sub, sl, "SETUSER") && argc >= 3) {

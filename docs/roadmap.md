@@ -629,3 +629,5 @@
     对应命令集合并对未知类别 fail-closed（Phase 157）
   - [x] ACL DRYRUN 权限模拟：按目标用户解析命令/key 并返回实际 `OK` 或
     `NOPERM`，未知用户 fail-closed，且不产生数据副作用（Phase 158）
+  - [x] ACL GENPASS 安全随机：按 Redis bits 语义生成有界十六进制密码，接入
+    PAL 系统安全随机源，随机源失败或非法范围均 fail-closed（Phase 159）

@@ -308,6 +308,9 @@
   未知类别在访问命令元数据前直接拒绝，不影响数据面。
   `ACL DRYRUN` 复用命令 ID、bitset 和 key pattern 检查，只模拟目标用户授权并
   返回 `OK/NOPERM`；未知用户和未知命令均 fail-closed，不执行数据命令。
+  `ACL GENPASS` 通过 PAL 调用平台安全随机源（Linux `getrandom`、其他 POSIX
+  `/dev/urandom`、Windows BCrypt），按 bits 生成十六进制输出；失败和越界输入
+  均 fail-closed。
 
 ## Stream 核心族（Phase 61）
 

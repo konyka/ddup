@@ -10,10 +10,44 @@
 #if DDUP_OS_WINDOWS
 #include <io.h>
 #include <windows.h>
+#include <bcrypt.h>
 #else
 #include <unistd.h>
 #include <sys/types.h>
+#if DDUP_OS_LINUX
+#include <sys/random.h>
 #endif
+#endif
+
+int pal_secure_random(void *buf, size_t len)
+{
+#if DDUP_OS_WINDOWS
+    return BCryptGenRandom(NULL, (PUCHAR)buf, (ULONG)len,
+                           BCRYPT_USE_SYSTEM_PREFERRED_RNG) == 0 ? 0 : -1;
+#elif DDUP_OS_LINUX
+    size_t off = 0;
+    while (off < len) {
+        ssize_t n = getrandom((unsigned char *)buf + off, len - off, 0);
+        if (n <= 0) return -1;
+        off += (size_t)n;
+    }
+    return 0;
+#elif DDUP_OS_POSIX
+    FILE *fp = fopen("/dev/urandom", "rb");
+    size_t got = 0;
+    if (fp == NULL) return -1;
+    while (got < len) {
+        size_t n = fread((unsigned char *)buf + got, 1, len - got, fp);
+        if (n == 0) { fclose(fp); return -1; }
+        got += n;
+    }
+    fclose(fp);
+    return 0;
+#else
+    (void)buf; (void)len;
+    return -1;
+#endif
+}
 
 struct pal_file {
     FILE *fp;

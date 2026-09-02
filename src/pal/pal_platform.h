@@ -6,6 +6,8 @@
 #ifndef DDUP_PAL_PLATFORM_H
 #define DDUP_PAL_PLATFORM_H
 
+#include <stddef.h>
+
 #if defined(_WIN32)
 #  define DDUP_OS_WINDOWS 1
 #  define DDUP_OS_NAME "windows"
@@ -68,5 +70,9 @@
 #    define DDUP_HAS_WYHASH 0
 #  endif
 #endif
+
+/* Fill a buffer with cryptographically strong random bytes when the host
+ * exposes a native source. Returns 0 on success, -1 otherwise. */
+int pal_secure_random(void *buf, size_t len);
 
 #endif /* DDUP_PAL_PLATFORM_H */
