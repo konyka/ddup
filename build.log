@@ -30,7 +30,7 @@
 -- Performing Test CMAKE_HAVE_LIBC_PTHREAD - Success
 -- Found Threads: TRUE
 -- ddup: TLS enabled (OpenSSL 3.0.13)
--- Configuring done (11.1s)
+-- Configuring done (10.6s)
 -- Generating done (0.1s)
 -- Build files have been written to: /home/runner/work/ddup/ddup/build
 [  1%] Building C object CMakeFiles/ddup_lua.dir/deps/lua/lapi.c.o
@@ -98,6 +98,11 @@
 [ 24%] Building C object CMakeFiles/ddup_core.dir/src/core/hashslot.c.o
 [ 25%] Building C object CMakeFiles/ddup_core.dir/src/core/cluster.c.o
 [ 25%] Building C object CMakeFiles/ddup_core.dir/src/core/acl.c.o
+/home/runner/work/ddup/ddup/src/core/acl.c: In function ‘acl_write_rule_line’:
+/home/runner/work/ddup/ddup/src/core/acl.c:247:30: warning: implicit declaration of function ‘cmd_name’ [-Wimplicit-function-declaration]
+  247 |             const char *cn = cmd_name((uint16_t)i);
+      |                              ^~~~~~~~
+/home/runner/work/ddup/ddup/src/core/acl.c:247:30: warning: initialization of ‘const char *’ from ‘int’ makes pointer from integer without a cast [-Wint-conversion]
 [ 26%] Building C object CMakeFiles/ddup_core.dir/src/resp/resp_parser.c.o
 [ 26%] Building C object CMakeFiles/ddup_core.dir/src/resp/resp_writer.c.o
 [ 26%] Building C object CMakeFiles/ddup_core.dir/src/server/server.c.o
@@ -108,6 +113,14 @@
 [ 28%] Built target ddup_core
 [ 28%] Building C object CMakeFiles/ddup-server.dir/src/main.c.o
 [ 28%] Linking C executable ddup-server
+/home/runner/work/ddup/ddup/src/core/acl.c:247:30: warning: type of ‘cmd_name’ does not match original declaration [-Wlto-type-mismatch]
+  247 |             const char *cn = cmd_name((uint16_t)i);
+      |                              ^
+/home/runner/work/ddup/ddup/src/core/command.c:23372:13: note: return value type mismatch
+23372 | const char *cmd_name(uint16_t cmd_id)
+      |             ^
+/home/runner/work/ddup/ddup/src/core/command.c:23372:13: note: ‘cmd_name’ was previously declared here
+/home/runner/work/ddup/ddup/src/core/command.c:23372:13: note: code may be misoptimized unless ‘-fno-strict-aliasing’ is used
 In function ‘snprintf’,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:423:9,
     inlined from ‘zlp_cmp_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1117:31,
@@ -148,6 +161,14 @@ In function ‘snprintf’,
 [ 29%] Built target ddup-bench
 [ 29%] Building C object CMakeFiles/bench_core.dir/bench/bench_core.c.o
 [ 29%] Linking C executable bench_core
+/home/runner/work/ddup/ddup/src/core/acl.c:247:30: warning: type of ‘cmd_name’ does not match original declaration [-Wlto-type-mismatch]
+  247 |             const char *cn = cmd_name((uint16_t)i);
+      |                              ^
+/home/runner/work/ddup/ddup/src/core/command.c:23372:13: note: return value type mismatch
+23372 | const char *cmd_name(uint16_t cmd_id)
+      |             ^
+/home/runner/work/ddup/ddup/src/core/command.c:23372:13: note: ‘cmd_name’ was previously declared here
+/home/runner/work/ddup/ddup/src/core/command.c:23372:13: note: code may be misoptimized unless ‘-fno-strict-aliasing’ is used
 In function ‘snprintf’,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:423:9,
     inlined from ‘zlp_cmp_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1117:31,
@@ -219,6 +240,11 @@ In function ‘snprintf’,
 [ 42%] Building C object CMakeFiles/ddup_core_test.dir/src/core/hashslot.c.o
 [ 42%] Building C object CMakeFiles/ddup_core_test.dir/src/core/cluster.c.o
 [ 43%] Building C object CMakeFiles/ddup_core_test.dir/src/core/acl.c.o
+/home/runner/work/ddup/ddup/src/core/acl.c: In function ‘acl_write_rule_line’:
+/home/runner/work/ddup/ddup/src/core/acl.c:247:30: warning: implicit declaration of function ‘cmd_name’ [-Wimplicit-function-declaration]
+  247 |             const char *cn = cmd_name((uint16_t)i);
+      |                              ^~~~~~~~
+/home/runner/work/ddup/ddup/src/core/acl.c:247:30: warning: initialization of ‘const char *’ from ‘int’ makes pointer from integer without a cast [-Wint-conversion]
 [ 43%] Building C object CMakeFiles/ddup_core_test.dir/src/resp/resp_parser.c.o
 [ 43%] Building C object CMakeFiles/ddup_core_test.dir/src/resp/resp_writer.c.o
 [ 44%] Building C object CMakeFiles/ddup_core_test.dir/src/server/server.c.o
@@ -241,6 +267,14 @@ In function ‘snprintf’,
 [ 48%] Built target test_spsc
 [ 48%] Building C object CMakeFiles/test_mt_server.dir/tests/test_mt_server.c.o
 [ 49%] Linking C executable test_mt_server
+/home/runner/work/ddup/ddup/src/core/acl.c:247:30: warning: type of ‘cmd_name’ does not match original declaration [-Wlto-type-mismatch]
+  247 |             const char *cn = cmd_name((uint16_t)i);
+      |                              ^
+/home/runner/work/ddup/ddup/src/core/command.c:23372:13: note: return value type mismatch
+23372 | const char *cmd_name(uint16_t cmd_id)
+      |             ^
+/home/runner/work/ddup/ddup/src/core/command.c:23372:13: note: ‘cmd_name’ was previously declared here
+/home/runner/work/ddup/ddup/src/core/command.c:23372:13: note: code may be misoptimized unless ‘-fno-strict-aliasing’ is used
 In function ‘snprintf’,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:423:9,
     inlined from ‘zlp_cmp_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1117:31,
@@ -281,6 +315,14 @@ In function ‘snprintf’,
 [ 50%] Built target test_cstd
 [ 50%] Building C object CMakeFiles/test_cmdid.dir/tests/test_cmdid.c.o
 [ 50%] Linking C executable test_cmdid
+/home/runner/work/ddup/ddup/src/core/acl.c:247:30: warning: type of ‘cmd_name’ does not match original declaration [-Wlto-type-mismatch]
+  247 |             const char *cn = cmd_name((uint16_t)i);
+      |                              ^
+/home/runner/work/ddup/ddup/src/core/command.c:23372:13: note: return value type mismatch
+23372 | const char *cmd_name(uint16_t cmd_id)
+      |             ^
+/home/runner/work/ddup/ddup/src/core/command.c:23372:13: note: ‘cmd_name’ was previously declared here
+/home/runner/work/ddup/ddup/src/core/command.c:23372:13: note: code may be misoptimized unless ‘-fno-strict-aliasing’ is used
 [ 50%] Built target test_cmdid
 [ 51%] Building C object CMakeFiles/test_buf_pool.dir/tests/test_buf_pool.c.o
 [ 51%] Linking C executable test_buf_pool
@@ -293,6 +335,14 @@ In function ‘snprintf’,
 [ 52%] Built target test_event
 [ 52%] Building C object CMakeFiles/test_server.dir/tests/test_server.c.o
 [ 53%] Linking C executable test_server
+/home/runner/work/ddup/ddup/src/core/acl.c:247:30: warning: type of ‘cmd_name’ does not match original declaration [-Wlto-type-mismatch]
+  247 |             const char *cn = cmd_name((uint16_t)i);
+      |                              ^
+/home/runner/work/ddup/ddup/src/core/command.c:23372:13: note: return value type mismatch
+23372 | const char *cmd_name(uint16_t cmd_id)
+      |             ^
+/home/runner/work/ddup/ddup/src/core/command.c:23372:13: note: ‘cmd_name’ was previously declared here
+/home/runner/work/ddup/ddup/src/core/command.c:23372:13: note: code may be misoptimized unless ‘-fno-strict-aliasing’ is used
 In function ‘snprintf’,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:423:9,
     inlined from ‘zlp_cmp_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1117:31,
@@ -345,6 +395,14 @@ In function ‘snprintf’,
 [ 57%] Built target test_rhtable
 [ 58%] Building C object CMakeFiles/test_command.dir/tests/test_command.c.o
 [ 58%] Linking C executable test_command
+/home/runner/work/ddup/ddup/src/core/acl.c:247:30: warning: type of ‘cmd_name’ does not match original declaration [-Wlto-type-mismatch]
+  247 |             const char *cn = cmd_name((uint16_t)i);
+      |                              ^
+/home/runner/work/ddup/ddup/src/core/command.c:23372:13: note: return value type mismatch
+23372 | const char *cmd_name(uint16_t cmd_id)
+      |             ^
+/home/runner/work/ddup/ddup/src/core/command.c:23372:13: note: ‘cmd_name’ was previously declared here
+/home/runner/work/ddup/ddup/src/core/command.c:23372:13: note: code may be misoptimized unless ‘-fno-strict-aliasing’ is used
 In function ‘snprintf’,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:423:9,
     inlined from ‘zlp_cmp_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1117:31,
@@ -393,6 +451,14 @@ In function ‘memcpy’,
 [ 59%] Built target test_tier
 [ 60%] Building C object CMakeFiles/test_tier_db.dir/tests/test_tier_db.c.o
 [ 60%] Linking C executable test_tier_db
+/home/runner/work/ddup/ddup/src/core/acl.c:247:30: warning: type of ‘cmd_name’ does not match original declaration [-Wlto-type-mismatch]
+  247 |             const char *cn = cmd_name((uint16_t)i);
+      |                              ^
+/home/runner/work/ddup/ddup/src/core/command.c:23372:13: note: return value type mismatch
+23372 | const char *cmd_name(uint16_t cmd_id)
+      |             ^
+/home/runner/work/ddup/ddup/src/core/command.c:23372:13: note: ‘cmd_name’ was previously declared here
+/home/runner/work/ddup/ddup/src/core/command.c:23372:13: note: code may be misoptimized unless ‘-fno-strict-aliasing’ is used
 In function ‘snprintf’,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:423:9,
     inlined from ‘zlp_cmp_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1117:31,
@@ -441,6 +507,14 @@ In function ‘memcpy’,
 [ 61%] Built target test_glob
 [ 61%] Building C object CMakeFiles/test_keys.dir/tests/test_keys.c.o
 [ 62%] Linking C executable test_keys
+/home/runner/work/ddup/ddup/src/core/acl.c:247:30: warning: type of ‘cmd_name’ does not match original declaration [-Wlto-type-mismatch]
+  247 |             const char *cn = cmd_name((uint16_t)i);
+      |                              ^
+/home/runner/work/ddup/ddup/src/core/command.c:23372:13: note: return value type mismatch
+23372 | const char *cmd_name(uint16_t cmd_id)
+      |             ^
+/home/runner/work/ddup/ddup/src/core/command.c:23372:13: note: ‘cmd_name’ was previously declared here
+/home/runner/work/ddup/ddup/src/core/command.c:23372:13: note: code may be misoptimized unless ‘-fno-strict-aliasing’ is used
 In function ‘snprintf’,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:423:9,
     inlined from ‘zlp_cmp_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1117:31,
@@ -486,6 +560,14 @@ In function ‘memcpy’,
 [ 62%] Built target test_keys
 [ 62%] Building C object CMakeFiles/test_stringx.dir/tests/test_stringx.c.o
 [ 62%] Linking C executable test_stringx
+/home/runner/work/ddup/ddup/src/core/acl.c:247:30: warning: type of ‘cmd_name’ does not match original declaration [-Wlto-type-mismatch]
+  247 |             const char *cn = cmd_name((uint16_t)i);
+      |                              ^
+/home/runner/work/ddup/ddup/src/core/command.c:23372:13: note: return value type mismatch
+23372 | const char *cmd_name(uint16_t cmd_id)
+      |             ^
+/home/runner/work/ddup/ddup/src/core/command.c:23372:13: note: ‘cmd_name’ was previously declared here
+/home/runner/work/ddup/ddup/src/core/command.c:23372:13: note: code may be misoptimized unless ‘-fno-strict-aliasing’ is used
 In function ‘snprintf’,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:423:9,
     inlined from ‘zlp_cmp_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1117:31,
@@ -531,6 +613,14 @@ In function ‘memcpy’,
 [ 62%] Built target test_stringx
 [ 63%] Building C object CMakeFiles/test_sort.dir/tests/test_sort.c.o
 [ 63%] Linking C executable test_sort
+/home/runner/work/ddup/ddup/src/core/acl.c:247:30: warning: type of ‘cmd_name’ does not match original declaration [-Wlto-type-mismatch]
+  247 |             const char *cn = cmd_name((uint16_t)i);
+      |                              ^
+/home/runner/work/ddup/ddup/src/core/command.c:23372:13: note: return value type mismatch
+23372 | const char *cmd_name(uint16_t cmd_id)
+      |             ^
+/home/runner/work/ddup/ddup/src/core/command.c:23372:13: note: ‘cmd_name’ was previously declared here
+/home/runner/work/ddup/ddup/src/core/command.c:23372:13: note: code may be misoptimized unless ‘-fno-strict-aliasing’ is used
 In function ‘snprintf’,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:423:9,
     inlined from ‘zlp_cmp_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1117:31,
@@ -576,6 +666,14 @@ In function ‘memcpy’,
 [ 63%] Built target test_sort
 [ 64%] Building C object CMakeFiles/test_hll.dir/tests/test_hll.c.o
 [ 64%] Linking C executable test_hll
+/home/runner/work/ddup/ddup/src/core/acl.c:247:30: warning: type of ‘cmd_name’ does not match original declaration [-Wlto-type-mismatch]
+  247 |             const char *cn = cmd_name((uint16_t)i);
+      |                              ^
+/home/runner/work/ddup/ddup/src/core/command.c:23372:13: note: return value type mismatch
+23372 | const char *cmd_name(uint16_t cmd_id)
+      |             ^
+/home/runner/work/ddup/ddup/src/core/command.c:23372:13: note: ‘cmd_name’ was previously declared here
+/home/runner/work/ddup/ddup/src/core/command.c:23372:13: note: code may be misoptimized unless ‘-fno-strict-aliasing’ is used
 In function ‘snprintf’,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:423:9,
     inlined from ‘zlp_cmp_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1117:31,
@@ -621,6 +719,14 @@ In function ‘memcpy’,
 [ 64%] Built target test_hll
 [ 65%] Building C object CMakeFiles/test_geo.dir/tests/test_geo.c.o
 [ 65%] Linking C executable test_geo
+/home/runner/work/ddup/ddup/src/core/acl.c:247:30: warning: type of ‘cmd_name’ does not match original declaration [-Wlto-type-mismatch]
+  247 |             const char *cn = cmd_name((uint16_t)i);
+      |                              ^
+/home/runner/work/ddup/ddup/src/core/command.c:23372:13: note: return value type mismatch
+23372 | const char *cmd_name(uint16_t cmd_id)
+      |             ^
+/home/runner/work/ddup/ddup/src/core/command.c:23372:13: note: ‘cmd_name’ was previously declared here
+/home/runner/work/ddup/ddup/src/core/command.c:23372:13: note: code may be misoptimized unless ‘-fno-strict-aliasing’ is used
 In function ‘snprintf’,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:423:9,
     inlined from ‘zlp_cmp_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1117:31,
@@ -666,6 +772,14 @@ In function ‘memcpy’,
 [ 65%] Built target test_geo
 [ 66%] Building C object CMakeFiles/test_admin.dir/tests/test_admin.c.o
 [ 66%] Linking C executable test_admin
+/home/runner/work/ddup/ddup/src/core/acl.c:247:30: warning: type of ‘cmd_name’ does not match original declaration [-Wlto-type-mismatch]
+  247 |             const char *cn = cmd_name((uint16_t)i);
+      |                              ^
+/home/runner/work/ddup/ddup/src/core/command.c:23372:13: note: return value type mismatch
+23372 | const char *cmd_name(uint16_t cmd_id)
+      |             ^
+/home/runner/work/ddup/ddup/src/core/command.c:23372:13: note: ‘cmd_name’ was previously declared here
+/home/runner/work/ddup/ddup/src/core/command.c:23372:13: note: code may be misoptimized unless ‘-fno-strict-aliasing’ is used
 In function ‘snprintf’,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:423:9,
     inlined from ‘zlp_cmp_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1117:31,
@@ -703,6 +817,14 @@ In function ‘snprintf’,
 [ 66%] Built target test_admin
 [ 67%] Building C object CMakeFiles/test_bitmap.dir/tests/test_bitmap.c.o
 [ 67%] Linking C executable test_bitmap
+/home/runner/work/ddup/ddup/src/core/acl.c:247:30: warning: type of ‘cmd_name’ does not match original declaration [-Wlto-type-mismatch]
+  247 |             const char *cn = cmd_name((uint16_t)i);
+      |                              ^
+/home/runner/work/ddup/ddup/src/core/command.c:23372:13: note: return value type mismatch
+23372 | const char *cmd_name(uint16_t cmd_id)
+      |             ^
+/home/runner/work/ddup/ddup/src/core/command.c:23372:13: note: ‘cmd_name’ was previously declared here
+/home/runner/work/ddup/ddup/src/core/command.c:23372:13: note: code may be misoptimized unless ‘-fno-strict-aliasing’ is used
 In function ‘snprintf’,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:423:9,
     inlined from ‘zlp_cmp_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1117:31,
@@ -748,6 +870,14 @@ In function ‘memcpy’,
 [ 67%] Built target test_bitmap
 [ 67%] Building C object CMakeFiles/test_expire.dir/tests/test_expire.c.o
 [ 67%] Linking C executable test_expire
+/home/runner/work/ddup/ddup/src/core/acl.c:247:30: warning: type of ‘cmd_name’ does not match original declaration [-Wlto-type-mismatch]
+  247 |             const char *cn = cmd_name((uint16_t)i);
+      |                              ^
+/home/runner/work/ddup/ddup/src/core/command.c:23372:13: note: return value type mismatch
+23372 | const char *cmd_name(uint16_t cmd_id)
+      |             ^
+/home/runner/work/ddup/ddup/src/core/command.c:23372:13: note: ‘cmd_name’ was previously declared here
+/home/runner/work/ddup/ddup/src/core/command.c:23372:13: note: code may be misoptimized unless ‘-fno-strict-aliasing’ is used
 In function ‘snprintf’,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:423:9,
     inlined from ‘zlp_cmp_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1117:31,
@@ -793,6 +923,14 @@ In function ‘memcpy’,
 [ 67%] Built target test_expire
 [ 67%] Building C object CMakeFiles/test_eviction.dir/tests/test_eviction.c.o
 [ 68%] Linking C executable test_eviction
+/home/runner/work/ddup/ddup/src/core/acl.c:247:30: warning: type of ‘cmd_name’ does not match original declaration [-Wlto-type-mismatch]
+  247 |             const char *cn = cmd_name((uint16_t)i);
+      |                              ^
+/home/runner/work/ddup/ddup/src/core/command.c:23372:13: note: return value type mismatch
+23372 | const char *cmd_name(uint16_t cmd_id)
+      |             ^
+/home/runner/work/ddup/ddup/src/core/command.c:23372:13: note: ‘cmd_name’ was previously declared here
+/home/runner/work/ddup/ddup/src/core/command.c:23372:13: note: code may be misoptimized unless ‘-fno-strict-aliasing’ is used
 In function ‘snprintf’,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:423:9,
     inlined from ‘zlp_cmp_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1117:31,
@@ -838,6 +976,14 @@ In function ‘memcpy’,
 [ 68%] Built target test_eviction
 [ 68%] Building C object CMakeFiles/test_hash.dir/tests/test_hash.c.o
 [ 69%] Linking C executable test_hash
+/home/runner/work/ddup/ddup/src/core/acl.c:247:30: warning: type of ‘cmd_name’ does not match original declaration [-Wlto-type-mismatch]
+  247 |             const char *cn = cmd_name((uint16_t)i);
+      |                              ^
+/home/runner/work/ddup/ddup/src/core/command.c:23372:13: note: return value type mismatch
+23372 | const char *cmd_name(uint16_t cmd_id)
+      |             ^
+/home/runner/work/ddup/ddup/src/core/command.c:23372:13: note: ‘cmd_name’ was previously declared here
+/home/runner/work/ddup/ddup/src/core/command.c:23372:13: note: code may be misoptimized unless ‘-fno-strict-aliasing’ is used
 In function ‘snprintf’,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:423:9,
     inlined from ‘zlp_cmp_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1117:31,
@@ -883,6 +1029,14 @@ In function ‘memcpy’,
 [ 69%] Built target test_hash
 [ 69%] Building C object CMakeFiles/test_list.dir/tests/test_list.c.o
 [ 69%] Linking C executable test_list
+/home/runner/work/ddup/ddup/src/core/acl.c:247:30: warning: type of ‘cmd_name’ does not match original declaration [-Wlto-type-mismatch]
+  247 |             const char *cn = cmd_name((uint16_t)i);
+      |                              ^
+/home/runner/work/ddup/ddup/src/core/command.c:23372:13: note: return value type mismatch
+23372 | const char *cmd_name(uint16_t cmd_id)
+      |             ^
+/home/runner/work/ddup/ddup/src/core/command.c:23372:13: note: ‘cmd_name’ was previously declared here
+/home/runner/work/ddup/ddup/src/core/command.c:23372:13: note: code may be misoptimized unless ‘-fno-strict-aliasing’ is used
 In function ‘snprintf’,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:423:9,
     inlined from ‘zlp_cmp_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1117:31,
@@ -937,6 +1091,14 @@ In function ‘memcpy’,
 [ 72%] Built target test_skiplist
 [ 73%] Building C object CMakeFiles/test_set.dir/tests/test_set.c.o
 [ 73%] Linking C executable test_set
+/home/runner/work/ddup/ddup/src/core/acl.c:247:30: warning: type of ‘cmd_name’ does not match original declaration [-Wlto-type-mismatch]
+  247 |             const char *cn = cmd_name((uint16_t)i);
+      |                              ^
+/home/runner/work/ddup/ddup/src/core/command.c:23372:13: note: return value type mismatch
+23372 | const char *cmd_name(uint16_t cmd_id)
+      |             ^
+/home/runner/work/ddup/ddup/src/core/command.c:23372:13: note: ‘cmd_name’ was previously declared here
+/home/runner/work/ddup/ddup/src/core/command.c:23372:13: note: code may be misoptimized unless ‘-fno-strict-aliasing’ is used
 In function ‘snprintf’,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:423:9,
     inlined from ‘zlp_cmp_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1117:31,
@@ -982,6 +1144,14 @@ In function ‘memcpy’,
 [ 73%] Built target test_set
 [ 73%] Building C object CMakeFiles/test_zset.dir/tests/test_zset.c.o
 [ 74%] Linking C executable test_zset
+/home/runner/work/ddup/ddup/src/core/acl.c:247:30: warning: type of ‘cmd_name’ does not match original declaration [-Wlto-type-mismatch]
+  247 |             const char *cn = cmd_name((uint16_t)i);
+      |                              ^
+/home/runner/work/ddup/ddup/src/core/command.c:23372:13: note: return value type mismatch
+23372 | const char *cmd_name(uint16_t cmd_id)
+      |             ^
+/home/runner/work/ddup/ddup/src/core/command.c:23372:13: note: ‘cmd_name’ was previously declared here
+/home/runner/work/ddup/ddup/src/core/command.c:23372:13: note: code may be misoptimized unless ‘-fno-strict-aliasing’ is used
 In function ‘snprintf’,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:423:9,
     inlined from ‘zlp_cmp_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1117:31,
@@ -1027,6 +1197,14 @@ In function ‘memcpy’,
 [ 74%] Built target test_zset
 [ 74%] Building C object CMakeFiles/test_stream.dir/tests/test_stream.c.o
 [ 75%] Linking C executable test_stream
+/home/runner/work/ddup/ddup/src/core/acl.c:247:30: warning: type of ‘cmd_name’ does not match original declaration [-Wlto-type-mismatch]
+  247 |             const char *cn = cmd_name((uint16_t)i);
+      |                              ^
+/home/runner/work/ddup/ddup/src/core/command.c:23372:13: note: return value type mismatch
+23372 | const char *cmd_name(uint16_t cmd_id)
+      |             ^
+/home/runner/work/ddup/ddup/src/core/command.c:23372:13: note: ‘cmd_name’ was previously declared here
+/home/runner/work/ddup/ddup/src/core/command.c:23372:13: note: code may be misoptimized unless ‘-fno-strict-aliasing’ is used
 In function ‘snprintf’,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:423:9,
     inlined from ‘zlp_cmp_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1117:31,
@@ -1072,6 +1250,14 @@ In function ‘snprintf’,
 [ 75%] Built target test_stream
 [ 75%] Building C object CMakeFiles/test_array.dir/tests/test_array.c.o
 [ 75%] Linking C executable test_array
+/home/runner/work/ddup/ddup/src/core/acl.c:247:30: warning: type of ‘cmd_name’ does not match original declaration [-Wlto-type-mismatch]
+  247 |             const char *cn = cmd_name((uint16_t)i);
+      |                              ^
+/home/runner/work/ddup/ddup/src/core/command.c:23372:13: note: return value type mismatch
+23372 | const char *cmd_name(uint16_t cmd_id)
+      |             ^
+/home/runner/work/ddup/ddup/src/core/command.c:23372:13: note: ‘cmd_name’ was previously declared here
+/home/runner/work/ddup/ddup/src/core/command.c:23372:13: note: code may be misoptimized unless ‘-fno-strict-aliasing’ is used
 In function ‘snprintf’,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:423:9,
     inlined from ‘zlp_cmp_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1117:31,
@@ -1117,6 +1303,14 @@ In function ‘memcpy’,
 [ 75%] Built target test_array
 [ 75%] Building C object CMakeFiles/test_session.dir/tests/test_session.c.o
 [ 75%] Linking C executable test_session
+/home/runner/work/ddup/ddup/src/core/acl.c:247:30: warning: type of ‘cmd_name’ does not match original declaration [-Wlto-type-mismatch]
+  247 |             const char *cn = cmd_name((uint16_t)i);
+      |                              ^
+/home/runner/work/ddup/ddup/src/core/command.c:23372:13: note: return value type mismatch
+23372 | const char *cmd_name(uint16_t cmd_id)
+      |             ^
+/home/runner/work/ddup/ddup/src/core/command.c:23372:13: note: ‘cmd_name’ was previously declared here
+/home/runner/work/ddup/ddup/src/core/command.c:23372:13: note: code may be misoptimized unless ‘-fno-strict-aliasing’ is used
 In function ‘snprintf’,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:423:9,
     inlined from ‘zlp_cmp_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1117:31,
@@ -1162,9 +1356,25 @@ In function ‘snprintf’,
 [ 75%] Built target test_session
 [ 75%] Building C object CMakeFiles/test_acl.dir/tests/test_acl.c.o
 [ 75%] Linking C executable test_acl
+/home/runner/work/ddup/ddup/src/core/acl.c:247:30: warning: type of ‘cmd_name’ does not match original declaration [-Wlto-type-mismatch]
+  247 |             const char *cn = cmd_name((uint16_t)i);
+      |                              ^
+/home/runner/work/ddup/ddup/src/core/command.c:23372:13: note: return value type mismatch
+23372 | const char *cmd_name(uint16_t cmd_id)
+      |             ^
+/home/runner/work/ddup/ddup/src/core/command.c:23372:13: note: ‘cmd_name’ was previously declared here
+/home/runner/work/ddup/ddup/src/core/command.c:23372:13: note: code may be misoptimized unless ‘-fno-strict-aliasing’ is used
 [ 75%] Built target test_acl
 [ 76%] Building C object CMakeFiles/test_multidb.dir/tests/test_multidb.c.o
 [ 76%] Linking C executable test_multidb
+/home/runner/work/ddup/ddup/src/core/acl.c:247:30: warning: type of ‘cmd_name’ does not match original declaration [-Wlto-type-mismatch]
+  247 |             const char *cn = cmd_name((uint16_t)i);
+      |                              ^
+/home/runner/work/ddup/ddup/src/core/command.c:23372:13: note: return value type mismatch
+23372 | const char *cmd_name(uint16_t cmd_id)
+      |             ^
+/home/runner/work/ddup/ddup/src/core/command.c:23372:13: note: ‘cmd_name’ was previously declared here
+/home/runner/work/ddup/ddup/src/core/command.c:23372:13: note: code may be misoptimized unless ‘-fno-strict-aliasing’ is used
 In function ‘snprintf’,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:423:9,
     inlined from ‘zlp_cmp_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1117:31,
@@ -1210,6 +1420,14 @@ In function ‘memcpy’,
 [ 76%] Built target test_multidb
 [ 76%] Building C object CMakeFiles/test_multi.dir/tests/test_multi.c.o
 [ 76%] Linking C executable test_multi
+/home/runner/work/ddup/ddup/src/core/acl.c:247:30: warning: type of ‘cmd_name’ does not match original declaration [-Wlto-type-mismatch]
+  247 |             const char *cn = cmd_name((uint16_t)i);
+      |                              ^
+/home/runner/work/ddup/ddup/src/core/command.c:23372:13: note: return value type mismatch
+23372 | const char *cmd_name(uint16_t cmd_id)
+      |             ^
+/home/runner/work/ddup/ddup/src/core/command.c:23372:13: note: ‘cmd_name’ was previously declared here
+/home/runner/work/ddup/ddup/src/core/command.c:23372:13: note: code may be misoptimized unless ‘-fno-strict-aliasing’ is used
 In function ‘snprintf’,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:423:9,
     inlined from ‘zlp_cmp_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1117:31,
@@ -1255,6 +1473,14 @@ In function ‘memcpy’,
 [ 76%] Built target test_multi
 [ 77%] Building C object CMakeFiles/test_pubsub.dir/tests/test_pubsub.c.o
 [ 77%] Linking C executable test_pubsub
+/home/runner/work/ddup/ddup/src/core/acl.c:247:30: warning: type of ‘cmd_name’ does not match original declaration [-Wlto-type-mismatch]
+  247 |             const char *cn = cmd_name((uint16_t)i);
+      |                              ^
+/home/runner/work/ddup/ddup/src/core/command.c:23372:13: note: return value type mismatch
+23372 | const char *cmd_name(uint16_t cmd_id)
+      |             ^
+/home/runner/work/ddup/ddup/src/core/command.c:23372:13: note: ‘cmd_name’ was previously declared here
+/home/runner/work/ddup/ddup/src/core/command.c:23372:13: note: code may be misoptimized unless ‘-fno-strict-aliasing’ is used
 In function ‘snprintf’,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:423:9,
     inlined from ‘zlp_cmp_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1117:31,
@@ -1300,6 +1526,14 @@ In function ‘memcpy’,
 [ 77%] Built target test_pubsub
 [ 78%] Building C object CMakeFiles/test_pubsub_shard.dir/tests/test_pubsub_shard.c.o
 [ 78%] Linking C executable test_pubsub_shard
+/home/runner/work/ddup/ddup/src/core/acl.c:247:30: warning: type of ‘cmd_name’ does not match original declaration [-Wlto-type-mismatch]
+  247 |             const char *cn = cmd_name((uint16_t)i);
+      |                              ^
+/home/runner/work/ddup/ddup/src/core/command.c:23372:13: note: return value type mismatch
+23372 | const char *cmd_name(uint16_t cmd_id)
+      |             ^
+/home/runner/work/ddup/ddup/src/core/command.c:23372:13: note: ‘cmd_name’ was previously declared here
+/home/runner/work/ddup/ddup/src/core/command.c:23372:13: note: code may be misoptimized unless ‘-fno-strict-aliasing’ is used
 In function ‘snprintf’,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:423:9,
     inlined from ‘zlp_cmp_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1117:31,
@@ -1340,6 +1574,14 @@ In function ‘snprintf’,
 [ 79%] Built target test_config
 [ 79%] Building C object CMakeFiles/test_aof.dir/tests/test_aof.c.o
 [ 80%] Linking C executable test_aof
+/home/runner/work/ddup/ddup/src/core/acl.c:247:30: warning: type of ‘cmd_name’ does not match original declaration [-Wlto-type-mismatch]
+  247 |             const char *cn = cmd_name((uint16_t)i);
+      |                              ^
+/home/runner/work/ddup/ddup/src/core/command.c:23372:13: note: return value type mismatch
+23372 | const char *cmd_name(uint16_t cmd_id)
+      |             ^
+/home/runner/work/ddup/ddup/src/core/command.c:23372:13: note: ‘cmd_name’ was previously declared here
+/home/runner/work/ddup/ddup/src/core/command.c:23372:13: note: code may be misoptimized unless ‘-fno-strict-aliasing’ is used
 In function ‘snprintf’,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:423:9,
     inlined from ‘zlp_cmp_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1117:31,
@@ -1385,6 +1627,14 @@ In function ‘memcpy’,
 [ 80%] Built target test_aof
 [ 80%] Building C object CMakeFiles/test_snapshot.dir/tests/test_snapshot.c.o
 [ 81%] Linking C executable test_snapshot
+/home/runner/work/ddup/ddup/src/core/acl.c:247:30: warning: type of ‘cmd_name’ does not match original declaration [-Wlto-type-mismatch]
+  247 |             const char *cn = cmd_name((uint16_t)i);
+      |                              ^
+/home/runner/work/ddup/ddup/src/core/command.c:23372:13: note: return value type mismatch
+23372 | const char *cmd_name(uint16_t cmd_id)
+      |             ^
+/home/runner/work/ddup/ddup/src/core/command.c:23372:13: note: ‘cmd_name’ was previously declared here
+/home/runner/work/ddup/ddup/src/core/command.c:23372:13: note: code may be misoptimized unless ‘-fno-strict-aliasing’ is used
 In function ‘snprintf’,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:423:9,
     inlined from ‘zlp_cmp_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1117:31,
@@ -1430,6 +1680,14 @@ In function ‘memcpy’,
 [ 81%] Built target test_snapshot
 [ 81%] Building C object CMakeFiles/test_repl.dir/tests/test_repl.c.o
 [ 81%] Linking C executable test_repl
+/home/runner/work/ddup/ddup/src/core/acl.c:247:30: warning: type of ‘cmd_name’ does not match original declaration [-Wlto-type-mismatch]
+  247 |             const char *cn = cmd_name((uint16_t)i);
+      |                              ^
+/home/runner/work/ddup/ddup/src/core/command.c:23372:13: note: return value type mismatch
+23372 | const char *cmd_name(uint16_t cmd_id)
+      |             ^
+/home/runner/work/ddup/ddup/src/core/command.c:23372:13: note: ‘cmd_name’ was previously declared here
+/home/runner/work/ddup/ddup/src/core/command.c:23372:13: note: code may be misoptimized unless ‘-fno-strict-aliasing’ is used
 In function ‘snprintf’,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:423:9,
     inlined from ‘zlp_cmp_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1117:31,
@@ -1473,6 +1731,14 @@ In function ‘snprintf’,
 [ 82%] Built target test_cluster_id
 [ 82%] Building C object CMakeFiles/test_cluster_cmds.dir/tests/test_cluster_cmds.c.o
 [ 82%] Linking C executable test_cluster_cmds
+/home/runner/work/ddup/ddup/src/core/acl.c:247:30: warning: type of ‘cmd_name’ does not match original declaration [-Wlto-type-mismatch]
+  247 |             const char *cn = cmd_name((uint16_t)i);
+      |                              ^
+/home/runner/work/ddup/ddup/src/core/command.c:23372:13: note: return value type mismatch
+23372 | const char *cmd_name(uint16_t cmd_id)
+      |             ^
+/home/runner/work/ddup/ddup/src/core/command.c:23372:13: note: ‘cmd_name’ was previously declared here
+/home/runner/work/ddup/ddup/src/core/command.c:23372:13: note: code may be misoptimized unless ‘-fno-strict-aliasing’ is used
 In function ‘snprintf’,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:423:9,
     inlined from ‘zlp_cmp_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1117:31,
@@ -1518,6 +1784,14 @@ In function ‘memcpy’,
 [ 82%] Built target test_cluster_cmds
 [ 83%] Building C object CMakeFiles/test_cluster_nodes.dir/tests/test_cluster_nodes.c.o
 [ 83%] Linking C executable test_cluster_nodes
+/home/runner/work/ddup/ddup/src/core/acl.c:247:30: warning: type of ‘cmd_name’ does not match original declaration [-Wlto-type-mismatch]
+  247 |             const char *cn = cmd_name((uint16_t)i);
+      |                              ^
+/home/runner/work/ddup/ddup/src/core/command.c:23372:13: note: return value type mismatch
+23372 | const char *cmd_name(uint16_t cmd_id)
+      |             ^
+/home/runner/work/ddup/ddup/src/core/command.c:23372:13: note: ‘cmd_name’ was previously declared here
+/home/runner/work/ddup/ddup/src/core/command.c:23372:13: note: code may be misoptimized unless ‘-fno-strict-aliasing’ is used
 In function ‘snprintf’,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:423:9,
     inlined from ‘zlp_cmp_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1117:31,
@@ -1563,6 +1837,14 @@ In function ‘memcpy’,
 [ 83%] Built target test_cluster_nodes
 [ 83%] Building C object CMakeFiles/test_cluster_bus.dir/tests/test_cluster_bus.c.o
 [ 84%] Linking C executable test_cluster_bus
+/home/runner/work/ddup/ddup/src/core/acl.c:247:30: warning: type of ‘cmd_name’ does not match original declaration [-Wlto-type-mismatch]
+  247 |             const char *cn = cmd_name((uint16_t)i);
+      |                              ^
+/home/runner/work/ddup/ddup/src/core/command.c:23372:13: note: return value type mismatch
+23372 | const char *cmd_name(uint16_t cmd_id)
+      |             ^
+/home/runner/work/ddup/ddup/src/core/command.c:23372:13: note: ‘cmd_name’ was previously declared here
+/home/runner/work/ddup/ddup/src/core/command.c:23372:13: note: code may be misoptimized unless ‘-fno-strict-aliasing’ is used
 In function ‘snprintf’,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:423:9,
     inlined from ‘zlp_cmp_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1117:31,
@@ -1600,6 +1882,14 @@ In function ‘snprintf’,
 [ 84%] Built target test_cluster_bus
 [ 84%] Building C object CMakeFiles/test_cluster_slots.dir/tests/test_cluster_slots.c.o
 [ 85%] Linking C executable test_cluster_slots
+/home/runner/work/ddup/ddup/src/core/acl.c:247:30: warning: type of ‘cmd_name’ does not match original declaration [-Wlto-type-mismatch]
+  247 |             const char *cn = cmd_name((uint16_t)i);
+      |                              ^
+/home/runner/work/ddup/ddup/src/core/command.c:23372:13: note: return value type mismatch
+23372 | const char *cmd_name(uint16_t cmd_id)
+      |             ^
+/home/runner/work/ddup/ddup/src/core/command.c:23372:13: note: ‘cmd_name’ was previously declared here
+/home/runner/work/ddup/ddup/src/core/command.c:23372:13: note: code may be misoptimized unless ‘-fno-strict-aliasing’ is used
 In function ‘snprintf’,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:423:9,
     inlined from ‘zlp_cmp_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1117:31,
@@ -1645,6 +1935,14 @@ In function ‘snprintf’,
 [ 85%] Built target test_cluster_slots
 [ 85%] Building C object CMakeFiles/test_dump.dir/tests/test_dump.c.o
 [ 85%] Linking C executable test_dump
+/home/runner/work/ddup/ddup/src/core/acl.c:247:30: warning: type of ‘cmd_name’ does not match original declaration [-Wlto-type-mismatch]
+  247 |             const char *cn = cmd_name((uint16_t)i);
+      |                              ^
+/home/runner/work/ddup/ddup/src/core/command.c:23372:13: note: return value type mismatch
+23372 | const char *cmd_name(uint16_t cmd_id)
+      |             ^
+/home/runner/work/ddup/ddup/src/core/command.c:23372:13: note: ‘cmd_name’ was previously declared here
+/home/runner/work/ddup/ddup/src/core/command.c:23372:13: note: code may be misoptimized unless ‘-fno-strict-aliasing’ is used
 In function ‘snprintf’,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:423:9,
     inlined from ‘zlp_cmp_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1117:31,
@@ -1690,6 +1988,14 @@ In function ‘memcpy’,
 [ 85%] Built target test_dump
 [ 85%] Building C object CMakeFiles/test_migrate.dir/tests/test_migrate.c.o
 [ 86%] Linking C executable test_migrate
+/home/runner/work/ddup/ddup/src/core/acl.c:247:30: warning: type of ‘cmd_name’ does not match original declaration [-Wlto-type-mismatch]
+  247 |             const char *cn = cmd_name((uint16_t)i);
+      |                              ^
+/home/runner/work/ddup/ddup/src/core/command.c:23372:13: note: return value type mismatch
+23372 | const char *cmd_name(uint16_t cmd_id)
+      |             ^
+/home/runner/work/ddup/ddup/src/core/command.c:23372:13: note: ‘cmd_name’ was previously declared here
+/home/runner/work/ddup/ddup/src/core/command.c:23372:13: note: code may be misoptimized unless ‘-fno-strict-aliasing’ is used
 In function ‘snprintf’,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:423:9,
     inlined from ‘zlp_cmp_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1117:31,
@@ -1727,6 +2033,14 @@ In function ‘snprintf’,
 [ 86%] Built target test_migrate
 [ 86%] Building C object CMakeFiles/test_cluster_migrate.dir/tests/test_cluster_migrate.c.o
 [ 86%] Linking C executable test_cluster_migrate
+/home/runner/work/ddup/ddup/src/core/acl.c:247:30: warning: type of ‘cmd_name’ does not match original declaration [-Wlto-type-mismatch]
+  247 |             const char *cn = cmd_name((uint16_t)i);
+      |                              ^
+/home/runner/work/ddup/ddup/src/core/command.c:23372:13: note: return value type mismatch
+23372 | const char *cmd_name(uint16_t cmd_id)
+      |             ^
+/home/runner/work/ddup/ddup/src/core/command.c:23372:13: note: ‘cmd_name’ was previously declared here
+/home/runner/work/ddup/ddup/src/core/command.c:23372:13: note: code may be misoptimized unless ‘-fno-strict-aliasing’ is used
 In function ‘snprintf’,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:423:9,
     inlined from ‘zlp_cmp_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1117:31,
@@ -1764,6 +2078,14 @@ In function ‘snprintf’,
 [ 86%] Built target test_cluster_migrate
 [ 86%] Building C object CMakeFiles/test_cluster_replica.dir/tests/test_cluster_replica.c.o
 [ 87%] Linking C executable test_cluster_replica
+/home/runner/work/ddup/ddup/src/core/acl.c:247:30: warning: type of ‘cmd_name’ does not match original declaration [-Wlto-type-mismatch]
+  247 |             const char *cn = cmd_name((uint16_t)i);
+      |                              ^
+/home/runner/work/ddup/ddup/src/core/command.c:23372:13: note: return value type mismatch
+23372 | const char *cmd_name(uint16_t cmd_id)
+      |             ^
+/home/runner/work/ddup/ddup/src/core/command.c:23372:13: note: ‘cmd_name’ was previously declared here
+/home/runner/work/ddup/ddup/src/core/command.c:23372:13: note: code may be misoptimized unless ‘-fno-strict-aliasing’ is used
 In function ‘snprintf’,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:423:9,
     inlined from ‘zlp_cmp_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1117:31,
@@ -1801,6 +2123,14 @@ In function ‘snprintf’,
 [ 87%] Built target test_cluster_replica
 [ 88%] Building C object CMakeFiles/test_cluster_epoch.dir/tests/test_cluster_epoch.c.o
 [ 88%] Linking C executable test_cluster_epoch
+/home/runner/work/ddup/ddup/src/core/acl.c:247:30: warning: type of ‘cmd_name’ does not match original declaration [-Wlto-type-mismatch]
+  247 |             const char *cn = cmd_name((uint16_t)i);
+      |                              ^
+/home/runner/work/ddup/ddup/src/core/command.c:23372:13: note: return value type mismatch
+23372 | const char *cmd_name(uint16_t cmd_id)
+      |             ^
+/home/runner/work/ddup/ddup/src/core/command.c:23372:13: note: ‘cmd_name’ was previously declared here
+/home/runner/work/ddup/ddup/src/core/command.c:23372:13: note: code may be misoptimized unless ‘-fno-strict-aliasing’ is used
 In function ‘snprintf’,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:423:9,
     inlined from ‘zlp_cmp_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1117:31,
@@ -1838,6 +2168,14 @@ In function ‘snprintf’,
 [ 88%] Built target test_cluster_epoch
 [ 89%] Building C object CMakeFiles/test_cluster_failover.dir/tests/test_cluster_failover.c.o
 [ 89%] Linking C executable test_cluster_failover
+/home/runner/work/ddup/ddup/src/core/acl.c:247:30: warning: type of ‘cmd_name’ does not match original declaration [-Wlto-type-mismatch]
+  247 |             const char *cn = cmd_name((uint16_t)i);
+      |                              ^
+/home/runner/work/ddup/ddup/src/core/command.c:23372:13: note: return value type mismatch
+23372 | const char *cmd_name(uint16_t cmd_id)
+      |             ^
+/home/runner/work/ddup/ddup/src/core/command.c:23372:13: note: ‘cmd_name’ was previously declared here
+/home/runner/work/ddup/ddup/src/core/command.c:23372:13: note: code may be misoptimized unless ‘-fno-strict-aliasing’ is used
 In function ‘snprintf’,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:423:9,
     inlined from ‘zlp_cmp_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1117:31,
@@ -1875,6 +2213,14 @@ In function ‘snprintf’,
 [ 89%] Built target test_cluster_failover
 [ 90%] Building C object CMakeFiles/test_cluster_pfail.dir/tests/test_cluster_pfail.c.o
 [ 90%] Linking C executable test_cluster_pfail
+/home/runner/work/ddup/ddup/src/core/acl.c:247:30: warning: type of ‘cmd_name’ does not match original declaration [-Wlto-type-mismatch]
+  247 |             const char *cn = cmd_name((uint16_t)i);
+      |                              ^
+/home/runner/work/ddup/ddup/src/core/command.c:23372:13: note: return value type mismatch
+23372 | const char *cmd_name(uint16_t cmd_id)
+      |             ^
+/home/runner/work/ddup/ddup/src/core/command.c:23372:13: note: ‘cmd_name’ was previously declared here
+/home/runner/work/ddup/ddup/src/core/command.c:23372:13: note: code may be misoptimized unless ‘-fno-strict-aliasing’ is used
 In function ‘snprintf’,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:423:9,
     inlined from ‘zlp_cmp_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1117:31,
@@ -1914,6 +2260,14 @@ In function ‘snprintf’,
 [ 91%] Building C object CMakeFiles/test_reshard.dir/tools/reshard_args.c.o
 [ 92%] Building C object CMakeFiles/test_reshard.dir/tools/reshard_client.c.o
 [ 92%] Linking C executable test_reshard
+/home/runner/work/ddup/ddup/src/core/acl.c:247:30: warning: type of ‘cmd_name’ does not match original declaration [-Wlto-type-mismatch]
+  247 |             const char *cn = cmd_name((uint16_t)i);
+      |                              ^
+/home/runner/work/ddup/ddup/src/core/command.c:23372:13: note: return value type mismatch
+23372 | const char *cmd_name(uint16_t cmd_id)
+      |             ^
+/home/runner/work/ddup/ddup/src/core/command.c:23372:13: note: ‘cmd_name’ was previously declared here
+/home/runner/work/ddup/ddup/src/core/command.c:23372:13: note: code may be misoptimized unless ‘-fno-strict-aliasing’ is used
 In function ‘snprintf’,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:423:9,
     inlined from ‘zlp_cmp_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1117:31,
@@ -1954,6 +2308,14 @@ In function ‘snprintf’,
 [ 93%] Built target test_lua_smoke
 [ 93%] Building C object CMakeFiles/test_script.dir/tests/test_script.c.o
 [ 94%] Linking C executable test_script
+/home/runner/work/ddup/ddup/src/core/acl.c:247:30: warning: type of ‘cmd_name’ does not match original declaration [-Wlto-type-mismatch]
+  247 |             const char *cn = cmd_name((uint16_t)i);
+      |                              ^
+/home/runner/work/ddup/ddup/src/core/command.c:23372:13: note: return value type mismatch
+23372 | const char *cmd_name(uint16_t cmd_id)
+      |             ^
+/home/runner/work/ddup/ddup/src/core/command.c:23372:13: note: ‘cmd_name’ was previously declared here
+/home/runner/work/ddup/ddup/src/core/command.c:23372:13: note: code may be misoptimized unless ‘-fno-strict-aliasing’ is used
 In function ‘snprintf’,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:423:9,
     inlined from ‘zlp_cmp_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1117:31,
@@ -1999,6 +2361,14 @@ In function ‘snprintf’,
 [ 94%] Built target test_script
 [ 95%] Building C object CMakeFiles/test_eval.dir/tests/test_eval.c.o
 [ 95%] Linking C executable test_eval
+/home/runner/work/ddup/ddup/src/core/acl.c:247:30: warning: type of ‘cmd_name’ does not match original declaration [-Wlto-type-mismatch]
+  247 |             const char *cn = cmd_name((uint16_t)i);
+      |                              ^
+/home/runner/work/ddup/ddup/src/core/command.c:23372:13: note: return value type mismatch
+23372 | const char *cmd_name(uint16_t cmd_id)
+      |             ^
+/home/runner/work/ddup/ddup/src/core/command.c:23372:13: note: ‘cmd_name’ was previously declared here
+/home/runner/work/ddup/ddup/src/core/command.c:23372:13: note: code may be misoptimized unless ‘-fno-strict-aliasing’ is used
 In function ‘snprintf’,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:423:9,
     inlined from ‘zlp_cmp_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1117:31,
@@ -2036,6 +2406,14 @@ In function ‘snprintf’,
 [ 95%] Built target test_eval
 [ 95%] Building C object CMakeFiles/test_redbus.dir/tests/test_redbus.c.o
 [ 95%] Linking C executable test_redbus
+/home/runner/work/ddup/ddup/src/core/acl.c:247:30: warning: type of ‘cmd_name’ does not match original declaration [-Wlto-type-mismatch]
+  247 |             const char *cn = cmd_name((uint16_t)i);
+      |                              ^
+/home/runner/work/ddup/ddup/src/core/command.c:23372:13: note: return value type mismatch
+23372 | const char *cmd_name(uint16_t cmd_id)
+      |             ^
+/home/runner/work/ddup/ddup/src/core/command.c:23372:13: note: ‘cmd_name’ was previously declared here
+/home/runner/work/ddup/ddup/src/core/command.c:23372:13: note: code may be misoptimized unless ‘-fno-strict-aliasing’ is used
 In function ‘snprintf’,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:423:9,
     inlined from ‘zlp_cmp_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1117:31,
@@ -2081,6 +2459,14 @@ In function ‘memcpy’,
 [ 95%] Built target test_redbus
 [ 96%] Building C object CMakeFiles/test_redbus_bus.dir/tests/test_redbus_bus.c.o
 [ 96%] Linking C executable test_redbus_bus
+/home/runner/work/ddup/ddup/src/core/acl.c:247:30: warning: type of ‘cmd_name’ does not match original declaration [-Wlto-type-mismatch]
+  247 |             const char *cn = cmd_name((uint16_t)i);
+      |                              ^
+/home/runner/work/ddup/ddup/src/core/command.c:23372:13: note: return value type mismatch
+23372 | const char *cmd_name(uint16_t cmd_id)
+      |             ^
+/home/runner/work/ddup/ddup/src/core/command.c:23372:13: note: ‘cmd_name’ was previously declared here
+/home/runner/work/ddup/ddup/src/core/command.c:23372:13: note: code may be misoptimized unless ‘-fno-strict-aliasing’ is used
 In function ‘snprintf’,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:423:9,
     inlined from ‘zlp_cmp_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1117:31,
@@ -2118,6 +2504,14 @@ In function ‘snprintf’,
 [ 96%] Built target test_redbus_bus
 [ 96%] Building C object CMakeFiles/test_redbus_failover.dir/tests/test_redbus_failover.c.o
 [ 97%] Linking C executable test_redbus_failover
+/home/runner/work/ddup/ddup/src/core/acl.c:247:30: warning: type of ‘cmd_name’ does not match original declaration [-Wlto-type-mismatch]
+  247 |             const char *cn = cmd_name((uint16_t)i);
+      |                              ^
+/home/runner/work/ddup/ddup/src/core/command.c:23372:13: note: return value type mismatch
+23372 | const char *cmd_name(uint16_t cmd_id)
+      |             ^
+/home/runner/work/ddup/ddup/src/core/command.c:23372:13: note: ‘cmd_name’ was previously declared here
+/home/runner/work/ddup/ddup/src/core/command.c:23372:13: note: code may be misoptimized unless ‘-fno-strict-aliasing’ is used
 In function ‘snprintf’,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:423:9,
     inlined from ‘zlp_cmp_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1117:31,
@@ -2163,6 +2557,14 @@ In function ‘memcpy’,
 [ 97%] Built target test_redbus_failover
 [ 98%] Building C object CMakeFiles/test_redbus_elect.dir/tests/test_redbus_elect.c.o
 [ 98%] Linking C executable test_redbus_elect
+/home/runner/work/ddup/ddup/src/core/acl.c:247:30: warning: type of ‘cmd_name’ does not match original declaration [-Wlto-type-mismatch]
+  247 |             const char *cn = cmd_name((uint16_t)i);
+      |                              ^
+/home/runner/work/ddup/ddup/src/core/command.c:23372:13: note: return value type mismatch
+23372 | const char *cmd_name(uint16_t cmd_id)
+      |             ^
+/home/runner/work/ddup/ddup/src/core/command.c:23372:13: note: ‘cmd_name’ was previously declared here
+/home/runner/work/ddup/ddup/src/core/command.c:23372:13: note: code may be misoptimized unless ‘-fno-strict-aliasing’ is used
 In function ‘snprintf’,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:423:9,
     inlined from ‘zlp_cmp_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1117:31,
@@ -2203,6 +2605,14 @@ In function ‘snprintf’,
 [ 99%] Built target test_iouring_op
 [ 99%] Building C object CMakeFiles/test_tls.dir/tests/test_tls.c.o
 [100%] Linking C executable test_tls
+/home/runner/work/ddup/ddup/src/core/acl.c:247:30: warning: type of ‘cmd_name’ does not match original declaration [-Wlto-type-mismatch]
+  247 |             const char *cn = cmd_name((uint16_t)i);
+      |                              ^
+/home/runner/work/ddup/ddup/src/core/command.c:23372:13: note: return value type mismatch
+23372 | const char *cmd_name(uint16_t cmd_id)
+      |             ^
+/home/runner/work/ddup/ddup/src/core/command.c:23372:13: note: ‘cmd_name’ was previously declared here
+/home/runner/work/ddup/ddup/src/core/command.c:23372:13: note: code may be misoptimized unless ‘-fno-strict-aliasing’ is used
 In function ‘snprintf’,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:423:9,
     inlined from ‘zlp_cmp_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1117:31,
@@ -2267,7 +2677,7 @@ Get:11 http://azure.archive.ubuntu.com/ubuntu noble/main amd64 libsource-highlig
 Get:12 http://azure.archive.ubuntu.com/ubuntu noble-updates/main amd64 gdb amd64 15.1-1ubuntu1~24.04.1 [4083 kB]
 Get:13 http://azure.archive.ubuntu.com/ubuntu noble-updates/main amd64 libc6-dbg amd64 2.39-0ubuntu8.8 [7461 kB]
 Preconfiguring packages ...
-Fetched 13.6 MB in 3s (4635 kB/s)
+Fetched 13.6 MB in 1s (15.1 MB/s)
 Selecting previously unselected package libdebuginfod-common.
 (Reading database ... (Reading database ... 5%(Reading database ... 10%(Reading database ... 15%(Reading database ... 20%(Reading database ... 25%(Reading database ... 30%(Reading database ... 35%(Reading database ... 40%(Reading database ... 45%(Reading database ... 50%(Reading database ... 55%(Reading database ... 60%(Reading database ... 65%(Reading database ... 70%(Reading database ... 75%(Reading database ... 80%(Reading database ... 85%(Reading database ... 90%(Reading database ... 95%(Reading database ... 100%(Reading database ... 203385 files and directories currently installed.)
 Preparing to unpack .../00-libdebuginfod-common_0.190-1.1ubuntu0.1_all.deb ...
