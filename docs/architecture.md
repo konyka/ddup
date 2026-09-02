@@ -327,6 +327,8 @@
   订阅类命令继续对每个频道参数执行 fail-closed 检查。
   `ACL SETUSER` 接受 Redis 常用别名（allkeys/resetkeys、allcommands/nocommands、
   nopass/resetpass），先在临时固定结构中解析，成功后一次性替换，避免部分更新。
+  `reset` 会清除密码、命令 bitset、key/channel pattern 并设置 `off`；同一请求
+  后续的 `on`/授权规则仍在临时副本上继续应用，最终一次性提交。
 
 ## Stream 核心族（Phase 61）
 

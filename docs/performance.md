@@ -1342,6 +1342,12 @@ Common Redis ACL aliases update the existing fixed user state in place. Parsing
 uses bounded case-insensitive comparisons and preserves atomic copy-on-success;
 the authorization hot path remains unchanged.
 
+### Phase 168: complete ACL reset semantics
+
+`reset` clears all bounded credential and permission fields in the temporary
+user copy and disables the account. The final assignment remains atomic and
+does not add work to normal authorization checks.
+
 ### Phase 154: ACL generation invalidation
 
 Each fixed ACL user slot carries a monotonic generation. Sessions cache the

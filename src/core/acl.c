@@ -64,6 +64,8 @@ static void clear_rules(acl_user *u)
     u->all_commands = 0;
     u->channel_count = 0;
     u->all_channels = 0;
+    u->password[0] = '\0';
+    u->enabled = 0;
 }
 
 static int set_cmd(acl_user *u, const char *p, size_t n, int allow)

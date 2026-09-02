@@ -497,6 +497,19 @@ static void test_acl_setuser_common_aliases(void)
     DD_CHECK(acl_authorize(u, CMD_SUBSCRIBE, sub, 2) == 1);
 }
 
+static void test_acl_reset_clears_password_and_disables_user(void)
+{
+    acl_registry r;
+    resp_value initial[3] = {rv("on"), rv(">secret"), rv("+get")};
+    resp_value reset[1] = {rv("reset")};
+    acl_user *u;
+    acl_init(&r, NULL);
+    DD_CHECK(acl_setuser(&r, "temp", 4, initial, 3) == 0);
+    DD_CHECK(acl_setuser(&r, "temp", 4, reset, 1) == 0);
+    u = acl_find(&r, "temp", 4);
+    DD_CHECK(u != NULL && u->enabled == 0 && u->password[0] == '\0');
+}
+
 int main(void)
 {
     DD_RUN(test_acl_users);
@@ -527,5 +540,6 @@ int main(void)
     DD_RUN(test_acl_channel_alias_rules);
     DD_RUN(test_acl_publish_checks_only_channel_argument);
     DD_RUN(test_acl_setuser_common_aliases);
+    DD_RUN(test_acl_reset_clears_password_and_disables_user);
     return DD_TEST_SUMMARY();
 }

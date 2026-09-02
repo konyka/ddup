@@ -647,3 +647,5 @@
     误当作频道；普通/模式订阅参数保持逐项检查（Phase 166）
   - [x] ACL SETUSER 常用别名：支持 `allkeys/resetkeys/allcommands/
     nocommands/nopass/resetpass`，保持规则原子替换与固定容量约束（Phase 167）
+  - [x] ACL reset 完整语义：清除密码、命令/key/channel 规则并关闭用户，
+    保持 Redis `reset` 后可显式 `on` 恢复的原子行为（Phase 168）

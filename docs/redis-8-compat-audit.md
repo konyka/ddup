@@ -117,6 +117,9 @@ bounded channel state as `&*` and an empty rule set.
   `ACL SETUSER` accepts common Redis aliases (`allkeys`, `resetkeys`,
   `allcommands`, `nocommands`, `nopass`, and `resetpass`) with bounded atomic
   rule replacement.
+  The `reset` rule clears password and all bounded permission patterns and turns
+  the user off; subsequent rules in the same atomic update can explicitly turn
+  it back on, matching Redis behavior.
 - Cluster slot maintenance: `SFLUSH` intersects requested ranges with local
   ownership and returns coalesced flushed ranges; `TRIMSLOTS RANGES` validates
   ownership before deleting keys from unserved slots. Both paths collect keys
