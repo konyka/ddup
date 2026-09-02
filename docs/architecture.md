@@ -1152,6 +1152,10 @@ DBSIZE 为 O(1)，可能计入尚未回收的过期 key。
   与所有远端 worker 均调用 server-owned AOF flush/rewrite 兼容钩子，完成后
   汇总首个成功 RESP 回复；任一 worker 的 AOF 错误会使整体请求 fail-closed，
   不再只更新连接所在 worker 的 AOF 状态。
+- **MT CLIENT LIST 全局视图**：`CLIENT LIST` 走聚合 fan-out，每个 worker 用
+  server-owned 钩子渲染本地行列表，聚合器仅拼接已验证 RESP bulk payload 后再
+  生成一个 bulk 回复。该路径只作用于管理面；连接读写和本地 `CLIENT ID/INFO`
+  仍保持无任务的 owner-local 快速路径。
 
 ## 架构对比：分片存储 + 消息路由（ddup mt）vs 共享存储（Garnet/Tsavorite）
 

@@ -3093,6 +3093,12 @@ void server_bgrewriteaof(server *s, resp_buf *out)
         srv_bgrewriteaof(s, out);
 }
 
+void server_client_list(server *s, resp_buf *out)
+{
+    if (s != NULL && out != NULL)
+        srv_client_list(s, out);
+}
+
 void server_set_requirepass(server *s, const char *pw)
 {
     s->requirepass = pw;

@@ -71,6 +71,7 @@
 | 2026-09-02 | Phase 137 SAVE consistency | worker multi-db session | Linux, Release | 复用既有 snapshot serializer；无新增数据面分配 | 保证 SELECT 非零 DB 时快照完整 |
 | 2026-09-02 | Phase 138 BGSAVE consistency | worker multi-db session + aggregate fan-out | Linux, Release | 复用 SAVE 序列化与既有聚合任务；仅控制面增加一次命令分类/广播 | 保证非零 DB 触发 BGSAVE 时所有逻辑库均落盘 |
 | 2026-09-02 | Phase 139 BGREWRITEAOF consistency | aggregate fan-out | Linux, Release | 复用 server-owned AOF flush hook；仅管理命令增加每个远端 worker 一个任务 | 消除多 worker AOF 控制面状态漂移，错误统一收敛 |
+| 2026-09-02 | Phase 140 CLIENT LIST global view | aggregate fan-out + bulk payload merge | Linux, Release | 仅 CLIENT LIST 创建远端任务并线性拼接 bulk 负载；连接热路径无额外分配 | 返回所有 worker 的本地连接，避免 home-worker 视图遗漏 |
 
 Phase 12 说明：PSYNC 的收益不在 loopback 小数据集（绝对值几十毫秒），
 而在大数据集 + 高写入场景——全量重同步成本 = 快照序列化 + 全量传输 +

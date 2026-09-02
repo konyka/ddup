@@ -1108,6 +1108,36 @@ static void test_bgrewriteaof_is_broadcast_to_workers(void)
     pal_socket_cleanup();
 }
 
+static void test_client_list_covers_all_workers(void)
+{
+    mt_server *ms;
+    pal_socket_t a, b;
+    char reply[4096];
+    size_t n, ids = 0, i;
+
+    DD_CHECK_EQ_INT(0, pal_socket_init());
+    ms = mt_server_create("127.0.0.1", 0, 2);
+    DD_CHECK(ms != NULL);
+    if (ms == NULL)
+        return;
+    DD_CHECK_EQ_INT(0, mt_server_start(ms));
+    a = connect_client(mt_server_port(ms));
+    b = connect_client(mt_server_port(ms));
+    (void)b;
+    n = request_full(a, "*2\r\n$6\r\nCLIENT\r\n$4\r\nLIST\r\n",
+                     reply, sizeof(reply));
+    DD_CHECK(n > 0);
+    for (i = 0; i + 3 < n; i++)
+        if (memcmp(reply + i, "id=", 3) == 0)
+            ids++;
+    DD_CHECK(ids >= 2);
+    pal_close(a);
+    pal_close(b);
+    mt_server_stop(ms);
+    mt_server_destroy(ms);
+    pal_socket_cleanup();
+}
+
 static void pick_key_for_slot(int wanted, char *out, size_t cap)
 {
     int i;
@@ -3368,6 +3398,7 @@ int main(void)
     DD_RUN(test_save_covers_all_selected_databases);
     DD_RUN(test_bgsave_covers_all_selected_databases);
     DD_RUN(test_bgrewriteaof_is_broadcast_to_workers);
+    DD_RUN(test_client_list_covers_all_workers);
     DD_RUN(test_cluster_state_propagates_to_workers);
     DD_RUN(test_mt_replica_partitions_full_sync);
     DD_RUN(test_mt_master_serves_replica_full_sync);

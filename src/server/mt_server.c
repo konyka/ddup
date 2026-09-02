@@ -309,6 +309,7 @@ struct mt_agg {
     size_t random_key_len;
     resp_buf keys_body; /* concatenated RESP bulk elements for KEYS */
     size_t keys_count;
+    resp_buf client_body; /* concatenated CLIENT LIST payloads */
     int fanout_done;
     int abandoned;
     int finished;
@@ -677,6 +678,7 @@ static void mt_agg_free(mt_agg *agg)
     }
     free(agg->pubsub_channels);
     free(agg->pubsub_channel_lens);
+    resp_buf_free(&agg->client_body);
     resp_buf_free(&agg->keys_body);
     free(agg->stats);
     free(agg);
@@ -1606,6 +1608,34 @@ static void mt_agg_accumulate(mt_agg *agg, const resp_buf *part)
                 }
             }
         }
+        else if (agg->cmd == CMD_CLIENT && part->data[0] == '$') {
+            const char *eol = (const char *)memchr(part->data, '\n', part->len);
+            const char *body;
+            long long n = -1;
+            size_t hdr;
+            if (eol == NULL || eol <= part->data + 1)
+                agg->err = 1;
+            else {
+                size_t digits = (size_t)(eol - (part->data + 1));
+                if (digits > 0 && eol[-1] == '\r')
+                    digits--;
+                if (!mt_parse_ll(part->data + 1, digits, &n) || n < 0) {
+                    agg->err = 1;
+                } else {
+                    hdr = (size_t)(eol - part->data) + 1;
+                    body = part->data + hdr;
+                    if ((unsigned long long)n >
+                            (unsigned long long)(part->data + part->len - body) ||
+                        resp_buf_reserve(&agg->client_body, (size_t)n) != 0)
+                        agg->err = 1;
+                    else {
+                        memcpy(agg->client_body.data + agg->client_body.len,
+                               body, (size_t)n);
+                        agg->client_body.len += (size_t)n;
+                    }
+                }
+            }
+        }
         else if (agg->cmd == CMD_PUBSUB && agg->pubsub_mode != 0) {
             arena ar;
             resp_value v;
@@ -1688,6 +1718,9 @@ static void mt_agg_finish(server *srv, void *conn, mt_conn_state *st,
                 fin->reply.len += agg->keys_body.len;
             }
         }
+        else if (agg->cmd == CMD_CLIENT)
+            resp_write_bulk(&fin->reply, agg->client_body.data,
+                            agg->client_body.len);
         else if (agg->cmd == CMD_PUBSUB && agg->pubsub_mode == 1) {
             resp_write_integer(&fin->reply, agg->sum);
         }
@@ -2754,6 +2787,11 @@ static void mt_bgrewriteaof_exec(worker *w, resp_buf *out)
     server_bgrewriteaof(w->srv, out);
 }
 
+static void mt_client_list_exec(worker *w, resp_buf *out)
+{
+    server_client_list(w->srv, out);
+}
+
 /* Execute CONFIG against every logical db on one worker and expose the
  * server-owned appendfsync hook, matching a normal client session. */
 static void mt_config_exec(worker *w, const resp_value *argv, size_t argc,
@@ -2877,6 +2915,8 @@ static int mt_route_aggregate(worker *home, void *conn,
     agg->db_index = db_index;
     if (cmd == CMD_KEYS)
         resp_buf_init(&agg->keys_body);
+    if (cmd == CMD_CLIENT)
+        resp_buf_init(&agg->client_body);
 
     /* home part */
     resp_buf_init(&local);
@@ -2919,6 +2959,9 @@ static int mt_route_aggregate(worker *home, void *conn,
         mt_bgsave_exec(home, &local);
     } else if (cmd == CMD_BGREWRITEAOF) {
         mt_bgrewriteaof_exec(home, &local);
+    } else if (cmd == CMD_CLIENT && argc >= 2 && argv[1].str != NULL &&
+               mt_ci_equal(argv[1].str, argv[1].len, "LIST")) {
+        mt_client_list_exec(home, &local);
     } else if (cmd == CMD_FLUSHDB) {
         db *d = server_db_at(home->srv, db_index);
         uint64_t dirty_before = d->dirty;
@@ -4067,7 +4110,9 @@ static int mt_route(void *ctx, void *conn, session *sess,
         cmd == CMD_LASTSAVE || cmd == CMD_SWAPDB ||
         cmd == CMD_INFO ||
         cmd == CMD_FLUSHALL || cmd == CMD_RANDOMKEY || cmd == CMD_KEYS ||
-        cmd == CMD_PUBSUB) {
+        cmd == CMD_PUBSUB ||
+        (cmd == CMD_CLIENT && argc >= 2 && argv[1].str != NULL &&
+         mt_ci_equal(argv[1].str, argv[1].len, "LIST"))) {
         mt_batch_flush(home, conn, st);
         return mt_route_aggregate(home, conn, argv, argc, raw, rawlen, cmd,
                                   sess->db_index);
@@ -4843,6 +4888,14 @@ static void mt_exec_task(worker *w, mt_task *t)
                 mt_ci_equal(v.items[0].str, v.items[0].len,
                             "bgrewriteaof")) {
                 mt_bgrewriteaof_exec(w, &t->reply);
+                continue;
+            }
+            if (v.count == 2 && v.items[0].str != NULL &&
+                v.items[0].len == 6 &&
+                mt_ci_equal(v.items[0].str, v.items[0].len, "client") &&
+                v.items[1].str != NULL && v.items[1].len == 4 &&
+                mt_ci_equal(v.items[1].str, v.items[1].len, "list")) {
+                mt_client_list_exec(w, &t->reply);
                 continue;
             }
             if (v.count >= 2 && v.items[0].str != NULL &&

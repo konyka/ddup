@@ -583,3 +583,6 @@
     每个 worker 执行其 server-owned AOF flush/rewrite 兼容钩子；修复多 worker
     模式下仅 home worker 处理管理命令的状态漂移，新增 routed-task 回归
     （Phase 139）
+  - [x] mt CLIENT LIST 全局视图：将 `CLIENT LIST` 纳入聚合 fan-out，并合并
+    各 worker 的 bulk 行负载；修复只返回连接所在 worker 本地连接的遗漏，新增
+    两个 worker 分配连接的真实 loopback 回归（Phase 140）

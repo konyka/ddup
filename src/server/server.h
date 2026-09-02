@@ -181,6 +181,8 @@ const repl_info *server_repl_info(const server *s);
 void server_aof_flush(server *s);
 /* Execute the compatibility BGREWRITEAOF hook against this server's AOF. */
 void server_bgrewriteaof(server *s, resp_buf *out);
+/* Render this server's local CLIENT LIST view. */
+void server_client_list(server *s, resp_buf *out);
 
 /* Resize the replication backlog ring (drops current contents). Returns 0
  * on success, -1 when bytes is zero or allocation fails; failure preserves
