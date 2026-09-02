@@ -579,3 +579,7 @@
     multi-db session 生成完整快照；修复非零 DB 客户端触发时误落本地路径并返回
     `snapshot path not configured` 的问题，新增保存后重启跨 DB 恢复回归
     （Phase 138）
+  - [x] mt BGREWRITEAOF 控制面一致性：将 `BGREWRITEAOF` 纳入聚合 fan-out，
+    每个 worker 执行其 server-owned AOF flush/rewrite 兼容钩子；修复多 worker
+    模式下仅 home worker 处理管理命令的状态漂移，新增 routed-task 回归
+    （Phase 139）

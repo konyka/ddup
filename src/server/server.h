@@ -179,6 +179,8 @@ const repl_info *server_repl_info(const server *s);
 /* Flush the optional AOF immediately (replication batches call this after
  * a stream chunk; mt mode flushes every worker's AOF). */
 void server_aof_flush(server *s);
+/* Execute the compatibility BGREWRITEAOF hook against this server's AOF. */
+void server_bgrewriteaof(server *s, resp_buf *out);
 
 /* Resize the replication backlog ring (drops current contents). Returns 0
  * on success, -1 when bytes is zero or allocation fails; failure preserves

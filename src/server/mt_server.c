@@ -2128,6 +2128,7 @@ static int mt_is_aggregate(uint16_t cmd)
 {
     return cmd == CMD_DBSIZE || cmd == CMD_FLUSHDB || cmd == CMD_SAVE ||
            cmd == CMD_BGSAVE || cmd == CMD_LASTSAVE || cmd == CMD_SWAPDB ||
+           cmd == CMD_BGREWRITEAOF ||
            cmd == CMD_INFO || cmd == CMD_FLUSHALL || cmd == CMD_RANDOMKEY ||
            cmd == CMD_KEYS;
 }
@@ -2748,6 +2749,11 @@ static void mt_bgsave_exec(worker *w, resp_buf *out)
     session_release(&sess);
 }
 
+static void mt_bgrewriteaof_exec(worker *w, resp_buf *out)
+{
+    server_bgrewriteaof(w->srv, out);
+}
+
 /* Execute CONFIG against every logical db on one worker and expose the
  * server-owned appendfsync hook, matching a normal client session. */
 static void mt_config_exec(worker *w, const resp_value *argv, size_t argc,
@@ -2911,6 +2917,8 @@ static int mt_route_aggregate(worker *home, void *conn,
         mt_save_exec(home, &local);
     } else if (cmd == CMD_BGSAVE) {
         mt_bgsave_exec(home, &local);
+    } else if (cmd == CMD_BGREWRITEAOF) {
+        mt_bgrewriteaof_exec(home, &local);
     } else if (cmd == CMD_FLUSHDB) {
         db *d = server_db_at(home->srv, db_index);
         uint64_t dirty_before = d->dirty;
@@ -4055,7 +4063,8 @@ static int mt_route(void *ctx, void *conn, session *sess,
     }
 
     if (cmd == CMD_DBSIZE || cmd == CMD_FLUSHDB || cmd == CMD_SAVE ||
-        cmd == CMD_BGSAVE || cmd == CMD_LASTSAVE || cmd == CMD_SWAPDB ||
+        cmd == CMD_BGSAVE || cmd == CMD_BGREWRITEAOF ||
+        cmd == CMD_LASTSAVE || cmd == CMD_SWAPDB ||
         cmd == CMD_INFO ||
         cmd == CMD_FLUSHALL || cmd == CMD_RANDOMKEY || cmd == CMD_KEYS ||
         cmd == CMD_PUBSUB) {
@@ -4827,6 +4836,13 @@ static void mt_exec_task(worker *w, mt_task *t)
                 v.items[0].len == 6 &&
                 mt_ci_equal(v.items[0].str, v.items[0].len, "bgsave")) {
                 mt_bgsave_exec(w, &t->reply);
+                continue;
+            }
+            if (v.count == 1 && v.items[0].str != NULL &&
+                v.items[0].len == 12 &&
+                mt_ci_equal(v.items[0].str, v.items[0].len,
+                            "bgrewriteaof")) {
+                mt_bgrewriteaof_exec(w, &t->reply);
                 continue;
             }
             if (v.count >= 2 && v.items[0].str != NULL &&

@@ -1148,6 +1148,10 @@ DBSIZE 为 O(1)，可能计入尚未回收的过期 key。
   worker 使用覆盖全部逻辑 DB 的 multi-db session。单线程 worker 中仍采用
   同步快照序列化（返回 Redis 风格的启动确认），避免客户端选择非零 DB 时
   仅保存当前库或误走本地路径；各 worker 快照完成后再汇总结果。
+- **MT BGREWRITEAOF 一致性**：`BGREWRITEAOF` 走同一聚合 fan-out，home worker
+  与所有远端 worker 均调用 server-owned AOF flush/rewrite 兼容钩子，完成后
+  汇总首个成功 RESP 回复；任一 worker 的 AOF 错误会使整体请求 fail-closed，
+  不再只更新连接所在 worker 的 AOF 状态。
 
 ## 架构对比：分片存储 + 消息路由（ddup mt）vs 共享存储（Garnet/Tsavorite）
 

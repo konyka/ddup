@@ -1080,6 +1080,34 @@ static void test_bgsave_covers_all_selected_databases(void)
     pal_socket_cleanup();
 }
 
+static void test_bgrewriteaof_is_broadcast_to_workers(void)
+{
+    mt_server *ms;
+    pal_socket_t a;
+    uint64_t before;
+    uint64_t deadline;
+
+    DD_CHECK_EQ_INT(0, pal_socket_init());
+    ms = mt_server_create("127.0.0.1", 0, 2);
+    DD_CHECK(ms != NULL);
+    if (ms == NULL)
+        return;
+    DD_CHECK_EQ_INT(0, mt_server_start(ms));
+    a = connect_client(mt_server_port(ms));
+    before = mt_server_tasks_executed(ms);
+    roundtrip(a, "*1\r\n$12\r\nBGREWRITEAOF\r\n",
+              "+Background append only file rewriting started\r\n");
+    deadline = pal_now_ms() + 2000;
+    while (mt_server_tasks_executed(ms) < before + 1 &&
+           pal_now_ms() < deadline)
+        pal_sleep_ms(1);
+    DD_CHECK(mt_server_tasks_executed(ms) >= before + 1);
+    pal_close(a);
+    mt_server_stop(ms);
+    mt_server_destroy(ms);
+    pal_socket_cleanup();
+}
+
 static void pick_key_for_slot(int wanted, char *out, size_t cap)
 {
     int i;
@@ -3339,6 +3367,7 @@ int main(void)
     DD_RUN(test_config_mutations_broadcast_to_workers);
     DD_RUN(test_save_covers_all_selected_databases);
     DD_RUN(test_bgsave_covers_all_selected_databases);
+    DD_RUN(test_bgrewriteaof_is_broadcast_to_workers);
     DD_RUN(test_cluster_state_propagates_to_workers);
     DD_RUN(test_mt_replica_partitions_full_sync);
     DD_RUN(test_mt_master_serves_replica_full_sync);
