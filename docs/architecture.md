@@ -300,6 +300,8 @@
   每个固定用户槽位带有单调递增 generation；session 在绑定/认证时缓存该值，
   命令执行和 MT 路由前做整数比较。用户删除并重建后，旧 session 会被清除认证
   状态，不能继承新用户权限，同时不引入锁或热路径分配。
+  generation 计数器属于各自 ACL registry，不再使用进程级共享可变状态；因此
+  多 server/worker 初始化和广播更新互不竞争，session 失效判定仍保持 O(1)。
 
 ## Stream 核心族（Phase 61）
 

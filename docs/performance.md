@@ -1284,3 +1284,10 @@ each command; stale sessions are cleared without allocation or registry scans.
 MT performs the same check before home-worker authorization, so routed tasks
 cannot observe a deleted/recreated user's permissions. The normal path adds
 one predictable branch and no synchronization or heap traffic.
+
+### Phase 155: registry-local ACL generations
+
+Generation counters now live inside each fixed ACL registry instead of a process
+global. This removes cross-server/worker contention and data-race exposure while
+preserving O(1) session validation: the hot path still performs only one cached
+integer comparison and no lock or allocation.

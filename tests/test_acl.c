@@ -197,6 +197,26 @@ static void test_acl_generation_changes_on_reuse(void)
     DD_CHECK(u != NULL && u->generation != old_generation);
 }
 
+static void test_acl_generation_is_registry_local(void)
+{
+    acl_registry a, b;
+    resp_value rules[1] = {rv("on")};
+    const acl_user *ua;
+    const acl_user *ub;
+    acl_init(&a, NULL);
+    acl_init(&b, NULL);
+    ua = acl_find_const(&a, "default", 7);
+    ub = acl_find_const(&b, "default", 7);
+    DD_CHECK(ua != NULL && ub != NULL);
+    DD_CHECK_EQ_INT(ua->generation, ub->generation);
+    DD_CHECK(acl_setuser(&a, "x", 1, rules, 1) == 0);
+    DD_CHECK(acl_setuser(&b, "x", 1, rules, 1) == 0);
+    ua = acl_find_const(&a, "x", 1);
+    ub = acl_find_const(&b, "x", 1);
+    DD_CHECK(ua != NULL && ub != NULL);
+    DD_CHECK_EQ_INT(ua->generation, ub->generation);
+}
+
 int main(void)
 {
     DD_RUN(test_acl_users);
@@ -211,5 +231,6 @@ int main(void)
     DD_RUN(test_acl_deleted_slots_and_denies_render);
     DD_RUN(test_acl_getuser_commands_are_visible);
     DD_RUN(test_acl_generation_changes_on_reuse);
+    DD_RUN(test_acl_generation_is_registry_local);
     return DD_TEST_SUMMARY();
 }

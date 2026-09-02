@@ -620,3 +620,6 @@
     （Phase 153）
   - [x] ACL generation 会话失效：删除并重建同名用户后，旧连接在本地及 MT
     远端路由前清除认证状态，避免继承新用户权限（Phase 154）
+  - [x] ACL generation 注册表隔离：generation 计数器改为 registry-local，
+    消除多 server/worker 间共享可变状态与数据竞争，保持旧 session 失效语义
+    稳定（Phase 155）

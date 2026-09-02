@@ -29,6 +29,7 @@ typedef struct acl_user {
 typedef struct acl_registry {
     acl_user users[ACL_MAX_USERS];
     uint8_t count;
+    uint64_t generation_next;
 } acl_registry;
 
 void acl_init(acl_registry *r, const char *requirepass);

@@ -85,6 +85,8 @@ python3 tools/audit_redis_compat.py \
   Each fixed user slot carries a monotonic generation. Sessions validate the
   cached generation before local execution and before MT routing; deleting and
   recreating a username therefore invalidates stale connections fail-closed.
+  Generation counters are registry-local, avoiding cross-worker shared mutable
+  state and keeping invalidation deterministic for independent server instances.
 - Cluster slot maintenance: `SFLUSH` intersects requested ranges with local
   ownership and returns coalesced flushed ranges; `TRIMSLOTS RANGES` validates
   ownership before deleting keys from unserved slots. Both paths collect keys
