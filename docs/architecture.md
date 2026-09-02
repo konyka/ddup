@@ -304,6 +304,8 @@
   多 server/worker 初始化和广播更新互不竞争，session 失效判定仍保持 O(1)。
   ACL 类别名采用无分配 ASCII 大小写不敏感比较，兼容 Redis 的命令大小写规则，
   解析完成后仍只保留预展开的权限 bitset。
+  `ACL CAT` 在管理冷路径上从静态命令表生成类别列表，先计数再写 RESP header；
+  未知类别在访问命令元数据前直接拒绝，不影响数据面。
 
 ## Stream 核心族（Phase 61）
 

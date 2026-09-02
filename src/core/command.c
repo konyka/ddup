@@ -11776,10 +11776,40 @@ static void command_acl(session *s, const resp_value *argv, size_t argc,
     }
     if (ci_equal(sub, sl, "CAT") && (argc == 2 || argc == 3)) {
         static const char *cats[] = {"keyspace", "read", "write", "connection"};
-        size_t i;
-        resp_write_array_header(out, sizeof(cats) / sizeof(cats[0]));
-        for (i = 0; i < sizeof(cats) / sizeof(cats[0]); i++)
-            resp_write_bulk(out, cats[i], strlen(cats[i]));
+        size_t i, count = 0;
+        if (argc == 2) {
+            resp_write_array_header(out, sizeof(cats) / sizeof(cats[0]));
+            for (i = 0; i < sizeof(cats) / sizeof(cats[0]); i++)
+                resp_write_bulk(out, cats[i], strlen(cats[i]));
+            return;
+        }
+        if (!ci_equal(argv[2].str, argv[2].len, "read") &&
+            !ci_equal(argv[2].str, argv[2].len, "write") &&
+            !ci_equal(argv[2].str, argv[2].len, "connection") &&
+            !ci_equal(argv[2].str, argv[2].len, "keyspace")) {
+            resp_write_error(out, "ERR unknown category", 20);
+            return;
+        }
+        for (i = 1; i <= CMD_MAX; i++) {
+            int match = 0;
+            if (ci_equal(argv[2].str, argv[2].len, "write")) match = cmd_is_write((uint16_t)i);
+            else if (ci_equal(argv[2].str, argv[2].len, "read")) match = !cmd_is_write((uint16_t)i);
+            else if (ci_equal(argv[2].str, argv[2].len, "connection"))
+                match = i == CMD_PING || i == CMD_ECHO || i == CMD_AUTH || i == CMD_QUIT || i == CMD_SELECT;
+            else match = i == CMD_GET || i == CMD_SET || i == CMD_DEL || i == CMD_EXISTS;
+            if (match && cmd_name((uint16_t)i) != NULL) count++;
+        }
+        resp_write_array_header(out, count);
+        for (i = 1; i <= CMD_MAX; i++) {
+            int match = 0;
+            if (ci_equal(argv[2].str, argv[2].len, "write")) match = cmd_is_write((uint16_t)i);
+            else if (ci_equal(argv[2].str, argv[2].len, "read")) match = !cmd_is_write((uint16_t)i);
+            else if (ci_equal(argv[2].str, argv[2].len, "connection"))
+                match = i == CMD_PING || i == CMD_ECHO || i == CMD_AUTH || i == CMD_QUIT || i == CMD_SELECT;
+            else match = i == CMD_GET || i == CMD_SET || i == CMD_DEL || i == CMD_EXISTS;
+            if (match && cmd_name((uint16_t)i) != NULL)
+                resp_write_bulk(out, cmd_name((uint16_t)i), strlen(cmd_name((uint16_t)i)));
+        }
         return;
     }
     if (ci_equal(sub, sl, "GENPASS") && (argc == 2 || argc == 3)) {

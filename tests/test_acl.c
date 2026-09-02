@@ -1,5 +1,6 @@
 #include <string.h>
 #include "core/acl.h"
+#include "core/session.h"
 #include "test.h"
 
 static resp_value rv(const char *s)
@@ -230,6 +231,43 @@ static void test_acl_categories_are_case_insensitive(void)
     DD_CHECK(acl_authorize(u, CMD_GET, getv, 2) == 1);
 }
 
+static void test_acl_cat_filters_commands(void)
+{
+    db d;
+    session s;
+    resp_value argv[3] = {rv("ACL"), rv("CAT"), rv("read")};
+    resp_buf out;
+    db_init(&d);
+    session_init(&s, &d);
+    s.acl_username[0] = 'd'; s.acl_username[1] = 'e'; s.acl_username[2] = 'f';
+    s.acl_username[3] = 'a'; s.acl_username[4] = 'u'; s.acl_username[5] = 'l';
+    s.acl_username[6] = 't'; s.acl_username[7] = '\0';
+    resp_buf_init(&out);
+    session_execute_at(&s, argv, 3, &out, 0);
+    DD_CHECK(strstr(out.data, "get") != NULL);
+    DD_CHECK(strstr(out.data, "\r\n$3\r\nset\r\n") == NULL);
+    resp_buf_free(&out);
+    session_release(&s);
+    db_destroy(&d);
+}
+
+static void test_acl_cat_rejects_unknown_category(void)
+{
+    db d;
+    session s;
+    resp_value argv[3] = {rv("ACL"), rv("CAT"), rv("bogus")};
+    resp_buf out;
+    db_init(&d);
+    session_init(&s, &d);
+    memcpy(s.acl_username, "default", 8);
+    resp_buf_init(&out);
+    session_execute_at(&s, argv, 3, &out, 0);
+    DD_CHECK(strstr(out.data, "unknown category") != NULL);
+    resp_buf_free(&out);
+    session_release(&s);
+    db_destroy(&d);
+}
+
 int main(void)
 {
     DD_RUN(test_acl_users);
@@ -246,5 +284,7 @@ int main(void)
     DD_RUN(test_acl_generation_changes_on_reuse);
     DD_RUN(test_acl_generation_is_registry_local);
     DD_RUN(test_acl_categories_are_case_insensitive);
+    DD_RUN(test_acl_cat_filters_commands);
+    DD_RUN(test_acl_cat_rejects_unknown_category);
     return DD_TEST_SUMMARY();
 }

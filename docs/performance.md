@@ -1276,6 +1276,12 @@ bounded stack buffer per user.
 `ACL GETUSER` enumerates the fixed command bitset only on the management path;
 no per-command allocations are introduced into dispatch.
 
+### Phase 157: ACL CAT command listing
+
+`ACL CAT` remains a management-only cold path. Category queries scan the static
+command table without allocations, count before emitting the RESP array header,
+and reject unknown categories before touching command metadata.
+
 ### Phase 154: ACL generation invalidation
 
 Each fixed ACL user slot carries a monotonic generation. Sessions cache the

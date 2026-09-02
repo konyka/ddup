@@ -90,6 +90,8 @@ python3 tools/audit_redis_compat.py \
   Category rule names are parsed case-insensitively (`@READ`, `@WRITE`, `@ALL`,
   and `@CONNECTION`) using bounded ASCII comparison, matching Redis command
   casing semantics without adding allocations.
+  `ACL CAT` lists available categories and filters commands for a requested
+  category; unknown categories fail closed before command metadata traversal.
 - Cluster slot maintenance: `SFLUSH` intersects requested ranges with local
   ownership and returns coalesced flushed ranges; `TRIMSLOTS RANGES` validates
   ownership before deleting keys from unserved slots. Both paths collect keys

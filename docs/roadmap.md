@@ -625,3 +625,5 @@
     稳定（Phase 155）
   - [x] ACL 类别规则大小写兼容：`@READ/@WRITE/@ALL/@CONNECTION` 与 Redis
     命令大小写语义一致，规则解析使用无分配 ASCII 比较（Phase 156）
+  - [x] ACL CAT 类别查询：`ACL CAT` 列出类别名，`ACL CAT <category>` 返回
+    对应命令集合并对未知类别 fail-closed（Phase 157）
