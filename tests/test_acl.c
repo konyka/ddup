@@ -481,6 +481,22 @@ static void test_acl_publish_checks_only_channel_argument(void)
     DD_CHECK(acl_authorize(u, CMD_PUBLISH, bad, 3) == 0);
 }
 
+static void test_acl_setuser_common_aliases(void)
+{
+    acl_registry r;
+    resp_value rules[5] = {rv("on"), rv("allkeys"), rv("allcommands"),
+                           rv("nopass"), rv("allchannels")};
+    resp_value getv[2] = {rv("GET"), rv("any")};
+    resp_value sub[2] = {rv("SUBSCRIBE"), rv("any")};
+    acl_user *u;
+    acl_init(&r, NULL);
+    DD_CHECK(acl_setuser(&r, "alias", 5, rules, 5) == 0);
+    u = acl_find(&r, "alias", 5);
+    DD_CHECK(u != NULL && u->password[0] == '\0');
+    DD_CHECK(acl_authorize(u, CMD_GET, getv, 2) == 1);
+    DD_CHECK(acl_authorize(u, CMD_SUBSCRIBE, sub, 2) == 1);
+}
+
 int main(void)
 {
     DD_RUN(test_acl_users);
@@ -510,5 +526,6 @@ int main(void)
     DD_RUN(test_acl_channel_rules_are_visible_in_metadata);
     DD_RUN(test_acl_channel_alias_rules);
     DD_RUN(test_acl_publish_checks_only_channel_argument);
+    DD_RUN(test_acl_setuser_common_aliases);
     return DD_TEST_SUMMARY();
 }

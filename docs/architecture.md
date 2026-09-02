@@ -325,6 +325,8 @@
 规则保持等价，便于安全迁移 Redis ACL 配置。
   发布命令按 Redis 参数布局只提取 channel，消息正文不会进入 ACL pattern 匹配；
   订阅类命令继续对每个频道参数执行 fail-closed 检查。
+  `ACL SETUSER` 接受 Redis 常用别名（allkeys/resetkeys、allcommands/nocommands、
+  nopass/resetpass），先在临时固定结构中解析，成功后一次性替换，避免部分更新。
 
 ## Stream 核心族（Phase 61）
 

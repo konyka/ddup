@@ -124,9 +124,15 @@ int acl_setuser(acl_registry *r, const char *name, size_t nlen,
     for (i = 0; i < nrules; i++) {
         if (rules[i].type != RESP_BULK_STRING) return -1;
         p = rules[i].str; n = rules[i].len;
-        if (n == 2 && memcmp(p, "on", 2) == 0) temp.enabled = 1;
-        else if (n == 3 && memcmp(p, "off", 3) == 0) temp.enabled = 0;
-        else if (n == 5 && memcmp(p, "reset", 5) == 0) clear_rules(&temp);
+        if (eq_ci(p, n, "on")) temp.enabled = 1;
+        else if (eq_ci(p, n, "off")) temp.enabled = 0;
+        else if (eq_ci(p, n, "reset")) clear_rules(&temp);
+        else if (eq_ci(p, n, "allkeys")) { memcpy(temp.patterns[0], "*", 2); temp.pattern_count = 1; }
+        else if (eq_ci(p, n, "resetkeys")) { temp.pattern_count = 0; }
+        else if (eq_ci(p, n, "allcommands")) { temp.all_commands = 1; }
+        else if (eq_ci(p, n, "nocommands")) { temp.all_commands = 0; memset(temp.allow, 0, sizeof(temp.allow)); }
+        else if (eq_ci(p, n, "nopass")) temp.password[0] = '\0';
+        else if (eq_ci(p, n, "resetpass")) temp.password[0] = '\0';
         else if (n > 1 && p[0] == '>') {
             if (n >= ACL_MAX_PASSWORD) return -1;
             memcpy(temp.password, p + 1, n - 1); temp.password[n - 1] = '\0';

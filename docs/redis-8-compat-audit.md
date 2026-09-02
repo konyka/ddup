@@ -114,6 +114,9 @@ python3 tools/audit_redis_compat.py \
 bounded channel state as `&*` and an empty rule set.
   `PUBLISH`/`SPUBLISH` channel checks stop before the message argument, while
   subscribe and pattern-subscribe validate every supplied channel argument.
+  `ACL SETUSER` accepts common Redis aliases (`allkeys`, `resetkeys`,
+  `allcommands`, `nocommands`, `nopass`, and `resetpass`) with bounded atomic
+  rule replacement.
 - Cluster slot maintenance: `SFLUSH` intersects requested ranges with local
   ownership and returns coalesced flushed ranges; `TRIMSLOTS RANGES` validates
   ownership before deleting keys from unserved slots. Both paths collect keys

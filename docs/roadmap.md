@@ -645,3 +645,5 @@
     等价，保持 Redis ACL 配置迁移兼容（Phase 165）
   - [x] ACL 发布参数边界：`PUBLISH/SPUBLISH` 仅校验 channel，不把消息正文
     误当作频道；普通/模式订阅参数保持逐项检查（Phase 166）
+  - [x] ACL SETUSER 常用别名：支持 `allkeys/resetkeys/allcommands/
+    nocommands/nopass/resetpass`，保持规则原子替换与固定容量约束（Phase 167）

@@ -1336,6 +1336,12 @@ remains a single flag check or fixed-pattern scan.
 is never scanned. Subscription commands continue to check each supplied
 channel/pattern with bounded iteration.
 
+### Phase 167: ACL SETUSER aliases
+
+Common Redis ACL aliases update the existing fixed user state in place. Parsing
+uses bounded case-insensitive comparisons and preserves atomic copy-on-success;
+the authorization hot path remains unchanged.
+
 ### Phase 154: ACL generation invalidation
 
 Each fixed ACL user slot carries a monotonic generation. Sessions cache the
