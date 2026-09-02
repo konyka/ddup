@@ -159,6 +159,8 @@ bounded channel state as `&*` and an empty rule set.
   `FAILOVER`, and `MONITOR`) treat protocol parameters as keyless arguments.
   Script and function commands (`EVAL*`/`FCALL*`) authorize only the declared
   `numkeys` slice, with checked zero-key and malformed-count handling.
+  Blocking pop/bit operations and legacy geo store forms authorize every actual
+  key while excluding timeout, count, coordinate, and option tokens.
 - Cluster slot maintenance: `SFLUSH` intersects requested ranges with local
   ownership and returns coalesced flushed ranges; `TRIMSLOTS RANGES` validates
   ownership before deleting keys from unserved slots. Both paths collect keys

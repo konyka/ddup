@@ -505,6 +505,62 @@ int acl_authorize(const acl_user *u, uint16_t cmd_id, const resp_value *argv,
         }
         return 1;
     }
+    if (cmd_id == CMD_BLPOP || cmd_id == CMD_BRPOP ||
+        cmd_id == CMD_BZPOPMIN || cmd_id == CMD_BZPOPMAX) {
+        size_t j, p, end = argc > 1 ? argc - 1 : 0;
+        if (end == 0 || u->pattern_count == 0) return 0;
+        for (j = 1; j < end; j++) {
+            if (argv[j].type != RESP_BULK_STRING) return 0;
+            for (p = 0; p < u->pattern_count; p++)
+                if (acl_match_pattern(u->patterns[p], strlen(u->patterns[p]), argv[j].str, argv[j].len)) break;
+            if (p == u->pattern_count) return 0;
+        }
+        return 1;
+    }
+    if (cmd_id == CMD_BLMPOP || cmd_id == CMD_BZMPOP) {
+        long long nk;
+        size_t j, p, end;
+        if (argc < 4 || argv[2].type != RESP_BULK_STRING ||
+            !acl_parse_ll(argv[2].str, argv[2].len, &nk) || nk <= 0 ||
+            (uint64_t)nk > (uint64_t)(argc - 3) || u->pattern_count == 0) return 0;
+        end = 3 + (size_t)nk;
+        for (j = 3; j < end; j++) {
+            if (argv[j].type != RESP_BULK_STRING) return 0;
+            for (p = 0; p < u->pattern_count; p++)
+                if (acl_match_pattern(u->patterns[p], strlen(u->patterns[p]), argv[j].str, argv[j].len)) break;
+            if (p == u->pattern_count) return 0;
+        }
+        return 1;
+    }
+    if (cmd_id == CMD_BITOP) {
+        size_t j, p;
+        if (argc < 4 || u->pattern_count == 0) return 0;
+        for (j = 2; j < argc; j++) {
+            if (argv[j].type != RESP_BULK_STRING) return 0;
+            for (p = 0; p < u->pattern_count; p++)
+                if (acl_match_pattern(u->patterns[p], strlen(u->patterns[p]), argv[j].str, argv[j].len)) break;
+            if (p == u->pattern_count) return 0;
+        }
+        return 1;
+    }
+    if (cmd_id == CMD_GEORADIUS || cmd_id == CMD_GEORADIUSBYMEMBER) {
+        size_t p, j;
+        if (argc < 2 || u->pattern_count == 0 || argv[1].type != RESP_BULK_STRING) return 0;
+        for (p = 0; p < u->pattern_count; p++)
+            if (acl_match_pattern(u->patterns[p], strlen(u->patterns[p]), argv[1].str, argv[1].len)) break;
+        if (p == u->pattern_count) return 0;
+        for (j = 2; j + 1 < argc; j++) {
+            if (argv[j].type == RESP_BULK_STRING &&
+                ((argv[j].len == 5 && memcmp(argv[j].str, "STORE", 5) == 0) ||
+                 (argv[j].len == 9 && memcmp(argv[j].str, "STOREDIST", 9) == 0))) {
+                if (argv[j + 1].type != RESP_BULK_STRING) return 0;
+                for (p = 0; p < u->pattern_count; p++)
+                    if (acl_match_pattern(u->patterns[p], strlen(u->patterns[p]), argv[j + 1].str, argv[j + 1].len)) return 1;
+                return 0;
+            }
+        }
+        return 1;
+    }
     /* Extract key positions for the common key-bearing command families.
      * Values/options are never treated as keys, avoiding false denials. */
     switch (cmd_id) {

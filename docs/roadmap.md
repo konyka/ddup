@@ -687,3 +687,5 @@
     MONITOR` 等参数保持 keyless，避免控制参数被误当作 key（Phase 186）
   - [x] ACL 脚本/函数 key 位点：`EVAL/EVALSHA/FCALL` 族仅校验
     `numkeys` 声明的 key，脚本/函数名与参数不参与 key pattern（Phase 187）
+  - [x] ACL 阻塞/选项型 key 位点：`BLPOP/BZMPOP/BLMPOP`、`BITOP` 与
+    `GEORADIUS ... STORE` 校验全部真实 key，忽略 timeout/option 参数（Phase 188）

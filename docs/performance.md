@@ -1485,6 +1485,13 @@ allocation-free authorization path.
 scan only the declared key slice. Zero-key scripts return after command-bitset
 authorization; no script/function name or argument value is glob-matched.
 
+### Phase 188: ACL blocking and option key positions
+
+Blocking pop commands scan only their declared key list and exclude timeout or
+count options. `BITOP` checks destination plus every source, and legacy
+`GEORADIUS` variants check optional `STORE/STOREDIST` destinations. All paths use
+bounded loops with no temporary allocation.
+
 Category names are normalized with a bounded ASCII comparison while parsing
 `SETUSER`; no temporary lowercase buffer or heap allocation is introduced.
 The authorization hot path remains the same pre-expanded bitset lookup.
