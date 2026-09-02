@@ -84,6 +84,25 @@ static int mt_parse_ll(const char *s, size_t len, long long *out)
     return 1;
 }
 
+static int mt_slowlog_get_count(const resp_value *argv, size_t argc,
+                                long long *count)
+{
+    if (argc == 2) {
+        *count = 10;
+        return 1;
+    }
+    if (argc != 3 || argv[2].str == NULL ||
+        !mt_parse_ll(argv[2].str, argv[2].len, count) || *count < 0)
+        return 0;
+    return 1;
+}
+
+static int mt_slowlog_get_valid(const resp_value *argv, size_t argc)
+{
+    long long count;
+    return mt_slowlog_get_count(argv, argc, &count);
+}
+
 /* ------------------------------------------------------------------ */
 /* routed tasks                                                        */
 /* ------------------------------------------------------------------ */
@@ -91,6 +110,12 @@ static int mt_parse_ll(const char *s, size_t len, long long *out)
 typedef struct worker worker;
 
 typedef struct mt_agg mt_agg;
+
+typedef struct mt_slowlog_item {
+    uint64_t id;
+    char *raw;
+    size_t rawlen;
+} mt_slowlog_item;
 
 /* One raw RESP command byte copy (routed tasks re-parse on the target
  * worker instead of deep-copying every argv element). */
@@ -312,6 +337,11 @@ struct mt_agg {
     resp_buf client_body; /* concatenated CLIENT LIST payloads */
     int client_kill;
     int slowlog_len;
+    int slowlog_get;
+    long long slowlog_count;
+    mt_slowlog_item *slowlog_items;
+    size_t slowlog_items_n;
+    size_t slowlog_items_cap;
     int fanout_done;
     int abandoned;
     int finished;
@@ -525,6 +555,7 @@ static int mt_route_txn(worker *, void *, mt_conn_state *,
 static void mt_replay_deferred(worker *, void *, mt_conn_state *);
 static void mt_exec_task(worker *, mt_task *);
 static void mt_drain_completions(worker *w);
+static int mt_slowlog_collect_part(mt_agg *agg, const resp_buf *part);
 static void mt_cluster_sync(worker *leader);
 static void mt_route_replicaof(worker *home, const resp_value *argv,
                                size_t argc, resp_buf *out);
@@ -681,6 +712,12 @@ static void mt_agg_free(mt_agg *agg)
     free(agg->pubsub_channels);
     free(agg->pubsub_channel_lens);
     resp_buf_free(&agg->client_body);
+    if (agg->slowlog_items != NULL) {
+        size_t i;
+        for (i = 0; i < agg->slowlog_items_n; i++)
+            free(agg->slowlog_items[i].raw);
+    }
+    free(agg->slowlog_items);
     resp_buf_free(&agg->keys_body);
     free(agg->stats);
     free(agg);
@@ -1550,6 +1587,8 @@ static void mt_agg_accumulate(mt_agg *agg, const resp_buf *part)
             agg->err = 1;
         else if (agg->cmd == CMD_INFO && agg->stats != NULL)
             mt_agg_info_accumulate(agg, part->data, part->len);
+        else if (agg->cmd == CMD_SLOWLOG && agg->slowlog_get)
+            agg->err |= mt_slowlog_collect_part(agg, part) != 0;
         else if (agg->cmd == CMD_RANDOMKEY && part->data[0] == '$') {
             const char *eol = (const char *)memchr(part->data, '\n',
                                                    part->len);
@@ -1711,6 +1750,42 @@ static void mt_agg_finish(server *srv, void *conn, mt_conn_state *st,
                  (agg->cmd == CMD_CLIENT && agg->client_kill) ||
                  (agg->cmd == CMD_SLOWLOG && agg->slowlog_len))
             resp_write_integer(&fin->reply, agg->sum);
+        else if (agg->cmd == CMD_SLOWLOG && agg->slowlog_get) {
+            size_t i, j, take;
+            resp_buf merged;
+            int merge_failed = 0;
+            for (i = 1; i < agg->slowlog_items_n; i++) {
+                mt_slowlog_item v = agg->slowlog_items[i];
+                j = i;
+                while (j > 0 && agg->slowlog_items[j - 1].id < v.id) {
+                    agg->slowlog_items[j] = agg->slowlog_items[j - 1];
+                    j--;
+                }
+                agg->slowlog_items[j] = v;
+            }
+            take = agg->slowlog_items_n;
+            if (agg->slowlog_count >= 0 && (size_t)agg->slowlog_count < take)
+                take = (size_t)agg->slowlog_count;
+            resp_buf_init(&merged);
+            resp_write_array_header(&merged, take);
+            for (i = 0; i < take; i++) {
+                if (resp_buf_reserve(&merged,
+                                     agg->slowlog_items[i].rawlen) != 0) {
+                    merge_failed = 1;
+                    break;
+                }
+                memcpy(merged.data + merged.len,
+                       agg->slowlog_items[i].raw,
+                       agg->slowlog_items[i].rawlen);
+                merged.len += agg->slowlog_items[i].rawlen;
+            }
+            if (merge_failed) {
+                resp_buf_free(&merged);
+                resp_write_error(&fin->reply, "ERR out of memory", 17);
+            } else {
+                fin->reply = merged;
+            }
+        }
         else if (agg->cmd == CMD_RANDOMKEY)
             resp_write_bulk(&fin->reply, agg->random_key,
                             agg->random_key_len);
@@ -2806,6 +2881,56 @@ static void mt_client_list_exec(worker *w, resp_buf *out)
     server_client_list(w->srv, out);
 }
 
+static void mt_slowlog_get_exec(worker *w, long long count, resp_buf *out)
+{
+    server_slowlog_get(w->srv, count, out);
+}
+
+static int mt_slowlog_collect_part(mt_agg *agg, const resp_buf *part)
+{
+    resp_value outer;
+    arena ar;
+    size_t i;
+    ptrdiff_t used;
+    arena_init(&ar, 4096);
+    used = resp_parse(part->data, part->len, &outer, &ar);
+    if (used != (ptrdiff_t)part->len || outer.type != RESP_ARRAY) {
+        arena_destroy(&ar);
+        return -1;
+    }
+    for (i = 0; i < outer.count; i++) {
+        resp_value *entry = &outer.items[i];
+        resp_buf raw;
+        mt_slowlog_item *ni;
+        if (entry->type != RESP_ARRAY || entry->count == 0 ||
+            entry->items[0].type != RESP_INTEGER ||
+            entry->items[0].integer < 0)
+            continue;
+        resp_buf_init(&raw);
+        resp_write_value(&raw, entry);
+        if (agg->slowlog_items_n == agg->slowlog_items_cap) {
+            size_t cap = agg->slowlog_items_cap == 0 ? 16 :
+                         agg->slowlog_items_cap * 2;
+            ni = (mt_slowlog_item *)realloc(agg->slowlog_items,
+                                            cap * sizeof(*ni));
+            if (ni == NULL) {
+                resp_buf_free(&raw);
+                arena_destroy(&ar);
+                return -1;
+            }
+            agg->slowlog_items = ni;
+            agg->slowlog_items_cap = cap;
+        }
+        agg->slowlog_items[agg->slowlog_items_n].id =
+            (uint64_t)entry->items[0].integer;
+        agg->slowlog_items[agg->slowlog_items_n].raw = raw.data;
+        agg->slowlog_items[agg->slowlog_items_n].rawlen = raw.len;
+        agg->slowlog_items_n++;
+    }
+    arena_destroy(&ar);
+    return 0;
+}
+
 static void mt_client_kill_exec(worker *w, const resp_value *argv, size_t argc,
                                 resp_buf *out)
 {
@@ -2971,6 +3096,11 @@ static int mt_route_aggregate(worker *home, void *conn,
     if (cmd == CMD_SLOWLOG && argc >= 2 && argv[1].str != NULL &&
         mt_ci_equal(argv[1].str, argv[1].len, "LEN"))
         agg->slowlog_len = 1;
+    if (cmd == CMD_SLOWLOG && argc >= 2 && argv[1].str != NULL &&
+        mt_ci_equal(argv[1].str, argv[1].len, "GET")) {
+        agg->slowlog_get = 1;
+        (void)mt_slowlog_get_count(argv, argc, &agg->slowlog_count);
+    }
 
     /* home part */
     resp_buf_init(&local);
@@ -3025,6 +3155,8 @@ static int mt_route_aggregate(worker *home, void *conn,
         mt_slowlog_reset_exec(home, &local);
     } else if (cmd == CMD_SLOWLOG && agg->slowlog_len) {
         resp_write_integer(&local, (long long)server_slowlog_len(home->srv));
+    } else if (cmd == CMD_SLOWLOG && agg->slowlog_get) {
+        mt_slowlog_get_exec(home, agg->slowlog_count, &local);
     } else if (cmd == CMD_FLUSHDB) {
         db *d = server_db_at(home->srv, db_index);
         uint64_t dirty_before = d->dirty;
@@ -4180,7 +4312,9 @@ static int mt_route(void *ctx, void *conn, session *sess,
         (cmd == CMD_HOTKEYS && mt_hotkeys_broadcast(argv, argc)) ||
         (cmd == CMD_SLOWLOG && argc >= 2 && argv[1].str != NULL &&
          (mt_ci_equal(argv[1].str, argv[1].len, "RESET") ||
-          mt_ci_equal(argv[1].str, argv[1].len, "LEN")))) {
+          mt_ci_equal(argv[1].str, argv[1].len, "LEN") ||
+          (mt_ci_equal(argv[1].str, argv[1].len, "GET") &&
+           mt_slowlog_get_valid(argv, argc))))) {
         mt_batch_flush(home, conn, st);
         return mt_route_aggregate(home, conn, argv, argc, raw, rawlen, cmd,
                                   sess->db_index);
@@ -4999,6 +5133,20 @@ static void mt_exec_task(worker *w, mt_task *t)
                 mt_slowlog_reset_exec(w, &t->reply);
                 continue;
             }
+            if (v.count >= 2 && v.items[0].str != NULL &&
+                v.items[0].len == 7 &&
+                mt_ci_equal(v.items[0].str, v.items[0].len, "slowlog") &&
+                v.items[1].str != NULL && v.items[1].len == 3 &&
+                mt_ci_equal(v.items[1].str, v.items[1].len, "get")) {
+                long long count;
+                if (!mt_slowlog_get_count(v.items, v.count, &count))
+                    resp_write_error(&t->reply,
+                                     "ERR value is not an integer or out of range",
+                                     43);
+                else
+                    mt_slowlog_get_exec(w, count, &t->reply);
+                continue;
+            }
             if (v.count == 2 && v.items[0].str != NULL &&
                 v.items[0].len == 7 &&
                 mt_ci_equal(v.items[0].str, v.items[0].len, "slowlog") &&
@@ -5430,6 +5578,8 @@ mt_server *mt_server_create_ex(const char *host, uint16_t port, int nworkers,
          * globally unique while connections migrate between workers. */
         server_set_client_id_allocator(w->srv, (uint64_t)i + 1,
                                        (uint64_t)nworkers);
+        server_set_slowlog_id_allocator(w->srv, (uint64_t)i + 1,
+                                         (uint64_t)nworkers);
         for (j = 0; j < nworkers; j++) {
             /* deep rings: a transient producer/consumer lag must not hit
              * the backpressure path at bench burst sizes */

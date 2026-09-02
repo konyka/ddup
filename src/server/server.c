@@ -214,6 +214,7 @@ struct server {
     size_t slowlog_len;
     size_t slowlog_cap;
     uint64_t slowlog_next_id;
+    uint64_t slowlog_id_stride;
     int hotkeys_active;
     int hotkeys_initialized;
     uint64_t hotkeys_start_ms;
@@ -2682,7 +2683,9 @@ static void srv_slowlog_add(void *ctx, const resp_value *argv, size_t argc,
         }
     }
     e = &srv->slowlog[srv->slowlog_len++];
-    e->id = srv->slowlog_next_id++;
+    e->id = srv->slowlog_next_id;
+    srv->slowlog_next_id += srv->slowlog_id_stride == 0 ? 1 :
+                             srv->slowlog_id_stride;
     e->ts = now_ms / 1000;
     e->usec = usec;
     e->argv = copy;
@@ -2756,6 +2759,7 @@ server *server_create_ex(const char *host, uint16_t port, int backend)
     s->client_id_stride = 1;
     s->slowlog_threshold_us = 10000; /* 10 ms, Redis default */
     s->slowlog_max = 128;
+    s->slowlog_id_stride = 1;
     s->proto_max_request_bytes = (size_t)SERVER_DEFAULT_MAX_REQUEST;
     s->repl_max_snapshot_bytes = (size_t)SERVER_DEFAULT_MAX_REQUEST;
     s->backend = backend;
@@ -3132,6 +3136,15 @@ void server_slowlog_get(server *s, long long count, resp_buf *out)
 {
     if (s != NULL && out != NULL)
         srv_slowlog_get(s, count, out);
+}
+
+void server_set_slowlog_id_allocator(server *s, uint64_t first,
+                                     uint64_t stride)
+{
+    if (s == NULL)
+        return;
+    s->slowlog_next_id = first == 0 ? 1 : first;
+    s->slowlog_id_stride = stride == 0 ? 1 : stride;
 }
 
 int server_hotkeys_command(server *s, const resp_value *argv, size_t argc,

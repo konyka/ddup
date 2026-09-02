@@ -1431,5 +1431,13 @@ sessionless routed task 在目标 worker 的执行计时边界调用 server-owne
 slowlog hook，因此跨 worker 命令只记录一次，且不会把 `SLOWLOG RESET/LEN`
 等观测控制命令再次写入日志。`SLOWLOG LEN` 通过现有聚合 fan-out 汇总每个
 worker 的环长度；每个 worker 只读本地计数，home worker 按流水线顺序生成
-单个整数回复。`SLOWLOG GET` 的跨 worker 条目排序和全局 ID 合并仍需后续
-独立阶段实现。
+单个整数回复。
+
+## Phase 146：MT `SLOWLOG GET` 全局聚合
+
+多 worker 模式为 slowlog ID 分配不相交的等差 lane：worker `i` 使用
+`first = i + 1`、`stride = worker_count`，无需共享锁即可保证全局唯一。
+`SLOWLOG GET [count]` 广播到所有 worker；home worker 校验每个 RESP array，
+保存条目 payload，按 ID 降序合并并截断到请求数量。非法 count 使用严格 64 位
+解析并保持 Redis 错误语义；任一 worker 错误或最终缓冲区分配失败均返回统一错误，
+禁止部分数组。RESET 不重置 ID，因此条目 ID 在生命周期内持续单调递增。

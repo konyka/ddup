@@ -10,6 +10,7 @@
 #include <string.h>
 
 #include "core/cluster.h"
+#include "core/arena.h"
 #include "core/hashslot.h"
 #include "pal/pal_file.h"
 #include "pal/pal_socket.h"
@@ -17,6 +18,7 @@
 #include "pal/pal_time.h"
 #include "server/mt_server.h"
 #include "server/server.h"
+#include "resp/resp_parser.h"
 
 static ptrdiff_t fail_aof_write(pal_file *f, const void *buf, size_t n)
 {
@@ -145,6 +147,40 @@ static size_t request_full(pal_socket_t c, const char *req, char *buf,
             } else if (got >= 2 && memcmp(buf + got - 2, "\r\n", 2) == 0) {
                 break;
             }
+        } else {
+            pal_sleep_ms(1);
+        }
+    }
+    return got;
+}
+
+/* Unlike request_full, this accepts nested RESP arrays such as SLOWLOG GET. */
+static size_t request_frame(pal_socket_t c, const char *req, char *buf,
+                            size_t cap)
+{
+    size_t sent = 0, got = 0, rlen = strlen(req);
+    uint64_t deadline = pal_now_ms() + 5000;
+    while (sent < rlen && pal_now_ms() < deadline) {
+        ptrdiff_t n = pal_send(c, req + sent, rlen - sent);
+        if (n > 0)
+            sent += (size_t)n;
+        else
+            pal_sleep_ms(1);
+    }
+    DD_CHECK_EQ_INT((long long)rlen, (long long)sent);
+    while (got + 1 < cap && pal_now_ms() < deadline) {
+        ptrdiff_t n = pal_recv(c, buf + got, cap - 1 - got);
+        if (n > 0) {
+            resp_value v;
+            arena ar;
+            got += (size_t)n;
+            buf[got] = '\0';
+            arena_init(&ar, 1024);
+            if (resp_parse(buf, got, &v, &ar) == (ptrdiff_t)got) {
+                arena_destroy(&ar);
+                break;
+            }
+            arena_destroy(&ar);
         } else {
             pal_sleep_ms(1);
         }
@@ -1279,7 +1315,7 @@ static void test_slowlog_records_routed_commands(void)
 {
     mt_server *ms;
     pal_socket_t a;
-    char key[32], key0[32], req[192], reply[256];
+    char key[32], key0[32], req[192], reply[512];
     size_t n;
 
     DD_CHECK_EQ_INT(0, pal_socket_init());
@@ -1301,9 +1337,34 @@ static void test_slowlog_records_routed_commands(void)
     snprintf(req, sizeof(req), "*3\r\n$3\r\nSET\r\n$%zu\r\n%s\r\n$1\r\ny\r\n",
              strlen(key0), key0);
     roundtrip(a, req, "+OK\r\n");
+    snprintf(req, sizeof(req), "*3\r\n$3\r\nSET\r\n$%zu\r\n%s\r\n$1\r\nz\r\n",
+             strlen(key), key);
+    roundtrip(a, req, "+OK\r\n");
     n = request_full(a, "*2\r\n$7\r\nSLOWLOG\r\n$3\r\nLEN\r\n",
                      reply, sizeof(reply));
-    DD_CHECK(n >= 4 && memcmp(reply, ":1\r\n", 4) == 0);
+    DD_CHECK(n >= 4 && reply[0] == ':');
+    n = request_frame(a, "*3\r\n$7\r\nSLOWLOG\r\n$3\r\nGET\r\n$1\r\n1\r\n",
+                      reply, sizeof(reply));
+    {
+        resp_value outer;
+        arena ar;
+        ptrdiff_t used;
+        arena_init(&ar, 2048);
+        used = resp_parse(reply, n, &outer, &ar);
+        DD_CHECK_EQ_INT((long long)n, (long long)used);
+        DD_CHECK(outer.type == RESP_ARRAY && outer.count == 1);
+        if (outer.type == RESP_ARRAY && outer.count == 1) {
+            DD_CHECK(outer.items[0].type == RESP_ARRAY);
+        }
+        arena_destroy(&ar);
+    }
+    n = request_frame(a, "*3\r\n$7\r\nSLOWLOG\r\n$3\r\nGET\r\n$1\r\n0\r\n",
+                      reply, sizeof(reply));
+    DD_CHECK(n >= 4 && memcmp(reply, "*0\r\n", 4) == 0);
+    roundtrip(a, "*2\r\n$7\r\nSLOWLOG\r\n$5\r\nRESET\r\n", "+OK\r\n");
+    n = request_frame(a, "*2\r\n$7\r\nSLOWLOG\r\n$3\r\nGET\r\n",
+                      reply, sizeof(reply));
+    DD_CHECK(n >= 4 && memcmp(reply, "*0\r\n", 4) == 0);
     pal_close(a);
     mt_server_stop(ms);
     mt_server_destroy(ms);

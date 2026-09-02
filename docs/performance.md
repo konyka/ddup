@@ -1232,3 +1232,13 @@ Routed task timing adds one pair of `pal_now_us()` calls only when the target
 worker executes a sessionless command. `SLOWLOG LEN` reads a worker-local counter
 and aggregates integer replies without copying entries or allocating per-command
 storage; `RESET` and `LEN` are excluded from recursive slowlog recording.
+
+### Phase 146: aggregated SLOWLOG GET
+
+Each worker contributes at most its configured slowlog window; the home worker
+merges a bounded `workers * count` candidate set and truncates to `count`. Entries
+are copied once as raw RESP and sorted with insertion sort, which is efficient for
+the small default window and avoids comparator/index allocations. The final reply
+is assembled in a temporary buffer and published only after all reserves succeed,
+so allocation failure cannot emit a malformed partial array. Strict count parsing
+rejects invalid requests before fan-out.

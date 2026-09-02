@@ -601,3 +601,6 @@
   - [x] mt routed slowlog 记录与全局 LEN：sessionless routed task 在所属
     worker 记录一次命令耗时，`SLOWLOG LEN` 聚合所有 worker 的环长度；控制
     命令不重复写入，新增迁移后远端写入回归（Phase 145）
+  - [x] mt `SLOWLOG GET` 全局聚合：各 worker 使用不相交 slowlog ID lane，
+    home worker 合并 RESP 条目并按全局 ID 降序截断；非法 count 与聚合 OOM
+    均 fail-closed（Phase 146）

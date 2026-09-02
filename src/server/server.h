@@ -194,6 +194,8 @@ void server_slowlog_record(server *s, const resp_value *argv, size_t argc,
                            uint64_t usec, uint64_t now_ms);
 size_t server_slowlog_len(server *s);
 void server_slowlog_get(server *s, long long count, resp_buf *out);
+void server_set_slowlog_id_allocator(server *s, uint64_t first,
+                                     uint64_t stride);
 /* Execute a server-owned HOTKEYS control command. */
 int server_hotkeys_command(server *s, const resp_value *argv, size_t argc,
                            resp_buf *out);
