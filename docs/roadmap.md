@@ -589,3 +589,6 @@
   - [x] mt HOTKEYS 控制面一致性：`HOTKEYS START/STOP/RESET` 广播到全部 worker，
     保持 `GET` 的本地快速读取；修复采样控制状态仅存在 home worker 导致跨 worker
     统计漂移，新增真实 socket 回归（Phase 141）
+  - [x] mt SLOWLOG RESET 一致性：`SLOWLOG RESET` 广播到全部 worker 并清空各自
+    环形缓冲；`LEN/GET` 保持本地快速读取，新增跨 worker 写入后重置回归
+    （Phase 142）

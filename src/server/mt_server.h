@@ -59,6 +59,7 @@ int mt_server_enable_aof(mt_server *ms, const char *dir,
 /* Set the appendfsync policy on every worker (AOF_FSYNC_* from
  * server/aof.h; default everysec). */
 void mt_server_set_appendfsync(mt_server *ms, int mode);
+void mt_server_set_slowlog_threshold(mt_server *ms, uint64_t usec);
 int mt_server_enable_snapshots(mt_server *ms, const char *dir,
                                const char *dbfilename, int save_sec);
 /* Enable tiered storage on every worker using "<dir>/tier-<id>.log". */

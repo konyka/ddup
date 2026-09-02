@@ -3099,6 +3099,12 @@ void server_client_list(server *s, resp_buf *out)
         srv_client_list(s, out);
 }
 
+void server_slowlog_reset(server *s)
+{
+    if (s != NULL)
+        srv_slowlog_reset(s);
+}
+
 int server_hotkeys_command(server *s, const resp_value *argv, size_t argc,
                            resp_buf *out)
 {

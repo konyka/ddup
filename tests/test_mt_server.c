@@ -1164,6 +1164,35 @@ static void test_hotkeys_control_is_broadcast(void)
     pal_socket_cleanup();
 }
 
+static void test_slowlog_reset_is_broadcast(void)
+{
+    mt_server *ms;
+    pal_socket_t a;
+    char key[32], req[192], reply[512];
+    size_t n;
+
+    DD_CHECK_EQ_INT(0, pal_socket_init());
+    ms = mt_server_create("127.0.0.1", 0, 2);
+    DD_CHECK(ms != NULL);
+    if (ms == NULL)
+        return;
+    mt_server_set_slowlog_threshold(ms, 0);
+    DD_CHECK_EQ_INT(0, mt_server_start(ms));
+    a = connect_client(mt_server_port(ms));
+    pick_key_for_worker(1, 2, key, sizeof(key));
+    snprintf(req, sizeof(req), "*3\r\n$3\r\nSET\r\n$%zu\r\n%s\r\n$1\r\nx\r\n",
+             strlen(key), key);
+    roundtrip(a, req, "+OK\r\n");
+    roundtrip(a, "*2\r\n$7\r\nSLOWLOG\r\n$5\r\nRESET\r\n", "+OK\r\n");
+    n = request_full(a, "*2\r\n$7\r\nSLOWLOG\r\n$3\r\nLEN\r\n",
+                     reply, sizeof(reply));
+    DD_CHECK(n >= 4 && memcmp(reply, ":0\r\n", 4) == 0);
+    pal_close(a);
+    mt_server_stop(ms);
+    mt_server_destroy(ms);
+    pal_socket_cleanup();
+}
+
 static void pick_key_for_slot(int wanted, char *out, size_t cap)
 {
     int i;
@@ -3426,6 +3455,7 @@ int main(void)
     DD_RUN(test_bgrewriteaof_is_broadcast_to_workers);
     DD_RUN(test_client_list_covers_all_workers);
     DD_RUN(test_hotkeys_control_is_broadcast);
+    DD_RUN(test_slowlog_reset_is_broadcast);
     DD_RUN(test_cluster_state_propagates_to_workers);
     DD_RUN(test_mt_replica_partitions_full_sync);
     DD_RUN(test_mt_master_serves_replica_full_sync);

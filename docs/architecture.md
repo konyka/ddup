@@ -1159,6 +1159,9 @@ DBSIZE 为 O(1)，可能计入尚未回收的过期 key。
 - **MT HOTKEYS 控制面一致性**：`HOTKEYS START/STOP/RESET` 通过聚合 fan-out
   同步所有 worker 的采样生命周期、过滤器和有界表；`HOTKEYS GET` 仍保持本地
   快速路径，避免读操作引入广播延迟。任一控制任务失败时聚合器统一返回错误。
+- **MT SLOWLOG RESET 一致性**：`SLOWLOG RESET` 通过聚合 fan-out 调用每个
+  worker 的 server-owned reset hook，确保所有环形缓冲同时清空；`SLOWLOG LEN/GET`
+  仍保留本地读取路径，避免管理读请求复制跨 worker 日志数据。
 
 ## 架构对比：分片存储 + 消息路由（ddup mt）vs 共享存储（Garnet/Tsavorite）
 

@@ -73,6 +73,7 @@
 | 2026-09-02 | Phase 139 BGREWRITEAOF consistency | aggregate fan-out | Linux, Release | 复用 server-owned AOF flush hook；仅管理命令增加每个远端 worker 一个任务 | 消除多 worker AOF 控制面状态漂移，错误统一收敛 |
 | 2026-09-02 | Phase 140 CLIENT LIST global view | aggregate fan-out + bulk payload merge | Linux, Release | 仅 CLIENT LIST 创建远端任务并线性拼接 bulk 负载；连接热路径无额外分配 | 返回所有 worker 的本地连接，避免 home-worker 视图遗漏 |
 | 2026-09-02 | Phase 141 HOTKEYS control consistency | aggregate fan-out | Linux, Release | 仅 START/STOP/RESET 创建远端控制任务；GET 仍为本地读取 | 统一采样生命周期，避免 worker 间监控状态漂移 |
+| 2026-09-02 | Phase 142 SLOWLOG RESET consistency | aggregate fan-out | Linux, Release | 仅 RESET 创建远端控制任务；LEN/GET 无跨 worker 复制 | 确保所有 worker 的慢日志环同时清空 |
 
 Phase 12 说明：PSYNC 的收益不在 loopback 小数据集（绝对值几十毫秒），
 而在大数据集 + 高写入场景——全量重同步成本 = 快照序列化 + 全量传输 +

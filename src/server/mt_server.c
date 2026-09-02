@@ -2807,6 +2807,12 @@ static void mt_hotkeys_exec(worker *w, const resp_value *argv, size_t argc,
     (void)server_hotkeys_command(w->srv, argv, argc, out);
 }
 
+static void mt_slowlog_reset_exec(worker *w, resp_buf *out)
+{
+    server_slowlog_reset(w->srv);
+    resp_write_simple_string(out, "OK", 2);
+}
+
 /* Execute CONFIG against every logical db on one worker and expose the
  * server-owned appendfsync hook, matching a normal client session. */
 static void mt_config_exec(worker *w, const resp_value *argv, size_t argc,
@@ -2979,6 +2985,9 @@ static int mt_route_aggregate(worker *home, void *conn,
         mt_client_list_exec(home, &local);
     } else if (cmd == CMD_HOTKEYS) {
         mt_hotkeys_exec(home, argv, argc, &local);
+    } else if (cmd == CMD_SLOWLOG && argc >= 2 && argv[1].str != NULL &&
+               mt_ci_equal(argv[1].str, argv[1].len, "RESET")) {
+        mt_slowlog_reset_exec(home, &local);
     } else if (cmd == CMD_FLUSHDB) {
         db *d = server_db_at(home->srv, db_index);
         uint64_t dirty_before = d->dirty;
@@ -4130,7 +4139,9 @@ static int mt_route(void *ctx, void *conn, session *sess,
         cmd == CMD_PUBSUB ||
         (cmd == CMD_CLIENT && argc >= 2 && argv[1].str != NULL &&
          mt_ci_equal(argv[1].str, argv[1].len, "LIST")) ||
-        (cmd == CMD_HOTKEYS && mt_hotkeys_broadcast(argv, argc))) {
+        (cmd == CMD_HOTKEYS && mt_hotkeys_broadcast(argv, argc)) ||
+        (cmd == CMD_SLOWLOG && argc >= 2 && argv[1].str != NULL &&
+         mt_ci_equal(argv[1].str, argv[1].len, "RESET"))) {
         mt_batch_flush(home, conn, st);
         return mt_route_aggregate(home, conn, argv, argc, raw, rawlen, cmd,
                                   sess->db_index);
@@ -4933,6 +4944,14 @@ static void mt_exec_task(worker *w, mt_task *t)
                 mt_config_exec(w, v.items, v.count, &t->reply);
                 continue;
             }
+            if (v.count == 2 && v.items[0].str != NULL &&
+                v.items[0].len == 7 &&
+                mt_ci_equal(v.items[0].str, v.items[0].len, "slowlog") &&
+                v.items[1].str != NULL && v.items[1].len == 5 &&
+                mt_ci_equal(v.items[1].str, v.items[1].len, "reset")) {
+                mt_slowlog_reset_exec(w, &t->reply);
+                continue;
+            }
         dirty_before = d->dirty;
         command_execute_at(d, v.items, v.count, &t->reply,
                            pal_wall_ms());
@@ -5512,6 +5531,15 @@ void mt_server_set_appendfsync(mt_server *ms, int mode)
     int i;
     for (i = 0; i < ms->nworkers; i++)
         server_set_appendfsync(ms->workers[i].srv, mode);
+}
+
+void mt_server_set_slowlog_threshold(mt_server *ms, uint64_t usec)
+{
+    int i;
+    if (ms == NULL)
+        return;
+    for (i = 0; i < ms->nworkers; i++)
+        server_set_slowlog_threshold(ms->workers[i].srv, usec);
 }
 
 int mt_server_enable_snapshots(mt_server *ms, const char *dir,
