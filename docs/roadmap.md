@@ -663,3 +663,5 @@
     仅非法非整数输入报错（Phase 174）
   - [x] ACL nopass 认证语义：`nopass` 使用固定标志接受任意密码，`resetpass`
     恢复密码校验，避免空密码与任意密码语义混淆（Phase 175）
+  - [x] ACL nocommands 完整清理：同时清空 allow/deny bitset，防止旧 deny 规则
+    在别名重置后残留并污染后续授权（Phase 176）

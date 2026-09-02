@@ -117,6 +117,8 @@ python3 tools/audit_redis_compat.py \
   `nopass` uses an explicit flag to accept any password, while `resetpass`
   restores password verification, matching Redis ACL semantics without conflating
   an empty password with unrestricted authentication.
+  `nocommands` clears both allow and deny command bitsets, preventing stale deny
+  rules from surviving an alias reset and matching Redis policy semantics.
   `allchannels` and `resetchannels` aliases are accepted and map to the same
 bounded channel state as `&*` and an empty rule set.
   `PUBLISH`/`SPUBLISH` channel checks stop before the message argument, while

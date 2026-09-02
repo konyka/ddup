@@ -1389,6 +1389,12 @@ query returns an empty RESP array without an error allocation or ring traversal.
 comparison for that user. `resetpass` clears the flag and restores normal
 constant-time comparison; no heap work is added to ordinary authorization.
 
+### Phase 176: complete nocommands reset
+
+`nocommands` clears both fixed allow and deny bitsets in the temporary user
+copy. The operation remains O(1) over the bounded bitset and preserves atomic
+rule replacement without affecting the hot authorization branch.
+
 ### Phase 154: ACL generation invalidation
 
 Each fixed ACL user slot carries a monotonic generation. Sessions cache the

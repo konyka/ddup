@@ -132,7 +132,7 @@ int acl_setuser(acl_registry *r, const char *name, size_t nlen,
         else if (eq_ci(p, n, "allkeys")) { memcpy(temp.patterns[0], "*", 2); temp.pattern_count = 1; }
         else if (eq_ci(p, n, "resetkeys")) { temp.pattern_count = 0; }
         else if (eq_ci(p, n, "allcommands")) { temp.all_commands = 1; }
-        else if (eq_ci(p, n, "nocommands")) { temp.all_commands = 0; memset(temp.allow, 0, sizeof(temp.allow)); }
+        else if (eq_ci(p, n, "nocommands")) { temp.all_commands = 0; memset(temp.allow, 0, sizeof(temp.allow)); memset(temp.deny, 0, sizeof(temp.deny)); }
         else if (eq_ci(p, n, "nopass")) { temp.password[0] = '\0'; temp.no_password = 1; }
         else if (eq_ci(p, n, "resetpass")) { temp.password[0] = '\0'; temp.no_password = 0; }
         else if (n > 1 && p[0] == '>') {

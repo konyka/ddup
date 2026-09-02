@@ -523,6 +523,22 @@ static void test_acl_nopass_accepts_any_password(void)
     DD_CHECK(acl_authenticate(&r, "open", 4, "another", 7) != NULL);
 }
 
+static void test_acl_nocommands_clears_old_allow_and_deny(void)
+{
+    acl_registry r;
+    resp_value initial[4] = {rv("on"), rv("+get"), rv("-set"), rv(">pw")};
+    resp_value reset[2] = {rv("nocommands"), rv("resetpass")};
+    resp_value getv[2] = {rv("GET"), rv("k")};
+    acl_user *u;
+    acl_init(&r, NULL);
+    DD_CHECK(acl_setuser(&r, "u", 1, initial, 4) == 0);
+    DD_CHECK(acl_setuser(&r, "u", 1, reset, 2) == 0);
+    u = acl_find(&r, "u", 1);
+    DD_CHECK(u != NULL && u->password[0] == '\0');
+    DD_CHECK(acl_authorize(u, CMD_GET, getv, 2) == 0);
+    DD_CHECK(u->deny[CMD_SET / 64] == 0);
+}
+
 static void test_acl_rule_line_capacity_covers_channel_patterns(void)
 {
     acl_registry r;
@@ -652,6 +668,7 @@ int main(void)
     DD_RUN(test_acl_setuser_common_aliases);
     DD_RUN(test_acl_reset_clears_password_and_disables_user);
     DD_RUN(test_acl_nopass_accepts_any_password);
+    DD_RUN(test_acl_nocommands_clears_old_allow_and_deny);
     DD_RUN(test_acl_rule_line_capacity_covers_channel_patterns);
     DD_RUN(test_acl_log_coalesces_identical_events);
     DD_RUN(test_acl_getuser_flags_do_not_mislabel_commands);
