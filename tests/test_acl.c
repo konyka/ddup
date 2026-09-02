@@ -954,6 +954,40 @@ static void test_acl_range_store_and_msetex_key_positions(void)
     DD_CHECK(acl_authorize(u, CMD_MSETEX, msetex, 7) == 0);
 }
 
+static void test_acl_stream_mutations_use_stream_key(void)
+{
+    acl_registry r;
+    resp_value rules[3] = {rv("on"), rv("~allowed:*") , rv("+@all")};
+    resp_value xadd[5] = {rv("XADD"), rv("secret:stream"), rv("*"), rv("field"), rv("value")};
+    resp_value xack[5] = {rv("XACK"), rv("secret:stream"), rv("group"), rv("0-1"), rv("0-2")};
+    resp_value xsetid[4] = {rv("XSETID"), rv("secret:stream"), rv("0-0"), rv("ENTRIES_ADDED")};
+    resp_value xadd_ok[5] = {rv("XADD"), rv("allowed:stream"), rv("*"), rv("field"), rv("value")};
+    acl_user *u;
+    acl_init(&r, NULL);
+    DD_CHECK(acl_setuser(&r, "u", 1, rules, 3) == 0);
+    u = acl_find(&r, "u", 1);
+    DD_CHECK(u != NULL);
+    DD_CHECK(acl_authorize(u, CMD_XADD, xadd, 5) == 0);
+    DD_CHECK(acl_authorize(u, CMD_XACK, xack, 5) == 0);
+    DD_CHECK(acl_authorize(u, CMD_XSETID, xsetid, 4) == 0);
+    DD_CHECK(acl_authorize(u, CMD_XADD, xadd_ok, 5) == 1);
+}
+
+static void test_acl_stream_reads_reject_odd_key_id_tail(void)
+{
+    acl_registry r;
+    resp_value rules[3] = {rv("on"), rv("~allowed:*") , rv("+@all")};
+    resp_value malformed[7] = {rv("XREAD"), rv("STREAMS"), rv("allowed:a"), rv("allowed:b"), rv("0-0"), rv("0-0"), rv("extra")};
+    resp_value malformed_group[8] = {rv("XREADGROUP"), rv("GROUP"), rv("g"), rv("c"), rv("STREAMS"), rv("allowed:a"), rv("allowed:b"), rv("0-0")};
+    acl_user *u;
+    acl_init(&r, NULL);
+    DD_CHECK(acl_setuser(&r, "u", 1, rules, 3) == 0);
+    u = acl_find(&r, "u", 1);
+    DD_CHECK(u != NULL);
+    DD_CHECK(acl_authorize(u, CMD_XREAD, malformed, 7) == 0);
+    DD_CHECK(acl_authorize(u, CMD_XREADGROUP, malformed_group, 8) == 0);
+}
+
 static void test_acl_cluster_subcommands_are_keyless(void)
 {
     acl_registry r;
@@ -1126,6 +1160,8 @@ int main(void)
     DD_RUN(test_acl_persistence_and_copy_key_positions);
     DD_RUN(test_acl_pubsub_introspection_checks_channels);
     DD_RUN(test_acl_range_store_and_msetex_key_positions);
+    DD_RUN(test_acl_stream_mutations_use_stream_key);
+    DD_RUN(test_acl_stream_reads_reject_odd_key_id_tail);
     DD_RUN(test_acl_cluster_subcommands_are_keyless);
     DD_RUN(test_acl_rule_line_capacity_covers_channel_patterns);
     DD_RUN(test_acl_log_coalesces_identical_events);

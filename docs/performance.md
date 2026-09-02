@@ -1521,7 +1521,13 @@ operations. Subcommand names, node addresses, slot numbers, and configuration
 
 Persistence and range-store commands use fixed argument positions for destination
 and source keys. `MSETEX` scans only its alternating key slots after checked
-`numkeys`; payloads, TTL values, and options never enter the glob matcher.
+  `numkeys`; payloads, TTL values, and options never enter the glob matcher.
+
+### Phase 194: ACL stream shape validation
+
+Stream reads now require an even key/ID tail after `STREAMS`; odd-length or
+truncated requests fail closed before pattern scans. The validation is a single
+bounded parity check with no allocation.
 
 Category names are normalized with a bounded ASCII comparison while parsing
 `SETUSER`; no temporary lowercase buffer or heap allocation is introduced.

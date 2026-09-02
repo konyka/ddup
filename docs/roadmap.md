@@ -699,3 +699,5 @@
     按控制面处理，不误当作数据 key（Phase 192）
   - [x] ACL 持久化/范围存储 key 位点：`RESTORE/DUMP/COPY/LCS/ZRANGESTORE`
     与 `MSETEX` 按协议位置校验真实 key（Phase 193）
+  - [x] ACL Stream 形状校验：`XREAD/XREADGROUP` 拒绝奇数长度的 key/ID 尾部，
+    防止截断 malformed 请求绕过授权（Phase 194）

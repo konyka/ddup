@@ -433,7 +433,7 @@ int acl_authorize(const acl_user *u, uint16_t cmd_id, const resp_value *argv,
         }
         if (streams == 0 || streams + 1 >= argc) return 0;
         key_count = (argc - streams - 1) / 2;
-        if (key_count == 0 || streams + 1 + key_count > argc) return 0;
+        if (key_count == 0 || ((argc - streams - 1) & 1u) != 0 || streams + 1 + key_count > argc) return 0;
         for (j = streams + 1; j < streams + 1 + key_count; j++) {
             if (argv[j].type != RESP_BULK_STRING) return 0;
             for (p = 0; p < u->pattern_count; p++)
