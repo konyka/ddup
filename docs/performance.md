@@ -1294,6 +1294,12 @@ pattern authorization check; it never executes or allocates command state.
 Generation is bounded to 4096 bits and converts directly into a stack buffer;
 normal command dispatch has no added work, locks, or allocations.
 
+### Phase 160: bounded ACL failure log
+
+ACL failures are recorded in a fixed 32-entry registry-local ring. Event writes
+copy into bounded inline fields and never allocate; `ACL LOG` serializes only on
+the cold management path, with count limiting before RESP emission.
+
 ### Phase 154: ACL generation invalidation
 
 Each fixed ACL user slot carries a monotonic generation. Sessions cache the

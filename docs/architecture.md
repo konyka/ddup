@@ -311,6 +311,8 @@
   `ACL GENPASS` 通过 PAL 调用平台安全随机源（Linux `getrandom`、其他 POSIX
   `/dev/urandom`、Windows BCrypt），按 bits 生成十六进制输出；失败和越界输入
   均 fail-closed。
+  ACL 认证/授权失败写入 ACL registry 的固定 32 项环形日志，字段有界且不依赖
+  堆分配；`ACL LOG [count|RESET]` 仅在管理冷路径读取或清空，避免日志洪泛。
 
 ## Stream 核心族（Phase 61）
 

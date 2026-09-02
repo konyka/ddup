@@ -631,3 +631,5 @@
     `NOPERM`，未知用户 fail-closed，且不产生数据副作用（Phase 158）
   - [x] ACL GENPASS 安全随机：按 Redis bits 语义生成有界十六进制密码，接入
     PAL 系统安全随机源，随机源失败或非法范围均 fail-closed（Phase 159）
+  - [x] ACL LOG 有界失败审计：记录认证和命令授权失败，支持最近事件查询与
+    RESET；固定容量环避免日志洪泛导致内存增长（Phase 160）

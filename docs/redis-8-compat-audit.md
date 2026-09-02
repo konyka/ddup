@@ -98,6 +98,9 @@ python3 tools/audit_redis_compat.py \
   `ACL GENPASS` follows Redis' default 256-bit and bounded bits semantics, emits
   hexadecimal output from the PAL secure RNG, and fails closed on unavailable
   entropy or invalid ranges.
+  `ACL LOG` now keeps a bounded 32-entry ring of authentication and command
+  authorization failures, supports count-limited reads and `RESET`, and avoids
+  unbounded memory growth from repeated failures.
 - Cluster slot maintenance: `SFLUSH` intersects requested ranges with local
   ownership and returns coalesced flushed ranges; `TRIMSLOTS RANGES` validates
   ownership before deleting keys from unserved slots. Both paths collect keys

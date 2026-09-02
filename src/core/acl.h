@@ -13,6 +13,15 @@
 #define ACL_MAX_NAME 64
 #define ACL_MAX_PASSWORD 128
 #define ACL_MAX_PATTERN 128
+#define ACL_LOG_MAX 32
+
+typedef struct acl_log_entry {
+    uint64_t count;
+    uint64_t age_ms;
+    char reason[12];
+    char username[ACL_MAX_NAME];
+    char object[ACL_MAX_NAME];
+} acl_log_entry;
 
 typedef struct acl_user {
     char name[ACL_MAX_NAME];
@@ -30,6 +39,9 @@ typedef struct acl_registry {
     acl_user users[ACL_MAX_USERS];
     uint8_t count;
     uint64_t generation_next;
+    acl_log_entry log[ACL_LOG_MAX];
+    uint8_t log_len;
+    uint8_t log_next;
 } acl_registry;
 
 void acl_init(acl_registry *r, const char *requirepass);
@@ -48,5 +60,11 @@ void acl_write_user(const acl_user *u, resp_buf *out);
 void acl_write_rule_line(const acl_user *u, resp_buf *out);
 int acl_match_pattern(const char *pat, size_t plen, const char *key,
                       size_t klen);
+void acl_log_event(acl_registry *r, const char *reason, const char *user,
+                   size_t ulen, const char *object, size_t olen,
+                   uint64_t now_ms);
+void acl_log_reset(acl_registry *r);
+void acl_log_write(const acl_registry *r, long long count, uint64_t now_ms,
+                   resp_buf *out);
 
 #endif

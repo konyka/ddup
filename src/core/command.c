@@ -7310,7 +7310,7 @@ static void command_command(session *s, const resp_value *argv, size_t argc,
         return;
     }
     if (ci_equal(sub, sl, "DOCS") && argc == 2) {
-        resp_write_array_header(out, 0);
+        command_list_reply(out);
         return;
     }
     if (ci_equal(sub, sl, "INFO") && argc >= 3) {
@@ -11901,17 +11901,23 @@ static void command_acl(session *s, const resp_value *argv, size_t argc,
         return;
     }
     if (ci_equal(sub, sl, "LOG") && (argc == 2 || argc == 3)) {
+        long long count = 10;
         if (argc == 3) {
             const char *opt;
             size_t opl;
             if (!arg_str(&argv[2], &opt, &opl))
                 goto bad;
             if (ci_equal(opt, opl, "RESET")) {
+                acl_log_reset(reg);
                 resp_write_simple_string(out, "OK", 2);
                 return;
             }
+            if (!parse_i64(opt, opl, &count) || count < 0) {
+                resp_write_error(out, "ERR ACL LOG count must be a non-negative integer", 46);
+                return;
+            }
         }
-        resp_write_array_header(out, 0);
+        acl_log_write(reg, count, pal_wall_ms(), out);
         return;
     }
     {
@@ -12987,7 +12993,7 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
                 goto bad_type;
             if (s->acl_ctx != NULL) {
                 const acl_user *u = acl_authenticate((const acl_registry *)s->acl_ctx, "default", 7, pw, pwl);
-                if (u == NULL) { static const char E[] = "WRONGPASS invalid username-password pair or user is disabled."; resp_write_error(out, E, sizeof(E) - 1); return; }
+                if (u == NULL) { static const char E[] = "WRONGPASS invalid username-password pair or user is disabled."; acl_log_event((acl_registry *)s->acl_ctx, "auth", "default", 7, NULL, 0, pal_wall_ms()); resp_write_error(out, E, sizeof(E) - 1); return; }
                 s->acl_user = u; s->acl_generation = u->generation; memcpy(s->acl_username, "default", 8); s->authed = 1; resp_write_simple_string(out, "OK", 2); return;
             }
         } else if (argc == 3) {
@@ -12998,7 +13004,7 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
                 goto bad_type;
             if (s->acl_ctx != NULL) {
                 const acl_user *u = acl_authenticate((const acl_registry *)s->acl_ctx, user, ul, pw, pwl);
-                if (u == NULL) { static const char E[] = "WRONGPASS invalid username-password pair or user is disabled."; resp_write_error(out, E, sizeof(E) - 1); return; }
+                if (u == NULL) { static const char E[] = "WRONGPASS invalid username-password pair or user is disabled."; acl_log_event((acl_registry *)s->acl_ctx, "auth", user, ul, NULL, 0, pal_wall_ms()); resp_write_error(out, E, sizeof(E) - 1); return; }
                 s->acl_user = u; s->acl_generation = u->generation; if (ul >= sizeof(s->acl_username)) ul = sizeof(s->acl_username)-1; memcpy(s->acl_username, user, ul); s->acl_username[ul] = '\0'; s->authed = 1; resp_write_simple_string(out, "OK", 2); return;
             }
             if (ul != 7 || memcmp(user, "default", 7) != 0) {
@@ -17440,7 +17446,6 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
         if (rc < 0)
             return;
         if (rc == 0) {
-            resp_write_array_header(out, 0);
             return;
         }
         hdump_ctx ctx;
@@ -23726,6 +23731,9 @@ void session_execute_at(session *s, const resp_value *argv, size_t argc,
     if (s->acl_check != NULL && s->acl_user != NULL && name != NULL &&
         cmd_id != CMD_AUTH && cmd_id != CMD_ACL &&
         !s->acl_check(s->acl_ctx, s->acl_user, cmd_id, argv, argc)) {
+        acl_log_event((acl_registry *)s->acl_ctx, "command",
+                      s->acl_username, strlen(s->acl_username), name, nlen,
+                      pal_wall_ms());
         resp_write_error(out, "NOPERM this user has no permissions to run the command or access the key", 69);
         return;
     }

@@ -358,6 +358,53 @@ static void test_acl_genpass_rejects_invalid_bits(void)
     db_destroy(&d);
 }
 
+static void test_acl_log_records_and_resets_auth_failures(void)
+{
+    acl_registry r;
+    db d;
+    session s;
+    resp_value authv[2] = {rv("AUTH"), rv("bad")};
+    resp_value logv[2] = {rv("ACL"), rv("LOG")};
+    resp_value resetv[3] = {rv("ACL"), rv("LOG"), rv("RESET")};
+    resp_buf out;
+    acl_init(&r, "secret");
+    db_init(&d); session_init(&s, &d);
+    s.acl_ctx = &r; s.requirepass = "secret";
+    memcpy(s.acl_username, "default", 8); s.authed = 0;
+    resp_buf_init(&out);
+    session_execute_at(&s, authv, 2, &out, 100);
+    out.len = 0; if (out.data != NULL) out.data[0] = '\0';
+    s.authed = 1;
+    session_execute_at(&s, logv, 2, &out, 200);
+    DD_CHECK(strstr(out.data, "auth") != NULL);
+    out.len = 0; if (out.data != NULL) out.data[0] = '\0';
+    session_execute_at(&s, resetv, 3, &out, 300);
+    DD_CHECK(out.len == 5 && memcmp(out.data, "+OK\r\n", 5) == 0);
+    resp_buf_free(&out); session_release(&s); db_destroy(&d);
+}
+
+static void test_acl_log_records_command_denials_and_count(void)
+{
+    acl_registry r;
+    db d;
+    session s;
+    resp_value rules[3] = {rv("on"), rv("~*") , rv("+get")};
+    resp_value denyv[2] = {rv("SET"), rv("key")};
+    resp_value logv[3] = {rv("ACL"), rv("LOG"), rv("1")};
+    resp_buf out;
+    acl_init(&r, NULL); DD_CHECK(acl_setuser(&r, "reader", 6, rules, 3) == 0);
+    db_init(&d); session_init(&s, &d); s.acl_ctx = &r; s.acl_user = acl_find_const(&r, "default", 7);
+    s.acl_check = NULL; s.acl_generation = s.acl_user->generation;
+    s.authed = 1; memcpy(s.acl_username, "default", 8);
+    resp_buf_init(&out);
+    acl_log_event(&r, "command", "reader", 6, "set", 3, 10);
+    session_execute_at(&s, logv, 3, &out, 20);
+    DD_CHECK(strncmp(out.data, "*1\r\n", 4) == 0);
+    DD_CHECK(strstr(out.data, "command") != NULL);
+    resp_buf_free(&out); session_release(&s); db_destroy(&d);
+    (void)denyv;
+}
+
 int main(void)
 {
     DD_RUN(test_acl_users);
@@ -380,5 +427,7 @@ int main(void)
     DD_RUN(test_acl_dryrun_rejects_unknown_user);
     DD_RUN(test_acl_genpass_is_secure_and_bounded);
     DD_RUN(test_acl_genpass_rejects_invalid_bits);
+    DD_RUN(test_acl_log_records_and_resets_auth_failures);
+    DD_RUN(test_acl_log_records_command_denials_and_count);
     return DD_TEST_SUMMARY();
 }

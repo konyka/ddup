@@ -184,6 +184,49 @@ int acl_match_pattern(const char *pat, size_t plen, const char *key, size_t klen
     return pi == plen;
 }
 
+void acl_log_event(acl_registry *r, const char *reason, const char *user,
+                   size_t ulen, const char *object, size_t olen,
+                   uint64_t now_ms)
+{
+    acl_log_entry *e;
+    size_t n;
+    if (r == NULL || reason == NULL) return;
+    e = &r->log[r->log_next];
+    memset(e, 0, sizeof(*e));
+    e->count = 1; e->age_ms = now_ms;
+    n = strlen(reason); if (n >= sizeof(e->reason)) n = sizeof(e->reason) - 1;
+    memcpy(e->reason, reason, n); e->reason[n] = '\0';
+    if (user != NULL) { if (ulen >= sizeof(e->username)) ulen = sizeof(e->username) - 1; memcpy(e->username, user, ulen); e->username[ulen] = '\0'; }
+    if (object != NULL) { if (olen >= sizeof(e->object)) olen = sizeof(e->object) - 1; memcpy(e->object, object, olen); e->object[olen] = '\0'; }
+    r->log_next = (uint8_t)((r->log_next + 1) % ACL_LOG_MAX);
+    if (r->log_len < ACL_LOG_MAX) r->log_len++;
+}
+
+void acl_log_reset(acl_registry *r)
+{
+    if (r == NULL) return;
+    r->log_len = 0; r->log_next = 0;
+}
+
+void acl_log_write(const acl_registry *r, long long count, uint64_t now_ms,
+                   resp_buf *out)
+{
+    size_t take, i, idx;
+    if (r == NULL) { resp_write_array_header(out, 0); return; }
+    if (count < 0) count = 0;
+    take = (size_t)count < r->log_len ? (size_t)count : r->log_len;
+    resp_write_array_header(out, take);
+    for (i = 0; i < take; i++) {
+        idx = (r->log_next + ACL_LOG_MAX - 1 - i) % ACL_LOG_MAX;
+        resp_write_map_header(out, 5);
+        resp_write_bulk(out, "count", 5); resp_write_integer(out, (long long)r->log[idx].count);
+        resp_write_bulk(out, "reason", 6); resp_write_bulk(out, r->log[idx].reason, strlen(r->log[idx].reason));
+        resp_write_bulk(out, "username", 8); resp_write_bulk(out, r->log[idx].username, strlen(r->log[idx].username));
+        resp_write_bulk(out, "object", 6); resp_write_bulk(out, r->log[idx].object, strlen(r->log[idx].object));
+        resp_write_bulk(out, "age-seconds", 11); resp_write_double(out, (double)(now_ms - r->log[idx].age_ms) / 1000.0);
+    }
+}
+
 int acl_authorize(const acl_user *u, uint16_t cmd_id, const resp_value *argv,
                   size_t argc)
 {
