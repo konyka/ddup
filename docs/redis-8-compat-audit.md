@@ -110,6 +110,8 @@ python3 tools/audit_redis_compat.py \
   normal Pub/Sub behavior when no custom ACL channel policy is configured.
   Channel patterns are exposed in `ACL LIST` and `ACL GETUSER` metadata so
   policy inspection remains lossless.
+  ACL failure logging safely handles absent user/object fields before event
+  coalescing, preventing malformed callers from causing a crash.
   `allchannels` and `resetchannels` aliases are accepted and map to the same
 bounded channel state as `&*` and an empty rule set.
   `PUBLISH`/`SPUBLISH` channel checks stop before the message argument, while

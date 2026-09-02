@@ -230,12 +230,14 @@ void acl_log_event(acl_registry *r, const char *reason, const char *user,
     acl_log_entry *e;
     size_t n;
     if (r == NULL || reason == NULL) return;
+    if (user == NULL) ulen = 0;
+    if (object == NULL) olen = 0;
     if (r->log_len > 0) {
         size_t last = (r->log_next + ACL_LOG_MAX - 1) % ACL_LOG_MAX;
         acl_log_entry *prev = &r->log[last];
         if (strcmp(prev->reason, reason) == 0 &&
             strlen(prev->username) == ulen &&
-            memcmp(prev->username, user, ulen) == 0 &&
+            (ulen == 0 || memcmp(prev->username, user, ulen) == 0) &&
             strlen(prev->object) == olen &&
             (olen == 0 || memcmp(prev->object, object, olen) == 0)) {
             if (prev->count != UINT64_MAX) prev->count++;

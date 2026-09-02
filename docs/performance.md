@@ -1372,6 +1372,12 @@ selection with no impact on authorization or data-plane latency.
 conversion uses a stack buffer on the management path and does not affect the
 allocation-free key authorization matcher.
 
+### Phase 173: safe ACL log null fields
+
+The ACL log API normalizes absent user/object fields before coalescing. This is
+a constant-time guard on the cold failure path and prevents null-pointer access
+without changing the fixed-ring layout.
+
 ### Phase 154: ACL generation invalidation
 
 Each fixed ACL user slot carries a monotonic generation. Sessions cache the

@@ -337,6 +337,8 @@
  rule 状态分离，避免管理端将策略错误解释为 `resetchannels`。
   `ACL GETUSER keys` 输出 `~pattern`，与 `channels` 的 `&pattern` 标记一致，
   确保策略审计能区分 key 和 channel 范围。
+  ACL 日志事件写入前将缺失 user/object 规范化为空字段，再执行聚合比较，确保
+  边界调用 fail-safe 且不改变固定容量模型。
 
 ## Stream 核心族（Phase 61）
 

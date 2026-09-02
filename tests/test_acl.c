@@ -579,6 +579,16 @@ static void test_acl_getuser_keys_keep_tilde_prefix(void)
     resp_buf_free(&out);
 }
 
+static void test_acl_log_null_fields_are_safe(void)
+{
+    acl_registry r;
+    acl_init(&r, NULL);
+    acl_log_event(&r, "auth", NULL, 8, NULL, 4, 1);
+    acl_log_event(&r, "auth", NULL, 8, NULL, 4, 2);
+    DD_CHECK(r.log_len == 1);
+    DD_CHECK(r.log[0].count == 2);
+}
+
 int main(void)
 {
     DD_RUN(test_acl_users);
@@ -614,5 +624,6 @@ int main(void)
     DD_RUN(test_acl_log_coalesces_identical_events);
     DD_RUN(test_acl_getuser_flags_do_not_mislabel_commands);
     DD_RUN(test_acl_getuser_keys_keep_tilde_prefix);
+    DD_RUN(test_acl_log_null_fields_are_safe);
     return DD_TEST_SUMMARY();
 }
