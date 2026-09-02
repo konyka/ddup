@@ -65,6 +65,7 @@
 | 2026-09-02 | Phase 131 SORT key metadata | COMMAND GETKEYS | Linux, Release | 仅管理面扫描可选 STORE 参数 | 保持客户端 key 元数据与实际路由一致 |
 | 2026-09-02 | Phase 132 management key metadata | COMMAND GETKEYS | Linux, Release | 仅管理面常量分支，无数据面开销 | 修正 MEMORY/OBJECT 子命令位置 |
 | 2026-09-02 | Phase 133 HIMPORT owner routing | session-local fast path | Linux, Release | 同 worker 无任务分配；仅远端请求增加一次 owner 判断 | 保留本地功能并阻止 fieldset 丢失 |
+| 2026-09-02 | Phase 134 script cache broadcast | control-plane fan-out | Linux, Release | 仅 SCRIPT/FUNCTION 管理命令创建聚合任务；EVALSHA/FCALL 数据热路径不变 | 消除跨 worker NOSCRIPT/未知函数 |
 
 Phase 12 说明：PSYNC 的收益不在 loopback 小数据集（绝对值几十毫秒），
 而在大数据集 + 高写入场景——全量重同步成本 = 快照序列化 + 全量传输 +

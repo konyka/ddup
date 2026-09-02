@@ -926,6 +926,49 @@ static void test_sort_store_cross_worker_fails_closed(void)
     pal_socket_cleanup();
 }
 
+static void test_script_cache_broadcast_reaches_key_owner(void)
+{
+    mt_server *ms;
+    pal_socket_t a;
+    char key[32], req[512], sha[64], reply[128];
+    size_t got;
+    static const char script[] =
+        "return redis.call('SET', KEYS[1], ARGV[1])";
+
+    DD_CHECK_EQ_INT(0, pal_socket_init());
+    pick_key_for_worker(1, 2, key, sizeof(key));
+    ms = mt_server_create("127.0.0.1", 0, 2);
+    DD_CHECK(ms != NULL);
+    if (ms == NULL)
+        return;
+    DD_CHECK_EQ_INT(0, mt_server_start(ms));
+    a = connect_client(mt_server_port(ms));
+
+    snprintf(req, sizeof(req), "*3\r\n$6\r\nSCRIPT\r\n$4\r\nLOAD\r\n$%zu\r\n%s\r\n",
+             strlen(script), script);
+    got = request_full(a, req, reply, sizeof(reply));
+    DD_CHECK(got == 47 && reply[0] == '$');
+    if (got >= 47) {
+        memcpy(sha, reply + 5, 40);
+        sha[40] = '\0';
+    } else {
+        sha[0] = '\0';
+    }
+
+    snprintf(req, sizeof(req),
+             "*5\r\n$7\r\nEVALSHA\r\n$40\r\n%s\r\n$1\r\n1\r\n$%zu\r\n%s\r\n$5\r\nvalue\r\n",
+             sha, strlen(key), key);
+    roundtrip(a, req, "$2\r\nOK\r\n");
+    snprintf(req, sizeof(req), "*2\r\n$3\r\nGET\r\n$%zu\r\n%s\r\n",
+             strlen(key), key);
+    roundtrip(a, req, "$5\r\nvalue\r\n");
+
+    pal_close(a);
+    mt_server_stop(ms);
+    mt_server_destroy(ms);
+    pal_socket_cleanup();
+}
+
 static void pick_key_for_slot(int wanted, char *out, size_t cap)
 {
     int i;
@@ -3181,6 +3224,7 @@ int main(void)
     DD_RUN(test_cluster_control_plane_mt);
     DD_RUN(test_himport_cross_worker_fails_closed);
     DD_RUN(test_sort_store_cross_worker_fails_closed);
+    DD_RUN(test_script_cache_broadcast_reaches_key_owner);
     DD_RUN(test_cluster_state_propagates_to_workers);
     DD_RUN(test_mt_replica_partitions_full_sync);
     DD_RUN(test_mt_master_serves_replica_full_sync);

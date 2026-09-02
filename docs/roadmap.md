@@ -564,3 +564,6 @@
   - [x] HIMPORT owner 精确路由：同 worker 的 `HIMPORT SET` 保留 session-local
     正常执行，仅对远端 owner fail-closed；事务路径同步拒绝无法携带 fieldset
     的跨 worker 请求（Phase 133）
+  - [x] mt 脚本缓存广播：`SCRIPT LOAD/FLUSH` 与 `FUNCTION LOAD/DELETE/FLUSH/
+    RESTORE` fan-out 到所有 worker，保证后续 `EVALSHA/FCALL` owner 路由可见；
+    新增真实 socket 回归验证目标 worker 执行已加载脚本（Phase 134）

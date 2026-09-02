@@ -1129,6 +1129,10 @@ DBSIZE 为 O(1)，可能计入尚未回收的过期 key。
   目标两个 key，防止客户端拓扑缓存遗漏写入目标。
 - `COMMAND GETKEYS/GETKEYSANDFLAGS` 对 `MEMORY USAGE <key>` 和
   `OBJECT <subcommand> <key>` 使用真实 key 位置，不会把子命令名当成数据 key。
+- **MT 脚本缓存一致性**：`SCRIPT LOAD/FLUSH` 与 `FUNCTION LOAD/DELETE/FLUSH/
+  RESTORE` 采用控制面 fan-out，在每个 worker 的 Lua/函数缓存上执行；home
+  worker 汇总第一个成功 RESP 回复。这样后续按数据 key owner 路由的
+  `EVALSHA/FCALL` 不会因缓存只存在于连接所在 worker 而返回 `NOSCRIPT`。
 
 ## 架构对比：分片存储 + 消息路由（ddup mt）vs 共享存储（Garnet/Tsavorite）
 

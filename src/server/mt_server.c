@@ -313,6 +313,8 @@ struct mt_agg {
     int abandoned;
     int finished;
     int pubsub_mode; /* 1 NUMPAT, 2 CHANNELS, 3 NUMSUB */
+    char *first_reply; /* first successful reply for generic broadcasts */
+    size_t first_reply_len;
     char *pubsub_pattern;
     size_t pubsub_pattern_len;
     char **pubsub_names;
@@ -658,6 +660,7 @@ static void mt_agg_free(mt_agg *agg)
     agg->finished = 1;
     free(agg->raw);
     free(agg->random_key);
+    free(agg->first_reply);
     free(agg->pubsub_pattern);
     if (agg->pubsub_names != NULL) {
         size_t i;
@@ -1528,6 +1531,16 @@ static int mt_pubsub_channel_add(mt_agg *agg, const char *ch, size_t len)
 
 static void mt_agg_accumulate(mt_agg *agg, const resp_buf *part)
 {
+    if (agg->first_reply == NULL && part->data != NULL && part->len > 0 &&
+        part->data[0] != '-') {
+        agg->first_reply = (char *)malloc(part->len);
+        if (agg->first_reply != NULL) {
+            memcpy(agg->first_reply, part->data, part->len);
+            agg->first_reply_len = part->len;
+        } else {
+            agg->err = 1;
+        }
+    }
     if (part->data != NULL && part->len > 0) {
         if (part->data[0] == '-')
             agg->err = 1;
@@ -1692,6 +1705,15 @@ static void mt_agg_finish(server *srv, void *conn, mt_conn_state *st,
                 resp_write_bulk(&fin->reply, agg->pubsub_names[i],
                                 agg->pubsub_name_lens[i]);
                 resp_write_integer(&fin->reply, agg->pubsub_counts[i]);
+            }
+        }
+        else if (agg->first_reply != NULL) {
+            if (resp_buf_reserve(&fin->reply, agg->first_reply_len) == 0) {
+                memcpy(fin->reply.data, agg->first_reply,
+                       agg->first_reply_len);
+                fin->reply.len = agg->first_reply_len;
+            } else {
+                resp_write_error(&fin->reply, "ERR out of memory", 17);
             }
         }
         else
@@ -2047,6 +2069,26 @@ static int mt_memory_target(int nworkers, const resp_value *argv,
         return (int)(hash_slot(argv[2].str, argv[2].len) %
                      (uint32_t)nworkers);
     return MT_LOCAL;
+}
+
+/* Script/function code is cached per worker. Broadcast management mutations
+ * so later key-owner execution sees the same cache on every shard. */
+static int mt_script_broadcast(uint16_t cmd, const resp_value *argv,
+                               size_t argc)
+{
+    const char *sub;
+    if (argc < 2 || argv[1].str == NULL)
+        return 0;
+    sub = argv[1].str;
+    if (cmd == CMD_SCRIPT)
+        return mt_ci_equal(sub, argv[1].len, "LOAD") ||
+               mt_ci_equal(sub, argv[1].len, "FLUSH");
+    if (cmd == CMD_FUNCTION)
+        return mt_ci_equal(sub, argv[1].len, "LOAD") ||
+               mt_ci_equal(sub, argv[1].len, "DELETE") ||
+               mt_ci_equal(sub, argv[1].len, "FLUSH") ||
+               mt_ci_equal(sub, argv[1].len, "RESTORE");
+    return 0;
 }
 
 /* SORT reads argv[1] and optionally writes a STORE destination. Both keys
@@ -3982,6 +4024,12 @@ static int mt_route(void *ctx, void *conn, session *sess,
             }
         }
         return 1;
+    }
+
+    if (mt_script_broadcast(cmd, argv, argc)) {
+        mt_batch_flush(home, conn, st);
+        return mt_route_aggregate(home, conn, argv, argc, raw, rawlen, cmd,
+                                  sess->db_index);
     }
 
     target = mt_classify(home->ms->nworkers, cmd, argv, argc);
