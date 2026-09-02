@@ -651,3 +651,5 @@
     保持 Redis `reset` 后可显式 `on` 恢复的原子行为（Phase 168）
   - [x] ACL 规则行容量收口：`ACL LIST` 栈 buffer 同时覆盖最大 key/channel
     pattern 集，保证完整 CRLF 行且不因新增频道规则截断（Phase 169）
+  - [x] ACL LOG 重复事件聚合：连续相同认证/授权失败递增固定环中 `count`，
+    减少攻击洪泛对审计保留窗口的挤占（Phase 170）

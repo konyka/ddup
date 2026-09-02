@@ -534,6 +534,20 @@ static void test_acl_rule_line_capacity_covers_channel_patterns(void)
     resp_buf_free(&out);
 }
 
+static void test_acl_log_coalesces_identical_events(void)
+{
+    acl_registry r;
+    resp_buf out;
+    acl_init(&r, NULL);
+    acl_log_event(&r, "auth", "alice", 5, "", 0, 100);
+    acl_log_event(&r, "auth", "alice", 5, "", 0, 200);
+    resp_buf_init(&out);
+    acl_log_write(&r, 10, 300, &out);
+    DD_CHECK(r.log_len == 1);
+    DD_CHECK(strstr(out.data, ":2\r\n") != NULL);
+    resp_buf_free(&out);
+}
+
 int main(void)
 {
     DD_RUN(test_acl_users);
@@ -566,5 +580,6 @@ int main(void)
     DD_RUN(test_acl_setuser_common_aliases);
     DD_RUN(test_acl_reset_clears_password_and_disables_user);
     DD_RUN(test_acl_rule_line_capacity_covers_channel_patterns);
+    DD_RUN(test_acl_log_coalesces_identical_events);
     return DD_TEST_SUMMARY();
 }

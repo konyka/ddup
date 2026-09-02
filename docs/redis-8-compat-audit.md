@@ -122,6 +122,8 @@ bounded channel state as `&*` and an empty rule set.
   it back on, matching Redis behavior.
   `ACL LIST` reserves bounded stack space for both key and channel patterns, so
   complete rule lines remain well-formed even at maximum configured cardinality.
+  Consecutive identical ACL failure events coalesce into a saturating `count` in
+  the fixed log ring, preserving distinct audit events during repeated attacks.
 - Cluster slot maintenance: `SFLUSH` intersects requested ranges with local
   ownership and returns coalesced flushed ranges; `TRIMSLOTS RANGES` validates
   ownership before deleting keys from unserved slots. Both paths collect keys

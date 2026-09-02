@@ -1354,6 +1354,12 @@ The cold `ACL LIST` formatter reserves stack capacity for both maximum key and
 channel pattern tables plus bounded credentials. This avoids heap allocation and
 prevents truncated RESP lines when a policy uses all inline slots.
 
+### Phase 170: ACL log event coalescing
+
+The fixed ACL log compares each new event only with the latest inline entry.
+Identical reason/user/object triples increment a saturating counter in place,
+avoiding allocation and retaining more distinct failures under repeated attacks.
+
 ### Phase 154: ACL generation invalidation
 
 Each fixed ACL user slot carries a monotonic generation. Sessions cache the
