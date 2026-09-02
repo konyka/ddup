@@ -306,6 +306,8 @@
   解析完成后仍只保留预展开的权限 bitset。
   `ACL CAT` 在管理冷路径上从静态命令表生成类别列表，先计数再写 RESP header；
   未知类别在访问命令元数据前直接拒绝，不影响数据面。
+  `ACL DRYRUN` 复用命令 ID、bitset 和 key pattern 检查，只模拟目标用户授权并
+  返回 `OK/NOPERM`；未知用户和未知命令均 fail-closed，不执行数据命令。
 
 ## Stream 核心族（Phase 61）
 

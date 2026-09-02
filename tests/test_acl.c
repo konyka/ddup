@@ -268,6 +268,56 @@ static void test_acl_cat_rejects_unknown_category(void)
     db_destroy(&d);
 }
 
+static void test_acl_dryrun_reports_effective_authorization(void)
+{
+    acl_registry r;
+    db d;
+    session s;
+    resp_value rules[3] = {rv("on"), rv("~*") , rv("+get")};
+    resp_value allowv[5] = {rv("ACL"), rv("DRYRUN"), rv("reader"),
+                            rv("GET"), rv("key")};
+    resp_value denyv[5] = {rv("ACL"), rv("DRYRUN"), rv("reader"),
+                           rv("SET"), rv("key")};
+    resp_buf out;
+    acl_init(&r, NULL);
+    DD_CHECK(acl_setuser(&r, "reader", 6, rules, 3) == 0);
+    db_init(&d);
+    session_init(&s, &d);
+    s.acl_ctx = &r;
+    memcpy(s.acl_username, "default", 8);
+    resp_buf_init(&out);
+    session_execute_at(&s, allowv, 5, &out, 0);
+    DD_CHECK(strcmp(out.data, "+OK\r\n") == 0);
+    out.len = 0;
+    if (out.data != NULL) out.data[0] = '\0';
+    session_execute_at(&s, denyv, 5, &out, 0);
+    DD_CHECK(strstr(out.data, "NOPERM") != NULL);
+    resp_buf_free(&out);
+    session_release(&s);
+    db_destroy(&d);
+}
+
+static void test_acl_dryrun_rejects_unknown_user(void)
+{
+    acl_registry r;
+    db d;
+    session s;
+    resp_value argv[5] = {rv("ACL"), rv("DRYRUN"), rv("ghost"),
+                          rv("GET"), rv("key")};
+    resp_buf out;
+    acl_init(&r, NULL);
+    db_init(&d);
+    session_init(&s, &d);
+    s.acl_ctx = &r;
+    memcpy(s.acl_username, "default", 8);
+    resp_buf_init(&out);
+    session_execute_at(&s, argv, 5, &out, 0);
+    DD_CHECK(strstr(out.data, "User 'ghost' not found") != NULL);
+    resp_buf_free(&out);
+    session_release(&s);
+    db_destroy(&d);
+}
+
 int main(void)
 {
     DD_RUN(test_acl_users);
@@ -286,5 +336,7 @@ int main(void)
     DD_RUN(test_acl_categories_are_case_insensitive);
     DD_RUN(test_acl_cat_filters_commands);
     DD_RUN(test_acl_cat_rejects_unknown_category);
+    DD_RUN(test_acl_dryrun_reports_effective_authorization);
+    DD_RUN(test_acl_dryrun_rejects_unknown_user);
     return DD_TEST_SUMMARY();
 }

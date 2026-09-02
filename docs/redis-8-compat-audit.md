@@ -92,6 +92,9 @@ python3 tools/audit_redis_compat.py \
   casing semantics without adding allocations.
   `ACL CAT` lists available categories and filters commands for a requested
   category; unknown categories fail closed before command metadata traversal.
+  `ACL DRYRUN` resolves the target user and command/key arguments through the
+  existing authorization path, returning `OK` or `NOPERM` without side effects;
+  unknown users and commands fail closed.
 - Cluster slot maintenance: `SFLUSH` intersects requested ranges with local
   ownership and returns coalesced flushed ranges; `TRIMSLOTS RANGES` validates
   ownership before deleting keys from unserved slots. Both paths collect keys

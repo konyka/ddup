@@ -627,3 +627,5 @@
     命令大小写语义一致，规则解析使用无分配 ASCII 比较（Phase 156）
   - [x] ACL CAT 类别查询：`ACL CAT` 列出类别名，`ACL CAT <category>` 返回
     对应命令集合并对未知类别 fail-closed（Phase 157）
+  - [x] ACL DRYRUN 权限模拟：按目标用户解析命令/key 并返回实际 `OK` 或
+    `NOPERM`，未知用户 fail-closed，且不产生数据副作用（Phase 158）

@@ -1282,6 +1282,12 @@ no per-command allocations are introduced into dispatch.
 command table without allocations, count before emitting the RESP array header,
 and reject unknown categories before touching command metadata.
 
+### Phase 158: ACL DRYRUN authorization simulation
+
+`ACL DRYRUN` is implemented as a side-effect-free management path. It performs
+one bounded user lookup, command-ID resolution, and the existing bitset/key
+pattern authorization check; it never executes or allocates command state.
+
 ### Phase 154: ACL generation invalidation
 
 Each fixed ACL user slot carries a monotonic generation. Sessions cache the

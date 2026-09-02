@@ -11837,6 +11837,26 @@ static void command_acl(session *s, const resp_value *argv, size_t argc,
         return;
     }
     if (ci_equal(sub, sl, "DRYRUN") && argc >= 3) {
+        const char *un;
+        size_t ul;
+        const acl_user *u;
+        uint16_t id;
+        if (argc < 5 || !arg_str(&argv[2], &un, &ul) ||
+            !arg_str(&argv[3], &sub, &sl))
+            goto bad;
+        u = reg == NULL ? NULL : acl_find_const(reg, un, ul);
+        if (u == NULL) {
+            char msg[128];
+            int n = snprintf(msg, sizeof(msg), "ERR User '%.*s' not found",
+                             (int)ul, un);
+            resp_write_error(out, msg, (size_t)n);
+            return;
+        }
+        id = cmd_resolve(sub, sl);
+        if (id == CMD_ID_UNKNOWN || !acl_authorize(u, id, argv + 3, argc - 3)) {
+            resp_write_error(out, "NOPERM this user has no permissions to run the command or access the key", 69);
+            return;
+        }
         resp_write_simple_string(out, "OK", 2);
         return;
     }
