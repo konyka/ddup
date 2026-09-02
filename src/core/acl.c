@@ -15,6 +15,8 @@ void acl_init(acl_registry *r, const char *requirepass)
     memcpy(r->users[0].name, "default", 8);
     r->users[0].enabled = 1;
     r->users[0].all_commands = 1;
+    memcpy(r->users[0].patterns[0], "*", 2);
+    r->users[0].pattern_count = 1;
     if (requirepass != NULL && requirepass[0] != '\0') {
         size_t n = strlen(requirepass);
         if (n >= ACL_MAX_PASSWORD) n = ACL_MAX_PASSWORD - 1;
@@ -152,7 +154,12 @@ int acl_authorize(const acl_user *u, uint16_t cmd_id, const resp_value *argv,
     if (u == NULL || !u->enabled || cmd_id >= CMD_STATS_SLOTS) return 0;
     if (!u->all_commands && !(u->allow[cmd_id / 64] & (UINT64_C(1) << (cmd_id % 64)))) return 0;
     if (u->deny[cmd_id / 64] & (UINT64_C(1) << (cmd_id % 64))) return 0;
-    if (u->pattern_count == 0 || argc < 2) return 1;
+    if (argc < 2) return 1;
+    if (cmd_id == CMD_SUBSCRIBE || cmd_id == CMD_UNSUBSCRIBE ||
+        cmd_id == CMD_PSUBSCRIBE || cmd_id == CMD_PUNSUBSCRIBE ||
+        cmd_id == CMD_SSUBSCRIBE || cmd_id == CMD_SUNSUBSCRIBE ||
+        cmd_id == CMD_PUBLISH || cmd_id == CMD_SPUBLISH)
+        return 1;
     /* Extract key positions for the common key-bearing command families.
      * Values/options are never treated as keys, avoiding false denials. */
     switch (cmd_id) {
@@ -160,7 +167,7 @@ int acl_authorize(const acl_user *u, uint16_t cmd_id, const resp_value *argv,
     case CMD_SETEX: case CMD_PSETEX: case CMD_GETSET: case CMD_APPEND:
     case CMD_INCR: case CMD_DECR: case CMD_INCRBY: case CMD_DECRBY:
     case CMD_INCRBYFLOAT: case CMD_STRLEN: case CMD_TYPE: case CMD_EXISTS:
-    case CMD_TOUCH: case CMD_RANDOMKEY: case CMD_EXPIRETIME: case CMD_PEXPIRETIME:
+    case CMD_TOUCH: case CMD_EXPIRETIME: case CMD_PEXPIRETIME:
         nkeys = 1; break;
     case CMD_MGET: case CMD_DEL: case CMD_UNLINK:
         nkeys = argc - 1; break;
@@ -171,6 +178,7 @@ int acl_authorize(const acl_user *u, uint16_t cmd_id, const resp_value *argv,
         break;
     }
     if (nkeys == 0) return 1;
+    if (u->pattern_count == 0) return 0;
     for (i = 0; i < nkeys && first + i * step < argc; i++) {
         size_t ai = first + i * step;
         if (argv[ai].type == RESP_BULK_STRING) {

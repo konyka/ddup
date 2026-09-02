@@ -285,6 +285,8 @@
   误判为 key。
   MT 路由在 home worker 入队前执行同一 ACL 检查；远端 sessionless task
   不信任客户端输入，从而不会绕过命令和 key 权限。
+  default 用户显式拥有 `~*`；自定义用户若未声明 key pattern，则对所有
+  带 key 的数据命令 fail-closed。
 
 ## Stream 核心族（Phase 61）
 

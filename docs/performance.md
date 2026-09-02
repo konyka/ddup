@@ -1263,3 +1263,5 @@ Key authorization extracts only command-declared key positions for common
 single- and multi-key commands, avoiding value/options scans on the hot path.
 MT performs this check once on the home worker before batching or forwarding;
 remote workers do not repeat the lookup or allocate an ACL context.
+An empty key-pattern set is a constant-time deny for key-bearing commands;
+the default user's unrestricted access is represented by one `*` pattern.

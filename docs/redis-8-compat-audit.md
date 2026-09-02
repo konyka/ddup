@@ -74,6 +74,8 @@ python3 tools/audit_redis_compat.py \
   pattern matching. `AUTH`, `WHOAMI`, `LIST`, `USERS`, `SETUSER`, `GETUSER`,
   and `DELUSER` operate on the live registry; ACL mutation is restricted to
   the default user.
+  The default user is initialized with `~*`; custom users without key rules
+  fail closed for key-bearing commands.
 - Cluster slot maintenance: `SFLUSH` intersects requested ranges with local
   ownership and returns coalesced flushed ranges; `TRIMSLOTS RANGES` validates
   ownership before deleting keys from unserved slots. Both paths collect keys

@@ -64,11 +64,27 @@ static void test_acl_key_scope_and_all_rules(void)
     DD_CHECK(acl_authorize(u, CMD_GET, badkey, 2) == 0);
 }
 
+static void test_acl_user_without_key_pattern_is_closed(void)
+{
+    acl_registry r;
+    resp_value rules[2] = {rv("on"), rv("+get")};
+    resp_value getv[2] = {rv("GET"), rv("cache:key")};
+    const acl_user *u;
+    acl_init(&r, NULL);
+    DD_CHECK(acl_setuser(&r, "nobody", 6, rules, 2) == 0);
+    u = acl_find_const(&r, "nobody", 6);
+    DD_CHECK(u != NULL);
+    DD_CHECK(acl_authorize(u, CMD_GET, getv, 2) == 0);
+    DD_CHECK(acl_authorize(acl_find_const(&r, "default", 7), CMD_GET,
+                           getv, 2) == 1);
+}
+
 int main(void)
 {
     DD_RUN(test_acl_users);
     DD_RUN(test_acl_default_password);
     DD_RUN(test_acl_atomic);
     DD_RUN(test_acl_key_scope_and_all_rules);
+    DD_RUN(test_acl_user_without_key_pattern_is_closed);
     return DD_TEST_SUMMARY();
 }
