@@ -129,7 +129,11 @@ int acl_setuser(acl_registry *r, const char *name, size_t nlen,
         if (eq_ci(p, n, "on")) temp.enabled = 1;
         else if (eq_ci(p, n, "off")) temp.enabled = 0;
         else if (eq_ci(p, n, "reset")) clear_rules(&temp);
-        else if (eq_ci(p, n, "allkeys")) { memcpy(temp.patterns[0], "*", 2); temp.pattern_count = 1; }
+        else if (eq_ci(p, n, "allkeys")) {
+            temp.pattern_count = 0;
+            memcpy(temp.patterns[0], "*", 2);
+            temp.pattern_count = 1;
+        }
         else if (eq_ci(p, n, "resetkeys")) { temp.pattern_count = 0; }
         else if (eq_ci(p, n, "allcommands")) { temp.all_commands = 1; }
         else if (eq_ci(p, n, "nocommands")) { temp.all_commands = 0; memset(temp.allow, 0, sizeof(temp.allow)); memset(temp.deny, 0, sizeof(temp.deny)); }
@@ -139,12 +143,21 @@ int acl_setuser(acl_registry *r, const char *name, size_t nlen,
             if (n >= ACL_MAX_PASSWORD) return -1;
             memcpy(temp.password, p + 1, n - 1); temp.password[n - 1] = '\0';
         } else if (n > 1 && p[0] == '~') {
+            if (n == 2 && p[1] == '*') {
+                temp.pattern_count = 0;
+                memcpy(temp.patterns[0], "*", 2);
+                temp.pattern_count = 1;
+                continue;
+            }
             if (temp.pattern_count >= ACL_MAX_PATTERNS || n >= ACL_MAX_PATTERN)
                 return -1;
             memcpy(temp.patterns[temp.pattern_count], p + 1, n - 1);
             temp.patterns[temp.pattern_count++][n - 1] = '\0';
         } else if (n > 1 && p[0] == '&') {
-            if (n == 2 && p[1] == '*') temp.all_channels = 1;
+            if (n == 2 && p[1] == '*') {
+                temp.channel_count = 0;
+                temp.all_channels = 1;
+            }
             else {
                 if (temp.channel_count >= ACL_MAX_CHANNELS || n >= ACL_MAX_PATTERN)
                     return -1;
@@ -152,6 +165,7 @@ int acl_setuser(acl_registry *r, const char *name, size_t nlen,
                 temp.channels[temp.channel_count++][n - 1] = '\0';
             }
         } else if (eq_ci(p, n, "allchannels")) {
+            temp.channel_count = 0;
             temp.all_channels = 1;
         } else if (eq_ci(p, n, "resetchannels")) {
             temp.channel_count = 0;

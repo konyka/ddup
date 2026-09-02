@@ -212,6 +212,11 @@ bounded channel state as `&*` and an empty rule set.
 
 ## 架构差异（无用户可见剩余项）
 
+ACL SETUSER 别名在固定容量临时副本上原子应用：`allkeys`/`~*` 与
+`allchannels`/`&*` 会先清空对应旧 pattern，再设置全开标志；`resetpass` 清除
+`nopass` 标志并恢复密码校验。这样别名组合不会残留互相矛盾的状态，授权路径仍为
+有界 bitset/glob 检查，无额外堆分配。
+
 - `BACKUP`：已实现基于原子多库快照的安全同步生命周期；Redis 的
   AOF durable-offset + sealed immutable delta 已实现；由于 ddup 无 AOF
   rewrite/segment 回收路径，该边界等价于安全 pinning。`HOTKEYS` 已实现安全生命周期、参数校验、预分配采样表、有界 Top-K、CRC16 `SLOTS` 过滤、实测 dispatch 微秒和原始请求字节计量；Redis 内部 hash-template 编码不改变外部语义。`HIMPORT` 已实现会话级字段集准备、批量写入和丢弃。

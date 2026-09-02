@@ -552,6 +552,68 @@ static void test_acl_resetkeys_preserves_enabled_state(void)
     DD_CHECK(u != NULL && u->enabled == 1 && u->pattern_count == 0);
 }
 
+static void test_acl_resetchannels_preserves_other_domains(void)
+{
+    acl_registry r;
+    resp_value initial[4] = {rv("on"), rv("+get"), rv("~*"), rv("&news:*")};
+    resp_value reset[1] = {rv("resetchannels")};
+    resp_value getv[2] = {rv("GET"), rv("k")};
+    resp_value sub[2] = {rv("SUBSCRIBE"), rv("news:x")};
+    acl_user *u;
+    acl_init(&r, NULL);
+    DD_CHECK(acl_setuser(&r, "u", 1, initial, 4) == 0);
+    DD_CHECK(acl_setuser(&r, "u", 1, reset, 1) == 0);
+    u = acl_find(&r, "u", 1);
+    DD_CHECK(u != NULL && u->enabled == 1 && u->pattern_count == 1);
+    DD_CHECK(acl_authorize(u, CMD_GET, getv, 2) == 1);
+    DD_CHECK(acl_authorize(u, CMD_SUBSCRIBE, sub, 2) == 0);
+}
+
+static void test_acl_resetpass_restores_password_checks(void)
+{
+    acl_registry r;
+    resp_value open[2] = {rv("on"), rv("nopass")};
+    resp_value passonly[1] = {rv(">secret")};
+    resp_value secured[2] = {rv("resetpass"), rv(">secret")};
+    acl_init(&r, NULL);
+    DD_CHECK(acl_setuser(&r, "u", 1, open, 2) == 0);
+    DD_CHECK(acl_authenticate(&r, "u", 1, "wrong", 5) != NULL);
+    DD_CHECK(acl_setuser(&r, "u", 1, passonly, 1) == 0);
+    DD_CHECK(acl_authenticate(&r, "u", 1, "wrong", 5) != NULL);
+    DD_CHECK(acl_setuser(&r, "u", 1, secured, 2) == 0);
+    DD_CHECK(acl_authenticate(&r, "u", 1, "wrong", 5) == NULL);
+    DD_CHECK(acl_authenticate(&r, "u", 1, "secret", 6) != NULL);
+}
+
+static void test_acl_all_aliases_clear_old_patterns(void)
+{
+    acl_registry r;
+    resp_value keys[2] = {rv("~old:*"), rv("allkeys")};
+    resp_value channels[2] = {rv("&old:*"), rv("allchannels")};
+    acl_init(&r, NULL);
+    DD_CHECK(acl_setuser(&r, "u", 1, keys, 2) == 0);
+    DD_CHECK(acl_setuser(&r, "u", 1, channels, 2) == 0);
+    {
+        acl_user *u = acl_find(&r, "u", 1);
+        DD_CHECK(u != NULL && u->pattern_count == 1 && strcmp(u->patterns[0], "*") == 0);
+        DD_CHECK(u != NULL && u->all_channels == 1 && u->channel_count == 0);
+    }
+}
+
+static void test_acl_star_aliases_clear_old_rules(void)
+{
+    acl_registry r;
+    resp_value keys[2] = {rv("~old:*"), rv("~*")};
+    resp_value channels[2] = {rv("&old:*"), rv("&*")};
+    acl_user *u;
+    acl_init(&r, NULL);
+    DD_CHECK(acl_setuser(&r, "u", 1, keys, 2) == 0);
+    DD_CHECK(acl_setuser(&r, "u", 1, channels, 2) == 0);
+    u = acl_find(&r, "u", 1);
+    DD_CHECK(u != NULL && u->pattern_count == 1 && strcmp(u->patterns[0], "*") == 0);
+    DD_CHECK(u != NULL && u->all_channels == 1 && u->channel_count == 0);
+}
+
 static void test_acl_rule_line_capacity_covers_channel_patterns(void)
 {
     acl_registry r;
@@ -683,6 +745,10 @@ int main(void)
     DD_RUN(test_acl_nopass_accepts_any_password);
     DD_RUN(test_acl_nocommands_clears_old_allow_and_deny);
     DD_RUN(test_acl_resetkeys_preserves_enabled_state);
+    DD_RUN(test_acl_resetchannels_preserves_other_domains);
+    DD_RUN(test_acl_resetpass_restores_password_checks);
+    DD_RUN(test_acl_all_aliases_clear_old_patterns);
+    DD_RUN(test_acl_star_aliases_clear_old_rules);
     DD_RUN(test_acl_rule_line_capacity_covers_channel_patterns);
     DD_RUN(test_acl_log_coalesces_identical_events);
     DD_RUN(test_acl_getuser_flags_do_not_mislabel_commands);

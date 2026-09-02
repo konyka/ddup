@@ -1401,6 +1401,13 @@ copy. The operation remains O(1) over the bounded bitset and preserves atomic
 copy. No command, channel, credential, or enabled-state work is performed;
 authorization remains unchanged outside key-bearing commands.
 
+### Phase 178: ACL alias state normalization
+
+`allkeys`/`~*` and `allchannels`/`&*` clear their bounded pattern arrays before
+setting the corresponding O(1) all-access flag. `resetpass` clears the fixed
+`nopass` bit before password checks resume. SETUSER still operates on a stack
+copy and commits once, so the update is atomic with no hot-path allocation.
+
 ### Phase 154: ACL generation invalidation
 
 Each fixed ACL user slot carries a monotonic generation. Sessions cache the

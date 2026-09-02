@@ -667,3 +667,5 @@
     在别名重置后残留并污染后续授权（Phase 176）
   - [x] ACL resetkeys 域隔离：`resetkeys` 只清空 key pattern，保持用户启用状态、
     密码、命令和 channel 权限不变（Phase 177）
+  - [x] ACL 别名状态收口：`allkeys`/`allchannels` 清理旧 pattern，`resetpass`
+    恢复密码校验，避免别名组合遗留状态（Phase 178）
