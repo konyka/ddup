@@ -891,6 +891,52 @@ static void test_acl_migrate_uses_key_tail_not_host_parameters(void)
     DD_CHECK(acl_authorize(u, CMD_MIGRATE, bad, 7) == 0);
 }
 
+static void test_acl_persistence_and_copy_key_positions(void)
+{
+    acl_registry r;
+    resp_value rules[3] = {rv("on"), rv("~allowed:*") , rv("+@all")};
+    resp_value dump[2] = {rv("DUMP"), rv("secret:key")};
+    resp_value restore[4] = {rv("RESTORE"), rv("secret:key"), rv("0"), rv("blob")};
+    resp_value restore_ok[4] = {rv("RESTORE"), rv("allowed:key"), rv("0"), rv("blob")};
+    resp_value restore_asking[4] = {rv("RESTORE-ASKING"), rv("secret:key"), rv("0"), rv("blob")};
+    resp_value copy[4] = {rv("COPY"), rv("allowed:src"), rv("secret:dst"), rv("REPLACE")};
+    resp_value lcs[3] = {rv("LCS"), rv("allowed:a"), rv("secret:b")};
+    resp_value lcs_ok[3] = {rv("LCS"), rv("allowed:a"), rv("allowed:b")};
+    acl_user *u;
+    acl_init(&r, NULL);
+    DD_CHECK(acl_setuser(&r, "u", 1, rules, 3) == 0);
+    u = acl_find(&r, "u", 1);
+    DD_CHECK(u != NULL);
+    DD_CHECK(acl_authorize(u, CMD_DUMP, dump, 2) == 0);
+    DD_CHECK(acl_authorize(u, CMD_RESTORE, restore, 4) == 0);
+    DD_CHECK(acl_authorize(u, CMD_RESTORE, restore_ok, 4) == 1);
+    DD_CHECK(acl_authorize(u, CMD_RESTORE_ASKING, restore_asking, 4) == 0);
+    DD_CHECK(acl_authorize(u, CMD_COPY, copy, 4) == 0);
+    DD_CHECK(acl_authorize(u, CMD_LCS, lcs, 3) == 0);
+    DD_CHECK(acl_authorize(u, CMD_LCS, lcs_ok, 3) == 1);
+}
+
+static void test_acl_pubsub_introspection_checks_channels(void)
+{
+    acl_registry r;
+    resp_value rules[3] = {rv("on"), rv("&allowed:*") , rv("+@all")};
+    resp_value channels_bad[3] = {rv("PUBSUB"), rv("CHANNELS"), rv("secret:*")};
+    resp_value channels_ok[3] = {rv("PUBSUB"), rv("CHANNELS"), rv("allowed:*")};
+    resp_value numsub_bad[3] = {rv("PUBSUB"), rv("NUMSUB"), rv("secret:chan")};
+    resp_value numsub_ok[3] = {rv("PUBSUB"), rv("NUMSUB"), rv("allowed:chan")};
+    resp_value numpat[2] = {rv("PUBSUB"), rv("NUMPAT")};
+    acl_user *u;
+    acl_init(&r, NULL);
+    DD_CHECK(acl_setuser(&r, "u", 1, rules, 3) == 0);
+    u = acl_find(&r, "u", 1);
+    DD_CHECK(u != NULL);
+    DD_CHECK(acl_authorize(u, CMD_PUBSUB, channels_bad, 3) == 0);
+    DD_CHECK(acl_authorize(u, CMD_PUBSUB, channels_ok, 3) == 1);
+    DD_CHECK(acl_authorize(u, CMD_PUBSUB, numsub_bad, 3) == 0);
+    DD_CHECK(acl_authorize(u, CMD_PUBSUB, numsub_ok, 3) == 1);
+    DD_CHECK(acl_authorize(u, CMD_PUBSUB, numpat, 2) == 1);
+}
+
 static void test_acl_rule_line_capacity_covers_channel_patterns(void)
 {
     acl_registry r;
@@ -1041,6 +1087,8 @@ int main(void)
     DD_RUN(test_acl_blocking_and_option_key_positions);
     DD_RUN(test_acl_stream_and_numkeys_positions);
     DD_RUN(test_acl_migrate_uses_key_tail_not_host_parameters);
+    DD_RUN(test_acl_persistence_and_copy_key_positions);
+    DD_RUN(test_acl_pubsub_introspection_checks_channels);
     DD_RUN(test_acl_rule_line_capacity_covers_channel_patterns);
     DD_RUN(test_acl_log_coalesces_identical_events);
     DD_RUN(test_acl_getuser_flags_do_not_mislabel_commands);

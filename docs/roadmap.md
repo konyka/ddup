@@ -693,3 +693,5 @@
     `LMPOP/ZMPOP` 按 `STREAMS`/`numkeys` 提取真实 key（Phase 189）
   - [x] ACL MIGRATE key 位点：检查主 key 及 `KEYS` 选项后的全部 key，
     忽略 host/port/db/timeout/COPY/AUTH 等协议参数（Phase 190）
+  - [x] ACL PUBSUB 查询 channel 边界：`PUBSUB CHANNELS/NUMSUB` 校验所有
+    channel 参数，`NUMPAT` 保持 keyless（Phase 191）

@@ -1503,7 +1503,13 @@ use checked `numkeys` slices. Group, consumer, timeout, direction, and count
 
 `MIGRATE` checks its primary key at the protocol-defined position and scans all
 keys following the optional `KEYS` marker. Host, port, database, timeout, and
-authentication tokens bypass pattern matching; bounded scans remain allocation-free.
+  authentication tokens bypass pattern matching; bounded scans remain allocation-free.
+
+### Phase 191: ACL PUBSUB introspection channels
+
+`PUBSUB CHANNELS` and `PUBSUB NUMSUB` validate each supplied channel against the
+bounded channel pattern list. `NUMPAT` has no channel operands and remains a
+constant-time command-only authorization path.
 
 Category names are normalized with a bounded ASCII comparison while parsing
 `SETUSER`; no temporary lowercase buffer or heap allocation is introduced.

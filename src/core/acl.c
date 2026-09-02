@@ -353,6 +353,18 @@ int acl_authorize(const acl_user *u, uint16_t cmd_id, const resp_value *argv,
         }
         return 1;
     }
+    if (cmd_id == CMD_PUBSUB && argc >= 2 && !u->all_channels) {
+        size_t j;
+        if (argv[1].type == RESP_BULK_STRING &&
+            ((argv[1].len == 8 && memcmp(argv[1].str, "CHANNELS", 8) == 0) ||
+             (argv[1].len == 6 && memcmp(argv[1].str, "NUMSUB", 6) == 0))) {
+            if (argc == 2) return 1;
+            for (j = 2; j < argc; j++)
+                if (argv[j].type != RESP_BULK_STRING ||
+                    !acl_authorize_channel(u, argv[j].str, argv[j].len, 0)) return 0;
+        }
+        return 1;
+    }
     switch (cmd_id) {
     case CMD_PING: case CMD_ECHO: case CMD_AUTH: case CMD_QUIT:
     case CMD_RESET: case CMD_HELLO: case CMD_TIME: case CMD_ROLE:

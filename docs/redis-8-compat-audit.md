@@ -165,6 +165,8 @@ bounded channel state as `&*` and an empty rule set.
   `STREAMS`/`numkeys` positions and fail closed on malformed or truncated input.
   `MIGRATE` authorizes its primary key and every key after an optional `KEYS`
   marker while excluding transport and authentication parameters.
+  `PUBSUB CHANNELS` and `PUBSUB NUMSUB` enforce channel ACLs for all query
+  operands; `PUBSUB NUMPAT` remains keyless.
 - Cluster slot maintenance: `SFLUSH` intersects requested ranges with local
   ownership and returns coalesced flushed ranges; `TRIMSLOTS RANGES` validates
   ownership before deleting keys from unserved slots. Both paths collect keys
