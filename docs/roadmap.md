@@ -697,3 +697,5 @@
     channel 参数，`NUMPAT` 保持 keyless（Phase 191）
   - [x] ACL Cluster/Sentinel 容器边界：`CLUSTER` 与 `SENTINEL` 子命令参数
     按控制面处理，不误当作数据 key（Phase 192）
+  - [x] ACL 持久化/范围存储 key 位点：`RESTORE/DUMP/COPY/LCS/ZRANGESTORE`
+    与 `MSETEX` 按协议位置校验真实 key（Phase 193）

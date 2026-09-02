@@ -466,6 +466,32 @@ int acl_authorize(const acl_user *u, uint16_t cmd_id, const resp_value *argv,
         }
         return 1;
     }
+    if (cmd_id == CMD_ZRANGESTORE) {
+        size_t j, p;
+        if (argc < 3 || u->pattern_count == 0) return 0;
+        for (j = 1; j <= 2; j++) {
+            if (argv[j].type != RESP_BULK_STRING) return 0;
+            for (p = 0; p < u->pattern_count; p++)
+                if (acl_match_pattern(u->patterns[p], strlen(u->patterns[p]), argv[j].str, argv[j].len)) break;
+            if (p == u->pattern_count) return 0;
+        }
+        return 1;
+    }
+    if (cmd_id == CMD_MSETEX) {
+        long long nk;
+        size_t j, p, end;
+        if (argc < 4 || argv[1].type != RESP_BULK_STRING ||
+            !acl_parse_ll(argv[1].str, argv[1].len, &nk) || nk <= 0 ||
+            (uint64_t)nk > (uint64_t)((argc - 2) / 2) || u->pattern_count == 0) return 0;
+        end = 2 + (size_t)nk * 2;
+        for (j = 2; j < end; j += 2) {
+            if (argv[j].type != RESP_BULK_STRING) return 0;
+            for (p = 0; p < u->pattern_count; p++)
+                if (acl_match_pattern(u->patterns[p], strlen(u->patterns[p]), argv[j].str, argv[j].len)) break;
+            if (p == u->pattern_count) return 0;
+        }
+        return 1;
+    }
     if (cmd_id == CMD_LMPOP) {
         long long nk;
         size_t j, p, end;

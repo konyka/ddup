@@ -937,6 +937,23 @@ static void test_acl_pubsub_introspection_checks_channels(void)
     DD_CHECK(acl_authorize(u, CMD_PUBSUB, numpat, 2) == 1);
 }
 
+static void test_acl_range_store_and_msetex_key_positions(void)
+{
+    acl_registry r;
+    resp_value rules[3] = {rv("on"), rv("~allowed:*") , rv("+@all")};
+    resp_value zstore[5] = {rv("ZRANGESTORE"), rv("allowed:out"), rv("allowed:src"), rv("0"), rv("-1")};
+    resp_value zstore_bad[5] = {rv("ZRANGESTORE"), rv("secret:out"), rv("allowed:src"), rv("0"), rv("-1")};
+    resp_value msetex[7] = {rv("MSETEX"), rv("2"), rv("allowed:a"), rv("1"), rv("secret:b"), rv("2"), rv("EX")};
+    acl_user *u;
+    acl_init(&r, NULL);
+    DD_CHECK(acl_setuser(&r, "u", 1, rules, 3) == 0);
+    u = acl_find(&r, "u", 1);
+    DD_CHECK(u != NULL);
+    DD_CHECK(acl_authorize(u, CMD_ZRANGESTORE, zstore, 5) == 1);
+    DD_CHECK(acl_authorize(u, CMD_ZRANGESTORE, zstore_bad, 5) == 0);
+    DD_CHECK(acl_authorize(u, CMD_MSETEX, msetex, 7) == 0);
+}
+
 static void test_acl_cluster_subcommands_are_keyless(void)
 {
     acl_registry r;
@@ -1108,6 +1125,7 @@ int main(void)
     DD_RUN(test_acl_migrate_uses_key_tail_not_host_parameters);
     DD_RUN(test_acl_persistence_and_copy_key_positions);
     DD_RUN(test_acl_pubsub_introspection_checks_channels);
+    DD_RUN(test_acl_range_store_and_msetex_key_positions);
     DD_RUN(test_acl_cluster_subcommands_are_keyless);
     DD_RUN(test_acl_rule_line_capacity_covers_channel_patterns);
     DD_RUN(test_acl_log_coalesces_identical_events);

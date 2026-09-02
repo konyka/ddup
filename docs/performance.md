@@ -1515,7 +1515,13 @@ bounded channel pattern list. `NUMPAT` has no channel operands and remains a
 
 `CLUSTER` and `SENTINEL` container commands are treated as keyless control-plane
 operations. Subcommand names, node addresses, slot numbers, and configuration
-tokens bypass key glob matching while command permissions remain enforced.
+  tokens bypass key glob matching while command permissions remain enforced.
+
+### Phase 193: ACL persistence and range-store key positions
+
+Persistence and range-store commands use fixed argument positions for destination
+and source keys. `MSETEX` scans only its alternating key slots after checked
+`numkeys`; payloads, TTL values, and options never enter the glob matcher.
 
 Category names are normalized with a bounded ASCII comparison while parsing
 `SETUSER`; no temporary lowercase buffer or heap allocation is introduced.
