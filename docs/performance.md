@@ -1422,6 +1422,12 @@ the first key. The fixed loop has no allocation and preserves fail-closed
 behavior for source/destination operations while adding only one predictable
 pattern scan on the common path.
 
+### Phase 181: ACL multi-key read/write completeness
+
+`EXISTS`, `TOUCH`, and set operations now scan every key operand through the
+bounded pattern list. The implementation reuses the existing fixed loop and
+adds no allocation, keeping authorization fail-closed for mixed-key requests.
+
 ### Phase 154: ACL generation invalidation
 
 Each fixed ACL user slot carries a monotonic generation. Sessions cache the

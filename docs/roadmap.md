@@ -673,3 +673,5 @@
     deny bitset，避免全开状态被历史规则污染（Phase 179）
   - [x] ACL 多 key 授权完整性：`RENAME/SMOVE/LMOVE/COPY` 等双 key 命令同时
     校验 source 与 destination，未授权任一 key 时 fail-closed（Phase 180）
+  - [x] ACL 多 key 读写完整性：`EXISTS/TOUCH/SINTER/SUNION/SDIFF` 校验全部
+    key 参数，防止多 key 请求绕过 key pattern（Phase 181）

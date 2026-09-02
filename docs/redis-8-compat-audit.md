@@ -144,6 +144,8 @@ bounded channel state as `&*` and an empty rule set.
   Multi-key source/destination commands (`RENAME`, `SMOVE`, `LMOVE`, `COPY`, and
   related variants) now authorize every key position, preventing a permitted
   source from being used to access an unauthorized destination.
+  `EXISTS`, `TOUCH`, `SINTER`, `SUNION`, and `SDIFF` likewise authorize every
+  supplied key instead of only the first operand.
 - Cluster slot maintenance: `SFLUSH` intersects requested ranges with local
   ownership and returns coalesced flushed ranges; `TRIMSLOTS RANGES` validates
   ownership before deleting keys from unserved slots. Both paths collect keys

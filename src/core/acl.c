@@ -347,10 +347,11 @@ int acl_authorize(const acl_user *u, uint16_t cmd_id, const resp_value *argv,
     case CMD_GET: case CMD_SET: case CMD_GETDEL: case CMD_GETEX:
     case CMD_SETEX: case CMD_PSETEX: case CMD_GETSET: case CMD_APPEND:
     case CMD_INCR: case CMD_DECR: case CMD_INCRBY: case CMD_DECRBY:
-    case CMD_INCRBYFLOAT: case CMD_STRLEN: case CMD_TYPE: case CMD_EXISTS:
-    case CMD_TOUCH: case CMD_EXPIRETIME: case CMD_PEXPIRETIME:
+    case CMD_INCRBYFLOAT: case CMD_STRLEN: case CMD_TYPE:
+    case CMD_EXPIRETIME: case CMD_PEXPIRETIME:
         nkeys = 1; break;
-    case CMD_MGET: case CMD_DEL: case CMD_UNLINK:
+    case CMD_MGET: case CMD_DEL: case CMD_UNLINK: case CMD_EXISTS:
+    case CMD_TOUCH: case CMD_SINTER: case CMD_SUNION: case CMD_SDIFF:
         nkeys = argc - 1; break;
     case CMD_MSET: case CMD_MSETNX:
         nkeys = (argc - 1) / 2; step = 2; break;

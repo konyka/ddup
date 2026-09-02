@@ -657,6 +657,23 @@ static void test_acl_multikey_commands_check_every_key(void)
     DD_CHECK(acl_authorize(u, CMD_SMOVE, smovev, 4) == 0);
 }
 
+static void test_acl_multikey_reads_check_every_key(void)
+{
+    acl_registry r;
+    resp_value rules[3] = {rv("on"), rv("~allowed:*") , rv("+@all")};
+    resp_value existsv[3] = {rv("EXISTS"), rv("allowed:1"), rv("secret:1")};
+    resp_value touchv[3] = {rv("TOUCH"), rv("allowed:1"), rv("secret:1")};
+    resp_value sinterv[3] = {rv("SINTER"), rv("allowed:set"), rv("secret:set")};
+    acl_user *u;
+    acl_init(&r, NULL);
+    DD_CHECK(acl_setuser(&r, "u", 1, rules, 3) == 0);
+    u = acl_find(&r, "u", 1);
+    DD_CHECK(u != NULL);
+    DD_CHECK(acl_authorize(u, CMD_EXISTS, existsv, 3) == 0);
+    DD_CHECK(acl_authorize(u, CMD_TOUCH, touchv, 3) == 0);
+    DD_CHECK(acl_authorize(u, CMD_SINTER, sinterv, 3) == 0);
+}
+
 static void test_acl_rule_line_capacity_covers_channel_patterns(void)
 {
     acl_registry r;
@@ -795,6 +812,7 @@ int main(void)
     DD_RUN(test_acl_reset_clears_nopass_state);
     DD_RUN(test_acl_allcommands_clears_old_denies);
     DD_RUN(test_acl_multikey_commands_check_every_key);
+    DD_RUN(test_acl_multikey_reads_check_every_key);
     DD_RUN(test_acl_rule_line_capacity_covers_channel_patterns);
     DD_RUN(test_acl_log_coalesces_identical_events);
     DD_RUN(test_acl_getuser_flags_do_not_mislabel_commands);
