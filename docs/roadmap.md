@@ -681,3 +681,5 @@
     `FLUSHDB/FLUSHALL/SHUTDOWN` 选项保持 keyless，避免误判（Phase 183）
   - [x] ACL 存储型多 key 授权：`SORT STORE`、`SINTERSTORE`、`ZUNIONSTORE`、
     `GEOSEARCHSTORE` 同时校验 destination 与所有 source key（Phase 184）
+  - [x] ACL 高级集合多 key 授权：`PFCOUNT/PFMERGE`、`SINTERCARD`、
+    `ZUNION/ZINTER/ZDIFF/ZINTERCARD` 校验全部 source key（Phase 185）

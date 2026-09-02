@@ -153,6 +153,8 @@ bounded channel state as `&*` and an empty rule set.
   Store-style commands (`SORT STORE`, `SINTERSTORE`, `ZUNIONSTORE`, and
   `GEOSEARCHSTORE`) authorize destination and source keys, with checked
   `numkeys` parsing and fail-closed handling for malformed requests.
+  `PFCOUNT`/`PFMERGE`, `SINTERCARD`, and sorted-set union/intersection/difference
+  commands authorize every declared source key rather than only the first.
 - Cluster slot maintenance: `SFLUSH` intersects requested ranges with local
   ownership and returns coalesced flushed ranges; `TRIMSLOTS RANGES` validates
   ownership before deleting keys from unserved slots. Both paths collect keys

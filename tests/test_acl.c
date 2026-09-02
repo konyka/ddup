@@ -767,6 +767,25 @@ static void test_acl_store_commands_check_destination_and_sources(void)
     DD_CHECK(acl_authorize(u, CMD_GEOSEARCHSTORE, geov, 4) == 0);
 }
 
+static void test_acl_advanced_multikey_commands_check_all_keys(void)
+{
+    acl_registry r;
+    resp_value rules[3] = {rv("on"), rv("~allowed:*") , rv("+@all")};
+    resp_value pfcount[3] = {rv("PFCOUNT"), rv("allowed:a"), rv("secret:b")};
+    resp_value sintercard[5] = {rv("SINTERCARD"), rv("2"), rv("allowed:a"), rv("secret:b"), rv("LIMIT")};
+    resp_value zunion[5] = {rv("ZUNION"), rv("2"), rv("allowed:a"), rv("secret:b"), rv("WITHSCORES")};
+    resp_value zintercard[4] = {rv("ZINTERCARD"), rv("2"), rv("allowed:a"), rv("secret:b")};
+    acl_user *u;
+    acl_init(&r, NULL);
+    DD_CHECK(acl_setuser(&r, "u", 1, rules, 3) == 0);
+    u = acl_find(&r, "u", 1);
+    DD_CHECK(u != NULL);
+    DD_CHECK(acl_authorize(u, CMD_PFCOUNT, pfcount, 3) == 0);
+    DD_CHECK(acl_authorize(u, CMD_SINTERCARD, sintercard, 5) == 0);
+    DD_CHECK(acl_authorize(u, CMD_ZUNION, zunion, 5) == 0);
+    DD_CHECK(acl_authorize(u, CMD_ZINTERCARD, zintercard, 4) == 0);
+}
+
 static void test_acl_rule_line_capacity_covers_channel_patterns(void)
 {
     acl_registry r;
@@ -911,6 +930,7 @@ int main(void)
     DD_RUN(test_acl_subcommand_key_positions_are_correct);
     DD_RUN(test_acl_keyless_options_do_not_require_key_pattern);
     DD_RUN(test_acl_store_commands_check_destination_and_sources);
+    DD_RUN(test_acl_advanced_multikey_commands_check_all_keys);
     DD_RUN(test_acl_rule_line_capacity_covers_channel_patterns);
     DD_RUN(test_acl_log_coalesces_identical_events);
     DD_RUN(test_acl_getuser_flags_do_not_mislabel_commands);

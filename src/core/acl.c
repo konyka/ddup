@@ -456,6 +456,34 @@ int acl_authorize(const acl_user *u, uint16_t cmd_id, const resp_value *argv,
             if (acl_match_pattern(u->patterns[p], strlen(u->patterns[p]), argv[2].str, argv[2].len)) return 1;
         return 0;
     }
+    if (cmd_id == CMD_PFCOUNT || cmd_id == CMD_PFMERGE) {
+        size_t j, p;
+        if (argc < 2 || u->pattern_count == 0) return 0;
+        for (j = 1; j < argc; j++) {
+            if (argv[j].type != RESP_BULK_STRING) return 0;
+            for (p = 0; p < u->pattern_count; p++)
+                if (acl_match_pattern(u->patterns[p], strlen(u->patterns[p]), argv[j].str, argv[j].len)) break;
+            if (p == u->pattern_count) return 0;
+        }
+        return 1;
+    }
+    if (cmd_id == CMD_SINTERCARD || cmd_id == CMD_ZUNION ||
+        cmd_id == CMD_ZINTER || cmd_id == CMD_ZDIFF || cmd_id == CMD_ZINTERCARD) {
+        long long nk;
+        size_t j, p, end;
+        if (argc < 3 || argv[1].type != RESP_BULK_STRING ||
+            !acl_parse_ll(argv[1].str, argv[1].len, &nk) || nk <= 0 ||
+            (uint64_t)nk > (uint64_t)(argc - 2) || u->pattern_count == 0)
+            return 0;
+        end = 2 + (size_t)nk;
+        for (j = 2; j < end; j++) {
+            if (argv[j].type != RESP_BULK_STRING) return 0;
+            for (p = 0; p < u->pattern_count; p++)
+                if (acl_match_pattern(u->patterns[p], strlen(u->patterns[p]), argv[j].str, argv[j].len)) break;
+            if (p == u->pattern_count) return 0;
+        }
+        return 1;
+    }
     /* Extract key positions for the common key-bearing command families.
      * Values/options are never treated as keys, avoiding false denials. */
     switch (cmd_id) {

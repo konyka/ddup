@@ -1465,6 +1465,13 @@ Store-style commands validate destination and source keys using bounded glob
 scans. `numkeys` is parsed with a checked 64-bit helper before any index math,
 so malformed or truncated requests fail closed without allocation or overflow.
 
+### Phase 185: ACL advanced multi-key coverage
+
+HyperLogLog, set-cardinality, and sorted-set multi-key commands now scan every
+declared source key. The bounded loops reuse the same glob matcher and validate
+`numkeys` before indexing, preserving predictable latency and fail-closed
+behavior without temporary allocations.
+
 Category names are normalized with a bounded ASCII comparison while parsing
 `SETUSER`; no temporary lowercase buffer or heap allocation is introduced.
 The authorization hot path remains the same pre-expanded bitset lookup.
