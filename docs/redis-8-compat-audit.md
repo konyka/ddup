@@ -64,6 +64,11 @@ python3 tools/audit_redis_compat.py \
   `tls-replication yes` enables it and `tls-ca-file` enables peer verification.
   TLS replication forces the readiness backend because the existing proactor
   contract does not carry TLS WANT_READ/WANT_WRITE state.
+- Cluster bus connections support optional TLS with independent server/client
+  contexts, non-blocking handshakes, and strict certificate validation when
+  `tls-ca-file` is configured. `tls-cluster yes` requires `cluster-enabled yes`
+  and readable certificate/key files; failed handshakes close the connection
+  before gossip state is applied.
 - Cluster slot maintenance: `SFLUSH` intersects requested ranges with local
   ownership and returns coalesced flushed ranges; `TRIMSLOTS RANGES` validates
   ownership before deleting keys from unserved slots. Both paths collect keys

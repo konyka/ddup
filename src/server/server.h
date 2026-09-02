@@ -116,6 +116,11 @@ void server_set_node_timeout(server *s, uint64_t ms);
 #define SERVER_BUS_PROTOCOL_DDUP 0
 #define SERVER_BUS_PROTOCOL_REDIS 1
 void server_set_bus_protocol(server *s, int proto);
+/* Enable TLS for the cluster bus. The server certificate/key are used for
+ * inbound peers; ca_file enables optional peer verification for outbound
+ * peers. Must be called before server_enable_cluster. */
+int server_set_cluster_tls(server *s, int enabled, const char *cert_file,
+                           const char *key_file, const char *ca_file);
 
 /* SLOWLOG log-slower-than threshold in microseconds (0 logs every command). */
 void server_set_slowlog_threshold(server *s, uint64_t usec);

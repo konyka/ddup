@@ -875,7 +875,12 @@ DBSIZE 为 O(1)，可能计入尚未回收的过期 key。
   周期，否则在线节点会在 PING 间隔内被误标）；超时标记 PFAIL +
   disconnected 链路位。PFAIL→FAIL 的法定人数语义、cluster_state 规则
   与自动故障转移门控见 Phase 26/7.10。
-- **TLS**：总线不支持 TLS（记录在案）。
+- **TLS（Phase 147）**：设置 `tls-cluster yes` 后，总线入站连接使用服务端
+  cert/key，出站连接使用独立客户端 context；`tls-ca-file` 非空时启用对端
+  证书校验。握手和总线读写均为非阻塞，WANT_READ/WANT_WRITE 通过 readiness
+  事件兴趣位推进；握手未完成前不解析 gossip。任何证书、协议或 IO 错误都
+  立即关闭连接且不修改节点表。该功能要求 readiness backend，proactor
+  选择会安全回退到 readiness。
 
 ## 槽分配与重定向（Phase 7.8b，多节点第二部分）
 

@@ -1242,3 +1242,13 @@ the small default window and avoids comparator/index allocations. The final repl
 is assembled in a temporary buffer and published only after all reserves succeed,
 so allocation failure cannot emit a malformed partial array. Strict count parsing
 rejects invalid requests before fan-out.
+
+### Phase 147: TLS cluster bus
+
+TLS is isolated to bus connections and adds no cost to the normal client data
+path. Each connection owns one `pal_tls` object; handshake interest is toggled
+only between read/write readiness states, and gossip parsing starts only after
+handshake completion. Certificate verification is opt-in through `tls-ca-file`;
+failed handshakes are closed before any topology mutation. Since the current
+proactor contract cannot represent TLS WANT_READ/WANT_WRITE, selecting a
+proactor with `tls-cluster` falls back to the readiness backend at startup.

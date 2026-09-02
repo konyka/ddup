@@ -99,7 +99,7 @@ int main(int argc, char **argv)
         int mt_backend = SERVER_BACKEND_SELECT;
         /* worker backend: IOCP on Windows, io_uring when asked, readiness
          * otherwise; TLS needs the readiness backend */
-        if (cfg.tls_port == 0 && !cfg.tls_replication) {
+        if (cfg.tls_port == 0 && !cfg.tls_replication && !cfg.tls_cluster) {
             if (strcmp(cfg.io, "iouring") == 0) {
                 mt_backend = SERVER_BACKEND_IOURING;
             } else {
@@ -187,6 +187,16 @@ int main(int argc, char **argv)
                 pal_socket_cleanup();
                 return 1;
             }
+            if (cfg.tls_cluster &&
+                mt_server_set_cluster_tls(ms, 1, cfg.tls_cert_file,
+                                          cfg.tls_key_file,
+                                          cfg.tls_ca_file[0] != '\0' ?
+                                          cfg.tls_ca_file : NULL) != 0) {
+                fprintf(stderr, "failed to enable TLS for cluster bus\n");
+                mt_server_destroy(ms);
+                pal_socket_cleanup();
+                return 1;
+            }
             if (mt_server_enable_cluster(ms, nid, cpath, cfg.bind) != 0) {
                 fprintf(stderr, "failed to enable mt cluster mode\n");
                 mt_server_destroy(ms);
@@ -259,7 +269,7 @@ int main(int argc, char **argv)
             else
                 backend = SERVER_BACKEND_SELECT;
         }
-        if ((cfg.tls_port > 0 || cfg.tls_replication) &&
+        if ((cfg.tls_port > 0 || cfg.tls_replication || cfg.tls_cluster) &&
             (backend == SERVER_BACKEND_IOCP ||
                                  backend == SERVER_BACKEND_IOURING_OP)) {
             printf("note: TLS listener/replication is unsupported on "
@@ -370,6 +380,16 @@ int main(int argc, char **argv)
             return 1;
         }
         server_load_nodes(s, cpath);
+        if (cfg.tls_cluster &&
+            server_set_cluster_tls(s, 1, cfg.tls_cert_file,
+                                   cfg.tls_key_file,
+                                   cfg.tls_ca_file[0] != '\0' ?
+                                   cfg.tls_ca_file : NULL) != 0) {
+            fprintf(stderr, "failed to enable TLS for cluster bus\n");
+            server_destroy(s);
+            pal_socket_cleanup();
+            return 1;
+        }
         server_enable_cluster(s, nid);
         server_set_nodes_path(s, cpath);
         if (strcmp(cfg.cluster_bus_protocol, "redis") == 0) {

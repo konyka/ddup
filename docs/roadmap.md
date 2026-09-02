@@ -604,3 +604,5 @@
   - [x] mt `SLOWLOG GET` 全局聚合：各 worker 使用不相交 slowlog ID lane，
     home worker 合并 RESP 条目并按全局 ID 降序截断；非法 count 与聚合 OOM
     均 fail-closed（Phase 146）
+  - [x] 集群总线 TLS：增加 `tls-cluster` 配置、非阻塞双向握手、可选 CA 校验
+    与失败即断连接安全门；proactor 配置自动回退 readiness（Phase 147）

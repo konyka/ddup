@@ -171,6 +171,10 @@ typedef struct bus_conn {
     size_t rcap;
     resp_buf out;
     int want_write;
+    pal_tls *tls;
+    int tls_handshaking;
+    int tls_client;
+    int tls_want_write;
 } bus_conn;
 
 struct server {
@@ -180,6 +184,8 @@ struct server {
     pal_tls_ctx *tls_ctx;
     pal_tls_ctx *repl_tls_ctx;
     int repl_tls;
+    pal_tls_ctx *bus_tls_ctx;
+    pal_tls_ctx *bus_tls_client_ctx;
     uint16_t tls_port;
     /* cluster bus (second listener on port+10000) */
     pal_socket_t bus_listen_fd;
@@ -3467,6 +3473,8 @@ void server_destroy(server *s)
     }
     pal_tls_ctx_free(s->tls_ctx);
     pal_tls_ctx_free(s->repl_tls_ctx);
+    pal_tls_ctx_free(s->bus_tls_ctx);
+    pal_tls_ctx_free(s->bus_tls_client_ctx);
     if (s->loop != NULL)
         pal_loop_free(s->loop);
     rh_destroy(&s->channels);
@@ -3928,6 +3936,38 @@ void server_set_bus_protocol(server *s, int proto)
     s->bus_protocol = proto;
 }
 
+int server_set_cluster_tls(server *s, int enabled, const char *cert_file,
+                           const char *key_file, const char *ca_file)
+{
+    pal_tls_ctx *server_ctx = NULL;
+    pal_tls_ctx *client_ctx = NULL;
+    if (s == NULL || s->bus_listen_fd != PAL_SOCKET_INVALID ||
+        s->bus != NULL)
+        return -1;
+    if (enabled && srv_proactor(s))
+        return -1;
+    if (!enabled) {
+        pal_tls_ctx_free(s->bus_tls_ctx);
+        pal_tls_ctx_free(s->bus_tls_client_ctx);
+        s->bus_tls_ctx = NULL;
+        s->bus_tls_client_ctx = NULL;
+        return 0;
+    }
+    if (cert_file == NULL || key_file == NULL)
+        return -1;
+    server_ctx = pal_tls_ctx_new(cert_file, key_file);
+    if (server_ctx == NULL)
+        return -1;
+    client_ctx = pal_tls_ctx_new_client(ca_file);
+    if (client_ctx == NULL) {
+        pal_tls_ctx_free(server_ctx);
+        return -1;
+    }
+    s->bus_tls_ctx = server_ctx;
+    s->bus_tls_client_ctx = client_ctx;
+    return 0;
+}
+
 static bus_conn *bus_conn_new(pal_socket_t fd, int outbound)
 {
     bus_conn *bc = (bus_conn *)calloc(1, sizeof(*bc));
@@ -3958,6 +3998,7 @@ static void bus_conn_free(server *s, bus_conn *bc)
     }
     pal_loop_del(s->loop, bc->fd);
     pal_close(bc->fd);
+    pal_tls_free(bc->tls);
     free(bc->rbuf);
     resp_buf_free(&bc->out);
     free(bc);
@@ -3967,7 +4008,10 @@ static void bus_conn_add(server *s, bus_conn *bc)
 {
     bc->next = s->bus;
     s->bus = bc;
-    (void)pal_loop_add(s->loop, bc->fd, 1, bc->want_write, bc);
+    /* During TLS handshake the first step may need a write event; once the
+     * handshake completes, write interest is enabled only for queued data. */
+    (void)pal_loop_add(s->loop, bc->fd, 1,
+                       bc->tls_handshaking || bc->want_write, bc);
 }
 
 /* non-blocking flush of a bus conn's out buffer */
@@ -3975,8 +4019,13 @@ static int bus_flush(server *s, bus_conn *bc)
 {
     size_t sent = 0;
     while (sent < bc->out.len) {
-        ptrdiff_t n = pal_send(bc->fd, bc->out.data + sent,
-                               bc->out.len - sent);
+        ptrdiff_t n = bc->tls != NULL
+                          ? pal_tls_write(bc->tls, bc->out.data + sent,
+                                          bc->out.len - sent)
+                          : pal_send(bc->fd, bc->out.data + sent,
+                                     bc->out.len - sent);
+        if (n == -2)
+            break;
         if (n < 0 && pal_would_block(pal_socket_error()))
             break;
         if (n <= 0)
@@ -3988,10 +4037,11 @@ static int bus_flush(server *s, bus_conn *bc)
         bc->out.len -= sent;
     }
     {
-        int want = bc->out.len > 0 ? 1 : 0;
+        int want = bc->out.len > 0 || bc->tls_want_write ? 1 : 0;
         if (want != bc->want_write) {
             bc->want_write = want;
-            pal_loop_mod(s->loop, bc->fd, 1, want, bc);
+            pal_loop_mod(s->loop, bc->fd, 1,
+                         want, bc);
         }
     }
     return 0;
@@ -4009,7 +4059,8 @@ static void bus_queue_frame(server *s, bus_conn *bc, int type)
         if (cluster_bus_build_frame(&s->db, type, &bc->out) != 0)
             return;
     }
-    bus_flush(s, bc);
+    if (!bc->tls_handshaking)
+        (void)bus_flush(s, bc);
 }
 
 static void bus_accept(server *s)
@@ -4026,6 +4077,14 @@ static void bus_accept(server *s)
     if (bc == NULL) {
         pal_close(fd);
         return;
+    }
+    if (s->bus_tls_ctx != NULL) {
+        bc->tls = pal_tls_new(s->bus_tls_ctx, fd);
+        if (bc->tls == NULL) {
+            bus_conn_free(s, bc);
+            return;
+        }
+        bc->tls_handshaking = 1;
     }
     (void)pal_get_peer_ip(fd, bc->peer_ip, sizeof(bc->peer_ip));
     bus_conn_add(s, bc);
@@ -4048,6 +4107,16 @@ static bus_conn *bus_connect(server *s, const char *ip, uint16_t bus_port)
     if (bc == NULL) {
         pal_close(fd);
         return NULL;
+    }
+    if (s->bus_tls_client_ctx != NULL) {
+        bc->tls = pal_tls_new(s->bus_tls_client_ctx, fd);
+        if (bc->tls == NULL) {
+            bus_conn_free(s, bc);
+            return NULL;
+        }
+        bc->tls_client = 1;
+        bc->tls_handshaking = 1;
+        bc->want_write = 1;
     }
     snprintf(bc->peer_ip, sizeof(bc->peer_ip), "%s", ip);
     bus_conn_add(s, bc);
@@ -4153,20 +4222,53 @@ static int srv_cluster_meet(void *ctx, const char *ip, uint16_t port)
 
 static void bus_service(server *s, bus_conn *bc, int writable)
 {
+    if (bc->tls_handshaking) {
+        int hs = bc->tls_client ? pal_tls_connect_handshake_nb(bc->tls)
+                                : pal_tls_handshake_nb(bc->tls);
+        if (hs < 0) {
+            bus_conn_free(s, bc);
+            return;
+        }
+        if (hs == 1) {
+            bc->tls_handshaking = 0;
+            bc->want_write = bc->out.len > 0;
+            bc->tls_want_write = 0;
+        } else {
+            bc->want_write = hs == 2;
+            bc->tls_want_write = hs == 2;
+        }
+        (void)pal_loop_mod(s->loop, bc->fd, 1,
+                           bc->want_write, bc);
+        if (bc->tls_handshaking)
+            return;
+    }
     if (writable && bus_flush(s, bc) != 0) {
         bus_conn_free(s, bc);
         return;
     }
     for (;;) {
-        ptrdiff_t n = pal_recv(bc->fd, bc->rbuf + bc->rlen,
-                               bc->rcap - bc->rlen);
+        ptrdiff_t n = bc->tls != NULL
+                          ? pal_tls_read(bc->tls, bc->rbuf + bc->rlen,
+                                         bc->rcap - bc->rlen)
+                          : pal_recv(bc->fd, bc->rbuf + bc->rlen,
+                                     bc->rcap - bc->rlen);
         if (n == 0 ||
-            (n < 0 && !pal_would_block(pal_socket_error()))) {
+            (n < 0 && n != -2 && !pal_would_block(pal_socket_error()))) {
             bus_conn_free(s, bc);
             return;
         }
-        if (n < 0)
+        if (n < 0) {
+            if (n == -2 && bc->tls != NULL) {
+                /* OpenSSL may require a write to complete a read (for
+                 * example, a post-handshake record). Preserve that interest
+                 * so the readiness loop cannot deadlock on read-only events. */
+                bc->tls_want_write = 1;
+                bc->want_write = 1;
+                (void)pal_loop_mod(s->loop, bc->fd, 1, 1, bc);
+            }
             break;
+        }
+        bc->tls_want_write = 0;
         bc->rlen += (size_t)n;
         if ((size_t)n < bc->rcap - bc->rlen)
             break;

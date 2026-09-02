@@ -25,6 +25,7 @@ void config_init(ddup_config *cfg)
     cfg->proto_max_request_bytes = 1024ULL * 1024ULL * 1024ULL;
     cfg->repl_max_snapshot_bytes = 1024ULL * 1024ULL * 1024ULL;
     cfg->tls_port = 0;
+    cfg->tls_cluster = 0;
     cfg->tls_cert_file[0] = '\0';
     cfg->tls_key_file[0] = '\0';
     cfg->io[0] = '\0';
@@ -205,6 +206,8 @@ int config_apply(ddup_config *cfg, const char *key, const char *value)
             return -1;
         return 0;
     }
+    if (key_eq(key, "tls-cluster"))
+        return parse_bool(value, &cfg->tls_cluster);
     if (key_eq(key, "tls-ca-file"))
         return copy_str(cfg->tls_ca_file, sizeof(cfg->tls_ca_file), value);
     if (key_eq(key, "io")) {
@@ -297,11 +300,29 @@ int config_validate(const ddup_config *cfg, char *err, size_t errcap)
                  "repl-max-snapshot-bytes must be between 1 and SIZE_MAX bytes");
         return -1;
     }
-    if (cfg->tls_replication && cfg->tls_ca_file[0] != '\0' &&
+    if ((cfg->tls_replication || cfg->tls_cluster) &&
+        cfg->tls_ca_file[0] != '\0' &&
         !file_readable(cfg->tls_ca_file)) {
-        snprintf(err, errcap,
-                 "tls-replication is set but tls-ca-file '%s' is not readable",
+        snprintf(err, errcap, "%s is set but tls-ca-file '%s' is not readable",
+                 cfg->tls_cluster ? "tls-cluster" : "tls-replication",
                  cfg->tls_ca_file);
+        return -1;
+    }
+    if (cfg->tls_cluster && !cfg->cluster_enabled) {
+        snprintf(err, errcap,
+                 "tls-cluster requires cluster-enabled yes");
+        return -1;
+    }
+    if (cfg->tls_cluster && !file_readable(cfg->tls_cert_file)) {
+        snprintf(err, errcap,
+                 "tls-cluster is set but tls-cert-file '%s' is not readable",
+                 cfg->tls_cert_file);
+        return -1;
+    }
+    if (cfg->tls_cluster && !file_readable(cfg->tls_key_file)) {
+        snprintf(err, errcap,
+                 "tls-cluster is set but tls-key-file '%s' is not readable",
+                 cfg->tls_key_file);
         return -1;
     }
     if (cfg->tls_port == 0)

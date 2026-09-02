@@ -5,6 +5,7 @@
 #include <openssl/err.h>
 #include <openssl/ssl.h>
 
+#include "core/cluster.h"
 #include "pal/pal_tls.h"
 #include "pal/pal_time.h"
 #include "pal/pal_thread.h"
@@ -453,6 +454,148 @@ static void test_mt_tls_roundtrip(void)
     pal_socket_cleanup();
 }
 
+static void test_cluster_tls_configuration(void)
+{
+    server *s;
+    DD_CHECK_EQ_INT(0, pal_socket_init());
+    s = server_create("127.0.0.1", 0);
+    DD_CHECK(s != NULL);
+    if (s != NULL) {
+        DD_CHECK_EQ_INT(0, server_set_cluster_tls(
+                               s, 1, DDUP_TEST_CERT_DIR "/cert.pem",
+                               DDUP_TEST_CERT_DIR "/key.pem", NULL));
+        server_enable_cluster(s,
+                              "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+        DD_CHECK(server_db(s) != NULL);
+        server_destroy(s);
+    }
+    s = server_create_ex("127.0.0.1", 0, SERVER_BACKEND_IOURING_OP);
+    if (s != NULL) {
+        /* A proactor must reject bus TLS rather than silently enabling a
+         * plaintext bus or leaving an unbound cluster control plane. */
+        if (server_is_proactor(s))
+            DD_CHECK_EQ_INT(-1, server_set_cluster_tls(
+                                   s, 1, DDUP_TEST_CERT_DIR "/cert.pem",
+                                   DDUP_TEST_CERT_DIR "/key.pem", NULL));
+        server_destroy(s);
+    }
+    pal_socket_cleanup();
+}
+
+static void test_cluster_bus_tls_roundtrip(void)
+{
+    static const char id[] =
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+    server *s;
+    SSL_CTX *cctx;
+    SSL *ssl;
+    pal_socket_t fd;
+    resp_buf frame;
+    char reply[16384];
+    int rc, iter;
+    uint64_t deadline;
+
+    DD_CHECK_EQ_INT(0, pal_socket_init());
+    s = server_create("127.0.0.1", 0);
+    DD_CHECK(s != NULL);
+    if (s == NULL) {
+        pal_socket_cleanup();
+        return;
+    }
+    DD_CHECK_EQ_INT(0, server_set_cluster_tls(
+                           s, 1, DDUP_TEST_CERT_DIR "/cert.pem",
+                           DDUP_TEST_CERT_DIR "/key.pem", NULL));
+    server_enable_cluster(s, id);
+
+    /* Plaintext bytes on the TLS bus must be rejected before gossip parsing. */
+    fd = pal_tcp_connect("127.0.0.1", (uint16_t)(server_port(s) + 10000));
+    DD_CHECK(fd != PAL_SOCKET_INVALID);
+    if (fd != PAL_SOCKET_INVALID) {
+        DD_CHECK_EQ_INT(0, pal_set_nonblocking(fd, 1));
+        (void)pal_send(fd, "RCM2", 4);
+        for (iter = 0; iter < 50; iter++)
+            server_run_once(s, 1);
+        DD_CHECK(server_db(s)->nnodes == 1);
+        pal_close(fd);
+    }
+
+    cctx = SSL_CTX_new(TLS_client_method());
+    DD_CHECK(cctx != NULL);
+    if (cctx == NULL) {
+        server_destroy(s);
+        pal_socket_cleanup();
+        return;
+    }
+    SSL_CTX_set_verify(cctx, SSL_VERIFY_NONE, NULL);
+    fd = pal_tcp_connect("127.0.0.1", (uint16_t)(server_port(s) + 10000));
+    DD_CHECK(fd != PAL_SOCKET_INVALID);
+    if (fd == PAL_SOCKET_INVALID) {
+        SSL_CTX_free(cctx);
+        server_destroy(s);
+        pal_socket_cleanup();
+        return;
+    }
+    DD_CHECK_EQ_INT(0, pal_set_nonblocking(fd, 1));
+    ssl = SSL_new(cctx);
+    DD_CHECK(ssl != NULL);
+    SSL_set_fd(ssl, (int)fd);
+    deadline = pal_now_ms() + 10000;
+    for (;;) {
+        rc = SSL_connect(ssl);
+        if (rc == 1)
+            break;
+        rc = SSL_get_error(ssl, rc);
+        DD_CHECK(rc == SSL_ERROR_WANT_READ || rc == SSL_ERROR_WANT_WRITE);
+        server_run_once(s, 1);
+        if (pal_now_ms() >= deadline)
+            break;
+    }
+    DD_CHECK(pal_now_ms() < deadline);
+
+    resp_buf_init(&frame);
+    DD_CHECK_EQ_INT(0, cluster_bus_build_frame(server_db(s),
+                                               CLUSTER_MSG_PING, &frame));
+    {
+        size_t off = 0;
+        deadline = pal_now_ms() + 10000;
+        while (off < frame.len && pal_now_ms() < deadline) {
+            rc = SSL_write(ssl, frame.data + off, (int)(frame.len - off));
+            if (rc > 0)
+                off += (size_t)rc;
+            else {
+                int er = SSL_get_error(ssl, rc);
+                DD_CHECK(er == SSL_ERROR_WANT_READ ||
+                         er == SSL_ERROR_WANT_WRITE);
+                server_run_once(s, 1);
+            }
+        }
+        DD_CHECK_EQ_INT((long long)frame.len, (long long)off);
+    }
+    {
+        size_t got = 0;
+        deadline = pal_now_ms() + 10000;
+        while (got < 10 && pal_now_ms() < deadline) {
+            rc = SSL_read(ssl, reply + got, (int)(sizeof(reply) - got));
+            if (rc > 0)
+                got += (size_t)rc;
+            else {
+                int er = SSL_get_error(ssl, rc);
+                DD_CHECK(er == SSL_ERROR_WANT_READ ||
+                         er == SSL_ERROR_WANT_WRITE);
+                server_run_once(s, 1);
+            }
+        }
+        DD_CHECK(got >= 10 && memcmp(reply, "RCM2", 4) == 0);
+    }
+    resp_buf_free(&frame);
+    (void)SSL_shutdown(ssl);
+    SSL_free(ssl);
+    pal_close(fd);
+    SSL_CTX_free(cctx);
+    server_destroy(s);
+    pal_socket_cleanup();
+}
+
 int main(void)
 {
     setvbuf(stdout, NULL, _IONBF, 0); /* progress visible under timeout */
@@ -464,5 +607,7 @@ int main(void)
     DD_RUN(test_tls_server_roundtrip);
     DD_RUN(test_tls_replication_master_link);
     DD_RUN(test_mt_tls_roundtrip);
+    DD_RUN(test_cluster_tls_configuration);
+    DD_RUN(test_cluster_bus_tls_roundtrip);
     return DD_TEST_SUMMARY();
 }

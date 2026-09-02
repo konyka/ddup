@@ -32,6 +32,7 @@ static void test_defaults(void)
     DD_CHECK_EQ_INT(0, (long long)cfg.tiered_storage_max_disk_bytes);
     DD_CHECK_EQ_INT(0, cfg.save_sec);
     DD_CHECK_EQ_INT(1, cfg.io_threads);
+    DD_CHECK_EQ_INT(0, cfg.tls_cluster);
     DD_CHECK_EQ_INT(1024LL * 1024LL * 1024LL,
                     (long long)cfg.proto_max_request_bytes);
     DD_CHECK_EQ_INT(1024LL * 1024LL * 1024LL,
@@ -271,6 +272,31 @@ static void test_tls_replication_options(void)
     DD_CHECK_EQ_INT(-1, config_apply(&cfg, "tls-replication", "maybe"));
 }
 
+static void test_tls_cluster_options(void)
+{
+    ddup_config cfg;
+    char err[256];
+
+    config_init(&cfg);
+    DD_CHECK_EQ_INT(0, config_apply(&cfg, "tls-cluster", "yes"));
+    DD_CHECK_EQ_INT(1, cfg.tls_cluster);
+    DD_CHECK_EQ_INT(-1, config_validate(&cfg, err, sizeof(err)));
+    DD_CHECK(strstr(err, "cluster-enabled") != NULL);
+
+    DD_CHECK_EQ_INT(0, config_apply(&cfg, "cluster-enabled", "yes"));
+    DD_CHECK_EQ_INT(0, config_apply(&cfg, "tls-cert-file", TMP_CONF));
+    DD_CHECK_EQ_INT(0, config_apply(&cfg, "tls-key-file", TMP_CONF));
+    write_file(TMP_CONF, "# readable test fixture\n");
+    DD_CHECK_EQ_INT(0, config_validate(&cfg, err, sizeof(err)));
+    remove(TMP_CONF);
+
+    DD_CHECK_EQ_INT(0, config_apply(&cfg, "tls-ca-file", "missing-ca.pem"));
+    DD_CHECK_EQ_INT(-1, config_validate(&cfg, err, sizeof(err)));
+    DD_CHECK(strstr(err, "tls-ca-file") != NULL);
+
+    DD_CHECK_EQ_INT(-1, config_apply(&cfg, "tls-cluster", "maybe"));
+}
+
 static void test_repl_backlog_size(void)
 {
     ddup_config cfg;
@@ -333,6 +359,7 @@ int main(void)
     DD_RUN(test_io_threads);
     DD_RUN(test_validate_tls);
     DD_RUN(test_tls_replication_options);
+    DD_RUN(test_tls_cluster_options);
     DD_RUN(test_repl_backlog_size);
     DD_RUN(test_resource_limit_validation);
     DD_RUN(test_listpack_threshold_keys);

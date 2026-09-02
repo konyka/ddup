@@ -74,6 +74,9 @@ int mt_server_enable_cluster(mt_server *ms, const char *node_id,
                              const char *announce_ip);
 /* Select the cluster bus wire protocol on worker 0. */
 void mt_server_set_bus_protocol(mt_server *ms, int proto);
+int mt_server_set_cluster_tls(mt_server *ms, int enabled,
+                              const char *cert_file, const char *key_file,
+                              const char *ca_file);
 
 /* Point worker 0's replica link at a master. Full sync is partitioned
  * across the worker pool; the command stream is routed like client traffic.

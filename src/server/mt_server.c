@@ -5831,6 +5831,16 @@ void mt_server_set_bus_protocol(mt_server *ms, int proto)
         server_set_bus_protocol(ms->workers[0].srv, proto);
 }
 
+int mt_server_set_cluster_tls(mt_server *ms, int enabled,
+                              const char *cert_file, const char *key_file,
+                              const char *ca_file)
+{
+    if (ms == NULL || ms->nworkers == 0)
+        return -1;
+    return server_set_cluster_tls(ms->workers[0].srv, enabled, cert_file,
+                                  key_file, ca_file);
+}
+
 int mt_server_replicaof(mt_server *ms, const char *host, uint16_t port)
 {
     server *leader;

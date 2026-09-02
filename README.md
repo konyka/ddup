@@ -18,7 +18,8 @@ redis c 的另一种实现 —— 参考微软 [Garnet](https://github.com/micro
   （原子写、定时自动保存）
 - 复制：master/replica 全量同步 + PSYNC 部分重同步、只读副本、
   断线自动重连重同步、链式复制
-- TLS：可选 OpenSSL 支持（独立 tls-port，与明文端口并行；Linux/macOS CI
+- TLS：可选 OpenSSL 支持（独立 tls-port，与明文端口并行；集群总线可用
+  `tls-cluster yes` 启用非阻塞 TLS；Linux/macOS CI
   安装 OpenSSL 并运行 TLS 测试；FreeBSD CI 不安装 OpenSSL）
 - 多节点集群模式：Redis cluster 风格（16384 槽、gossip 节点发现、
   ADDSLOTS/SETSLOT、-MOVED/-ASK 重定向、MIGRATE 在线迁移、
@@ -87,6 +88,10 @@ openssl req -x509 -newkey rsa:2048 -keyout key.pem -out cert.pem \
 
 # 客户端连接（redis-cli）
 redis-cli -p 6380 --tls --insecure
+
+# 集群总线 TLS（要求 cluster-enabled yes；复用同一 cert/key）
+./build/ddup-server --cluster-enabled yes --tls-cluster yes \
+    --tls-cert-file cert.pem --tls-key-file key.pem
 ```
 
 ## 文档

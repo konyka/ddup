@@ -29,6 +29,7 @@ typedef struct ddup_config {
     char tls_key_file[512];
     int tls_replication;       /* outbound master link TLS */
     char tls_ca_file[512];     /* optional CA bundle; empty disables verify */
+    int tls_cluster;           /* cluster bus TLS */
     char io[16]; /* "" = auto (iocp on Windows, select elsewhere) */
     int io_threads;                /* 1 = single-threaded (default); >1 = mt worker pool */
     char requirepass[128];         /* "" = auth disabled (Redis requirepass) */
@@ -60,7 +61,7 @@ int config_load_file(ddup_config *cfg, const char *path);
  * Returns 0 on success, -1 on unknown key or invalid value. */
 int config_apply(ddup_config *cfg, const char *key, const char *value);
 
-/* Cross-field validation (tls-port requires readable cert+key files).
+/* Cross-field validation (TLS listener/cluster bus require readable cert+key).
  * Returns 0 ok, -1 and a message in err otherwise. */
 int config_validate(const ddup_config *cfg, char *err, size_t errcap);
 
