@@ -539,6 +539,19 @@ static void test_acl_nocommands_clears_old_allow_and_deny(void)
     DD_CHECK(u->deny[CMD_SET / 64] == 0);
 }
 
+static void test_acl_resetkeys_preserves_enabled_state(void)
+{
+    acl_registry r;
+    resp_value initial[2] = {rv("on"), rv("~*")};
+    resp_value reset[1] = {rv("resetkeys")};
+    acl_user *u;
+    acl_init(&r, NULL);
+    DD_CHECK(acl_setuser(&r, "u", 1, initial, 2) == 0);
+    DD_CHECK(acl_setuser(&r, "u", 1, reset, 1) == 0);
+    u = acl_find(&r, "u", 1);
+    DD_CHECK(u != NULL && u->enabled == 1 && u->pattern_count == 0);
+}
+
 static void test_acl_rule_line_capacity_covers_channel_patterns(void)
 {
     acl_registry r;
@@ -669,6 +682,7 @@ int main(void)
     DD_RUN(test_acl_reset_clears_password_and_disables_user);
     DD_RUN(test_acl_nopass_accepts_any_password);
     DD_RUN(test_acl_nocommands_clears_old_allow_and_deny);
+    DD_RUN(test_acl_resetkeys_preserves_enabled_state);
     DD_RUN(test_acl_rule_line_capacity_covers_channel_patterns);
     DD_RUN(test_acl_log_coalesces_identical_events);
     DD_RUN(test_acl_getuser_flags_do_not_mislabel_commands);

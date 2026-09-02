@@ -1393,7 +1393,13 @@ constant-time comparison; no heap work is added to ordinary authorization.
 
 `nocommands` clears both fixed allow and deny bitsets in the temporary user
 copy. The operation remains O(1) over the bounded bitset and preserves atomic
-rule replacement without affecting the hot authorization branch.
+  rule replacement without affecting the hot authorization branch.
+
+### Phase 177: resetkeys domain isolation
+
+`resetkeys` updates only the bounded key-pattern fields in the temporary user
+copy. No command, channel, credential, or enabled-state work is performed;
+authorization remains unchanged outside key-bearing commands.
 
 ### Phase 154: ACL generation invalidation
 

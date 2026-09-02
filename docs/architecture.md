@@ -345,6 +345,8 @@
   标志，`resetpass` 清除标志并恢复常量时间密码比较。
   `nocommands` 重置时同时清空 allow/deny bitset，避免旧拒绝规则残留；所有变更
   仍在临时用户副本上完成后一次性发布。
+  `resetkeys` 与完整 `reset` 分离，仅清空 key pattern；用户状态、密码、命令和
+  channel 规则保持不变，避免别名操作跨权限域产生副作用。
 
 ## Stream 核心族（Phase 61）
 

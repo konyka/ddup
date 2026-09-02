@@ -665,3 +665,5 @@
     恢复密码校验，避免空密码与任意密码语义混淆（Phase 175）
   - [x] ACL nocommands 完整清理：同时清空 allow/deny bitset，防止旧 deny 规则
     在别名重置后残留并污染后续授权（Phase 176）
+  - [x] ACL resetkeys 域隔离：`resetkeys` 只清空 key pattern，保持用户启用状态、
+    密码、命令和 channel 权限不变（Phase 177）
