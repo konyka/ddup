@@ -510,6 +510,19 @@ static void test_acl_reset_clears_password_and_disables_user(void)
     DD_CHECK(u != NULL && u->enabled == 0 && u->password[0] == '\0');
 }
 
+static void test_acl_nopass_accepts_any_password(void)
+{
+    acl_registry r;
+    resp_value rules[3] = {rv("on"), rv("nopass"), rv("+get")};
+    const acl_user *u;
+    acl_init(&r, NULL);
+    DD_CHECK(acl_setuser(&r, "open", 4, rules, 3) == 0);
+    u = acl_find_const(&r, "open", 4);
+    DD_CHECK(u != NULL);
+    DD_CHECK(acl_authenticate(&r, "open", 4, "one", 3) != NULL);
+    DD_CHECK(acl_authenticate(&r, "open", 4, "another", 7) != NULL);
+}
+
 static void test_acl_rule_line_capacity_covers_channel_patterns(void)
 {
     acl_registry r;
@@ -638,6 +651,7 @@ int main(void)
     DD_RUN(test_acl_publish_checks_only_channel_argument);
     DD_RUN(test_acl_setuser_common_aliases);
     DD_RUN(test_acl_reset_clears_password_and_disables_user);
+    DD_RUN(test_acl_nopass_accepts_any_password);
     DD_RUN(test_acl_rule_line_capacity_covers_channel_patterns);
     DD_RUN(test_acl_log_coalesces_identical_events);
     DD_RUN(test_acl_getuser_flags_do_not_mislabel_commands);

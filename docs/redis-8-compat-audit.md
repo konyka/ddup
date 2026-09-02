@@ -114,6 +114,9 @@ python3 tools/audit_redis_compat.py \
   coalescing, preventing malformed callers from causing a crash.
   Negative `ACL LOG` counts are normalized to zero (empty array), while only
   non-integer counts are rejected, matching Redis query semantics.
+  `nopass` uses an explicit flag to accept any password, while `resetpass`
+  restores password verification, matching Redis ACL semantics without conflating
+  an empty password with unrestricted authentication.
   `allchannels` and `resetchannels` aliases are accepted and map to the same
 bounded channel state as `&*` and an empty rule set.
   `PUBLISH`/`SPUBLISH` channel checks stop before the message argument, while

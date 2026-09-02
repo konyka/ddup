@@ -341,6 +341,8 @@
   边界调用 fail-safe 且不改变固定容量模型。
   `ACL LOG` 的 count 解析保留 Redis 负数归零语义；只有非整数输入走错误路径，
   避免管理客户端因负 count 产生不兼容失败。
+  ACL 用户以固定 `no_password` 标志区分 nopass 与普通空密码；认证时先检查该
+  标志，`resetpass` 清除标志并恢复常量时间密码比较。
 
 ## Stream 核心族（Phase 61）
 

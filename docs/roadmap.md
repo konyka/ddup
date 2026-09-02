@@ -661,3 +661,5 @@
     防止边界调用触发空指针比较或崩溃（Phase 173）
   - [x] ACL LOG 负 count 兼容：`ACL LOG <negative>` 按 Redis 归零并返回空数组，
     仅非法非整数输入报错（Phase 174）
+  - [x] ACL nopass 认证语义：`nopass` 使用固定标志接受任意密码，`resetpass`
+    恢复密码校验，避免空密码与任意密码语义混淆（Phase 175）

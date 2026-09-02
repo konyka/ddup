@@ -37,6 +37,7 @@ typedef struct acl_user {
     char channels[ACL_MAX_CHANNELS][ACL_MAX_PATTERN];
     uint8_t channel_count;
     int all_channels;
+    int no_password;
 } acl_user;
 
 typedef struct acl_registry {

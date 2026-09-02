@@ -1383,6 +1383,12 @@ without changing the fixed-ring layout.
 Negative log counts are normalized to zero after bounded integer parsing, so the
 query returns an empty RESP array without an error allocation or ring traversal.
 
+### Phase 175: ACL nopass semantics
+
+`nopass` is represented by one inline flag and short-circuits password
+comparison for that user. `resetpass` clears the flag and restores normal
+constant-time comparison; no heap work is added to ordinary authorization.
+
 ### Phase 154: ACL generation invalidation
 
 Each fixed ACL user slot carries a monotonic generation. Sessions cache the

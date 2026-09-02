@@ -133,8 +133,8 @@ int acl_setuser(acl_registry *r, const char *name, size_t nlen,
         else if (eq_ci(p, n, "resetkeys")) { temp.pattern_count = 0; }
         else if (eq_ci(p, n, "allcommands")) { temp.all_commands = 1; }
         else if (eq_ci(p, n, "nocommands")) { temp.all_commands = 0; memset(temp.allow, 0, sizeof(temp.allow)); }
-        else if (eq_ci(p, n, "nopass")) temp.password[0] = '\0';
-        else if (eq_ci(p, n, "resetpass")) temp.password[0] = '\0';
+        else if (eq_ci(p, n, "nopass")) { temp.password[0] = '\0'; temp.no_password = 1; }
+        else if (eq_ci(p, n, "resetpass")) { temp.password[0] = '\0'; temp.no_password = 0; }
         else if (n > 1 && p[0] == '>') {
             if (n >= ACL_MAX_PASSWORD) return -1;
             memcpy(temp.password, p + 1, n - 1); temp.password[n - 1] = '\0';
@@ -190,6 +190,7 @@ const acl_user *acl_authenticate(const acl_registry *r, const char *name,
     size_t i;
     unsigned char diff = 0;
     if (u == NULL || !u->enabled) return NULL;
+    if (u->no_password) return u;
     if (strlen(u->password) != plen) return NULL;
     for (i = 0; i < plen; i++) diff |= (unsigned char)u->password[i] ^ (unsigned char)password[i];
     return diff == 0 ? u : NULL;
