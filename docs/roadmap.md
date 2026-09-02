@@ -618,3 +618,5 @@
     已删除用户槽位（Phase 152）
   - [x] ACL GETUSER 命令权限可见性：输出 allow/deny 命令规则和 key 范围
     （Phase 153）
+  - [x] ACL generation 会话失效：删除并重建同名用户后，旧连接在本地及 MT
+    远端路由前清除认证状态，避免继承新用户权限（Phase 154）

@@ -2989,6 +2989,7 @@ static void mt_acl_exec(worker *w, const resp_value *argv, size_t argc,
     sess.acl_ctx = server_acl_registry(w->srv);
     sess.acl_user = acl_find_const((const acl_registry *)sess.acl_ctx,
                                    "default", 7);
+    sess.acl_generation = sess.acl_user == NULL ? 0 : sess.acl_user->generation;
     sess.acl_check = NULL;
     memcpy(sess.acl_username, "default", 8);
     session_execute_at(&sess, argv, argc, out, pal_wall_ms());
@@ -4186,6 +4187,9 @@ static int mt_route(void *ctx, void *conn, session *sess,
     if (argc == 0 || argv[0].str == NULL)
         return 0;
     cmd = cmd_resolve(argv[0].str, argv[0].len);
+
+    /* Refresh ACL identity before any home-worker authorization or routing. */
+    (void)session_acl_refresh(sess);
 
     st = (mt_conn_state *)server_conn_mt_state(conn);
 

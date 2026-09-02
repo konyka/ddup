@@ -82,6 +82,9 @@ python3 tools/audit_redis_compat.py \
   command bitsets at update time; unknown commands fail closed.
   `ACL LIST` returns complete bounded rule lines suitable for policy auditing.
   `ACL GETUSER` exposes the effective allow/deny command set and key rules.
+  Each fixed user slot carries a monotonic generation. Sessions validate the
+  cached generation before local execution and before MT routing; deleting and
+  recreating a username therefore invalidates stale connections fail-closed.
 - Cluster slot maintenance: `SFLUSH` intersects requested ranges with local
   ownership and returns coalesced flushed ranges; `TRIMSLOTS RANGES` validates
   ownership before deleting keys from unserved slots. Both paths collect keys

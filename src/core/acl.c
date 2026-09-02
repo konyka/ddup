@@ -9,6 +9,8 @@ static int eq(const char *a, size_t al, const char *b)
     return al == bl && memcmp(a, b, al) == 0;
 }
 
+static uint64_t acl_generation_next;
+
 void acl_init(acl_registry *r, const char *requirepass)
 {
     memset(r, 0, sizeof(*r));
@@ -16,6 +18,7 @@ void acl_init(acl_registry *r, const char *requirepass)
     memcpy(r->users[0].name, "default", 8);
     r->users[0].enabled = 1;
     r->users[0].all_commands = 1;
+    r->users[0].generation = ++acl_generation_next;
     memcpy(r->users[0].patterns[0], "*", 2);
     r->users[0].pattern_count = 1;
     if (requirepass != NULL && requirepass[0] != '\0') {
@@ -100,6 +103,7 @@ int acl_setuser(acl_registry *r, const char *name, size_t nlen,
         memset(u, 0, sizeof(*u));
         memcpy(u->name, name, nlen);
         u->name[nlen] = '\0';
+        u->generation = ++acl_generation_next;
     }
     temp = *u;
     for (i = 0; i < nrules; i++) {
@@ -135,6 +139,7 @@ int acl_deluser(acl_registry *r, const char *name, size_t nlen)
             r->users[i].password[0] = '\0';
             clear_rules(&r->users[i]);
             r->users[i].name[0] = '\0';
+            r->users[i].generation = ++acl_generation_next;
             return 1;
         }
     }

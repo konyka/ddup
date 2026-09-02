@@ -180,6 +180,23 @@ static void test_acl_getuser_commands_are_visible(void)
     resp_buf_free(&out);
 }
 
+static void test_acl_generation_changes_on_reuse(void)
+{
+    acl_registry r;
+    resp_value rules[2] = {rv("on"), rv("+get")};
+    acl_user *u;
+    uint64_t old_generation;
+    acl_init(&r, NULL);
+    DD_CHECK(acl_setuser(&r, "temp", 4, rules, 2) == 0);
+    u = acl_find(&r, "temp", 4);
+    DD_CHECK(u != NULL);
+    old_generation = u->generation;
+    DD_CHECK(acl_deluser(&r, "temp", 4) == 1);
+    DD_CHECK(acl_setuser(&r, "temp", 4, rules, 2) == 0);
+    u = acl_find(&r, "temp", 4);
+    DD_CHECK(u != NULL && u->generation != old_generation);
+}
+
 int main(void)
 {
     DD_RUN(test_acl_users);
@@ -193,5 +210,6 @@ int main(void)
     DD_RUN(test_acl_unknown_key_command_fails_closed);
     DD_RUN(test_acl_deleted_slots_and_denies_render);
     DD_RUN(test_acl_getuser_commands_are_visible);
+    DD_RUN(test_acl_generation_changes_on_reuse);
     return DD_TEST_SUMMARY();
 }

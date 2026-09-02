@@ -23,6 +23,7 @@ typedef struct acl_user {
     uint64_t deny[CMD_STATS_SLOTS / 64];
     int enabled;
     int all_commands;
+    uint64_t generation;
 } acl_user;
 
 typedef struct acl_registry {

@@ -1275,3 +1275,12 @@ single bit operations rather than category traversal.
 bounded stack buffer per user.
 `ACL GETUSER` enumerates the fixed command bitset only on the management path;
 no per-command allocations are introduced into dispatch.
+
+### Phase 154: ACL generation invalidation
+
+Each fixed ACL user slot carries a monotonic generation. Sessions cache the
+generation at bind/auth time and perform a pointer-safe integer comparison on
+each command; stale sessions are cleared without allocation or registry scans.
+MT performs the same check before home-worker authorization, so routed tasks
+cannot observe a deleted/recreated user's permissions. The normal path adds
+one predictable branch and no synchronization or heap traffic.

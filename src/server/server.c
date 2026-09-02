@@ -1984,6 +1984,7 @@ static conn *conn_create(server *srv, pal_socket_t fd)
     c->sess->acl_ctx = &srv->acl;
     c->sess->acl_user = acl_find_const(&srv->acl, "default", 7);
     c->sess->acl_check = srv_acl_check;
+    c->sess->acl_generation = c->sess->acl_user == NULL ? 0 : c->sess->acl_user->generation;
     memcpy(c->sess->acl_username, "default", 8);
     c->sess->authed = (srv->requirepass == NULL ||
                        srv->requirepass[0] == '\0')
@@ -3183,6 +3184,7 @@ void server_set_requirepass(server *s, const char *pw)
             if (c == NULL || c->sess == NULL) continue;
             c->sess->requirepass = pw;
             c->sess->acl_user = acl_find_const(&s->acl, "default", 7);
+            c->sess->acl_generation = c->sess->acl_user == NULL ? 0 : c->sess->acl_user->generation;
             c->sess->authed = (pw == NULL || pw[0] == '\0') ? 1 : 0;
             memcpy(c->sess->acl_username, "default", 8);
         }

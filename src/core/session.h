@@ -69,6 +69,7 @@ typedef struct session {
     const char *requirepass; /* not owned; NULL/"" = auth disabled */
     void *acl_ctx;
     const struct acl_user *acl_user;
+    uint64_t acl_generation;
     int (*acl_check)(void *ctx, const struct acl_user *user,
                      uint16_t cmd_id, const resp_value *argv, size_t argc);
     int (*acl_command)(void *ctx, struct session *s, const resp_value *argv,
@@ -274,6 +275,9 @@ void session_block_clear(session *s);
  * restrictions); eviction check runs afterwards. */
 void session_execute_at(session *s, const resp_value *argv, size_t argc,
                         resp_buf *out, uint64_t now_ms);
+
+/* Drop authentication when the ACL slot was deleted and reused. */
+int session_acl_refresh(session *s);
 void session_execute(session *s, const resp_value *argv, size_t argc,
                      resp_buf *out);
 

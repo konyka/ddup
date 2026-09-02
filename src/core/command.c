@@ -11721,6 +11721,8 @@ static void command_acl(session *s, const resp_value *argv, size_t argc,
         resp_write_error(out, "NOAUTH Authentication required.", 32);
         return;
     }
+    if (argc < 2 || !arg_str(&argv[1], &sub, &sl))
+        goto bad;
     if (strcmp(s->acl_username, "default") != 0 && argc >= 2 &&
         (ci_equal(sub, sl, "LIST") || ci_equal(sub, sl, "USERS") ||
          ci_equal(sub, sl, "GETUSER") || ci_equal(sub, sl, "DELUSER") ||
@@ -11735,9 +11737,6 @@ static void command_acl(session *s, const resp_value *argv, size_t argc,
         resp_write_error(out, "NOPERM ACL configuration is restricted to the default user", 59);
         return;
     }
-    if (argc < 2 || !arg_str(&argv[1], &sub, &sl))
-        goto bad;
-
     if (ci_equal(sub, sl, "HELP") && argc == 2) {
         static const char *help[] = {
             "CAT [category]", "DELUSER <username> [username ...]",
@@ -12911,7 +12910,7 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
             if (s->acl_ctx != NULL) {
                 const acl_user *u = acl_authenticate((const acl_registry *)s->acl_ctx, "default", 7, pw, pwl);
                 if (u == NULL) { static const char E[] = "WRONGPASS invalid username-password pair or user is disabled."; resp_write_error(out, E, sizeof(E) - 1); return; }
-                s->acl_user = u; memcpy(s->acl_username, "default", 8); s->authed = 1; resp_write_simple_string(out, "OK", 2); return;
+                s->acl_user = u; s->acl_generation = u->generation; memcpy(s->acl_username, "default", 8); s->authed = 1; resp_write_simple_string(out, "OK", 2); return;
             }
         } else if (argc == 3) {
             const char *user;
@@ -12922,7 +12921,7 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
             if (s->acl_ctx != NULL) {
                 const acl_user *u = acl_authenticate((const acl_registry *)s->acl_ctx, user, ul, pw, pwl);
                 if (u == NULL) { static const char E[] = "WRONGPASS invalid username-password pair or user is disabled."; resp_write_error(out, E, sizeof(E) - 1); return; }
-                s->acl_user = u; if (ul >= sizeof(s->acl_username)) ul = sizeof(s->acl_username)-1; memcpy(s->acl_username, user, ul); s->acl_username[ul] = '\0'; s->authed = 1; resp_write_simple_string(out, "OK", 2); return;
+                s->acl_user = u; s->acl_generation = u->generation; if (ul >= sizeof(s->acl_username)) ul = sizeof(s->acl_username)-1; memcpy(s->acl_username, user, ul); s->acl_username[ul] = '\0'; s->authed = 1; resp_write_simple_string(out, "OK", 2); return;
             }
             if (ul != 7 || memcmp(user, "default", 7) != 0) {
                 static const char E[] =
@@ -23539,6 +23538,8 @@ void session_execute_at(session *s, const resp_value *argv, size_t argc,
     if (name != NULL)
         cmd_id = cmd_resolve(name, nlen);
 
+    (void)session_acl_refresh(s);
+
     /* Lean GET/SET (Phase 36): a plain session (authed, not in MULTI, not
      * subscribed, cluster off) running GET, or SET with no options, skips
      * the second cmd_resolve, the READONLY/ownership wrappers and the
@@ -23830,6 +23831,18 @@ void session_execute_at(session *s, const resp_value *argv, size_t argc,
 
 bad_type:
     resp_write_error(out, "ERR invalid argument type", 24);
+}
+
+int session_acl_refresh(session *s)
+{
+    if (s == NULL || s->acl_user == NULL ||
+        s->acl_user->generation == s->acl_generation)
+        return 0;
+    s->acl_user = NULL;
+    s->acl_generation = 0;
+    s->authed = 0;
+    s->acl_username[0] = '\0';
+    return 1;
 }
 
 void session_execute(session *s, const resp_value *argv, size_t argc,
