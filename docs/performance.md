@@ -1459,6 +1459,12 @@ or allocation on unrelated subcommands.
 commands such as `FLUSHDB`, `FLUSHALL`, and `SHUTDOWN` remain keyless regardless
 of option tokens. Dispatch is a fixed branch sequence with no temporary storage.
 
+### Phase 184: ACL store-command key completeness
+
+Store-style commands validate destination and source keys using bounded glob
+scans. `numkeys` is parsed with a checked 64-bit helper before any index math,
+so malformed or truncated requests fail closed without allocation or overflow.
+
 Category names are normalized with a bounded ASCII comparison while parsing
 `SETUSER`; no temporary lowercase buffer or heap allocation is introduced.
 The authorization hot path remains the same pre-expanded bitset lookup.

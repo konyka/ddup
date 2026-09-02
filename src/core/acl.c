@@ -2,6 +2,7 @@
 
 #include <string.h>
 #include <stdio.h>
+#include <limits.h>
 
 static int eq(const char *a, size_t al, const char *b)
 {
@@ -19,6 +20,31 @@ static int eq_ci(const char *a, size_t al, const char *b)
         if (ca >= 'A' && ca <= 'Z') ca = (unsigned char)(ca + ('a' - 'A'));
         if (cb >= 'A' && cb <= 'Z') cb = (unsigned char)(cb + ('a' - 'A'));
         if (ca != cb) return 0;
+    }
+    return 1;
+}
+
+static int acl_parse_ll(const char *s, size_t len, long long *out)
+{
+    size_t i = 0;
+    int neg = 0;
+    unsigned long long v = 0;
+    if (len == 0 || out == NULL) return 0;
+    if (s[i] == '-') { neg = 1; i++; }
+    if (i == len) return 0;
+    for (; i < len; i++) {
+        unsigned digit;
+        if (s[i] < '0' || s[i] > '9') return 0;
+        digit = (unsigned)(s[i] - '0');
+        if (v > (UINT64_MAX - digit) / 10) return 0;
+        v = v * 10 + digit;
+    }
+    if (neg) {
+        if (v > (unsigned long long)LLONG_MAX + 1ULL) return 0;
+        *out = v == (unsigned long long)LLONG_MAX + 1ULL ? LLONG_MIN : -(long long)v;
+    } else {
+        if (v > (unsigned long long)LLONG_MAX) return 0;
+        *out = (long long)v;
     }
     return 1;
 }
@@ -365,6 +391,71 @@ int acl_authorize(const acl_user *u, uint16_t cmd_id, const resp_value *argv,
         keyless = 0;
     }
     if (keyless) return 1;
+    /* Commands with option-dependent key positions are checked explicitly so
+     * destination keys cannot bypass the source key policy. */
+    if (cmd_id == CMD_SORT || cmd_id == CMD_SORT_RO) {
+        size_t j;
+        if (argc < 2 || argv[1].type != RESP_BULK_STRING) return 0;
+        if (u->pattern_count == 0) return 0;
+        for (j = 0; j < u->pattern_count; j++)
+            if (acl_match_pattern(u->patterns[j], strlen(u->patterns[j]), argv[1].str, argv[1].len)) break;
+        if (j == u->pattern_count) return 0;
+        if (cmd_id == CMD_SORT) for (j = 2; j + 1 < argc; j++) {
+            if (argv[j].type == RESP_BULK_STRING && argv[j].len == 5 &&
+                memcmp(argv[j].str, "STORE", 5) == 0) {
+                if (argv[j + 1].type != RESP_BULK_STRING) return 0;
+                for (size_t p = 0; p < u->pattern_count; p++)
+                    if (acl_match_pattern(u->patterns[p], strlen(u->patterns[p]), argv[j + 1].str, argv[j + 1].len)) return 1;
+                return 0;
+            }
+        }
+        return 1;
+    }
+    if (cmd_id == CMD_SINTERSTORE || cmd_id == CMD_SUNIONSTORE || cmd_id == CMD_SDIFFSTORE) {
+        long long nk;
+        size_t j, p, end;
+        if (argc < 4 || u->pattern_count == 0 || argv[1].type != RESP_BULK_STRING ||
+            argv[2].type != RESP_BULK_STRING || !acl_parse_ll(argv[2].str, argv[2].len, &nk) || nk <= 0)
+            return 0;
+        end = 3 + (size_t)nk;
+        if (end > argc) return 0;
+        for (j = 1; j < end; j++) {
+            if (j == 2) continue;
+            if (argv[j].type != RESP_BULK_STRING) return 0;
+            for (p = 0; p < u->pattern_count; p++)
+                if (acl_match_pattern(u->patterns[p], strlen(u->patterns[p]), argv[j].str, argv[j].len)) break;
+            if (p == u->pattern_count) return 0;
+        }
+        return 1;
+    }
+    if (cmd_id == CMD_ZUNIONSTORE || cmd_id == CMD_ZINTERSTORE || cmd_id == CMD_ZDIFFSTORE) {
+        long long nk;
+        size_t j, p, end;
+        if (argc < 4 || u->pattern_count == 0 || argv[1].type != RESP_BULK_STRING ||
+            argv[2].type != RESP_BULK_STRING || !acl_parse_ll(argv[2].str, argv[2].len, &nk) || nk <= 0)
+            return 0;
+        end = 3 + (size_t)nk;
+        if (end > argc) return 0;
+        for (j = 1; j < end; j++) {
+            if (j == 2) continue;
+            if (argv[j].type != RESP_BULK_STRING) return 0;
+            for (p = 0; p < u->pattern_count; p++)
+                if (acl_match_pattern(u->patterns[p], strlen(u->patterns[p]), argv[j].str, argv[j].len)) break;
+            if (p == u->pattern_count) return 0;
+        }
+        return 1;
+    }
+    if (cmd_id == CMD_GEOSEARCHSTORE) {
+        size_t p;
+        if (argc < 3 || u->pattern_count == 0) return 0;
+        if (argv[1].type != RESP_BULK_STRING || argv[2].type != RESP_BULK_STRING) return 0;
+        for (p = 0; p < u->pattern_count; p++)
+            if (!acl_match_pattern(u->patterns[p], strlen(u->patterns[p]), argv[1].str, argv[1].len)) break;
+        if (p == u->pattern_count) return 0;
+        for (p = 0; p < u->pattern_count; p++)
+            if (acl_match_pattern(u->patterns[p], strlen(u->patterns[p]), argv[2].str, argv[2].len)) return 1;
+        return 0;
+    }
     /* Extract key positions for the common key-bearing command families.
      * Values/options are never treated as keys, avoiding false denials. */
     switch (cmd_id) {

@@ -748,6 +748,25 @@ static void test_acl_keyless_options_do_not_require_key_pattern(void)
     DD_CHECK(acl_authorize(u, CMD_SHUTDOWN, shutdownv, 2) == 1);
 }
 
+static void test_acl_store_commands_check_destination_and_sources(void)
+{
+    acl_registry r;
+    resp_value rules[3] = {rv("on"), rv("~allowed:*") , rv("+@all")};
+    resp_value sortv[4] = {rv("SORT"), rv("allowed:list"), rv("STORE"), rv("secret:out")};
+    resp_value sinterv[5] = {rv("SINTERSTORE"), rv("allowed:out"), rv("2"), rv("allowed:a"), rv("secret:b")};
+    resp_value zunionv[5] = {rv("ZUNIONSTORE"), rv("allowed:out"), rv("2"), rv("allowed:a"), rv("secret:b")};
+    resp_value geov[4] = {rv("GEOSEARCHSTORE"), rv("allowed:out"), rv("secret:geo"), rv("FROMMEMBER")};
+    acl_user *u;
+    acl_init(&r, NULL);
+    DD_CHECK(acl_setuser(&r, "u", 1, rules, 3) == 0);
+    u = acl_find(&r, "u", 1);
+    DD_CHECK(u != NULL);
+    DD_CHECK(acl_authorize(u, CMD_SORT, sortv, 5) == 0);
+    DD_CHECK(acl_authorize(u, CMD_SINTERSTORE, sinterv, 5) == 0);
+    DD_CHECK(acl_authorize(u, CMD_ZUNIONSTORE, zunionv, 5) == 0);
+    DD_CHECK(acl_authorize(u, CMD_GEOSEARCHSTORE, geov, 4) == 0);
+}
+
 static void test_acl_rule_line_capacity_covers_channel_patterns(void)
 {
     acl_registry r;
@@ -891,6 +910,7 @@ int main(void)
     DD_RUN(test_acl_keyed_subcommands_still_check_keys);
     DD_RUN(test_acl_subcommand_key_positions_are_correct);
     DD_RUN(test_acl_keyless_options_do_not_require_key_pattern);
+    DD_RUN(test_acl_store_commands_check_destination_and_sources);
     DD_RUN(test_acl_rule_line_capacity_covers_channel_patterns);
     DD_RUN(test_acl_log_coalesces_identical_events);
     DD_RUN(test_acl_getuser_flags_do_not_mislabel_commands);

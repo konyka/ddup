@@ -679,3 +679,5 @@
     `MEMORY USAGE`/`DEBUG OBJECT` key-bearing 路径，避免误拒与绕过（Phase 182）
   - [x] ACL 诊断/运维参数边界：`OBJECT/XINFO` 从正确参数提取 key，
     `FLUSHDB/FLUSHALL/SHUTDOWN` 选项保持 keyless，避免误判（Phase 183）
+  - [x] ACL 存储型多 key 授权：`SORT STORE`、`SINTERSTORE`、`ZUNIONSTORE`、
+    `GEOSEARCHSTORE` 同时校验 destination 与所有 source key（Phase 184）
