@@ -310,6 +310,7 @@ struct mt_agg {
     resp_buf keys_body; /* concatenated RESP bulk elements for KEYS */
     size_t keys_count;
     resp_buf client_body; /* concatenated CLIENT LIST payloads */
+    int client_kill;
     int fanout_done;
     int abandoned;
     int finished;
@@ -1675,7 +1676,7 @@ static void mt_agg_accumulate(mt_agg *agg, const resp_buf *part)
         }
         else if (part->data[0] == ':' && part->len > 2) {
             long long v = strtoll(part->data + 1, NULL, 10);
-            if (agg->cmd == CMD_DBSIZE)
+            if (agg->cmd == CMD_DBSIZE || agg->cmd == CMD_CLIENT)
                 agg->sum += v;
             else if (agg->cmd == CMD_LASTSAVE && v > agg->sum)
                 agg->sum = v;
@@ -1704,7 +1705,8 @@ static void mt_agg_finish(server *srv, void *conn, mt_conn_state *st,
                                 server_repl_info(
                                     agg->home->ms->workers[0].srv),
                                 agg->stats, &fin->reply);
-        else if (agg->cmd == CMD_DBSIZE || agg->cmd == CMD_LASTSAVE)
+        else if (agg->cmd == CMD_DBSIZE || agg->cmd == CMD_LASTSAVE ||
+                 (agg->cmd == CMD_CLIENT && agg->client_kill))
             resp_write_integer(&fin->reply, agg->sum);
         else if (agg->cmd == CMD_RANDOMKEY)
             resp_write_bulk(&fin->reply, agg->random_key,
@@ -2801,6 +2803,28 @@ static void mt_client_list_exec(worker *w, resp_buf *out)
     server_client_list(w->srv, out);
 }
 
+static void mt_client_kill_exec(worker *w, const resp_value *argv, size_t argc,
+                                resp_buf *out)
+{
+    char filter[128];
+    size_t i, n = 0;
+    if (argc < 3) {
+        resp_write_error(out, "ERR wrong number of arguments for 'client|kill' command", 52);
+        return;
+    }
+    for (i = 2; i < argc; i++) {
+        if (argv[i].str == NULL || n + argv[i].len + (n != 0) >= sizeof(filter)) {
+            resp_write_error(out, "ERR CLIENT KILL filter is too long", 34);
+            return;
+        }
+        if (n != 0)
+            filter[n++] = ' ';
+        memcpy(filter + n, argv[i].str, argv[i].len);
+        n += argv[i].len;
+    }
+    (void)server_client_kill(w->srv, filter, n, out);
+}
+
 static void mt_hotkeys_exec(worker *w, const resp_value *argv, size_t argc,
                             resp_buf *out)
 {
@@ -2938,6 +2962,9 @@ static int mt_route_aggregate(worker *home, void *conn,
         resp_buf_init(&agg->keys_body);
     if (cmd == CMD_CLIENT)
         resp_buf_init(&agg->client_body);
+    if (cmd == CMD_CLIENT && argc >= 2 && argv[1].str != NULL &&
+        mt_ci_equal(argv[1].str, argv[1].len, "KILL"))
+        agg->client_kill = 1;
 
     /* home part */
     resp_buf_init(&local);
@@ -2983,6 +3010,8 @@ static int mt_route_aggregate(worker *home, void *conn,
     } else if (cmd == CMD_CLIENT && argc >= 2 && argv[1].str != NULL &&
                mt_ci_equal(argv[1].str, argv[1].len, "LIST")) {
         mt_client_list_exec(home, &local);
+    } else if (cmd == CMD_CLIENT && agg->client_kill) {
+        mt_client_kill_exec(home, argv, argc, &local);
     } else if (cmd == CMD_HOTKEYS) {
         mt_hotkeys_exec(home, argv, argc, &local);
     } else if (cmd == CMD_SLOWLOG && argc >= 2 && argv[1].str != NULL &&
@@ -4138,7 +4167,8 @@ static int mt_route(void *ctx, void *conn, session *sess,
         cmd == CMD_FLUSHALL || cmd == CMD_RANDOMKEY || cmd == CMD_KEYS ||
         cmd == CMD_PUBSUB ||
         (cmd == CMD_CLIENT && argc >= 2 && argv[1].str != NULL &&
-         mt_ci_equal(argv[1].str, argv[1].len, "LIST")) ||
+         (mt_ci_equal(argv[1].str, argv[1].len, "LIST") ||
+          mt_ci_equal(argv[1].str, argv[1].len, "KILL"))) ||
         (cmd == CMD_HOTKEYS && mt_hotkeys_broadcast(argv, argc)) ||
         (cmd == CMD_SLOWLOG && argc >= 2 && argv[1].str != NULL &&
          mt_ci_equal(argv[1].str, argv[1].len, "RESET"))) {
@@ -4925,6 +4955,14 @@ static void mt_exec_task(worker *w, mt_task *t)
                 v.items[1].str != NULL && v.items[1].len == 4 &&
                 mt_ci_equal(v.items[1].str, v.items[1].len, "list")) {
                 mt_client_list_exec(w, &t->reply);
+                continue;
+            }
+            if (v.count >= 3 && v.items[0].str != NULL &&
+                v.items[0].len == 6 &&
+                mt_ci_equal(v.items[0].str, v.items[0].len, "client") &&
+                v.items[1].str != NULL && v.items[1].len == 4 &&
+                mt_ci_equal(v.items[1].str, v.items[1].len, "kill")) {
+                mt_client_kill_exec(w, v.items, v.count, &t->reply);
                 continue;
             }
             if (v.count >= 2 && v.items[0].str != NULL &&

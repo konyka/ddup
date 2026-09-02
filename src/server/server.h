@@ -187,6 +187,8 @@ void server_aof_flush(server *s);
 void server_bgrewriteaof(server *s, resp_buf *out);
 /* Render this server's local CLIENT LIST view. */
 void server_client_list(server *s, resp_buf *out);
+int server_client_kill(server *s, const char *filter, size_t filterlen,
+                       resp_buf *out);
 void server_slowlog_reset(server *s);
 /* Execute a server-owned HOTKEYS control command. */
 int server_hotkeys_command(server *s, const resp_value *argv, size_t argc,

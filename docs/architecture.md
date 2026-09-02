@@ -1415,3 +1415,12 @@ MT worker 的连接 ID 使用按 worker 分 lane 的单调等差序列：第 `i`
 保持不变。独立 server 继续使用步长 1 的原有序列。该分配为后续精确的
 `CLIENT KILL ID` 跨 worker 路由提供无歧义目标，但当前 kill 过滤器仍需单独的
 控制面实现。
+
+## Phase 144：MT `CLIENT KILL ID` 控制面
+
+`CLIENT KILL` 在 MT 模式下作为聚合控制命令执行。home worker 将完整过滤器
+广播到所有 worker；每个 worker 仅扫描自己拥有的连接并将命中的数量返回，home
+worker 汇总为一个 RESP integer。命中连接由其所属 worker 设置
+`close_after_send`，因此不会因 home worker 与连接 owner 不同而误杀其他连接。
+聚合任务沿用连接流水线序号、pending 计数和 fail-closed 分配策略；目标连接
+关闭与控制命令回复解耦，避免 IOCP/io_uring 未完成操作被提前释放。

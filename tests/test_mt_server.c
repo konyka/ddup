@@ -1168,6 +1168,56 @@ static void test_client_ids_are_globally_unique(void)
     pal_socket_cleanup();
 }
 
+static void test_client_kill_id_cross_worker(void)
+{
+    mt_server *ms;
+    pal_socket_t controller, target, survivor;
+    char reply[256];
+    char idreq[128];
+    size_t n;
+    long long target_id;
+
+    DD_CHECK_EQ_INT(0, pal_socket_init());
+    ms = mt_server_create("127.0.0.1", 0, 2);
+    DD_CHECK(ms != NULL);
+    if (ms == NULL)
+        return;
+    DD_CHECK_EQ_INT(0, mt_server_start(ms));
+    controller = connect_client(mt_server_port(ms));
+    target = connect_client(mt_server_port(ms));
+    survivor = connect_client(mt_server_port(ms));
+    n = request_full(target, "*2\r\n$6\r\nCLIENT\r\n$2\r\nID\r\n",
+                     reply, sizeof(reply));
+    DD_CHECK(n > 1 && reply[0] == ':');
+    target_id = strtoll(reply + 1, NULL, 10);
+    snprintf(idreq, sizeof(idreq),
+             "*4\r\n$6\r\nCLIENT\r\n$4\r\nKILL\r\n$2\r\nID\r\n$%zu\r\n%lld\r\n",
+             strlen(reply + 1) - 2, target_id);
+    roundtrip(controller, idreq, ":1\r\n");
+    /* The target is closed asynchronously, while an unrelated connection
+     * remains usable. */
+    roundtrip(survivor, "*1\r\n$4\r\nPING\r\n", "+PONG\r\n");
+    {
+        uint64_t deadline = pal_now_ms() + 3000;
+        int closed = 0;
+        while (pal_now_ms() < deadline) {
+            ptrdiff_t nr = pal_recv(target, reply, sizeof(reply));
+            if (nr == 0) {
+                closed = 1;
+                break;
+            }
+            pal_sleep_ms(1);
+        }
+        DD_CHECK(closed);
+    }
+    pal_close(controller);
+    pal_close(target);
+    pal_close(survivor);
+    mt_server_stop(ms);
+    mt_server_destroy(ms);
+    pal_socket_cleanup();
+}
+
 static void test_hotkeys_control_is_broadcast(void)
 {
     mt_server *ms;
@@ -3485,6 +3535,7 @@ int main(void)
     DD_RUN(test_bgrewriteaof_is_broadcast_to_workers);
     DD_RUN(test_client_list_covers_all_workers);
     DD_RUN(test_client_ids_are_globally_unique);
+    DD_RUN(test_client_kill_id_cross_worker);
     DD_RUN(test_hotkeys_control_is_broadcast);
     DD_RUN(test_slowlog_reset_is_broadcast);
     DD_RUN(test_cluster_state_propagates_to_workers);

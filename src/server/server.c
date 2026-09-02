@@ -3102,6 +3102,14 @@ void server_client_list(server *s, resp_buf *out)
         srv_client_list(s, out);
 }
 
+int server_client_kill(server *s, const char *filter, size_t filterlen,
+                       resp_buf *out)
+{
+    if (s == NULL || out == NULL)
+        return 0;
+    return srv_client_kill(s, filter, filterlen, out);
+}
+
 void server_slowlog_reset(server *s)
 {
     if (s != NULL)

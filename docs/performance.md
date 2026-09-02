@@ -1218,3 +1218,10 @@ MT client IDs use disjoint arithmetic sequences per worker (`first = worker + 1`
 `stride = worker_count`). Allocation remains a single increment on the accepting
 worker with no shared lock or heap allocation. Connection migration preserves the
 existing ID. The new uniqueness check adds no steady-state command-path cost.
+
+### Phase 144: MT CLIENT KILL
+
+`CLIENT KILL` uses the existing aggregate fan-out path. The filter is copied once
+into the aggregate task; workers scan only their local connection arrays, so the
+steady-state cost is O(workers + total connections) with no global lock. Only the
+matching owner marks a connection for close, preserving proactor zombie safety.

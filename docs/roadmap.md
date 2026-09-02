@@ -595,3 +595,6 @@
   - [x] mt 全局 CLIENT ID 分配：每个 worker 使用互不相交的等差 ID 序列，
     连接迁移时保留原 ID；新增三 worker 多连接唯一性回归，避免 `CLIENT ID`
     与后续 `CLIENT KILL ID` 路由发生歧义（Phase 143）
+  - [x] mt `CLIENT KILL ID` 精确控制面：将 ID 过滤器广播到全部 worker，
+    汇总本地命中数并按流水线顺序返回；目标连接只在所属 worker 标记关闭，
+    避免 home worker 误杀或返回部分计数（Phase 144）
