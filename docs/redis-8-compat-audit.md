@@ -161,6 +161,8 @@ bounded channel state as `&*` and an empty rule set.
   `numkeys` slice, with checked zero-key and malformed-count handling.
   Blocking pop/bit operations and legacy geo store forms authorize every actual
   key while excluding timeout, count, coordinate, and option tokens.
+  Stream reads/group management and multi-pop commands extract keys from their
+  `STREAMS`/`numkeys` positions and fail closed on malformed or truncated input.
 - Cluster slot maintenance: `SFLUSH` intersects requested ranges with local
   ownership and returns coalesced flushed ranges; `TRIMSLOTS RANGES` validates
   ownership before deleting keys from unserved slots. Both paths collect keys

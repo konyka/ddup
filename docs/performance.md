@@ -1492,6 +1492,13 @@ count options. `BITOP` checks destination plus every source, and legacy
 `GEORADIUS` variants check optional `STORE/STOREDIST` destinations. All paths use
 bounded loops with no temporary allocation.
 
+### Phase 189: ACL stream and multi-pop key positions
+
+`XREAD/XREADGROUP` locate the `STREAMS` marker and scan only the key half of the
+paired stream/id tail. `XGROUP` checks its stream argument, while `LMPOP/ZMPOP`
+use checked `numkeys` slices. Group, consumer, timeout, direction, and count
+tokens never enter the glob matcher.
+
 Category names are normalized with a bounded ASCII comparison while parsing
 `SETUSER`; no temporary lowercase buffer or heap allocation is introduced.
 The authorization hot path remains the same pre-expanded bitset lookup.

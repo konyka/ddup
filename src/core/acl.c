@@ -411,6 +411,61 @@ int acl_authorize(const acl_user *u, uint16_t cmd_id, const resp_value *argv,
         }
         return 1;
     }
+    if (cmd_id == CMD_XREAD || cmd_id == CMD_XREADGROUP) {
+        size_t streams = 0, j, p, key_count;
+        if (u->pattern_count == 0) return 0;
+        for (j = 1; j < argc; j++) {
+            if (argv[j].type == RESP_BULK_STRING && argv[j].len == 7 &&
+                memcmp(argv[j].str, "STREAMS", 7) == 0) { streams = j; break; }
+        }
+        if (streams == 0 || streams + 1 >= argc) return 0;
+        key_count = (argc - streams - 1) / 2;
+        if (key_count == 0 || streams + 1 + key_count > argc) return 0;
+        for (j = streams + 1; j < streams + 1 + key_count; j++) {
+            if (argv[j].type != RESP_BULK_STRING) return 0;
+            for (p = 0; p < u->pattern_count; p++)
+                if (acl_match_pattern(u->patterns[p], strlen(u->patterns[p]), argv[j].str, argv[j].len)) break;
+            if (p == u->pattern_count) return 0;
+        }
+        return 1;
+    }
+    if (cmd_id == CMD_XGROUP) {
+        size_t p;
+        if (argc < 3 || argv[2].type != RESP_BULK_STRING || u->pattern_count == 0) return 0;
+        for (p = 0; p < u->pattern_count; p++)
+            if (acl_match_pattern(u->patterns[p], strlen(u->patterns[p]), argv[2].str, argv[2].len)) return 1;
+        return 0;
+    }
+    if (cmd_id == CMD_LMPOP) {
+        long long nk;
+        size_t j, p, end;
+        if (argc < 4 || argv[2].type != RESP_BULK_STRING ||
+            !acl_parse_ll(argv[2].str, argv[2].len, &nk) || nk <= 0 ||
+            (uint64_t)nk > (uint64_t)(argc - 3) || u->pattern_count == 0) return 0;
+        end = 3 + (size_t)nk;
+        for (j = 3; j < end; j++) {
+            if (argv[j].type != RESP_BULK_STRING) return 0;
+            for (p = 0; p < u->pattern_count; p++)
+                if (acl_match_pattern(u->patterns[p], strlen(u->patterns[p]), argv[j].str, argv[j].len)) break;
+            if (p == u->pattern_count) return 0;
+        }
+        return 1;
+    }
+    if (cmd_id == CMD_ZMPOP) {
+        long long nk;
+        size_t j, p, end;
+        if (argc < 3 || argv[1].type != RESP_BULK_STRING ||
+            !acl_parse_ll(argv[1].str, argv[1].len, &nk) || nk <= 0 ||
+            (uint64_t)nk > (uint64_t)(argc - 2) || u->pattern_count == 0) return 0;
+        end = 2 + (size_t)nk;
+        for (j = 2; j < end; j++) {
+            if (argv[j].type != RESP_BULK_STRING) return 0;
+            for (p = 0; p < u->pattern_count; p++)
+                if (acl_match_pattern(u->patterns[p], strlen(u->patterns[p]), argv[j].str, argv[j].len)) break;
+            if (p == u->pattern_count) return 0;
+        }
+        return 1;
+    }
     if (keyless) return 1;
     /* Commands with option-dependent key positions are checked explicitly so
      * destination keys cannot bypass the source key policy. */

@@ -689,3 +689,5 @@
     `numkeys` 声明的 key，脚本/函数名与参数不参与 key pattern（Phase 187）
   - [x] ACL 阻塞/选项型 key 位点：`BLPOP/BZMPOP/BLMPOP`、`BITOP` 与
     `GEORADIUS ... STORE` 校验全部真实 key，忽略 timeout/option 参数（Phase 188）
+  - [x] ACL Stream/多路弹出 key 位点：`XREAD/XREADGROUP/XGROUP` 与
+    `LMPOP/ZMPOP` 按 `STREAMS`/`numkeys` 提取真实 key（Phase 189）

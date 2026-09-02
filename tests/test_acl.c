@@ -849,6 +849,33 @@ static void test_acl_blocking_and_option_key_positions(void)
     DD_CHECK(acl_authorize(u, CMD_GEORADIUS, georadius, 8) == 0);
 }
 
+static void test_acl_stream_and_numkeys_positions(void)
+{
+    acl_registry r;
+    resp_value rules[3] = {rv("on"), rv("~allowed:*") , rv("+@all")};
+    resp_value xread[8] = {rv("XREAD"), rv("COUNT"), rv("1"), rv("STREAMS"), rv("allowed:s"), rv("secret:s"), rv("0-0"), rv("0-0")};
+    resp_value xreadgroup[9] = {rv("XREADGROUP"), rv("GROUP"), rv("g"), rv("c"), rv("STREAMS"), rv("allowed:s"), rv("secret:s"), rv("0"), rv("0")};
+    resp_value xgroup[4] = {rv("XGROUP"), rv("CREATE"), rv("secret:s"), rv("g")};
+    resp_value lmpop[6] = {rv("LMPOP"), rv("0"), rv("2"), rv("allowed:a"), rv("secret:b"), rv("LEFT")};
+    resp_value zmpop[6] = {rv("ZMPOP"), rv("2"), rv("2"), rv("allowed:a"), rv("secret:b"), rv("MIN")};
+    resp_value xread_ok[8] = {rv("XREAD"), rv("COUNT"), rv("1"), rv("STREAMS"), rv("allowed:s"), rv("allowed:t"), rv("0-0"), rv("0-0")};
+    resp_value xgroup_ok[4] = {rv("XGROUP"), rv("CREATE"), rv("allowed:s"), rv("g")};
+    resp_value lmpop_ok[6] = {rv("LMPOP"), rv("0"), rv("2"), rv("allowed:a"), rv("allowed:b"), rv("LEFT")};
+    acl_user *u;
+    acl_init(&r, NULL);
+    DD_CHECK(acl_setuser(&r, "u", 1, rules, 3) == 0);
+    u = acl_find(&r, "u", 1);
+    DD_CHECK(u != NULL);
+    DD_CHECK(acl_authorize(u, CMD_XREAD, xread, 8) == 0);
+    DD_CHECK(acl_authorize(u, CMD_XREAD, xread_ok, 8) == 1);
+    DD_CHECK(acl_authorize(u, CMD_XREADGROUP, xreadgroup, 9) == 0);
+    DD_CHECK(acl_authorize(u, CMD_XGROUP, xgroup, 4) == 0);
+    DD_CHECK(acl_authorize(u, CMD_XGROUP, xgroup_ok, 4) == 1);
+    DD_CHECK(acl_authorize(u, CMD_LMPOP, lmpop, 6) == 0);
+    DD_CHECK(acl_authorize(u, CMD_LMPOP, lmpop_ok, 6) == 1);
+    DD_CHECK(acl_authorize(u, CMD_ZMPOP, zmpop, 6) == 0);
+}
+
 static void test_acl_rule_line_capacity_covers_channel_patterns(void)
 {
     acl_registry r;
@@ -997,6 +1024,7 @@ int main(void)
     DD_RUN(test_acl_replication_and_cluster_controls_are_keyless);
     DD_RUN(test_acl_script_commands_use_declared_key_positions);
     DD_RUN(test_acl_blocking_and_option_key_positions);
+    DD_RUN(test_acl_stream_and_numkeys_positions);
     DD_RUN(test_acl_rule_line_capacity_covers_channel_patterns);
     DD_RUN(test_acl_log_coalesces_identical_events);
     DD_RUN(test_acl_getuser_flags_do_not_mislabel_commands);
