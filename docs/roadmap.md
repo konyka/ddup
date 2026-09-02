@@ -572,3 +572,6 @@
   - [x] mt CONFIG 一致性：`CONFIG SET`/`RESETSTAT` 广播到所有 worker，
     同步数据库级内存参数与服务器级 `appendfsync` writer；`CONFIG GET` 保持
     本地快速路径并新增跨连接一致性回归（Phase 136）
+  - [x] mt SAVE 多数据库一致性：广播 fan-out 使用 worker 级 multi-db
+    session 生成完整快照，修复客户端处于 `SELECT` 非零 DB 时只保存单库的
+    风险；新增保存后重启跨 DB 恢复回归（Phase 137）

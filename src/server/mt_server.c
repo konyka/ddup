@@ -2706,6 +2706,28 @@ static void mt_flushall_exec(worker *w, int log_db_index, resp_buf *out)
     session_release(&sess);
 }
 
+/* SAVE must use a worker-level multi-db session even when the client selected
+ * a non-zero logical DB; snapshot_path is configured on db0 by the server. */
+static void mt_save_exec(worker *w, resp_buf *out)
+{
+    static const char req[] = "*1\r\n$4\r\nSAVE\r\n";
+    session sess;
+    resp_value v;
+    arena ar;
+    session_init(&sess, server_db_at(w->srv, 0));
+    sess.sel_ctx = w->srv;
+    sess.sel_fn = server_select_db;
+    sess.sel_ndbs = server_ndbs(w->srv);
+    arena_init(&ar, 64);
+    if (resp_parse(req, sizeof(req) - 1, &v, &ar) ==
+        (ptrdiff_t)(sizeof(req) - 1))
+        session_execute_at(&sess, v.items, v.count, out, pal_wall_ms());
+    else
+        resp_write_error(out, "ERR Protocol error", 18);
+    arena_destroy(&ar);
+    session_release(&sess);
+}
+
 /* Execute CONFIG against every logical db on one worker and expose the
  * server-owned appendfsync hook, matching a normal client session. */
 static void mt_config_exec(worker *w, const resp_value *argv, size_t argc,
@@ -2865,6 +2887,8 @@ static int mt_route_aggregate(worker *home, void *conn,
         else
             resp_write_error(&local, "ERR Protocol error", 18);
         arena_destroy(&ar);
+    } else if (cmd == CMD_SAVE) {
+        mt_save_exec(home, &local);
     } else if (cmd == CMD_FLUSHDB) {
         db *d = server_db_at(home->srv, db_index);
         uint64_t dirty_before = d->dirty;
@@ -4768,6 +4792,12 @@ static void mt_exec_task(worker *w, mt_task *t)
                 v.items[0].len == 8 &&
                 mt_ci_equal(v.items[0].str, v.items[0].len, "flushall")) {
                 mt_flushall_exec(w, t->db_index, &t->reply);
+                continue;
+            }
+            if (v.count == 1 && v.items[0].str != NULL &&
+                v.items[0].len == 4 &&
+                mt_ci_equal(v.items[0].str, v.items[0].len, "save")) {
+                mt_save_exec(w, &t->reply);
                 continue;
             }
             if (v.count >= 2 && v.items[0].str != NULL &&

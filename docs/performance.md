@@ -68,6 +68,7 @@
 | 2026-09-02 | Phase 134 script cache broadcast | control-plane fan-out | Linux, Release | 仅 SCRIPT/FUNCTION 管理命令创建聚合任务；EVALSHA/FCALL 数据热路径不变 | 消除跨 worker NOSCRIPT/未知函数 |
 | 2026-09-02 | Phase 135 script broadcast errors | completion aggregation | Linux, Release | 复用既有聚合 completion，无新增数据面分配 | 任一 worker 错误时整体 fail-closed |
 | 2026-09-02 | Phase 136 CONFIG consistency | control-plane fan-out | Linux, Release | SET/RESETSTAT 才广播；GET 保持本地无任务路径 | 消除多 worker 配置漂移 |
+| 2026-09-02 | Phase 137 SAVE consistency | worker multi-db session | Linux, Release | 复用既有 snapshot serializer；无新增数据面分配 | 保证 SELECT 非零 DB 时快照完整 |
 
 Phase 12 说明：PSYNC 的收益不在 loopback 小数据集（绝对值几十毫秒），
 而在大数据集 + 高写入场景——全量重同步成本 = 快照序列化 + 全量传输 +

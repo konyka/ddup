@@ -1140,6 +1140,10 @@ DBSIZE 为 O(1)，可能计入尚未回收的过期 key。
   路径在所有 worker 执行；数据库级参数（`maxmemory`、策略）覆盖该 worker
   的全部逻辑 DB，服务器级 `appendfsync` 通过 server-owned hook 更新各自
   AOF writer。`CONFIG GET` 仍在本地快速读取，避免读请求产生广播开销。
+- **MT SAVE 一致性**：`SAVE` 在每个 worker 使用覆盖全部逻辑 DB 的
+  multi-db session 执行，而不是复用调用连接当前选中的 DB；因此每个
+  `worker-<id>-<snapshot>` 文件都包含完整 DB 集合，重启恢复不会丢失
+  非零 DB 的数据。
 
 ## 架构对比：分片存储 + 消息路由（ddup mt）vs 共享存储（Garnet/Tsavorite）
 
