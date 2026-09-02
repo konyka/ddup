@@ -257,6 +257,8 @@ static void test_object_metadata_and_getkeysflags(void)
     EXPECT_REPLY("*2\r\n$2\r\nk1\r\n$2\r\nk2\r\n");
     cmd(6, "COMMAND", "GETKEYS", "FCALL_RO", "fn", "1", "k1");
     EXPECT_REPLY("*1\r\n$2\r\nk1\r\n");
+    cmd(7, "COMMAND", "GETKEYS", "SORT", "src", "STORE", "dst");
+    EXPECT_REPLY("*2\r\n$3\r\nsrc\r\n$3\r\ndst\r\n");
 }
 
 static void test_server_management_commands(void)

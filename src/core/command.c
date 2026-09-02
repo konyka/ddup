@@ -7186,6 +7186,21 @@ static void command_emit_keys_mode(const resp_value *argv, size_t argc,
         EMIT_KEY(&argv[3]);
         goto done;
     }
+    if (cmd_id == CMD_SORT || cmd_id == CMD_SORT_RO) {
+        EMIT_KEY(&argv[3]);
+        if (cmd_id == CMD_SORT) {
+            for (i = 4; i + 1 < argc; i++) {
+                const char *tok;
+                size_t tl;
+                if (arg_str(&argv[i], &tok, &tl) &&
+                    ci_equal(tok, tl, "STORE")) {
+                    EMIT_KEY(&argv[i + 1]);
+                    break;
+                }
+            }
+        }
+        goto done;
+    }
     if (cmd_id == CMD_XGROUP || cmd_id == CMD_XINFO) {
         if (argc > 4)
             EMIT_KEY(&argv[4]);

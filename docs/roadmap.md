@@ -556,3 +556,5 @@
   - [x] SORT STORE 双 key 安全路由：MT 与 Cluster 同时检查排序源 key 和
     `STORE` 目标 key；跨 worker/slot 在执行前返回 `CROSSSLOT`，并以真实
     loopback 回归锁定无部分写入（Phase 130）
+  - [x] SORT key 元数据同步：`COMMAND GETKEYS/GETKEYSANDFLAGS` 识别
+    `SORT STORE <destination>` 并返回双 key，补充命令元数据回归（Phase 131）

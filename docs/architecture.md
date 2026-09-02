@@ -1122,6 +1122,8 @@ DBSIZE 为 O(1)，可能计入尚未回收的过期 key。
 - **复合排序键约束**：`SORT <source> STORE <destination>` 同时校验源和目标
   key 的 worker/slot；跨 worker 或跨 slot 请求在执行前返回 `CROSSSLOT`，避免
   sessionless 路由只携带源 key 而把排序结果写入错误分片。`SORT_RO` 仅读取源 key。
+- `COMMAND GETKEYS/GETKEYSANDFLAGS` 与上述规则保持一致，`SORT STORE` 返回源、
+  目标两个 key，防止客户端拓扑缓存遗漏写入目标。
 
 ## 架构对比：分片存储 + 消息路由（ddup mt）vs 共享存储（Garnet/Tsavorite）
 
