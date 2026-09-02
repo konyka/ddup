@@ -1348,6 +1348,12 @@ the authorization hot path remains unchanged.
 user copy and disables the account. The final assignment remains atomic and
 does not add work to normal authorization checks.
 
+### Phase 169: ACL rule-line capacity
+
+The cold `ACL LIST` formatter reserves stack capacity for both maximum key and
+channel pattern tables plus bounded credentials. This avoids heap allocation and
+prevents truncated RESP lines when a policy uses all inline slots.
+
 ### Phase 154: ACL generation invalidation
 
 Each fixed ACL user slot carries a monotonic generation. Sessions cache the

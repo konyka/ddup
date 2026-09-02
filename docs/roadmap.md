@@ -649,3 +649,5 @@
     nocommands/nopass/resetpass`，保持规则原子替换与固定容量约束（Phase 167）
   - [x] ACL reset 完整语义：清除密码、命令/key/channel 规则并关闭用户，
     保持 Redis `reset` 后可显式 `on` 恢复的原子行为（Phase 168）
+  - [x] ACL 规则行容量收口：`ACL LIST` 栈 buffer 同时覆盖最大 key/channel
+    pattern 集，保证完整 CRLF 行且不因新增频道规则截断（Phase 169）

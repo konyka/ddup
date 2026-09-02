@@ -510,6 +510,30 @@ static void test_acl_reset_clears_password_and_disables_user(void)
     DD_CHECK(u != NULL && u->enabled == 0 && u->password[0] == '\0');
 }
 
+static void test_acl_rule_line_capacity_covers_channel_patterns(void)
+{
+    acl_registry r;
+    resp_value rules[ACL_MAX_CHANNELS + 2];
+    char pats[ACL_MAX_CHANNELS][ACL_MAX_PATTERN];
+    resp_buf out;
+    const acl_user *u;
+    size_t i;
+    rules[0] = rv("on");
+    for (i = 0; i < ACL_MAX_CHANNELS; i++) {
+        memset(pats[i], 'x', sizeof(pats[i]));
+        pats[i][ACL_MAX_PATTERN - 1] = '\0';
+        pats[i][0] = '&';
+        rules[i + 1] = rv(pats[i]);
+    }
+    acl_init(&r, NULL);
+    DD_CHECK(acl_setuser(&r, "wide", 4, rules, ACL_MAX_CHANNELS + 1) == 0);
+    u = acl_find_const(&r, "wide", 4);
+    resp_buf_init(&out);
+    acl_write_rule_line(u, &out);
+    DD_CHECK(out.len >= 2 && memcmp(out.data + out.len - 2, "\r\n", 2) == 0);
+    resp_buf_free(&out);
+}
+
 int main(void)
 {
     DD_RUN(test_acl_users);
@@ -541,5 +565,6 @@ int main(void)
     DD_RUN(test_acl_publish_checks_only_channel_argument);
     DD_RUN(test_acl_setuser_common_aliases);
     DD_RUN(test_acl_reset_clears_password_and_disables_user);
+    DD_RUN(test_acl_rule_line_capacity_covers_channel_patterns);
     return DD_TEST_SUMMARY();
 }

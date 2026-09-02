@@ -375,7 +375,8 @@ void acl_write_user(const acl_user *u, resp_buf *out)
 void acl_write_rule_line(const acl_user *u, resp_buf *out)
 {
     size_t i;
-    char buf[ACL_MAX_NAME + ACL_MAX_PASSWORD + ACL_MAX_PATTERNS * ACL_MAX_PATTERN + 64];
+    char buf[ACL_MAX_NAME + ACL_MAX_PASSWORD +
+             (ACL_MAX_PATTERNS + ACL_MAX_CHANNELS) * ACL_MAX_PATTERN + 128];
     int n = snprintf(buf, sizeof(buf), "user %s %s %s", u->name,
                      u->enabled ? "on" : "off",
                      u->all_commands ? "allcommands" : "resetkeys");
