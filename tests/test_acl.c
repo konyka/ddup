@@ -130,6 +130,56 @@ static void test_acl_rule_rendering(void)
     resp_buf_free(&out);
 }
 
+static void test_acl_unknown_key_command_fails_closed(void)
+{
+    acl_registry r;
+    resp_value rules[4] = {rv("on"), rv("~cache:*") , rv("+hget"), rv("+echo")};
+    resp_value good[3] = {rv("HGET"), rv("cache:key"), rv("field")};
+    resp_value bad[3] = {rv("HGET"), rv("other:key"), rv("field")};
+    resp_value echo[2] = {rv("ECHO"), rv("hello")};
+    const acl_user *u;
+    acl_init(&r, NULL);
+    DD_CHECK(acl_setuser(&r, "hash", 4, rules, 4) == 0);
+    u = acl_find_const(&r, "hash", 4);
+    DD_CHECK(u != NULL);
+    DD_CHECK(acl_authorize(u, CMD_HGET, good, 3) == 1);
+    DD_CHECK(acl_authorize(u, CMD_HGET, bad, 3) == 0);
+    DD_CHECK(acl_authorize(u, CMD_ECHO, echo, 2) == 1);
+}
+
+static void test_acl_deleted_slots_and_denies_render(void)
+{
+    acl_registry r;
+    resp_value rules[4] = {rv("on"), rv("~*") , rv("+get"), rv("-set")};
+    resp_buf out;
+    const acl_user *u;
+    acl_init(&r, NULL);
+    DD_CHECK(acl_setuser(&r, "temp", 4, rules, 4) == 0);
+    DD_CHECK(acl_deluser(&r, "temp", 4) == 1);
+    resp_buf_init(&out);
+    u = acl_find_const(&r, "default", 7);
+    DD_CHECK(u != NULL);
+    acl_write_rule_line(u, &out);
+    DD_CHECK(strstr(out.data, "user default") != NULL);
+    resp_buf_free(&out);
+}
+
+static void test_acl_getuser_commands_are_visible(void)
+{
+    acl_registry r;
+    resp_value rules[4] = {rv("on"), rv("~*") , rv("+get"), rv("-set")};
+    resp_buf out;
+    const acl_user *u;
+    acl_init(&r, NULL);
+    DD_CHECK(acl_setuser(&r, "audit", 5, rules, 4) == 0);
+    u = acl_find_const(&r, "audit", 5);
+    resp_buf_init(&out);
+    acl_write_user(u, &out);
+    DD_CHECK(strstr(out.data, "+get") != NULL);
+    DD_CHECK(strstr(out.data, "-set") != NULL);
+    resp_buf_free(&out);
+}
+
 int main(void)
 {
     DD_RUN(test_acl_users);
@@ -140,5 +190,8 @@ int main(void)
     DD_RUN(test_acl_sensitive_queries_require_default);
     DD_RUN(test_acl_categories_and_keyless_commands);
     DD_RUN(test_acl_rule_rendering);
+    DD_RUN(test_acl_unknown_key_command_fails_closed);
+    DD_RUN(test_acl_deleted_slots_and_denies_render);
+    DD_RUN(test_acl_getuser_commands_are_visible);
     return DD_TEST_SUMMARY();
 }

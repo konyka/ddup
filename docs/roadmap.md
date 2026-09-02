@@ -616,3 +616,5 @@
     @connection`，未声明 key 的命令不触发模式检查（Phase 151）
   - [x] ACL LIST 完整规则渲染：返回状态、权限、密码和 key pattern，过滤
     已删除用户槽位（Phase 152）
+  - [x] ACL GETUSER 命令权限可见性：输出 allow/deny 命令规则和 key 范围
+    （Phase 153）

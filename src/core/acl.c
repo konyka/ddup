@@ -171,6 +171,7 @@ int acl_authorize(const acl_user *u, uint16_t cmd_id, const resp_value *argv,
                   size_t argc)
 {
     size_t i, first = 1, step = 1, nkeys = 0;
+    int keyless = 0;
     if (u == NULL || !u->enabled || cmd_id >= CMD_STATS_SLOTS) return 0;
     if (!u->all_commands && !(u->allow[cmd_id / 64] & (UINT64_C(1) << (cmd_id % 64)))) return 0;
     if (u->deny[cmd_id / 64] & (UINT64_C(1) << (cmd_id % 64))) return 0;
@@ -180,6 +181,15 @@ int acl_authorize(const acl_user *u, uint16_t cmd_id, const resp_value *argv,
         cmd_id == CMD_SSUBSCRIBE || cmd_id == CMD_SUNSUBSCRIBE ||
         cmd_id == CMD_PUBLISH || cmd_id == CMD_SPUBLISH)
         return 1;
+    switch (cmd_id) {
+    case CMD_PING: case CMD_ECHO: case CMD_AUTH: case CMD_QUIT:
+    case CMD_RESET: case CMD_HELLO: case CMD_TIME: case CMD_ROLE:
+    case CMD_READONLY: case CMD_READWRITE: case CMD_SELECT:
+    case CMD_COMMAND: case CMD_INFO: case CMD_LATENCY: case CMD_LOLWUT:
+        keyless = 1; break;
+    default: break;
+    }
+    if (keyless) return 1;
     /* Extract key positions for the common key-bearing command families.
      * Values/options are never treated as keys, avoiding false denials. */
     switch (cmd_id) {
@@ -194,7 +204,7 @@ int acl_authorize(const acl_user *u, uint16_t cmd_id, const resp_value *argv,
     case CMD_MSET: case CMD_MSETNX:
         nkeys = (argc - 1) / 2; step = 2; break;
     default:
-        nkeys = 0;
+        nkeys = 1;
         break;
     }
     if (nkeys == 0) return 1;
@@ -222,8 +232,22 @@ void acl_write_user(const acl_user *u, resp_buf *out)
     resp_write_bulk(out, "passwords", 9);
     resp_write_array_header(out, u->password[0] ? 1 : 0);
     if (u->password[0]) resp_write_bulk(out, u->password, strlen(u->password));
-    resp_write_bulk(out, "commands", 8);
-    resp_write_array_header(out, 0);
+    {
+        size_t j, count = 0;
+        for (j = 1; j < CMD_STATS_SLOTS; j++)
+            if ((u->allow[j / 64] | u->deny[j / 64]) &
+                (UINT64_C(1) << (j % 64))) count++;
+        resp_write_bulk(out, "commands", 8);
+        resp_write_array_header(out, count);
+        for (j = 1; j < CMD_STATS_SLOTS; j++) {
+            char cmd[64];
+            const char *name = cmd_name((uint16_t)j);
+            int n;
+            if (name == NULL || !((u->allow[j / 64] | u->deny[j / 64]) & (UINT64_C(1) << (j % 64)))) continue;
+            n = snprintf(cmd, sizeof(cmd), "%c%s", (u->deny[j / 64] & (UINT64_C(1) << (j % 64))) ? '-' : '+', name);
+            resp_write_bulk(out, cmd, (size_t)n);
+        }
+    }
     resp_write_bulk(out, "keys", 4);
     resp_write_array_header(out, u->pattern_count);
     for (i = 0; i < u->pattern_count; i++) resp_write_bulk(out, u->patterns[i], strlen(u->patterns[i]));
@@ -249,6 +273,18 @@ void acl_write_rule_line(const acl_user *u, resp_buf *out)
         }
         buf[w] = '\0';
         n = (int)w;
+    }
+    for (i = 1; i < CMD_STATS_SLOTS; i++) {
+        size_t w;
+        if ((u->deny[i / 64] & (UINT64_C(1) << (i % 64))) == 0) continue;
+        w = strlen(buf);
+        if (w + 2 + 32 >= sizeof(buf)) break;
+        buf[w++] = ' '; buf[w++] = '-';
+        {
+            const char *cn = cmd_name((uint16_t)i);
+            if (cn != NULL) { size_t cl = strlen(cn); if (w + cl >= sizeof(buf)) break; memcpy(buf + w, cn, cl); w += cl; }
+        }
+        buf[w] = '\0'; n = (int)w;
     }
     if (u->password[0]) n += snprintf(buf + n, sizeof(buf) - (size_t)n,
                                       " >%s", u->password);

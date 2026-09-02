@@ -11763,9 +11763,12 @@ static void command_acl(session *s, const resp_value *argv, size_t argc,
         return;
     }
     if (ci_equal(sub, sl, "USERS") && argc == 2) {
-        size_t i;
-        resp_write_array_header(out, reg == NULL ? 0 : reg->count);
-        for (i = 0; reg != NULL && i < reg->count; i++) resp_write_bulk(out, reg->users[i].name, strlen(reg->users[i].name));
+        size_t i, count = 0;
+        for (i = 0; reg != NULL && i < reg->count; i++)
+            if (reg->users[i].name[0] != '\0') count++;
+        resp_write_array_header(out, count);
+        for (i = 0; reg != NULL && i < reg->count; i++)
+            if (reg->users[i].name[0] != '\0') resp_write_bulk(out, reg->users[i].name, strlen(reg->users[i].name));
         return;
     }
     if (ci_equal(sub, sl, "WHOAMI") && argc == 2) {

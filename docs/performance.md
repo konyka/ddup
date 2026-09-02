@@ -1273,3 +1273,5 @@ Category rules are expanded once during `SETUSER`; data-path checks remain
 single bit operations rather than category traversal.
 `ACL LIST` formatting is confined to the cold management path and uses a
 bounded stack buffer per user.
+`ACL GETUSER` enumerates the fixed command bitset only on the management path;
+no per-command allocations are introduced into dispatch.

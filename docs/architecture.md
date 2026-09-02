@@ -295,6 +295,8 @@
   命令和未声明 key 的命令默认不扩展权限。
   `ACL LIST` 输出完整规则行（状态、命令、密码和 key pattern），并过滤
   固定表中的已删除槽位。
+  `ACL GETUSER` 的 `commands` 字段同步输出 allow/deny 命令规则，便于
+  管理端进行无损策略审计。
 
 ## Stream 核心族（Phase 61）
 
