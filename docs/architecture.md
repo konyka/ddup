@@ -277,8 +277,10 @@
   `[0,0]`；`REPLCONF` 做握手应答；`FAILOVER` 在无副本时返回明确错误；
   `MONITOR` 通过 server-owned subscription stream 输出后续命令事件。
   `ACL/LATENCY/MODULE/SENTINEL/DEBUG` 注册为
-  容器并提供最小空视图或错误应答（无扩展模块、无 ACL 文件、无 Sentinel
-  拓扑），避免未知命令中断客户端；所有应答均为冷路径、无热路径分配。
+  容器；ACL 使用 server-owned 固定容量用户表和 session 级用户引用，
+  通过 bitset 命令检查和无分配键模式匹配，ACL 管理写操作仅允许 default
+  用户；其余命令提供最小空视图或错误应答（无扩展模块、无 ACL 文件、无
+  Sentinel 拓扑），避免未知命令中断客户端。
 
 ## Stream 核心族（Phase 61）
 

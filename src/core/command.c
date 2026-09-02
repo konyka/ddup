@@ -12894,7 +12894,7 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
                 goto bad_type;
             if (s->acl_ctx != NULL) {
                 const acl_user *u = acl_authenticate((const acl_registry *)s->acl_ctx, "default", 7, pw, pwl);
-                if (u == NULL) { resp_write_error(out, "WRONGPASS invalid username-password pair or user is disabled.", 60); return; }
+                if (u == NULL) { static const char E[] = "WRONGPASS invalid username-password pair or user is disabled."; resp_write_error(out, E, sizeof(E) - 1); return; }
                 s->acl_user = u; memcpy(s->acl_username, "default", 8); s->authed = 1; resp_write_simple_string(out, "OK", 2); return;
             }
         } else if (argc == 3) {
@@ -12905,7 +12905,7 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
                 goto bad_type;
             if (s->acl_ctx != NULL) {
                 const acl_user *u = acl_authenticate((const acl_registry *)s->acl_ctx, user, ul, pw, pwl);
-                if (u == NULL) { resp_write_error(out, "WRONGPASS invalid username-password pair or user is disabled.", 60); return; }
+                if (u == NULL) { static const char E[] = "WRONGPASS invalid username-password pair or user is disabled."; resp_write_error(out, E, sizeof(E) - 1); return; }
                 s->acl_user = u; if (ul >= sizeof(s->acl_username)) ul = sizeof(s->acl_username)-1; memcpy(s->acl_username, user, ul); s->acl_username[ul] = '\0'; s->authed = 1; resp_write_simple_string(out, "OK", 2); return;
             }
             if (ul != 7 || memcmp(user, "default", 7) != 0) {

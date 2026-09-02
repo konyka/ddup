@@ -69,6 +69,11 @@ python3 tools/audit_redis_compat.py \
   `tls-ca-file` is configured. `tls-cluster yes` requires `cluster-enabled yes`
   and readable certificate/key files; failed handshakes close the connection
   before gossip state is applied.
+- ACL uses a bounded server-owned user table with atomic rule replacement,
+  constant-time password comparison, command bitsets, and allocation-free key
+  pattern matching. `AUTH`, `WHOAMI`, `LIST`, `USERS`, `SETUSER`, `GETUSER`,
+  and `DELUSER` operate on the live registry; ACL mutation is restricted to
+  the default user.
 - Cluster slot maintenance: `SFLUSH` intersects requested ranges with local
   ownership and returns coalesced flushed ranges; `TRIMSLOTS RANGES` validates
   ownership before deleting keys from unserved slots. Both paths collect keys

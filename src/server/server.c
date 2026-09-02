@@ -1981,7 +1981,7 @@ static conn *conn_create(server *srv, pal_socket_t fd)
     c->sess->psync_ctx = srv;
     c->sess->psync_hook = srv_psync;
     c->sess->requirepass = srv->requirepass;
-    c->sess->acl_ctx = srv;
+    c->sess->acl_ctx = &srv->acl;
     c->sess->acl_user = acl_find_const(&srv->acl, "default", 7);
     c->sess->acl_check = srv_acl_check;
     memcpy(c->sess->acl_username, "default", 8);
@@ -3175,6 +3175,18 @@ void server_set_requirepass(server *s, const char *pw)
 {
     s->requirepass = pw;
     acl_init(&s->acl, pw);
+    /* Existing connections must observe the new default credential policy. */
+    {
+        size_t i;
+        for (i = 0; i < s->nconns; i++) {
+            conn *c = s->conns[i];
+            if (c == NULL || c->sess == NULL) continue;
+            c->sess->requirepass = pw;
+            c->sess->acl_user = acl_find_const(&s->acl, "default", 7);
+            c->sess->authed = (pw == NULL || pw[0] == '\0') ? 1 : 0;
+            memcpy(c->sess->acl_username, "default", 8);
+        }
+    }
 }
 
 void server_set_client_id_allocator(server *s, uint64_t first,

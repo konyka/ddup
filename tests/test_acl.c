@@ -28,6 +28,13 @@ static void test_acl_users(void)
     DD_CHECK(acl_authenticate(&r, "alice", 5, "secret", 6) == NULL);
 }
 
+static void test_acl_default_password(void)
+{
+    acl_registry r;
+    acl_init(&r, "pw");
+    DD_CHECK(acl_authenticate(&r, "default", 7, "pw", 2) != NULL);
+}
+
 static void test_acl_atomic(void)
 {
     acl_registry r;
@@ -46,6 +53,7 @@ static void test_acl_atomic(void)
 int main(void)
 {
     DD_RUN(test_acl_users);
+    DD_RUN(test_acl_default_password);
     DD_RUN(test_acl_atomic);
     return DD_TEST_SUMMARY();
 }
