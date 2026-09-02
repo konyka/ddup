@@ -564,6 +564,21 @@ static void test_acl_getuser_flags_do_not_mislabel_commands(void)
     resp_buf_free(&out);
 }
 
+static void test_acl_getuser_keys_keep_tilde_prefix(void)
+{
+    acl_registry r;
+    resp_value rules[2] = {rv("on"), rv("~cache:*")};
+    resp_buf out;
+    const acl_user *u;
+    acl_init(&r, NULL);
+    DD_CHECK(acl_setuser(&r, "cache", 5, rules, 2) == 0);
+    u = acl_find_const(&r, "cache", 5);
+    resp_buf_init(&out);
+    acl_write_user(u, &out);
+    DD_CHECK(strstr(out.data, "~cache:*") != NULL);
+    resp_buf_free(&out);
+}
+
 int main(void)
 {
     DD_RUN(test_acl_users);
@@ -598,5 +613,6 @@ int main(void)
     DD_RUN(test_acl_rule_line_capacity_covers_channel_patterns);
     DD_RUN(test_acl_log_coalesces_identical_events);
     DD_RUN(test_acl_getuser_flags_do_not_mislabel_commands);
+    DD_RUN(test_acl_getuser_keys_keep_tilde_prefix);
     return DD_TEST_SUMMARY();
 }

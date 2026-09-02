@@ -334,7 +334,9 @@
   ACL 失败日志对连续相同的 reason/user/object 事件在最新固定槽位递增饱和计数，
   避免攻击重复请求过快挤占有限审计窗口，且不引入堆分配。
   `ACL GETUSER flags` 中命令权限状态使用 `allcommands/nocommands`，与 channel
-  rule 状态分离，避免管理端将策略错误解释为 `resetchannels`。
+ rule 状态分离，避免管理端将策略错误解释为 `resetchannels`。
+  `ACL GETUSER keys` 输出 `~pattern`，与 `channels` 的 `&pattern` 标记一致，
+  确保策略审计能区分 key 和 channel 范围。
 
 ## Stream 核心族（Phase 61）
 

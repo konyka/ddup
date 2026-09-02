@@ -373,7 +373,12 @@ void acl_write_user(const acl_user *u, resp_buf *out)
     }
     resp_write_bulk(out, "keys", 4);
     resp_write_array_header(out, u->pattern_count);
-    for (i = 0; i < u->pattern_count; i++) resp_write_bulk(out, u->patterns[i], strlen(u->patterns[i]));
+    for (i = 0; i < u->pattern_count; i++) {
+        char pat[ACL_MAX_PATTERN + 1];
+        pat[0] = '~';
+        memcpy(pat + 1, u->patterns[i], strlen(u->patterns[i]) + 1);
+        resp_write_bulk(out, pat, strlen(pat));
+    }
     resp_write_bulk(out, "channels", 8);
     resp_write_array_header(out, u->all_channels ? 1 : u->channel_count);
     if (u->all_channels) resp_write_bulk(out, "&*", 2);

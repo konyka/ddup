@@ -126,6 +126,8 @@ bounded channel state as `&*` and an empty rule set.
   the fixed log ring, preserving distinct audit events during repeated attacks.
   `ACL GETUSER` reports `nocommands` for non-unrestricted command policies,
   rather than mislabeling command state as a channel reset.
+  `ACL GETUSER` preserves the Redis `~` prefix for key patterns, alongside `&`
+  for channel patterns, so policy metadata is unambiguous.
 - Cluster slot maintenance: `SFLUSH` intersects requested ranges with local
   ownership and returns coalesced flushed ranges; `TRIMSLOTS RANGES` validates
   ownership before deleting keys from unserved slots. Both paths collect keys

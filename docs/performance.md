@@ -1366,6 +1366,12 @@ The management-only flags renderer now emits the command-state label
 `nocommands` rather than a channel-state label. This is a constant output
 selection with no impact on authorization or data-plane latency.
 
+### Phase 172: ACL key metadata prefixes
+
+`ACL GETUSER` adds the `~` marker while serializing bounded key patterns. The
+conversion uses a stack buffer on the management path and does not affect the
+allocation-free key authorization matcher.
+
 ### Phase 154: ACL generation invalidation
 
 Each fixed ACL user slot carries a monotonic generation. Sessions cache the

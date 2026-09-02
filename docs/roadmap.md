@@ -655,3 +655,5 @@
     减少攻击洪泛对审计保留窗口的挤占（Phase 170）
   - [x] ACL GETUSER flags 语义校正：非 allcommands 用户显示 `nocommands`，
     不再将命令权限状态误标为 channel reset（Phase 171）
+  - [x] ACL GETUSER key metadata：`keys` 字段保留 `~` 前缀，与 `channels` 的
+    `&` 前缀一致，避免策略类型歧义（Phase 172）
