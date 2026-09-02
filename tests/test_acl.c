@@ -674,6 +674,44 @@ static void test_acl_multikey_reads_check_every_key(void)
     DD_CHECK(acl_authorize(u, CMD_SINTER, sinterv, 3) == 0);
 }
 
+static void test_acl_keyless_subcommands_do_not_require_key_pattern(void)
+{
+    acl_registry r;
+    resp_value rules[2] = {rv("on"), rv("+@all")};
+    resp_value config[3] = {rv("CONFIG"), rv("GET"), rv("maxmemory")};
+    resp_value client[2] = {rv("CLIENT"), rv("ID")};
+    resp_value memory[2] = {rv("MEMORY"), rv("STATS")};
+    resp_value slowlog[3] = {rv("SLOWLOG"), rv("GET"), rv("10")};
+    resp_value command[3] = {rv("COMMAND"), rv("INFO"), rv("GET")};
+    resp_value waitv[3] = {rv("WAIT"), rv("1"), rv("100")};
+    acl_user *u;
+    acl_init(&r, NULL);
+    DD_CHECK(acl_setuser(&r, "u", 1, rules, 2) == 0);
+    u = acl_find(&r, "u", 1);
+    DD_CHECK(u != NULL);
+    DD_CHECK(acl_authorize(u, CMD_CONFIG, config, 3) == 1);
+    DD_CHECK(acl_authorize(u, CMD_CLIENT, client, 2) == 1);
+    DD_CHECK(acl_authorize(u, CMD_MEMORY, memory, 2) == 1);
+    DD_CHECK(acl_authorize(u, CMD_SLOWLOG, slowlog, 3) == 1);
+    DD_CHECK(acl_authorize(u, CMD_COMMAND, command, 3) == 1);
+    DD_CHECK(acl_authorize(u, CMD_WAIT, waitv, 3) == 1);
+}
+
+static void test_acl_keyed_subcommands_still_check_keys(void)
+{
+    acl_registry r;
+    resp_value rules[3] = {rv("on"), rv("~allowed:*") , rv("+@all")};
+    resp_value memory[3] = {rv("MEMORY"), rv("USAGE"), rv("secret:1")};
+    resp_value debug[3] = {rv("DEBUG"), rv("OBJECT"), rv("secret:1")};
+    acl_user *u;
+    acl_init(&r, NULL);
+    DD_CHECK(acl_setuser(&r, "u", 1, rules, 3) == 0);
+    u = acl_find(&r, "u", 1);
+    DD_CHECK(u != NULL);
+    DD_CHECK(acl_authorize(u, CMD_MEMORY, memory, 3) == 0);
+    DD_CHECK(acl_authorize(u, CMD_DEBUG, debug, 3) == 0);
+}
+
 static void test_acl_rule_line_capacity_covers_channel_patterns(void)
 {
     acl_registry r;
@@ -813,6 +851,8 @@ int main(void)
     DD_RUN(test_acl_allcommands_clears_old_denies);
     DD_RUN(test_acl_multikey_commands_check_every_key);
     DD_RUN(test_acl_multikey_reads_check_every_key);
+    DD_RUN(test_acl_keyless_subcommands_do_not_require_key_pattern);
+    DD_RUN(test_acl_keyed_subcommands_still_check_keys);
     DD_RUN(test_acl_rule_line_capacity_covers_channel_patterns);
     DD_RUN(test_acl_log_coalesces_identical_events);
     DD_RUN(test_acl_getuser_flags_do_not_mislabel_commands);

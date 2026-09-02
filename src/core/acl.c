@@ -332,8 +332,25 @@ int acl_authorize(const acl_user *u, uint16_t cmd_id, const resp_value *argv,
     case CMD_RESET: case CMD_HELLO: case CMD_TIME: case CMD_ROLE:
     case CMD_READONLY: case CMD_READWRITE: case CMD_SELECT:
     case CMD_COMMAND: case CMD_INFO: case CMD_LATENCY: case CMD_LOLWUT:
+    case CMD_CONFIG: case CMD_CLIENT: case CMD_SLOWLOG:
+    case CMD_WAIT: case CMD_WAITAOF: case CMD_PUBSUB: case CMD_FUNCTION:
+    case CMD_SCRIPT: case CMD_DEBUG: case CMD_MODULE:
         keyless = 1; break;
     default: break;
+    }
+    if (cmd_id == CMD_MEMORY && argc >= 2) {
+        if (argv[1].type == RESP_BULK_STRING &&
+            argv[1].len == 5 && memcmp(argv[1].str, "USAGE", 5) == 0)
+            nkeys = 1, first = 2;
+        else
+            keyless = 1;
+    }
+    if (cmd_id == CMD_DEBUG && argc >= 2) {
+        if (argv[1].type == RESP_BULK_STRING &&
+            argv[1].len == 6 && memcmp(argv[1].str, "OBJECT", 6) == 0)
+            nkeys = 1, first = 2, keyless = 0;
+        else
+            keyless = 1;
     }
     if (keyless) return 1;
     /* Extract key positions for the common key-bearing command families.

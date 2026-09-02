@@ -1446,6 +1446,13 @@ integer comparison and no lock or allocation.
 
 ### Phase 156: case-insensitive ACL categories
 
+### Phase 182: ACL subcommand key extraction
+
+Management and diagnostics commands use a constant-time subcommand dispatch for
+keyless authorization. `MEMORY USAGE` and `DEBUG OBJECT` select their actual key
+at the correct argument index, retaining bounded pattern checks without parsing
+or allocation on unrelated subcommands.
+
 Category names are normalized with a bounded ASCII comparison while parsing
 `SETUSER`; no temporary lowercase buffer or heap allocation is introduced.
 The authorization hot path remains the same pre-expanded bitset lookup.
