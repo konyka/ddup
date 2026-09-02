@@ -691,3 +691,5 @@
     `GEORADIUS ... STORE` 校验全部真实 key，忽略 timeout/option 参数（Phase 188）
   - [x] ACL Stream/多路弹出 key 位点：`XREAD/XREADGROUP/XGROUP` 与
     `LMPOP/ZMPOP` 按 `STREAMS`/`numkeys` 提取真实 key（Phase 189）
+  - [x] ACL MIGRATE key 位点：检查主 key 及 `KEYS` 选项后的全部 key，
+    忽略 host/port/db/timeout/COPY/AUTH 等协议参数（Phase 190）

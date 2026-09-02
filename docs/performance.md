@@ -1497,7 +1497,13 @@ bounded loops with no temporary allocation.
 `XREAD/XREADGROUP` locate the `STREAMS` marker and scan only the key half of the
 paired stream/id tail. `XGROUP` checks its stream argument, while `LMPOP/ZMPOP`
 use checked `numkeys` slices. Group, consumer, timeout, direction, and count
-tokens never enter the glob matcher.
+  tokens never enter the glob matcher.
+
+### Phase 190: ACL MIGRATE key positions
+
+`MIGRATE` checks its primary key at the protocol-defined position and scans all
+keys following the optional `KEYS` marker. Host, port, database, timeout, and
+authentication tokens bypass pattern matching; bounded scans remain allocation-free.
 
 Category names are normalized with a bounded ASCII comparison while parsing
 `SETUSER`; no temporary lowercase buffer or heap allocation is introduced.

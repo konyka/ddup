@@ -436,6 +436,23 @@ int acl_authorize(const acl_user *u, uint16_t cmd_id, const resp_value *argv,
             if (acl_match_pattern(u->patterns[p], strlen(u->patterns[p]), argv[2].str, argv[2].len)) return 1;
         return 0;
     }
+    if (cmd_id == CMD_MIGRATE) {
+        size_t p, j;
+        if (argc < 4 || argv[3].type != RESP_BULK_STRING || u->pattern_count == 0) return 0;
+        for (p = 0; p < u->pattern_count; p++)
+            if (argv[3].len == 0 || acl_match_pattern(u->patterns[p], strlen(u->patterns[p]), argv[3].str, argv[3].len)) break;
+        if (argv[3].len != 0 && p == u->pattern_count) return 0;
+        for (j = 6; j + 1 < argc; j++) {
+            if (argv[j].type == RESP_BULK_STRING && argv[j].len == 4 &&
+                memcmp(argv[j].str, "KEYS", 4) == 0) {
+                if (argv[j + 1].type != RESP_BULK_STRING) return 0;
+                for (p = 0; p < u->pattern_count; p++)
+                    if (acl_match_pattern(u->patterns[p], strlen(u->patterns[p]), argv[j + 1].str, argv[j + 1].len)) return 1;
+                return 0;
+            }
+        }
+        return 1;
+    }
     if (cmd_id == CMD_LMPOP) {
         long long nk;
         size_t j, p, end;

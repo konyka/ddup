@@ -876,6 +876,21 @@ static void test_acl_stream_and_numkeys_positions(void)
     DD_CHECK(acl_authorize(u, CMD_ZMPOP, zmpop, 6) == 0);
 }
 
+static void test_acl_migrate_uses_key_tail_not_host_parameters(void)
+{
+    acl_registry r;
+    resp_value rules[3] = {rv("on"), rv("~allowed:*") , rv("+@all")};
+    resp_value ok[7] = {rv("MIGRATE"), rv("127.0.0.1"), rv("6379"), rv("allowed:key"), rv("0"), rv("1"), rv("COPY")};
+    resp_value bad[7] = {rv("MIGRATE"), rv("127.0.0.1"), rv("6379"), rv("secret:key"), rv("0"), rv("1"), rv("COPY")};
+    acl_user *u;
+    acl_init(&r, NULL);
+    DD_CHECK(acl_setuser(&r, "u", 1, rules, 3) == 0);
+    u = acl_find(&r, "u", 1);
+    DD_CHECK(u != NULL);
+    DD_CHECK(acl_authorize(u, CMD_MIGRATE, ok, 7) == 1);
+    DD_CHECK(acl_authorize(u, CMD_MIGRATE, bad, 7) == 0);
+}
+
 static void test_acl_rule_line_capacity_covers_channel_patterns(void)
 {
     acl_registry r;
@@ -1025,6 +1040,7 @@ int main(void)
     DD_RUN(test_acl_script_commands_use_declared_key_positions);
     DD_RUN(test_acl_blocking_and_option_key_positions);
     DD_RUN(test_acl_stream_and_numkeys_positions);
+    DD_RUN(test_acl_migrate_uses_key_tail_not_host_parameters);
     DD_RUN(test_acl_rule_line_capacity_covers_channel_patterns);
     DD_RUN(test_acl_log_coalesces_identical_events);
     DD_RUN(test_acl_getuser_flags_do_not_mislabel_commands);
