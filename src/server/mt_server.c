@@ -2166,6 +2166,15 @@ static int mt_is_aggregate(uint16_t cmd)
            cmd == CMD_KEYS;
 }
 
+static int mt_hotkeys_broadcast(const resp_value *argv, size_t argc)
+{
+    if (argc < 2 || argv[1].str == NULL)
+        return 0;
+    return mt_ci_equal(argv[1].str, argv[1].len, "START") ||
+           mt_ci_equal(argv[1].str, argv[1].len, "STOP") ||
+           mt_ci_equal(argv[1].str, argv[1].len, "RESET");
+}
+
 /* Multi-key commands: every key must map to the same worker (same rule as
  * cluster CROSSSLOT). Key positions by command:
  *   MGET/DEL/UNLINK/EXISTS/TOUCH -> argv[1..]
@@ -2792,6 +2801,12 @@ static void mt_client_list_exec(worker *w, resp_buf *out)
     server_client_list(w->srv, out);
 }
 
+static void mt_hotkeys_exec(worker *w, const resp_value *argv, size_t argc,
+                            resp_buf *out)
+{
+    (void)server_hotkeys_command(w->srv, argv, argc, out);
+}
+
 /* Execute CONFIG against every logical db on one worker and expose the
  * server-owned appendfsync hook, matching a normal client session. */
 static void mt_config_exec(worker *w, const resp_value *argv, size_t argc,
@@ -2962,6 +2977,8 @@ static int mt_route_aggregate(worker *home, void *conn,
     } else if (cmd == CMD_CLIENT && argc >= 2 && argv[1].str != NULL &&
                mt_ci_equal(argv[1].str, argv[1].len, "LIST")) {
         mt_client_list_exec(home, &local);
+    } else if (cmd == CMD_HOTKEYS) {
+        mt_hotkeys_exec(home, argv, argc, &local);
     } else if (cmd == CMD_FLUSHDB) {
         db *d = server_db_at(home->srv, db_index);
         uint64_t dirty_before = d->dirty;
@@ -4112,7 +4129,8 @@ static int mt_route(void *ctx, void *conn, session *sess,
         cmd == CMD_FLUSHALL || cmd == CMD_RANDOMKEY || cmd == CMD_KEYS ||
         cmd == CMD_PUBSUB ||
         (cmd == CMD_CLIENT && argc >= 2 && argv[1].str != NULL &&
-         mt_ci_equal(argv[1].str, argv[1].len, "LIST"))) {
+         mt_ci_equal(argv[1].str, argv[1].len, "LIST")) ||
+        (cmd == CMD_HOTKEYS && mt_hotkeys_broadcast(argv, argc))) {
         mt_batch_flush(home, conn, st);
         return mt_route_aggregate(home, conn, argv, argc, raw, rawlen, cmd,
                                   sess->db_index);
@@ -4896,6 +4914,16 @@ static void mt_exec_task(worker *w, mt_task *t)
                 v.items[1].str != NULL && v.items[1].len == 4 &&
                 mt_ci_equal(v.items[1].str, v.items[1].len, "list")) {
                 mt_client_list_exec(w, &t->reply);
+                continue;
+            }
+            if (v.count >= 2 && v.items[0].str != NULL &&
+                v.items[0].len == 7 &&
+                mt_ci_equal(v.items[0].str, v.items[0].len, "hotkeys") &&
+                v.items[1].str != NULL &&
+                (mt_ci_equal(v.items[1].str, v.items[1].len, "start") ||
+                 mt_ci_equal(v.items[1].str, v.items[1].len, "stop") ||
+                 mt_ci_equal(v.items[1].str, v.items[1].len, "reset"))) {
+                mt_hotkeys_exec(w, v.items, v.count, &t->reply);
                 continue;
             }
             if (v.count >= 2 && v.items[0].str != NULL &&

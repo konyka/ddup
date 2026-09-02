@@ -3099,6 +3099,14 @@ void server_client_list(server *s, resp_buf *out)
         srv_client_list(s, out);
 }
 
+int server_hotkeys_command(server *s, const resp_value *argv, size_t argc,
+                           resp_buf *out)
+{
+    if (s == NULL || argv == NULL || out == NULL)
+        return -1;
+    return srv_hotkeys_command(s, argv, argc, out);
+}
+
 void server_set_requirepass(server *s, const char *pw)
 {
     s->requirepass = pw;

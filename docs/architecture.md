@@ -1156,6 +1156,9 @@ DBSIZE 为 O(1)，可能计入尚未回收的过期 key。
   server-owned 钩子渲染本地行列表，聚合器仅拼接已验证 RESP bulk payload 后再
   生成一个 bulk 回复。该路径只作用于管理面；连接读写和本地 `CLIENT ID/INFO`
   仍保持无任务的 owner-local 快速路径。
+- **MT HOTKEYS 控制面一致性**：`HOTKEYS START/STOP/RESET` 通过聚合 fan-out
+  同步所有 worker 的采样生命周期、过滤器和有界表；`HOTKEYS GET` 仍保持本地
+  快速路径，避免读操作引入广播延迟。任一控制任务失败时聚合器统一返回错误。
 
 ## 架构对比：分片存储 + 消息路由（ddup mt）vs 共享存储（Garnet/Tsavorite）
 

@@ -1138,6 +1138,32 @@ static void test_client_list_covers_all_workers(void)
     pal_socket_cleanup();
 }
 
+static void test_hotkeys_control_is_broadcast(void)
+{
+    mt_server *ms;
+    pal_socket_t a;
+    char reply[2048];
+    size_t n;
+
+    DD_CHECK_EQ_INT(0, pal_socket_init());
+    ms = mt_server_create("127.0.0.1", 0, 2);
+    DD_CHECK(ms != NULL);
+    if (ms == NULL)
+        return;
+    DD_CHECK_EQ_INT(0, mt_server_start(ms));
+    a = connect_client(mt_server_port(ms));
+    roundtrip(a, "*5\r\n$7\r\nHOTKEYS\r\n$5\r\nSTART\r\n$7\r\nMETRICS\r\n$1\r\n1\r\n$3\r\nCPU\r\n",
+              "+OK\r\n");
+    n = request_full(a, "*2\r\n$7\r\nHOTKEYS\r\n$3\r\nGET\r\n",
+                     reply, sizeof(reply));
+    DD_CHECK(n > 0 && strstr(reply, "active") != NULL);
+    roundtrip(a, "*2\r\n$7\r\nHOTKEYS\r\n$4\r\nSTOP\r\n", "+OK\r\n");
+    pal_close(a);
+    mt_server_stop(ms);
+    mt_server_destroy(ms);
+    pal_socket_cleanup();
+}
+
 static void pick_key_for_slot(int wanted, char *out, size_t cap)
 {
     int i;
@@ -3399,6 +3425,7 @@ int main(void)
     DD_RUN(test_bgsave_covers_all_selected_databases);
     DD_RUN(test_bgrewriteaof_is_broadcast_to_workers);
     DD_RUN(test_client_list_covers_all_workers);
+    DD_RUN(test_hotkeys_control_is_broadcast);
     DD_RUN(test_cluster_state_propagates_to_workers);
     DD_RUN(test_mt_replica_partitions_full_sync);
     DD_RUN(test_mt_master_serves_replica_full_sync);

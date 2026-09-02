@@ -586,3 +586,6 @@
   - [x] mt CLIENT LIST 全局视图：将 `CLIENT LIST` 纳入聚合 fan-out，并合并
     各 worker 的 bulk 行负载；修复只返回连接所在 worker 本地连接的遗漏，新增
     两个 worker 分配连接的真实 loopback 回归（Phase 140）
+  - [x] mt HOTKEYS 控制面一致性：`HOTKEYS START/STOP/RESET` 广播到全部 worker，
+    保持 `GET` 的本地快速读取；修复采样控制状态仅存在 home worker 导致跨 worker
+    统计漂移，新增真实 socket 回归（Phase 141）

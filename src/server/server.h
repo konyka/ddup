@@ -183,6 +183,9 @@ void server_aof_flush(server *s);
 void server_bgrewriteaof(server *s, resp_buf *out);
 /* Render this server's local CLIENT LIST view. */
 void server_client_list(server *s, resp_buf *out);
+/* Execute a server-owned HOTKEYS control command. */
+int server_hotkeys_command(server *s, const resp_value *argv, size_t argc,
+                           resp_buf *out);
 
 /* Resize the replication backlog ring (drops current contents). Returns 0
  * on success, -1 when bytes is zero or allocation fails; failure preserves
