@@ -633,3 +633,5 @@
     PAL 系统安全随机源，随机源失败或非法范围均 fail-closed（Phase 159）
   - [x] ACL LOG 有界失败审计：记录认证和命令授权失败，支持最近事件查询与
     RESET；固定容量环避免日志洪泛导致内存增长（Phase 160）
+  - [x] MT ACL 拒绝审计一致性：home worker 在远端路由拒绝前写入同一 ACL
+    失败环，消除 sessionless worker 场景的安全审计盲区（Phase 161）

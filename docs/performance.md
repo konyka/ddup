@@ -1300,6 +1300,12 @@ ACL failures are recorded in a fixed 32-entry registry-local ring. Event writes
 copy into bounded inline fields and never allocate; `ACL LOG` serializes only on
 the cold management path, with count limiting before RESP emission.
 
+### Phase 161: MT ACL denial audit parity
+
+Remote-route denials append to the home worker's fixed ACL ring before the task
+is rejected. The bounded inline copy adds no allocation and avoids any remote
+worker synchronization or duplicate logging.
+
 ### Phase 154: ACL generation invalidation
 
 Each fixed ACL user slot carries a monotonic generation. Sessions cache the

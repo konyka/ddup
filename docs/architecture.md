@@ -313,6 +313,8 @@
   均 fail-closed。
   ACL 认证/授权失败写入 ACL registry 的固定 32 项环形日志，字段有界且不依赖
   堆分配；`ACL LOG [count|RESET]` 仅在管理冷路径读取或清空，避免日志洪泛。
+  MT home worker 在远端命令/键授权失败时写入同一 registry-local 日志，再拒绝
+  入队，保证 sessionless worker 不产生不可见的授权失败。
 
 ## Stream 核心族（Phase 61）
 

@@ -2744,6 +2744,33 @@ static void test_acl_deleted_recreated_session_is_denied_on_remote_route(void)
     mt_server_stop(ms); mt_server_destroy(ms); pal_socket_cleanup();
 }
 
+static void test_acl_remote_denial_is_logged_on_home_worker(void)
+{
+    mt_server *ms;
+    pal_socket_t a, b;
+    char key[32], req[256], buf[2048];
+    DD_CHECK_EQ_INT(0, pal_socket_init());
+    pick_key_for_worker(1, 2, key, sizeof(key));
+    ms = mt_server_create("127.0.0.1", 0, 2);
+    DD_CHECK(ms != NULL); if (ms == NULL) { pal_socket_cleanup(); return; }
+    mt_server_set_requirepass(ms, "rootpw");
+    DD_CHECK_EQ_INT(0, mt_server_start(ms));
+    a = connect_client(mt_server_port(ms)); b = connect_client(mt_server_port(ms));
+    roundtrip(a, "*2\r\n$4\r\nAUTH\r\n$6\r\nrootpw\r\n", "+OK\r\n");
+    roundtrip(a, "*6\r\n$3\r\nACL\r\n$7\r\nSETUSER\r\n$6\r\nreader\r\n$2\r\non\r\n$7\r\n>secret\r\n$4\r\n+get\r\n", "+OK\r\n");
+    roundtrip(b, "*3\r\n$4\r\nAUTH\r\n$6\r\nreader\r\n$6\r\nsecret\r\n", "+OK\r\n");
+    snprintf(req, sizeof(req), "*2\r\n$3\r\nSET\r\n$%zu\r\n%s\r\n", strlen(key), key);
+    roundtrip(b, req, "-NOPERM this user has no permissions to run the command or access the key\r\n");
+    roundtrip(b, "*2\r\n$4\r\nAUTH\r\n$6\r\nrootpw\r\n", "+OK\r\n");
+    {
+        size_t n = request_frame(b, "*2\r\n$3\r\nACL\r\n$3\r\nLOG\r\n", buf,
+                                 sizeof(buf));
+        DD_CHECK(n > 4 && buf[0] == '*' && buf[1] != '0');
+    }
+    (void)buf;
+    pal_close(a); pal_close(b); mt_server_stop(ms); mt_server_destroy(ms); pal_socket_cleanup();
+}
+
 static void test_watch_pipeline_two_remote_gets_are_not_queued(void)
 {
     mt_server *ms;
@@ -3741,6 +3768,7 @@ int main(void)
     DD_RUN(test_acl_remote_route_denied);
     DD_RUN(test_acl_setuser_broadcasts_to_all_workers);
     DD_RUN(test_acl_deleted_recreated_session_is_denied_on_remote_route);
+    DD_RUN(test_acl_remote_denial_is_logged_on_home_worker);
     DD_RUN(test_watch_pipeline_two_remote_gets_are_not_queued);
     DD_RUN(test_watch_pipeline_unwatch_is_ordered_and_disconnect_safe);
     DD_RUN(test_watch_shutdown_releases_remote_owner);

@@ -4218,6 +4218,9 @@ static int mt_route(void *ctx, void *conn, session *sess,
     if (sess->acl_check != NULL && sess->acl_user != NULL &&
         cmd != CMD_AUTH && cmd != CMD_ACL &&
         !sess->acl_check(sess->acl_ctx, sess->acl_user, cmd, argv, argc)) {
+        acl_log_event((acl_registry *)sess->acl_ctx, "command",
+                      sess->acl_username, strlen(sess->acl_username),
+                      argv[0].str, argv[0].len, pal_wall_ms());
         static const char noperm[] =
             "-NOPERM this user has no permissions to run the command or access the key\r\n";
         mt_batch_flush(home, conn, st);
