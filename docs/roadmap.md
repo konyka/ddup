@@ -639,3 +639,5 @@
     发布命令执行有界 channel 匹配，未授权频道 fail-closed（Phase 162）
   - [x] ACL default channel 兼容：default 用户显式拥有 all-channels，保持
     未配置 ACL 时普通/分片 Pub/Sub 行为不变（Phase 163）
+  - [x] ACL channel 元数据可见性：`ACL LIST` 输出 `&pattern`，`ACL GETUSER`
+    输出 `channels` 字段，保证策略审计无损（Phase 164）

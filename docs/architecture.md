@@ -319,6 +319,8 @@
   订阅和发布在 home worker 侧逐频道匹配，未授权频道在副作用前 fail-closed。
   default 用户初始化时设置 `all_channels`，普通部署无需遍历 channel pattern，
   同时保持原有 Pub/Sub 行为。
+  `ACL LIST` 与 `ACL GETUSER` 同步展示 channel pattern，管理端可完整审计频道
+  策略；渲染只发生在冷路径，不影响发布订阅热路径。
 
 ## Stream 核心族（Phase 61）
 

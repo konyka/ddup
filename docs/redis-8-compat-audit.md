@@ -108,6 +108,8 @@ python3 tools/audit_redis_compat.py \
   unauthorized channels fail closed before registration or delivery.
   The default user is initialized with unrestricted channel access, preserving
   normal Pub/Sub behavior when no custom ACL channel policy is configured.
+  Channel patterns are exposed in `ACL LIST` and `ACL GETUSER` metadata so
+  policy inspection remains lossless.
 - Cluster slot maintenance: `SFLUSH` intersects requested ranges with local
   ownership and returns coalesced flushed ranges; `TRIMSLOTS RANGES` validates
   ownership before deleting keys from unserved slots. Both paths collect keys

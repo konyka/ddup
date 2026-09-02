@@ -1319,6 +1319,11 @@ The default ACL user carries a single `all_channels` flag, avoiding pattern
 iteration for the common unrestricted Pub/Sub path while preserving Redis
 compatibility when no custom channel policy is configured.
 
+### Phase 164: ACL channel metadata visibility
+
+Channel rules are rendered only on the cold `ACL LIST/GETUSER` paths. Bounded
+stack buffers and fixed arrays preserve the zero-allocation data-plane checks.
+
 ### Phase 154: ACL generation invalidation
 
 Each fixed ACL user slot carries a monotonic generation. Sessions cache the

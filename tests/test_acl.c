@@ -432,6 +432,25 @@ static void test_acl_default_user_allows_channels(void)
     DD_CHECK(acl_authorize(u, CMD_SUBSCRIBE, sub, 2) == 1);
 }
 
+static void test_acl_channel_rules_are_visible_in_metadata(void)
+{
+    acl_registry r;
+    resp_value rules[3] = {rv("on"), rv("+subscribe"), rv("&news:*")};
+    resp_buf out;
+    const acl_user *u;
+    acl_init(&r, NULL);
+    DD_CHECK(acl_setuser(&r, "pub", 3, rules, 3) == 0);
+    u = acl_find_const(&r, "pub", 3);
+    resp_buf_init(&out);
+    acl_write_rule_line(u, &out);
+    DD_CHECK(strstr(out.data, "&news:*") != NULL);
+    out.len = 0; if (out.data != NULL) out.data[0] = '\0';
+    acl_write_user(u, &out);
+    DD_CHECK(strstr(out.data, "channels") != NULL);
+    DD_CHECK(strstr(out.data, "news:*") != NULL);
+    resp_buf_free(&out);
+}
+
 int main(void)
 {
     DD_RUN(test_acl_users);
@@ -458,5 +477,6 @@ int main(void)
     DD_RUN(test_acl_log_records_command_denials_and_count);
     DD_RUN(test_acl_channel_patterns_are_enforced);
     DD_RUN(test_acl_default_user_allows_channels);
+    DD_RUN(test_acl_channel_rules_are_visible_in_metadata);
     return DD_TEST_SUMMARY();
 }

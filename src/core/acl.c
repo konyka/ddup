@@ -320,7 +320,7 @@ int acl_authorize(const acl_user *u, uint16_t cmd_id, const resp_value *argv,
 void acl_write_user(const acl_user *u, resp_buf *out)
 {
     size_t i;
-    resp_write_array_header(out, 8);
+    resp_write_array_header(out, 10);
     resp_write_bulk(out, "flags", 5);
     resp_write_array_header(out, 2);
     resp_write_bulk(out, u->enabled ? "on" : "off", u->enabled ? 2 : 3);
@@ -347,6 +347,15 @@ void acl_write_user(const acl_user *u, resp_buf *out)
     resp_write_bulk(out, "keys", 4);
     resp_write_array_header(out, u->pattern_count);
     for (i = 0; i < u->pattern_count; i++) resp_write_bulk(out, u->patterns[i], strlen(u->patterns[i]));
+    resp_write_bulk(out, "channels", 8);
+    resp_write_array_header(out, u->all_channels ? 1 : u->channel_count);
+    if (u->all_channels) resp_write_bulk(out, "&*", 2);
+    else for (i = 0; i < u->channel_count; i++) {
+        char pat[ACL_MAX_PATTERN + 1];
+        pat[0] = '&';
+        memcpy(pat + 1, u->channels[i], strlen(u->channels[i]) + 1);
+        resp_write_bulk(out, pat, strlen(pat));
+    }
 }
 
 void acl_write_rule_line(const acl_user *u, resp_buf *out)
@@ -386,6 +395,10 @@ void acl_write_rule_line(const acl_user *u, resp_buf *out)
                                       " >%s", u->password);
     for (i = 0; i < u->pattern_count && (size_t)n < sizeof(buf); i++)
         n += snprintf(buf + n, sizeof(buf) - (size_t)n, " ~%s", u->patterns[i]);
+    for (i = 0; i < u->channel_count && (size_t)n < sizeof(buf); i++)
+        n += snprintf(buf + n, sizeof(buf) - (size_t)n, " &%s", u->channels[i]);
+    if (u->all_channels && (size_t)n < sizeof(buf))
+        n += snprintf(buf + n, sizeof(buf) - (size_t)n, " &*");
     if ((size_t)n + 2 < sizeof(buf)) { buf[n++] = '\r'; buf[n++] = '\n'; buf[n] = '\0'; }
     if (resp_buf_reserve(out, (size_t)n) == 0) { memcpy(out->data + out->len, buf, (size_t)n); out->len += (size_t)n; }
 }
