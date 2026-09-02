@@ -1259,3 +1259,5 @@ ACL state is server-owned in a fixed 32-user table. Command permissions use
 512-bit bitsets and key patterns use bounded storage with an allocation-free
 glob matcher, so authorized data commands add one bit test and only inspect
 provided key arguments. Password checks use a constant-time byte comparison.
+Key authorization extracts only command-declared key positions for common
+single- and multi-key commands, avoiding value/options scans on the hot path.

@@ -50,10 +50,25 @@ static void test_acl_atomic(void)
     DD_CHECK(acl_authorize(u, CMD_SET, NULL, 0) == 0);
 }
 
+static void test_acl_key_scope_and_all_rules(void)
+{
+    acl_registry r;
+    resp_value rules[3] = {rv("on"), rv("~cache:*") , rv("+@all")};
+    resp_value setv[3] = {rv("SET"), rv("cache:key"), rv("other-value")};
+    resp_value badkey[2] = {rv("GET"), rv("other")};
+    const acl_user *u;
+    DD_CHECK(acl_setuser(&r, "all", 3, rules, 3) == 0);
+    u = acl_authenticate(&r, "all", 3, "", 0);
+    DD_CHECK(u != NULL);
+    DD_CHECK(acl_authorize(u, CMD_SET, setv, 3) == 1);
+    DD_CHECK(acl_authorize(u, CMD_GET, badkey, 2) == 0);
+}
+
 int main(void)
 {
     DD_RUN(test_acl_users);
     DD_RUN(test_acl_default_password);
     DD_RUN(test_acl_atomic);
+    DD_RUN(test_acl_key_scope_and_all_rules);
     return DD_TEST_SUMMARY();
 }

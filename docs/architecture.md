@@ -281,6 +281,8 @@
   通过 bitset 命令检查和无分配键模式匹配，ACL 管理写操作仅允许 default
   用户；其余命令提供最小空视图或错误应答（无扩展模块、无 ACL 文件、无
   Sentinel 拓扑），避免未知命令中断客户端。
+  常见多 key 命令只对声明的 key 参数做 pattern 校验，不将 value 或选项
+  误判为 key。
 
 ## Stream 核心族（Phase 61）
 

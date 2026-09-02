@@ -48,7 +48,8 @@ static void clear_rules(acl_user *u)
 static int set_cmd(acl_user *u, const char *p, size_t n, int allow)
 {
     uint16_t id;
-    if (n == 4 && memcmp(p, "@all", 4) == 0) {
+    if (n == 5 && (p[0] == '+' || p[0] == '-') &&
+        memcmp(p + 1, "@all", 4) == 0) {
         u->all_commands = allow;
         return 0;
     }
@@ -147,16 +148,35 @@ int acl_match_pattern(const char *pat, size_t plen, const char *key, size_t klen
 int acl_authorize(const acl_user *u, uint16_t cmd_id, const resp_value *argv,
                   size_t argc)
 {
-    size_t i;
+    size_t i, first = 1, step = 1, nkeys = 0;
     if (u == NULL || !u->enabled || cmd_id >= CMD_STATS_SLOTS) return 0;
     if (!u->all_commands && !(u->allow[cmd_id / 64] & (UINT64_C(1) << (cmd_id % 64)))) return 0;
     if (u->deny[cmd_id / 64] & (UINT64_C(1) << (cmd_id % 64))) return 0;
     if (u->pattern_count == 0 || argc < 2) return 1;
-    for (i = 1; i < argc; i++) {
-        if (argv[i].type == RESP_BULK_STRING) {
+    /* Extract key positions for the common key-bearing command families.
+     * Values/options are never treated as keys, avoiding false denials. */
+    switch (cmd_id) {
+    case CMD_GET: case CMD_SET: case CMD_GETDEL: case CMD_GETEX:
+    case CMD_SETEX: case CMD_PSETEX: case CMD_GETSET: case CMD_APPEND:
+    case CMD_INCR: case CMD_DECR: case CMD_INCRBY: case CMD_DECRBY:
+    case CMD_INCRBYFLOAT: case CMD_STRLEN: case CMD_TYPE: case CMD_EXISTS:
+    case CMD_TOUCH: case CMD_RANDOMKEY: case CMD_EXPIRETIME: case CMD_PEXPIRETIME:
+        nkeys = 1; break;
+    case CMD_MGET: case CMD_DEL: case CMD_UNLINK:
+        nkeys = argc - 1; break;
+    case CMD_MSET: case CMD_MSETNX:
+        nkeys = (argc - 1) / 2; step = 2; break;
+    default:
+        nkeys = 1;
+        break;
+    }
+    if (nkeys == 0) return 1;
+    for (i = 0; i < nkeys && first + i * step < argc; i++) {
+        size_t ai = first + i * step;
+        if (argv[ai].type == RESP_BULK_STRING) {
             size_t p;
             for (p = 0; p < u->pattern_count; p++)
-                if (acl_match_pattern(u->patterns[p], strlen(u->patterns[p]), argv[i].str, argv[i].len)) break;
+                if (acl_match_pattern(u->patterns[p], strlen(u->patterns[p]), argv[ai].str, argv[ai].len)) break;
             if (p == u->pattern_count) return 0;
         }
     }
