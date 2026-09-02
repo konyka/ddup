@@ -1124,6 +1124,8 @@ DBSIZE 为 O(1)，可能计入尚未回收的过期 key。
   sessionless 路由只携带源 key 而把排序结果写入错误分片。`SORT_RO` 仅读取源 key。
 - `COMMAND GETKEYS/GETKEYSANDFLAGS` 与上述规则保持一致，`SORT STORE` 返回源、
   目标两个 key，防止客户端拓扑缓存遗漏写入目标。
+- `COMMAND GETKEYS/GETKEYSANDFLAGS` 对 `MEMORY USAGE <key>` 和
+  `OBJECT <subcommand> <key>` 使用真实 key 位置，不会把子命令名当成数据 key。
 
 ## 架构对比：分片存储 + 消息路由（ddup mt）vs 共享存储（Garnet/Tsavorite）
 

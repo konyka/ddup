@@ -63,6 +63,7 @@
 | 2026-09-01 | Phase 129 MT key routing | MEMORY USAGE / HIMPORT SET classification | Linux, Release | 仅命令分类路径增加常量比较；数据面仍无额外分配 | 避免 key 错 shard 与 session-local 状态丢失 |
 | 2026-09-02 | Phase 130 SORT STORE routing | dual-key classification | Linux, Release | 常量扫描可选 STORE 参数；无额外热路径分配 | 在排序结果写入前阻止跨 worker/slot 部分写入 |
 | 2026-09-02 | Phase 131 SORT key metadata | COMMAND GETKEYS | Linux, Release | 仅管理面扫描可选 STORE 参数 | 保持客户端 key 元数据与实际路由一致 |
+| 2026-09-02 | Phase 132 management key metadata | COMMAND GETKEYS | Linux, Release | 仅管理面常量分支，无数据面开销 | 修正 MEMORY/OBJECT 子命令位置 |
 
 Phase 12 说明：PSYNC 的收益不在 loopback 小数据集（绝对值几十毫秒），
 而在大数据集 + 高写入场景——全量重同步成本 = 快照序列化 + 全量传输 +

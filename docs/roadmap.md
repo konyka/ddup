@@ -558,3 +558,6 @@
     loopback 回归锁定无部分写入（Phase 130）
   - [x] SORT key 元数据同步：`COMMAND GETKEYS/GETKEYSANDFLAGS` 识别
     `SORT STORE <destination>` 并返回双 key，补充命令元数据回归（Phase 131）
+  - [x] 管理命令 key 元数据校正：`COMMAND GETKEYS/GETKEYSANDFLAGS` 补齐
+    `MEMORY USAGE <key>` 与 `OBJECT <subcommand> <key>` 的真实参数位置，
+    防止拓扑客户端缓存伪 key（Phase 132）

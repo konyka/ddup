@@ -259,6 +259,10 @@ static void test_object_metadata_and_getkeysflags(void)
     EXPECT_REPLY("*1\r\n$2\r\nk1\r\n");
     cmd(7, "COMMAND", "GETKEYS", "SORT", "src", "STORE", "dst");
     EXPECT_REPLY("*2\r\n$3\r\nsrc\r\n$3\r\ndst\r\n");
+    cmd(5, "COMMAND", "GETKEYS", "MEMORY", "USAGE", "key");
+    EXPECT_REPLY("*1\r\n$3\r\nkey\r\n");
+    cmd(5, "COMMAND", "GETKEYS", "OBJECT", "ENCODING", "key");
+    EXPECT_REPLY("*1\r\n$3\r\nkey\r\n");
 }
 
 static void test_server_management_commands(void)

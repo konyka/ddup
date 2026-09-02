@@ -7201,6 +7201,17 @@ static void command_emit_keys_mode(const resp_value *argv, size_t argc,
         }
         goto done;
     }
+    if (cmd_id == CMD_MEMORY) {
+        if (argc > 4 && arg_str(&argv[3], &name, &nlen) &&
+            ci_equal(name, nlen, "USAGE"))
+            EMIT_KEY(&argv[4]);
+        goto done;
+    }
+    if (cmd_id == CMD_OBJECT) {
+        if (argc > 4)
+            EMIT_KEY(&argv[4]);
+        goto done;
+    }
     if (cmd_id == CMD_XGROUP || cmd_id == CMD_XINFO) {
         if (argc > 4)
             EMIT_KEY(&argv[4]);
