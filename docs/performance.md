@@ -1408,6 +1408,13 @@ setting the corresponding O(1) all-access flag. `resetpass` clears the fixed
 `nopass` bit before password checks resume. SETUSER still operates on a stack
 copy and commits once, so the update is atomic with no hot-path allocation.
 
+### Phase 179: ACL unrestricted-state cleanup
+
+`reset` now clears the fixed `no_password` flag, while `allcommands` and
+`+@all` clear the bounded deny bitset. These are constant-size updates on the
+stack user copy; authorization remains a single bitset check with no added
+allocation or synchronization.
+
 ### Phase 154: ACL generation invalidation
 
 Each fixed ACL user slot carries a monotonic generation. Sessions cache the

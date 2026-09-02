@@ -65,6 +65,7 @@ static void clear_rules(acl_user *u)
     u->channel_count = 0;
     u->all_channels = 0;
     u->password[0] = '\0';
+    u->no_password = 0;
     u->enabled = 0;
 }
 
@@ -77,6 +78,8 @@ static int set_cmd(acl_user *u, const char *p, size_t n, int allow)
         size_t clen = n - 2;
         if (clen == 3 && eq_ci(cat, clen, "all")) {
             u->all_commands = allow;
+            if (allow) memset(u->deny, 0, sizeof(u->deny));
+            else memset(u->allow, 0, sizeof(u->allow));
             return 0;
         }
         if ((clen == 4 && eq_ci(cat, clen, "read")) ||
@@ -135,7 +138,10 @@ int acl_setuser(acl_registry *r, const char *name, size_t nlen,
             temp.pattern_count = 1;
         }
         else if (eq_ci(p, n, "resetkeys")) { temp.pattern_count = 0; }
-        else if (eq_ci(p, n, "allcommands")) { temp.all_commands = 1; }
+        else if (eq_ci(p, n, "allcommands")) {
+            temp.all_commands = 1;
+            memset(temp.deny, 0, sizeof(temp.deny));
+        }
         else if (eq_ci(p, n, "nocommands")) { temp.all_commands = 0; memset(temp.allow, 0, sizeof(temp.allow)); memset(temp.deny, 0, sizeof(temp.deny)); }
         else if (eq_ci(p, n, "nopass")) { temp.password[0] = '\0'; temp.no_password = 1; }
         else if (eq_ci(p, n, "resetpass")) { temp.password[0] = '\0'; temp.no_password = 0; }

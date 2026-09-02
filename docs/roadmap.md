@@ -669,3 +669,5 @@
     密码、命令和 channel 权限不变（Phase 177）
   - [x] ACL 别名状态收口：`allkeys`/`allchannels` 清理旧 pattern，`resetpass`
     恢复密码校验，避免别名组合遗留状态（Phase 178）
+  - [x] ACL 全量规则互斥：`reset` 清除 `nopass`，`allcommands/+@all` 清除旧
+    deny bitset，避免全开状态被历史规则污染（Phase 179）

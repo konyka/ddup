@@ -119,6 +119,8 @@ python3 tools/audit_redis_compat.py \
   an empty password with unrestricted authentication.
   `nocommands` clears both allow and deny command bitsets, preventing stale deny
   rules from surviving an alias reset and matching Redis policy semantics.
+  `reset` also clears `nopass`, and `allcommands`/`+@all` remove stale deny
+  bits so unrestricted users cannot inherit contradictory historical rules.
   `resetkeys` clears only key patterns and preserves enabled state, credentials,
   command rules, and channel permissions, matching Redis alias scope.
   `allchannels` and `resetchannels` aliases are accepted and map to the same
