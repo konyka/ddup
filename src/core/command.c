@@ -11721,6 +11721,14 @@ static void command_acl(session *s, const resp_value *argv, size_t argc,
         resp_write_error(out, "NOAUTH Authentication required.", 32);
         return;
     }
+    if (strcmp(s->acl_username, "default") != 0 && argc >= 2 &&
+        (ci_equal(sub, sl, "LIST") || ci_equal(sub, sl, "USERS") ||
+         ci_equal(sub, sl, "GETUSER") || ci_equal(sub, sl, "DELUSER") ||
+         ci_equal(sub, sl, "SETUSER") || ci_equal(sub, sl, "SAVE") ||
+         ci_equal(sub, sl, "LOAD") || ci_equal(sub, sl, "LOG"))) {
+        resp_write_error(out, "NOPERM ACL administration requires the default user", 49);
+        return;
+    }
     if (argc >= 2 && (ci_equal(sub, sl, "SETUSER") ||
                       ci_equal(sub, sl, "DELUSER")) &&
         strcmp(s->acl_username, "default") != 0) {

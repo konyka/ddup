@@ -287,6 +287,8 @@
   不信任客户端输入，从而不会绕过命令和 key 权限。
   default 用户显式拥有 `~*`；自定义用户若未声明 key pattern，则对所有
   带 key 的数据命令 fail-closed。
+  ACL 用户管理、用户列表、用户详情、ACL 日志和 ACL 文件操作仅允许
+  default 用户；普通用户仅可使用非敏感诊断子命令。
 
 ## Stream 核心族（Phase 61）
 

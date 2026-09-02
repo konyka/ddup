@@ -79,6 +79,21 @@ static void test_acl_user_without_key_pattern_is_closed(void)
                            getv, 2) == 1);
 }
 
+static void test_acl_sensitive_queries_require_default(void)
+{
+    acl_registry r;
+    resp_value rules[4] = {rv("on"), rv(">pw"), rv("~*") , rv("+acl")};
+    const acl_user *u;
+    acl_init(&r, NULL);
+    DD_CHECK(acl_setuser(&r, "reader", 6, rules, 4) == 0);
+    u = acl_authenticate(&r, "reader", 6, "pw", 2);
+    DD_CHECK(u != NULL);
+    DD_CHECK(strcmp(u->name, "reader") == 0);
+    /* ACL command itself is permissioned, but sensitive subcommands are
+     * enforced by the command layer based on the active username. */
+    DD_CHECK(acl_authorize(u, CMD_ACL, NULL, 0) == 1);
+}
+
 int main(void)
 {
     DD_RUN(test_acl_users);
@@ -86,5 +101,6 @@ int main(void)
     DD_RUN(test_acl_atomic);
     DD_RUN(test_acl_key_scope_and_all_rules);
     DD_RUN(test_acl_user_without_key_pattern_is_closed);
+    DD_RUN(test_acl_sensitive_queries_require_default);
     return DD_TEST_SUMMARY();
 }

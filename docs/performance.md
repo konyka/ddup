@@ -1265,3 +1265,5 @@ MT performs this check once on the home worker before batching or forwarding;
 remote workers do not repeat the lookup or allocate an ACL context.
 An empty key-pattern set is a constant-time deny for key-bearing commands;
 the default user's unrestricted access is represented by one `*` pattern.
+Sensitive ACL subcommand gating is a fixed username comparison before any
+registry traversal, so rejected requests do not touch user metadata.
