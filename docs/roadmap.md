@@ -711,3 +711,5 @@
     并显式输出 `nopass`，保证导出/回放语义一致（Phase 198）
   - [x] ACL GETUSER unrestricted 元数据：flags 显式输出 `nopass`，并保留
     `~*`/`&*` 全 key/channel 状态，避免全开策略被误解为空规则（Phase 199）
+  - [x] ACL 密码规则互斥：追加 `>password` 自动清除 `nopass`，恢复严格密码
+    校验，避免任意密码状态残留（Phase 200）

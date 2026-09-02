@@ -579,7 +579,7 @@ static void test_acl_resetpass_restores_password_checks(void)
     DD_CHECK(acl_setuser(&r, "u", 1, open, 2) == 0);
     DD_CHECK(acl_authenticate(&r, "u", 1, "wrong", 5) != NULL);
     DD_CHECK(acl_setuser(&r, "u", 1, passonly, 1) == 0);
-    DD_CHECK(acl_authenticate(&r, "u", 1, "wrong", 5) != NULL);
+    DD_CHECK(acl_authenticate(&r, "u", 1, "wrong", 5) == NULL);
     DD_CHECK(acl_setuser(&r, "u", 1, secured, 2) == 0);
     DD_CHECK(acl_authenticate(&r, "u", 1, "wrong", 5) == NULL);
     DD_CHECK(acl_authenticate(&r, "u", 1, "secret", 6) != NULL);
@@ -759,6 +759,21 @@ static void test_acl_getuser_metadata_marks_unrestricted_domains(void)
     DD_CHECK(strstr(out.data, "~*") != NULL);
     DD_CHECK(strstr(out.data, "&*") != NULL);
     resp_buf_free(&out);
+}
+
+static void test_acl_password_rule_clears_nopass(void)
+{
+    acl_registry r;
+    resp_value open[2] = {rv("on"), rv("nopass")};
+    resp_value password[1] = {rv(">secret")};
+    const acl_user *u;
+    acl_init(&r, NULL);
+    DD_CHECK(acl_setuser(&r, "u", 1, open, 2) == 0);
+    DD_CHECK(acl_setuser(&r, "u", 1, password, 1) == 0);
+    u = acl_find_const(&r, "u", 1);
+    DD_CHECK(u != NULL && u->no_password == 0);
+    DD_CHECK(acl_authenticate(&r, "u", 1, "wrong", 5) == NULL);
+    DD_CHECK(acl_authenticate(&r, "u", 1, "secret", 6) != NULL);
 }
 
 static void test_acl_subcommand_key_positions_are_correct(void)
@@ -1244,6 +1259,7 @@ int main(void)
     DD_RUN(test_acl_object_xinfo_help_is_keyless);
     DD_RUN(test_acl_rule_metadata_preserves_command_and_nopass_state);
     DD_RUN(test_acl_getuser_metadata_marks_unrestricted_domains);
+    DD_RUN(test_acl_password_rule_clears_nopass);
     DD_RUN(test_acl_subcommand_key_positions_are_correct);
     DD_RUN(test_acl_keyless_options_do_not_require_key_pattern);
     DD_RUN(test_acl_store_commands_check_destination_and_sources);

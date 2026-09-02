@@ -1562,3 +1562,9 @@ existing inline state without allocations in authorization or authentication.
 Category names are normalized with a bounded ASCII comparison while parsing
 `SETUSER`; no temporary lowercase buffer or heap allocation is introduced.
 The authorization hot path remains the same pre-expanded bitset lookup.
+
+### Phase 200: ACL password-rule exclusivity
+
+Adding a plaintext password rule clears the fixed `no_password` flag before the
+atomic user commit. Authentication remains a constant-time comparison path and
+does not add allocation or synchronization.

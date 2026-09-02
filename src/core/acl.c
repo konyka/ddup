@@ -174,6 +174,7 @@ int acl_setuser(acl_registry *r, const char *name, size_t nlen,
         else if (n > 1 && p[0] == '>') {
             if (n >= ACL_MAX_PASSWORD) return -1;
             memcpy(temp.password, p + 1, n - 1); temp.password[n - 1] = '\0';
+            temp.no_password = 0;
         } else if (n > 1 && p[0] == '~') {
             if (n == 2 && p[1] == '*') {
                 temp.pattern_count = 0;
