@@ -1539,7 +1539,13 @@ the hash key after its subcommand, while `PREPARE`, `DISCARD`, and `DISCARDALL`
 
 Generic key authorization now rejects non-bulk key values and odd-length
 `MSET/MSETNX` pairs before pattern matching. The checks are constant-time shape
-guards that prevent malformed requests from bypassing the bounded glob scan.
+  guards that prevent malformed requests from bypassing the bounded glob scan.
+
+### Phase 197: ACL subcommand help boundaries
+
+`OBJECT HELP` and `XINFO HELP` take a constant-time keyless branch, while other
+subcommands retain their explicit key position checks. No allocation or pattern
+scan is added to help requests.
 
 Category names are normalized with a bounded ASCII comparison while parsing
 `SETUSER`; no temporary lowercase buffer or heap allocation is introduced.

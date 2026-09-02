@@ -712,6 +712,21 @@ static void test_acl_keyed_subcommands_still_check_keys(void)
     DD_CHECK(acl_authorize(u, CMD_DEBUG, debug, 3) == 0);
 }
 
+static void test_acl_object_xinfo_help_is_keyless(void)
+{
+    acl_registry r;
+    resp_value rules[2] = {rv("on"), rv("+@all")};
+    resp_value object_help[2] = {rv("OBJECT"), rv("HELP")};
+    resp_value xinfo_help[2] = {rv("XINFO"), rv("HELP")};
+    acl_user *u;
+    acl_init(&r, NULL);
+    DD_CHECK(acl_setuser(&r, "u", 1, rules, 2) == 0);
+    u = acl_find(&r, "u", 1);
+    DD_CHECK(u != NULL);
+    DD_CHECK(acl_authorize(u, CMD_OBJECT, object_help, 2) == 1);
+    DD_CHECK(acl_authorize(u, CMD_XINFO, xinfo_help, 2) == 1);
+}
+
 static void test_acl_subcommand_key_positions_are_correct(void)
 {
     acl_registry r;
@@ -1192,6 +1207,7 @@ int main(void)
     DD_RUN(test_acl_multikey_reads_check_every_key);
     DD_RUN(test_acl_keyless_subcommands_do_not_require_key_pattern);
     DD_RUN(test_acl_keyed_subcommands_still_check_keys);
+    DD_RUN(test_acl_object_xinfo_help_is_keyless);
     DD_RUN(test_acl_subcommand_key_positions_are_correct);
     DD_RUN(test_acl_keyless_options_do_not_require_key_pattern);
     DD_RUN(test_acl_store_commands_check_destination_and_sources);

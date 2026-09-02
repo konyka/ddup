@@ -401,11 +401,17 @@ int acl_authorize(const acl_user *u, uint16_t cmd_id, const resp_value *argv,
         first = 2;
         keyless = 0;
     }
+    if (cmd_id == CMD_OBJECT && argc >= 2 && argv[1].type == RESP_BULK_STRING &&
+        argv[1].len == 4 && memcmp(argv[1].str, "HELP", 4) == 0)
+        keyless = 1;
     if (cmd_id == CMD_XINFO && argc >= 3) {
         nkeys = 1;
         first = 2;
         keyless = 0;
     }
+    if (cmd_id == CMD_XINFO && argc >= 2 && argv[1].type == RESP_BULK_STRING &&
+        argv[1].len == 4 && memcmp(argv[1].str, "HELP", 4) == 0)
+        keyless = 1;
     if (cmd_id == CMD_EVAL || cmd_id == CMD_EVALSHA ||
         cmd_id == CMD_EVAL_RO || cmd_id == CMD_EVALSHA_RO ||
         cmd_id == CMD_FCALL || cmd_id == CMD_FCALL_RO) {

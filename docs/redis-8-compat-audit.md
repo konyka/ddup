@@ -177,6 +177,8 @@ bounded channel state as `&*` and an empty rule set.
   hash key of `HIMPORT SET`; fieldset lifecycle subcommands have no keys.
   ACL key checks fail closed for non-string key values and malformed odd-length
   `MSET/MSETNX` argument lists.
+  `OBJECT HELP` and `XINFO HELP` are keyless help forms; keyed subcommands still
+  authorize their actual key argument.
 - Cluster slot maintenance: `SFLUSH` intersects requested ranges with local
   ownership and returns coalesced flushed ranges; `TRIMSLOTS RANGES` validates
   ownership before deleting keys from unserved slots. Both paths collect keys

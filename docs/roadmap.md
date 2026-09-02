@@ -705,3 +705,5 @@
     仅校验 hash key，准备/丢弃子命令保持 keyless（Phase 195）
   - [x] ACL malformed key fail-closed：非 bulk key、奇数参数 `MSET/MSETNX`
     和不完整 key 对统一拒绝，消除默认路径 fail-open（Phase 196）
+  - [x] ACL 子命令帮助边界：`OBJECT HELP` 与 `XINFO HELP` 保持 keyless，
+    其他带 key 子命令仍按实际位置校验（Phase 197）
