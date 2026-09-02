@@ -15,6 +15,8 @@
 #include "resp/resp.h"
 #include "resp/resp_writer.h"
 
+struct acl_user;
+
 /* One queued MULTI command: deep-copied argv (the recv buffer is recycled
  * between commands, so zero-copy views would dangle until EXEC). */
 typedef struct queued_cmd {
@@ -65,6 +67,13 @@ typedef struct session {
      * server sets it to 0 and provides requirepass when auth is enabled. */
     int authed;
     const char *requirepass; /* not owned; NULL/"" = auth disabled */
+    void *acl_ctx;
+    const struct acl_user *acl_user;
+    int (*acl_check)(void *ctx, const struct acl_user *user,
+                     uint16_t cmd_id, const resp_value *argv, size_t argc);
+    int (*acl_command)(void *ctx, struct session *s, const resp_value *argv,
+                       size_t argc, resp_buf *out);
+    char acl_username[64];
     /* multi-db selection (SELECT/SWAPDB): stack sessions have no hook and
      * only db 0 exists */
     int db_index;

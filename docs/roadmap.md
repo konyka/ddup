@@ -606,3 +606,5 @@
     均 fail-closed（Phase 146）
   - [x] 集群总线 TLS：增加 `tls-cluster` 配置、非阻塞双向握手、可选 CA 校验
     与失败即断连接安全门；proactor 配置自动回退 readiness（Phase 147）
+  - [x] ACL 用户授权：固定容量用户表、原子 SETUSER、AUTH 用户切换、命令
+    bitset 与无分配键模式匹配，管理操作仅限 default 用户（Phase 148）

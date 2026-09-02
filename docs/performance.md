@@ -1252,3 +1252,10 @@ handshake completion. Certificate verification is opt-in through `tls-ca-file`;
 failed handshakes are closed before any topology mutation. Since the current
 proactor contract cannot represent TLS WANT_READ/WANT_WRITE, selecting a
 proactor with `tls-cluster` falls back to the readiness backend at startup.
+
+### Phase 148: bounded ACL
+
+ACL state is server-owned in a fixed 32-user table. Command permissions use
+512-bit bitsets and key patterns use bounded storage with an allocation-free
+glob matcher, so authorized data commands add one bit test and only inspect
+provided key arguments. Password checks use a constant-time byte comparison.

@@ -6,6 +6,7 @@
  * expiry, while Redis read-modify-write string commands preserve it.
  */
 #include "core/command.h"
+#include "core/acl.h"
 
 #include <float.h>
 #include <limits.h>
@@ -11715,7 +11716,17 @@ static void command_acl(session *s, const resp_value *argv, size_t argc,
 {
     const char *sub;
     size_t sl;
-    (void)s;
+    acl_registry *reg = (acl_registry *)s->acl_ctx;
+    if (!s->authed) {
+        resp_write_error(out, "NOAUTH Authentication required.", 32);
+        return;
+    }
+    if (argc >= 2 && (ci_equal(sub, sl, "SETUSER") ||
+                      ci_equal(sub, sl, "DELUSER")) &&
+        strcmp(s->acl_username, "default") != 0) {
+        resp_write_error(out, "NOPERM ACL configuration is restricted to the default user", 59);
+        return;
+    }
     if (argc < 2 || !arg_str(&argv[1], &sub, &sl))
         goto bad;
 
@@ -11733,15 +11744,19 @@ static void command_acl(session *s, const resp_value *argv, size_t argc,
         return;
     }
     if (ci_equal(sub, sl, "LIST") && argc == 2) {
-        resp_write_array_header(out, 0);
+        size_t i;
+        resp_write_array_header(out, reg == NULL ? 0 : reg->count);
+        for (i = 0; reg != NULL && i < reg->count; i++) resp_write_bulk(out, reg->users[i].name, strlen(reg->users[i].name));
         return;
     }
     if (ci_equal(sub, sl, "USERS") && argc == 2) {
-        resp_write_array_header(out, 0);
+        size_t i;
+        resp_write_array_header(out, reg == NULL ? 0 : reg->count);
+        for (i = 0; reg != NULL && i < reg->count; i++) resp_write_bulk(out, reg->users[i].name, strlen(reg->users[i].name));
         return;
     }
     if (ci_equal(sub, sl, "WHOAMI") && argc == 2) {
-        resp_write_bulk(out, "default", 7);
+        resp_write_bulk(out, s->acl_username[0] ? s->acl_username : "default", strlen(s->acl_username[0] ? s->acl_username : "default"));
         return;
     }
     if (ci_equal(sub, sl, "CAT") && (argc == 2 || argc == 3)) {
@@ -11759,15 +11774,21 @@ static void command_acl(session *s, const resp_value *argv, size_t argc,
         return;
     }
     if (ci_equal(sub, sl, "SETUSER") && argc >= 3) {
-        resp_write_simple_string(out, "OK", 2);
+        const char *un; size_t ul; size_t i;
+        if (!arg_str(&argv[2], &un, &ul) || reg == NULL || acl_setuser(reg, un, ul, argv + 3, argc - 3) != 0) { resp_write_error(out, "ERR ACL SETUSER failed", 23); return; }
+        (void)i; resp_write_simple_string(out, "OK", 2);
         return;
     }
     if (ci_equal(sub, sl, "GETUSER") && argc == 3) {
-        resp_write_bulk(out, NULL, 0);
+        const char *un; size_t ul; const acl_user *u;
+        if (!arg_str(&argv[2], &un, &ul) || reg == NULL || (u = acl_find_const(reg, un, ul)) == NULL) { resp_write_bulk(out, NULL, 0); return; }
+        acl_write_user(u, out);
         return;
     }
     if (ci_equal(sub, sl, "DELUSER") && argc >= 3) {
-        resp_write_integer(out, 0);
+        long long n = 0; size_t i;
+        for (i = 2; i < argc; i++) { const char *un; size_t ul; if (arg_str(&argv[i], &un, &ul) && reg != NULL) n += acl_deluser(reg, un, ul); }
+        resp_write_integer(out, n);
         return;
     }
     if (ci_equal(sub, sl, "DRYRUN") && argc >= 3) {
@@ -12871,12 +12892,22 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
         if (argc == 2) {
             if (!arg_str(&argv[1], &pw, &pwl))
                 goto bad_type;
+            if (s->acl_ctx != NULL) {
+                const acl_user *u = acl_authenticate((const acl_registry *)s->acl_ctx, "default", 7, pw, pwl);
+                if (u == NULL) { resp_write_error(out, "WRONGPASS invalid username-password pair or user is disabled.", 60); return; }
+                s->acl_user = u; memcpy(s->acl_username, "default", 8); s->authed = 1; resp_write_simple_string(out, "OK", 2); return;
+            }
         } else if (argc == 3) {
             const char *user;
             size_t ul;
             if (!arg_str(&argv[1], &user, &ul) ||
                 !arg_str(&argv[2], &pw, &pwl))
                 goto bad_type;
+            if (s->acl_ctx != NULL) {
+                const acl_user *u = acl_authenticate((const acl_registry *)s->acl_ctx, user, ul, pw, pwl);
+                if (u == NULL) { resp_write_error(out, "WRONGPASS invalid username-password pair or user is disabled.", 60); return; }
+                s->acl_user = u; if (ul >= sizeof(s->acl_username)) ul = sizeof(s->acl_username)-1; memcpy(s->acl_username, user, ul); s->acl_username[ul] = '\0'; s->authed = 1; resp_write_simple_string(out, "OK", 2); return;
+            }
             if (ul != 7 || memcmp(user, "default", 7) != 0) {
                 static const char E[] =
                     "WRONGPASS invalid username-password pair or user is "
@@ -23588,6 +23619,13 @@ void session_execute_at(session *s, const resp_value *argv, size_t argc,
         cmd_id != CMD_QUIT && cmd_id != CMD_RESET && cmd_id != CMD_HELLO) {
         static const char E[] = "NOAUTH Authentication required.";
         resp_write_error(out, E, sizeof(E) - 1);
+        return;
+    }
+
+    if (s->acl_check != NULL && s->acl_user != NULL && name != NULL &&
+        cmd_id != CMD_AUTH && cmd_id != CMD_ACL &&
+        !s->acl_check(s->acl_ctx, s->acl_user, cmd_id, argv, argc)) {
+        resp_write_error(out, "NOPERM this user has no permissions to run the command or access the key", 69);
         return;
     }
 

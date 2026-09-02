@@ -22,6 +22,7 @@
 #include "core/arena.h"
 #include "core/buf_pool.h"
 #include "core/command.h"
+#include "core/acl.h"
 #include "core/hashslot.h"
 #include "core/redbus.h"
 #include "core/session.h"
@@ -142,6 +143,9 @@ static int srv_backup_command(void *ctx, const resp_value *argv, size_t argc,
                               resp_buf *out);
 static void srv_hotkeys_record(server *srv, const session *source,
                                const resp_value *argv, size_t argc);
+static int srv_acl_check(void *ctx, const struct acl_user *user,
+                         uint16_t cmd_id, const resp_value *argv, size_t argc)
+{ (void)ctx; return acl_authorize(user, cmd_id, argv, argc); }
 
 /* master link states */
 #define LINK_SYNC_SENT 0
@@ -212,6 +216,7 @@ struct server {
     int aof_db_index;  /* last db index written to the AOF (SELECT prefix) */
     int aof_fsync_mode; /* appendfsync policy (AOF_FSYNC_*) */
     const char *requirepass; /* AUTH password (not owned); NULL/"" = off */
+    acl_registry acl;
     uint64_t next_client_id;    /* monotonic CLIENT ID allocator */
     uint64_t client_id_stride;  /* mt allocator stride (1 for standalone) */
     uint64_t slowlog_threshold_us; /* SLOWLOG log-slower-than (0 = all) */
@@ -1976,6 +1981,10 @@ static conn *conn_create(server *srv, pal_socket_t fd)
     c->sess->psync_ctx = srv;
     c->sess->psync_hook = srv_psync;
     c->sess->requirepass = srv->requirepass;
+    c->sess->acl_ctx = srv;
+    c->sess->acl_user = acl_find_const(&srv->acl, "default", 7);
+    c->sess->acl_check = srv_acl_check;
+    memcpy(c->sess->acl_username, "default", 8);
     c->sess->authed = (srv->requirepass == NULL ||
                        srv->requirepass[0] == '\0')
                           ? 1
@@ -2766,6 +2775,7 @@ server *server_create_ex(const char *host, uint16_t port, int backend)
     s->slowlog_threshold_us = 10000; /* 10 ms, Redis default */
     s->slowlog_max = 128;
     s->slowlog_id_stride = 1;
+    acl_init(&s->acl, NULL);
     s->proto_max_request_bytes = (size_t)SERVER_DEFAULT_MAX_REQUEST;
     s->repl_max_snapshot_bytes = (size_t)SERVER_DEFAULT_MAX_REQUEST;
     s->backend = backend;
@@ -3164,6 +3174,7 @@ int server_hotkeys_command(server *s, const resp_value *argv, size_t argc,
 void server_set_requirepass(server *s, const char *pw)
 {
     s->requirepass = pw;
+    acl_init(&s->acl, pw);
 }
 
 void server_set_client_id_allocator(server *s, uint64_t first,
