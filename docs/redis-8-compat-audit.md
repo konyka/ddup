@@ -87,6 +87,9 @@ python3 tools/audit_redis_compat.py \
   recreating a username therefore invalidates stale connections fail-closed.
   Generation counters are registry-local, avoiding cross-worker shared mutable
   state and keeping invalidation deterministic for independent server instances.
+  Category rule names are parsed case-insensitively (`@READ`, `@WRITE`, `@ALL`,
+  and `@CONNECTION`) using bounded ASCII comparison, matching Redis command
+  casing semantics without adding allocations.
 - Cluster slot maintenance: `SFLUSH` intersects requested ranges with local
   ownership and returns coalesced flushed ranges; `TRIMSLOTS RANGES` validates
   ownership before deleting keys from unserved slots. Both paths collect keys

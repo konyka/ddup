@@ -9,6 +9,20 @@ static int eq(const char *a, size_t al, const char *b)
     return al == bl && memcmp(a, b, al) == 0;
 }
 
+static int eq_ci(const char *a, size_t al, const char *b)
+{
+    size_t i, bl = strlen(b);
+    if (al != bl) return 0;
+    for (i = 0; i < al; i++) {
+        unsigned char ca = (unsigned char)a[i];
+        unsigned char cb = (unsigned char)b[i];
+        if (ca >= 'A' && ca <= 'Z') ca = (unsigned char)(ca + ('a' - 'A'));
+        if (cb >= 'A' && cb <= 'Z') cb = (unsigned char)(cb + ('a' - 'A'));
+        if (ca != cb) return 0;
+    }
+    return 1;
+}
+
 void acl_init(acl_registry *r, const char *requirepass)
 {
     memset(r, 0, sizeof(*r));
@@ -56,13 +70,13 @@ static int set_cmd(acl_user *u, const char *p, size_t n, int allow)
     if (n > 2 && (p[0] == '+' || p[0] == '-') && p[1] == '@') {
         const char *cat = p + 2;
         size_t clen = n - 2;
-        if (clen == 3 && memcmp(cat, "all", 3) == 0) {
+        if (clen == 3 && eq_ci(cat, clen, "all")) {
             u->all_commands = allow;
             return 0;
         }
-        if ((clen == 4 && memcmp(cat, "read", 4) == 0) ||
-            (clen == 5 && memcmp(cat, "write", 5) == 0) ||
-            (clen == 10 && memcmp(cat, "connection", 10) == 0)) {
+        if ((clen == 4 && eq_ci(cat, clen, "read")) ||
+            (clen == 5 && eq_ci(cat, clen, "write")) ||
+            (clen == 10 && eq_ci(cat, clen, "connection"))) {
             for (i = 1; i < CMD_STATS_SLOTS; i++) {
                 int match = 0;
                 if (clen == 5 && cmd_is_write((uint16_t)i)) match = 1;

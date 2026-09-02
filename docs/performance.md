@@ -1291,3 +1291,9 @@ Generation counters now live inside each fixed ACL registry instead of a process
 global. This removes cross-server/worker contention and data-race exposure while
 preserving O(1) session validation: the hot path still performs only one cached
 integer comparison and no lock or allocation.
+
+### Phase 156: case-insensitive ACL categories
+
+Category names are normalized with a bounded ASCII comparison while parsing
+`SETUSER`; no temporary lowercase buffer or heap allocation is introduced.
+The authorization hot path remains the same pre-expanded bitset lookup.

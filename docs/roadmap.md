@@ -623,3 +623,5 @@
   - [x] ACL generation 注册表隔离：generation 计数器改为 registry-local，
     消除多 server/worker 间共享可变状态与数据竞争，保持旧 session 失效语义
     稳定（Phase 155）
+  - [x] ACL 类别规则大小写兼容：`@READ/@WRITE/@ALL/@CONNECTION` 与 Redis
+    命令大小写语义一致，规则解析使用无分配 ASCII 比较（Phase 156）

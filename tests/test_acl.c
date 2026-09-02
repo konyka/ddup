@@ -217,6 +217,19 @@ static void test_acl_generation_is_registry_local(void)
     DD_CHECK_EQ_INT(ua->generation, ub->generation);
 }
 
+static void test_acl_categories_are_case_insensitive(void)
+{
+    acl_registry r;
+    resp_value rules[3] = {rv("on"), rv("+@READ"), rv("~*")};
+    resp_value getv[2] = {rv("GET"), rv("k")};
+    acl_user *u;
+    acl_init(&r, NULL);
+    DD_CHECK(acl_setuser(&r, "case", 4, rules, 3) == 0);
+    u = acl_find(&r, "case", 4);
+    DD_CHECK(u != NULL);
+    DD_CHECK(acl_authorize(u, CMD_GET, getv, 2) == 1);
+}
+
 int main(void)
 {
     DD_RUN(test_acl_users);
@@ -232,5 +245,6 @@ int main(void)
     DD_RUN(test_acl_getuser_commands_are_visible);
     DD_RUN(test_acl_generation_changes_on_reuse);
     DD_RUN(test_acl_generation_is_registry_local);
+    DD_RUN(test_acl_categories_are_case_insensitive);
     return DD_TEST_SUMMARY();
 }

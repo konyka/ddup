@@ -302,6 +302,8 @@
   状态，不能继承新用户权限，同时不引入锁或热路径分配。
   generation 计数器属于各自 ACL registry，不再使用进程级共享可变状态；因此
   多 server/worker 初始化和广播更新互不竞争，session 失效判定仍保持 O(1)。
+  ACL 类别名采用无分配 ASCII 大小写不敏感比较，兼容 Redis 的命令大小写规则，
+  解析完成后仍只保留预展开的权限 bitset。
 
 ## Stream 核心族（Phase 61）
 
