@@ -67,6 +67,10 @@ void server_set_appendfsync(server *s, int mode);
  * owned; pass NULL/"" to disable. New connections start unauthenticated. */
 void server_set_requirepass(server *s, const char *pw);
 
+/* Configure a disjoint arithmetic sequence for CLIENT IDs. The first ID is
+ * assigned to the next accepted connection; existing connections retain IDs. */
+void server_set_client_id_allocator(server *s, uint64_t first, uint64_t stride);
+
 /* Apply the memory limit and eviction policy to every logical db. */
 void server_set_maxmemory(server *s, uint64_t bytes, int policy);
 /* Enable tiered storage for every logical db from dir/<logname>. The store

@@ -592,3 +592,6 @@
   - [x] mt SLOWLOG RESET 一致性：`SLOWLOG RESET` 广播到全部 worker 并清空各自
     环形缓冲；`LEN/GET` 保持本地快速读取，新增跨 worker 写入后重置回归
     （Phase 142）
+  - [x] mt 全局 CLIENT ID 分配：每个 worker 使用互不相交的等差 ID 序列，
+    连接迁移时保留原 ID；新增三 worker 多连接唯一性回归，避免 `CLIENT ID`
+    与后续 `CLIENT KILL ID` 路由发生歧义（Phase 143）

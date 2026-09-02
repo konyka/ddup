@@ -207,6 +207,7 @@ struct server {
     int aof_fsync_mode; /* appendfsync policy (AOF_FSYNC_*) */
     const char *requirepass; /* AUTH password (not owned); NULL/"" = off */
     uint64_t next_client_id;    /* monotonic CLIENT ID allocator */
+    uint64_t client_id_stride;  /* mt allocator stride (1 for standalone) */
     uint64_t slowlog_threshold_us; /* SLOWLOG log-slower-than (0 = all) */
     size_t slowlog_max;         /* SLOWLOG max retained entries */
     slowlog_entry *slowlog;     /* SLOWLOG newest-last ring */
@@ -1905,7 +1906,8 @@ static conn *conn_create(server *srv, pal_socket_t fd)
     c->fd = fd;
     c->srv = srv;
     c->send_fixed_id = -1;
-    c->id = srv->next_client_id++;
+    c->id = srv->next_client_id;
+    srv->next_client_id += srv->client_id_stride == 0 ? 1 : srv->client_id_stride;
     c->name_len = 0;
     c->sess = session_create(&srv->db);
     if (srv->proto_max_request_bytes < SERVER_RECV_CHUNK) {
@@ -2751,6 +2753,7 @@ server *server_create_ex(const char *host, uint16_t port, int backend)
     s->cluster_control = 1;
     s->aof_fsync_mode = AOF_FSYNC_EVERYSEC;
     s->next_client_id = 1;
+    s->client_id_stride = 1;
     s->slowlog_threshold_us = 10000; /* 10 ms, Redis default */
     s->slowlog_max = 128;
     s->proto_max_request_bytes = (size_t)SERVER_DEFAULT_MAX_REQUEST;
@@ -3116,6 +3119,15 @@ int server_hotkeys_command(server *s, const resp_value *argv, size_t argc,
 void server_set_requirepass(server *s, const char *pw)
 {
     s->requirepass = pw;
+}
+
+void server_set_client_id_allocator(server *s, uint64_t first,
+                                    uint64_t stride)
+{
+    if (s == NULL)
+        return;
+    s->next_client_id = first == 0 ? 1 : first;
+    s->client_id_stride = stride == 0 ? 1 : stride;
 }
 
 void server_set_maxmemory(server *s, uint64_t bytes, int policy)

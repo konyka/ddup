@@ -5361,6 +5361,10 @@ mt_server *mt_server_create_ex(const char *host, uint16_t port, int nworkers,
             mt_server_destroy(ms);
             return NULL;
         }
+        /* Encode the worker lane in the monotonic sequence so IDs are
+         * globally unique while connections migrate between workers. */
+        server_set_client_id_allocator(w->srv, (uint64_t)i + 1,
+                                       (uint64_t)nworkers);
         for (j = 0; j < nworkers; j++) {
             /* deep rings: a transient producer/consumer lag must not hit
              * the backpressure path at bench burst sizes */

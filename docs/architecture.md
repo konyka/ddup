@@ -1406,3 +1406,12 @@ bench/       压测客户端 ddup-bench（Phase 3，非 ctest 目标）
 tools/       ddup-reshard 集群迁槽工具 + reshard_client（阻塞 RESP 客户端
              与迁槽编排，Phase 16）
 ```
+
+## Phase 143：MT 全局 CLIENT ID
+
+MT worker 的连接 ID 使用按 worker 分 lane 的单调等差序列：第 `i` 个 worker
+从 `i + 1` 开始、步长为 worker 总数。这样无需共享热路径锁即可保证并发 accept
+时全局唯一；连接迁移只移动 `conn` 指针，不重新创建连接，因此 ID 在迁移前后
+保持不变。独立 server 继续使用步长 1 的原有序列。该分配为后续精确的
+`CLIENT KILL ID` 跨 worker 路由提供无歧义目标，但当前 kill 过滤器仍需单独的
+控制面实现。

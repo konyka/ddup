@@ -1212,3 +1212,9 @@ mt 路由器现在也按 `numkeys` 处理 `EVAL/EVALSHA/EVAL_RO/EVALSHA_RO` 和
 
 `SFLUSH` 和 `TRIMSLOTS` 在 mt 模式走 fail-closed 拒绝分支，不会在单个
 home worker 上做部分槽删除；待跨 worker 广播事务具备原子提交/回滚后再启用。
+### Phase 143: MT client ID allocation
+
+MT client IDs use disjoint arithmetic sequences per worker (`first = worker + 1`,
+`stride = worker_count`). Allocation remains a single increment on the accepting
+worker with no shared lock or heap allocation. Connection migration preserves the
+existing ID. The new uniqueness check adds no steady-state command-path cost.

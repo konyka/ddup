@@ -1138,6 +1138,36 @@ static void test_client_list_covers_all_workers(void)
     pal_socket_cleanup();
 }
 
+static void test_client_ids_are_globally_unique(void)
+{
+    mt_server *ms;
+    pal_socket_t c[4];
+    char reply[8192];
+    size_t n, i, j, ids[4];
+
+    DD_CHECK_EQ_INT(0, pal_socket_init());
+    ms = mt_server_create("127.0.0.1", 0, 3);
+    DD_CHECK(ms != NULL);
+    if (ms == NULL)
+        return;
+    DD_CHECK_EQ_INT(0, mt_server_start(ms));
+    for (i = 0; i < 4; i++) {
+        c[i] = connect_client(mt_server_port(ms));
+        n = request_full(c[i], "*2\r\n$6\r\nCLIENT\r\n$2\r\nID\r\n",
+                         reply, sizeof(reply));
+        DD_CHECK(n > 1 && reply[0] == ':');
+        ids[i] = (uint64_t)strtoull(reply + 1, NULL, 10);
+    }
+    for (i = 0; i < 4; i++)
+        for (j = i + 1; j < 4; j++)
+            DD_CHECK(ids[i] != ids[j]);
+    for (i = 0; i < 4; i++)
+        pal_close(c[i]);
+    mt_server_stop(ms);
+    mt_server_destroy(ms);
+    pal_socket_cleanup();
+}
+
 static void test_hotkeys_control_is_broadcast(void)
 {
     mt_server *ms;
@@ -3454,6 +3484,7 @@ int main(void)
     DD_RUN(test_bgsave_covers_all_selected_databases);
     DD_RUN(test_bgrewriteaof_is_broadcast_to_workers);
     DD_RUN(test_client_list_covers_all_workers);
+    DD_RUN(test_client_ids_are_globally_unique);
     DD_RUN(test_hotkeys_control_is_broadcast);
     DD_RUN(test_slowlog_reset_is_broadcast);
     DD_RUN(test_cluster_state_propagates_to_workers);
