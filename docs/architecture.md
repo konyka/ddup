@@ -317,6 +317,8 @@
   入队，保证 sessionless worker 不产生不可见的授权失败。
   ACL 用户同时维护固定容量 channel pattern 表（`&pattern`/`&*`）；订阅、模式
   订阅和发布在 home worker 侧逐频道匹配，未授权频道在副作用前 fail-closed。
+  default 用户初始化时设置 `all_channels`，普通部署无需遍历 channel pattern，
+  同时保持原有 Pub/Sub 行为。
 
 ## Stream 核心族（Phase 61）
 

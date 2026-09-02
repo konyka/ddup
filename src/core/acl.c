@@ -33,6 +33,7 @@ void acl_init(acl_registry *r, const char *requirepass)
     r->users[0].generation = ++r->generation_next;
     memcpy(r->users[0].patterns[0], "*", 2);
     r->users[0].pattern_count = 1;
+    r->users[0].all_channels = 1;
     if (requirepass != NULL && requirepass[0] != '\0') {
         size_t n = strlen(requirepass);
         if (n >= ACL_MAX_PASSWORD) n = ACL_MAX_PASSWORD - 1;

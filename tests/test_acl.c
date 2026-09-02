@@ -421,6 +421,17 @@ static void test_acl_channel_patterns_are_enforced(void)
     DD_CHECK(acl_authorize_channel(u, bad[1].str, bad[1].len, 0) == 0);
 }
 
+static void test_acl_default_user_allows_channels(void)
+{
+    acl_registry r;
+    resp_value sub[2] = {rv("SUBSCRIBE"), rv("any-channel")};
+    const acl_user *u;
+    acl_init(&r, NULL);
+    u = acl_find_const(&r, "default", 7);
+    DD_CHECK(u != NULL);
+    DD_CHECK(acl_authorize(u, CMD_SUBSCRIBE, sub, 2) == 1);
+}
+
 int main(void)
 {
     DD_RUN(test_acl_users);
@@ -446,5 +457,6 @@ int main(void)
     DD_RUN(test_acl_log_records_and_resets_auth_failures);
     DD_RUN(test_acl_log_records_command_denials_and_count);
     DD_RUN(test_acl_channel_patterns_are_enforced);
+    DD_RUN(test_acl_default_user_allows_channels);
     return DD_TEST_SUMMARY();
 }

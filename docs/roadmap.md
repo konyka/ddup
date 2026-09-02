@@ -637,3 +637,5 @@
     失败环，消除 sessionless worker 场景的安全审计盲区（Phase 161）
   - [x] ACL channel pattern 授权：支持 `&pattern`/`&*`，对普通及模式订阅、
     发布命令执行有界 channel 匹配，未授权频道 fail-closed（Phase 162）
+  - [x] ACL default channel 兼容：default 用户显式拥有 all-channels，保持
+    未配置 ACL 时普通/分片 Pub/Sub 行为不变（Phase 163）

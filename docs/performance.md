@@ -1313,6 +1313,12 @@ allocation-free glob matcher. Pub/Sub authorization checks each supplied
 channel before registration or routing; unrestricted `&*` is a single flag,
 and data commands add no channel metadata allocations.
 
+### Phase 163: default all-channel compatibility
+
+The default ACL user carries a single `all_channels` flag, avoiding pattern
+iteration for the common unrestricted Pub/Sub path while preserving Redis
+compatibility when no custom channel policy is configured.
+
 ### Phase 154: ACL generation invalidation
 
 Each fixed ACL user slot carries a monotonic generation. Sessions cache the
