@@ -689,6 +689,7 @@ static void test_randomkey_aggregates_workers(void)
     snprintf(req, sizeof(req), "*3\r\n$3\r\nSET\r\n$%zu\r\n%s\r\n$2\r\nv1\r\n",
              strlen(k1), k1);
     roundtrip(a, req, "+OK\r\n");
+    roundtrip(a, "*2\r\n$7\r\nSLOWLOG\r\n$5\r\nRESET\r\n", "+OK\r\n");
 
     snprintf(req, sizeof(req), "*1\r\n$9\r\nRANDOMKEY\r\n");
     n = request_full(a, req, reply, sizeof(reply));
@@ -882,6 +883,7 @@ static void test_himport_cross_worker_fails_closed(void)
     snprintf(req, sizeof(req), "*3\r\n$3\r\nSET\r\n$%zu\r\n%s\r\n$1\r\nx\r\n",
              strlen(key), key);
     roundtrip(a, req, "+OK\r\n");
+    roundtrip(a, "*2\r\n$7\r\nSLOWLOG\r\n$5\r\nRESET\r\n", "+OK\r\n");
     snprintf(req, sizeof(req), "*3\r\n$6\r\nMEMORY\r\n$5\r\nUSAGE\r\n$%zu\r\n%s\r\n",
              strlen(key), key);
     {
@@ -1267,6 +1269,41 @@ static void test_slowlog_reset_is_broadcast(void)
     n = request_full(a, "*2\r\n$7\r\nSLOWLOG\r\n$3\r\nLEN\r\n",
                      reply, sizeof(reply));
     DD_CHECK(n >= 4 && memcmp(reply, ":0\r\n", 4) == 0);
+    pal_close(a);
+    mt_server_stop(ms);
+    mt_server_destroy(ms);
+    pal_socket_cleanup();
+}
+
+static void test_slowlog_records_routed_commands(void)
+{
+    mt_server *ms;
+    pal_socket_t a;
+    char key[32], key0[32], req[192], reply[256];
+    size_t n;
+
+    DD_CHECK_EQ_INT(0, pal_socket_init());
+    ms = mt_server_create("127.0.0.1", 0, 2);
+    DD_CHECK(ms != NULL);
+    if (ms == NULL)
+        return;
+    mt_server_set_slowlog_threshold(ms, 0);
+    DD_CHECK_EQ_INT(0, mt_server_start(ms));
+    a = connect_client(mt_server_port(ms));
+    pick_key_for_worker(1, 2, key, sizeof(key));
+    snprintf(req, sizeof(req), "*3\r\n$3\r\nSET\r\n$%zu\r\n%s\r\n$1\r\nx\r\n",
+             strlen(key), key);
+    roundtrip(a, req, "+OK\r\n");
+    /* The first remote key migrates the connection to worker 1. A second key
+     * owned by worker 0 must then use the routed-task path. */
+    roundtrip(a, "*2\r\n$7\r\nSLOWLOG\r\n$5\r\nRESET\r\n", "+OK\r\n");
+    pick_key_for_worker(0, 2, key0, sizeof(key0));
+    snprintf(req, sizeof(req), "*3\r\n$3\r\nSET\r\n$%zu\r\n%s\r\n$1\r\ny\r\n",
+             strlen(key0), key0);
+    roundtrip(a, req, "+OK\r\n");
+    n = request_full(a, "*2\r\n$7\r\nSLOWLOG\r\n$3\r\nLEN\r\n",
+                     reply, sizeof(reply));
+    DD_CHECK(n >= 4 && memcmp(reply, ":1\r\n", 4) == 0);
     pal_close(a);
     mt_server_stop(ms);
     mt_server_destroy(ms);
@@ -3538,6 +3575,7 @@ int main(void)
     DD_RUN(test_client_kill_id_cross_worker);
     DD_RUN(test_hotkeys_control_is_broadcast);
     DD_RUN(test_slowlog_reset_is_broadcast);
+    DD_RUN(test_slowlog_records_routed_commands);
     DD_RUN(test_cluster_state_propagates_to_workers);
     DD_RUN(test_mt_replica_partitions_full_sync);
     DD_RUN(test_mt_master_serves_replica_full_sync);

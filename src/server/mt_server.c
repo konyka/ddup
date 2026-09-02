@@ -311,6 +311,7 @@ struct mt_agg {
     size_t keys_count;
     resp_buf client_body; /* concatenated CLIENT LIST payloads */
     int client_kill;
+    int slowlog_len;
     int fanout_done;
     int abandoned;
     int finished;
@@ -1676,7 +1677,8 @@ static void mt_agg_accumulate(mt_agg *agg, const resp_buf *part)
         }
         else if (part->data[0] == ':' && part->len > 2) {
             long long v = strtoll(part->data + 1, NULL, 10);
-            if (agg->cmd == CMD_DBSIZE || agg->cmd == CMD_CLIENT)
+            if (agg->cmd == CMD_DBSIZE || agg->cmd == CMD_CLIENT ||
+                (agg->cmd == CMD_SLOWLOG && agg->slowlog_len))
                 agg->sum += v;
             else if (agg->cmd == CMD_LASTSAVE && v > agg->sum)
                 agg->sum = v;
@@ -1706,7 +1708,8 @@ static void mt_agg_finish(server *srv, void *conn, mt_conn_state *st,
                                     agg->home->ms->workers[0].srv),
                                 agg->stats, &fin->reply);
         else if (agg->cmd == CMD_DBSIZE || agg->cmd == CMD_LASTSAVE ||
-                 (agg->cmd == CMD_CLIENT && agg->client_kill))
+                 (agg->cmd == CMD_CLIENT && agg->client_kill) ||
+                 (agg->cmd == CMD_SLOWLOG && agg->slowlog_len))
             resp_write_integer(&fin->reply, agg->sum);
         else if (agg->cmd == CMD_RANDOMKEY)
             resp_write_bulk(&fin->reply, agg->random_key,
@@ -2965,6 +2968,9 @@ static int mt_route_aggregate(worker *home, void *conn,
     if (cmd == CMD_CLIENT && argc >= 2 && argv[1].str != NULL &&
         mt_ci_equal(argv[1].str, argv[1].len, "KILL"))
         agg->client_kill = 1;
+    if (cmd == CMD_SLOWLOG && argc >= 2 && argv[1].str != NULL &&
+        mt_ci_equal(argv[1].str, argv[1].len, "LEN"))
+        agg->slowlog_len = 1;
 
     /* home part */
     resp_buf_init(&local);
@@ -3017,6 +3023,8 @@ static int mt_route_aggregate(worker *home, void *conn,
     } else if (cmd == CMD_SLOWLOG && argc >= 2 && argv[1].str != NULL &&
                mt_ci_equal(argv[1].str, argv[1].len, "RESET")) {
         mt_slowlog_reset_exec(home, &local);
+    } else if (cmd == CMD_SLOWLOG && agg->slowlog_len) {
+        resp_write_integer(&local, (long long)server_slowlog_len(home->srv));
     } else if (cmd == CMD_FLUSHDB) {
         db *d = server_db_at(home->srv, db_index);
         uint64_t dirty_before = d->dirty;
@@ -4171,7 +4179,8 @@ static int mt_route(void *ctx, void *conn, session *sess,
           mt_ci_equal(argv[1].str, argv[1].len, "KILL"))) ||
         (cmd == CMD_HOTKEYS && mt_hotkeys_broadcast(argv, argc)) ||
         (cmd == CMD_SLOWLOG && argc >= 2 && argv[1].str != NULL &&
-         mt_ci_equal(argv[1].str, argv[1].len, "RESET"))) {
+         (mt_ci_equal(argv[1].str, argv[1].len, "RESET") ||
+          mt_ci_equal(argv[1].str, argv[1].len, "LEN")))) {
         mt_batch_flush(home, conn, st);
         return mt_route_aggregate(home, conn, argv, argc, raw, rawlen, cmd,
                                   sess->db_index);
@@ -4990,9 +4999,27 @@ static void mt_exec_task(worker *w, mt_task *t)
                 mt_slowlog_reset_exec(w, &t->reply);
                 continue;
             }
-        dirty_before = d->dirty;
-        command_execute_at(d, v.items, v.count, &t->reply,
+            if (v.count == 2 && v.items[0].str != NULL &&
+                v.items[0].len == 7 &&
+                mt_ci_equal(v.items[0].str, v.items[0].len, "slowlog") &&
+                v.items[1].str != NULL && v.items[1].len == 3 &&
+                mt_ci_equal(v.items[1].str, v.items[1].len, "len")) {
+                resp_write_integer(&t->reply,
+                                   (long long)server_slowlog_len(w->srv));
+                continue;
+            }
+            dirty_before = d->dirty;
+            {
+                uint64_t routed_t0 = pal_now_us();
+            command_execute_at(d, v.items, v.count, &t->reply,
                            pal_wall_ms());
+                if (v.count == 0 || v.items[0].str == NULL ||
+                    v.items[0].len != 7 ||
+                    !mt_ci_equal(v.items[0].str, v.items[0].len, "slowlog"))
+                    server_slowlog_record(w->srv, v.items, v.count,
+                                          pal_now_us() - routed_t0,
+                                          pal_wall_ms());
+            }
             /* sessionless path: log applied mutations to the
              * worker's own AOF */
             if (d->dirty != dirty_before)

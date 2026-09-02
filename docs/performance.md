@@ -1225,3 +1225,10 @@ existing ID. The new uniqueness check adds no steady-state command-path cost.
 into the aggregate task; workers scan only their local connection arrays, so the
 steady-state cost is O(workers + total connections) with no global lock. Only the
 matching owner marks a connection for close, preserving proactor zombie safety.
+
+### Phase 145: routed slowlog and LEN
+
+Routed task timing adds one pair of `pal_now_us()` calls only when the target
+worker executes a sessionless command. `SLOWLOG LEN` reads a worker-local counter
+and aggregates integer replies without copying entries or allocating per-command
+storage; `RESET` and `LEN` are excluded from recursive slowlog recording.

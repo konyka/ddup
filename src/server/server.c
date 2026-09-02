@@ -3116,6 +3116,24 @@ void server_slowlog_reset(server *s)
         srv_slowlog_reset(s);
 }
 
+void server_slowlog_record(server *s, const resp_value *argv, size_t argc,
+                           uint64_t usec, uint64_t now_ms)
+{
+    if (s != NULL && argv != NULL)
+        srv_slowlog_add(s, argv, argc, usec, now_ms);
+}
+
+size_t server_slowlog_len(server *s)
+{
+    return s == NULL ? 0 : srv_slowlog_len(s);
+}
+
+void server_slowlog_get(server *s, long long count, resp_buf *out)
+{
+    if (s != NULL && out != NULL)
+        srv_slowlog_get(s, count, out);
+}
+
 int server_hotkeys_command(server *s, const resp_value *argv, size_t argc,
                            resp_buf *out)
 {

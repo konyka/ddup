@@ -190,6 +190,10 @@ void server_client_list(server *s, resp_buf *out);
 int server_client_kill(server *s, const char *filter, size_t filterlen,
                        resp_buf *out);
 void server_slowlog_reset(server *s);
+void server_slowlog_record(server *s, const resp_value *argv, size_t argc,
+                           uint64_t usec, uint64_t now_ms);
+size_t server_slowlog_len(server *s);
+void server_slowlog_get(server *s, long long count, resp_buf *out);
 /* Execute a server-owned HOTKEYS control command. */
 int server_hotkeys_command(server *s, const resp_value *argv, size_t argc,
                            resp_buf *out);

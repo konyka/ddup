@@ -1424,3 +1424,12 @@ worker 汇总为一个 RESP integer。命中连接由其所属 worker 设置
 `close_after_send`，因此不会因 home worker 与连接 owner 不同而误杀其他连接。
 聚合任务沿用连接流水线序号、pending 计数和 fail-closed 分配策略；目标连接
 关闭与控制命令回复解耦，避免 IOCP/io_uring 未完成操作被提前释放。
+
+## Phase 145：MT routed slowlog 与全局 LEN
+
+sessionless routed task 在目标 worker 的执行计时边界调用 server-owned
+slowlog hook，因此跨 worker 命令只记录一次，且不会把 `SLOWLOG RESET/LEN`
+等观测控制命令再次写入日志。`SLOWLOG LEN` 通过现有聚合 fan-out 汇总每个
+worker 的环长度；每个 worker 只读本地计数，home worker 按流水线顺序生成
+单个整数回复。`SLOWLOG GET` 的跨 worker 条目排序和全局 ID 合并仍需后续
+独立阶段实现。

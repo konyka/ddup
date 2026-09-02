@@ -598,3 +598,6 @@
   - [x] mt `CLIENT KILL ID` 精确控制面：将 ID 过滤器广播到全部 worker，
     汇总本地命中数并按流水线顺序返回；目标连接只在所属 worker 标记关闭，
     避免 home worker 误杀或返回部分计数（Phase 144）
+  - [x] mt routed slowlog 记录与全局 LEN：sessionless routed task 在所属
+    worker 记录一次命令耗时，`SLOWLOG LEN` 聚合所有 worker 的环长度；控制
+    命令不重复写入，新增迁移后远端写入回归（Phase 145）
