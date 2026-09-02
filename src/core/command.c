@@ -7310,7 +7310,7 @@ static void command_command(session *s, const resp_value *argv, size_t argc,
         return;
     }
     if (ci_equal(sub, sl, "DOCS") && argc == 2) {
-        command_list_reply(out);
+        resp_write_array_header(out, 0);
         return;
     }
     if (ci_equal(sub, sl, "INFO") && argc >= 3) {
@@ -17446,6 +17446,7 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
         if (rc < 0)
             return;
         if (rc == 0) {
+            resp_write_array_header(out, 0);
             return;
         }
         hdump_ctx ctx;
