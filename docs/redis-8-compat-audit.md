@@ -78,6 +78,8 @@ python3 tools/audit_redis_compat.py \
   fail closed for key-bearing commands.
   User-management and metadata-bearing ACL subcommands are restricted to the
   default user to avoid credential and policy disclosure.
+  Category grants `@all`, `@read`, `@write`, and `@connection` are expanded into
+  command bitsets at update time; unknown commands fail closed.
 - Cluster slot maintenance: `SFLUSH` intersects requested ranges with local
   ownership and returns coalesced flushed ranges; `TRIMSLOTS RANGES` validates
   ownership before deleting keys from unserved slots. Both paths collect keys

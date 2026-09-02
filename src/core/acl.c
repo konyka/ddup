@@ -50,10 +50,29 @@ static void clear_rules(acl_user *u)
 static int set_cmd(acl_user *u, const char *p, size_t n, int allow)
 {
     uint16_t id;
-    if (n == 5 && (p[0] == '+' || p[0] == '-') &&
-        memcmp(p + 1, "@all", 4) == 0) {
-        u->all_commands = allow;
-        return 0;
+    size_t i;
+    if (n > 2 && (p[0] == '+' || p[0] == '-') && p[1] == '@') {
+        const char *cat = p + 2;
+        size_t clen = n - 2;
+        if (clen == 3 && memcmp(cat, "all", 3) == 0) {
+            u->all_commands = allow;
+            return 0;
+        }
+        if ((clen == 4 && memcmp(cat, "read", 4) == 0) ||
+            (clen == 5 && memcmp(cat, "write", 5) == 0) ||
+            (clen == 10 && memcmp(cat, "connection", 10) == 0)) {
+            for (i = 1; i < CMD_STATS_SLOTS; i++) {
+                int match = 0;
+                if (clen == 5 && cmd_is_write((uint16_t)i)) match = 1;
+                if (clen == 4 && !cmd_is_write((uint16_t)i)) match = 1;
+                if (clen == 10 && (i == CMD_PING || i == CMD_ECHO || i == CMD_AUTH || i == CMD_QUIT || i == CMD_SELECT)) match = 1;
+                if (match) {
+                    if (allow) u->allow[i / 64] |= UINT64_C(1) << (i % 64);
+                    else u->deny[i / 64] |= UINT64_C(1) << (i % 64);
+                }
+            }
+            return 0;
+        }
     }
     if (n == 0 || n > 255) return -1;
     id = cmd_resolve(p[0] == '+' || p[0] == '-' ? p + 1 : p,
@@ -174,7 +193,7 @@ int acl_authorize(const acl_user *u, uint16_t cmd_id, const resp_value *argv,
     case CMD_MSET: case CMD_MSETNX:
         nkeys = (argc - 1) / 2; step = 2; break;
     default:
-        nkeys = 1;
+        nkeys = 0;
         break;
     }
     if (nkeys == 0) return 1;

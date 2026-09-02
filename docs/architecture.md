@@ -291,6 +291,8 @@
   带 key 的数据命令 fail-closed。
   ACL 用户管理、用户列表、用户详情、ACL 日志和 ACL 文件操作仅允许
   default 用户；普通用户仅可使用非敏感诊断子命令。
+  支持 `+@all`、`+@read`、`+@write` 和 `+@connection` 类别规则；未知
+  命令和未声明 key 的命令默认不扩展权限。
 
 ## Stream 核心族（Phase 61）
 

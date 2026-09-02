@@ -94,6 +94,23 @@ static void test_acl_sensitive_queries_require_default(void)
     DD_CHECK(acl_authorize(u, CMD_ACL, NULL, 0) == 1);
 }
 
+static void test_acl_categories_and_keyless_commands(void)
+{
+    acl_registry r;
+    resp_value rules[3] = {rv("on"), rv("~*") , rv("+@read")};
+    resp_value ping[1] = {rv("PING")};
+    resp_value getv[2] = {rv("GET"), rv("k")};
+    resp_value setv[3] = {rv("SET"), rv("k"), rv("v")};
+    const acl_user *u;
+    acl_init(&r, NULL);
+    DD_CHECK(acl_setuser(&r, "reader", 6, rules, 3) == 0);
+    u = acl_find_const(&r, "reader", 6);
+    DD_CHECK(u != NULL);
+    DD_CHECK(acl_authorize(u, CMD_PING, ping, 1) == 1);
+    DD_CHECK(acl_authorize(u, CMD_GET, getv, 2) == 1);
+    DD_CHECK(acl_authorize(u, CMD_SET, setv, 3) == 0);
+}
+
 int main(void)
 {
     DD_RUN(test_acl_users);
@@ -102,5 +119,6 @@ int main(void)
     DD_RUN(test_acl_key_scope_and_all_rules);
     DD_RUN(test_acl_user_without_key_pattern_is_closed);
     DD_RUN(test_acl_sensitive_queries_require_default);
+    DD_RUN(test_acl_categories_and_keyless_commands);
     return DD_TEST_SUMMARY();
 }
