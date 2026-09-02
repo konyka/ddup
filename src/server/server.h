@@ -76,6 +76,12 @@ int server_enable_tiering(server *s, const char *dir, const char *logname,
 void server_set_proto_max_request_bytes(server *s, size_t bytes);
 void server_set_repl_max_snapshot_bytes(server *s, size_t bytes);
 
+/* Execute a server-level CONFIG hook for an internal worker session. */
+int server_config_command(void *ctx, const char *sub, size_t sub_len,
+                          const char *param, size_t param_len,
+                          const char *value, size_t value_len,
+                          resp_buf *out);
+
 /* Point SAVE at path (not owned) and, if the file exists, load it into the
  * db. load returns 0 on success, -1 on corrupt/missing file. */
 void server_set_snapshot_path(server *s, const char *path);

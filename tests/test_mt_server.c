@@ -969,6 +969,37 @@ static void test_script_cache_broadcast_reaches_key_owner(void)
     pal_socket_cleanup();
 }
 
+static void test_config_mutations_broadcast_to_workers(void)
+{
+    mt_server *ms;
+    pal_socket_t a, b;
+
+    DD_CHECK_EQ_INT(0, pal_socket_init());
+    ms = mt_server_create("127.0.0.1", 0, 2);
+    DD_CHECK(ms != NULL);
+    if (ms == NULL)
+        return;
+    DD_CHECK_EQ_INT(0, mt_server_start(ms));
+    a = connect_client(mt_server_port(ms));
+    b = connect_client(mt_server_port(ms));
+
+    roundtrip(a, "*4\r\n$6\r\nCONFIG\r\n$3\r\nSET\r\n$9\r\nmaxmemory\r\n$5\r\n12345\r\n",
+              "+OK\r\n");
+    roundtrip(b, "*3\r\n$6\r\nCONFIG\r\n$3\r\nGET\r\n$9\r\nmaxmemory\r\n",
+              "*2\r\n$9\r\nmaxmemory\r\n$5\r\n12345\r\n");
+
+    roundtrip(a, "*4\r\n$6\r\nCONFIG\r\n$3\r\nSET\r\n$11\r\nappendfsync\r\n$6\r\nalways\r\n",
+              "+OK\r\n");
+    roundtrip(b, "*3\r\n$6\r\nCONFIG\r\n$3\r\nGET\r\n$11\r\nappendfsync\r\n",
+              "*2\r\n$11\r\nappendfsync\r\n$6\r\nalways\r\n");
+
+    pal_close(a);
+    pal_close(b);
+    mt_server_stop(ms);
+    mt_server_destroy(ms);
+    pal_socket_cleanup();
+}
+
 static void pick_key_for_slot(int wanted, char *out, size_t cap)
 {
     int i;
@@ -3225,6 +3256,7 @@ int main(void)
     DD_RUN(test_himport_cross_worker_fails_closed);
     DD_RUN(test_sort_store_cross_worker_fails_closed);
     DD_RUN(test_script_cache_broadcast_reaches_key_owner);
+    DD_RUN(test_config_mutations_broadcast_to_workers);
     DD_RUN(test_cluster_state_propagates_to_workers);
     DD_RUN(test_mt_replica_partitions_full_sync);
     DD_RUN(test_mt_master_serves_replica_full_sync);

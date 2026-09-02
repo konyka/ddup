@@ -1136,6 +1136,10 @@ DBSIZE 为 O(1)，可能计入尚未回收的过期 key。
 - 广播任务沿用现有 completion/reorder 顺序和错误聚合；任一 worker 执行失败
   时整体返回统一错误，不向客户端暴露某个分片已成功、另一个分片失败的
   部分状态。
+- **MT 配置一致性**：`CONFIG SET` 与 `CONFIG RESETSTAT` 通过同一 fan-out
+  路径在所有 worker 执行；数据库级参数（`maxmemory`、策略）覆盖该 worker
+  的全部逻辑 DB，服务器级 `appendfsync` 通过 server-owned hook 更新各自
+  AOF writer。`CONFIG GET` 仍在本地快速读取，避免读请求产生广播开销。
 
 ## 架构对比：分片存储 + 消息路由（ddup mt）vs 共享存储（Garnet/Tsavorite）
 

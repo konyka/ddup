@@ -2091,6 +2091,14 @@ static int mt_script_broadcast(uint16_t cmd, const resp_value *argv,
     return 0;
 }
 
+static int mt_config_broadcast(const resp_value *argv, size_t argc)
+{
+    if (argc < 2 || argv[1].str == NULL)
+        return 0;
+    return mt_ci_equal(argv[1].str, argv[1].len, "SET") ||
+           mt_ci_equal(argv[1].str, argv[1].len, "RESETSTAT");
+}
+
 /* SORT reads argv[1] and optionally writes a STORE destination. Both keys
  * must stay on one worker because remote tasks do not provide a second
  * destination transaction. */
@@ -2698,6 +2706,22 @@ static void mt_flushall_exec(worker *w, int log_db_index, resp_buf *out)
     session_release(&sess);
 }
 
+/* Execute CONFIG against every logical db on one worker and expose the
+ * server-owned appendfsync hook, matching a normal client session. */
+static void mt_config_exec(worker *w, const resp_value *argv, size_t argc,
+                           resp_buf *out)
+{
+    session sess;
+    session_init(&sess, server_db_at(w->srv, 0));
+    sess.sel_ctx = w->srv;
+    sess.sel_fn = server_select_db;
+    sess.sel_ndbs = server_ndbs(w->srv);
+    sess.config_ctx = w->srv;
+    sess.config_command = server_config_command;
+    session_execute_at(&sess, argv, argc, out, pal_wall_ms());
+    session_release(&sess);
+}
+
 /* Aggregate commands (DBSIZE sum, FLUSHDB broadcast): run the home part
  * inline, fan sub-tasks out to every other worker and finish when all
  * parts arrived. Runs on the home worker thread. */
@@ -2829,6 +2853,15 @@ static int mt_route_aggregate(worker *home, void *conn,
         arena_init(&ar, 1024);
         if (resp_parse(raw, rawlen, &v, &ar) == (ptrdiff_t)rawlen)
             mt_swapdb_exec(home, db_index, &v, &local);
+        else
+            resp_write_error(&local, "ERR Protocol error", 18);
+        arena_destroy(&ar);
+    } else if (cmd == CMD_CONFIG) {
+        resp_value v;
+        arena ar;
+        arena_init(&ar, 256);
+        if (resp_parse(raw, rawlen, &v, &ar) == (ptrdiff_t)rawlen)
+            mt_config_exec(home, v.items, v.count, &local);
         else
             resp_write_error(&local, "ERR Protocol error", 18);
         arena_destroy(&ar);
@@ -4026,6 +4059,12 @@ static int mt_route(void *ctx, void *conn, session *sess,
         return 1;
     }
 
+    if (cmd == CMD_CONFIG && mt_config_broadcast(argv, argc)) {
+        mt_batch_flush(home, conn, st);
+        return mt_route_aggregate(home, conn, argv, argc, raw, rawlen, cmd,
+                                  sess->db_index);
+    }
+
     if (mt_script_broadcast(cmd, argv, argc)) {
         mt_batch_flush(home, conn, st);
         return mt_route_aggregate(home, conn, argv, argc, raw, rawlen, cmd,
@@ -4729,6 +4768,13 @@ static void mt_exec_task(worker *w, mt_task *t)
                 v.items[0].len == 8 &&
                 mt_ci_equal(v.items[0].str, v.items[0].len, "flushall")) {
                 mt_flushall_exec(w, t->db_index, &t->reply);
+                continue;
+            }
+            if (v.count >= 2 && v.items[0].str != NULL &&
+                v.items[0].len == 6 &&
+                mt_ci_equal(v.items[0].str, v.items[0].len, "config") &&
+                mt_config_broadcast(v.items, v.count)) {
+                mt_config_exec(w, v.items, v.count, &t->reply);
                 continue;
             }
         dirty_before = d->dirty;

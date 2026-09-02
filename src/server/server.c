@@ -1877,6 +1877,15 @@ static int srv_config_command(void *ctx, const char *sub, size_t sub_len,
     return 1;
 }
 
+int server_config_command(void *ctx, const char *sub, size_t sub_len,
+                          const char *param, size_t param_len,
+                          const char *value, size_t value_len,
+                          resp_buf *out)
+{
+    return srv_config_command(ctx, sub, sub_len, param, param_len, value,
+                              value_len, out);
+}
+
 #ifdef DDUP_TESTING
 int server_test_config_appendfsync(const char *value, resp_buf *out)
 {

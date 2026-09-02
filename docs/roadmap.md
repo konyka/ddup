@@ -569,3 +569,6 @@
     新增真实 socket 回归验证目标 worker 执行已加载脚本（Phase 134）
   - [x] mt 脚本广播错误收敛：聚合 completion 使用现有流水线顺序，任一
     worker 失败时整体 fail-closed，避免返回脚本缓存的部分成功状态（Phase 135）
+  - [x] mt CONFIG 一致性：`CONFIG SET`/`RESETSTAT` 广播到所有 worker，
+    同步数据库级内存参数与服务器级 `appendfsync` writer；`CONFIG GET` 保持
+    本地快速路径并新增跨连接一致性回归（Phase 136）
