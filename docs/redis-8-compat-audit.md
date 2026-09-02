@@ -124,6 +124,8 @@ bounded channel state as `&*` and an empty rule set.
   complete rule lines remain well-formed even at maximum configured cardinality.
   Consecutive identical ACL failure events coalesce into a saturating `count` in
   the fixed log ring, preserving distinct audit events during repeated attacks.
+  `ACL GETUSER` reports `nocommands` for non-unrestricted command policies,
+  rather than mislabeling command state as a channel reset.
 - Cluster slot maintenance: `SFLUSH` intersects requested ranges with local
   ownership and returns coalesced flushed ranges; `TRIMSLOTS RANGES` validates
   ownership before deleting keys from unserved slots. Both paths collect keys

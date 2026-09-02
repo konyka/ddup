@@ -333,6 +333,8 @@
   写出前保留 CRLF 空间，避免新增频道策略导致审计行截断。
   ACL 失败日志对连续相同的 reason/user/object 事件在最新固定槽位递增饱和计数，
   避免攻击重复请求过快挤占有限审计窗口，且不引入堆分配。
+  `ACL GETUSER flags` 中命令权限状态使用 `allcommands/nocommands`，与 channel
+  rule 状态分离，避免管理端将策略错误解释为 `resetchannels`。
 
 ## Stream 核心族（Phase 61）
 

@@ -1360,6 +1360,12 @@ The fixed ACL log compares each new event only with the latest inline entry.
 Identical reason/user/object triples increment a saturating counter in place,
 avoiding allocation and retaining more distinct failures under repeated attacks.
 
+### Phase 171: ACL GETUSER flag accuracy
+
+The management-only flags renderer now emits the command-state label
+`nocommands` rather than a channel-state label. This is a constant output
+selection with no impact on authorization or data-plane latency.
+
 ### Phase 154: ACL generation invalidation
 
 Each fixed ACL user slot carries a monotonic generation. Sessions cache the

@@ -653,3 +653,5 @@
     pattern 集，保证完整 CRLF 行且不因新增频道规则截断（Phase 169）
   - [x] ACL LOG 重复事件聚合：连续相同认证/授权失败递增固定环中 `count`，
     减少攻击洪泛对审计保留窗口的挤占（Phase 170）
+  - [x] ACL GETUSER flags 语义校正：非 allcommands 用户显示 `nocommands`，
+    不再将命令权限状态误标为 channel reset（Phase 171）
