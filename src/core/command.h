@@ -483,6 +483,7 @@ int cmd_is_write(uint16_t cmd_id);
 int cmd_min_argc(uint16_t cmd_id);
 int cmd_max_argc(uint16_t cmd_id);
 int cmd_parity(uint16_t cmd_id);
+const char *cmd_name(uint16_t cmd_id);
 
 /* Retry a session suspended by a blocking command (server event-loop
  * integration). Writes the reply into `out` and clears the blocked state
