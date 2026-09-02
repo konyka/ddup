@@ -1007,6 +1007,27 @@ static void test_acl_cluster_subcommands_are_keyless(void)
     DD_CHECK(acl_authorize(u, CMD_CLUSTER, keyslot, 3) == 1);
 }
 
+static void test_acl_ddup_control_and_himport_key_positions(void)
+{
+    acl_registry r;
+    resp_value rules[3] = {rv("on"), rv("~allowed:*") , rv("+@all")};
+    resp_value backup[2] = {rv("BACKUP"), rv("STATUS")};
+    resp_value hotkeys[2] = {rv("HOTKEYS"), rv("GET")};
+    resp_value prepare[2] = {rv("HIMPORT"), rv("PREPARE")};
+    resp_value set_bad[4] = {rv("HIMPORT"), rv("SET"), rv("secret:hash"), rv("f")};
+    resp_value set_ok[4] = {rv("HIMPORT"), rv("SET"), rv("allowed:hash"), rv("f")};
+    acl_user *u;
+    acl_init(&r, NULL);
+    DD_CHECK(acl_setuser(&r, "u", 1, rules, 3) == 0);
+    u = acl_find(&r, "u", 1);
+    DD_CHECK(u != NULL);
+    DD_CHECK(acl_authorize(u, CMD_BACKUP, backup, 2) == 1);
+    DD_CHECK(acl_authorize(u, CMD_HOTKEYS, hotkeys, 2) == 1);
+    DD_CHECK(acl_authorize(u, CMD_HIMPORT, prepare, 2) == 1);
+    DD_CHECK(acl_authorize(u, CMD_HIMPORT, set_bad, 4) == 0);
+    DD_CHECK(acl_authorize(u, CMD_HIMPORT, set_ok, 4) == 1);
+}
+
 static void test_acl_rule_line_capacity_covers_channel_patterns(void)
 {
     acl_registry r;
@@ -1163,6 +1184,7 @@ int main(void)
     DD_RUN(test_acl_stream_mutations_use_stream_key);
     DD_RUN(test_acl_stream_reads_reject_odd_key_id_tail);
     DD_RUN(test_acl_cluster_subcommands_are_keyless);
+    DD_RUN(test_acl_ddup_control_and_himport_key_positions);
     DD_RUN(test_acl_rule_line_capacity_covers_channel_patterns);
     DD_RUN(test_acl_log_coalesces_identical_events);
     DD_RUN(test_acl_getuser_flags_do_not_mislabel_commands);

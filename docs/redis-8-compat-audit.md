@@ -173,6 +173,8 @@ bounded channel state as `&*` and an empty rule set.
   keys at their Redis-defined positions, excluding payload and option arguments.
   `XREAD`/`XREADGROUP` reject odd or truncated key/ID tails after `STREAMS` rather
   than silently dropping an unmatched stream ID.
+  ddup extension commands keep `BACKUP`/`HOTKEYS` keyless and authorize only the
+  hash key of `HIMPORT SET`; fieldset lifecycle subcommands have no keys.
 - Cluster slot maintenance: `SFLUSH` intersects requested ranges with local
   ownership and returns coalesced flushed ranges; `TRIMSLOTS RANGES` validates
   ownership before deleting keys from unserved slots. Both paths collect keys

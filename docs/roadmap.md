@@ -701,3 +701,5 @@
     与 `MSETEX` 按协议位置校验真实 key（Phase 193）
   - [x] ACL Stream 形状校验：`XREAD/XREADGROUP` 拒绝奇数长度的 key/ID 尾部，
     防止截断 malformed 请求绕过授权（Phase 194）
+  - [x] ACL 扩展命令 key 边界：`BACKUP/HOTKEYS` 按控制面处理，`HIMPORT SET`
+    仅校验 hash key，准备/丢弃子命令保持 keyless（Phase 195）

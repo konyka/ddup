@@ -1527,7 +1527,13 @@ and source keys. `MSETEX` scans only its alternating key slots after checked
 
 Stream reads now require an even key/ID tail after `STREAMS`; odd-length or
 truncated requests fail closed before pattern scans. The validation is a single
-bounded parity check with no allocation.
+  bounded parity check with no allocation.
+
+### Phase 195: ACL extension-command key boundaries
+
+`BACKUP` and `HOTKEYS` remain command-only control paths. `HIMPORT SET` checks
+the hash key after its subcommand, while `PREPARE`, `DISCARD`, and `DISCARDALL`
+skip key matching. All branches are fixed-position and allocation-free.
 
 Category names are normalized with a bounded ASCII comparison while parsing
 `SETUSER`; no temporary lowercase buffer or heap allocation is introduced.

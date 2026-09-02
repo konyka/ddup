@@ -378,6 +378,7 @@ int acl_authorize(const acl_user *u, uint16_t cmd_id, const resp_value *argv,
     case CMD_ASKING: case CMD_SYNC: case CMD_PSYNC: case CMD_REPLICAOF:
     case CMD_SLAVEOF: case CMD_REPLCONF: case CMD_FAILOVER: case CMD_MONITOR:
     case CMD_CLUSTER: case CMD_SENTINEL:
+    case CMD_BACKUP: case CMD_HOTKEYS:
         keyless = 1; break;
     default: break;
     }
@@ -463,6 +464,17 @@ int acl_authorize(const acl_user *u, uint16_t cmd_id, const resp_value *argv,
                     if (acl_match_pattern(u->patterns[p], strlen(u->patterns[p]), argv[j + 1].str, argv[j + 1].len)) return 1;
                 return 0;
             }
+        }
+        return 1;
+    }
+    if (cmd_id == CMD_HIMPORT) {
+        if (argc >= 2 && argv[1].type == RESP_BULK_STRING &&
+            argv[1].len == 3 && memcmp(argv[1].str, "SET", 3) == 0) {
+            size_t p;
+            if (argc < 3 || argv[2].type != RESP_BULK_STRING || u->pattern_count == 0) return 0;
+            for (p = 0; p < u->pattern_count; p++)
+                if (acl_match_pattern(u->patterns[p], strlen(u->patterns[p]), argv[2].str, argv[2].len)) return 1;
+            return 0;
         }
         return 1;
     }
