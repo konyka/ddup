@@ -392,6 +392,25 @@ int acl_authorize(const acl_user *u, uint16_t cmd_id, const resp_value *argv,
         first = 2;
         keyless = 0;
     }
+    if (cmd_id == CMD_EVAL || cmd_id == CMD_EVALSHA ||
+        cmd_id == CMD_EVAL_RO || cmd_id == CMD_EVALSHA_RO ||
+        cmd_id == CMD_FCALL || cmd_id == CMD_FCALL_RO) {
+        long long nk;
+        size_t j, p, end;
+        if (argc < 3 || argv[2].type != RESP_BULK_STRING ||
+            !acl_parse_ll(argv[2].str, argv[2].len, &nk) || nk < 0 ||
+            (uint64_t)nk > (uint64_t)(argc - 3)) return 0;
+        if (nk == 0) return 1;
+        if (u->pattern_count == 0) return 0;
+        end = 3 + (size_t)nk;
+        for (j = 3; j < end; j++) {
+            if (argv[j].type != RESP_BULK_STRING) return 0;
+            for (p = 0; p < u->pattern_count; p++)
+                if (acl_match_pattern(u->patterns[p], strlen(u->patterns[p]), argv[j].str, argv[j].len)) break;
+            if (p == u->pattern_count) return 0;
+        }
+        return 1;
+    }
     if (keyless) return 1;
     /* Commands with option-dependent key positions are checked explicitly so
      * destination keys cannot bypass the source key policy. */

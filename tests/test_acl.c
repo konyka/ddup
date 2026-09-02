@@ -809,6 +809,27 @@ static void test_acl_replication_and_cluster_controls_are_keyless(void)
     DD_CHECK(acl_authorize(u, CMD_MONITOR, monitor, 1) == 1);
 }
 
+static void test_acl_script_commands_use_declared_key_positions(void)
+{
+    acl_registry r;
+    resp_value rules[3] = {rv("on"), rv("~allowed:*") , rv("+@all")};
+    resp_value eval_ok[5] = {rv("EVAL"), rv("secret-script"), rv("1"), rv("allowed:1"), rv("arg")};
+    resp_value eval_bad[5] = {rv("EVAL"), rv("allowed-script"), rv("1"), rv("secret:1"), rv("arg")};
+    resp_value fcall_ok[5] = {rv("FCALL"), rv("secret-fn"), rv("1"), rv("allowed:1"), rv("arg")};
+    resp_value fcall_bad[5] = {rv("FCALL"), rv("allowed-fn"), rv("1"), rv("secret:1"), rv("arg")};
+    resp_value eval_zero[3] = {rv("EVAL"), rv("secret-script"), rv("0")};
+    acl_user *u;
+    acl_init(&r, NULL);
+    DD_CHECK(acl_setuser(&r, "u", 1, rules, 3) == 0);
+    u = acl_find(&r, "u", 1);
+    DD_CHECK(u != NULL);
+    DD_CHECK(acl_authorize(u, CMD_EVAL, eval_ok, 5) == 1);
+    DD_CHECK(acl_authorize(u, CMD_EVAL, eval_bad, 5) == 0);
+    DD_CHECK(acl_authorize(u, CMD_FCALL, fcall_ok, 5) == 1);
+    DD_CHECK(acl_authorize(u, CMD_FCALL, fcall_bad, 5) == 0);
+    DD_CHECK(acl_authorize(u, CMD_EVAL, eval_zero, 3) == 1);
+}
+
 static void test_acl_rule_line_capacity_covers_channel_patterns(void)
 {
     acl_registry r;
@@ -955,6 +976,7 @@ int main(void)
     DD_RUN(test_acl_store_commands_check_destination_and_sources);
     DD_RUN(test_acl_advanced_multikey_commands_check_all_keys);
     DD_RUN(test_acl_replication_and_cluster_controls_are_keyless);
+    DD_RUN(test_acl_script_commands_use_declared_key_positions);
     DD_RUN(test_acl_rule_line_capacity_covers_channel_patterns);
     DD_RUN(test_acl_log_coalesces_identical_events);
     DD_RUN(test_acl_getuser_flags_do_not_mislabel_commands);

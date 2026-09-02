@@ -685,3 +685,5 @@
     `ZUNION/ZINTER/ZDIFF/ZINTERCARD` 校验全部 source key（Phase 185）
   - [x] ACL 复制/集群控制边界：`ASKING/PSYNC/REPLCONF/REPLICAOF/FAILOVER/
     MONITOR` 等参数保持 keyless，避免控制参数被误当作 key（Phase 186）
+  - [x] ACL 脚本/函数 key 位点：`EVAL/EVALSHA/FCALL` 族仅校验
+    `numkeys` 声明的 key，脚本/函数名与参数不参与 key pattern（Phase 187）

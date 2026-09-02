@@ -1479,6 +1479,12 @@ branch as other administrative commands. Their host/offset/option arguments are
 never glob-matched as data keys, avoiding false denials and preserving the
 allocation-free authorization path.
 
+### Phase 187: ACL script/function key positions
+
+`EVAL`, `EVALSHA`, `FCALL`, and read-only variants parse a checked `numkeys` and
+scan only the declared key slice. Zero-key scripts return after command-bitset
+authorization; no script/function name or argument value is glob-matched.
+
 Category names are normalized with a bounded ASCII comparison while parsing
 `SETUSER`; no temporary lowercase buffer or heap allocation is introduced.
 The authorization hot path remains the same pre-expanded bitset lookup.
