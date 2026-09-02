@@ -1545,7 +1545,13 @@ Generic key authorization now rejects non-bulk key values and odd-length
 
 `OBJECT HELP` and `XINFO HELP` take a constant-time keyless branch, while other
 subcommands retain their explicit key position checks. No allocation or pattern
-scan is added to help requests.
+  scan is added to help requests.
+
+### Phase 198: ACL lossless policy metadata
+
+Rule rendering now emits `nocommands` for restricted command policies and an
+explicit `nopass` token for unrestricted authentication. Rendering remains a
+bounded stack-buffer operation with no authorization-path cost.
 
 Category names are normalized with a bounded ASCII comparison while parsing
 `SETUSER`; no temporary lowercase buffer or heap allocation is introduced.

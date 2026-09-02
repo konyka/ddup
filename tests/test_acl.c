@@ -727,6 +727,23 @@ static void test_acl_object_xinfo_help_is_keyless(void)
     DD_CHECK(acl_authorize(u, CMD_XINFO, xinfo_help, 2) == 1);
 }
 
+static void test_acl_rule_metadata_preserves_command_and_nopass_state(void)
+{
+    acl_registry r;
+    resp_value restricted[3] = {rv("on"), rv("nopass"), rv("+get")};
+    resp_buf out;
+    const acl_user *u;
+    acl_init(&r, NULL);
+    DD_CHECK(acl_setuser(&r, "u", 1, restricted, 3) == 0);
+    u = acl_find_const(&r, "u", 1);
+    resp_buf_init(&out);
+    acl_write_rule_line(u, &out);
+    DD_CHECK(strstr(out.data, "nocommands") != NULL);
+    DD_CHECK(strstr(out.data, "resetkeys") == NULL);
+    DD_CHECK(strstr(out.data, "nopass") != NULL);
+    resp_buf_free(&out);
+}
+
 static void test_acl_subcommand_key_positions_are_correct(void)
 {
     acl_registry r;
@@ -1208,6 +1225,7 @@ int main(void)
     DD_RUN(test_acl_keyless_subcommands_do_not_require_key_pattern);
     DD_RUN(test_acl_keyed_subcommands_still_check_keys);
     DD_RUN(test_acl_object_xinfo_help_is_keyless);
+    DD_RUN(test_acl_rule_metadata_preserves_command_and_nopass_state);
     DD_RUN(test_acl_subcommand_key_positions_are_correct);
     DD_RUN(test_acl_keyless_options_do_not_require_key_pattern);
     DD_RUN(test_acl_store_commands_check_destination_and_sources);

@@ -707,3 +707,5 @@
     和不完整 key 对统一拒绝，消除默认路径 fail-open（Phase 196）
   - [x] ACL 子命令帮助边界：`OBJECT HELP` 与 `XINFO HELP` 保持 keyless，
     其他带 key 子命令仍按实际位置校验（Phase 197）
+  - [x] ACL 策略元数据无损渲染：`ACL LIST` 使用 `nocommands` 表示受限命令域，
+    并显式输出 `nopass`，保证导出/回放语义一致（Phase 198）

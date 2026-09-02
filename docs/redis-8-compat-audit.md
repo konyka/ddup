@@ -179,6 +179,8 @@ bounded channel state as `&*` and an empty rule set.
   `MSET/MSETNX` argument lists.
   `OBJECT HELP` and `XINFO HELP` are keyless help forms; keyed subcommands still
   authorize their actual key argument.
+  `ACL LIST` renders restricted users as `nocommands` and emits `nopass` when
+  arbitrary-password authentication is enabled, preserving round-trip policy.
 - Cluster slot maintenance: `SFLUSH` intersects requested ranges with local
   ownership and returns coalesced flushed ranges; `TRIMSLOTS RANGES` validates
   ownership before deleting keys from unserved slots. Both paths collect keys

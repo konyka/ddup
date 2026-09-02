@@ -781,7 +781,7 @@ void acl_write_rule_line(const acl_user *u, resp_buf *out)
              (ACL_MAX_PATTERNS + ACL_MAX_CHANNELS) * ACL_MAX_PATTERN + 128];
     int n = snprintf(buf, sizeof(buf), "user %s %s %s", u->name,
                      u->enabled ? "on" : "off",
-                     u->all_commands ? "allcommands" : "resetkeys");
+                     u->all_commands ? "allcommands" : "nocommands");
     if (n < 0 || (size_t)n >= sizeof(buf)) return;
     for (i = 1; i < CMD_STATS_SLOTS; i++) {
         size_t w;
@@ -810,6 +810,8 @@ void acl_write_rule_line(const acl_user *u, resp_buf *out)
     }
     if (u->password[0]) n += snprintf(buf + n, sizeof(buf) - (size_t)n,
                                       " >%s", u->password);
+    else if (u->no_password && (size_t)n < sizeof(buf))
+        n += snprintf(buf + n, sizeof(buf) - (size_t)n, " nopass");
     for (i = 0; i < u->pattern_count && (size_t)n < sizeof(buf); i++)
         n += snprintf(buf + n, sizeof(buf) - (size_t)n, " ~%s", u->patterns[i]);
     for (i = 0; i < u->channel_count && (size_t)n < sizeof(buf); i++)
