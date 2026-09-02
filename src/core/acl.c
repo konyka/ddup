@@ -1,6 +1,7 @@
 #include "core/acl.h"
 
 #include <string.h>
+#include <stdio.h>
 
 static int eq(const char *a, size_t al, const char *b)
 {
@@ -226,4 +227,33 @@ void acl_write_user(const acl_user *u, resp_buf *out)
     resp_write_bulk(out, "keys", 4);
     resp_write_array_header(out, u->pattern_count);
     for (i = 0; i < u->pattern_count; i++) resp_write_bulk(out, u->patterns[i], strlen(u->patterns[i]));
+}
+
+void acl_write_rule_line(const acl_user *u, resp_buf *out)
+{
+    size_t i;
+    char buf[ACL_MAX_NAME + ACL_MAX_PASSWORD + ACL_MAX_PATTERNS * ACL_MAX_PATTERN + 64];
+    int n = snprintf(buf, sizeof(buf), "user %s %s %s", u->name,
+                     u->enabled ? "on" : "off",
+                     u->all_commands ? "allcommands" : "resetkeys");
+    if (n < 0 || (size_t)n >= sizeof(buf)) return;
+    for (i = 1; i < CMD_STATS_SLOTS; i++) {
+        size_t w;
+        if ((u->allow[i / 64] & (UINT64_C(1) << (i % 64))) == 0) continue;
+        w = strlen(buf);
+        if (w + 2 + 32 >= sizeof(buf)) break;
+        buf[w++] = ' '; buf[w++] = '+';
+        {
+            const char *cn = cmd_name((uint16_t)i);
+            if (cn != NULL) { size_t cl = strlen(cn); if (w + cl >= sizeof(buf)) break; memcpy(buf + w, cn, cl); w += cl; }
+        }
+        buf[w] = '\0';
+        n = (int)w;
+    }
+    if (u->password[0]) n += snprintf(buf + n, sizeof(buf) - (size_t)n,
+                                      " >%s", u->password);
+    for (i = 0; i < u->pattern_count && (size_t)n < sizeof(buf); i++)
+        n += snprintf(buf + n, sizeof(buf) - (size_t)n, " ~%s", u->patterns[i]);
+    if ((size_t)n + 2 < sizeof(buf)) { buf[n++] = '\r'; buf[n++] = '\n'; buf[n] = '\0'; }
+    if (resp_buf_reserve(out, (size_t)n) == 0) { memcpy(out->data + out->len, buf, (size_t)n); out->len += (size_t)n; }
 }

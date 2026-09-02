@@ -111,6 +111,25 @@ static void test_acl_categories_and_keyless_commands(void)
     DD_CHECK(acl_authorize(u, CMD_SET, setv, 3) == 0);
 }
 
+static void test_acl_rule_rendering(void)
+{
+    acl_registry r;
+    resp_value rules[4] = {rv("on"), rv(">pw"), rv("~cache:*") , rv("+get")};
+    resp_buf out;
+    const acl_user *u;
+    acl_init(&r, NULL);
+    DD_CHECK(acl_setuser(&r, "alice", 5, rules, 4) == 0);
+    u = acl_find_const(&r, "alice", 5);
+    resp_buf_init(&out);
+    acl_write_rule_line(u, &out);
+    DD_CHECK(strstr(out.data, "user alice") != NULL);
+    DD_CHECK(strstr(out.data, "on") != NULL);
+    DD_CHECK(strstr(out.data, ">pw") != NULL);
+    DD_CHECK(strstr(out.data, "~cache:*") != NULL);
+    DD_CHECK(strstr(out.data, "+get") != NULL);
+    resp_buf_free(&out);
+}
+
 int main(void)
 {
     DD_RUN(test_acl_users);
@@ -120,5 +139,6 @@ int main(void)
     DD_RUN(test_acl_user_without_key_pattern_is_closed);
     DD_RUN(test_acl_sensitive_queries_require_default);
     DD_RUN(test_acl_categories_and_keyless_commands);
+    DD_RUN(test_acl_rule_rendering);
     return DD_TEST_SUMMARY();
 }

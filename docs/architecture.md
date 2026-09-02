@@ -293,6 +293,8 @@
   default 用户；普通用户仅可使用非敏感诊断子命令。
   支持 `+@all`、`+@read`、`+@write` 和 `+@connection` 类别规则；未知
   命令和未声明 key 的命令默认不扩展权限。
+  `ACL LIST` 输出完整规则行（状态、命令、密码和 key pattern），并过滤
+  固定表中的已删除槽位。
 
 ## Stream 核心族（Phase 61）
 

@@ -1271,3 +1271,5 @@ registry traversal, so rejected requests do not touch user metadata.
 local bitset/pattern check with no cross-worker synchronization.
 Category rules are expanded once during `SETUSER`; data-path checks remain
 single bit operations rather than category traversal.
+`ACL LIST` formatting is confined to the cold management path and uses a
+bounded stack buffer per user.

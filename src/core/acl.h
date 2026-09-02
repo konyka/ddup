@@ -43,6 +43,7 @@ const acl_user *acl_authenticate(const acl_registry *r, const char *name,
 int acl_authorize(const acl_user *u, uint16_t cmd_id, const resp_value *argv,
                   size_t argc);
 void acl_write_user(const acl_user *u, resp_buf *out);
+void acl_write_rule_line(const acl_user *u, resp_buf *out);
 int acl_match_pattern(const char *pat, size_t plen, const char *key,
                       size_t klen);
 

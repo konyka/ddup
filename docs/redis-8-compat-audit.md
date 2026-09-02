@@ -80,6 +80,7 @@ python3 tools/audit_redis_compat.py \
   default user to avoid credential and policy disclosure.
   Category grants `@all`, `@read`, `@write`, and `@connection` are expanded into
   command bitsets at update time; unknown commands fail closed.
+  `ACL LIST` returns complete bounded rule lines suitable for policy auditing.
 - Cluster slot maintenance: `SFLUSH` intersects requested ranges with local
   ownership and returns coalesced flushed ranges; `TRIMSLOTS RANGES` validates
   ownership before deleting keys from unserved slots. Both paths collect keys

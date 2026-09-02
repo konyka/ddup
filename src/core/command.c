@@ -11752,9 +11752,14 @@ static void command_acl(session *s, const resp_value *argv, size_t argc,
         return;
     }
     if (ci_equal(sub, sl, "LIST") && argc == 2) {
-        size_t i;
-        resp_write_array_header(out, reg == NULL ? 0 : reg->count);
-        for (i = 0; reg != NULL && i < reg->count; i++) resp_write_bulk(out, reg->users[i].name, strlen(reg->users[i].name));
+        size_t i, count = 0;
+        for (i = 0; reg != NULL && i < reg->count; i++)
+            if (reg->users[i].name[0] != '\0') count++;
+        resp_write_array_header(out, count);
+        for (i = 0; reg != NULL && i < reg->count; i++) {
+            if (reg->users[i].name[0] == '\0') continue;
+            acl_write_rule_line(&reg->users[i], out);
+        }
         return;
     }
     if (ci_equal(sub, sl, "USERS") && argc == 2) {
@@ -23362,6 +23367,12 @@ int cmd_parity(uint16_t cmd_id)
     if (cmd_id == 0 || cmd_id > (uint16_t)(sizeof(CMD_TABLE) / sizeof(CMD_TABLE[0])))
         return 0;
     return CMD_TABLE[cmd_id - 1].parity;
+}
+
+const char *cmd_name(uint16_t cmd_id)
+{
+    const cmd_entry *e = cmd_table_entry(cmd_id);
+    return e == NULL ? NULL : e->name;
 }
 
 /* Queue-time check: unknown command or bad arity writes the error reply,

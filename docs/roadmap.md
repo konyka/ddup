@@ -614,3 +614,5 @@
     保证跨连接认证策略一致（Phase 150）
   - [x] ACL 类别规则与 keyless fail-closed：支持 `@all/@read/@write/
     @connection`，未声明 key 的命令不触发模式检查（Phase 151）
+  - [x] ACL LIST 完整规则渲染：返回状态、权限、密码和 key pattern，过滤
+    已删除用户槽位（Phase 152）
