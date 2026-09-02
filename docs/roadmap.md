@@ -641,3 +641,5 @@
     未配置 ACL 时普通/分片 Pub/Sub 行为不变（Phase 163）
   - [x] ACL channel 元数据可见性：`ACL LIST` 输出 `&pattern`，`ACL GETUSER`
     输出 `channels` 字段，保证策略审计无损（Phase 164）
+  - [x] ACL channel 别名：支持 `allchannels`/`resetchannels`，与 `&*`/空规则
+    等价，保持 Redis ACL 配置迁移兼容（Phase 165）

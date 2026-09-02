@@ -321,6 +321,8 @@
   同时保持原有 Pub/Sub 行为。
   `ACL LIST` 与 `ACL GETUSER` 同步展示 channel pattern，管理端可完整审计频道
   策略；渲染只发生在冷路径，不影响发布订阅热路径。
+  `allchannels` 与 `resetchannels` 仅更新同一固定 channel 状态，和 `&*`/清空
+  规则保持等价，便于安全迁移 Redis ACL 配置。
 
 ## Stream 核心族（Phase 61）
 

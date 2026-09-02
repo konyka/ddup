@@ -143,6 +143,11 @@ int acl_setuser(acl_registry *r, const char *name, size_t nlen,
                 memcpy(temp.channels[temp.channel_count], p + 1, n - 1);
                 temp.channels[temp.channel_count++][n - 1] = '\0';
             }
+        } else if (eq_ci(p, n, "allchannels")) {
+            temp.all_channels = 1;
+        } else if (eq_ci(p, n, "resetchannels")) {
+            temp.channel_count = 0;
+            temp.all_channels = 0;
         } else if (n > 1 && (p[0] == '+' || p[0] == '-')) {
             if (set_cmd(&temp, p, n, p[0] == '+') != 0) return -1;
         } else return -1;

@@ -451,6 +451,21 @@ static void test_acl_channel_rules_are_visible_in_metadata(void)
     resp_buf_free(&out);
 }
 
+static void test_acl_channel_alias_rules(void)
+{
+    acl_registry r;
+    resp_value allv[3] = {rv("on"), rv("allchannels"), rv("+subscribe")};
+    resp_value resetv[3] = {rv("on"), rv("resetchannels"), rv("+subscribe")};
+    resp_value sub[2] = {rv("SUBSCRIBE"), rv("any")};
+    acl_user *u;
+    acl_init(&r, NULL);
+    DD_CHECK(acl_setuser(&r, "all", 3, allv, 3) == 0);
+    u = acl_find(&r, "all", 3);
+    DD_CHECK(u != NULL && acl_authorize(u, CMD_SUBSCRIBE, sub, 2) == 1);
+    DD_CHECK(acl_setuser(&r, "all", 3, resetv, 3) == 0);
+    DD_CHECK(acl_authorize(u, CMD_SUBSCRIBE, sub, 2) == 0);
+}
+
 int main(void)
 {
     DD_RUN(test_acl_users);
@@ -478,5 +493,6 @@ int main(void)
     DD_RUN(test_acl_channel_patterns_are_enforced);
     DD_RUN(test_acl_default_user_allows_channels);
     DD_RUN(test_acl_channel_rules_are_visible_in_metadata);
+    DD_RUN(test_acl_channel_alias_rules);
     return DD_TEST_SUMMARY();
 }

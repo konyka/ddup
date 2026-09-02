@@ -110,6 +110,8 @@ python3 tools/audit_redis_compat.py \
   normal Pub/Sub behavior when no custom ACL channel policy is configured.
   Channel patterns are exposed in `ACL LIST` and `ACL GETUSER` metadata so
   policy inspection remains lossless.
+  `allchannels` and `resetchannels` aliases are accepted and map to the same
+  bounded channel state as `&*` and an empty rule set.
 - Cluster slot maintenance: `SFLUSH` intersects requested ranges with local
   ownership and returns coalesced flushed ranges; `TRIMSLOTS RANGES` validates
   ownership before deleting keys from unserved slots. Both paths collect keys

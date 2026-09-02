@@ -1324,6 +1324,12 @@ compatibility when no custom channel policy is configured.
 Channel rules are rendered only on the cold `ACL LIST/GETUSER` paths. Bounded
 stack buffers and fixed arrays preserve the zero-allocation data-plane checks.
 
+### Phase 165: ACL channel aliases
+
+`allchannels` and `resetchannels` update the same inline flags as `&*` and an
+empty channel set. Alias parsing is bounded and allocation-free; authorization
+remains a single flag check or fixed-pattern scan.
+
 ### Phase 154: ACL generation invalidation
 
 Each fixed ACL user slot carries a monotonic generation. Sessions cache the
