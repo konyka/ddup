@@ -1144,6 +1144,10 @@ DBSIZE 为 O(1)，可能计入尚未回收的过期 key。
   multi-db session 执行，而不是复用调用连接当前选中的 DB；因此每个
   `worker-<id>-<snapshot>` 文件都包含完整 DB 集合，重启恢复不会丢失
   非零 DB 的数据。
+- **MT BGSAVE 一致性**：`BGSAVE` 与 `SAVE` 一样走聚合 fan-out，并在每个
+  worker 使用覆盖全部逻辑 DB 的 multi-db session。单线程 worker 中仍采用
+  同步快照序列化（返回 Redis 风格的启动确认），避免客户端选择非零 DB 时
+  仅保存当前库或误走本地路径；各 worker 快照完成后再汇总结果。
 
 ## 架构对比：分片存储 + 消息路由（ddup mt）vs 共享存储（Garnet/Tsavorite）
 

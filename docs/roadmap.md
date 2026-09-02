@@ -575,3 +575,7 @@
   - [x] mt SAVE 多数据库一致性：广播 fan-out 使用 worker 级 multi-db
     session 生成完整快照，修复客户端处于 `SELECT` 非零 DB 时只保存单库的
     风险；新增保存后重启跨 DB 恢复回归（Phase 137）
+  - [x] mt BGSAVE 多数据库一致性：将 `BGSAVE` 纳入聚合路由，复用 worker 级
+    multi-db session 生成完整快照；修复非零 DB 客户端触发时误落本地路径并返回
+    `snapshot path not configured` 的问题，新增保存后重启跨 DB 恢复回归
+    （Phase 138）

@@ -1041,6 +1041,45 @@ static void test_save_covers_all_selected_databases(void)
     pal_socket_cleanup();
 }
 
+static void test_bgsave_covers_all_selected_databases(void)
+{
+    mt_server *ms;
+    pal_socket_t a;
+
+    DD_CHECK_EQ_INT(0, pal_socket_init());
+    (void)pal_file_unlink("./worker-0-mtdbsavebg.ddr");
+    (void)pal_file_unlink("./worker-1-mtdbsavebg.ddr");
+    ms = mt_server_create("127.0.0.1", 0, 2);
+    DD_CHECK(ms != NULL);
+    if (ms == NULL)
+        return;
+    DD_CHECK_EQ_INT(0, mt_server_enable_snapshots(ms, ".", "mtdbsavebg.ddr", 0));
+    DD_CHECK_EQ_INT(0, mt_server_start(ms));
+    a = connect_client(mt_server_port(ms));
+    roundtrip(a, "*2\r\n$6\r\nSELECT\r\n$1\r\n1\r\n", "+OK\r\n");
+    roundtrip(a, "*3\r\n$3\r\nSET\r\n$2\r\nbg\r\n$1\r\nv\r\n", "+OK\r\n");
+    roundtrip(a, "*1\r\n$6\r\nBGSAVE\r\n", "+Background saving started\r\n");
+    pal_close(a);
+    mt_server_stop(ms);
+    mt_server_destroy(ms);
+
+    ms = mt_server_create("127.0.0.1", 0, 2);
+    DD_CHECK(ms != NULL);
+    if (ms == NULL)
+        return;
+    DD_CHECK_EQ_INT(0, mt_server_enable_snapshots(ms, ".", "mtdbsavebg.ddr", 0));
+    DD_CHECK_EQ_INT(0, mt_server_start(ms));
+    a = connect_client(mt_server_port(ms));
+    roundtrip(a, "*2\r\n$6\r\nSELECT\r\n$1\r\n1\r\n", "+OK\r\n");
+    roundtrip(a, "*2\r\n$3\r\nGET\r\n$2\r\nbg\r\n", "$1\r\nv\r\n");
+    pal_close(a);
+    mt_server_stop(ms);
+    mt_server_destroy(ms);
+    (void)pal_file_unlink("./worker-0-mtdbsavebg.ddr");
+    (void)pal_file_unlink("./worker-1-mtdbsavebg.ddr");
+    pal_socket_cleanup();
+}
+
 static void pick_key_for_slot(int wanted, char *out, size_t cap)
 {
     int i;
@@ -3299,6 +3338,7 @@ int main(void)
     DD_RUN(test_script_cache_broadcast_reaches_key_owner);
     DD_RUN(test_config_mutations_broadcast_to_workers);
     DD_RUN(test_save_covers_all_selected_databases);
+    DD_RUN(test_bgsave_covers_all_selected_databases);
     DD_RUN(test_cluster_state_propagates_to_workers);
     DD_RUN(test_mt_replica_partitions_full_sync);
     DD_RUN(test_mt_master_serves_replica_full_sync);
