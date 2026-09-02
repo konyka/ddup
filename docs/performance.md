@@ -1472,6 +1472,13 @@ declared source key. The bounded loops reuse the same glob matcher and validate
 `numkeys` before indexing, preserving predictable latency and fail-closed
 behavior without temporary allocations.
 
+### Phase 186: ACL replication and control boundaries
+
+Replication and cluster-control commands use the same constant-time keyless
+branch as other administrative commands. Their host/offset/option arguments are
+never glob-matched as data keys, avoiding false denials and preserving the
+allocation-free authorization path.
+
 Category names are normalized with a bounded ASCII comparison while parsing
 `SETUSER`; no temporary lowercase buffer or heap allocation is introduced.
 The authorization hot path remains the same pre-expanded bitset lookup.

@@ -786,6 +786,29 @@ static void test_acl_advanced_multikey_commands_check_all_keys(void)
     DD_CHECK(acl_authorize(u, CMD_ZINTERCARD, zintercard, 4) == 0);
 }
 
+static void test_acl_replication_and_cluster_controls_are_keyless(void)
+{
+    acl_registry r;
+    resp_value rules[2] = {rv("on"), rv("+@all")};
+    resp_value asking[1] = {rv("ASKING")};
+    resp_value psync[3] = {rv("PSYNC"), rv("?"), rv("-1")};
+    resp_value replconf[4] = {rv("REPLCONF"), rv("ACK"), rv("42"), rv("GETACK")};
+    resp_value replicaof[3] = {rv("REPLICAOF"), rv("127.0.0.1"), rv("6379")};
+    resp_value failover[2] = {rv("FAILOVER"), rv("TO")};
+    resp_value monitor[1] = {rv("MONITOR")};
+    acl_user *u;
+    acl_init(&r, NULL);
+    DD_CHECK(acl_setuser(&r, "u", 1, rules, 2) == 0);
+    u = acl_find(&r, "u", 1);
+    DD_CHECK(u != NULL);
+    DD_CHECK(acl_authorize(u, CMD_ASKING, asking, 1) == 1);
+    DD_CHECK(acl_authorize(u, CMD_PSYNC, psync, 3) == 1);
+    DD_CHECK(acl_authorize(u, CMD_REPLCONF, replconf, 4) == 1);
+    DD_CHECK(acl_authorize(u, CMD_REPLICAOF, replicaof, 3) == 1);
+    DD_CHECK(acl_authorize(u, CMD_FAILOVER, failover, 2) == 1);
+    DD_CHECK(acl_authorize(u, CMD_MONITOR, monitor, 1) == 1);
+}
+
 static void test_acl_rule_line_capacity_covers_channel_patterns(void)
 {
     acl_registry r;
@@ -931,6 +954,7 @@ int main(void)
     DD_RUN(test_acl_keyless_options_do_not_require_key_pattern);
     DD_RUN(test_acl_store_commands_check_destination_and_sources);
     DD_RUN(test_acl_advanced_multikey_commands_check_all_keys);
+    DD_RUN(test_acl_replication_and_cluster_controls_are_keyless);
     DD_RUN(test_acl_rule_line_capacity_covers_channel_patterns);
     DD_RUN(test_acl_log_coalesces_identical_events);
     DD_RUN(test_acl_getuser_flags_do_not_mislabel_commands);

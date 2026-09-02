@@ -683,3 +683,5 @@
     `GEOSEARCHSTORE` 同时校验 destination 与所有 source key（Phase 184）
   - [x] ACL 高级集合多 key 授权：`PFCOUNT/PFMERGE`、`SINTERCARD`、
     `ZUNION/ZINTER/ZDIFF/ZINTERCARD` 校验全部 source key（Phase 185）
+  - [x] ACL 复制/集群控制边界：`ASKING/PSYNC/REPLCONF/REPLICAOF/FAILOVER/
+    MONITOR` 等参数保持 keyless，避免控制参数被误当作 key（Phase 186）
