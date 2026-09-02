@@ -659,3 +659,5 @@
     `&` 前缀一致，避免策略类型歧义（Phase 172）
   - [x] ACL LOG 空字段安全：日志 API 对缺失 user/object 做长度归零处理，
     防止边界调用触发空指针比较或崩溃（Phase 173）
+  - [x] ACL LOG 负 count 兼容：`ACL LOG <negative>` 按 Redis 归零并返回空数组，
+    仅非法非整数输入报错（Phase 174）

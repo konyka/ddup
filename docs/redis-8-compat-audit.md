@@ -112,6 +112,8 @@ python3 tools/audit_redis_compat.py \
   policy inspection remains lossless.
   ACL failure logging safely handles absent user/object fields before event
   coalescing, preventing malformed callers from causing a crash.
+  Negative `ACL LOG` counts are normalized to zero (empty array), while only
+  non-integer counts are rejected, matching Redis query semantics.
   `allchannels` and `resetchannels` aliases are accepted and map to the same
 bounded channel state as `&*` and an empty rule set.
   `PUBLISH`/`SPUBLISH` channel checks stop before the message argument, while

@@ -1378,6 +1378,11 @@ The ACL log API normalizes absent user/object fields before coalescing. This is
 a constant-time guard on the cold failure path and prevents null-pointer access
 without changing the fixed-ring layout.
 
+### Phase 174: ACL LOG negative count compatibility
+
+Negative log counts are normalized to zero after bounded integer parsing, so the
+query returns an empty RESP array without an error allocation or ring traversal.
+
 ### Phase 154: ACL generation invalidation
 
 Each fixed ACL user slot carries a monotonic generation. Sessions cache the

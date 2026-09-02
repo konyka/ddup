@@ -339,6 +339,8 @@
   确保策略审计能区分 key 和 channel 范围。
   ACL 日志事件写入前将缺失 user/object 规范化为空字段，再执行聚合比较，确保
   边界调用 fail-safe 且不改变固定容量模型。
+  `ACL LOG` 的 count 解析保留 Redis 负数归零语义；只有非整数输入走错误路径，
+  避免管理客户端因负 count 产生不兼容失败。
 
 ## Stream 核心族（Phase 61）
 

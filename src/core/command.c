@@ -11912,10 +11912,11 @@ static void command_acl(session *s, const resp_value *argv, size_t argc,
                 resp_write_simple_string(out, "OK", 2);
                 return;
             }
-            if (!parse_i64(opt, opl, &count) || count < 0) {
+            if (!parse_i64(opt, opl, &count)) {
                 resp_write_error(out, "ERR ACL LOG count must be a non-negative integer", 46);
                 return;
             }
+            if (count < 0) count = 0;
         }
         acl_log_write(reg, count, pal_wall_ms(), out);
         return;

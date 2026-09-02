@@ -589,6 +589,24 @@ static void test_acl_log_null_fields_are_safe(void)
     DD_CHECK(r.log[0].count == 2);
 }
 
+static void test_acl_log_negative_count_returns_empty(void)
+{
+    acl_registry r;
+    db d;
+    session s;
+    resp_value argv[3] = {rv("ACL"), rv("LOG"), rv("-1")};
+    resp_buf out;
+    acl_init(&r, NULL);
+    acl_log_event(&r, "auth", "alice", 5, NULL, 0, 1);
+    db_init(&d); session_init(&s, &d); s.acl_ctx = &r;
+    memcpy(s.acl_username, "default", 8); s.acl_user = acl_find_const(&r, "default", 7);
+    s.acl_generation = s.acl_user->generation;
+    resp_buf_init(&out);
+    session_execute_at(&s, argv, 3, &out, 2);
+    DD_CHECK(out.len >= 4 && memcmp(out.data, "*0\r\n", 4) == 0);
+    resp_buf_free(&out); session_release(&s); db_destroy(&d);
+}
+
 int main(void)
 {
     DD_RUN(test_acl_users);
@@ -625,5 +643,6 @@ int main(void)
     DD_RUN(test_acl_getuser_flags_do_not_mislabel_commands);
     DD_RUN(test_acl_getuser_keys_keep_tilde_prefix);
     DD_RUN(test_acl_log_null_fields_are_safe);
+    DD_RUN(test_acl_log_negative_count_returns_empty);
     return DD_TEST_SUMMARY();
 }
