@@ -61,6 +61,7 @@
 | 2026-08-05 | Phase 13 commandstats | pal_now_us 微基准 | 同上 | ~19.5 ns/call | - | QueryPerformanceCounter 封装 |
 | 2026-09-01 | Phase 128 MT aggregate OOM | fail-closed guard | Linux, Release | 无额外热路径分配；仅聚合命令执行一次受 mutex 保护的故障注入计数检查 | 防止 OOM 时错误的 home-only fallback |
 | 2026-09-01 | Phase 129 MT key routing | MEMORY USAGE / HIMPORT SET classification | Linux, Release | 仅命令分类路径增加常量比较；数据面仍无额外分配 | 避免 key 错 shard 与 session-local 状态丢失 |
+| 2026-09-02 | Phase 130 SORT STORE routing | dual-key classification | Linux, Release | 常量扫描可选 STORE 参数；无额外热路径分配 | 在排序结果写入前阻止跨 worker/slot 部分写入 |
 
 Phase 12 说明：PSYNC 的收益不在 loopback 小数据集（绝对值几十毫秒），
 而在大数据集 + 高写入场景——全量重同步成本 = 快照序列化 + 全量传输 +

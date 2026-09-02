@@ -889,6 +889,36 @@ static void test_himport_cross_worker_fails_closed(void)
     pal_socket_cleanup();
 }
 
+static void test_sort_store_cross_worker_fails_closed(void)
+{
+    mt_server *ms;
+    pal_socket_t a;
+    char src[32], dst[32], req[320];
+
+    DD_CHECK_EQ_INT(0, pal_socket_init());
+    pick_key_for_worker(0, 2, src, sizeof(src));
+    pick_key_for_worker(1, 2, dst, sizeof(dst));
+    ms = mt_server_create("127.0.0.1", 0, 2);
+    DD_CHECK(ms != NULL);
+    if (ms == NULL)
+        return;
+    DD_CHECK_EQ_INT(0, mt_server_start(ms));
+    a = connect_client(mt_server_port(ms));
+    snprintf(req, sizeof(req), "*4\r\n$5\r\nRPUSH\r\n$%zu\r\n%s\r\n$1\r\n2\r\n$1\r\n1\r\n",
+             strlen(src), src);
+    roundtrip(a, req, ":2\r\n");
+    snprintf(req, sizeof(req), "*4\r\n$4\r\nSORT\r\n$%zu\r\n%s\r\n$5\r\nSTORE\r\n$%zu\r\n%s\r\n",
+             strlen(src), src, strlen(dst), dst);
+    roundtrip(a, req, "-CROSSSLOT Keys in request don't hash to the same slot\r\n");
+    snprintf(req, sizeof(req), "*2\r\n$6\r\nEXISTS\r\n$%zu\r\n%s\r\n",
+             strlen(dst), dst);
+    roundtrip(a, req, ":0\r\n");
+    pal_close(a);
+    mt_server_stop(ms);
+    mt_server_destroy(ms);
+    pal_socket_cleanup();
+}
+
 static void pick_key_for_slot(int wanted, char *out, size_t cap)
 {
     int i;
@@ -3143,6 +3173,7 @@ int main(void)
     DD_RUN(test_scan_composite_cursor_across_workers);
     DD_RUN(test_cluster_control_plane_mt);
     DD_RUN(test_himport_cross_worker_fails_closed);
+    DD_RUN(test_sort_store_cross_worker_fails_closed);
     DD_RUN(test_cluster_state_propagates_to_workers);
     DD_RUN(test_mt_replica_partitions_full_sync);
     DD_RUN(test_mt_master_serves_replica_full_sync);

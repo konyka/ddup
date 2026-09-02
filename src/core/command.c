@@ -4480,6 +4480,27 @@ static int cmd_keys_accum(const resp_value *argv, size_t argc, int *have,
         }
         return 1;
     }
+    if (cmd_id == CMD_SORT || cmd_id == CMD_SORT_RO) {
+        const char *k;
+        size_t kl;
+        if (!arg_str(&argv[1], &k, &kl) ||
+            !slot_accum(k, kl, have, slot))
+            return 0;
+        if (cmd_id == CMD_SORT) {
+            for (i = 2; i + 1 < argc; i++) {
+                const char *tok;
+                size_t tl;
+                if (arg_str(&argv[i], &tok, &tl) &&
+                    ci_equal(tok, tl, "STORE")) {
+                    if (arg_str(&argv[i + 1], &k, &kl) &&
+                        !slot_accum(k, kl, have, slot))
+                        return 0;
+                    break;
+                }
+            }
+        }
+        return 1;
+    }
     if (cmd_id == CMD_MSETEX) {
         const char *nv;
         size_t nvl;
@@ -5061,6 +5082,27 @@ static int cluster_check_ownership(session *s, const resp_value *argv,
             if (arg_str(&argv[i], &k, &kl) &&
                 !db_key_served(d, k, kl, out, now_ms, asking))
                 return 0;
+        }
+        return 1;
+    }
+    if (cmd_id == CMD_SORT || cmd_id == CMD_SORT_RO) {
+        const char *k;
+        size_t kl;
+        if (!arg_str(&argv[1], &k, &kl) ||
+            !db_key_served(d, k, kl, out, now_ms, asking))
+            return 0;
+        if (cmd_id == CMD_SORT) {
+            for (i = 2; i + 1 < argc; i++) {
+                const char *tok;
+                size_t tl;
+                if (arg_str(&argv[i], &tok, &tl) &&
+                    ci_equal(tok, tl, "STORE")) {
+                    if (arg_str(&argv[i + 1], &k, &kl) &&
+                        !db_key_served(d, k, kl, out, now_ms, asking))
+                        return 0;
+                    break;
+                }
+            }
         }
         return 1;
     }

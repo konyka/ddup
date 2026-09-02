@@ -2049,6 +2049,31 @@ static int mt_memory_target(int nworkers, const resp_value *argv,
     return MT_LOCAL;
 }
 
+/* SORT reads argv[1] and optionally writes a STORE destination. Both keys
+ * must stay on one worker because remote tasks do not provide a second
+ * destination transaction. */
+static int mt_sort_target(int nworkers, const resp_value *argv, size_t argc)
+{
+    int target;
+    size_t i;
+    if (argc < 2 || argv[1].str == NULL)
+        return MT_LOCAL;
+    target = (int)(hash_slot(argv[1].str, argv[1].len) %
+                   (uint32_t)nworkers);
+    for (i = 2; i + 1 < argc; i++) {
+        if (argv[i].str != NULL &&
+            mt_ci_equal(argv[i].str, argv[i].len, "STORE")) {
+            int dst;
+            if (argv[i + 1].str == NULL)
+                return MT_LOCAL;
+            dst = (int)(hash_slot(argv[i + 1].str, argv[i + 1].len) %
+                        (uint32_t)nworkers);
+            return dst == target ? target : MT_CROSSSLOT;
+        }
+    }
+    return target;
+}
+
 static int mt_is_aggregate(uint16_t cmd)
 {
     return cmd == CMD_DBSIZE || cmd == CMD_FLUSHDB || cmd == CMD_SAVE ||
@@ -2248,6 +2273,8 @@ static int mt_classify(int nworkers, uint16_t cmd, const resp_value *argv,
     }
     if (cmd == CMD_MEMORY)
         return mt_memory_target(nworkers, argv, argc);
+    if (cmd == CMD_SORT || cmd == CMD_SORT_RO)
+        return mt_sort_target(nworkers, argv, argc);
     if (mt_is_blocking_pop(cmd))
         return mt_blocking_target(nworkers, cmd, argv, argc);
     if (cmd == CMD_MIGRATE)

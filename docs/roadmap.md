@@ -553,3 +553,6 @@
   - [x] mt session-local 安全路由：`HIMPORT SET` 在无法携带连接 fieldset
     到远端 worker 时 fail-closed；`MEMORY USAGE <key>` 补齐 key-owner 路由，
     并在 Cluster ownership 检查中识别该 key（Phase 129）
+  - [x] SORT STORE 双 key 安全路由：MT 与 Cluster 同时检查排序源 key 和
+    `STORE` 目标 key；跨 worker/slot 在执行前返回 `CROSSSLOT`，并以真实
+    loopback 回归锁定无部分写入（Phase 130）
