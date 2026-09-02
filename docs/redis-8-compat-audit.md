@@ -167,6 +167,8 @@ bounded channel state as `&*` and an empty rule set.
   marker while excluding transport and authentication parameters.
   `PUBSUB CHANNELS` and `PUBSUB NUMSUB` enforce channel ACLs for all query
   operands; `PUBSUB NUMPAT` remains keyless.
+  `CLUSTER` and `SENTINEL` control containers keep their protocol arguments
+  keyless, avoiding false key-pattern denials.
 - Cluster slot maintenance: `SFLUSH` intersects requested ranges with local
   ownership and returns coalesced flushed ranges; `TRIMSLOTS RANGES` validates
   ownership before deleting keys from unserved slots. Both paths collect keys

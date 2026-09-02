@@ -937,6 +937,25 @@ static void test_acl_pubsub_introspection_checks_channels(void)
     DD_CHECK(acl_authorize(u, CMD_PUBSUB, numpat, 2) == 1);
 }
 
+static void test_acl_cluster_subcommands_are_keyless(void)
+{
+    acl_registry r;
+    resp_value rules[2] = {rv("on"), rv("+@all")};
+    resp_value info[2] = {rv("CLUSTER"), rv("INFO")};
+    resp_value nodes[2] = {rv("CLUSTER"), rv("NODES")};
+    resp_value meet[4] = {rv("CLUSTER"), rv("MEET"), rv("127.0.0.1"), rv("6379")};
+    resp_value keyslot[3] = {rv("CLUSTER"), rv("KEYSLOT"), rv("secret:key")};
+    acl_user *u;
+    acl_init(&r, NULL);
+    DD_CHECK(acl_setuser(&r, "u", 1, rules, 2) == 0);
+    u = acl_find(&r, "u", 1);
+    DD_CHECK(u != NULL);
+    DD_CHECK(acl_authorize(u, CMD_CLUSTER, info, 2) == 1);
+    DD_CHECK(acl_authorize(u, CMD_CLUSTER, nodes, 2) == 1);
+    DD_CHECK(acl_authorize(u, CMD_CLUSTER, meet, 4) == 1);
+    DD_CHECK(acl_authorize(u, CMD_CLUSTER, keyslot, 3) == 1);
+}
+
 static void test_acl_rule_line_capacity_covers_channel_patterns(void)
 {
     acl_registry r;
@@ -1089,6 +1108,7 @@ int main(void)
     DD_RUN(test_acl_migrate_uses_key_tail_not_host_parameters);
     DD_RUN(test_acl_persistence_and_copy_key_positions);
     DD_RUN(test_acl_pubsub_introspection_checks_channels);
+    DD_RUN(test_acl_cluster_subcommands_are_keyless);
     DD_RUN(test_acl_rule_line_capacity_covers_channel_patterns);
     DD_RUN(test_acl_log_coalesces_identical_events);
     DD_RUN(test_acl_getuser_flags_do_not_mislabel_commands);

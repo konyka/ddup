@@ -377,6 +377,7 @@ int acl_authorize(const acl_user *u, uint16_t cmd_id, const resp_value *argv,
     case CMD_BGREWRITEAOF: case CMD_SWAPDB: case CMD_LASTSAVE:
     case CMD_ASKING: case CMD_SYNC: case CMD_PSYNC: case CMD_REPLICAOF:
     case CMD_SLAVEOF: case CMD_REPLCONF: case CMD_FAILOVER: case CMD_MONITOR:
+    case CMD_CLUSTER: case CMD_SENTINEL:
         keyless = 1; break;
     default: break;
     }

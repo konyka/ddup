@@ -1509,7 +1509,13 @@ keys following the optional `KEYS` marker. Host, port, database, timeout, and
 
 `PUBSUB CHANNELS` and `PUBSUB NUMSUB` validate each supplied channel against the
 bounded channel pattern list. `NUMPAT` has no channel operands and remains a
-constant-time command-only authorization path.
+  constant-time command-only authorization path.
+
+### Phase 192: ACL cluster and sentinel containers
+
+`CLUSTER` and `SENTINEL` container commands are treated as keyless control-plane
+operations. Subcommand names, node addresses, slot numbers, and configuration
+tokens bypass key glob matching while command permissions remain enforced.
 
 Category names are normalized with a bounded ASCII comparison while parsing
 `SETUSER`; no temporary lowercase buffer or heap allocation is introduced.

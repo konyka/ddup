@@ -695,3 +695,5 @@
     忽略 host/port/db/timeout/COPY/AUTH 等协议参数（Phase 190）
   - [x] ACL PUBSUB 查询 channel 边界：`PUBSUB CHANNELS/NUMSUB` 校验所有
     channel 参数，`NUMPAT` 保持 keyless（Phase 191）
+  - [x] ACL Cluster/Sentinel 容器边界：`CLUSTER` 与 `SENTINEL` 子命令参数
+    按控制面处理，不误当作数据 key（Phase 192）
