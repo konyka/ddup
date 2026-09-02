@@ -1267,3 +1267,5 @@ An empty key-pattern set is a constant-time deny for key-bearing commands;
 the default user's unrestricted access is represented by one `*` pattern.
 Sensitive ACL subcommand gating is a fixed username comparison before any
 registry traversal, so rejected requests do not touch user metadata.
+`SETUSER`/`DELUSER` are cold-path broadcasts; normal authorization remains a
+local bitset/pattern check with no cross-worker synchronization.

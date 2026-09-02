@@ -610,3 +610,5 @@
     bitset 与无分配键模式匹配，管理操作仅限 default 用户（Phase 148）
   - [x] MT ACL 路由安全门：home worker 在远端任务入队前执行命令/键授权，
     防止 sessionless worker 绕过 ACL（Phase 149）
+  - [x] MT ACL 管理广播：`ACL SETUSER/DELUSER` 在所有 worker 原子应用，
+    保证跨连接认证策略一致（Phase 150）

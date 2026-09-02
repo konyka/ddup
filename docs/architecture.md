@@ -285,6 +285,8 @@
   误判为 key。
   MT 路由在 home worker 入队前执行同一 ACL 检查；远端 sessionless task
   不信任客户端输入，从而不会绕过命令和 key 权限。
+  ACL 管理变更通过聚合 fan-out 同步到全部 worker，数据面连接仍使用本地
+  只读用户表，避免共享锁。
   default 用户显式拥有 `~*`；自定义用户若未声明 key pattern，则对所有
   带 key 的数据命令 fail-closed。
   ACL 用户管理、用户列表、用户详情、ACL 日志和 ACL 文件操作仅允许
