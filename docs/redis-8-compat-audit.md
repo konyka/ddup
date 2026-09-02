@@ -141,6 +141,9 @@ bounded channel state as `&*` and an empty rule set.
   rather than mislabeling command state as a channel reset.
   `ACL GETUSER` preserves the Redis `~` prefix for key patterns, alongside `&`
   for channel patterns, so policy metadata is unambiguous.
+  Multi-key source/destination commands (`RENAME`, `SMOVE`, `LMOVE`, `COPY`, and
+  related variants) now authorize every key position, preventing a permitted
+  source from being used to access an unauthorized destination.
 - Cluster slot maintenance: `SFLUSH` intersects requested ranges with local
   ownership and returns coalesced flushed ranges; `TRIMSLOTS RANGES` validates
   ownership before deleting keys from unserved slots. Both paths collect keys

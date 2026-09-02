@@ -339,6 +339,11 @@ int acl_authorize(const acl_user *u, uint16_t cmd_id, const resp_value *argv,
     /* Extract key positions for the common key-bearing command families.
      * Values/options are never treated as keys, avoiding false denials. */
     switch (cmd_id) {
+    case CMD_SMOVE: case CMD_RENAME: case CMD_RENAMENX:
+    case CMD_RPOPLPUSH: case CMD_LMOVE: case CMD_LMOVEM:
+    case CMD_COPY: case CMD_LCS: case CMD_BRPOPLPUSH:
+    case CMD_BLMOVE: case CMD_BLMOVEM:
+        nkeys = 2; break;
     case CMD_GET: case CMD_SET: case CMD_GETDEL: case CMD_GETEX:
     case CMD_SETEX: case CMD_PSETEX: case CMD_GETSET: case CMD_APPEND:
     case CMD_INCR: case CMD_DECR: case CMD_INCRBY: case CMD_DECRBY:

@@ -1415,6 +1415,13 @@ copy and commits once, so the update is atomic with no hot-path allocation.
 stack user copy; authorization remains a single bitset check with no added
 allocation or synchronization.
 
+### Phase 180: ACL multi-key authorization completeness
+
+Double-key commands now perform two bounded glob checks instead of checking only
+the first key. The fixed loop has no allocation and preserves fail-closed
+behavior for source/destination operations while adding only one predictable
+pattern scan on the common path.
+
 ### Phase 154: ACL generation invalidation
 
 Each fixed ACL user slot carries a monotonic generation. Sessions cache the

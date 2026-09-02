@@ -671,3 +671,5 @@
     恢复密码校验，避免别名组合遗留状态（Phase 178）
   - [x] ACL 全量规则互斥：`reset` 清除 `nopass`，`allcommands/+@all` 清除旧
     deny bitset，避免全开状态被历史规则污染（Phase 179）
+  - [x] ACL 多 key 授权完整性：`RENAME/SMOVE/LMOVE/COPY` 等双 key 命令同时
+    校验 source 与 destination，未授权任一 key 时 fail-closed（Phase 180）
