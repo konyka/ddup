@@ -1306,6 +1306,13 @@ Remote-route denials append to the home worker's fixed ACL ring before the task
 is rejected. The bounded inline copy adds no allocation and avoids any remote
 worker synchronization or duplicate logging.
 
+### Phase 162: bounded ACL channel authorization
+
+Channel permissions use a fixed 16-pattern inline table and the existing
+allocation-free glob matcher. Pub/Sub authorization checks each supplied
+channel before registration or routing; unrestricted `&*` is a single flag,
+and data commands add no channel metadata allocations.
+
 ### Phase 154: ACL generation invalidation
 
 Each fixed ACL user slot carries a monotonic generation. Sessions cache the

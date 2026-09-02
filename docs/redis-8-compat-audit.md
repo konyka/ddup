@@ -103,6 +103,9 @@ python3 tools/audit_redis_compat.py \
   unbounded memory growth from repeated failures.
   MT home-worker authorization denials are recorded in the same bounded ring
   before routing is rejected, preserving audit visibility across workers.
+  ACL channel patterns (`&pattern` and `&*`) are enforced for subscribe,
+  pattern-subscribe, and publish commands with bounded allocation-free matching;
+  unauthorized channels fail closed before registration or delivery.
 - Cluster slot maintenance: `SFLUSH` intersects requested ranges with local
   ownership and returns coalesced flushed ranges; `TRIMSLOTS RANGES` validates
   ownership before deleting keys from unserved slots. Both paths collect keys

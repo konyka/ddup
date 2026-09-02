@@ -405,6 +405,22 @@ static void test_acl_log_records_command_denials_and_count(void)
     (void)denyv;
 }
 
+static void test_acl_channel_patterns_are_enforced(void)
+{
+    acl_registry r;
+    resp_value rules[3] = {rv("on"), rv("+subscribe"), rv("&news:*")};
+    resp_value sub[2] = {rv("SUBSCRIBE"), rv("news:sports")};
+    resp_value bad[2] = {rv("SUBSCRIBE"), rv("private")};
+    acl_user *u;
+    acl_init(&r, NULL);
+    DD_CHECK(acl_setuser(&r, "pub", 3, rules, 3) == 0);
+    u = acl_find(&r, "pub", 3);
+    DD_CHECK(u != NULL);
+    DD_CHECK(acl_authorize(u, CMD_SUBSCRIBE, sub, 2) == 1);
+    DD_CHECK(acl_authorize_channel(u, sub[1].str, sub[1].len, 0) == 1);
+    DD_CHECK(acl_authorize_channel(u, bad[1].str, bad[1].len, 0) == 0);
+}
+
 int main(void)
 {
     DD_RUN(test_acl_users);
@@ -429,5 +445,6 @@ int main(void)
     DD_RUN(test_acl_genpass_rejects_invalid_bits);
     DD_RUN(test_acl_log_records_and_resets_auth_failures);
     DD_RUN(test_acl_log_records_command_denials_and_count);
+    DD_RUN(test_acl_channel_patterns_are_enforced);
     return DD_TEST_SUMMARY();
 }

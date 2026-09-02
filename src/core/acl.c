@@ -61,6 +61,8 @@ static void clear_rules(acl_user *u)
     memset(u->deny, 0, sizeof(u->deny));
     u->pattern_count = 0;
     u->all_commands = 0;
+    u->channel_count = 0;
+    u->all_channels = 0;
 }
 
 static int set_cmd(acl_user *u, const char *p, size_t n, int allow)
@@ -132,6 +134,14 @@ int acl_setuser(acl_registry *r, const char *name, size_t nlen,
                 return -1;
             memcpy(temp.patterns[temp.pattern_count], p + 1, n - 1);
             temp.patterns[temp.pattern_count++][n - 1] = '\0';
+        } else if (n > 1 && p[0] == '&') {
+            if (n == 2 && p[1] == '*') temp.all_channels = 1;
+            else {
+                if (temp.channel_count >= ACL_MAX_CHANNELS || n >= ACL_MAX_PATTERN)
+                    return -1;
+                memcpy(temp.channels[temp.channel_count], p + 1, n - 1);
+                temp.channels[temp.channel_count++][n - 1] = '\0';
+            }
         } else if (n > 1 && (p[0] == '+' || p[0] == '-')) {
             if (set_cmd(&temp, p, n, p[0] == '+') != 0) return -1;
         } else return -1;
@@ -182,6 +192,21 @@ int acl_match_pattern(const char *pat, size_t plen, const char *key, size_t klen
     }
     while (pi < plen && pat[pi] == '*') pi++;
     return pi == plen;
+}
+
+int acl_authorize_channel(const acl_user *u, const char *channel,
+                          size_t clen, int is_pattern)
+{
+    size_t i;
+    if (u == NULL || !u->enabled || channel == NULL) return 0;
+    if (u->all_channels) return 1;
+    for (i = 0; i < u->channel_count; i++) {
+        size_t plen = strlen(u->channels[i]);
+        if ((is_pattern && plen == clen && memcmp(u->channels[i], channel, clen) == 0) ||
+            (!is_pattern && acl_match_pattern(u->channels[i], plen, channel, clen)))
+            return 1;
+    }
+    return 0;
 }
 
 void acl_log_event(acl_registry *r, const char *reason, const char *user,
@@ -239,8 +264,18 @@ int acl_authorize(const acl_user *u, uint16_t cmd_id, const resp_value *argv,
     if (cmd_id == CMD_SUBSCRIBE || cmd_id == CMD_UNSUBSCRIBE ||
         cmd_id == CMD_PSUBSCRIBE || cmd_id == CMD_PUNSUBSCRIBE ||
         cmd_id == CMD_SSUBSCRIBE || cmd_id == CMD_SUNSUBSCRIBE ||
-        cmd_id == CMD_PUBLISH || cmd_id == CMD_SPUBLISH)
+        cmd_id == CMD_PUBLISH || cmd_id == CMD_SPUBLISH) {
+        size_t first = 1, i;
+        int pattern = cmd_id == CMD_PSUBSCRIBE || cmd_id == CMD_PUNSUBSCRIBE;
+        if (!u->all_channels) {
+            for (i = first; i < argc; i++) {
+                if (argv[i].type != RESP_BULK_STRING ||
+                    !acl_authorize_channel(u, argv[i].str, argv[i].len, pattern))
+                    return 0;
+            }
+        }
         return 1;
+    }
     switch (cmd_id) {
     case CMD_PING: case CMD_ECHO: case CMD_AUTH: case CMD_QUIT:
     case CMD_RESET: case CMD_HELLO: case CMD_TIME: case CMD_ROLE:

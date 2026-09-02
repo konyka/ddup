@@ -13,6 +13,7 @@
 #define ACL_MAX_NAME 64
 #define ACL_MAX_PASSWORD 128
 #define ACL_MAX_PATTERN 128
+#define ACL_MAX_CHANNELS 16
 #define ACL_LOG_MAX 32
 
 typedef struct acl_log_entry {
@@ -33,6 +34,9 @@ typedef struct acl_user {
     int enabled;
     int all_commands;
     uint64_t generation;
+    char channels[ACL_MAX_CHANNELS][ACL_MAX_PATTERN];
+    uint8_t channel_count;
+    int all_channels;
 } acl_user;
 
 typedef struct acl_registry {
@@ -60,6 +64,8 @@ void acl_write_user(const acl_user *u, resp_buf *out);
 void acl_write_rule_line(const acl_user *u, resp_buf *out);
 int acl_match_pattern(const char *pat, size_t plen, const char *key,
                       size_t klen);
+int acl_authorize_channel(const acl_user *u, const char *channel,
+                          size_t clen, int is_pattern);
 void acl_log_event(acl_registry *r, const char *reason, const char *user,
                    size_t ulen, const char *object, size_t olen,
                    uint64_t now_ms);

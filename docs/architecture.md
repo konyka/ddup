@@ -315,6 +315,8 @@
   堆分配；`ACL LOG [count|RESET]` 仅在管理冷路径读取或清空，避免日志洪泛。
   MT home worker 在远端命令/键授权失败时写入同一 registry-local 日志，再拒绝
   入队，保证 sessionless worker 不产生不可见的授权失败。
+  ACL 用户同时维护固定容量 channel pattern 表（`&pattern`/`&*`）；订阅、模式
+  订阅和发布在 home worker 侧逐频道匹配，未授权频道在副作用前 fail-closed。
 
 ## Stream 核心族（Phase 61）
 
