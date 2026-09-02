@@ -712,6 +712,42 @@ static void test_acl_keyed_subcommands_still_check_keys(void)
     DD_CHECK(acl_authorize(u, CMD_DEBUG, debug, 3) == 0);
 }
 
+static void test_acl_subcommand_key_positions_are_correct(void)
+{
+    acl_registry r;
+    resp_value rules[3] = {rv("on"), rv("~allowed:*") , rv("+@all")};
+    resp_value object_ok[3] = {rv("OBJECT"), rv("ENCODING"), rv("allowed:1")};
+    resp_value object_bad[3] = {rv("OBJECT"), rv("ENCODING"), rv("secret:1")};
+    resp_value xinfo_ok[3] = {rv("XINFO"), rv("STREAM"), rv("allowed:stream")};
+    resp_value xinfo_bad[3] = {rv("XINFO"), rv("STREAM"), rv("secret:stream")};
+    acl_user *u;
+    acl_init(&r, NULL);
+    DD_CHECK(acl_setuser(&r, "u", 1, rules, 3) == 0);
+    u = acl_find(&r, "u", 1);
+    DD_CHECK(u != NULL);
+    DD_CHECK(acl_authorize(u, CMD_OBJECT, object_ok, 3) == 1);
+    DD_CHECK(acl_authorize(u, CMD_OBJECT, object_bad, 3) == 0);
+    DD_CHECK(acl_authorize(u, CMD_XINFO, xinfo_ok, 3) == 1);
+    DD_CHECK(acl_authorize(u, CMD_XINFO, xinfo_bad, 3) == 0);
+}
+
+static void test_acl_keyless_options_do_not_require_key_pattern(void)
+{
+    acl_registry r;
+    resp_value rules[2] = {rv("on"), rv("+@all")};
+    resp_value flushdb[2] = {rv("FLUSHDB"), rv("ASYNC")};
+    resp_value flushall[2] = {rv("FLUSHALL"), rv("SYNC")};
+    resp_value shutdownv[2] = {rv("SHUTDOWN"), rv("NOSAVE")};
+    acl_user *u;
+    acl_init(&r, NULL);
+    DD_CHECK(acl_setuser(&r, "u", 1, rules, 2) == 0);
+    u = acl_find(&r, "u", 1);
+    DD_CHECK(u != NULL);
+    DD_CHECK(acl_authorize(u, CMD_FLUSHDB, flushdb, 2) == 1);
+    DD_CHECK(acl_authorize(u, CMD_FLUSHALL, flushall, 2) == 1);
+    DD_CHECK(acl_authorize(u, CMD_SHUTDOWN, shutdownv, 2) == 1);
+}
+
 static void test_acl_rule_line_capacity_covers_channel_patterns(void)
 {
     acl_registry r;
@@ -853,6 +889,8 @@ int main(void)
     DD_RUN(test_acl_multikey_reads_check_every_key);
     DD_RUN(test_acl_keyless_subcommands_do_not_require_key_pattern);
     DD_RUN(test_acl_keyed_subcommands_still_check_keys);
+    DD_RUN(test_acl_subcommand_key_positions_are_correct);
+    DD_RUN(test_acl_keyless_options_do_not_require_key_pattern);
     DD_RUN(test_acl_rule_line_capacity_covers_channel_patterns);
     DD_RUN(test_acl_log_coalesces_identical_events);
     DD_RUN(test_acl_getuser_flags_do_not_mislabel_commands);

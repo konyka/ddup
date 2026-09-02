@@ -148,6 +148,8 @@ bounded channel state as `&*` and an empty rule set.
   supplied key instead of only the first operand.
   ACL key extraction distinguishes keyless administrative subcommands from
   `MEMORY USAGE` and `DEBUG OBJECT`, which continue to enforce key patterns.
+  `OBJECT` and `XINFO` extract the key from the correct subcommand position;
+  `FLUSHDB`, `FLUSHALL`, and `SHUTDOWN` options are not treated as keys.
 - Cluster slot maintenance: `SFLUSH` intersects requested ranges with local
   ownership and returns coalesced flushed ranges; `TRIMSLOTS RANGES` validates
   ownership before deleting keys from unserved slots. Both paths collect keys

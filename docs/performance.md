@@ -1453,6 +1453,12 @@ keyless authorization. `MEMORY USAGE` and `DEBUG OBJECT` select their actual key
 at the correct argument index, retaining bounded pattern checks without parsing
 or allocation on unrelated subcommands.
 
+### Phase 183: ACL operational argument boundaries
+
+`OBJECT` and `XINFO` use their second argument as the key, while operational
+commands such as `FLUSHDB`, `FLUSHALL`, and `SHUTDOWN` remain keyless regardless
+of option tokens. Dispatch is a fixed branch sequence with no temporary storage.
+
 Category names are normalized with a bounded ASCII comparison while parsing
 `SETUSER`; no temporary lowercase buffer or heap allocation is introduced.
 The authorization hot path remains the same pre-expanded bitset lookup.

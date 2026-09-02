@@ -334,7 +334,9 @@ int acl_authorize(const acl_user *u, uint16_t cmd_id, const resp_value *argv,
     case CMD_COMMAND: case CMD_INFO: case CMD_LATENCY: case CMD_LOLWUT:
     case CMD_CONFIG: case CMD_CLIENT: case CMD_SLOWLOG:
     case CMD_WAIT: case CMD_WAITAOF: case CMD_PUBSUB: case CMD_FUNCTION:
-    case CMD_SCRIPT: case CMD_DEBUG: case CMD_MODULE:
+    case CMD_SCRIPT: case CMD_MODULE: case CMD_DBSIZE: case CMD_FLUSHDB:
+    case CMD_FLUSHALL: case CMD_SHUTDOWN: case CMD_SAVE: case CMD_BGSAVE:
+    case CMD_BGREWRITEAOF: case CMD_SWAPDB: case CMD_LASTSAVE:
         keyless = 1; break;
     default: break;
     }
@@ -351,6 +353,16 @@ int acl_authorize(const acl_user *u, uint16_t cmd_id, const resp_value *argv,
             nkeys = 1, first = 2, keyless = 0;
         else
             keyless = 1;
+    }
+    if (cmd_id == CMD_OBJECT && argc >= 3) {
+        nkeys = 1;
+        first = 2;
+        keyless = 0;
+    }
+    if (cmd_id == CMD_XINFO && argc >= 3) {
+        nkeys = 1;
+        first = 2;
+        keyless = 0;
     }
     if (keyless) return 1;
     /* Extract key positions for the common key-bearing command families.

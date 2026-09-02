@@ -677,3 +677,5 @@
     key 参数，防止多 key 请求绕过 key pattern（Phase 181）
   - [x] ACL 子命令 key 提取收口：管理/诊断命令按子命令区分 keyless 与
     `MEMORY USAGE`/`DEBUG OBJECT` key-bearing 路径，避免误拒与绕过（Phase 182）
+  - [x] ACL 诊断/运维参数边界：`OBJECT/XINFO` 从正确参数提取 key，
+    `FLUSHDB/FLUSHALL/SHUTDOWN` 选项保持 keyless，避免误判（Phase 183）
