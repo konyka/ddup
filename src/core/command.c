@@ -12883,7 +12883,7 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
         const char *pw = NULL;
         size_t pwl = 0;
         const char *rp = s->requirepass;
-        if (rp == NULL || rp[0] == '\0') {
+        if ((rp == NULL || rp[0] == '\0') && s->acl_ctx == NULL) {
             static const char E[] =
                 "ERR Client sent AUTH, but no password is set";
             resp_write_error(out, E, sizeof(E) - 1);

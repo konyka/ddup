@@ -12,6 +12,7 @@
 #include <stdint.h>
 
 #include "pal/pal_file.h"
+#include "core/acl.h"
 
 typedef struct mt_server mt_server;
 
@@ -98,6 +99,8 @@ int mt_server_start(mt_server *ms);
 
 /* Require AUTH before commands on every worker (Redis requirepass). */
 void mt_server_set_requirepass(mt_server *ms, const char *pw);
+int mt_server_acl_setuser(mt_server *ms, const char *name, size_t nlen,
+                          const resp_value *rules, size_t nrules);
 
 /* Apply the memory limit and eviction policy on every worker. */
 void mt_server_set_maxmemory(mt_server *ms, uint64_t bytes, int policy);

@@ -283,6 +283,8 @@
   Sentinel 拓扑），避免未知命令中断客户端。
   常见多 key 命令只对声明的 key 参数做 pattern 校验，不将 value 或选项
   误判为 key。
+  MT 路由在 home worker 入队前执行同一 ACL 检查；远端 sessionless task
+  不信任客户端输入，从而不会绕过命令和 key 权限。
 
 ## Stream 核心族（Phase 61）
 

@@ -4166,25 +4166,6 @@ static int mt_route(void *ctx, void *conn, session *sess,
 
     st = (mt_conn_state *)server_conn_mt_state(conn);
 
-    /* AUTH gate: unauthenticated conns may only run AUTH and QUIT; routed
-     * tasks are trusted once the home session is authenticated */
-    if (!sess->authed && cmd != CMD_AUTH && cmd != CMD_QUIT &&
-        cmd != CMD_RESET && cmd != CMD_HELLO) {
-        static const char noauth[] = "-NOAUTH Authentication required.\r\n";
-        uint64_t seq;
-        if (st == NULL) {
-            st = (mt_conn_state *)calloc(1, sizeof(*st));
-            if (st == NULL)
-                return 0;
-            st->batch_target = -1;
-            server_conn_set_mt_state(conn, st);
-        }
-        mt_batch_flush(home, conn, st);
-        seq = st->seq_next++;
-        mt_reply_local(home, conn, st, seq, noauth, sizeof(noauth) - 1,
-                       out);
-        return 1;
-    }
     if (st == NULL) {
         st = (mt_conn_state *)calloc(1, sizeof(*st));
         if (st == NULL)
@@ -4193,6 +4174,30 @@ static int mt_route(void *ctx, void *conn, session *sess,
         server_conn_set_mt_state(conn, st);
     }
 
+    /* AUTH gate: unauthenticated conns may only run AUTH and QUIT; routed
+     * tasks are trusted once the home session is authenticated */
+    if (!sess->authed && cmd != CMD_AUTH && cmd != CMD_QUIT &&
+        cmd != CMD_RESET && cmd != CMD_HELLO) {
+        static const char noauth[] = "-NOAUTH Authentication required.\r\n";
+        uint64_t seq;
+        mt_batch_flush(home, conn, st);
+        seq = st->seq_next++;
+        mt_reply_local(home, conn, st, seq, noauth, sizeof(noauth) - 1,
+                       out);
+        return 1;
+    }
+    /* Routed tasks execute on a sessionless worker context. Authorize on the
+     * home connection before enqueueing so remote workers cannot bypass ACL. */
+    if (sess->acl_check != NULL && sess->acl_user != NULL &&
+        cmd != CMD_AUTH && cmd != CMD_ACL &&
+        !sess->acl_check(sess->acl_ctx, sess->acl_user, cmd, argv, argc)) {
+        static const char noperm[] =
+            "-NOPERM this user has no permissions to run the command or access the key\r\n";
+        mt_batch_flush(home, conn, st);
+        mt_reply_local(home, conn, st, st->seq_next++, noperm,
+                       sizeof(noperm) - 1, out);
+        return 1;
+    }
     /* A replica handshake must live on worker 0, where the aggregated
      * snapshot serializer and the central downstream backlog own the
      * connection. Move clean handshake conns from any other worker. */
@@ -5627,6 +5632,19 @@ void mt_server_set_requirepass(mt_server *ms, const char *pw)
     int i;
     for (i = 0; i < ms->nworkers; i++)
         server_set_requirepass(ms->workers[i].srv, pw);
+}
+
+int mt_server_acl_setuser(mt_server *ms, const char *name, size_t nlen,
+                          const resp_value *rules, size_t nrules)
+{
+    int i;
+    if (ms == NULL || name == NULL || rules == NULL) return -1;
+    for (i = 0; i < ms->nworkers; i++) {
+        acl_registry *r = server_acl_registry(ms->workers[i].srv);
+        if (r == NULL || acl_setuser(r, name, nlen, rules, nrules) != 0)
+            return -1;
+    }
+    return 0;
 }
 
 void mt_server_set_maxmemory(mt_server *ms, uint64_t bytes, int policy)

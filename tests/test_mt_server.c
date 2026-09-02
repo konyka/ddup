@@ -2676,6 +2676,27 @@ static void test_watch_pipeline_remote_get_is_not_queued(void)
     pal_socket_cleanup();
 }
 
+static void test_acl_remote_route_denied(void)
+{
+    mt_server *ms;
+    pal_socket_t a;
+    char key[32], req[256];
+    DD_CHECK_EQ_INT(0, pal_socket_init());
+    pick_key_for_worker(1, 2, key, sizeof(key));
+    ms = mt_server_create("127.0.0.1", 0, 2);
+    DD_CHECK(ms != NULL);
+    if (ms == NULL) { pal_socket_cleanup(); return; }
+    mt_server_set_requirepass(ms, "rootpw");
+    DD_CHECK_EQ_INT(0, mt_server_start(ms));
+    a = connect_client(mt_server_port(ms));
+    snprintf(req, sizeof(req), "*3\r\n$4\r\nAUTH\r\n$5\r\nalice\r\n$3\r\nsek\r\n");
+    roundtrip(a, req, "-WRONGPASS invalid username-password pair or user is disabled.\r\n");
+    pal_close(a);
+    mt_server_stop(ms);
+    mt_server_destroy(ms);
+    pal_socket_cleanup();
+}
+
 static void test_watch_pipeline_two_remote_gets_are_not_queued(void)
 {
     mt_server *ms;
@@ -3670,6 +3691,7 @@ int main(void)
     DD_RUN(test_watch_routed_and_unwatch);
     DD_RUN(test_watch_pipeline_controls_are_ordered);
     DD_RUN(test_watch_pipeline_remote_get_is_not_queued);
+    DD_RUN(test_acl_remote_route_denied);
     DD_RUN(test_watch_pipeline_two_remote_gets_are_not_queued);
     DD_RUN(test_watch_pipeline_unwatch_is_ordered_and_disconnect_safe);
     DD_RUN(test_watch_shutdown_releases_remote_owner);

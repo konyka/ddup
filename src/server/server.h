@@ -11,6 +11,7 @@
 #include <stdint.h>
 
 #include "core/session.h"
+#include "core/acl.h"
 #include "pal/pal_file.h"
 #include "pal/pal_socket.h"
 
@@ -66,6 +67,8 @@ void server_set_appendfsync(server *s, int mode);
 /* Require AUTH before commands (Redis requirepass). The pointer is not
  * owned; pass NULL/"" to disable. New connections start unauthenticated. */
 void server_set_requirepass(server *s, const char *pw);
+/* Read-only access for the mt control-plane ACL fan-out. */
+acl_registry *server_acl_registry(server *s);
 
 /* Configure a disjoint arithmetic sequence for CLIENT IDs. The first ID is
  * assigned to the next accepted connection; existing connections retain IDs. */

@@ -1261,3 +1261,5 @@ glob matcher, so authorized data commands add one bit test and only inspect
 provided key arguments. Password checks use a constant-time byte comparison.
 Key authorization extracts only command-declared key positions for common
 single- and multi-key commands, avoiding value/options scans on the hot path.
+MT performs this check once on the home worker before batching or forwarding;
+remote workers do not repeat the lookup or allocate an ACL context.

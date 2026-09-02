@@ -3189,6 +3189,11 @@ void server_set_requirepass(server *s, const char *pw)
     }
 }
 
+acl_registry *server_acl_registry(server *s)
+{
+    return s == NULL ? NULL : &s->acl;
+}
+
 void server_set_client_id_allocator(server *s, uint64_t first,
                                     uint64_t stride)
 {
