@@ -271,10 +271,11 @@ int acl_authorize(const acl_user *u, uint16_t cmd_id, const resp_value *argv,
         cmd_id == CMD_PSUBSCRIBE || cmd_id == CMD_PUNSUBSCRIBE ||
         cmd_id == CMD_SSUBSCRIBE || cmd_id == CMD_SUNSUBSCRIBE ||
         cmd_id == CMD_PUBLISH || cmd_id == CMD_SPUBLISH) {
-        size_t first = 1, i;
+        size_t first = 1, end, i;
         int pattern = cmd_id == CMD_PSUBSCRIBE || cmd_id == CMD_PUNSUBSCRIBE;
+        end = (cmd_id == CMD_PUBLISH || cmd_id == CMD_SPUBLISH) ? 2 : argc;
         if (!u->all_channels) {
-            for (i = first; i < argc; i++) {
+            for (i = first; i < end; i++) {
                 if (argv[i].type != RESP_BULK_STRING ||
                     !acl_authorize_channel(u, argv[i].str, argv[i].len, pattern))
                     return 0;

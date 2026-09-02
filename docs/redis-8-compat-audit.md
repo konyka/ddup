@@ -111,7 +111,9 @@ python3 tools/audit_redis_compat.py \
   Channel patterns are exposed in `ACL LIST` and `ACL GETUSER` metadata so
   policy inspection remains lossless.
   `allchannels` and `resetchannels` aliases are accepted and map to the same
-  bounded channel state as `&*` and an empty rule set.
+bounded channel state as `&*` and an empty rule set.
+  `PUBLISH`/`SPUBLISH` channel checks stop before the message argument, while
+  subscribe and pattern-subscribe validate every supplied channel argument.
 - Cluster slot maintenance: `SFLUSH` intersects requested ranges with local
   ownership and returns coalesced flushed ranges; `TRIMSLOTS RANGES` validates
   ownership before deleting keys from unserved slots. Both paths collect keys

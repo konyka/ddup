@@ -1330,6 +1330,12 @@ stack buffers and fixed arrays preserve the zero-allocation data-plane checks.
 empty channel set. Alias parsing is bounded and allocation-free; authorization
 remains a single flag check or fixed-pattern scan.
 
+### Phase 166: publish channel argument boundary
+
+`PUBLISH` and `SPUBLISH` authorize only their channel argument; the message body
+is never scanned. Subscription commands continue to check each supplied
+channel/pattern with bounded iteration.
+
 ### Phase 154: ACL generation invalidation
 
 Each fixed ACL user slot carries a monotonic generation. Sessions cache the

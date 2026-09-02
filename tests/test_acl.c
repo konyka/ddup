@@ -466,6 +466,21 @@ static void test_acl_channel_alias_rules(void)
     DD_CHECK(acl_authorize(u, CMD_SUBSCRIBE, sub, 2) == 0);
 }
 
+static void test_acl_publish_checks_only_channel_argument(void)
+{
+    acl_registry r;
+    resp_value rules[3] = {rv("on"), rv("&news:*") , rv("+publish")};
+    resp_value pub[3] = {rv("PUBLISH"), rv("news:sports"), rv("private-body")};
+    resp_value bad[3] = {rv("PUBLISH"), rv("private"), rv("news:sports")};
+    acl_user *u;
+    acl_init(&r, NULL);
+    DD_CHECK(acl_setuser(&r, "pub", 3, rules, 3) == 0);
+    u = acl_find(&r, "pub", 3);
+    DD_CHECK(u != NULL);
+    DD_CHECK(acl_authorize(u, CMD_PUBLISH, pub, 3) == 1);
+    DD_CHECK(acl_authorize(u, CMD_PUBLISH, bad, 3) == 0);
+}
+
 int main(void)
 {
     DD_RUN(test_acl_users);
@@ -494,5 +509,6 @@ int main(void)
     DD_RUN(test_acl_default_user_allows_channels);
     DD_RUN(test_acl_channel_rules_are_visible_in_metadata);
     DD_RUN(test_acl_channel_alias_rules);
+    DD_RUN(test_acl_publish_checks_only_channel_argument);
     return DD_TEST_SUMMARY();
 }
