@@ -181,6 +181,8 @@ bounded channel state as `&*` and an empty rule set.
   authorize their actual key argument.
   `ACL LIST` renders restricted users as `nocommands` and emits `nopass` when
   arbitrary-password authentication is enabled, preserving round-trip policy.
+  `ACL GETUSER` likewise exposes `nopass` and unrestricted `~*`/`&*` metadata so
+  clients can distinguish all-access domains from empty rule sets.
 - Cluster slot maintenance: `SFLUSH` intersects requested ranges with local
   ownership and returns coalesced flushed ranges; `TRIMSLOTS RANGES` validates
   ownership before deleting keys from unserved slots. Both paths collect keys

@@ -1551,7 +1551,13 @@ subcommands retain their explicit key position checks. No allocation or pattern
 
 Rule rendering now emits `nocommands` for restricted command policies and an
 explicit `nopass` token for unrestricted authentication. Rendering remains a
-bounded stack-buffer operation with no authorization-path cost.
+  bounded stack-buffer operation with no authorization-path cost.
+
+### Phase 199: ACL GETUSER unrestricted metadata
+
+`ACL GETUSER` emits the fixed `nopass` flag and keeps `~*`/`&*` entries for
+unrestricted key/channel domains. The additional RESP fields are rendered from
+existing inline state without allocations in authorization or authentication.
 
 Category names are normalized with a bounded ASCII comparison while parsing
 `SETUSER`; no temporary lowercase buffer or heap allocation is introduced.

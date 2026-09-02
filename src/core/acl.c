@@ -733,9 +733,10 @@ void acl_write_user(const acl_user *u, resp_buf *out)
     size_t i;
     resp_write_array_header(out, 10);
     resp_write_bulk(out, "flags", 5);
-    resp_write_array_header(out, 2);
+    resp_write_array_header(out, u->no_password ? 3 : 2);
     resp_write_bulk(out, u->enabled ? "on" : "off", u->enabled ? 2 : 3);
     resp_write_bulk(out, u->all_commands ? "allcommands" : "nocommands", u->all_commands ? 11 : 10);
+    if (u->no_password) resp_write_bulk(out, "nopass", 6);
     resp_write_bulk(out, "passwords", 9);
     resp_write_array_header(out, u->password[0] ? 1 : 0);
     if (u->password[0]) resp_write_bulk(out, u->password, strlen(u->password));

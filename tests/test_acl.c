@@ -744,6 +744,23 @@ static void test_acl_rule_metadata_preserves_command_and_nopass_state(void)
     resp_buf_free(&out);
 }
 
+static void test_acl_getuser_metadata_marks_unrestricted_domains(void)
+{
+    acl_registry r;
+    resp_value rules[5] = {rv("on"), rv("nopass"), rv("allkeys"), rv("allchannels"), rv("allcommands")};
+    resp_buf out;
+    const acl_user *u;
+    acl_init(&r, NULL);
+    DD_CHECK(acl_setuser(&r, "u", 1, rules, 5) == 0);
+    u = acl_find_const(&r, "u", 1);
+    resp_buf_init(&out);
+    acl_write_user(u, &out);
+    DD_CHECK(strstr(out.data, "nopass") != NULL);
+    DD_CHECK(strstr(out.data, "~*") != NULL);
+    DD_CHECK(strstr(out.data, "&*") != NULL);
+    resp_buf_free(&out);
+}
+
 static void test_acl_subcommand_key_positions_are_correct(void)
 {
     acl_registry r;
@@ -1226,6 +1243,7 @@ int main(void)
     DD_RUN(test_acl_keyed_subcommands_still_check_keys);
     DD_RUN(test_acl_object_xinfo_help_is_keyless);
     DD_RUN(test_acl_rule_metadata_preserves_command_and_nopass_state);
+    DD_RUN(test_acl_getuser_metadata_marks_unrestricted_domains);
     DD_RUN(test_acl_subcommand_key_positions_are_correct);
     DD_RUN(test_acl_keyless_options_do_not_require_key_pattern);
     DD_RUN(test_acl_store_commands_check_destination_and_sources);

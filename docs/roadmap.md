@@ -709,3 +709,5 @@
     其他带 key 子命令仍按实际位置校验（Phase 197）
   - [x] ACL 策略元数据无损渲染：`ACL LIST` 使用 `nocommands` 表示受限命令域，
     并显式输出 `nopass`，保证导出/回放语义一致（Phase 198）
+  - [x] ACL GETUSER unrestricted 元数据：flags 显式输出 `nopass`，并保留
+    `~*`/`&*` 全 key/channel 状态，避免全开策略被误解为空规则（Phase 199）
