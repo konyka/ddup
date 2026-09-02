@@ -702,6 +702,7 @@ int acl_authorize(const acl_user *u, uint16_t cmd_id, const resp_value *argv,
     case CMD_TOUCH: case CMD_SINTER: case CMD_SUNION: case CMD_SDIFF:
         nkeys = argc - 1; break;
     case CMD_MSET: case CMD_MSETNX:
+        if (((argc - 1) & 1u) != 0) return 0;
         nkeys = (argc - 1) / 2; step = 2; break;
     default:
         nkeys = 1;
@@ -716,7 +717,7 @@ int acl_authorize(const acl_user *u, uint16_t cmd_id, const resp_value *argv,
             for (p = 0; p < u->pattern_count; p++)
                 if (acl_match_pattern(u->patterns[p], strlen(u->patterns[p]), argv[ai].str, argv[ai].len)) break;
             if (p == u->pattern_count) return 0;
-        }
+        } else return 0;
     }
     return 1;
 }

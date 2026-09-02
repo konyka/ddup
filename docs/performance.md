@@ -1533,7 +1533,13 @@ truncated requests fail closed before pattern scans. The validation is a single
 
 `BACKUP` and `HOTKEYS` remain command-only control paths. `HIMPORT SET` checks
 the hash key after its subcommand, while `PREPARE`, `DISCARD`, and `DISCARDALL`
-skip key matching. All branches are fixed-position and allocation-free.
+  skip key matching. All branches are fixed-position and allocation-free.
+
+### Phase 196: ACL malformed-key fail-closed
+
+Generic key authorization now rejects non-bulk key values and odd-length
+`MSET/MSETNX` pairs before pattern matching. The checks are constant-time shape
+guards that prevent malformed requests from bypassing the bounded glob scan.
 
 Category names are normalized with a bounded ASCII comparison while parsing
 `SETUSER`; no temporary lowercase buffer or heap allocation is introduced.

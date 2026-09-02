@@ -1028,6 +1028,29 @@ static void test_acl_ddup_control_and_himport_key_positions(void)
     DD_CHECK(acl_authorize(u, CMD_HIMPORT, set_ok, 4) == 1);
 }
 
+static void test_acl_key_authorization_fails_closed_on_malformed_values(void)
+{
+    acl_registry r;
+    resp_value nonstring;
+    resp_value rules[3] = {rv("on"), rv("~allowed:*") , rv("+@all")};
+    resp_value malformed_get[2];
+    resp_value truncated_mget[2] = {rv("MGET"), rv("allowed:a")};
+    resp_value malformed_mset[4];
+    acl_user *u;
+    acl_init(&r, NULL);
+    memset(&nonstring, 0, sizeof(nonstring));
+    nonstring.type = RESP_INTEGER;
+    nonstring.integer = 1;
+    malformed_get[0] = rv("GET"); malformed_get[1] = nonstring;
+    malformed_mset[0] = rv("MSET"); malformed_mset[1] = rv("allowed:a"); malformed_mset[2] = rv("v"); malformed_mset[3] = nonstring;
+    DD_CHECK(acl_setuser(&r, "u", 1, rules, 3) == 0);
+    u = acl_find(&r, "u", 1);
+    DD_CHECK(u != NULL);
+    DD_CHECK(acl_authorize(u, CMD_GET, malformed_get, 2) == 0);
+    DD_CHECK(acl_authorize(u, CMD_MGET, truncated_mget, 2) == 1);
+    DD_CHECK(acl_authorize(u, CMD_MSET, malformed_mset, 4) == 0);
+}
+
 static void test_acl_rule_line_capacity_covers_channel_patterns(void)
 {
     acl_registry r;
@@ -1185,6 +1208,7 @@ int main(void)
     DD_RUN(test_acl_stream_reads_reject_odd_key_id_tail);
     DD_RUN(test_acl_cluster_subcommands_are_keyless);
     DD_RUN(test_acl_ddup_control_and_himport_key_positions);
+    DD_RUN(test_acl_key_authorization_fails_closed_on_malformed_values);
     DD_RUN(test_acl_rule_line_capacity_covers_channel_patterns);
     DD_RUN(test_acl_log_coalesces_identical_events);
     DD_RUN(test_acl_getuser_flags_do_not_mislabel_commands);

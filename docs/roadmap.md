@@ -703,3 +703,5 @@
     防止截断 malformed 请求绕过授权（Phase 194）
   - [x] ACL 扩展命令 key 边界：`BACKUP/HOTKEYS` 按控制面处理，`HIMPORT SET`
     仅校验 hash key，准备/丢弃子命令保持 keyless（Phase 195）
+  - [x] ACL malformed key fail-closed：非 bulk key、奇数参数 `MSET/MSETNX`
+    和不完整 key 对统一拒绝，消除默认路径 fail-open（Phase 196）
