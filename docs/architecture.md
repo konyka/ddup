@@ -1119,6 +1119,9 @@ DBSIZE 为 O(1)，可能计入尚未回收的过期 key。
   `ERR command not supported in mt mode`，避免把无状态任务发送到远端后丢失
   fieldset。`MEMORY USAGE <key>` 则按 key owner 路由，其余 MEMORY 子命令
   保持 worker-local。
+- `HIMPORT SET` 在目标 key 属于当前 worker 时保留完整 session-local 执行；
+  只有远端 owner 请求被拒绝，避免不必要地牺牲同 worker 功能，同时不发送
+  无法携带 fieldset 的 sessionless 任务。
 - **复合排序键约束**：`SORT <source> STORE <destination>` 同时校验源和目标
   key 的 worker/slot；跨 worker 或跨 slot 请求在执行前返回 `CROSSSLOT`，避免
   sessionless 路由只携带源 key 而把排序结果写入错误分片。`SORT_RO` 仅读取源 key。

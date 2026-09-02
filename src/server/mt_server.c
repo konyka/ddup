@@ -2265,10 +2265,15 @@ static int mt_classify(int nworkers, uint16_t cmd, const resp_value *argv,
         return MT_BLOCKED;
     if (cmd == CMD_HIMPORT) {
         /* PREPARE/DISCARD are session-local; SET needs the fieldset state,
-         * which cannot be reconstructed by a sessionless remote task. */
+         * which cannot be reconstructed by a sessionless remote task. Keep
+         * same-worker SET on the normal session path. */
         if (argc >= 2 && argv[1].str != NULL &&
-            mt_ci_equal(argv[1].str, argv[1].len, "SET"))
-            return MT_BLOCKED;
+            mt_ci_equal(argv[1].str, argv[1].len, "SET")) {
+            if (argc < 3 || argv[2].str == NULL)
+                return MT_LOCAL;
+            return (int)(hash_slot(argv[2].str, argv[2].len) %
+                         (uint32_t)nworkers);
+        }
         return MT_LOCAL;
     }
     if (cmd == CMD_MEMORY)
@@ -3239,6 +3244,14 @@ static int mt_txn_exec(worker *home, void *conn, mt_conn_state *st,
             bad = 1;
             break;
         }
+        if (c == CMD_HIMPORT && v.count >= 2 &&
+            v.items[1].str != NULL &&
+            mt_ci_equal(v.items[1].str, v.items[1].len, "SET") &&
+            tg != home->id) {
+            bad = 1;
+            blocked = 1;
+            break;
+        }
         if (tg >= 0) {
             if (target == -1)
                 target = tg;
@@ -3974,6 +3987,11 @@ static int mt_route(void *ctx, void *conn, session *sess,
     target = mt_classify(home->ms->nworkers, cmd, argv, argc);
     if (target == MT_PASS)
         return 0; /* legacy inline path (SINTER/SUNION/SDIFF for now) */
+
+    /* HIMPORT fieldsets belong to this connection; a remote sessionless task
+     * cannot carry them, so reject only the remote-owner case. */
+    if (cmd == CMD_HIMPORT && target >= 0 && target != home->id)
+        target = MT_BLOCKED;
 
     if (cmd == CMD_MIGRATE && target == MT_CROSSSLOT) {
         mt_batch_flush(home, conn, st);

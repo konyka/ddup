@@ -561,3 +561,6 @@
   - [x] 管理命令 key 元数据校正：`COMMAND GETKEYS/GETKEYSANDFLAGS` 补齐
     `MEMORY USAGE <key>` 与 `OBJECT <subcommand> <key>` 的真实参数位置，
     防止拓扑客户端缓存伪 key（Phase 132）
+  - [x] HIMPORT owner 精确路由：同 worker 的 `HIMPORT SET` 保留 session-local
+    正常执行，仅对远端 owner fail-closed；事务路径同步拒绝无法携带 fieldset
+    的跨 worker 请求（Phase 133）

@@ -847,10 +847,11 @@ static void test_himport_cross_worker_fails_closed(void)
 {
     mt_server *ms;
     pal_socket_t a;
-    char key[32], req[256];
+    char key[32], local[32], req[256];
 
     DD_CHECK_EQ_INT(0, pal_socket_init());
     pick_key_for_worker(1, 2, key, sizeof(key));
+    pick_key_for_worker(0, 2, local, sizeof(local));
     ms = mt_server_create("127.0.0.1", 0, 2);
     DD_CHECK(ms != NULL);
     if (ms == NULL)
@@ -861,6 +862,12 @@ static void test_himport_cross_worker_fails_closed(void)
     /* Fieldsets are connection-local and cannot be replayed sessionlessly. */
     roundtrip(a, "*4\r\n$7\r\nHIMPORT\r\n$7\r\nPREPARE\r\n$2\r\nfs\r\n$1\r\nf\r\n",
               "+OK\r\n");
+    roundtrip(a, "*4\r\n$7\r\nHIMPORT\r\n$7\r\nPREPARE\r\n$3\r\nloc\r\n$1\r\nf\r\n",
+              "+OK\r\n");
+    snprintf(req, sizeof(req),
+             "*5\r\n$7\r\nHIMPORT\r\n$3\r\nSET\r\n$%zu\r\n%s\r\n$3\r\nloc\r\n$1\r\nv\r\n",
+             strlen(local), local);
+    roundtrip(a, req, "+OK\r\n");
     snprintf(req, sizeof(req),
              "*5\r\n$7\r\nHIMPORT\r\n$3\r\nSET\r\n$%zu\r\n%s\r\n$2\r\nfs\r\n$1\r\nv\r\n",
              strlen(key), key);
