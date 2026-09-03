@@ -16915,17 +16915,23 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
 
     if (cmd_id == CMD_INFO) {
         int machine = 0;
-        if (argc == 2) {
+        if (argc > 1) {
+            size_t i;
             const char *sec;
             size_t seclen;
-            if (!arg_str(&argv[1], &sec, &seclen) ||
-                !ci_equal(sec, seclen, "__STATS__")) {
-                static const char E[] = "ERR unsupported INFO section";
-                resp_write_error(out, E, sizeof(E) - 1);
-                return;
+            if (argc == 2 && arg_str(&argv[1], &sec, &seclen) &&
+                ci_equal(sec, seclen, "__STATS__")) {
+                machine = 1;
+            } else {
+                /* Redis accepts one or more named sections. ddup's compact
+                 * renderer has a single bounded snapshot, so validate all
+                 * section tokens and return that snapshot for any selection. */
+                for (i = 1; i < argc; i++)
+                    if (!arg_str(&argv[i], &sec, &seclen))
+                        goto bad_type;
             }
-            machine = 1;
-        } else if (argc != 1) {
+        }
+        if (argc == 0) {
             wrong_args(out, "info");
             return;
         }

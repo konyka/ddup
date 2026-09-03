@@ -300,6 +300,10 @@ static void test_server_management_commands(void)
     EXPECT_REPLY(":1\r\n");
     cmd(4, "DEBUG", "STRINGMATCH", "cache:42", "user:*");
     EXPECT_REPLY(":0\r\n");
+    cmd(2, "INFO", "SERVER");
+    DD_CHECK(strstr(g_out.data, "# Memory") != NULL);
+    cmd(3, "INFO", "SERVER", "STATS");
+    DD_CHECK(strstr(g_out.data, "# Stats") != NULL);
 }
 
 int main(void)

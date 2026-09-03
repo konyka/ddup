@@ -723,3 +723,5 @@
     与 Redis 8 的事件查询语义一致（Phase 204）
   - [x] DEBUG STRINGMATCH 语义实现：使用现有二进制安全 glob 匹配器返回
     精确布尔结果，避免诊断命令恒定返回不匹配（Phase 205）
+  - [x] INFO section 兼容：接受 `INFO SERVER` 及多个 section 参数，校验
+    参数类型后返回有界快照，避免把标准客户端请求误报为 unsupported（Phase 206）

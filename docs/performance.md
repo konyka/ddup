@@ -1600,3 +1600,9 @@ responses for unknown events.
 `DEBUG STRINGMATCH` reuses the allocation-free, binary-safe glob matcher used by
 `KEYS` and ACL patterns. Matching remains bounded by the input pattern/string and
 does not add heap traffic to the diagnostic path.
+
+### Phase 206: INFO section compatibility
+
+`INFO` accepts one or more section tokens after validating them in-place. The
+compact ddup snapshot is emitted from the same bounded renderer for each
+selection, preserving O(1) section dispatch without per-section allocations.

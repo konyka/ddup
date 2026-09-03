@@ -196,6 +196,9 @@ bounded channel state as `&*` and an empty rule set.
   of returning an empty array for an unknown event.
   `DEBUG STRINGMATCH <value> <pattern>` now returns the actual glob match result
   through ddup's binary-safe matcher rather than a constant zero placeholder.
+  `INFO` accepts standard section arguments (including multiple sections) and
+  returns the bounded ddup snapshot instead of rejecting `INFO SERVER` as an
+  unsupported section; the internal `__STATS__` transport remains unchanged.
 - Cluster slot maintenance: `SFLUSH` intersects requested ranges with local
   ownership and returns coalesced flushed ranges; `TRIMSLOTS RANGES` validates
   ownership before deleting keys from unserved slots. Both paths collect keys
