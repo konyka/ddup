@@ -123,6 +123,14 @@ static void test_client_tracking_state_machine(void)
     DD_CHECK(strstr(out.data, "CLIENT CACHING can be called only") != NULL);
     exec_sess(s, T0, &out, 4, "CLIENT", "TRACKING", "ON", "OPTIN");
     EXPECT(out, "+OK\r\n");
+    exec_sess(s, T0, &out, 5, "CLIENT", "TRACKING", "ON", "REDIRECT", "42");
+    EXPECT(out, "+OK\r\n");
+    exec_sess(s, T0, &out, 2, "CLIENT", "GETREDIR");
+    EXPECT(out, ":42\r\n");
+    exec_sess(s, T0, &out, 3, "CLIENT", "TRACKING", "ON");
+    EXPECT(out, "+OK\r\n");
+    exec_sess(s, T0, &out, 2, "CLIENT", "GETREDIR");
+    EXPECT(out, ":0\r\n");
     exec_sess(s, T0, &out, 3, "CLIENT", "CACHING", "YES");
     EXPECT(out, "+OK\r\n");
     exec_sess(s, T0, &out, 2, "CLIENT", "TRACKINGINFO");

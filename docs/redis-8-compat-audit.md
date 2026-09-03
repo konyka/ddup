@@ -321,3 +321,6 @@ and prefixes fields.
 `CLIENT CACHING YES|NO` is now a one-shot hint: after the next non-CACHING
 command, `TRACKINGINFO` no longer reports `caching-yes`/`caching-no`. Disabling
 tracking and `RESET` clear the hint immediately.
+
+`CLIENT GETREDIR` now returns the configured redirect client ID while tracking is
+enabled and `-1` otherwise, matching the `TRACKINGINFO.redirect` field.

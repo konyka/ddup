@@ -7584,6 +7584,10 @@ static void command_client(session *s, const resp_value *argv, size_t argc,
             resp_write_bulk(out, s->tracking_prefixes[i], strlen(s->tracking_prefixes[i]));
         return;
     }
+    if (ci_equal(sub, sl, "GETREDIR") && argc == 2) {
+        resp_write_integer(out, s->tracking ? s->tracking_redirect : -1);
+        return;
+    }
     if (s->client_ctx == NULL) {
         resp_write_error(out, "ERR CLIENT is not supported in this context",
                          sizeof("ERR CLIENT is not supported in this context") - 1);
@@ -7644,10 +7648,6 @@ static void command_client(session *s, const resp_value *argv, size_t argc,
             return;
         }
         resp_write_simple_string(out, "OK", 2);
-        return;
-    }
-    if (ci_equal(sub, sl, "GETREDIR") && argc == 2) {
-        resp_write_integer(out, -1);
         return;
     }
     if ((ci_equal(sub, sl, "NO-EVICT") || ci_equal(sub, sl, "NO-TOUCH")) &&

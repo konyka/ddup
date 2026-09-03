@@ -1638,3 +1638,10 @@ selected database receives a transient `no_touch_active` bit, so normal reads
 use `rh_get()` instead of `rh_get_touch()` without changing command signatures
 or allocating. The bit is cleared immediately after dispatch; the extra cost
 is one predictable branch per lookup and one store per command.
+
+### Phase 211: CLIENT GETREDIR consistency
+
+`GETREDIR` reads the inline tracking redirect field in O(1) without allocation.
+The command is handled before optional server client hooks, so embedded sessions
+and network sessions expose the same state and disabled tracking deterministically
+returns `-1`.

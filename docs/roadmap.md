@@ -737,3 +737,6 @@
   - [x] CLIENT CACHING 一次性语义：`YES/NO` 只影响下一条命令，随后自动
     清除 caching 标志；tracking 关闭或 RESET 时同步清理，避免状态泄漏
     到后续请求（Phase 210）
+  - [x] CLIENT GETREDIR 状态一致性：tracking 启用并配置 `REDIRECT <id>` 时
+    返回实际重定向 ID；未启用或关闭 tracking 时返回 `-1`，与 TRACKINGINFO
+    保持一致（Phase 211）
