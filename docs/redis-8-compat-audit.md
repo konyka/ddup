@@ -299,3 +299,10 @@ ACL SETUSER 别名在固定容量临时副本上原子应用：`allkeys`/`~*` �
 missing_top:
 missing_containers:
 AUDIT-BASELINE-END -->
+
+### CLIENT REPLY
+
+`CLIENT REPLY ON|OFF|SKIP` is implemented as connection-local state. `OFF`
+suppresses subsequent command replies until `ON`; `SKIP` suppresses exactly one
+subsequent reply and automatically returns to normal mode. The control command
+itself is acknowledged before the new mode takes effect.

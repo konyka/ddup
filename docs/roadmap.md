@@ -725,3 +725,6 @@
     精确布尔结果，避免诊断命令恒定返回不匹配（Phase 205）
   - [x] INFO section 兼容：接受 `INFO SERVER` 及多个 section 参数，校验
     参数类型后返回有界快照，避免把标准客户端请求误报为 unsupported（Phase 206）
+  - [x] CLIENT REPLY 连接语义：实现 `ON/OFF/SKIP` 会话级回复模式；`OFF`
+    持续抑制后续回复，`SKIP` 仅跳过下一条，命令副作用与 AOF/监控保持执行
+    （Phase 207）

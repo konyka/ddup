@@ -7384,6 +7384,27 @@ static void command_client(session *s, const resp_value *argv, size_t argc,
             resp_write_bulk(out, help[i], strlen(help[i]));
         return;
     }
+    /* REPLY is a connection-local control command and works even when the
+     * optional server client hooks are unavailable (e.g. embedded sessions). */
+    if (ci_equal(sub, sl, "REPLY") && argc == 3) {
+        const char *mode;
+        size_t mdl;
+        if (!arg_str(&argv[2], &mode, &mdl) ||
+            (!ci_equal(mode, mdl, "ON") &&
+             !ci_equal(mode, mdl, "OFF") &&
+             !ci_equal(mode, mdl, "SKIP"))) {
+            resp_write_error(out, ERR_SYNTAX, sizeof(ERR_SYNTAX) - 1);
+            return;
+        }
+        if (ci_equal(mode, mdl, "ON"))
+            s->reply_mode = 0;
+        else if (ci_equal(mode, mdl, "OFF"))
+            s->reply_mode = 1;
+        else
+            s->reply_mode = 2;
+        resp_write_simple_string(out, "OK", 2);
+        return;
+    }
     if (s->client_ctx == NULL) {
         resp_write_error(out, "ERR CLIENT is not supported in this context",
                          sizeof("ERR CLIENT is not supported in this context") - 1);
@@ -7485,19 +7506,6 @@ static void command_client(session *s, const resp_value *argv, size_t argc,
         return;
     }
     if (ci_equal(sub, sl, "UNPAUSE") && argc == 2) {
-        resp_write_simple_string(out, "OK", 2);
-        return;
-    }
-    if (ci_equal(sub, sl, "REPLY") && argc == 3) {
-        const char *mode;
-        size_t mdl;
-        if (!arg_str(&argv[2], &mode, &mdl) ||
-            (!ci_equal(mode, mdl, "ON") &&
-             !ci_equal(mode, mdl, "OFF") &&
-             !ci_equal(mode, mdl, "SKIP"))) {
-            resp_write_error(out, ERR_SYNTAX, sizeof(ERR_SYNTAX) - 1);
-            return;
-        }
         resp_write_simple_string(out, "OK", 2);
         return;
     }
@@ -23640,8 +23648,9 @@ done:
     s->multi_error = 0;
 }
 
-void session_execute_at(session *s, const resp_value *argv, size_t argc,
-                        resp_buf *out, uint64_t now_ms)
+static void session_execute_at_raw(session *s, const resp_value *argv,
+                                   size_t argc, resp_buf *out,
+                                   uint64_t now_ms)
 {
     const char *name = NULL;
     size_t nlen = 0;
@@ -23866,6 +23875,7 @@ void session_execute_at(session *s, const resp_value *argv, size_t argc,
         s->multi_error = 0;
         s->read_only = 0;
         s->asking = 0;
+        s->reply_mode = 0;
         s->db_index = 0;
         if (s->sel_fn != NULL)
             s->d = s->sel_fn(s->sel_ctx, 0);
@@ -23960,6 +23970,22 @@ void session_execute_at(session *s, const resp_value *argv, size_t argc,
 
 bad_type:
     resp_write_error(out, "ERR invalid argument type", 24);
+}
+
+void session_execute_at(session *s, const resp_value *argv, size_t argc,
+                        resp_buf *out, uint64_t now_ms)
+{
+    int mode_before = s->reply_mode;
+    size_t out_before = out->len;
+    session_execute_at_raw(s, argv, argc, out, now_ms);
+    /* REPLY ON must be able to re-enable and acknowledge itself.  Likewise,
+     * OFF/SKIP are acknowledged before their new mode takes effect. */
+    if (mode_before == 1)
+        out->len = out_before;
+    else if (mode_before == 2) {
+        out->len = out_before;
+        s->reply_mode = 0;
+    }
 }
 
 int session_acl_refresh(session *s)

@@ -168,6 +168,9 @@ typedef struct session {
      * anything already buffered) has been flushed; no-op for stack
      * sessions */
     int quit;
+    /* CLIENT REPLY state: 0 sends replies, 1 suppresses replies, 2 skips
+     * exactly the next command reply. */
+    int reply_mode;
     int monitor_enabled;
     void *monitor_ctx;
     int (*monitor_start)(void *ctx, struct session *s);

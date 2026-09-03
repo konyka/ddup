@@ -1606,3 +1606,12 @@ does not add heap traffic to the diagnostic path.
 `INFO` accepts one or more section tokens after validating them in-place. The
 compact ddup snapshot is emitted from the same bounded renderer for each
 selection, preserving O(1) section dispatch without per-section allocations.
+
+### Phase 207: CLIENT REPLY suppression
+
+Reply mode is a three-state integer stored directly in `session`; changing the
+mode does not allocate. `session_execute_at()` records the existing output
+length and truncates only the current command's newly appended RESP bytes when
+`OFF` or `SKIP` applies. Command execution, persistence, monitoring, and
+statistics still run, while suppression adds one length snapshot and a branch
+on the connection hot path.

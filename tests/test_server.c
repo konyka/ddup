@@ -139,6 +139,61 @@ static void test_ping_set_get(void)
     server_destroy(s);
 }
 
+static void test_client_reply_modes(void)
+{
+    server *s = make_server();
+    pal_socket_t c;
+    char buf[128];
+    int i;
+    ptrdiff_t n;
+    DD_CHECK(s != NULL);
+    if (s == NULL)
+        return;
+    c = connect_client(s);
+
+    /* The mode-changing command itself is always acknowledged. */
+    roundtrip(s, c, "*3\r\n$6\r\nCLIENT\r\n$5\r\nREPLY\r\n$3\r\nOFF\r\n",
+              "+OK\r\n");
+    {
+        const char req[] = "*1\r\n$4\r\nPING\r\n";
+        DD_CHECK_EQ_INT((long long)(sizeof(req) - 1), pal_send(c, req,
+                                                               sizeof(req) - 1));
+    }
+    for (i = 0; i < 10; i++) {
+        server_run_once(s, 5);
+        n = pal_recv(c, buf, sizeof(buf));
+        DD_CHECK(n <= 0);
+    }
+    /* Replies remain suppressed until ON, whose reply is suppressed too. */
+    {
+        const char req[] = "*3\r\n$6\r\nCLIENT\r\n$5\r\nREPLY\r\n$2\r\nON\r\n";
+        DD_CHECK_EQ_INT((long long)(sizeof(req) - 1), pal_send(c, req,
+                                                               sizeof(req) - 1));
+    }
+    for (i = 0; i < 10; i++) {
+        server_run_once(s, 5);
+        n = pal_recv(c, buf, sizeof(buf));
+        DD_CHECK(n <= 0);
+    }
+    roundtrip(s, c, "*1\r\n$4\r\nPING\r\n", "+PONG\r\n");
+
+    roundtrip(s, c, "*3\r\n$6\r\nCLIENT\r\n$5\r\nREPLY\r\n$4\r\nSKIP\r\n",
+              "+OK\r\n");
+    {
+        const char req[] = "*1\r\n$4\r\nPING\r\n";
+        DD_CHECK_EQ_INT((long long)(sizeof(req) - 1), pal_send(c, req,
+                                                               sizeof(req) - 1));
+    }
+    for (i = 0; i < 10; i++) {
+        server_run_once(s, 5);
+        n = pal_recv(c, buf, sizeof(buf));
+        DD_CHECK(n <= 0);
+    }
+    roundtrip(s, c, "*1\r\n$4\r\nPING\r\n", "+PONG\r\n");
+    pal_close(c);
+    server_destroy(s);
+}
+
 static void test_monitor_stream(void)
 {
     server *s = make_server();
@@ -1328,6 +1383,7 @@ static void run_all_tests(void)
 {
     DD_RUN(test_cluster_save_close_failure_preserves_state);
     DD_RUN(test_ping_set_get);
+    DD_RUN(test_client_reply_modes);
     DD_RUN(test_monitor_stream);
     DD_RUN(test_hotkeys_sampled_key_metrics);
     DD_RUN(test_hotkeys_multi_key_commands);
