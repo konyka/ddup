@@ -223,6 +223,10 @@ static void test_slowlog(void)
     roundtrip_contains(s, c,
                        "*3\r\n$7\r\nSLOWLOG\r\n$3\r\nGET\r\n$1\r\n5\r\n",
                        "RESET");
+    /* Redis treats any negative count as "return all entries". */
+    roundtrip_contains(s, c,
+                       "*3\r\n$7\r\nSLOWLOG\r\n$3\r\nGET\r\n$2\r\n-1\r\n",
+                       "*");
 
     pal_close(c);
     server_destroy(s);

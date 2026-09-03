@@ -1575,3 +1575,9 @@ does not add allocation or synchronization.
 the O(1) deterministic estimate. ddup has no sampled nested encoding, so the
 validated hint has no allocation, scan, or data-path cost while malformed
 requests fail closed.
+
+### Phase 202: SLOWLOG negative-count compatibility
+
+Negative `SLOWLOG GET` counts are normalized to the current fixed-ring length
+before bounded serialization. The path remains O(N) in retained entries with no
+additional allocation or copy beyond the existing RESP output.

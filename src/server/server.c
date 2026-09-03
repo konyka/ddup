@@ -2718,7 +2718,7 @@ static void srv_slowlog_get(void *ctx, long long count, resp_buf *out)
     server *srv = (server *)ctx;
     size_t i, n;
     if (count < 0)
-        count = 10;
+        count = (long long)srv->slowlog_len;
     n = srv->slowlog_len;
     if ((size_t)count < n)
         n = (size_t)count;

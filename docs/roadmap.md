@@ -715,3 +715,5 @@
     校验，避免任意密码状态残留（Phase 200）
   - [x] MEMORY USAGE 参数边界：`SAMPLES` 必须带唯一的非负整数计数，拒绝
     截断、非整数和负数请求，保持确定性内存估算零额外分配（Phase 201）
+  - [x] SLOWLOG 负 count 兼容：`SLOWLOG GET <negative>` 返回固定日志环中的
+    全部条目，避免 Redis 客户端分页语义不一致（Phase 202）

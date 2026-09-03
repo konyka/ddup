@@ -7712,8 +7712,7 @@ static void command_slowlog(session *s, const resp_value *argv, size_t argc,
         if (argc == 3) {
             const char *cv;
             size_t cl;
-            if (!arg_str(&argv[2], &cv, &cl) || !parse_i64(cv, cl, &count) ||
-                count < 0) {
+            if (!arg_str(&argv[2], &cv, &cl) || !parse_i64(cv, cl, &count)) {
                 resp_write_error(out, ERR_NOT_INT, sizeof(ERR_NOT_INT) - 1);
                 return;
             }

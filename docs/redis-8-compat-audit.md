@@ -188,6 +188,8 @@ bounded channel state as `&*` and an empty rule set.
   `MEMORY USAGE key SAMPLES count` now requires exactly one non-negative integer
   count; ddup validates the Redis option boundary even though its deterministic
   object model does not need sampling work.
+  `SLOWLOG GET` accepts negative counts as an explicit request for all retained
+  entries, matching Redis pagination semantics while retaining the bounded ring.
 - Cluster slot maintenance: `SFLUSH` intersects requested ranges with local
   ownership and returns coalesced flushed ranges; `TRIMSLOTS RANGES` validates
   ownership before deleting keys from unserved slots. Both paths collect keys
