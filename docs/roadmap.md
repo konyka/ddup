@@ -753,3 +753,5 @@
     错误响应长度改为编译期安全计算（Phase 215）
   - [x] CLIENT TRACKING 状态清理完整性：模式无选项重启时同步清除
     PREFIX/NOLOOP/REDIRECT/CACHING，避免模式专属状态跨模式残留（Phase 216）
+  - [x] CLIENT TRACKING PREFIX 重叠校验：拒绝重复或前缀包含关系，失败请求
+    保持原 tracking 状态；使用固定槽位内存比较，避免额外堆分配（Phase 217）

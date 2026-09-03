@@ -1682,3 +1682,10 @@ without adding allocation or data-path work.
 The mode-less transition to default tracking clears bounded mode-specific
 metadata in the same constant-time state update. No heap allocation or ordinary
 command-path work is added; the fixed PREFIX storage is reset by count only.
+
+### Phase 217: CLIENT TRACKING PREFIX overlap validation
+
+Each new bounded PREFIX is compared against the existing fixed slots up to the
+shorter length. Duplicate and containing prefixes fail before session mutation,
+with O(prefixes x prefix-length) control-path work, no heap allocation, and no
+impact on ordinary command execution.

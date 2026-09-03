@@ -159,10 +159,27 @@ static void test_client_tracking_state_machine(void)
     DD_CHECK(strstr(out.data, "optin") == NULL);
     exec_sess(s, T0, &out, 3, "CLIENT", "TRACKING", "OFF");
     EXPECT(out, "+OK\r\n");
+    exec_sess(s, T0, &out, 4, "CLIENT", "TRACKING", "ON", "OPTIN");
+    EXPECT(out, "+OK\r\n");
+    exec_sess(s, T0, &out, 3, "CLIENT", "CACHING", "YES");
+    EXPECT(out, "+OK\r\n");
+    exec_sess(s, T0, &out, 3, "CLIENT", "TRACKING", "ON");
+    EXPECT(out, "+OK\r\n");
+    exec_sess(s, T0, &out, 2, "CLIENT", "TRACKINGINFO");
+    DD_CHECK(strstr(out.data, "caching-yes") == NULL);
+    exec_sess(s, T0, &out, 3, "CLIENT", "TRACKING", "OFF");
+    EXPECT(out, "+OK\r\n");
     exec_sess(s, T0, &out, 3, "CLIENT", "TRACKING", "ON");
     EXPECT(out, "+OK\r\n");
     exec_sess(s, T0, &out, 3, "CLIENT", "CACHING", "YES");
     DD_CHECK(strstr(out.data, "CLIENT CACHING can be called only") != NULL);
+
+    exec_sess(s, T0, &out, 8, "CLIENT", "TRACKING", "ON", "BCAST",
+              "PREFIX", "foo", "PREFIX", "foo");
+    DD_CHECK(strstr(out.data, "overlaps with another provided prefix") != NULL);
+    exec_sess(s, T0, &out, 2, "CLIENT", "TRACKINGINFO");
+    DD_CHECK(strstr(out.data, "$2\r\non\r\n") != NULL);
+    DD_CHECK(strstr(out.data, "$8\r\nprefixes\r\n*0\r\n") != NULL);
 
     exec_sess(s, T0, &out, 4, "CLIENT", "TRACKING", "ON", "OPTIN");
     EXPECT(out, "-ERR You can't switch OPTIN/OPTOUT mode before disabling tracking for this client, and then re-enabling it with a different mode.\r\n");

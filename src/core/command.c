@@ -7503,10 +7503,20 @@ static void command_client(session *s, const resp_value *argv, size_t argc,
                     return;
                 }
             } else if (ci_equal(opt, opt_len, "PREFIX")) {
+                size_t p;
                 if (++i >= argc || !arg_str(&argv[i], &opt, &opt_len) ||
                     opt_len >= sizeof(prefixes[0]) || prefix_count >= 4) {
                     resp_write_error(out, ERR_SYNTAX, sizeof(ERR_SYNTAX) - 1);
                     return;
+                }
+                for (p = 0; p < prefix_count; p++) {
+                    size_t existing_len = strlen(prefixes[p]);
+                    size_t shorter = existing_len < opt_len ? existing_len : opt_len;
+                    if (memcmp(prefixes[p], opt, shorter) == 0) {
+                        static const char E[] = "ERR Prefix overlaps with another provided prefix. Prefixes for a single client must not overlap.";
+                        resp_write_error(out, E, sizeof(E) - 1);
+                        return;
+                    }
                 }
                 memcpy(prefixes[prefix_count], opt,
                        opt_len);

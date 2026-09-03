@@ -344,3 +344,7 @@ literal lengths so responses are never truncated.
 
 The mode transition also clears PREFIX, NOLOOP, REDIRECT, and CACHING metadata,
 preventing mode-specific state from leaking into the default tracking mode.
+
+Redis-compatible PREFIX validation now rejects duplicate or overlapping prefix
+strings atomically. The bounded session state remains unchanged on failure, and
+the check uses only fixed inline storage.
