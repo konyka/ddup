@@ -717,3 +717,5 @@
     截断、非整数和负数请求，保持确定性内存估算零额外分配（Phase 201）
   - [x] SLOWLOG 负 count 兼容：`SLOWLOG GET <negative>` 返回固定日志环中的
     全部条目，避免 Redis 客户端分页语义不一致（Phase 202）
+  - [x] LATENCY GRAPH 无样本 fail-closed：未知或无数据事件返回明确错误，
+    不再伪造成功图形响应，并限制事件名格式化边界（Phase 203）

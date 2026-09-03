@@ -11979,13 +11979,19 @@ static void command_latency(session *s, const resp_value *argv, size_t argc,
     if (ci_equal(sub, sl, "GRAPH") && argc == 3) {
         const char *event;
         size_t el;
-        char buf[128];
-        int n;
         if (!arg_str(&argv[2], &event, &el))
             goto bad;
-        n = snprintf(buf, sizeof(buf), "latency graph for event: %.*s",
-                     (int)el, event);
-        resp_write_bulk(out, buf, (size_t)n);
+        if (el == 0 || el >= 96) {
+            resp_write_error(out, "ERR No samples available for event ''", 37);
+            return;
+        }
+        {
+            char msg[128];
+            int n = snprintf(msg, sizeof(msg),
+                             "ERR No samples available for event '%.*s'",
+                             (int)el, event);
+            resp_write_error(out, msg, (size_t)n);
+        }
         return;
     }
     if (ci_equal(sub, sl, "DOCTOR") && argc == 2) {

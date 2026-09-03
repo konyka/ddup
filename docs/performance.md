@@ -1581,3 +1581,10 @@ requests fail closed.
 Negative `SLOWLOG GET` counts are normalized to the current fixed-ring length
 before bounded serialization. The path remains O(N) in retained entries with no
 additional allocation or copy beyond the existing RESP output.
+
+### Phase 203: LATENCY GRAPH no-sample handling
+
+`LATENCY GRAPH` now fails closed when ddup has no latency samples instead of
+returning a synthetic success payload. Event names are formatted into a bounded
+stack buffer; malformed or oversized names take a constant-time generic error
+path with no heap allocation.
