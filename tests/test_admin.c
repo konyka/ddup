@@ -93,6 +93,16 @@ static void test_memory_usage_stats(void)
     cmd(3, "MEMORY", "USAGE", "missing-key");
     EXPECT_REPLY("$-1\r\n");
 
+    /* SAMPLES requires a non-negative integer operand. */
+    cmd(5, "MEMORY", "USAGE", "mk", "SAMPLES", "1");
+    DD_CHECK(g_out.len > 1 && g_out.data[0] == ':');
+    cmd(4, "MEMORY", "USAGE", "mk", "SAMPLES");
+    EXPECT_REPLY("-ERR syntax error\r\n");
+    cmd(5, "MEMORY", "USAGE", "mk", "SAMPLES", "-1");
+    EXPECT_REPLY("-ERR syntax error\r\n");
+    cmd(5, "MEMORY", "USAGE", "mk", "SAMPLES", "nope");
+    EXPECT_REPLY("-ERR value is not an integer or out of range\r\n");
+
     cmd(2, "MEMORY", "STATS");
     DD_CHECK(g_out.len > 1 && g_out.data[0] == '*');
     DD_CHECK(strstr(g_out.data, "used_memory") != NULL);

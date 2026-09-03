@@ -7618,22 +7618,32 @@ static void command_memory(session *s, const resp_value *argv, size_t argc,
         return;
     }
 
-    if (ci_equal(sub, sl, "USAGE") && (argc == 3 || argc == 4)) {
+    if (ci_equal(sub, sl, "USAGE") && argc >= 3) {
         const char *key;
         size_t kl;
         uint64_t usage;
         if (!arg_str(&argv[2], &key, &kl))
             goto bad_type;
-        if (argc == 4) {
-            /* SAMPLES is accepted and ignored for the deterministic
-             * single-thread estimate; Redis clients send it as a hint. */
-            const char *opt;
-            size_t ol;
-            if (!arg_str(&argv[3], &opt, &ol) ||
-                !ci_equal(opt, ol, "SAMPLES")) {
+        if (argc != 3) {
+            const char *opt, *sample_text;
+            size_t ol, sample_len;
+            long long samples;
+            if (argc != 5 || !arg_str(&argv[3], &opt, &ol) ||
+                !ci_equal(opt, ol, "SAMPLES") ||
+                !arg_str(&argv[4], &sample_text, &sample_len)) {
                 resp_write_error(out, "ERR syntax error", 16);
                 return;
             }
+            if (!parse_i64(sample_text, sample_len, &samples)) {
+                resp_write_error(out, ERR_NOT_INT, sizeof(ERR_NOT_INT) - 1);
+                return;
+            }
+            if (samples < 0) {
+                resp_write_error(out, "ERR syntax error", 16);
+                return;
+            }
+            /* The deterministic ddup object layout has no sampled nested
+             * encodings, so a validated SAMPLES hint needs no extra work. */
         }
         usage = command_memory_usage(s->d, key, kl, now_ms);
         if (usage == 0)

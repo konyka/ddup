@@ -1568,3 +1568,10 @@ The authorization hot path remains the same pre-expanded bitset lookup.
 Adding a plaintext password rule clears the fixed `no_password` flag before the
 atomic user commit. Authentication remains a constant-time comparison path and
 does not add allocation or synchronization.
+
+### Phase 201: MEMORY USAGE SAMPLES validation
+
+`MEMORY USAGE` validates its optional `SAMPLES <count>` pair in-place before
+the O(1) deterministic estimate. ddup has no sampled nested encoding, so the
+validated hint has no allocation, scan, or data-path cost while malformed
+requests fail closed.

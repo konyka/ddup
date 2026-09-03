@@ -185,6 +185,9 @@ bounded channel state as `&*` and an empty rule set.
   clients can distinguish all-access domains from empty rule sets.
   Adding `>password` clears `nopass` and restores password verification, matching
   Redis ACL rule ordering semantics.
+  `MEMORY USAGE key SAMPLES count` now requires exactly one non-negative integer
+  count; ddup validates the Redis option boundary even though its deterministic
+  object model does not need sampling work.
 - Cluster slot maintenance: `SFLUSH` intersects requested ranges with local
   ownership and returns coalesced flushed ranges; `TRIMSLOTS RANGES` validates
   ownership before deleting keys from unserved slots. Both paths collect keys
