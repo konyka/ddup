@@ -327,3 +327,8 @@ enabled and `-1` otherwise, matching the `TRACKINGINFO.redirect` field.
 
 Network sessions now reject `CLIENT TRACKING ... REDIRECT <id>` when the target
 client does not exist, matching Redis' fail-closed control-plane validation.
+
+Mode-less `CLIENT TRACKING ON` preserves Redis' default tracking mode instead of
+implicitly selecting OPTOUT. `CLIENT TRACKINGINFO` therefore reports only `on`
+for a default session, while `CLIENT CACHING YES|NO` is rejected unless OPTIN or
+OPTOUT was explicitly enabled.

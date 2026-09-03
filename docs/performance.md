@@ -1653,3 +1653,11 @@ before mutating session state. The check is O(number of connections), occurs
 only on the control command, and adds no allocation or cost to ordinary requests.
 Embedded sessions without a server hook retain the host-controlled compatibility
 path.
+
+### Phase 213: CLIENT TRACKING default mode
+
+Mode-less `CLIENT TRACKING ON` now preserves `tracking_mode == 0`, representing
+Redis' default tracking behavior. The state transition is a constant-time branch
+with no allocation; `TRACKINGINFO` emits only the active mode flags, and
+`CLIENT CACHING` rejects default-mode sessions before mutating state. Existing
+OPTIN/OPTOUT sessions retain their mode when re-enabled without an explicit mode.

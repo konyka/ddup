@@ -119,6 +119,18 @@ static void test_client_tracking_state_machine(void)
     exec_sess(s, T0, &out, 2, "CLIENT", "TRACKINGINFO");
     EXPECT(out, "*6\r\n$5\r\nflags\r\n*1\r\n$3\r\noff\r\n$8\r\nredirect\r\n:-1\r\n$8\r\nprefixes\r\n*0\r\n");
 
+    /* Plain TRACKING ON keeps Redis' default tracking mode (no OPTIN/OPTOUT). */
+    exec_sess(s, T0, &out, 3, "CLIENT", "TRACKING", "ON");
+    EXPECT(out, "+OK\r\n");
+    exec_sess(s, T0, &out, 2, "CLIENT", "TRACKINGINFO");
+    DD_CHECK(strstr(out.data, "$2\r\non\r\n") != NULL);
+    DD_CHECK(strstr(out.data, "optin") == NULL);
+    DD_CHECK(strstr(out.data, "optout") == NULL);
+    exec_sess(s, T0, &out, 3, "CLIENT", "CACHING", "YES");
+    DD_CHECK(strstr(out.data, "CLIENT CACHING can be called only") != NULL);
+    exec_sess(s, T0, &out, 3, "CLIENT", "TRACKING", "OFF");
+    EXPECT(out, "+OK\r\n");
+
     exec_sess(s, T0, &out, 3, "CLIENT", "CACHING", "YES");
     DD_CHECK(strstr(out.data, "CLIENT CACHING can be called only") != NULL);
     exec_sess(s, T0, &out, 4, "CLIENT", "TRACKING", "ON", "OPTIN");
@@ -131,6 +143,8 @@ static void test_client_tracking_state_machine(void)
     EXPECT(out, "+OK\r\n");
     exec_sess(s, T0, &out, 3, "CLIENT", "TRACKING", "ON");
     EXPECT(out, "+OK\r\n");
+    exec_sess(s, T0, &out, 2, "CLIENT", "TRACKINGINFO");
+    DD_CHECK(strstr(out.data, "optout") == NULL);
     exec_sess(s, T0, &out, 2, "CLIENT", "GETREDIR");
     EXPECT(out, ":0\r\n");
     exec_sess(s, T0, &out, 3, "CLIENT", "CACHING", "YES");
@@ -147,7 +161,7 @@ static void test_client_tracking_state_machine(void)
     exec_sess(s, T0, &out, 3, "CLIENT", "TRACKING", "ON");
     EXPECT(out, "+OK\r\n");
     exec_sess(s, T0, &out, 3, "CLIENT", "CACHING", "YES");
-    DD_CHECK(strstr(out.data, "CACHING YES is only valid") != NULL);
+    DD_CHECK(strstr(out.data, "CLIENT CACHING can be called only") != NULL);
 
     exec_sess(s, T0, &out, 4, "CLIENT", "TRACKING", "ON", "OPTIN");
     EXPECT(out, "-ERR You can't switch OPTIN/OPTOUT mode before disabling tracking for this client, and then re-enabling it with a different mode.\r\n");

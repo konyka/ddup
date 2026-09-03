@@ -7527,8 +7527,11 @@ static void command_client(session *s, const resp_value *argv, size_t argc,
             return;
         }
         s->tracking = 1;
-        if (mode != 0 || !was_tracking)
-            s->tracking_mode = mode == 0 ? 3 : mode;
+        if (mode != 0)
+            s->tracking_mode = mode;
+        else if (!was_tracking)
+            /* A mode-less enable uses Redis' default tracking semantics. */
+            s->tracking_mode = 0;
         s->tracking_noloop = noloop;
         s->tracking_redirect = redirect;
         resp_write_simple_string(out, "OK", 2);

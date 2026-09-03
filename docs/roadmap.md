@@ -743,3 +743,6 @@
   - [x] CLIENT TRACKING REDIRECT 安全校验：网络 session 启用重定向前验证
     目标连接仍存在；不存在的 ID fail-closed，避免保存失效控制面状态
     （Phase 212）
+  - [x] CLIENT TRACKING 默认模式修正：无 `BCAST/OPTIN/OPTOUT` 的首次
+    `TRACKING ON` 保持 Redis 默认 tracking 语义；`TRACKINGINFO` 不伪造
+    `optout`，`CACHING YES|NO` 仅在显式 OPTIN/OPTOUT 下可用（Phase 213）
