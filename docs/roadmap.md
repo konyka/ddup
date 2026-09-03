@@ -755,3 +755,5 @@
     PREFIX/NOLOOP/REDIRECT/CACHING，避免模式专属状态跨模式残留（Phase 216）
   - [x] CLIENT TRACKING PREFIX 重叠校验：拒绝重复或前缀包含关系，失败请求
     保持原 tracking 状态；使用固定槽位内存比较，避免额外堆分配（Phase 217）
+  - [x] CLIENT SETINFO 元数据：保存并展示 `LIB-NAME/LIB-VER`，校验 ASCII
+    可打印字符、支持空值清除，并在 `CLIENT INFO/LIST` 中安全输出（Phase 218）

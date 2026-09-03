@@ -7652,7 +7652,7 @@ static void command_client(session *s, const resp_value *argv, size_t argc,
         return;
     }
     if (ci_equal(sub, sl, "INFO") && argc == 2) {
-        char buf[192];
+        char buf[256];
         long long id = s->client_id(s->client_ctx, s);
         const char *name;
         size_t nl = 0;
@@ -7660,6 +7660,21 @@ static void command_client(session *s, const resp_value *argv, size_t argc,
         name = s->client_getname(s->client_ctx, s, &nl);
         n = snprintf(buf, sizeof(buf), "id=%lld name=%.*s", id,
                      (int)nl, name == NULL ? "" : name);
+        if (n >= 0 && (size_t)n < sizeof(buf)) {
+            int extra = snprintf(buf + n, sizeof(buf) - (size_t)n,
+                                 " lib-name=%s lib-ver=%s",
+                                 s->client_lib_name, s->client_lib_ver);
+            if (extra < 0)
+                n = 0;
+            else if ((size_t)extra >= sizeof(buf) - (size_t)n)
+                n = (int)sizeof(buf) - 1;
+            else
+                n += extra;
+        } else if (n < 0) {
+            n = 0;
+        } else {
+            n = (int)sizeof(buf) - 1;
+        }
         resp_write_bulk(out, buf, (size_t)n);
         return;
     }
@@ -7669,12 +7684,30 @@ static void command_client(session *s, const resp_value *argv, size_t argc,
         if (!arg_str(&argv[2], &attr, &al) ||
             !arg_str(&argv[3], &val, &vl))
             goto bad_type;
-        (void)val;
-        (void)vl;
         if (!ci_equal(attr, al, "lib-name") &&
             !ci_equal(attr, al, "lib-ver")) {
             resp_write_error(out, ERR_SYNTAX, sizeof(ERR_SYNTAX) - 1);
             return;
+        }
+        {
+            size_t i;
+            char *dst = ci_equal(attr, al, "lib-name") ?
+                        s->client_lib_name : s->client_lib_ver;
+            if (vl >= 64) {
+                static const char E[] = "ERR client info value is too long";
+                resp_write_error(out, E, sizeof(E) - 1);
+                return;
+            }
+            for (i = 0; i < vl; i++) {
+                if ((unsigned char)val[i] < '!' ||
+                    (unsigned char)val[i] > '~') {
+                    static const char E[] = "ERR client info value cannot contain spaces, newlines or special characters.";
+                    resp_write_error(out, E, sizeof(E) - 1);
+                    return;
+                }
+            }
+            memcpy(dst, val, vl);
+            dst[vl] = '\0';
         }
         resp_write_simple_string(out, "OK", 2);
         return;
@@ -24090,6 +24123,8 @@ static void session_execute_at_raw(session *s, const resp_value *argv,
         s->tracking_noloop = 0;
         s->tracking_redirect = 0;
         s->tracking_prefix_count = 0;
+        s->client_lib_name[0] = '\0';
+        s->client_lib_ver[0] = '\0';
         s->reply_mode = 0;
         s->db_index = 0;
         if (s->sel_fn != NULL)

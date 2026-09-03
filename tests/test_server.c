@@ -210,6 +210,105 @@ static void test_client_tracking_redirect_validation(void)
     server_destroy(s);
 }
 
+static void test_client_setinfo_metadata(void)
+{
+    server *s = make_server();
+    pal_socket_t c;
+    char buf[512];
+    size_t got = 0;
+    int iter = 0;
+    DD_CHECK(s != NULL);
+    if (s == NULL)
+        return;
+    c = connect_client(s);
+    roundtrip(s, c,
+              "*4\r\n$6\r\nCLIENT\r\n$7\r\nSETINFO\r\n$8\r\nLIB-NAME\r\n$3\r\nfoo\r\n",
+              "+OK\r\n");
+    roundtrip(s, c,
+              "*4\r\n$6\r\nCLIENT\r\n$7\r\nSETINFO\r\n$7\r\nLIB-VER\r\n$3\r\n1.2\r\n",
+              "+OK\r\n");
+    {
+        const char req[] = "*2\r\n$6\r\nCLIENT\r\n$4\r\nINFO\r\n";
+        DD_CHECK_EQ_INT((long long)(sizeof(req) - 1),
+                        (long long)pal_send(c, req, sizeof(req) - 1));
+    }
+    while (got < sizeof(buf) - 1 && iter++ < 10000) {
+        ptrdiff_t n;
+        server_run_once(s, 50);
+        n = pal_recv(c, buf + got, sizeof(buf) - 1 - got);
+        if (n > 0)
+            got += (size_t)n;
+        if (got != 0 && buf[got - 2] == '\r' && buf[got - 1] == '\n')
+            break;
+    }
+    buf[got] = '\0';
+    DD_CHECK(strstr(buf, "lib-name=foo") != NULL);
+    DD_CHECK(strstr(buf, "lib-ver=1.2") != NULL);
+    {
+        char longv[64];
+        char req[512];
+        char listbuf[512];
+        size_t listgot = 0;
+        memset(longv, 'x', sizeof(longv) - 1);
+        longv[sizeof(longv) - 1] = '\0';
+        (void)snprintf(req, sizeof(req),
+                       "*4\r\n$6\r\nCLIENT\r\n$7\r\nSETINFO\r\n$8\r\nLIB-NAME\r\n$63\r\n%s\r\n",
+                       longv);
+        roundtrip(s, c, req, "+OK\r\n");
+        (void)snprintf(req, sizeof(req),
+                       "*4\r\n$6\r\nCLIENT\r\n$7\r\nSETINFO\r\n$7\r\nLIB-VER\r\n$63\r\n%s\r\n",
+                       longv);
+        roundtrip(s, c, req, "+OK\r\n");
+        {
+            const char info_req[] = "*2\r\n$6\r\nCLIENT\r\n$4\r\nINFO\r\n";
+            got = 0;
+            DD_CHECK_EQ_INT((long long)(sizeof(info_req) - 1),
+                            (long long)pal_send(c, info_req,
+                                                 sizeof(info_req) - 1));
+            iter = 0;
+            while (got < sizeof(buf) - 1 && iter++ < 10000) {
+                ptrdiff_t n;
+                server_run_once(s, 50);
+                n = pal_recv(c, buf + got, sizeof(buf) - 1 - got);
+                if (n > 0)
+                    got += (size_t)n;
+                if (got >= 2 && buf[got - 2] == '\r' && buf[got - 1] == '\n')
+                    break;
+            }
+            DD_CHECK(got <= 191);
+        }
+        {
+            const char list_req[] = "*2\r\n$6\r\nCLIENT\r\n$4\r\nLIST\r\n";
+            int list_iter = 0;
+            DD_CHECK_EQ_INT((long long)(sizeof(list_req) - 1),
+                            (long long)pal_send(c, list_req,
+                                                 sizeof(list_req) - 1));
+            while (listgot < sizeof(listbuf) - 1 && list_iter++ < 10000) {
+                ptrdiff_t n;
+                server_run_once(s, 50);
+                n = pal_recv(c, listbuf + listgot,
+                             sizeof(listbuf) - 1 - listgot);
+                if (n > 0)
+                    listgot += (size_t)n;
+                if (listgot >= 2 && listbuf[listgot - 2] == '\r' &&
+                    listbuf[listgot - 1] == '\n')
+                    break;
+            }
+            listbuf[listgot] = '\0';
+            DD_CHECK(strstr(listbuf, "lib-name=") != NULL);
+            DD_CHECK(strstr(listbuf, "lib-ver=") != NULL);
+        }
+    }
+    roundtrip(s, c,
+              "*4\r\n$6\r\nCLIENT\r\n$7\r\nSETINFO\r\n$8\r\nLIB-NAME\r\n$1\r\n \r\n",
+              "-ERR client info value cannot contain spaces, newlines or special characters.\r\n");
+    roundtrip(s, c,
+              "*4\r\n$6\r\nCLIENT\r\n$7\r\nSETINFO\r\n$8\r\nLIB-NAME\r\n$0\r\n\r\n",
+              "+OK\r\n");
+    pal_close(c);
+    server_destroy(s);
+}
+
 static void test_monitor_stream(void)
 {
     server *s = make_server();
@@ -1401,6 +1500,7 @@ static void run_all_tests(void)
     DD_RUN(test_ping_set_get);
     DD_RUN(test_client_reply_modes);
     DD_RUN(test_client_tracking_redirect_validation);
+    DD_RUN(test_client_setinfo_metadata);
     DD_RUN(test_monitor_stream);
     DD_RUN(test_hotkeys_sampled_key_metrics);
     DD_RUN(test_hotkeys_multi_key_commands);

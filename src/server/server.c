@@ -2565,14 +2565,17 @@ static void srv_client_list(void *ctx, resp_buf *out)
     for (i = 0; i < srv->nconns; i++) {
         conn *c = srv->conns[i];
         char ip[64] = "0.0.0.0";
-        char line[256];
+        char line[512];
         int n;
         (void)pal_get_peer_ip(c->fd, ip, sizeof(ip));
         n = snprintf(line, sizeof(line),
-                     "id=%llu addr=%s name=%s\n",
+                     "id=%llu addr=%s name=%s lib-name=%s lib-ver=%s\n",
                      (unsigned long long)c->id, ip,
-                     c->name_len == 0 ? "" : c->name);
-        if (n > 0 && resp_buf_reserve(&body, (size_t)n) == 0) {
+                     c->name_len == 0 ? "" : c->name,
+                     c->sess == NULL ? "" : c->sess->client_lib_name,
+                     c->sess == NULL ? "" : c->sess->client_lib_ver);
+        if (n > 0 && (size_t)n < sizeof(line) &&
+            resp_buf_reserve(&body, (size_t)n) == 0) {
             memcpy(body.data + body.len, line, (size_t)n);
             body.len += (size_t)n;
         }

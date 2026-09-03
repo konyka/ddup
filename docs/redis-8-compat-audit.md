@@ -348,3 +348,8 @@ preventing mode-specific state from leaking into the default tracking mode.
 Redis-compatible PREFIX validation now rejects duplicate or overlapping prefix
 strings atomically. The bounded session state remains unchanged on failure, and
 the check uses only fixed inline storage.
+
+`CLIENT SETINFO LIB-NAME/LIB-VER` now validates printable ASCII values, stores
+bounded metadata in the connection session, supports empty-value clearing, and
+exposes the fields through `CLIENT INFO` and `CLIENT LIST` with safe bounded
+formatting.

@@ -75,6 +75,8 @@ typedef struct session {
     int (*acl_command)(void *ctx, struct session *s, const resp_value *argv,
                        size_t argc, resp_buf *out);
     char acl_username[64];
+    char client_lib_name[64];
+    char client_lib_ver[64];
     /* multi-db selection (SELECT/SWAPDB): stack sessions have no hook and
      * only db 0 exists */
     int db_index;

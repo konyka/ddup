@@ -1689,3 +1689,10 @@ Each new bounded PREFIX is compared against the existing fixed slots up to the
 shorter length. Duplicate and containing prefixes fail before session mutation,
 with O(prefixes x prefix-length) control-path work, no heap allocation, and no
 impact on ordinary command execution.
+
+### Phase 218: CLIENT SETINFO metadata
+
+`LIB-NAME` and `LIB-VER` use fixed 64-byte session fields. Validation is O(value
+length) with no heap allocation; `CLIENT INFO` uses a bounded stack renderer,
+and `CLIENT LIST` uses a larger fixed line buffer with an explicit truncation
+guard. Metadata updates do not add work to ordinary data commands.
