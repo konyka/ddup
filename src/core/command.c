@@ -11969,7 +11969,21 @@ static void command_latency(session *s, const resp_value *argv, size_t argc,
         return;
     }
     if (ci_equal(sub, sl, "HISTORY") && argc == 3) {
-        resp_write_array_header(out, 0);
+        const char *event;
+        size_t el;
+        if (!arg_str(&argv[2], &event, &el))
+            goto bad;
+        if (el == 0 || el >= 96) {
+            resp_write_error(out, "ERR No samples available for event ''", 37);
+            return;
+        }
+        {
+            char msg[128];
+            int n = snprintf(msg, sizeof(msg),
+                             "ERR No samples available for event '%.*s'",
+                             (int)el, event);
+            resp_write_error(out, msg, (size_t)n);
+        }
         return;
     }
     if (ci_equal(sub, sl, "RESET") && argc >= 2) {

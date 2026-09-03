@@ -192,6 +192,8 @@ bounded channel state as `&*` and an empty rule set.
   entries, matching Redis pagination semantics while retaining the bounded ring.
   `LATENCY GRAPH <event>` returns Redis' no-samples error when the event has no
   recorded data; ddup no longer emits a fabricated graph payload.
+  `LATENCY HISTORY <event>` applies the same no-samples error semantics instead
+  of returning an empty array for an unknown event.
 - Cluster slot maintenance: `SFLUSH` intersects requested ranges with local
   ownership and returns coalesced flushed ranges; `TRIMSLOTS RANGES` validates
   ownership before deleting keys from unserved slots. Both paths collect keys

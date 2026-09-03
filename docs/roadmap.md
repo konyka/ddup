@@ -719,3 +719,5 @@
     全部条目，避免 Redis 客户端分页语义不一致（Phase 202）
   - [x] LATENCY GRAPH 无样本 fail-closed：未知或无数据事件返回明确错误，
     不再伪造成功图形响应，并限制事件名格式化边界（Phase 203）
+  - [x] LATENCY HISTORY 无样本 fail-closed：未知或无数据事件返回明确错误，
+    与 Redis 8 的事件查询语义一致（Phase 204）

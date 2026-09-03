@@ -288,6 +288,8 @@ static void test_server_management_commands(void)
     EXPECT_REPLY("*0\r\n");
     cmd(3, "LATENCY", "GRAPH", "missing-event");
     EXPECT_REPLY("-ERR No samples available for event 'missing-event'\r\n");
+    cmd(3, "LATENCY", "HISTORY", "missing-event");
+    EXPECT_REPLY("-ERR No samples available for event 'missing-event'\r\n");
     cmd(2, "MODULE", "LIST");
     EXPECT_REPLY("*0\r\n");
     cmd(2, "SENTINEL", "MASTERS");

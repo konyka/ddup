@@ -1588,3 +1588,9 @@ additional allocation or copy beyond the existing RESP output.
 returning a synthetic success payload. Event names are formatted into a bounded
 stack buffer; malformed or oversized names take a constant-time generic error
 path with no heap allocation.
+
+### Phase 204: LATENCY HISTORY no-sample handling
+
+`LATENCY HISTORY` uses the same bounded no-sample error path as `GRAPH`, keeping
+event formatting allocation-free and avoiding ambiguous empty-array success
+responses for unknown events.
