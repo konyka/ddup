@@ -312,6 +312,7 @@ static db *srv_select_db(void *ctx, int idx);
 static void srv_aof_log(server *srv, int db_index, const resp_value *argv,
                         size_t argc);
 static long long srv_client_id(void *ctx, struct session *s);
+static int srv_client_exists(void *ctx, long long id);
 static int srv_client_setname(void *ctx, struct session *s,
                               const char *name, size_t len);
 static const char *srv_client_getname(void *ctx, struct session *s,
@@ -1999,6 +2000,7 @@ static conn *conn_create(server *srv, pal_socket_t fd)
     c->sess->reset_hook = srv_reset;
     c->sess->client_ctx = srv;
     c->sess->client_id = srv_client_id;
+    c->sess->client_exists = srv_client_exists;
     c->sess->client_setname = srv_client_setname;
     c->sess->client_getname = srv_client_getname;
     c->sess->client_list = srv_client_list;
@@ -2518,6 +2520,18 @@ static long long srv_client_id(void *ctx, struct session *s)
 {
     conn *c = client_conn_from_session((server *)ctx, s);
     return c == NULL ? 0 : (long long)c->id;
+}
+
+static int srv_client_exists(void *ctx, long long id)
+{
+    server *srv = (server *)ctx;
+    size_t i;
+    if (id <= 0)
+        return 0;
+    for (i = 0; i < srv->nconns; i++)
+        if ((long long)srv->conns[i]->id == id)
+            return 1;
+    return 0;
 }
 
 static int srv_client_setname(void *ctx, struct session *s,
@@ -3742,6 +3756,7 @@ void server_conn_rehome(server *s, void *conn_ptr)
     c->sess->reset_ctx = s;
     c->sess->cluster_ctx = s;
     c->sess->client_ctx = s;
+    c->sess->client_exists = srv_client_exists;
     c->sess->slowlog_ctx = s;
     c->sess->bgrewriteaof_ctx = s;
     c->sess->hotkeys_ctx = s;

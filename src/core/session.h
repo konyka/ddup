@@ -234,6 +234,7 @@ typedef struct session {
     /* server ops/introspection hooks (server-owned; NULL in stack tests) */
     void *client_ctx;
     long long (*client_id)(void *ctx, struct session *s);
+    int (*client_exists)(void *ctx, long long id);
     int (*client_setname)(void *ctx, struct session *s, const char *name,
                           size_t len);
     const char *(*client_getname)(void *ctx, struct session *s,

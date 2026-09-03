@@ -324,3 +324,6 @@ tracking and `RESET` clear the hint immediately.
 
 `CLIENT GETREDIR` now returns the configured redirect client ID while tracking is
 enabled and `-1` otherwise, matching the `TRACKINGINFO.redirect` field.
+
+Network sessions now reject `CLIENT TRACKING ... REDIRECT <id>` when the target
+client does not exist, matching Redis' fail-closed control-plane validation.

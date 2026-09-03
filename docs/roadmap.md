@@ -740,3 +740,6 @@
   - [x] CLIENT GETREDIR 状态一致性：tracking 启用并配置 `REDIRECT <id>` 时
     返回实际重定向 ID；未启用或关闭 tracking 时返回 `-1`，与 TRACKINGINFO
     保持一致（Phase 211）
+  - [x] CLIENT TRACKING REDIRECT 安全校验：网络 session 启用重定向前验证
+    目标连接仍存在；不存在的 ID fail-closed，避免保存失效控制面状态
+    （Phase 212）

@@ -194,6 +194,22 @@ static void test_client_reply_modes(void)
     server_destroy(s);
 }
 
+static void test_client_tracking_redirect_validation(void)
+{
+    server *s = make_server();
+    pal_socket_t c;
+    DD_CHECK(s != NULL);
+    if (s == NULL)
+        return;
+    c = connect_client(s);
+    roundtrip(s, c,
+              "*5\r\n$6\r\nCLIENT\r\n$8\r\nTRACKING\r\n$2\r\nON\r\n"
+              "$8\r\nREDIRECT\r\n$2\r\n-1\r\n",
+              "-ERR The client ID you want redirect to does not exist\r\n");
+    pal_close(c);
+    server_destroy(s);
+}
+
 static void test_monitor_stream(void)
 {
     server *s = make_server();
@@ -1384,6 +1400,7 @@ static void run_all_tests(void)
     DD_RUN(test_cluster_save_close_failure_preserves_state);
     DD_RUN(test_ping_set_get);
     DD_RUN(test_client_reply_modes);
+    DD_RUN(test_client_tracking_redirect_validation);
     DD_RUN(test_monitor_stream);
     DD_RUN(test_hotkeys_sampled_key_metrics);
     DD_RUN(test_hotkeys_multi_key_commands);

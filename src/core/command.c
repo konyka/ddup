@@ -7492,6 +7492,12 @@ static void command_client(session *s, const resp_value *argv, size_t argc,
                     resp_write_error(out, ERR_NOT_INT, sizeof(ERR_NOT_INT) - 1);
                     return;
                 }
+                if (s->client_exists != NULL &&
+                    !s->client_exists(s->client_ctx, redirect)) {
+                    static const char E[] = "ERR The client ID you want redirect to does not exist";
+                    resp_write_error(out, E, sizeof(E) - 1);
+                    return;
+                }
             } else if (ci_equal(opt, opt_len, "PREFIX")) {
                 if (++i >= argc || !arg_str(&argv[i], &opt, &opt_len) ||
                     opt_len >= sizeof(s->tracking_prefixes[0]) ||

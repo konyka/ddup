@@ -1645,3 +1645,11 @@ is one predictable branch per lookup and one store per command.
 The command is handled before optional server client hooks, so embedded sessions
 and network sessions expose the same state and disabled tracking deterministically
 returns `-1`.
+
+### Phase 212: CLIENT TRACKING redirect validation
+
+Redirect validation uses a server-owned linear scan of the live connection table
+before mutating session state. The check is O(number of connections), occurs
+only on the control command, and adds no allocation or cost to ordinary requests.
+Embedded sessions without a server hook retain the host-controlled compatibility
+path.
