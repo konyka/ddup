@@ -171,6 +171,7 @@ typedef struct session {
     /* CLIENT REPLY state: 0 sends replies, 1 suppresses replies, 2 skips
      * exactly the next command reply. */
     int reply_mode;
+    int no_touch;
     int monitor_enabled;
     void *monitor_ctx;
     int (*monitor_start)(void *ctx, struct session *s);

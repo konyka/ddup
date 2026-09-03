@@ -728,3 +728,6 @@
   - [x] CLIENT REPLY 连接语义：实现 `ON/OFF/SKIP` 会话级回复模式；`OFF`
     持续抑制后续回复，`SKIP` 仅跳过下一条，命令副作用与 AOF/监控保持执行
     （Phase 207）
+  - [x] CLIENT NO-TOUCH 连接语义：`ON` 禁止当前连接访问 key 时刷新 LRU
+    元数据，`OFF` 恢复 touch；采用执行期瞬态标志，保持命令结果与持久化语义
+    不变（Phase 208）

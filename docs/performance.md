@@ -1615,3 +1615,11 @@ length and truncates only the current command's newly appended RESP bytes when
 `OFF` or `SKIP` applies. Command execution, persistence, monitoring, and
 statistics still run, while suppression adds one length snapshot and a branch
 on the connection hot path.
+
+### Phase 208: CLIENT NO-TOUCH
+
+`NO-TOUCH` is a session-local integer flag. During command execution the
+selected database receives a transient `no_touch_active` bit, so normal reads
+use `rh_get()` instead of `rh_get_touch()` without changing command signatures
+or allocating. The bit is cleared immediately after dispatch; the extra cost
+is one predictable branch per lookup and one store per command.

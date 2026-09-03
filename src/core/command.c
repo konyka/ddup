@@ -99,6 +99,7 @@ void db_init(db *d)
     d->expired_keys = 0;
     d->evicted_keys = 0;
     d->used_memory = 0;
+    d->no_touch_active = 0;
     d->dirty = 0;
     d->maxmemory = 0;
     d->maxmemory_policy = DB_POLICY_ALLKEYS_LRU;
@@ -351,7 +352,11 @@ static int db_get(db *d, const char *key, size_t klen, const char **val,
                   size_t *vlen, uint64_t now_ms)
 {
     db_expire_if_needed(d, key, klen, now_ms);
-    if (!rh_get_touch(&d->table, key, klen, val, vlen, lru_clock(now_ms)))
+    if (d->no_touch_active) {
+        if (!rh_get(&d->table, key, klen, val, vlen))
+            return 0;
+    } else if (!rh_get_touch(&d->table, key, klen, val, vlen,
+                             lru_clock(now_ms)))
         return 0;
     if (obj_is_tier(*val, *vlen))
         return db_tier_materialize(d, key, klen, val, vlen, now_ms);
@@ -568,7 +573,13 @@ static int db_tier_materialize(db *d, const char *key, size_t klen,
     }
     if (tier_del(d->tier, rid) != 0)
         d->tier_io_error = 1;
-    if (!rh_get_touch(&d->table, key, klen, val, vlen, lru_clock(now_ms))) {
+    if (d->no_touch_active) {
+        if (!rh_get(&d->table, key, klen, val, vlen)) {
+            d->tier_io_error = 1;
+            return 0;
+        }
+    } else if (!rh_get_touch(&d->table, key, klen, val, vlen,
+                             lru_clock(now_ms))) {
         d->tier_io_error = 1;
         return 0;
     }
@@ -7402,6 +7413,18 @@ static void command_client(session *s, const resp_value *argv, size_t argc,
             s->reply_mode = 1;
         else
             s->reply_mode = 2;
+        resp_write_simple_string(out, "OK", 2);
+        return;
+    }
+    if (ci_equal(sub, sl, "NO-TOUCH") && argc == 3) {
+        const char *mode;
+        size_t mdl;
+        if (!arg_str(&argv[2], &mode, &mdl) ||
+            (!ci_equal(mode, mdl, "ON") && !ci_equal(mode, mdl, "OFF"))) {
+            resp_write_error(out, ERR_SYNTAX, sizeof(ERR_SYNTAX) - 1);
+            return;
+        }
+        s->no_touch = ci_equal(mode, mdl, "ON");
         resp_write_simple_string(out, "OK", 2);
         return;
     }
@@ -23875,6 +23898,7 @@ static void session_execute_at_raw(session *s, const resp_value *argv,
         s->multi_error = 0;
         s->read_only = 0;
         s->asking = 0;
+        s->no_touch = 0;
         s->reply_mode = 0;
         s->db_index = 0;
         if (s->sel_fn != NULL)
@@ -23977,7 +24001,9 @@ void session_execute_at(session *s, const resp_value *argv, size_t argc,
 {
     int mode_before = s->reply_mode;
     size_t out_before = out->len;
+    s->d->no_touch_active = s->no_touch;
     session_execute_at_raw(s, argv, argc, out, now_ms);
+    s->d->no_touch_active = 0;
     /* REPLY ON must be able to re-enable and acknowledge itself.  Likewise,
      * OFF/SKIP are acknowledged before their new mode takes effect. */
     if (mode_before == 1)

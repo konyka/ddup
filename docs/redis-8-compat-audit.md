@@ -306,3 +306,8 @@ AUDIT-BASELINE-END -->
 suppresses subsequent command replies until `ON`; `SKIP` suppresses exactly one
 subsequent reply and automatically returns to normal mode. The control command
 itself is acknowledged before the new mode takes effect.
+
+`CLIENT NO-TOUCH ON|OFF` is implemented as connection-local state. While enabled,
+key reads skip LRU metadata refresh but retain expiry checks, value materialization,
+command side effects, AOF logging, and monitoring. `RESET` restores normal touch
+behavior.

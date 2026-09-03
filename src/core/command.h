@@ -36,6 +36,7 @@ typedef struct db {
     uint64_t expired_keys; /* lazy + active expirations */
     uint64_t evicted_keys;
     uint64_t used_memory;
+    int no_touch_active; /* transient execution flag for CLIENT NO-TOUCH */
     uint64_t dirty;        /* mutation counter (AOF hook trigger) */
     uint64_t maxmemory;    /* bytes; 0 = unlimited */
     int maxmemory_policy;  /* DB_POLICY_* */

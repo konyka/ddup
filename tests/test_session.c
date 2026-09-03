@@ -71,6 +71,39 @@ static void test_session_basic(void)
     db_destroy(&d);
 }
 
+static void test_client_no_touch_preserves_lru(void)
+{
+    db d;
+    session *s;
+    resp_buf out;
+    uint32_t before, after;
+    db_init(&d);
+    resp_buf_init(&out);
+    s = session_create(&d);
+    DD_CHECK(s != NULL);
+    if (s == NULL)
+        return;
+
+    exec_sess(s, 1000000ULL, &out, 3, "SET", "k", "v");
+    before = rh_meta_of(&d.table, "k", 1);
+    exec_sess(s, 4000000ULL, &out, 3, "CLIENT", "NO-TOUCH", "ON");
+    EXPECT(out, "+OK\r\n");
+    exec_sess(s, 9000000ULL, &out, 2, "GET", "k");
+    EXPECT(out, "$1\r\nv\r\n");
+    after = rh_meta_of(&d.table, "k", 1);
+    DD_CHECK_EQ_INT((long long)before, (long long)after);
+
+    exec_sess(s, 12000000ULL, &out, 3, "CLIENT", "NO-TOUCH", "OFF");
+    EXPECT(out, "+OK\r\n");
+    exec_sess(s, 16000000ULL, &out, 2, "GET", "k");
+    EXPECT(out, "$1\r\nv\r\n");
+    DD_CHECK(rh_meta_of(&d.table, "k", 1) != after);
+
+    session_free(s);
+    resp_buf_free(&out);
+    db_destroy(&d);
+}
+
 static void test_auth_flow(void)
 {
     db d;
@@ -378,6 +411,7 @@ int main(void)
 {
     DD_RUN(test_queue_allocation_size_overflow);
     DD_RUN(test_session_basic);
+    DD_RUN(test_client_no_touch_preserves_lru);
     DD_RUN(test_auth_flow);
     DD_RUN(test_auth_username_form);
     DD_RUN(test_auth_without_password_configured);
