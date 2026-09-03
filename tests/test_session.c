@@ -154,14 +154,9 @@ static void test_client_tracking_state_machine(void)
     exec_sess(s, T0, &out, 2, "CLIENT", "GETREDIR");
     EXPECT(out, ":0\r\n");
     exec_sess(s, T0, &out, 3, "CLIENT", "CACHING", "YES");
-    EXPECT(out, "+OK\r\n");
+    EXPECT(out, "-ERR CLIENT CACHING can be called only when the client is in tracking mode with OPTIN or OPTOUT mode enabled\r\n");
     exec_sess(s, T0, &out, 2, "CLIENT", "TRACKINGINFO");
-    DD_CHECK(strstr(out.data, "optin") != NULL);
-    DD_CHECK(strstr(out.data, "caching-yes") != NULL);
-    exec_sess(s, T0, &out, 1, "PING");
-    EXPECT(out, "+PONG\r\n");
-    exec_sess(s, T0, &out, 2, "CLIENT", "TRACKINGINFO");
-    DD_CHECK(strstr(out.data, "caching-yes") == NULL);
+    DD_CHECK(strstr(out.data, "optin") == NULL);
     exec_sess(s, T0, &out, 3, "CLIENT", "TRACKING", "OFF");
     EXPECT(out, "+OK\r\n");
     exec_sess(s, T0, &out, 3, "CLIENT", "TRACKING", "ON");
@@ -175,6 +170,8 @@ static void test_client_tracking_state_machine(void)
     EXPECT(out, "+OK\r\n");
     exec_sess(s, T0, &out, 4, "CLIENT", "TRACKING", "ON", "BCAST");
     EXPECT(out, "+OK\r\n");
+    exec_sess(s, T0, &out, 3, "CLIENT", "TRACKING", "ON");
+    EXPECT(out, "-ERR You can't switch BCAST mode on/off before disabling tracking for this client, and then re-enabling it with a different mode.\r\n");
     exec_sess(s, T0, &out, 5, "CLIENT", "TRACKING", "ON", "BCAST", "OPTIN");
     EXPECT(out, "-ERR OPTIN and OPTOUT are not compatible with BCAST\r\n");
 

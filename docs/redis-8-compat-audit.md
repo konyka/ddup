@@ -336,3 +336,11 @@ OPTOUT was explicitly enabled.
 `CLIENT TRACKING` option parsing is atomic for bounded PREFIX metadata: malformed
 or incompatible requests no longer leave a partially applied prefix in the
 session. Validation uses a fixed stack scratch copy and commits only on success.
+
+Mode-less tracking re-enable matches Redis transitions: OPTIN/OPTOUT returns to
+the default mode and clears mode-specific state, while an active BCAST client
+cannot implicitly switch modes. Tracking errors are emitted with compile-time
+literal lengths so responses are never truncated.
+
+The mode transition also clears PREFIX, NOLOOP, REDIRECT, and CACHING metadata,
+preventing mode-specific state from leaking into the default tracking mode.

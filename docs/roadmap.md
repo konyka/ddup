@@ -748,3 +748,8 @@
     `optout`，`CACHING YES|NO` 仅在显式 OPTIN/OPTOUT 下可用（Phase 213）
   - [x] CLIENT TRACKING 原子选项提交：非法 `PREFIX`/组合不会污染已有
     tracking 元数据；采用固定大小栈临时副本，校验通过后一次性提交（Phase 214）
+  - [x] CLIENT TRACKING 重启模式对齐：无选项重新启用时，OPTIN/OPTOUT
+    回到默认模式并清理专属状态；BCAST 模式按 Redis 规则拒绝隐式切换，
+    错误响应长度改为编译期安全计算（Phase 215）
+  - [x] CLIENT TRACKING 状态清理完整性：模式无选项重启时同步清除
+    PREFIX/NOLOOP/REDIRECT/CACHING，避免模式专属状态跨模式残留（Phase 216）

@@ -1668,3 +1668,17 @@ Tracking PREFIX parsing now uses a fixed `4 x 64` byte stack scratch buffer and
 commits the complete bounded state only after all options pass validation. Failed
 commands therefore perform no partial mutation; the steady-state cost is one
 bounded copy and no heap allocation, while ordinary data commands are unchanged.
+
+### Phase 215: CLIENT TRACKING mode transitions
+
+Mode-less re-enable now performs a constant-time transition to the default mode
+for OPTIN/OPTOUT sessions and clears their mode-specific redirect, caching, and
+NOLOOP/PREFIX state. BCAST remains protected by the existing mode-switch guard.
+Error lengths use `sizeof` on static literals, avoiding truncated RESP payloads
+without adding allocation or data-path work.
+
+### Phase 216: CLIENT TRACKING mode-specific cleanup
+
+The mode-less transition to default tracking clears bounded mode-specific
+metadata in the same constant-time state update. No heap allocation or ordinary
+command-path work is added; the fixed PREFIX storage is reset by count only.

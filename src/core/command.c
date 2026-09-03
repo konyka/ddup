@@ -7433,14 +7433,14 @@ static void command_client(session *s, const resp_value *argv, size_t argc,
         size_t status_len;
         size_t i;
         int mode = 0;
-        int was_tracking = s->tracking;
-        int bcast = 0;
+        int bcast;
         int noloop = 0;
         long long redirect = 0;
         size_t prefix_count = s->tracking_prefix_count;
         char prefixes[4][64];
         if (prefix_count != 0)
             memcpy(prefixes, s->tracking_prefixes, sizeof(prefixes));
+        bcast = s->tracking_mode == 1;
         if (!arg_str(&argv[2], &status, &status_len))
             goto bad_type;
         if (ci_equal(status, status_len, "OFF")) {
@@ -7522,7 +7522,8 @@ static void command_client(session *s, const resp_value *argv, size_t argc,
             return;
         }
         if (s->tracking && s->tracking_mode == 1 && mode != 1) {
-            resp_write_error(out, "ERR You can't switch BCAST mode on/off before disabling tracking for this client, and then re-enabling it with a different mode.", 125);
+            static const char E[] = "ERR You can't switch BCAST mode on/off before disabling tracking for this client, and then re-enabling it with a different mode.";
+            resp_write_error(out, E, sizeof(E) - 1);
             return;
         }
         if (prefix_count != 0 && !bcast) {
@@ -7532,9 +7533,11 @@ static void command_client(session *s, const resp_value *argv, size_t argc,
         s->tracking = 1;
         if (mode != 0)
             s->tracking_mode = mode;
-        else if (!was_tracking)
-            /* A mode-less enable uses Redis' default tracking semantics. */
+        else {
+            /* A mode-less enable selects Redis' default tracking semantics. */
             s->tracking_mode = 0;
+            prefix_count = 0;
+        }
         s->tracking_noloop = noloop;
         s->tracking_redirect = redirect;
         s->tracking_prefix_count = prefix_count;
@@ -7550,7 +7553,8 @@ static void command_client(session *s, const resp_value *argv, size_t argc,
             goto bad_type;
         if (!s->tracking ||
             (s->tracking_mode != 2 && s->tracking_mode != 3)) {
-            resp_write_error(out, "ERR CLIENT CACHING can be called only when the client is in tracking mode with OPTIN or OPTOUT mode enabled", 113);
+            static const char E[] = "ERR CLIENT CACHING can be called only when the client is in tracking mode with OPTIN or OPTOUT mode enabled";
+            resp_write_error(out, E, sizeof(E) - 1);
             return;
         }
         if (ci_equal(mode, mode_len, "YES")) {
