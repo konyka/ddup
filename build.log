@@ -30,8 +30,8 @@
 -- Performing Test CMAKE_HAVE_LIBC_PTHREAD - Success
 -- Found Threads: TRUE
 -- ddup: TLS enabled (OpenSSL 3.0.13)
--- Configuring done (13.5s)
--- Generating done (0.2s)
+-- Configuring done (12.4s)
+-- Generating done (0.1s)
 -- Build files have been written to: /home/runner/work/ddup/ddup/build
 [  1%] Building C object CMakeFiles/ddup_lua.dir/deps/lua/lapi.c.o
 [  1%] Building C object CMakeFiles/ddup_lua.dir/deps/lua/lauxlib.c.o
@@ -383,7 +383,7 @@ In function ‘memcpy’,
     inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:143:5,
     inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:138:13,
     inlined from ‘resp_write_error’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:169:5,
-    inlined from ‘command_client’ at /home/runner/work/ddup/ddup/src/core/command.c:7402:13:
+    inlined from ‘command_client’ at /home/runner/work/ddup/ddup/src/core/command.c:7423:13:
 /usr/include/x86_64-linux-gnu/bits/string_fortified.h:29:10: warning: ‘__builtin_memcpy’ reading 29 bytes from a region of size 28 [-Wstringop-overread]
    29 |   return __builtin___memcpy_chk (__dest, __src, __len,
       |          ^
@@ -391,7 +391,7 @@ In function ‘memcpy’,
     inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:143:5,
     inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:138:13,
     inlined from ‘resp_write_error’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:169:5,
-    inlined from ‘command_acl’ at /home/runner/work/ddup/ddup/src/core/command.c:11842:13:
+    inlined from ‘command_acl’ at /home/runner/work/ddup/ddup/src/core/command.c:11850:13:
 /usr/include/x86_64-linux-gnu/bits/string_fortified.h:29:10: warning: ‘__builtin_memcpy’ reading 109 bytes from a region of size 106 [-Wstringop-overread]
    29 |   return __builtin___memcpy_chk (__dest, __src, __len,
       |          ^
@@ -439,7 +439,7 @@ In function ‘memcpy’,
     inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:143:5,
     inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:138:13,
     inlined from ‘resp_write_error’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:169:5,
-    inlined from ‘command_client’ at /home/runner/work/ddup/ddup/src/core/command.c:7402:13:
+    inlined from ‘command_client’ at /home/runner/work/ddup/ddup/src/core/command.c:7423:13:
 /usr/include/x86_64-linux-gnu/bits/string_fortified.h:29:10: warning: ‘__builtin_memcpy’ reading 29 bytes from a region of size 28 [-Wstringop-overread]
    29 |   return __builtin___memcpy_chk (__dest, __src, __len,
       |          ^
@@ -447,7 +447,7 @@ In function ‘memcpy’,
     inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:143:5,
     inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:138:13,
     inlined from ‘resp_write_error’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:169:5,
-    inlined from ‘command_acl’ at /home/runner/work/ddup/ddup/src/core/command.c:11842:13:
+    inlined from ‘command_acl’ at /home/runner/work/ddup/ddup/src/core/command.c:11850:13:
 /usr/include/x86_64-linux-gnu/bits/string_fortified.h:29:10: warning: ‘__builtin_memcpy’ reading 109 bytes from a region of size 106 [-Wstringop-overread]
    29 |   return __builtin___memcpy_chk (__dest, __src, __len,
       |          ^
@@ -488,10 +488,7 @@ In function ‘memcpy’,
     inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:143:5,
     inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:138:13,
     inlined from ‘resp_write_error’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:169:5,
-    inlined from ‘command_client’ at /home/runner/work/ddup/ddup/src/core/command.c:7402:13:
-/usr/include/x86_64-linux-gnu/bits/string_fortified.h:29:10: warning: ‘__builtin_memcpy’ reading 29 bytes from a region of size 28 [-Wstringop-overread]
-   29 |   return __builtin___memcpy_chk (__dest, __src, __len,
-      |          ^
+    inlined from ‘command_client’ at /home/runner/work/ddup/ddup/src/core/command.c:7423:13:
 In function ‘snprintf’,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:423:9,
     inlined from ‘obj_zset_last_in_lex_range’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1584:39,
@@ -499,11 +496,14 @@ In function ‘snprintf’,
 /usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
    54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
       |          ^
+/usr/include/x86_64-linux-gnu/bits/string_fortified.h:29:10: warning: ‘__builtin_memcpy’ reading 29 bytes from a region of size 28 [-Wstringop-overread]
+   29 |   return __builtin___memcpy_chk (__dest, __src, __len,
+      |          ^
 In function ‘memcpy’,
     inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:143:5,
     inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:138:13,
     inlined from ‘resp_write_error’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:169:5,
-    inlined from ‘command_acl’ at /home/runner/work/ddup/ddup/src/core/command.c:11842:13:
+    inlined from ‘command_acl’ at /home/runner/work/ddup/ddup/src/core/command.c:11850:13:
 /usr/include/x86_64-linux-gnu/bits/string_fortified.h:29:10: warning: ‘__builtin_memcpy’ reading 109 bytes from a region of size 106 [-Wstringop-overread]
    29 |   return __builtin___memcpy_chk (__dest, __src, __len,
       |          ^
@@ -548,16 +548,16 @@ In function ‘memcpy’,
     inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:143:5,
     inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:138:13,
     inlined from ‘resp_write_error’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:169:5,
-    inlined from ‘command_client’ at /home/runner/work/ddup/ddup/src/core/command.c:7402:13:
-/usr/include/x86_64-linux-gnu/bits/string_fortified.h:29:10: warning: ‘__builtin_memcpy’ reading 29 bytes from a region of size 28 [-Wstringop-overread]
+    inlined from ‘command_acl’ at /home/runner/work/ddup/ddup/src/core/command.c:11850:13:
+/usr/include/x86_64-linux-gnu/bits/string_fortified.h:29:10: warning: ‘__builtin_memcpy’ reading 109 bytes from a region of size 106 [-Wstringop-overread]
    29 |   return __builtin___memcpy_chk (__dest, __src, __len,
       |          ^
 In function ‘memcpy’,
     inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:143:5,
     inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:138:13,
     inlined from ‘resp_write_error’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:169:5,
-    inlined from ‘command_acl’ at /home/runner/work/ddup/ddup/src/core/command.c:11842:13:
-/usr/include/x86_64-linux-gnu/bits/string_fortified.h:29:10: warning: ‘__builtin_memcpy’ reading 109 bytes from a region of size 106 [-Wstringop-overread]
+    inlined from ‘command_client’ at /home/runner/work/ddup/ddup/src/core/command.c:7423:13:
+/usr/include/x86_64-linux-gnu/bits/string_fortified.h:29:10: warning: ‘__builtin_memcpy’ reading 29 bytes from a region of size 28 [-Wstringop-overread]
    29 |   return __builtin___memcpy_chk (__dest, __src, __len,
       |          ^
 [ 62%] Built target test_stringx
@@ -601,7 +601,7 @@ In function ‘memcpy’,
     inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:143:5,
     inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:138:13,
     inlined from ‘resp_write_error’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:169:5,
-    inlined from ‘command_acl’ at /home/runner/work/ddup/ddup/src/core/command.c:11842:13:
+    inlined from ‘command_acl’ at /home/runner/work/ddup/ddup/src/core/command.c:11850:13:
 /usr/include/x86_64-linux-gnu/bits/string_fortified.h:29:10: warning: ‘__builtin_memcpy’ reading 109 bytes from a region of size 106 [-Wstringop-overread]
    29 |   return __builtin___memcpy_chk (__dest, __src, __len,
       |          ^
@@ -609,7 +609,7 @@ In function ‘memcpy’,
     inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:143:5,
     inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:138:13,
     inlined from ‘resp_write_error’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:169:5,
-    inlined from ‘command_client’ at /home/runner/work/ddup/ddup/src/core/command.c:7402:13:
+    inlined from ‘command_client’ at /home/runner/work/ddup/ddup/src/core/command.c:7423:13:
 /usr/include/x86_64-linux-gnu/bits/string_fortified.h:29:10: warning: ‘__builtin_memcpy’ reading 29 bytes from a region of size 28 [-Wstringop-overread]
    29 |   return __builtin___memcpy_chk (__dest, __src, __len,
       |          ^
@@ -654,7 +654,7 @@ In function ‘memcpy’,
     inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:143:5,
     inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:138:13,
     inlined from ‘resp_write_error’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:169:5,
-    inlined from ‘command_client’ at /home/runner/work/ddup/ddup/src/core/command.c:7402:13:
+    inlined from ‘command_client’ at /home/runner/work/ddup/ddup/src/core/command.c:7423:13:
 /usr/include/x86_64-linux-gnu/bits/string_fortified.h:29:10: warning: ‘__builtin_memcpy’ reading 29 bytes from a region of size 28 [-Wstringop-overread]
    29 |   return __builtin___memcpy_chk (__dest, __src, __len,
       |          ^
@@ -662,7 +662,7 @@ In function ‘memcpy’,
     inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:143:5,
     inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:138:13,
     inlined from ‘resp_write_error’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:169:5,
-    inlined from ‘command_acl’ at /home/runner/work/ddup/ddup/src/core/command.c:11842:13:
+    inlined from ‘command_acl’ at /home/runner/work/ddup/ddup/src/core/command.c:11850:13:
 /usr/include/x86_64-linux-gnu/bits/string_fortified.h:29:10: warning: ‘__builtin_memcpy’ reading 109 bytes from a region of size 106 [-Wstringop-overread]
    29 |   return __builtin___memcpy_chk (__dest, __src, __len,
       |          ^
@@ -707,7 +707,7 @@ In function ‘memcpy’,
     inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:143:5,
     inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:138:13,
     inlined from ‘resp_write_error’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:169:5,
-    inlined from ‘command_client’ at /home/runner/work/ddup/ddup/src/core/command.c:7402:13:
+    inlined from ‘command_client’ at /home/runner/work/ddup/ddup/src/core/command.c:7423:13:
 /usr/include/x86_64-linux-gnu/bits/string_fortified.h:29:10: warning: ‘__builtin_memcpy’ reading 29 bytes from a region of size 28 [-Wstringop-overread]
    29 |   return __builtin___memcpy_chk (__dest, __src, __len,
       |          ^
@@ -715,7 +715,7 @@ In function ‘memcpy’,
     inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:143:5,
     inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:138:13,
     inlined from ‘resp_write_error’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:169:5,
-    inlined from ‘command_acl’ at /home/runner/work/ddup/ddup/src/core/command.c:11842:13:
+    inlined from ‘command_acl’ at /home/runner/work/ddup/ddup/src/core/command.c:11850:13:
 /usr/include/x86_64-linux-gnu/bits/string_fortified.h:29:10: warning: ‘__builtin_memcpy’ reading 109 bytes from a region of size 106 [-Wstringop-overread]
    29 |   return __builtin___memcpy_chk (__dest, __src, __len,
       |          ^
@@ -797,7 +797,7 @@ In function ‘memcpy’,
     inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:143:5,
     inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:138:13,
     inlined from ‘resp_write_error’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:169:5,
-    inlined from ‘command_client’ at /home/runner/work/ddup/ddup/src/core/command.c:7402:13:
+    inlined from ‘command_client’ at /home/runner/work/ddup/ddup/src/core/command.c:7423:13:
 /usr/include/x86_64-linux-gnu/bits/string_fortified.h:29:10: warning: ‘__builtin_memcpy’ reading 29 bytes from a region of size 28 [-Wstringop-overread]
    29 |   return __builtin___memcpy_chk (__dest, __src, __len,
       |          ^
@@ -805,7 +805,7 @@ In function ‘memcpy’,
     inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:143:5,
     inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:138:13,
     inlined from ‘resp_write_error’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:169:5,
-    inlined from ‘command_acl’ at /home/runner/work/ddup/ddup/src/core/command.c:11842:13:
+    inlined from ‘command_acl’ at /home/runner/work/ddup/ddup/src/core/command.c:11850:13:
 /usr/include/x86_64-linux-gnu/bits/string_fortified.h:29:10: warning: ‘__builtin_memcpy’ reading 109 bytes from a region of size 106 [-Wstringop-overread]
    29 |   return __builtin___memcpy_chk (__dest, __src, __len,
       |          ^
@@ -850,7 +850,7 @@ In function ‘memcpy’,
     inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:143:5,
     inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:138:13,
     inlined from ‘resp_write_error’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:169:5,
-    inlined from ‘command_client’ at /home/runner/work/ddup/ddup/src/core/command.c:7402:13:
+    inlined from ‘command_client’ at /home/runner/work/ddup/ddup/src/core/command.c:7423:13:
 /usr/include/x86_64-linux-gnu/bits/string_fortified.h:29:10: warning: ‘__builtin_memcpy’ reading 29 bytes from a region of size 28 [-Wstringop-overread]
    29 |   return __builtin___memcpy_chk (__dest, __src, __len,
       |          ^
@@ -858,7 +858,7 @@ In function ‘memcpy’,
     inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:143:5,
     inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:138:13,
     inlined from ‘resp_write_error’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:169:5,
-    inlined from ‘command_acl’ at /home/runner/work/ddup/ddup/src/core/command.c:11842:13:
+    inlined from ‘command_acl’ at /home/runner/work/ddup/ddup/src/core/command.c:11850:13:
 /usr/include/x86_64-linux-gnu/bits/string_fortified.h:29:10: warning: ‘__builtin_memcpy’ reading 109 bytes from a region of size 106 [-Wstringop-overread]
    29 |   return __builtin___memcpy_chk (__dest, __src, __len,
       |          ^
@@ -903,7 +903,7 @@ In function ‘memcpy’,
     inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:143:5,
     inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:138:13,
     inlined from ‘resp_write_error’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:169:5,
-    inlined from ‘command_client’ at /home/runner/work/ddup/ddup/src/core/command.c:7402:13:
+    inlined from ‘command_client’ at /home/runner/work/ddup/ddup/src/core/command.c:7423:13:
 /usr/include/x86_64-linux-gnu/bits/string_fortified.h:29:10: warning: ‘__builtin_memcpy’ reading 29 bytes from a region of size 28 [-Wstringop-overread]
    29 |   return __builtin___memcpy_chk (__dest, __src, __len,
       |          ^
@@ -911,7 +911,7 @@ In function ‘memcpy’,
     inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:143:5,
     inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:138:13,
     inlined from ‘resp_write_error’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:169:5,
-    inlined from ‘command_acl’ at /home/runner/work/ddup/ddup/src/core/command.c:11842:13:
+    inlined from ‘command_acl’ at /home/runner/work/ddup/ddup/src/core/command.c:11850:13:
 /usr/include/x86_64-linux-gnu/bits/string_fortified.h:29:10: warning: ‘__builtin_memcpy’ reading 109 bytes from a region of size 106 [-Wstringop-overread]
    29 |   return __builtin___memcpy_chk (__dest, __src, __len,
       |          ^
@@ -936,7 +936,7 @@ In function ‘memcpy’,
     inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:143:5,
     inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:138:13,
     inlined from ‘resp_write_error’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:169:5,
-    inlined from ‘command_client’ at /home/runner/work/ddup/ddup/src/core/command.c:7402:13:
+    inlined from ‘command_client’ at /home/runner/work/ddup/ddup/src/core/command.c:7423:13:
 /usr/include/x86_64-linux-gnu/bits/string_fortified.h:29:10: warning: ‘__builtin_memcpy’ reading 29 bytes from a region of size 28 [-Wstringop-overread]
    29 |   return __builtin___memcpy_chk (__dest, __src, __len,
       |          ^
@@ -964,7 +964,7 @@ In function ‘memcpy’,
     inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:143:5,
     inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:138:13,
     inlined from ‘resp_write_error’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:169:5,
-    inlined from ‘command_acl’ at /home/runner/work/ddup/ddup/src/core/command.c:11842:13:
+    inlined from ‘command_acl’ at /home/runner/work/ddup/ddup/src/core/command.c:11850:13:
 /usr/include/x86_64-linux-gnu/bits/string_fortified.h:29:10: warning: ‘__builtin_memcpy’ reading 109 bytes from a region of size 106 [-Wstringop-overread]
    29 |   return __builtin___memcpy_chk (__dest, __src, __len,
       |          ^
@@ -1009,7 +1009,7 @@ In function ‘memcpy’,
     inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:143:5,
     inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:138:13,
     inlined from ‘resp_write_error’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:169:5,
-    inlined from ‘command_client’ at /home/runner/work/ddup/ddup/src/core/command.c:7402:13:
+    inlined from ‘command_client’ at /home/runner/work/ddup/ddup/src/core/command.c:7423:13:
 /usr/include/x86_64-linux-gnu/bits/string_fortified.h:29:10: warning: ‘__builtin_memcpy’ reading 29 bytes from a region of size 28 [-Wstringop-overread]
    29 |   return __builtin___memcpy_chk (__dest, __src, __len,
       |          ^
@@ -1017,7 +1017,7 @@ In function ‘memcpy’,
     inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:143:5,
     inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:138:13,
     inlined from ‘resp_write_error’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:169:5,
-    inlined from ‘command_acl’ at /home/runner/work/ddup/ddup/src/core/command.c:11842:13:
+    inlined from ‘command_acl’ at /home/runner/work/ddup/ddup/src/core/command.c:11850:13:
 /usr/include/x86_64-linux-gnu/bits/string_fortified.h:29:10: warning: ‘__builtin_memcpy’ reading 109 bytes from a region of size 106 [-Wstringop-overread]
    29 |   return __builtin___memcpy_chk (__dest, __src, __len,
       |          ^
@@ -1071,7 +1071,7 @@ In function ‘memcpy’,
     inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:143:5,
     inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:138:13,
     inlined from ‘resp_write_error’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:169:5,
-    inlined from ‘command_client’ at /home/runner/work/ddup/ddup/src/core/command.c:7402:13:
+    inlined from ‘command_client’ at /home/runner/work/ddup/ddup/src/core/command.c:7423:13:
 /usr/include/x86_64-linux-gnu/bits/string_fortified.h:29:10: warning: ‘__builtin_memcpy’ reading 29 bytes from a region of size 28 [-Wstringop-overread]
    29 |   return __builtin___memcpy_chk (__dest, __src, __len,
       |          ^
@@ -1079,7 +1079,7 @@ In function ‘memcpy’,
     inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:143:5,
     inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:138:13,
     inlined from ‘resp_write_error’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:169:5,
-    inlined from ‘command_acl’ at /home/runner/work/ddup/ddup/src/core/command.c:11842:13:
+    inlined from ‘command_acl’ at /home/runner/work/ddup/ddup/src/core/command.c:11850:13:
 /usr/include/x86_64-linux-gnu/bits/string_fortified.h:29:10: warning: ‘__builtin_memcpy’ reading 109 bytes from a region of size 106 [-Wstringop-overread]
    29 |   return __builtin___memcpy_chk (__dest, __src, __len,
       |          ^
@@ -1124,7 +1124,7 @@ In function ‘memcpy’,
     inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:143:5,
     inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:138:13,
     inlined from ‘resp_write_error’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:169:5,
-    inlined from ‘command_client’ at /home/runner/work/ddup/ddup/src/core/command.c:7402:13:
+    inlined from ‘command_client’ at /home/runner/work/ddup/ddup/src/core/command.c:7423:13:
 /usr/include/x86_64-linux-gnu/bits/string_fortified.h:29:10: warning: ‘__builtin_memcpy’ reading 29 bytes from a region of size 28 [-Wstringop-overread]
    29 |   return __builtin___memcpy_chk (__dest, __src, __len,
       |          ^
@@ -1132,7 +1132,7 @@ In function ‘memcpy’,
     inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:143:5,
     inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:138:13,
     inlined from ‘resp_write_error’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:169:5,
-    inlined from ‘command_acl’ at /home/runner/work/ddup/ddup/src/core/command.c:11842:13:
+    inlined from ‘command_acl’ at /home/runner/work/ddup/ddup/src/core/command.c:11850:13:
 /usr/include/x86_64-linux-gnu/bits/string_fortified.h:29:10: warning: ‘__builtin_memcpy’ reading 109 bytes from a region of size 106 [-Wstringop-overread]
    29 |   return __builtin___memcpy_chk (__dest, __src, __len,
       |          ^
@@ -1159,14 +1159,6 @@ In function ‘snprintf’,
 /usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
    54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
       |          ^
-In function ‘memcpy’,
-    inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:143:5,
-    inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:138:13,
-    inlined from ‘resp_write_error’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:169:5,
-    inlined from ‘command_client’ at /home/runner/work/ddup/ddup/src/core/command.c:7402:13:
-/usr/include/x86_64-linux-gnu/bits/string_fortified.h:29:10: warning: ‘__builtin_memcpy’ reading 29 bytes from a region of size 28 [-Wstringop-overread]
-   29 |   return __builtin___memcpy_chk (__dest, __src, __len,
-      |          ^
 In function ‘snprintf’,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:423:9,
     inlined from ‘obj_zset_first_in_lex_range’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1559:39,
@@ -1185,7 +1177,15 @@ In function ‘memcpy’,
     inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:143:5,
     inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:138:13,
     inlined from ‘resp_write_error’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:169:5,
-    inlined from ‘command_acl’ at /home/runner/work/ddup/ddup/src/core/command.c:11842:13:
+    inlined from ‘command_client’ at /home/runner/work/ddup/ddup/src/core/command.c:7423:13:
+/usr/include/x86_64-linux-gnu/bits/string_fortified.h:29:10: warning: ‘__builtin_memcpy’ reading 29 bytes from a region of size 28 [-Wstringop-overread]
+   29 |   return __builtin___memcpy_chk (__dest, __src, __len,
+      |          ^
+In function ‘memcpy’,
+    inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:143:5,
+    inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:138:13,
+    inlined from ‘resp_write_error’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:169:5,
+    inlined from ‘command_acl’ at /home/runner/work/ddup/ddup/src/core/command.c:11850:13:
 /usr/include/x86_64-linux-gnu/bits/string_fortified.h:29:10: warning: ‘__builtin_memcpy’ reading 109 bytes from a region of size 106 [-Wstringop-overread]
    29 |   return __builtin___memcpy_chk (__dest, __src, __len,
       |          ^
@@ -1230,7 +1230,7 @@ In function ‘memcpy’,
     inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:143:5,
     inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:138:13,
     inlined from ‘resp_write_error’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:169:5,
-    inlined from ‘command_client’ at /home/runner/work/ddup/ddup/src/core/command.c:7402:13:
+    inlined from ‘command_client’ at /home/runner/work/ddup/ddup/src/core/command.c:7423:13:
 /usr/include/x86_64-linux-gnu/bits/string_fortified.h:29:10: warning: ‘__builtin_memcpy’ reading 29 bytes from a region of size 28 [-Wstringop-overread]
    29 |   return __builtin___memcpy_chk (__dest, __src, __len,
       |          ^
@@ -1238,7 +1238,7 @@ In function ‘memcpy’,
     inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:143:5,
     inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:138:13,
     inlined from ‘resp_write_error’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:169:5,
-    inlined from ‘command_acl’ at /home/runner/work/ddup/ddup/src/core/command.c:11842:13:
+    inlined from ‘command_acl’ at /home/runner/work/ddup/ddup/src/core/command.c:11850:13:
 /usr/include/x86_64-linux-gnu/bits/string_fortified.h:29:10: warning: ‘__builtin_memcpy’ reading 109 bytes from a region of size 106 [-Wstringop-overread]
    29 |   return __builtin___memcpy_chk (__dest, __src, __len,
       |          ^
@@ -1283,7 +1283,7 @@ In function ‘memcpy’,
     inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:143:5,
     inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:138:13,
     inlined from ‘resp_write_error’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:169:5,
-    inlined from ‘command_client’ at /home/runner/work/ddup/ddup/src/core/command.c:7402:13:
+    inlined from ‘command_client’ at /home/runner/work/ddup/ddup/src/core/command.c:7423:13:
 /usr/include/x86_64-linux-gnu/bits/string_fortified.h:29:10: warning: ‘__builtin_memcpy’ reading 29 bytes from a region of size 28 [-Wstringop-overread]
    29 |   return __builtin___memcpy_chk (__dest, __src, __len,
       |          ^
@@ -1291,7 +1291,7 @@ In function ‘memcpy’,
     inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:143:5,
     inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:138:13,
     inlined from ‘resp_write_error’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:169:5,
-    inlined from ‘command_acl’ at /home/runner/work/ddup/ddup/src/core/command.c:11842:13:
+    inlined from ‘command_acl’ at /home/runner/work/ddup/ddup/src/core/command.c:11850:13:
 /usr/include/x86_64-linux-gnu/bits/string_fortified.h:29:10: warning: ‘__builtin_memcpy’ reading 109 bytes from a region of size 106 [-Wstringop-overread]
    29 |   return __builtin___memcpy_chk (__dest, __src, __len,
       |          ^
@@ -1336,7 +1336,7 @@ In function ‘memcpy’,
     inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:143:5,
     inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:138:13,
     inlined from ‘resp_write_error’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:169:5,
-    inlined from ‘command_client’ at /home/runner/work/ddup/ddup/src/core/command.c:7402:13:
+    inlined from ‘command_client’ at /home/runner/work/ddup/ddup/src/core/command.c:7423:13:
 /usr/include/x86_64-linux-gnu/bits/string_fortified.h:29:10: warning: ‘__builtin_memcpy’ reading 29 bytes from a region of size 28 [-Wstringop-overread]
    29 |   return __builtin___memcpy_chk (__dest, __src, __len,
       |          ^
@@ -1344,7 +1344,7 @@ In function ‘memcpy’,
     inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:143:5,
     inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:138:13,
     inlined from ‘resp_write_error’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:169:5,
-    inlined from ‘command_acl’ at /home/runner/work/ddup/ddup/src/core/command.c:11842:13:
+    inlined from ‘command_acl’ at /home/runner/work/ddup/ddup/src/core/command.c:11850:13:
 /usr/include/x86_64-linux-gnu/bits/string_fortified.h:29:10: warning: ‘__builtin_memcpy’ reading 109 bytes from a region of size 106 [-Wstringop-overread]
    29 |   return __builtin___memcpy_chk (__dest, __src, __len,
       |          ^
@@ -1389,7 +1389,7 @@ In function ‘memcpy’,
     inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:143:5,
     inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:138:13,
     inlined from ‘resp_write_error’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:169:5,
-    inlined from ‘command_client’ at /home/runner/work/ddup/ddup/src/core/command.c:7402:13:
+    inlined from ‘command_client’ at /home/runner/work/ddup/ddup/src/core/command.c:7423:13:
 /usr/include/x86_64-linux-gnu/bits/string_fortified.h:29:10: warning: ‘__builtin_memcpy’ reading 29 bytes from a region of size 28 [-Wstringop-overread]
    29 |   return __builtin___memcpy_chk (__dest, __src, __len,
       |          ^
@@ -1397,7 +1397,7 @@ In function ‘memcpy’,
     inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:143:5,
     inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:138:13,
     inlined from ‘resp_write_error’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:169:5,
-    inlined from ‘command_acl’ at /home/runner/work/ddup/ddup/src/core/command.c:11842:13:
+    inlined from ‘command_acl’ at /home/runner/work/ddup/ddup/src/core/command.c:11850:13:
 /usr/include/x86_64-linux-gnu/bits/string_fortified.h:29:10: warning: ‘__builtin_memcpy’ reading 109 bytes from a region of size 106 [-Wstringop-overread]
    29 |   return __builtin___memcpy_chk (__dest, __src, __len,
       |          ^
@@ -1442,7 +1442,7 @@ In function ‘memcpy’,
     inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:143:5,
     inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:138:13,
     inlined from ‘resp_write_error’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:169:5,
-    inlined from ‘command_client’ at /home/runner/work/ddup/ddup/src/core/command.c:7402:13:
+    inlined from ‘command_client’ at /home/runner/work/ddup/ddup/src/core/command.c:7423:13:
 /usr/include/x86_64-linux-gnu/bits/string_fortified.h:29:10: warning: ‘__builtin_memcpy’ reading 29 bytes from a region of size 28 [-Wstringop-overread]
    29 |   return __builtin___memcpy_chk (__dest, __src, __len,
       |          ^
@@ -1450,7 +1450,7 @@ In function ‘memcpy’,
     inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:143:5,
     inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:138:13,
     inlined from ‘resp_write_error’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:169:5,
-    inlined from ‘command_acl’ at /home/runner/work/ddup/ddup/src/core/command.c:11842:13:
+    inlined from ‘command_acl’ at /home/runner/work/ddup/ddup/src/core/command.c:11850:13:
 /usr/include/x86_64-linux-gnu/bits/string_fortified.h:29:10: warning: ‘__builtin_memcpy’ reading 109 bytes from a region of size 106 [-Wstringop-overread]
    29 |   return __builtin___memcpy_chk (__dest, __src, __len,
       |          ^
@@ -1495,7 +1495,7 @@ In function ‘memcpy’,
     inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:143:5,
     inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:138:13,
     inlined from ‘resp_write_error’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:169:5,
-    inlined from ‘command_acl’ at /home/runner/work/ddup/ddup/src/core/command.c:11842:13:
+    inlined from ‘command_acl’ at /home/runner/work/ddup/ddup/src/core/command.c:11850:13:
 /usr/include/x86_64-linux-gnu/bits/string_fortified.h:29:10: warning: ‘__builtin_memcpy’ reading 109 bytes from a region of size 106 [-Wstringop-overread]
    29 |   return __builtin___memcpy_chk (__dest, __src, __len,
       |          ^
@@ -1503,7 +1503,7 @@ In function ‘memcpy’,
     inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:143:5,
     inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:138:13,
     inlined from ‘resp_write_error’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:169:5,
-    inlined from ‘command_client’ at /home/runner/work/ddup/ddup/src/core/command.c:7402:13:
+    inlined from ‘command_client’ at /home/runner/work/ddup/ddup/src/core/command.c:7423:13:
 /usr/include/x86_64-linux-gnu/bits/string_fortified.h:29:10: warning: ‘__builtin_memcpy’ reading 29 bytes from a region of size 28 [-Wstringop-overread]
    29 |   return __builtin___memcpy_chk (__dest, __src, __len,
       |          ^
@@ -1570,20 +1570,20 @@ In function ‘snprintf’,
 /usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
    54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
       |          ^
-In function ‘memcpy’,
-    inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:143:5,
-    inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:138:13,
-    inlined from ‘resp_write_error’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:169:5,
-    inlined from ‘command_client’ at /home/runner/work/ddup/ddup/src/core/command.c:7402:13:
-/usr/include/x86_64-linux-gnu/bits/string_fortified.h:29:10: warning: ‘__builtin_memcpy’ reading 29 bytes from a region of size 28 [-Wstringop-overread]
-   29 |   return __builtin___memcpy_chk (__dest, __src, __len,
-      |          ^
 In function ‘snprintf’,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:423:9,
     inlined from ‘obj_zset_first_in_lex_range’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1559:39,
     inlined from ‘obj_zset_first_in_lex_range’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1550:5:
 /usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
    54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^
+In function ‘memcpy’,
+    inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:143:5,
+    inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:138:13,
+    inlined from ‘resp_write_error’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:169:5,
+    inlined from ‘command_client’ at /home/runner/work/ddup/ddup/src/core/command.c:7423:13:
+/usr/include/x86_64-linux-gnu/bits/string_fortified.h:29:10: warning: ‘__builtin_memcpy’ reading 29 bytes from a region of size 28 [-Wstringop-overread]
+   29 |   return __builtin___memcpy_chk (__dest, __src, __len,
       |          ^
 In function ‘snprintf’,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:423:9,
@@ -1596,7 +1596,7 @@ In function ‘memcpy’,
     inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:143:5,
     inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:138:13,
     inlined from ‘resp_write_error’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:169:5,
-    inlined from ‘command_acl’ at /home/runner/work/ddup/ddup/src/core/command.c:11842:13:
+    inlined from ‘command_acl’ at /home/runner/work/ddup/ddup/src/core/command.c:11850:13:
 /usr/include/x86_64-linux-gnu/bits/string_fortified.h:29:10: warning: ‘__builtin_memcpy’ reading 109 bytes from a region of size 106 [-Wstringop-overread]
    29 |   return __builtin___memcpy_chk (__dest, __src, __len,
       |          ^
@@ -1641,7 +1641,7 @@ In function ‘memcpy’,
     inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:143:5,
     inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:138:13,
     inlined from ‘resp_write_error’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:169:5,
-    inlined from ‘command_client’ at /home/runner/work/ddup/ddup/src/core/command.c:7402:13:
+    inlined from ‘command_client’ at /home/runner/work/ddup/ddup/src/core/command.c:7423:13:
 /usr/include/x86_64-linux-gnu/bits/string_fortified.h:29:10: warning: ‘__builtin_memcpy’ reading 29 bytes from a region of size 28 [-Wstringop-overread]
    29 |   return __builtin___memcpy_chk (__dest, __src, __len,
       |          ^
@@ -1649,7 +1649,7 @@ In function ‘memcpy’,
     inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:143:5,
     inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:138:13,
     inlined from ‘resp_write_error’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:169:5,
-    inlined from ‘command_acl’ at /home/runner/work/ddup/ddup/src/core/command.c:11842:13:
+    inlined from ‘command_acl’ at /home/runner/work/ddup/ddup/src/core/command.c:11850:13:
 /usr/include/x86_64-linux-gnu/bits/string_fortified.h:29:10: warning: ‘__builtin_memcpy’ reading 109 bytes from a region of size 106 [-Wstringop-overread]
    29 |   return __builtin___memcpy_chk (__dest, __src, __len,
       |          ^
@@ -1737,7 +1737,7 @@ In function ‘memcpy’,
     inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:143:5,
     inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:138:13,
     inlined from ‘resp_write_error’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:169:5,
-    inlined from ‘command_client’ at /home/runner/work/ddup/ddup/src/core/command.c:7402:13:
+    inlined from ‘command_client’ at /home/runner/work/ddup/ddup/src/core/command.c:7423:13:
 /usr/include/x86_64-linux-gnu/bits/string_fortified.h:29:10: warning: ‘__builtin_memcpy’ reading 29 bytes from a region of size 28 [-Wstringop-overread]
    29 |   return __builtin___memcpy_chk (__dest, __src, __len,
       |          ^
@@ -1745,7 +1745,7 @@ In function ‘memcpy’,
     inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:143:5,
     inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:138:13,
     inlined from ‘resp_write_error’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:169:5,
-    inlined from ‘command_acl’ at /home/runner/work/ddup/ddup/src/core/command.c:11842:13:
+    inlined from ‘command_acl’ at /home/runner/work/ddup/ddup/src/core/command.c:11850:13:
 /usr/include/x86_64-linux-gnu/bits/string_fortified.h:29:10: warning: ‘__builtin_memcpy’ reading 109 bytes from a region of size 106 [-Wstringop-overread]
    29 |   return __builtin___memcpy_chk (__dest, __src, __len,
       |          ^
@@ -1790,7 +1790,7 @@ In function ‘memcpy’,
     inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:143:5,
     inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:138:13,
     inlined from ‘resp_write_error’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:169:5,
-    inlined from ‘command_client’ at /home/runner/work/ddup/ddup/src/core/command.c:7402:13:
+    inlined from ‘command_client’ at /home/runner/work/ddup/ddup/src/core/command.c:7423:13:
 /usr/include/x86_64-linux-gnu/bits/string_fortified.h:29:10: warning: ‘__builtin_memcpy’ reading 29 bytes from a region of size 28 [-Wstringop-overread]
    29 |   return __builtin___memcpy_chk (__dest, __src, __len,
       |          ^
@@ -1798,7 +1798,7 @@ In function ‘memcpy’,
     inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:143:5,
     inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:138:13,
     inlined from ‘resp_write_error’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:169:5,
-    inlined from ‘command_acl’ at /home/runner/work/ddup/ddup/src/core/command.c:11842:13:
+    inlined from ‘command_acl’ at /home/runner/work/ddup/ddup/src/core/command.c:11850:13:
 /usr/include/x86_64-linux-gnu/bits/string_fortified.h:29:10: warning: ‘__builtin_memcpy’ reading 109 bytes from a region of size 106 [-Wstringop-overread]
    29 |   return __builtin___memcpy_chk (__dest, __src, __len,
       |          ^
@@ -1880,7 +1880,7 @@ In function ‘memcpy’,
     inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:143:5,
     inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:138:13,
     inlined from ‘resp_write_error’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:169:5,
-    inlined from ‘command_client’ at /home/runner/work/ddup/ddup/src/core/command.c:7402:13:
+    inlined from ‘command_client’ at /home/runner/work/ddup/ddup/src/core/command.c:7423:13:
 /usr/include/x86_64-linux-gnu/bits/string_fortified.h:29:10: warning: ‘__builtin_memcpy’ reading 29 bytes from a region of size 28 [-Wstringop-overread]
    29 |   return __builtin___memcpy_chk (__dest, __src, __len,
       |          ^
@@ -1888,7 +1888,7 @@ In function ‘memcpy’,
     inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:143:5,
     inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:138:13,
     inlined from ‘resp_write_error’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:169:5,
-    inlined from ‘command_acl’ at /home/runner/work/ddup/ddup/src/core/command.c:11842:13:
+    inlined from ‘command_acl’ at /home/runner/work/ddup/ddup/src/core/command.c:11850:13:
 /usr/include/x86_64-linux-gnu/bits/string_fortified.h:29:10: warning: ‘__builtin_memcpy’ reading 109 bytes from a region of size 106 [-Wstringop-overread]
    29 |   return __builtin___memcpy_chk (__dest, __src, __len,
       |          ^
@@ -1933,7 +1933,7 @@ In function ‘memcpy’,
     inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:143:5,
     inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:138:13,
     inlined from ‘resp_write_error’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:169:5,
-    inlined from ‘command_client’ at /home/runner/work/ddup/ddup/src/core/command.c:7402:13:
+    inlined from ‘command_client’ at /home/runner/work/ddup/ddup/src/core/command.c:7423:13:
 /usr/include/x86_64-linux-gnu/bits/string_fortified.h:29:10: warning: ‘__builtin_memcpy’ reading 29 bytes from a region of size 28 [-Wstringop-overread]
    29 |   return __builtin___memcpy_chk (__dest, __src, __len,
       |          ^
@@ -1941,7 +1941,7 @@ In function ‘memcpy’,
     inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:143:5,
     inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:138:13,
     inlined from ‘resp_write_error’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:169:5,
-    inlined from ‘command_acl’ at /home/runner/work/ddup/ddup/src/core/command.c:11842:13:
+    inlined from ‘command_acl’ at /home/runner/work/ddup/ddup/src/core/command.c:11850:13:
 /usr/include/x86_64-linux-gnu/bits/string_fortified.h:29:10: warning: ‘__builtin_memcpy’ reading 109 bytes from a region of size 106 [-Wstringop-overread]
    29 |   return __builtin___memcpy_chk (__dest, __src, __len,
       |          ^
@@ -2250,7 +2250,7 @@ In function ‘memcpy’,
     inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:143:5,
     inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:138:13,
     inlined from ‘resp_write_error’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:169:5,
-    inlined from ‘command_acl’ at /home/runner/work/ddup/ddup/src/core/command.c:11842:13:
+    inlined from ‘command_acl’ at /home/runner/work/ddup/ddup/src/core/command.c:11850:13:
 /usr/include/x86_64-linux-gnu/bits/string_fortified.h:29:10: warning: ‘__builtin_memcpy’ reading 109 bytes from a region of size 106 [-Wstringop-overread]
    29 |   return __builtin___memcpy_chk (__dest, __src, __len,
       |          ^
@@ -2258,7 +2258,7 @@ In function ‘memcpy’,
     inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:143:5,
     inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:138:13,
     inlined from ‘resp_write_error’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:169:5,
-    inlined from ‘command_client’ at /home/runner/work/ddup/ddup/src/core/command.c:7402:13:
+    inlined from ‘command_client’ at /home/runner/work/ddup/ddup/src/core/command.c:7423:13:
 /usr/include/x86_64-linux-gnu/bits/string_fortified.h:29:10: warning: ‘__builtin_memcpy’ reading 29 bytes from a region of size 28 [-Wstringop-overread]
    29 |   return __builtin___memcpy_chk (__dest, __src, __len,
       |          ^
@@ -2340,7 +2340,7 @@ In function ‘memcpy’,
     inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:143:5,
     inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:138:13,
     inlined from ‘resp_write_error’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:169:5,
-    inlined from ‘command_acl’ at /home/runner/work/ddup/ddup/src/core/command.c:11842:13:
+    inlined from ‘command_acl’ at /home/runner/work/ddup/ddup/src/core/command.c:11850:13:
 /usr/include/x86_64-linux-gnu/bits/string_fortified.h:29:10: warning: ‘__builtin_memcpy’ reading 109 bytes from a region of size 106 [-Wstringop-overread]
    29 |   return __builtin___memcpy_chk (__dest, __src, __len,
       |          ^
@@ -2348,7 +2348,7 @@ In function ‘memcpy’,
     inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:143:5,
     inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:138:13,
     inlined from ‘resp_write_error’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:169:5,
-    inlined from ‘command_client’ at /home/runner/work/ddup/ddup/src/core/command.c:7402:13:
+    inlined from ‘command_client’ at /home/runner/work/ddup/ddup/src/core/command.c:7423:13:
 /usr/include/x86_64-linux-gnu/bits/string_fortified.h:29:10: warning: ‘__builtin_memcpy’ reading 29 bytes from a region of size 28 [-Wstringop-overread]
    29 |   return __builtin___memcpy_chk (__dest, __src, __len,
       |          ^
@@ -2430,7 +2430,7 @@ In function ‘memcpy’,
     inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:143:5,
     inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:138:13,
     inlined from ‘resp_write_error’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:169:5,
-    inlined from ‘command_acl’ at /home/runner/work/ddup/ddup/src/core/command.c:11842:13:
+    inlined from ‘command_acl’ at /home/runner/work/ddup/ddup/src/core/command.c:11850:13:
 /usr/include/x86_64-linux-gnu/bits/string_fortified.h:29:10: warning: ‘__builtin_memcpy’ reading 109 bytes from a region of size 106 [-Wstringop-overread]
    29 |   return __builtin___memcpy_chk (__dest, __src, __len,
       |          ^
@@ -2438,7 +2438,7 @@ In function ‘memcpy’,
     inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:143:5,
     inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:138:13,
     inlined from ‘resp_write_error’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:169:5,
-    inlined from ‘command_client’ at /home/runner/work/ddup/ddup/src/core/command.c:7402:13:
+    inlined from ‘command_client’ at /home/runner/work/ddup/ddup/src/core/command.c:7423:13:
 /usr/include/x86_64-linux-gnu/bits/string_fortified.h:29:10: warning: ‘__builtin_memcpy’ reading 29 bytes from a region of size 28 [-Wstringop-overread]
    29 |   return __builtin___memcpy_chk (__dest, __src, __len,
       |          ^
@@ -2549,7 +2549,7 @@ Get:11 http://azure.archive.ubuntu.com/ubuntu noble/main amd64 libsource-highlig
 Get:12 http://azure.archive.ubuntu.com/ubuntu noble-updates/main amd64 gdb amd64 15.1-1ubuntu1~24.04.1 [4083 kB]
 Get:13 http://azure.archive.ubuntu.com/ubuntu noble-updates/main amd64 libc6-dbg amd64 2.39-0ubuntu8.8 [7461 kB]
 Preconfiguring packages ...
-Fetched 13.6 MB in 0s (59.5 MB/s)
+Fetched 13.6 MB in 2s (7413 kB/s)
 Selecting previously unselected package libdebuginfod-common.
 (Reading database ... (Reading database ... 5%(Reading database ... 10%(Reading database ... 15%(Reading database ... 20%(Reading database ... 25%(Reading database ... 30%(Reading database ... 35%(Reading database ... 40%(Reading database ... 45%(Reading database ... 50%(Reading database ... 55%(Reading database ... 60%(Reading database ... 65%(Reading database ... 70%(Reading database ... 75%(Reading database ... 80%(Reading database ... 85%(Reading database ... 90%(Reading database ... 95%(Reading database ... 100%(Reading database ... 203385 files and directories currently installed.)
 Preparing to unpack .../00-libdebuginfod-common_0.190-1.1ubuntu0.1_all.deb ...
