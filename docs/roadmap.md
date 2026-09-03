@@ -721,3 +721,5 @@
     不再伪造成功图形响应，并限制事件名格式化边界（Phase 203）
   - [x] LATENCY HISTORY 无样本 fail-closed：未知或无数据事件返回明确错误，
     与 Redis 8 的事件查询语义一致（Phase 204）
+  - [x] DEBUG STRINGMATCH 语义实现：使用现有二进制安全 glob 匹配器返回
+    精确布尔结果，避免诊断命令恒定返回不匹配（Phase 205）

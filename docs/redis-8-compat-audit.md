@@ -194,6 +194,8 @@ bounded channel state as `&*` and an empty rule set.
   recorded data; ddup no longer emits a fabricated graph payload.
   `LATENCY HISTORY <event>` applies the same no-samples error semantics instead
   of returning an empty array for an unknown event.
+  `DEBUG STRINGMATCH <value> <pattern>` now returns the actual glob match result
+  through ddup's binary-safe matcher rather than a constant zero placeholder.
 - Cluster slot maintenance: `SFLUSH` intersects requested ranges with local
   ownership and returns coalesced flushed ranges; `TRIMSLOTS RANGES` validates
   ownership before deleting keys from unserved slots. Both paths collect keys

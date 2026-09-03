@@ -1594,3 +1594,9 @@ path with no heap allocation.
 `LATENCY HISTORY` uses the same bounded no-sample error path as `GRAPH`, keeping
 event formatting allocation-free and avoiding ambiguous empty-array success
 responses for unknown events.
+
+### Phase 205: DEBUG STRINGMATCH
+
+`DEBUG STRINGMATCH` reuses the allocation-free, binary-safe glob matcher used by
+`KEYS` and ACL patterns. Matching remains bounded by the input pattern/string and
+does not add heap traffic to the diagnostic path.

@@ -12257,7 +12257,13 @@ static void command_debug(session *s, const resp_value *argv, size_t argc,
         return;
     }
     if (ci_equal(sub, sl, "STRINGMATCH") && argc == 4) {
-        resp_write_integer(out, 0);
+        const char *value, *pattern;
+        size_t value_len, pattern_len;
+        if (!arg_str(&argv[2], &value, &value_len) ||
+            !arg_str(&argv[3], &pattern, &pattern_len))
+            goto bad;
+        resp_write_integer(out, ddup_glob_match(pattern, pattern_len, value,
+                                                value_len));
         return;
     }
     if (ci_equal(sub, sl, "LOG-MESSAGE") && argc == 3) {

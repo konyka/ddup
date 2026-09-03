@@ -296,6 +296,10 @@ static void test_server_management_commands(void)
     EXPECT_REPLY("*0\r\n");
     cmd(3, "DEBUG", "SLEEP", "0");
     EXPECT_REPLY("+OK\r\n");
+    cmd(4, "DEBUG", "STRINGMATCH", "cache:42", "cache:*");
+    EXPECT_REPLY(":1\r\n");
+    cmd(4, "DEBUG", "STRINGMATCH", "cache:42", "user:*");
+    EXPECT_REPLY(":0\r\n");
 }
 
 int main(void)
