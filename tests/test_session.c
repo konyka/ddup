@@ -104,6 +104,45 @@ static void test_client_no_touch_preserves_lru(void)
     db_destroy(&d);
 }
 
+static void test_client_tracking_state_machine(void)
+{
+    db d;
+    session *s;
+    resp_buf out;
+    db_init(&d);
+    resp_buf_init(&out);
+    s = session_create(&d);
+    DD_CHECK(s != NULL);
+    if (s == NULL)
+        return;
+
+    exec_sess(s, T0, &out, 2, "CLIENT", "TRACKINGINFO");
+    EXPECT(out, "*6\r\n$5\r\nflags\r\n*1\r\n$3\r\noff\r\n$8\r\nredirect\r\n:-1\r\n$8\r\nprefixes\r\n*0\r\n");
+
+    exec_sess(s, T0, &out, 3, "CLIENT", "CACHING", "YES");
+    DD_CHECK(strstr(out.data, "CLIENT CACHING can be called only") != NULL);
+    exec_sess(s, T0, &out, 4, "CLIENT", "TRACKING", "ON", "OPTIN");
+    EXPECT(out, "+OK\r\n");
+    exec_sess(s, T0, &out, 3, "CLIENT", "CACHING", "YES");
+    EXPECT(out, "+OK\r\n");
+    exec_sess(s, T0, &out, 2, "CLIENT", "TRACKINGINFO");
+    DD_CHECK(strstr(out.data, "optin") != NULL);
+    DD_CHECK(strstr(out.data, "caching-yes") != NULL);
+
+    exec_sess(s, T0, &out, 4, "CLIENT", "TRACKING", "ON", "OPTOUT");
+    EXPECT(out, "-ERR You can't switch OPTIN/OPTOUT mode before disabling tracking for this client, and then re-enabling it with a different mode.\r\n");
+    exec_sess(s, T0, &out, 3, "CLIENT", "TRACKING", "OFF");
+    EXPECT(out, "+OK\r\n");
+    exec_sess(s, T0, &out, 4, "CLIENT", "TRACKING", "ON", "BCAST");
+    EXPECT(out, "+OK\r\n");
+    exec_sess(s, T0, &out, 5, "CLIENT", "TRACKING", "ON", "BCAST", "OPTIN");
+    EXPECT(out, "-ERR OPTIN and OPTOUT are not compatible with BCAST\r\n");
+
+    session_free(s);
+    resp_buf_free(&out);
+    db_destroy(&d);
+}
+
 static void test_auth_flow(void)
 {
     db d;
@@ -412,6 +451,7 @@ int main(void)
     DD_RUN(test_queue_allocation_size_overflow);
     DD_RUN(test_session_basic);
     DD_RUN(test_client_no_touch_preserves_lru);
+    DD_RUN(test_client_tracking_state_machine);
     DD_RUN(test_auth_flow);
     DD_RUN(test_auth_username_form);
     DD_RUN(test_auth_without_password_configured);

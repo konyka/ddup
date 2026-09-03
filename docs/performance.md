@@ -1616,6 +1616,14 @@ length and truncates only the current command's newly appended RESP bytes when
 statistics still run, while suppression adds one length snapshot and a branch
 on the connection hot path.
 
+### Phase 209: CLIENT TRACKING state
+
+Tracking metadata is stored inline in `session` (bounded prefix slots, no heap
+allocation). Option parsing is a single bounded pass; incompatible modes and
+invalid `CACHING` requests fail before state mutation. `TRACKINGINFO` serializes
+the fixed state directly, so the control path remains O(options + prefixes) and
+does not add work to ordinary key commands.
+
 ### Phase 208: CLIENT NO-TOUCH
 
 `NO-TOUCH` is a session-local integer flag. During command execution the

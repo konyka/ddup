@@ -172,6 +172,13 @@ typedef struct session {
      * exactly the next command reply. */
     int reply_mode;
     int no_touch;
+    int tracking;
+    int tracking_mode; /* 1=bcast, 2=optin, 3=optout */
+    int tracking_caching;
+    int tracking_noloop;
+    long long tracking_redirect;
+    size_t tracking_prefix_count;
+    char tracking_prefixes[4][64];
     int monitor_enabled;
     void *monitor_ctx;
     int (*monitor_start)(void *ctx, struct session *s);

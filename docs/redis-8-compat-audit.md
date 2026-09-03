@@ -311,3 +311,9 @@ itself is acknowledged before the new mode takes effect.
 key reads skip LRU metadata refresh but retain expiry checks, value materialization,
 command side effects, AOF logging, and monitoring. `RESET` restores normal touch
 behavior.
+
+`CLIENT TRACKING ON|OFF` now keeps connection-local BCAST/OPTIN/OPTOUT, NOLOOP,
+REDIRECT, and bounded PREFIX metadata. Incompatible option combinations are
+rejected atomically. `CLIENT CACHING YES|NO` requires the corresponding OPTIN or
+OPTOUT mode, and `CLIENT TRACKINGINFO` reports Redis-compatible flags, redirect,
+and prefixes fields.

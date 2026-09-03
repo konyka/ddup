@@ -7428,6 +7428,160 @@ static void command_client(session *s, const resp_value *argv, size_t argc,
         resp_write_simple_string(out, "OK", 2);
         return;
     }
+    if (ci_equal(sub, sl, "TRACKING") && argc >= 3) {
+        const char *status;
+        size_t status_len;
+        size_t i;
+        int mode = 0;
+        int bcast = 0;
+        int noloop = 0;
+        long long redirect = 0;
+        if (!arg_str(&argv[2], &status, &status_len))
+            goto bad_type;
+        if (ci_equal(status, status_len, "OFF")) {
+            if (argc != 3) {
+                resp_write_error(out, ERR_SYNTAX, sizeof(ERR_SYNTAX) - 1);
+                return;
+            }
+            s->tracking = 0;
+            s->tracking_mode = 0;
+            s->tracking_caching = 0;
+            s->tracking_noloop = 0;
+            s->tracking_redirect = 0;
+            s->tracking_prefix_count = 0;
+            resp_write_simple_string(out, "OK", 2);
+            return;
+        }
+        if (!ci_equal(status, status_len, "ON")) {
+            resp_write_error(out, ERR_SYNTAX, sizeof(ERR_SYNTAX) - 1);
+            return;
+        }
+        for (i = 3; i < argc; i++) {
+            const char *opt;
+            size_t opt_len;
+            if (!arg_str(&argv[i], &opt, &opt_len))
+                goto bad_type;
+            if (ci_equal(opt, opt_len, "BCAST")) {
+                if (mode != 0 && mode != 1) {
+                    static const char E[] = "ERR OPTIN and OPTOUT are not compatible with BCAST";
+                    resp_write_error(out, E, sizeof(E) - 1);
+                    return;
+                }
+                bcast = 1;
+                mode = 1;
+            } else if (ci_equal(opt, opt_len, "OPTIN")) {
+                if (bcast || mode == 3) {
+                    static const char E[] = "ERR OPTIN and OPTOUT are not compatible with BCAST";
+                    resp_write_error(out, E, sizeof(E) - 1);
+                    return;
+                }
+                mode = 2;
+            } else if (ci_equal(opt, opt_len, "OPTOUT")) {
+                if (bcast || mode == 2) {
+                    static const char E[] = "ERR OPTIN and OPTOUT are not compatible with BCAST";
+                    resp_write_error(out, E, sizeof(E) - 1);
+                    return;
+                }
+                mode = 3;
+            } else if (ci_equal(opt, opt_len, "NOLOOP")) {
+                noloop = 1;
+            } else if (ci_equal(opt, opt_len, "REDIRECT")) {
+                if (++i >= argc || !arg_str(&argv[i], &opt, &opt_len) ||
+                    !parse_i64(opt, opt_len, &redirect)) {
+                    resp_write_error(out, ERR_NOT_INT, sizeof(ERR_NOT_INT) - 1);
+                    return;
+                }
+            } else if (ci_equal(opt, opt_len, "PREFIX")) {
+                if (++i >= argc || !arg_str(&argv[i], &opt, &opt_len) ||
+                    opt_len >= sizeof(s->tracking_prefixes[0]) ||
+                    s->tracking_prefix_count >= 4) {
+                    resp_write_error(out, ERR_SYNTAX, sizeof(ERR_SYNTAX) - 1);
+                    return;
+                }
+                memcpy(s->tracking_prefixes[s->tracking_prefix_count], opt,
+                       opt_len);
+                s->tracking_prefixes[s->tracking_prefix_count++][opt_len] = '\0';
+            } else {
+                resp_write_error(out, ERR_SYNTAX, sizeof(ERR_SYNTAX) - 1);
+                return;
+            }
+        }
+        if (s->tracking && s->tracking_mode != mode && mode != 0) {
+            static const char E[] = "ERR You can't switch OPTIN/OPTOUT mode before disabling tracking for this client, and then re-enabling it with a different mode.";
+            resp_write_error(out, E, sizeof(E) - 1);
+            return;
+        }
+        if (s->tracking && s->tracking_mode == 1 && mode != 1) {
+            resp_write_error(out, "ERR You can't switch BCAST mode on/off before disabling tracking for this client, and then re-enabling it with a different mode.", 125);
+            return;
+        }
+        if (s->tracking_prefix_count != 0 && !bcast) {
+            resp_write_error(out, "ERR PREFIX option requires BCAST mode to be enabled", 51);
+            return;
+        }
+        s->tracking = 1;
+        s->tracking_mode = mode == 0 ? 3 : mode;
+        s->tracking_noloop = noloop;
+        s->tracking_redirect = redirect;
+        resp_write_simple_string(out, "OK", 2);
+        return;
+    }
+    if (ci_equal(sub, sl, "CACHING") && argc == 3) {
+        const char *mode;
+        size_t mode_len;
+        if (!arg_str(&argv[2], &mode, &mode_len))
+            goto bad_type;
+        if (!s->tracking ||
+            (s->tracking_mode != 2 && s->tracking_mode != 3)) {
+            resp_write_error(out, "ERR CLIENT CACHING can be called only when the client is in tracking mode with OPTIN or OPTOUT mode enabled", 113);
+            return;
+        }
+        if (ci_equal(mode, mode_len, "YES")) {
+            if (s->tracking_mode != 2) {
+                resp_write_error(out, "ERR CLIENT CACHING YES is only valid when tracking is enabled in OPTIN mode.", 77);
+                return;
+            }
+        } else if (ci_equal(mode, mode_len, "NO")) {
+            if (s->tracking_mode != 3) {
+                resp_write_error(out, "ERR CLIENT CACHING NO is only valid when tracking is enabled in OPTOUT mode.", 77);
+                return;
+            }
+        } else {
+            resp_write_error(out, ERR_SYNTAX, sizeof(ERR_SYNTAX) - 1);
+            return;
+        }
+        s->tracking_caching = 1;
+        resp_write_simple_string(out, "OK", 2);
+        return;
+    }
+    if (ci_equal(sub, sl, "TRACKINGINFO") && argc == 2) {
+        size_t i;
+        size_t flags = 1;
+        if (s->tracking_mode == 1) flags += 1;
+        if (s->tracking_mode == 2) flags += 1;
+        if (s->tracking_mode == 3) flags += 1;
+        if (s->tracking_caching) flags += 1;
+        if (s->tracking_noloop) flags += 1;
+        resp_write_array_header(out, 6);
+        resp_write_bulk(out, "flags", 5);
+        resp_write_array_header(out, flags);
+        resp_write_bulk(out, s->tracking ? "on" : "off",
+                        s->tracking ? 2 : 3);
+        if (s->tracking_mode == 1) resp_write_bulk(out, "bcast", 5);
+        if (s->tracking_mode == 2) resp_write_bulk(out, "optin", 5);
+        if (s->tracking_mode == 3) resp_write_bulk(out, "optout", 6);
+        if (s->tracking_caching)
+            resp_write_bulk(out, s->tracking_mode == 2 ? "caching-yes" : "caching-no",
+                            s->tracking_mode == 2 ? 11 : 10);
+        if (s->tracking_noloop) resp_write_bulk(out, "noloop", 6);
+        resp_write_bulk(out, "redirect", 8);
+        resp_write_integer(out, s->tracking ? s->tracking_redirect : -1);
+        resp_write_bulk(out, "prefixes", 8);
+        resp_write_array_header(out, s->tracking_prefix_count);
+        for (i = 0; i < s->tracking_prefix_count; i++)
+            resp_write_bulk(out, s->tracking_prefixes[i], strlen(s->tracking_prefixes[i]));
+        return;
+    }
     if (s->client_ctx == NULL) {
         resp_write_error(out, "ERR CLIENT is not supported in this context",
                          sizeof("ERR CLIENT is not supported in this context") - 1);
@@ -23899,6 +24053,12 @@ static void session_execute_at_raw(session *s, const resp_value *argv,
         s->read_only = 0;
         s->asking = 0;
         s->no_touch = 0;
+        s->tracking = 0;
+        s->tracking_mode = 0;
+        s->tracking_caching = 0;
+        s->tracking_noloop = 0;
+        s->tracking_redirect = 0;
+        s->tracking_prefix_count = 0;
         s->reply_mode = 0;
         s->db_index = 0;
         if (s->sel_fn != NULL)
