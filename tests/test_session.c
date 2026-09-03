@@ -131,6 +131,12 @@ static void test_client_tracking_state_machine(void)
     exec_sess(s, T0, &out, 3, "CLIENT", "TRACKING", "OFF");
     EXPECT(out, "+OK\r\n");
 
+    /* Invalid options must not leak partially parsed PREFIX state. */
+    exec_sess(s, T0, &out, 5, "CLIENT", "TRACKING", "ON", "PREFIX", "leak");
+    DD_CHECK(strstr(out.data, "PREFIX option requires BCAST") != NULL);
+    exec_sess(s, T0, &out, 2, "CLIENT", "TRACKINGINFO");
+    DD_CHECK(strstr(out.data, "$8\r\nprefixes\r\n*0\r\n") != NULL);
+
     exec_sess(s, T0, &out, 3, "CLIENT", "CACHING", "YES");
     DD_CHECK(strstr(out.data, "CLIENT CACHING can be called only") != NULL);
     exec_sess(s, T0, &out, 4, "CLIENT", "TRACKING", "ON", "OPTIN");

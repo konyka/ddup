@@ -332,3 +332,7 @@ Mode-less `CLIENT TRACKING ON` preserves Redis' default tracking mode instead of
 implicitly selecting OPTOUT. `CLIENT TRACKINGINFO` therefore reports only `on`
 for a default session, while `CLIENT CACHING YES|NO` is rejected unless OPTIN or
 OPTOUT was explicitly enabled.
+
+`CLIENT TRACKING` option parsing is atomic for bounded PREFIX metadata: malformed
+or incompatible requests no longer leave a partially applied prefix in the
+session. Validation uses a fixed stack scratch copy and commits only on success.

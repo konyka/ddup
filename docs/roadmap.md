@@ -746,3 +746,5 @@
   - [x] CLIENT TRACKING 默认模式修正：无 `BCAST/OPTIN/OPTOUT` 的首次
     `TRACKING ON` 保持 Redis 默认 tracking 语义；`TRACKINGINFO` 不伪造
     `optout`，`CACHING YES|NO` 仅在显式 OPTIN/OPTOUT 下可用（Phase 213）
+  - [x] CLIENT TRACKING 原子选项提交：非法 `PREFIX`/组合不会污染已有
+    tracking 元数据；采用固定大小栈临时副本，校验通过后一次性提交（Phase 214）

@@ -7437,6 +7437,10 @@ static void command_client(session *s, const resp_value *argv, size_t argc,
         int bcast = 0;
         int noloop = 0;
         long long redirect = 0;
+        size_t prefix_count = s->tracking_prefix_count;
+        char prefixes[4][64];
+        if (prefix_count != 0)
+            memcpy(prefixes, s->tracking_prefixes, sizeof(prefixes));
         if (!arg_str(&argv[2], &status, &status_len))
             goto bad_type;
         if (ci_equal(status, status_len, "OFF")) {
@@ -7500,14 +7504,13 @@ static void command_client(session *s, const resp_value *argv, size_t argc,
                 }
             } else if (ci_equal(opt, opt_len, "PREFIX")) {
                 if (++i >= argc || !arg_str(&argv[i], &opt, &opt_len) ||
-                    opt_len >= sizeof(s->tracking_prefixes[0]) ||
-                    s->tracking_prefix_count >= 4) {
+                    opt_len >= sizeof(prefixes[0]) || prefix_count >= 4) {
                     resp_write_error(out, ERR_SYNTAX, sizeof(ERR_SYNTAX) - 1);
                     return;
                 }
-                memcpy(s->tracking_prefixes[s->tracking_prefix_count], opt,
+                memcpy(prefixes[prefix_count], opt,
                        opt_len);
-                s->tracking_prefixes[s->tracking_prefix_count++][opt_len] = '\0';
+                prefixes[prefix_count++][opt_len] = '\0';
             } else {
                 resp_write_error(out, ERR_SYNTAX, sizeof(ERR_SYNTAX) - 1);
                 return;
@@ -7522,7 +7525,7 @@ static void command_client(session *s, const resp_value *argv, size_t argc,
             resp_write_error(out, "ERR You can't switch BCAST mode on/off before disabling tracking for this client, and then re-enabling it with a different mode.", 125);
             return;
         }
-        if (s->tracking_prefix_count != 0 && !bcast) {
+        if (prefix_count != 0 && !bcast) {
             resp_write_error(out, "ERR PREFIX option requires BCAST mode to be enabled", 51);
             return;
         }
@@ -7534,6 +7537,9 @@ static void command_client(session *s, const resp_value *argv, size_t argc,
             s->tracking_mode = 0;
         s->tracking_noloop = noloop;
         s->tracking_redirect = redirect;
+        s->tracking_prefix_count = prefix_count;
+        if (prefix_count != 0)
+            memcpy(s->tracking_prefixes, prefixes, sizeof(prefixes));
         resp_write_simple_string(out, "OK", 2);
         return;
     }

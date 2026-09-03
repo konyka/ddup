@@ -1661,3 +1661,10 @@ Redis' default tracking behavior. The state transition is a constant-time branch
 with no allocation; `TRACKINGINFO` emits only the active mode flags, and
 `CLIENT CACHING` rejects default-mode sessions before mutating state. Existing
 OPTIN/OPTOUT sessions retain their mode when re-enabled without an explicit mode.
+
+### Phase 214: CLIENT TRACKING atomic option commit
+
+Tracking PREFIX parsing now uses a fixed `4 x 64` byte stack scratch buffer and
+commits the complete bounded state only after all options pass validation. Failed
+commands therefore perform no partial mutation; the steady-state cost is one
+bounded copy and no heap allocation, while ordinary data commands are unchanged.
