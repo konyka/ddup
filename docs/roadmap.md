@@ -734,3 +734,6 @@
   - [x] CLIENT TRACKING 状态机：实现 `ON/OFF` 的 BCAST/OPTIN/OPTOUT/
     NOLOOP/PREFIX/REDIRECT 组合校验、`CACHING` 模式约束，以及
     `TRACKINGINFO` 的 flags/redirect/prefixes introspection（Phase 209）
+  - [x] CLIENT CACHING 一次性语义：`YES/NO` 只影响下一条命令，随后自动
+    清除 caching 标志；tracking 关闭或 RESET 时同步清理，避免状态泄漏
+    到后续请求（Phase 210）

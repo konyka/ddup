@@ -128,8 +128,18 @@ static void test_client_tracking_state_machine(void)
     exec_sess(s, T0, &out, 2, "CLIENT", "TRACKINGINFO");
     DD_CHECK(strstr(out.data, "optin") != NULL);
     DD_CHECK(strstr(out.data, "caching-yes") != NULL);
+    exec_sess(s, T0, &out, 1, "PING");
+    EXPECT(out, "+PONG\r\n");
+    exec_sess(s, T0, &out, 2, "CLIENT", "TRACKINGINFO");
+    DD_CHECK(strstr(out.data, "caching-yes") == NULL);
+    exec_sess(s, T0, &out, 3, "CLIENT", "TRACKING", "OFF");
+    EXPECT(out, "+OK\r\n");
+    exec_sess(s, T0, &out, 3, "CLIENT", "TRACKING", "ON");
+    EXPECT(out, "+OK\r\n");
+    exec_sess(s, T0, &out, 3, "CLIENT", "CACHING", "YES");
+    DD_CHECK(strstr(out.data, "CACHING YES is only valid") != NULL);
 
-    exec_sess(s, T0, &out, 4, "CLIENT", "TRACKING", "ON", "OPTOUT");
+    exec_sess(s, T0, &out, 4, "CLIENT", "TRACKING", "ON", "OPTIN");
     EXPECT(out, "-ERR You can't switch OPTIN/OPTOUT mode before disabling tracking for this client, and then re-enabling it with a different mode.\r\n");
     exec_sess(s, T0, &out, 3, "CLIENT", "TRACKING", "OFF");
     EXPECT(out, "+OK\r\n");

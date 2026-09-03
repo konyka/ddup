@@ -7433,6 +7433,7 @@ static void command_client(session *s, const resp_value *argv, size_t argc,
         size_t status_len;
         size_t i;
         int mode = 0;
+        int was_tracking = s->tracking;
         int bcast = 0;
         int noloop = 0;
         long long redirect = 0;
@@ -7506,7 +7507,7 @@ static void command_client(session *s, const resp_value *argv, size_t argc,
                 return;
             }
         }
-        if (s->tracking && s->tracking_mode != mode && mode != 0) {
+        if (s->tracking && mode != 0 && s->tracking_mode != mode) {
             static const char E[] = "ERR You can't switch OPTIN/OPTOUT mode before disabling tracking for this client, and then re-enabling it with a different mode.";
             resp_write_error(out, E, sizeof(E) - 1);
             return;
@@ -7520,7 +7521,8 @@ static void command_client(session *s, const resp_value *argv, size_t argc,
             return;
         }
         s->tracking = 1;
-        s->tracking_mode = mode == 0 ? 3 : mode;
+        if (mode != 0 || !was_tracking)
+            s->tracking_mode = mode == 0 ? 3 : mode;
         s->tracking_noloop = noloop;
         s->tracking_redirect = redirect;
         resp_write_simple_string(out, "OK", 2);
@@ -24160,10 +24162,19 @@ void session_execute_at(session *s, const resp_value *argv, size_t argc,
                         resp_buf *out, uint64_t now_ms)
 {
     int mode_before = s->reply_mode;
+    int caching_before = s->tracking_caching;
+    int is_caching_cmd = 0;
     size_t out_before = out->len;
+    if (argc == 3 && argv[0].type == RESP_BULK_STRING &&
+        ci_equal(argv[0].str, argv[0].len, "CLIENT") &&
+        argv[1].type == RESP_BULK_STRING &&
+        ci_equal(argv[1].str, argv[1].len, "CACHING"))
+        is_caching_cmd = 1;
     s->d->no_touch_active = s->no_touch;
     session_execute_at_raw(s, argv, argc, out, now_ms);
     s->d->no_touch_active = 0;
+    if (caching_before && !is_caching_cmd)
+        s->tracking_caching = 0;
     /* REPLY ON must be able to re-enable and acknowledge itself.  Likewise,
      * OFF/SKIP are acknowledged before their new mode takes effect. */
     if (mode_before == 1)

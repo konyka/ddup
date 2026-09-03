@@ -1624,6 +1624,13 @@ invalid `CACHING` requests fail before state mutation. `TRACKINGINFO` serializes
 the fixed state directly, so the control path remains O(options + prefixes) and
 does not add work to ordinary key commands.
 
+### Phase 210: CLIENT CACHING one-shot state
+
+The caching hint remains an inline session bit. `session_execute_at()` clears it
+after the next non-`CLIENT CACHING` command, adding only one command-level branch
+and no allocation. Tracking OFF and RESET clear the bit together with the other
+tracking metadata, preventing stale hints from affecting later requests.
+
 ### Phase 208: CLIENT NO-TOUCH
 
 `NO-TOUCH` is a session-local integer flag. During command execution the
