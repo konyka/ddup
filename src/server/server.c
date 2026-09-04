@@ -1673,7 +1673,8 @@ static int srv_write_snapshot(server *srv, resp_buf *out, const char *prefix,
     }
     hl = snprintf(hdr, sizeof(hdr), "$%llu\r\n",
                   (unsigned long long)snap.len);
-    if (prefix_len > SIZE_MAX - (size_t)hl ||
+    if (hl < 0 || (size_t)hl >= sizeof(hdr) ||
+        prefix_len > SIZE_MAX - (size_t)hl ||
         snap.len > SIZE_MAX - prefix_len - (size_t)hl) {
         resp_buf_free(&snap);
         return -1;
@@ -1723,7 +1724,8 @@ static int srv_write_continue(server *srv, resp_buf *out, uint64_t offset,
     size_t backlog_len, frame_len, copied = 0, start = out->len;
     int hl = snprintf(hdr, sizeof(hdr), "+CONTINUE %s\r\n", srv->repl.replid);
 
-    if (offset > srv->backlog.offset)
+    if (hl < 0 || (size_t)hl >= sizeof(hdr) ||
+        offset > srv->backlog.offset)
         return -1;
     backlog_len = (size_t)(srv->backlog.offset - offset);
     if ((uint64_t)backlog_len != srv->backlog.offset - offset ||
@@ -1834,7 +1836,8 @@ static int srv_psync(void *ctx, session *sess, const char *replid,
     hl = snprintf(hdr, sizeof(hdr), "+FULLRESYNC %s %llu\r\n",
                   srv->repl.replid,
                   (unsigned long long)srv->repl.offset);
-    if (srv_write_snapshot(srv, &c->out, hdr, (size_t)hl) != 0) {
+    if (hl < 0 || (size_t)hl >= sizeof(hdr) ||
+        srv_write_snapshot(srv, &c->out, hdr, (size_t)hl) != 0) {
         return -2;
     }
     if (!c->is_replica) {

@@ -1776,3 +1776,9 @@ heap allocation.
 MONITOR quoted-argument rendering now checks `len * 2 + 2` overflow and
 propagates reserve failures. A failed argument rolls the connection buffer back
 to the message start, preserving protocol framing without extra allocations.
+
+### Phase 232: bounded replication headers
+
+Replication handshake headers validate `snprintf` success and non-truncation
+before frame-size arithmetic. The checks are constant-time and add no work to
+the steady-state command or backlog append paths.

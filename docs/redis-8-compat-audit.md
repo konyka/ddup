@@ -408,3 +408,7 @@ cardinality.
 MONITOR output now treats each emitted command as a transactional append:
 oversized quoted arguments fail safely and discard the partial frame, preserving
 well-formed monitoring output under memory pressure.
+
+Replication snapshot and partial-resync headers now reject negative or truncated
+format results before converting lengths to `size_t`, preserving atomic frame
+construction under malformed or extreme state.
