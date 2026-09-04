@@ -813,6 +813,8 @@
     NULL/空路径和无效缓冲区，保持恢复路径原子失败（Phase 250）
   - [x] 单库快照读取容量溢出保护：文件缓冲区扩容在 `cap*2` 前检查上溢，
     防止极端持久化文件导致尺寸回绕（Phase 252）
+  - [x] 快照写入辅助层边界：`buf_reserve`/`buf_bytes` 拒绝 NULL 缓冲区和
+    非零长度 NULL 源，允许零长度 payload 保持兼容（Phase 261）
   - [x] Tier 存储 API 边界：open/put/get/del/flush/compact 拒绝 NULL/空路径
     与无效键值指针，并校验临时路径长度（Phase 253）
   - [x] Tier 日志重放完整性：恢复记录按声明 body 长度精确读取，截断记录

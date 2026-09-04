@@ -17,6 +17,8 @@
 
 static int buf_reserve(resp_buf *b, size_t n)
 {
+    if (b == NULL)
+        return -1;
     if (n > SIZE_MAX - b->len)
         return -1;
     return resp_buf_reserve(b, n);
@@ -69,6 +71,8 @@ static int buf_f64le(resp_buf *b, double v)
 
 static int buf_bytes(resp_buf *b, const char *p, size_t n)
 {
+    if (b == NULL || (p == NULL && n != 0))
+        return -1;
     if (buf_reserve(b, n) != 0)
         return -1;
     memcpy(b->data + b->len, p, n);

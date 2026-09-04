@@ -1894,6 +1894,11 @@ and bounded temporary allocations.
 Single-database snapshot loading checks capacity doubling before `realloc`,
 returning failure on overflow while preserving the existing linear-growth path.
 
+### Phase 261: defensive snapshot buffer helpers
+
+Snapshot append helpers validate buffer and source pointers before reserve/copy.
+The zero-length payload case remains allocation-free and accepts a null source.
+
 ### Phase 253: null-safe tier APIs
 
 Tier storage entry points validate paths, payload pointers, and writer state
