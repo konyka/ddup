@@ -270,6 +270,10 @@ int tier_open(tier_store **out, const char *path, uint64_t max_disk_bytes)
                     t->failed = 1;
                     break;
                 }
+                if (op != TIER_OP_PUT && (klen != 0 || vlen != 0)) {
+                    t->failed = 1;
+                    break;
+                }
                 if (body > UINT32_MAX - sizeof(hdr) ||
                     tier_advance_id(t, rid) != 0)
                     {

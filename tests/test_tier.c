@@ -142,6 +142,26 @@ static void test_replay_rejects_unknown_operation(void)
     pal_file_unlink(PATH);
 }
 
+static void test_replay_rejects_control_body(void)
+{
+    tier_store *t;
+    FILE *f;
+    unsigned char hdr[26] = {0};
+    pal_file_unlink(PATH);
+    f = fopen(PATH, "wb");
+    DD_CHECK(f != NULL);
+    if (f != NULL) {
+        fwrite("DDUPTC1", 1, 8, f);
+        hdr[0] = 2; /* DEL */
+        hdr[2] = 1; /* illegal key body */
+        fwrite(hdr, 1, sizeof(hdr), f);
+        fputc('x', f);
+        fclose(f);
+    }
+    DD_CHECK_EQ_INT(-1, tier_open(&t, PATH, 0));
+    pal_file_unlink(PATH);
+}
+
 static void test_flush_db_keeps_other_db(void)
 {
     tier_store *t;
@@ -254,6 +274,7 @@ int main(void)
     DD_RUN(test_replay_rejects_truncated_record);
     DD_RUN(test_replay_rejects_id_and_length_overflow);
     DD_RUN(test_replay_rejects_unknown_operation);
+    DD_RUN(test_replay_rejects_control_body);
     DD_RUN(test_flush_db_keeps_other_db);
     DD_RUN(test_compact_keeps_live);
     DD_RUN(test_disk_limit);

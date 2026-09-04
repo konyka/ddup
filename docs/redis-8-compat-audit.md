@@ -495,3 +495,6 @@ insertion failure, preventing durable records from becoming unaddressable.
 
 Tier replay now rejects unknown operation codes before consuming record bodies,
 preventing undefined persistence operations from mutating recovery state.
+
+Tier replay now rejects DEL/FLUSH records carrying unexpected key/value bodies,
+preventing hidden bytes from being silently accepted during recovery.

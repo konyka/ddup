@@ -1922,3 +1922,8 @@ update behavior.
 
 Tier replay rejects unknown record operations before body processing or index
 mutation. Valid log replay retains the same bounded sequential scan.
+
+### Phase 258: strict tier control records
+
+DEL and FLUSH replay records now require zero key/value lengths before body
+consumption. The check is constant-time and leaves valid control-log replay intact.
