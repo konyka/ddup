@@ -865,3 +865,5 @@
     清理阶段 double-free（Phase 270）
   - [x] 复制 backlog 输入与偏移防护：NULL 对象/数据/输出安全返回，复制偏移
     在 UINT64_MAX 处饱和，避免控制面崩溃和回绕（Phase 271）
+  - [x] 集群 hash-slot 输入防护：CRC16、标签提取和槽位计算拒绝非零长度
+    NULL key，标签输出允许 NULL 仅跳过复制，保持路由路径安全（Phase 272）

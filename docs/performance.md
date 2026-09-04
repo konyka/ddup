@@ -2004,3 +2004,10 @@ Backlog lifecycle, append, and read helpers now reject null objects and buffers
 before touching state. The absolute replication offset uses saturating addition
 to prevent wraparound under malformed or adversarial append sizes; normal ring
 writes retain the same O(1) copy path.
+
+### Phase 272: bounded cluster hash-slot inputs
+
+CRC16 and slot/tag helpers now fail closed for non-empty null keys; hashtag
+rendering treats a null output as a deliberate no-copy request. Valid routing
+continues to use the read-only 256-entry CRC table with no allocation or extra
+per-byte branches beyond the existing loop.

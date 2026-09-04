@@ -543,3 +543,7 @@ free, keeping corrupted internal handles fail-closed during cleanup.
 Replication backlog helpers now fail closed on null inputs and saturate the
 absolute stream offset at `UINT64_MAX`, preventing malformed replication data
 from causing pointer faults or offset wraparound.
+
+Cluster CRC16/hash-slot helpers now reject non-empty null keys and safely handle
+null hashtag output buffers, preventing malformed routing inputs from crashing
+the command path while preserving Redis hashtag semantics for valid keys.

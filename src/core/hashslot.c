@@ -47,6 +47,8 @@ uint16_t crc16(const char *buf, size_t len)
 {
     uint16_t crc = 0;
     size_t i;
+    if (buf == NULL && len != 0)
+        return 0;
     for (i = 0; i < len; i++)
         crc = (uint16_t)((crc << 8) ^
                          crc16_tab[((crc >> 8) ^ (uint8_t)buf[i]) & 0xFF]);
@@ -56,6 +58,10 @@ uint16_t crc16(const char *buf, size_t len)
 size_t hash_tag(const char *key, size_t klen, char *out, size_t cap)
 {
     size_t i, start = 0, end = 0, n;
+    if (key == NULL && klen != 0)
+        return 0;
+    if (out == NULL)
+        cap = 0;
     for (i = 0; i < klen; i++) {
         if (key[i] == '{') {
             size_t j;
@@ -86,6 +92,8 @@ size_t hash_tag(const char *key, size_t klen, char *out, size_t cap)
 uint32_t hash_slot(const char *key, size_t klen)
 {
     size_t i, start = 0, end = klen;
+    if (key == NULL && klen != 0)
+        return 0;
     for (i = 0; i < klen; i++) {
         if (key[i] == '{') {
             size_t j;

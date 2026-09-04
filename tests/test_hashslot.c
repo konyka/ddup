@@ -104,6 +104,20 @@ static void test_hashtag_rule(void)
     DD_CHECK(n == 3 && memcmp(tag, "bar", 3) == 0);
 }
 
+static void test_hashslot_null_inputs(void)
+{
+    char out[8] = {'s', 'e', 'n', 't', 'i', 'n', 'e', 'l'};
+
+    DD_CHECK_EQ_INT(0, (long long)crc16(NULL, 1));
+    DD_CHECK_EQ_INT(0, (long long)hash_tag(NULL, 1, out, sizeof(out)));
+    DD_CHECK_MEM("sentinel", 8, out, 8);
+    DD_CHECK_EQ_INT(3, (long long)hash_tag("abc", 3, NULL, 4));
+    DD_CHECK_EQ_INT(0, (long long)hash_slot(NULL, 1));
+    DD_CHECK_EQ_INT(0, (long long)hash_slot(NULL, 0));
+    DD_CHECK_EQ_INT(0, (long long)crc16(NULL, 0));
+    DD_CHECK_EQ_INT(0, (long long)hash_tag(NULL, 0, out, sizeof(out)));
+}
+
 static void test_slot_vectors(void)
 {
     /* published Redis hash slot values */
@@ -125,6 +139,7 @@ int main(void)
     DD_RUN(test_crc16_concurrent_initialization);
     DD_RUN(test_crc16_table_matches_reference);
     DD_RUN(test_hashtag_rule);
+    DD_RUN(test_hashslot_null_inputs);
     DD_RUN(test_slot_vectors);
     return DD_TEST_SUMMARY();
 }
