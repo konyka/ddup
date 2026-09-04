@@ -355,6 +355,10 @@ static void test_management_error_bounds(void)
     cmd(6, "HPEXPIRE", "hash", "10", long_sub, "FIELDS", "1");
     DD_CHECK(g_out.len <= 132);
     DD_CHECK(strstr(g_out.data, "ERR unknown argument") != NULL);
+
+    cmd(5, "ACL", "DRYRUN", long_sub, "PING", "x");
+    DD_CHECK(g_out.len <= 132);
+    DD_CHECK(strstr(g_out.data, "ERR User '") != NULL);
 }
 
 int main(void)

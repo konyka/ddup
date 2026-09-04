@@ -12170,9 +12170,11 @@ static void command_acl(session *s, const resp_value *argv, size_t argc,
         u = reg == NULL ? NULL : acl_find_const(reg, un, ul);
         if (u == NULL) {
             char msg[128];
+            size_t shown = ul > 96 ? 96 : ul;
             int n = snprintf(msg, sizeof(msg), "ERR User '%.*s' not found",
-                             (int)ul, un);
-            resp_write_error(out, msg, (size_t)n);
+                             (int)shown, un);
+            resp_write_error(out, msg, n < 0 || (size_t)n >= sizeof(msg)
+                                      ? sizeof(msg) - 1 : (size_t)n);
             return;
         }
         id = cmd_resolve(sub, sl);

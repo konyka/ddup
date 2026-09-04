@@ -1733,3 +1733,9 @@ with no allocation or impact on recognized configuration updates.
 Unknown options in hash-field expiration commands cap displayed input at 96
 bytes and clamp the formatted length before RESP output. Recognized expiration
 paths retain their existing allocation-free hot path.
+
+### Phase 225: bounded ACL DRYRUN diagnostics
+
+Unknown ACL users are rendered with a 96-byte input cap and checked output
+length. The authorization and command-dispatch hot paths remain unchanged and
+allocation-free.

@@ -379,3 +379,7 @@ from causing out-of-bounds RESP writes.
 Unknown options for `HEXPIRE`/`HPEXPIRE` and their absolute-time variants now
 use bounded diagnostics, preserving fail-closed parsing without exposing
 uninitialized stack bytes for oversized option tokens.
+
+`ACL DRYRUN` now bounds the missing-user diagnostic as well, retaining the
+Redis-style error while preventing oversized usernames from extending the RESP
+write beyond initialized stack storage.
