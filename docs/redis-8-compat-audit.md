@@ -362,3 +362,8 @@ Unknown subcommands for `ACL`, `LATENCY`, `MODULE`, `SENTINEL`, and `DEBUG` now
 use bounded diagnostic rendering. Inputs are truncated to a fixed prefix and
 the RESP writer receives only bytes actually present in the stack buffer,
 preventing malformed oversized arguments from causing out-of-bounds reads.
+
+Top-level unknown-command responses and queued MULTI command validation now use
+bounded command-name rendering as well; SCRIPT unknown-subcommand errors follow
+the same fixed-buffer path. This keeps Redis diagnostics useful while ensuring
+RESP output lengths never exceed initialized stack storage.

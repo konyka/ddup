@@ -1709,3 +1709,9 @@ Unknown subcommand errors for management containers use a shared fixed 128-byte
 stack renderer and show at most 64 bytes of attacker-controlled input. The
 diagnostic path performs no allocation and never passes an unbounded `snprintf`
 result length to the RESP writer.
+
+### Phase 221: bounded command-name diagnostics
+
+Top-level and queued-command unknown-name errors now cap attacker-controlled
+command text before formatting. SCRIPT subcommand diagnostics share the same
+fixed stack renderer, keeping malformed requests allocation-free and bounded.

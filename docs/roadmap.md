@@ -761,3 +761,5 @@
     `Unrecognized option '<attr>'`，使用固定栈缓冲区并限制属性长度（Phase 219）
   - [x] 管理命令错误边界：ACL/LATENCY/MODULE/SENTINEL/DEBUG 未知子命令的
     诊断输出限制为固定长度，避免超长 RESP 参数导致栈缓冲区越界（Phase 220）
+  - [x] 全局未知命令错误边界：顶层分发与 MULTI 队列路径限制命令名渲染长度，
+    SCRIPT 未知子命令复用固定诊断缓冲区（Phase 221）

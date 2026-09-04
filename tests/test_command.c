@@ -327,6 +327,14 @@ static void test_management_error_bounds(void)
     cmd(3, "SENTINEL", long_sub, "extra");
     DD_CHECK(g_out.len <= 132);
     DD_CHECK(strstr(g_out.data, "ERR Unknown SENTINEL subcommand") != NULL);
+
+    cmd(1, long_sub);
+    DD_CHECK(g_out.len <= 132);
+    DD_CHECK(strstr(g_out.data, "ERR unknown command") != NULL);
+
+    cmd(3, "SCRIPT", long_sub, "extra");
+    DD_CHECK(g_out.len <= 132);
+    DD_CHECK(strstr(g_out.data, "ERR Unknown SCRIPT subcommand") != NULL);
 }
 
 int main(void)

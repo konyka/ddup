@@ -11950,6 +11950,19 @@ static void write_unknown_subcommand_error(resp_buf *out, const char *prefix,
         resp_write_error(out, msg, (size_t)n);
 }
 
+static void write_unknown_command_error(resp_buf *out, const char *name,
+                                        size_t nlen)
+{
+    char msg[128];
+    size_t shown = nlen > 96 ? 96 : nlen;
+    int n = snprintf(msg, sizeof(msg), "ERR unknown command '%.*s'",
+                     (int)shown, name);
+    if (n < 0 || (size_t)n >= sizeof(msg))
+        resp_write_error(out, msg, sizeof(msg) - 1);
+    else
+        resp_write_error(out, msg, (size_t)n);
+}
+
 static void command_failover(session *s, const resp_value *argv, size_t argc,
                              resp_buf *out)
 {
@@ -14024,14 +14037,7 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
             resp_write_error(out, E, sizeof(E) - 1);
             return;
         }
-        {
-            char msg[96];
-            int n = snprintf(msg, sizeof(msg),
-                             "ERR Unknown SCRIPT subcommand or wrong number "
-                             "of arguments for '%.*s'",
-                             (int)sl, sub);
-            resp_write_error(out, msg, (size_t)n);
-        }
+        write_unknown_subcommand_error(out, "SCRIPT subcommand or wrong number of arguments for", sub, sl);
         return;
     }
 
@@ -23298,12 +23304,7 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
         return;
     }
 
-    {
-        char msg[128];
-        int n = snprintf(msg, sizeof(msg), "ERR unknown command '%.*s'",
-                         (int)nlen, name);
-        resp_write_error(out, msg, (size_t)n);
-    }
+    write_unknown_command_error(out, name, nlen);
     return;
 
 bad_type:
@@ -23756,12 +23757,7 @@ static int queue_validate(session *s, const resp_value *argv, size_t argc,
     cmd_id = cmd_resolve(name, nlen);
     if (cmd_id == CMD_ID_UNKNOWN) {
         s->multi_error = 1;
-        {
-            char msg[128];
-            int n = snprintf(msg, sizeof(msg), "ERR unknown command '%.*s'",
-                             (int)nlen, name);
-            resp_write_error(out, msg, (size_t)n);
-        }
+        write_unknown_command_error(out, name, nlen);
         return -1;
     }
     ce = &CMD_TABLE[cmd_id - 1];
