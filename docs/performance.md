@@ -1983,3 +1983,11 @@ paths ignore malformed old-table metadata. These checks are cold/error branches;
 initialized-table probing and migration retain the same allocation and branch
 profile. Teardown also detects aliased slot arrays to avoid double-free when a
 corrupted handle is released.
+
+### Phase 269: deterministic hash-table outputs
+
+`rh_set_ex2` initializes the returned old-block ownership pair on every valid
+insert, and `rh_random_entry` clears its output views before reporting an empty
+or invalid table. The extra stores occur only at API boundaries and remove
+caller-side stale-pointer cleanup hazards; successful sampling still performs
+the same bounded slot scan.

@@ -532,3 +532,7 @@ Hash-table iteration, lookup, random sampling, and teardown now fail closed on
 inconsistent slot-array metadata and avoid double-free on aliased storage,
 improving resilience against corrupted internal handles without changing valid
 Redis command behavior.
+
+Hash-table ownership and sampling outputs are now deterministic: insert calls
+clear the old-value result on a new key, while failed random sampling clears all
+views, preventing stale pointers from escaping into command and eviction paths.

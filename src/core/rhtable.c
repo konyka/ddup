@@ -438,6 +438,10 @@ int rh_set_ex2(rh_table *t, const char *key, size_t klen, const char *v1,
     if (vlen > UINT32_MAX || klen > SIZE_MAX - vlen)
         return -1;
 
+    /* Make the ownership result deterministic for inserts. */
+    *old_kv = NULL;
+    *old_vlen = 0;
+
     rh_migrate_some(t);
     uint64_t h = rh_hash(key, klen);
 
@@ -532,8 +536,15 @@ int rh_random_entry(rh_table *t, uint32_t rand, const char **key, size_t *klen,
                     const char **val, size_t *vlen, uint32_t *meta)
 {
     const rh_entry *e = NULL;
-    if (t == NULL || t->slots == NULL || t->cap == 0 || key == NULL ||
-        klen == NULL || val == NULL || vlen == NULL || t->size == 0)
+    if (key == NULL || klen == NULL || val == NULL || vlen == NULL)
+        return 0;
+    *key = NULL;
+    *klen = 0;
+    *val = NULL;
+    *vlen = 0;
+    if (meta != NULL)
+        *meta = 0;
+    if (t == NULL || t->slots == NULL || t->cap == 0 || t->size == 0)
         return 0;
     e = rh_scan_occupied(t->slots, t->cap, (size_t)rand & (t->cap - 1));
     if (e == NULL && t->old_slots != NULL && t->old_cap != 0)

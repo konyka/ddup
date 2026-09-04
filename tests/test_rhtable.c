@@ -192,6 +192,40 @@ static void test_set_ex(void)
     rh_destroy(&t);
 }
 
+static void test_set_ex_output_initialization(void)
+{
+    rh_table t;
+    char *old_kv = (char *)0x1;
+    size_t old_vlen = 99;
+
+    rh_init(&t);
+    DD_CHECK_EQ_INT(0, rh_set_ex2(&t, "new", 3, "v", 1, NULL, 0, 7,
+                                  &old_kv, &old_vlen));
+    DD_CHECK(old_kv == NULL);
+    DD_CHECK_EQ_INT(0, (long long)old_vlen);
+    rh_destroy(&t);
+}
+
+static void test_random_entry_failure_clears_outputs(void)
+{
+    rh_table t;
+    const char *key = (const char *)0x1;
+    const char *val = (const char *)0x1;
+    size_t klen = 99;
+    size_t vlen = 99;
+    uint32_t meta = 99;
+
+    rh_init(&t);
+    DD_CHECK_EQ_INT(0, rh_random_entry(&t, 0, &key, &klen, &val, &vlen,
+                                       &meta));
+    DD_CHECK(key == NULL);
+    DD_CHECK(val == NULL);
+    DD_CHECK_EQ_INT(0, (long long)klen);
+    DD_CHECK_EQ_INT(0, (long long)vlen);
+    DD_CHECK_EQ_INT(0, (long long)meta);
+    rh_destroy(&t);
+}
+
 static void test_reject_unrepresentable_lengths(void)
 {
     rh_table t;
@@ -612,6 +646,8 @@ int main(void)
     DD_RUN(test_test_helpers_reject_null_outputs);
     DD_RUN(test_overwrite);
     DD_RUN(test_set_ex);
+    DD_RUN(test_set_ex_output_initialization);
+    DD_RUN(test_random_entry_failure_clears_outputs);
     DD_RUN(test_reject_unrepresentable_lengths);
     DD_RUN(test_delete);
     DD_RUN(test_binary_keys_values);
