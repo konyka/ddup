@@ -1001,10 +1001,11 @@ int snapshot_serialize_multi_shards(void *const *ctxs, snapshot_db_get get,
                                     int nshards, int ndbs, resp_buf *out)
 {
     int i;
-    size_t start = out->len;
-    if (ctxs == NULL || get == NULL || nshards < 0 ||
+    size_t start;
+    if (out == NULL || ctxs == NULL || get == NULL || nshards < 0 ||
         nshards > UINT16_MAX)
         return -1;
+    start = out->len;
     if (buf_bytes(out, "DDUPMT01", 8) != 0 ||
         buf_u16le(out, (uint16_t)nshards) != 0) {
         out->len = start;
@@ -1061,9 +1062,11 @@ int snapshot_serialize_multi(void *ctx, snapshot_db_get get, int ndbs,
                              resp_buf *out)
 {
     int i;
-    size_t start = out->len;
-    if (ndbs < 0 || ndbs > UINT16_MAX)
+    size_t start;
+    if (ctx == NULL || get == NULL || out == NULL || ndbs < 0 ||
+        ndbs > UINT16_MAX)
         return -1;
+    start = out->len;
     if (buf_bytes(out, "DDUP0002", 8) != 0 ||
         buf_u16le(out, (uint16_t)ndbs) != 0) {
         out->len = start;
@@ -1110,6 +1113,9 @@ int snapshot_save_multi(void *ctx, snapshot_db_get get, int ndbs,
     int rc = -1;
     size_t path_len;
 
+    if (ctx == NULL || get == NULL || ndbs <= 0 || path == NULL ||
+        path[0] == '\0')
+        return -1;
     resp_buf_init(&buf);
     if (snapshot_serialize_multi(ctx, get, ndbs, &buf) != 0) {
         resp_buf_free(&buf);
@@ -1151,7 +1157,7 @@ int snapshot_load_mem_multi(void *ctx, snapshot_db_get get, int ndbs,
     int ok = 1;
     int i;
 
-    if (len < 8)
+    if (ctx == NULL || get == NULL || ndbs <= 0 || buf == NULL || len < 8)
         return -1;
     if (memcmp(buf, "DDUPMT01", 8) == 0) {
         db_array_ctx shard_ctx;

@@ -46,6 +46,21 @@ static void test_snapshot_api_rejects_null_inputs(void)
     resp_buf_free(&out);
 }
 
+static void test_snapshot_multi_api_rejects_null_inputs(void)
+{
+    resp_buf out;
+    resp_buf_init(&out);
+    DD_CHECK_EQ_INT(-1, snapshot_serialize_multi_shards(NULL, NULL, 0, 1, &out));
+    DD_CHECK_EQ_INT(-1, snapshot_serialize_multi_shards(NULL, NULL, 0, 1, NULL));
+    DD_CHECK_EQ_INT(-1, snapshot_serialize_multi_buffers(NULL, NULL, 0, &out));
+    DD_CHECK_EQ_INT(-1, snapshot_serialize_multi(NULL, NULL, 1, &out));
+    DD_CHECK_EQ_INT(-1, snapshot_serialize_multi(NULL, NULL, 1, NULL));
+    DD_CHECK_EQ_INT(-1, snapshot_save_multi(NULL, NULL, 1, NULL));
+    DD_CHECK_EQ_INT(-1, snapshot_load_mem_multi(NULL, NULL, 1, NULL, 0, 0));
+    DD_CHECK_EQ_INT(-1, snapshot_load_multi(NULL, NULL, 1, NULL, 0));
+    resp_buf_free(&out);
+}
+
 #define EXPECT(out, s) DD_CHECK_MEM((s), strlen(s), (out).data, (out).len)
 
 #define T0 1000000ULL
@@ -734,6 +749,7 @@ static void test_failed_install_and_restore_are_transactional(void)
 int main(void)
 {
     DD_RUN(test_snapshot_api_rejects_null_inputs);
+    DD_RUN(test_snapshot_multi_api_rejects_null_inputs);
     DD_RUN(test_roundtrip_all_types);
     DD_RUN(test_expired_keys_skipped_at_load);
     DD_RUN(test_corrupt_and_atomic);

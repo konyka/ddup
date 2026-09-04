@@ -1882,3 +1882,9 @@ buffered I/O behavior.
 Snapshot serialization, persistence, replay, and per-key transfer APIs validate
 database, path, payload, and output pointers before work. Valid paths retain the
 existing transactional temporary-database behavior.
+
+### Phase 251: null-safe multi-database snapshots
+
+Multi-database and sharded snapshot APIs validate contexts, callbacks, paths, and
+buffers before serialization or replay. Valid paths retain transactional swaps
+and bounded temporary allocations.

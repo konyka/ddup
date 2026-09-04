@@ -473,3 +473,6 @@ points now reject null or empty inputs before file operations.
 
 Snapshot save/load, memory replay, and per-key DUMP/RESTORE entry points now
 reject null or empty inputs before parsing or file operations.
+
+Sharded and multi-database snapshot entry points now reject null contexts,
+callbacks, paths, and buffers before serialization or replay mutation.
