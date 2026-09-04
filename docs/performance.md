@@ -1696,3 +1696,9 @@ impact on ordinary command execution.
 length) with no heap allocation; `CLIENT INFO` uses a bounded stack renderer,
 and `CLIENT LIST` uses a larger fixed line buffer with an explicit truncation
 guard. Metadata updates do not add work to ordinary data commands.
+
+### Phase 219: CLIENT SETINFO error compatibility
+
+Unknown SETINFO attributes are rendered into a fixed 128-byte stack buffer with
+bounded precision before returning the Redis-compatible error. The path is O(1)
+for the bounded attribute and adds no allocation or data-path overhead.

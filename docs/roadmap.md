@@ -757,3 +757,5 @@
     保持原 tracking 状态；使用固定槽位内存比较，避免额外堆分配（Phase 217）
   - [x] CLIENT SETINFO 元数据：保存并展示 `LIB-NAME/LIB-VER`，校验 ASCII
     可打印字符、支持空值清除，并在 `CLIENT INFO/LIST` 中安全输出（Phase 218）
+  - [x] CLIENT SETINFO 错误兼容：未知属性返回 Redis 风格的
+    `Unrecognized option '<attr>'`，使用固定栈缓冲区并限制属性长度（Phase 219）

@@ -353,3 +353,7 @@ the check uses only fixed inline storage.
 bounded metadata in the connection session, supports empty-value clearing, and
 exposes the fields through `CLIENT INFO` and `CLIENT LIST` with safe bounded
 formatting.
+
+Unknown `CLIENT SETINFO` attributes now return `ERR Unrecognized option '<attr>'`
+with bounded stack formatting, matching Redis diagnostics without exposing
+unbounded input or changing ordinary command execution.

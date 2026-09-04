@@ -302,6 +302,26 @@ static void test_client_setinfo_metadata(void)
     roundtrip(s, c,
               "*4\r\n$6\r\nCLIENT\r\n$7\r\nSETINFO\r\n$8\r\nLIB-NAME\r\n$1\r\n \r\n",
               "-ERR client info value cannot contain spaces, newlines or special characters.\r\n");
+    {
+        const char req[] = "*4\r\n$6\r\nCLIENT\r\n$7\r\nSETINFO\r\n$3\r\nBAD\r\n$1\r\nx\r\n";
+        char errbuf[128];
+        size_t errgot = 0;
+        int erriter = 0;
+        DD_CHECK_EQ_INT((long long)(sizeof(req) - 1),
+                        (long long)pal_send(c, req, sizeof(req) - 1));
+        while (errgot < sizeof(errbuf) - 1 && erriter++ < 10000) {
+            ptrdiff_t n;
+            server_run_once(s, 50);
+            n = pal_recv(c, errbuf + errgot, sizeof(errbuf) - 1 - errgot);
+            if (n > 0)
+                errgot += (size_t)n;
+            if (errgot >= 2 && errbuf[errgot - 2] == '\r' &&
+                errbuf[errgot - 1] == '\n')
+                break;
+        }
+        errbuf[errgot] = '\0';
+        DD_CHECK(strstr(errbuf, "Unrecognized option 'BAD'") != NULL);
+    }
     roundtrip(s, c,
               "*4\r\n$6\r\nCLIENT\r\n$7\r\nSETINFO\r\n$8\r\nLIB-NAME\r\n$0\r\n\r\n",
               "+OK\r\n");

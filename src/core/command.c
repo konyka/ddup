@@ -7686,7 +7686,13 @@ static void command_client(session *s, const resp_value *argv, size_t argc,
             goto bad_type;
         if (!ci_equal(attr, al, "lib-name") &&
             !ci_equal(attr, al, "lib-ver")) {
-            resp_write_error(out, ERR_SYNTAX, sizeof(ERR_SYNTAX) - 1);
+            char e[128];
+            int n = snprintf(e, sizeof(e), "ERR Unrecognized option '%.*s'",
+                             (int)(al > 96 ? 96 : al), attr);
+            if (n < 0)
+                resp_write_error(out, ERR_SYNTAX, sizeof(ERR_SYNTAX) - 1);
+            else
+                resp_write_error(out, e, (size_t)n);
             return;
         }
         {
