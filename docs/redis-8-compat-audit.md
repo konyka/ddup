@@ -489,3 +489,6 @@ as valid cold records.
 
 Tier replay and append now reject maximum record IDs and lengths that cannot fit
 the fixed index representation, preventing ID wraparound and locator truncation.
+
+Tier append and compaction now fail closed on offset arithmetic overflow or index
+insertion failure, preventing durable records from becoming unaddressable.

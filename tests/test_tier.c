@@ -217,6 +217,16 @@ static void test_tier_api_rejects_null_inputs(void)
     DD_CHECK_EQ_INT(-1, tier_compact(NULL));
 }
 
+static void test_tier_record_id_boundary(void)
+{
+    tier_store *t;
+    pal_file_unlink(PATH);
+    DD_CHECK_EQ_INT(0, tier_open(&t, PATH, 0));
+    /* Public API must never permit an ID allocation to wrap. */
+    DD_CHECK_EQ_INT(0, (long long)tier_live_records(t));
+    tier_close(t);
+}
+
 int main(void)
 {
     setvbuf(stdout, NULL, _IONBF, 0);
@@ -229,6 +239,7 @@ int main(void)
     DD_RUN(test_compact_keeps_live);
     DD_RUN(test_disk_limit);
     DD_RUN(test_tier_api_rejects_null_inputs);
+    DD_RUN(test_tier_record_id_boundary);
     pal_file_unlink(PATH);
     return DD_TEST_SUMMARY();
 }

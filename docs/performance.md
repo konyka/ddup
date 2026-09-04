@@ -1911,3 +1911,9 @@ unchanged; replay overhead is proportional to persisted bytes.
 Tier record IDs and encoded record lengths are validated before index updates.
 Overflow checks are cold-path replay/append guards and do not affect normal lookup
 or append throughput.
+
+### Phase 256: tier index/offset consistency
+
+Tier append and compaction paths now check total-offset arithmetic and propagate
+index insertion failures. Normal writes retain the same single-pass I/O and index
+update behavior.

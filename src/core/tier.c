@@ -123,12 +123,14 @@ static int tier_advance_id(tier_store *t, uint64_t rid)
     return 0;
 }
 
-static void index_set(rh_table *idx, uint64_t rid, const tier_loc *loc)
+static int index_set(rh_table *idx, uint64_t rid, const tier_loc *loc)
 {
     unsigned char key[8];
     put_u64le(key, rid);
-    (void)rh_set(idx, (const char *)key, sizeof(key),
-                 (const char *)loc, sizeof(*loc));
+    return rh_set(idx, (const char *)key, sizeof(key),
+                  (const char *)loc, sizeof(*loc)) < 0
+               ? -1
+               : 0;
 }
 
 static int index_get(const rh_table *idx, uint64_t rid, tier_loc *loc)
@@ -155,7 +157,13 @@ static int append_record(tier_store *t, unsigned char *hdr, size_t hdrlen,
                          const char *key, size_t klen, const char *val,
                          size_t vlen)
 {
+    uint64_t total;
     if (t->failed)
+        return -1;
+    if (hdrlen > SIZE_MAX - klen || hdrlen + klen > SIZE_MAX - vlen)
+        return -1;
+    total = (uint64_t)(hdrlen + klen + vlen);
+    if (t->end > UINT64_MAX - total)
         return -1;
     if (t->max_disk_bytes != 0 &&
         (t->end > t->max_disk_bytes || hdrlen > t->max_disk_bytes - t->end ||
@@ -308,7 +316,10 @@ int tier_open(tier_store **out, const char *path, uint64_t max_disk_bytes)
                     t->failed = 1;
                     break;
                 }
-                index_set(&t->index, rid, &loc);
+                if (index_set(&t->index, rid, &loc) != 0) {
+                    t->failed = 1;
+                    break;
+                }
                 (void)expire;
                 t->end += sizeof(hdr) + body;
             }
@@ -366,7 +377,10 @@ int tier_put(tier_store *t, unsigned int db_index, const char *key,
     loc.db_index = db_index;
     if (append_record(t, hdr, sizeof(hdr), key, klen, val, vlen) != 0)
         return -1;
-    index_set(&t->index, rid, &loc);
+    if (index_set(&t->index, rid, &loc) != 0) {
+        t->failed = 1;
+        return -1;
+    }
     t->next_id = rid + 1;
     if (record_id != NULL)
         *record_id = rid;
@@ -560,6 +574,10 @@ int tier_compact(tier_store *t)
             }
             free(rec);
             c.items[i].loc.off = off;
+            if (new_end > UINT64_MAX - c.items[i].loc.len) {
+                ok = 0;
+                break;
+            }
             new_end += c.items[i].loc.len;
         }
     }
@@ -599,7 +617,11 @@ int tier_compact(tier_store *t)
     rh_destroy(&t->index);
     rh_init(&t->index);
     for (i = 0; i < c.n; i++)
-        index_set(&t->index, c.items[i].rid, &c.items[i].loc);
+        if (index_set(&t->index, c.items[i].rid, &c.items[i].loc) != 0) {
+            free(c.items);
+            t->failed = 1;
+            return -1;
+        }
     free(c.items);
     t->end = new_end;
     t->disk_bytes = new_end;
