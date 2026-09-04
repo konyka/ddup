@@ -1991,3 +1991,9 @@ insert, and `rh_random_entry` clears its output views before reporting an empty
 or invalid table. The extra stores occur only at API boundaries and remove
 caller-side stale-pointer cleanup hazards; successful sampling still performs
 the same bounded slot scan.
+
+### Phase 270: aliased hash-table teardown safety
+
+Teardown now skips the second slot-array free when a malformed handle aliases
+`old_slots` to `slots`. The comparison is outside normal CRUD/lookup paths and
+therefore has no effect on initialized-table throughput.

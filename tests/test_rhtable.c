@@ -151,8 +151,7 @@ static void test_inconsistent_table_state_fails_closed(void)
     t.old_slots = t.slots;
     DD_CHECK_EQ_INT(0, rh_get(&t, "missing", 7, &v, &vl));
     DD_CHECK_EQ_INT(0, rh_random_entry(&t, 0, &v, &vl, &v, &vl, NULL));
-    /* Prevent the intentionally aliased old_slots from being freed twice. */
-    t.old_slots = NULL;
+    /* Destroy must also tolerate the intentionally aliased slot pointers. */
     rh_destroy(&t);
 }
 

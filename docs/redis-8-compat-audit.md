@@ -536,3 +536,6 @@ Redis command behavior.
 Hash-table ownership and sampling outputs are now deterministic: insert calls
 clear the old-value result on a new key, while failed random sampling clears all
 views, preventing stale pointers from escaping into command and eviction paths.
+
+Hash-table teardown now handles aliased primary/old slot arrays without a second
+free, keeping corrupted internal handles fail-closed during cleanup.

@@ -115,7 +115,8 @@ void rh_destroy(rh_table *t)
                 free(t->old_slots[i].kv);
     }
     free(t->slots);
-    free(t->old_slots);
+    if (t->old_slots != t->slots)
+        free(t->old_slots);
     t->slots = NULL;
     t->old_slots = NULL;
 }
