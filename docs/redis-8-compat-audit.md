@@ -502,6 +502,10 @@ preventing undefined persistence operations from mutating recovery state.
 Tier replay now rejects DEL/FLUSH records carrying unexpected key/value bodies,
 preventing hidden bytes from being silently accepted during recovery.
 
+Shared hash-table APIs now reject null tables, keys, values, and output pointers
+before probing or mutation, preventing malformed internal calls from crashing
+command, ACL, snapshot, or tier paths.
+
 Tier reads now validate persisted offsets and value bounds before file access and
 clear output parameters on failure, preventing corrupt indexes from causing
 out-of-range reads.

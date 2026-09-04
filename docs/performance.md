@@ -1905,6 +1905,11 @@ Tier storage entry points validate paths, payload pointers, and writer state
 before file operations. Compaction checks temporary-path sizing without changing
 the normal append/index hot path.
 
+### Phase 263: null-safe hash-table APIs
+
+Hash-table entry points validate table, key/value, and output pointers before
+probing. Valid operations retain the same O(1) probe path and allocation policy.
+
 ### Phase 254: exact tier replay reads
 
 Tier replay now consumes each declared record body with bounded exact reads,

@@ -22,6 +22,30 @@ static void test_set_get(void)
     rh_destroy(&t);
 }
 
+static void test_api_rejects_null_inputs(void)
+{
+    rh_table t;
+    const char *v = NULL;
+    size_t vl = 0;
+    char *old = NULL;
+    size_t old_len = 0;
+    rh_init(&t);
+    rh_init(NULL);
+    rh_destroy(NULL);
+    DD_CHECK_EQ_INT(0, rh_get(NULL, "k", 1, &v, &vl));
+    DD_CHECK_EQ_INT(0, rh_get(&t, NULL, 1, &v, &vl));
+    DD_CHECK_EQ_INT(-1, rh_set(NULL, "k", 1, "v", 1));
+    DD_CHECK_EQ_INT(-1, rh_set(&t, NULL, 1, "v", 1));
+    DD_CHECK_EQ_INT(-1, rh_set(&t, "k", 1, NULL, 1));
+    DD_CHECK_EQ_INT(-1, rh_set_ex2(&t, "k", 1, NULL, 1, NULL, 0, 0,
+                                   &old, &old_len));
+    DD_CHECK_EQ_INT(0, rh_del(NULL, "k", 1));
+    DD_CHECK_EQ_INT(0, rh_touch(NULL, "k", 1, 0));
+    DD_CHECK_EQ_INT(0, rh_meta_of(NULL, "k", 1));
+    DD_CHECK_EQ_INT(0, rh_size(NULL));
+    rh_destroy(&t);
+}
+
 static void test_overwrite(void)
 {
     rh_table t;
@@ -484,6 +508,7 @@ int main(void)
     DD_RUN(test_capacity_arithmetic_overflow);
     DD_RUN(test_cached_growth_threshold);
     DD_RUN(test_set_get);
+    DD_RUN(test_api_rejects_null_inputs);
     DD_RUN(test_overwrite);
     DD_RUN(test_set_ex);
     DD_RUN(test_reject_unrepresentable_lengths);

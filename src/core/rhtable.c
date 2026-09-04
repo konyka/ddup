@@ -84,6 +84,8 @@ static rh_entry *rh_alloc_slots(size_t cap)
 
 void rh_init(rh_table *t)
 {
+    if (t == NULL)
+        return;
     t->slots = rh_alloc_slots(RH_INIT_CAP);
     t->cap = RH_INIT_CAP;
     t->size = 0;
@@ -96,6 +98,8 @@ void rh_init(rh_table *t)
 
 void rh_destroy(rh_table *t)
 {
+    if (t == NULL)
+        return;
     for (size_t i = 0; i < t->cap; i++)
         if (t->slots[i].psl >= 0)
             free(t->slots[i].kv);
@@ -238,7 +242,7 @@ int rh_test_grow_capacity(size_t cap, size_t *new_cap)
 
 size_t rh_size(const rh_table *t)
 {
-    return t->size;
+    return t == NULL ? 0 : t->size;
 }
 
 void rh_each(const rh_table *t, rh_iter_fn fn, void *ctx)
@@ -294,6 +298,9 @@ size_t rh_scan(rh_table *t, size_t cursor, size_t count, rh_scan_cb cb,
 int rh_get(rh_table *t, const char *key, size_t klen,
            const char **val, size_t *vlen)
 {
+    if (t == NULL || (key == NULL && klen != 0) || val == NULL ||
+        vlen == NULL)
+        return 0;
     rh_migrate_some(t);
     uint64_t h = rh_hash(key, klen);
     const rh_entry *e = NULL;
@@ -315,6 +322,9 @@ int rh_get(rh_table *t, const char *key, size_t klen,
 int rh_get_touch(rh_table *t, const char *key, size_t klen,
                  const char **val, size_t *vlen, uint32_t meta)
 {
+    if (t == NULL || (key == NULL && klen != 0) || val == NULL ||
+        vlen == NULL)
+        return 0;
     rh_migrate_some(t);
     uint64_t h = rh_hash(key, klen);
     rh_entry *e = NULL;
@@ -337,7 +347,9 @@ int rh_get_touch(rh_table *t, const char *key, size_t klen,
 int rh_set(rh_table *t, const char *key, size_t klen,
            const char *val, size_t vlen)
 {
-    if (klen > UINT32_MAX || vlen > UINT32_MAX || klen > SIZE_MAX - vlen)
+    if (t == NULL || (key == NULL && klen != 0) ||
+        (val == NULL && vlen != 0) || klen > UINT32_MAX ||
+        vlen > UINT32_MAX || klen > SIZE_MAX - vlen)
         return -1;
     rh_migrate_some(t);
     uint64_t h = rh_hash(key, klen);
@@ -392,7 +404,10 @@ int rh_set_ex2(rh_table *t, const char *key, size_t klen, const char *v1,
 {
     size_t vlen;
 
-    if (klen > UINT32_MAX || n1 > UINT32_MAX || n2 > UINT32_MAX ||
+    if (t == NULL || (key == NULL && klen != 0) ||
+        (v1 == NULL && n1 != 0) || (v2 == NULL && n2 != 0) ||
+        old_kv == NULL || old_vlen == NULL || klen > UINT32_MAX ||
+        n1 > UINT32_MAX || n2 > UINT32_MAX ||
         n1 > SIZE_MAX - n2)
         return -1;
     vlen = n1 + n2;
@@ -462,6 +477,8 @@ int rh_set_ex(rh_table *t, const char *key, size_t klen, const char *val,
 
 uint32_t rh_meta_of(rh_table *t, const char *key, size_t klen)
 {
+    if (t == NULL || (key == NULL && klen != 0))
+        return 0;
     uint64_t h = rh_hash(key, klen);
     long i = rh_find_in(t->slots, t->cap, h, key, klen);
     if (i >= 0)
@@ -509,6 +526,8 @@ int rh_random_entry(rh_table *t, uint32_t rand, const char **key, size_t *klen,
 
 int rh_touch(rh_table *t, const char *key, size_t klen, uint32_t meta)
 {
+    if (t == NULL || (key == NULL && klen != 0))
+        return 0;
     uint64_t h = rh_hash(key, klen);
     rh_entry *e = NULL;
     long i = rh_find_in(t->slots, t->cap, h, key, klen);
@@ -527,6 +546,8 @@ int rh_touch(rh_table *t, const char *key, size_t klen, uint32_t meta)
 
 int rh_del(rh_table *t, const char *key, size_t klen)
 {
+    if (t == NULL || (key == NULL && klen != 0))
+        return 0;
     rh_migrate_some(t);
     uint64_t h = rh_hash(key, klen);
     long i = rh_find_in(t->slots, t->cap, h, key, klen);

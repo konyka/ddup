@@ -815,6 +815,8 @@
     防止极端持久化文件导致尺寸回绕（Phase 252）
   - [x] 快照写入辅助层边界：`buf_reserve`/`buf_bytes` 拒绝 NULL 缓冲区和
     非零长度 NULL 源，允许零长度 payload 保持兼容（Phase 261）
+  - [x] 哈希表公共 API 边界：初始化、查找、写入、删除、touch、meta 和 size
+    对 NULL/非法数据安全返回，保持热路径常量级校验（Phase 263）
   - [x] Tier 存储 API 边界：open/put/get/del/flush/compact 拒绝 NULL/空路径
     与无效键值指针，并校验临时路径长度（Phase 253）
   - [x] Tier 日志重放完整性：恢复记录按声明 body 长度精确读取，截断记录
