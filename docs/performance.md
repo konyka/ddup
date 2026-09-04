@@ -1933,3 +1933,9 @@ consumption. The check is constant-time and leaves valid control-log replay inta
 Tier reads initialize output parameters on failure and validate stored locations
 against the current file end before seeking. Valid reads retain one index lookup
 and one value allocation.
+
+### Phase 260: fail-closed tier compaction swap
+
+Compaction rename/reopen failures latch the store as failed and prevent further
+writes. The successful compaction path remains a single atomic rename plus index
+rebuild.

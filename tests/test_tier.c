@@ -278,6 +278,21 @@ static void test_tier_get_initializes_outputs_on_failure(void)
     tier_close(t);
 }
 
+static void test_compact_rename_failure_is_fail_closed(void)
+{
+    tier_store *t;
+    uint64_t rid;
+    pal_file_unlink(PATH);
+    DD_CHECK_EQ_INT(0, tier_open(&t, PATH, 0));
+    DD_CHECK_EQ_INT(0, tier_put(t, 0, "k", 1, "v", 1, 0, &rid));
+    pal_file_test_reset();
+    pal_file_test_fail_next_rename();
+    DD_CHECK_EQ_INT(-1, tier_compact(t));
+    DD_CHECK_EQ_INT(1, tier_failed(t));
+    tier_close(t);
+    pal_file_unlink(PATH);
+}
+
 int main(void)
 {
     setvbuf(stdout, NULL, _IONBF, 0);
@@ -294,6 +309,7 @@ int main(void)
     DD_RUN(test_tier_api_rejects_null_inputs);
     DD_RUN(test_tier_record_id_boundary);
     DD_RUN(test_tier_get_initializes_outputs_on_failure);
+    DD_RUN(test_compact_rename_failure_is_fail_closed);
     pal_file_unlink(PATH);
     return DD_TEST_SUMMARY();
 }

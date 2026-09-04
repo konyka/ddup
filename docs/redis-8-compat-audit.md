@@ -502,3 +502,6 @@ preventing hidden bytes from being silently accepted during recovery.
 Tier reads now validate persisted offsets and value bounds before file access and
 clear output parameters on failure, preventing corrupt indexes from causing
 out-of-range reads.
+
+Tier compaction now latches failure when atomic replacement or reopening fails,
+preventing subsequent writes against an uncertain cold-layer file state.
