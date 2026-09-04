@@ -1782,3 +1782,9 @@ to the message start, preserving protocol framing without extra allocations.
 Replication handshake headers validate `snprintf` success and non-truncation
 before frame-size arithmetic. The checks are constant-time and add no work to
 the steady-state command or backlog append paths.
+
+### Phase 233: fail-closed multi-thread persistence paths
+
+Worker AOF and snapshot paths are formatted into a fixed stack buffer and checked
+for truncation before any worker state is changed. Configuration adds one bounded
+format pass per worker, with no heap allocation and no change to steady-state I/O.

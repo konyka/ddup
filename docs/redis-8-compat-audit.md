@@ -368,6 +368,11 @@ bounded command-name rendering as well; SCRIPT unknown-subcommand errors follow
 the same fixed-buffer path. This keeps Redis diagnostics useful while ensuring
 RESP output lengths never exceed initialized stack storage.
 
+Multi-thread AOF and snapshot configuration now rejects null inputs and truncated
+worker paths before applying settings. This keeps persistence control-plane setup
+fail-closed and prevents distinct configurations from silently sharing a truncated
+filename.
+
 Duplicate `FUNCTION LOAD` library diagnostics now use bounded library-name
 rendering and checked output lengths, preserving useful Redis-style errors for
 large library metadata without exposing stack-buffer overreads.

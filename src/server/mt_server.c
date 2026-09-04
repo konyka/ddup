@@ -5796,14 +5796,36 @@ uint64_t mt_server_test_worker_loops(const mt_server *ms, int worker_id)
     return server_io_counters(ms->workers[worker_id].srv)->loops;
 }
 
+/* Format worker-owned persistence paths without accepting truncation. */
+static int mt_format_worker_path(char *dst, size_t cap, const char *dir,
+                                 int worker_id, const char *name)
+{
+    int n;
+    if (dst == NULL || cap == 0 || dir == NULL || name == NULL)
+        return -1;
+    n = snprintf(dst, cap, "%s/worker-%d-%s", dir, worker_id, name);
+    if (n < 0 || (size_t)n >= cap)
+        return -1;
+    return 0;
+}
+
 int mt_server_enable_aof(mt_server *ms, const char *dir,
                          const char *appendfilename)
 {
     int i;
+    char path[1088];
+    if (ms == NULL || dir == NULL || appendfilename == NULL)
+        return -1;
+    /* Validate every path before changing any worker configuration. */
+    for (i = 0; i < ms->nworkers; i++) {
+        if (mt_format_worker_path(path, sizeof(path), dir, ms->workers[i].id,
+                                  appendfilename) != 0)
+            return -1;
+    }
     for (i = 0; i < ms->nworkers; i++) {
         worker *w = &ms->workers[i];
-        snprintf(w->aof_path, sizeof(w->aof_path), "%s/worker-%d-%s", dir,
-                 w->id, appendfilename);
+        (void)mt_format_worker_path(w->aof_path, sizeof(w->aof_path), dir,
+                                     w->id, appendfilename);
         if (server_enable_aof(w->srv, w->aof_path) != 0)
             return -1;
     }
@@ -5830,10 +5852,19 @@ int mt_server_enable_snapshots(mt_server *ms, const char *dir,
                                const char *dbfilename, int save_sec)
 {
     int i;
+    char path[1088];
+    if (ms == NULL || dir == NULL || dbfilename == NULL)
+        return -1;
+    /* Validate every path before changing any worker configuration. */
+    for (i = 0; i < ms->nworkers; i++) {
+        if (mt_format_worker_path(path, sizeof(path), dir, ms->workers[i].id,
+                                  dbfilename) != 0)
+            return -1;
+    }
     for (i = 0; i < ms->nworkers; i++) {
         worker *w = &ms->workers[i];
-        snprintf(w->snap_path, sizeof(w->snap_path), "%s/worker-%d-%s",
-                 dir, w->id, dbfilename);
+        (void)mt_format_worker_path(w->snap_path, sizeof(w->snap_path), dir,
+                                     w->id, dbfilename);
         server_set_snapshot_path(w->srv, w->snap_path);
         if (pal_file_exists(w->snap_path) &&
             server_load_snapshot(w->srv) != 0)

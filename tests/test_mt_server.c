@@ -3123,6 +3123,30 @@ static void test_aof_persistence_mt(void)
     pal_socket_cleanup();
 }
 
+static void test_persistence_configuration_rejects_null_inputs(void)
+{
+    mt_server *ms;
+    char long_name[1200];
+    memset(long_name, 'p', sizeof(long_name) - 1);
+    long_name[sizeof(long_name) - 1] = '\0';
+
+    DD_CHECK_EQ_INT(-1, mt_server_enable_aof(NULL, ".", "x.aof"));
+    DD_CHECK_EQ_INT(-1, mt_server_enable_aof(NULL, NULL, "x.aof"));
+    DD_CHECK_EQ_INT(-1, mt_server_enable_aof(NULL, ".", NULL));
+    DD_CHECK_EQ_INT(-1, mt_server_enable_snapshots(NULL, ".", "x.rdb", 0));
+    DD_CHECK_EQ_INT(-1, mt_server_enable_snapshots(NULL, NULL, "x.rdb", 0));
+    DD_CHECK_EQ_INT(-1, mt_server_enable_snapshots(NULL, ".", NULL, 0));
+
+    /* The integration fixture may be unavailable in restricted sandboxes. */
+    ms = mt_server_create("127.0.0.1", 0, 2);
+    if (ms != NULL) {
+        DD_CHECK_EQ_INT(-1, mt_server_enable_aof(ms, long_name, "x.aof"));
+        DD_CHECK_EQ_INT(-1,
+                        mt_server_enable_snapshots(ms, ".", long_name, 0));
+        mt_server_destroy(ms);
+    }
+}
+
 static void test_aof_aggregate_mt(void)
 {
     mt_server *ms;
@@ -3773,6 +3797,7 @@ int main(void)
     DD_RUN(test_watch_pipeline_unwatch_is_ordered_and_disconnect_safe);
     DD_RUN(test_watch_shutdown_releases_remote_owner);
     DD_RUN(test_aof_persistence_mt);
+    DD_RUN(test_persistence_configuration_rejects_null_inputs);
     DD_RUN(test_aof_aggregate_mt);
     DD_RUN(test_aof_failure_stops_mt_workers_without_spin);
     DD_RUN(test_snapshot_mt);

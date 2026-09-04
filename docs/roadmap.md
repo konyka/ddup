@@ -786,3 +786,6 @@
   - [x] 复制握手头部边界：快照长度、`+CONTINUE`、`+FULLRESYNC` 的
     `snprintf` 结果先校验再参与 `size_t` 计算，避免负值/截断转成超大长度
     （Phase 232）
+  - [x] 多线程持久化路径 fail-closed：AOF/快照配置拒绝空参数，并在任何
+    worker 应用配置前验证路径未被 `snprintf` 截断，避免路径碰撞或错误加载
+    （Phase 233）
