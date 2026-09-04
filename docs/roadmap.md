@@ -809,6 +809,8 @@
     以及空帧，避免 malformed gossip 解引用崩溃（Phase 244）
   - [x] 节点 ID 持久化写入边界：生成内容校验 `snprintf` 返回值，并检查
     文件关闭结果，避免截断或刷新失败被误报成功（Phase 248）
+  - [x] 快照公共 API 边界：序列化、保存、加载、DUMP/RESTORE 入口拒绝
+    NULL/空路径和无效缓冲区，保持恢复路径原子失败（Phase 250）
   - [x] AOF 公共 API 边界：open、日志、flush、复制增量和测试注入入口对
     NULL/空路径安全返回，避免持久化控制面崩溃（Phase 249）
   - [x] 集群总线构帧检查顺序：PUBLISH/FAIL 在访问输出长度前校验 NULL，

@@ -384,7 +384,10 @@ static void save_entry_cb(const char *key, size_t klen, const char *val,
 int snapshot_serialize(db *d, resp_buf *out)
 {
     save_ctx ctx;
-    size_t start = out->len;
+    size_t start;
+    if (d == NULL || out == NULL)
+        return -1;
+    start = out->len;
     if (buf_bytes(out, "DDUP0001", 8) != 0)
         return -1;
     ctx.d = d;
@@ -406,6 +409,8 @@ int snapshot_save(db *d, const char *path)
     int rc = -1;
     size_t path_len;
 
+    if (d == NULL || path == NULL || path[0] == '\0')
+        return -1;
     resp_buf_init(&buf);
     if (snapshot_serialize(d, &buf) != 0) {
         resp_buf_free(&buf);
@@ -897,7 +902,7 @@ int snapshot_load_mem(db *d, const char *buf, size_t len, uint64_t now_ms)
     db tmp;
     int ok;
 
-    if (len < 8 || memcmp(buf, "DDUP0001", 8) != 0)
+    if (d == NULL || buf == NULL || len < 8 || memcmp(buf, "DDUP0001", 8) != 0)
         return -1;
     r.p = buf;
     r.len = len;
@@ -1318,11 +1323,15 @@ mt_done:
 int snapshot_load_multi(void *ctx, snapshot_db_get get, int ndbs,
                         const char *path, uint64_t now_ms)
 {
-    pal_file *f = pal_file_open_read(path);
+    pal_file *f = NULL;
     char *buf = NULL;
     size_t len = 0, cap = 0;
     int rc;
 
+    if (ctx == NULL || get == NULL || ndbs <= 0 || path == NULL ||
+        path[0] == '\0')
+        return -1;
+    f = pal_file_open_read(path);
     if (f == NULL)
         return -1;
     for (;;) {
@@ -1368,11 +1377,14 @@ int snapshot_load_multi(void *ctx, snapshot_db_get get, int ndbs,
 
 int snapshot_load(db *d, const char *path, uint64_t now_ms)
 {
-    pal_file *f = pal_file_open_read(path);
+    pal_file *f = NULL;
     char *buf = NULL;
     size_t len = 0, cap = 0;
     int rc;
 
+    if (d == NULL || path == NULL || path[0] == '\0')
+        return -1;
+    f = pal_file_open_read(path);
     if (f == NULL)
         return -1;
     for (;;) {
@@ -1415,7 +1427,7 @@ int snapshot_dump_key(db *d, const char *key, size_t klen, resp_buf *out)
     size_t vl, start;
     save_ctx ctx;
 
-    if (!rh_get(&d->table, key, klen, &v, &vl))
+    if (d == NULL || key == NULL || out == NULL || !rh_get(&d->table, key, klen, &v, &vl))
         return -1;
     start = out->len;
     ctx.d = d;
@@ -1452,7 +1464,7 @@ int snapshot_restore_key(db *d, const char *key, size_t klen,
     uint64_t stored = 0;
     int i;
 
-    if (klen > UINT32_MAX)
+    if (d == NULL || key == NULL || payload == NULL || klen > UINT32_MAX)
         return -1;
     db_expire_if_needed(d, key, klen, now_ms);
     if (!replace && rh_get(&d->table, key, klen, &vblob, &vbloblen))

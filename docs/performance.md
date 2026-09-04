@@ -1876,3 +1876,9 @@ before mutation. Valid paths retain bounded array scans with no new allocation.
 AOF control APIs validate writer, payload, callback, and path inputs before
 touching file state. Valid flush and copy-delta paths retain their existing
 buffered I/O behavior.
+
+### Phase 250: null-safe snapshot APIs
+
+Snapshot serialization, persistence, replay, and per-key transfer APIs validate
+database, path, payload, and output pointers before work. Valid paths retain the
+existing transactional temporary-database behavior.

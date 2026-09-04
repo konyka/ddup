@@ -470,3 +470,6 @@ mutation, keeping malformed control-plane requests fail-closed.
 
 AOF open, logging, flushing, callback injection, replay, and delta-copy entry
 points now reject null or empty inputs before file operations.
+
+Snapshot save/load, memory replay, and per-key DUMP/RESTORE entry points now
+reject null or empty inputs before parsing or file operations.
