@@ -436,6 +436,10 @@ Cluster identity configuration now rejects oversized node IDs and announced IPs
 instead of silently truncating them, preserving stable node identity and routing
 metadata.
 
+Cluster node-table APIs now reject null, malformed, short, or oversized node IDs
+before lookup or insertion, preventing partial identities from entering gossip
+and persistence state.
+
 Cluster bus PING/PUBLISH/FAIL builders now reject null inputs before buffer writes,
 keeping malformed control-plane calls fail-closed without changing valid frames.
 

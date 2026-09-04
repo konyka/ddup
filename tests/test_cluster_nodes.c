@@ -211,6 +211,23 @@ static void test_parse_rejects_out_of_range_ports(void)
     db_destroy(&d);
 }
 
+static void test_node_api_rejects_null_inputs(void)
+{
+    db d;
+    db_init(&d);
+    cluster_nodes_init(&d);
+    DD_CHECK(cluster_node_find(NULL, ID1) == NULL);
+    DD_CHECK(cluster_node_find(&d, NULL) == NULL);
+    DD_CHECK(cluster_node_add(NULL, ID1) == NULL);
+    DD_CHECK(cluster_node_add(&d, NULL) == NULL);
+    DD_CHECK(cluster_node_find(&d, "short") == NULL);
+    DD_CHECK(cluster_node_add(&d, "short") == NULL);
+    DD_CHECK(cluster_node_add(&d, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa") == NULL);
+    DD_CHECK_EQ_INT(-1, cluster_node_id_load_or_create(NULL, NULL));
+    DD_CHECK_EQ_INT(-1, cluster_node_id_load_or_create("/tmp/ddup-node-id-test", NULL));
+    db_destroy(&d);
+}
+
 int main(void)
 {
     DD_RUN(test_node_add_find);
@@ -220,5 +237,6 @@ int main(void)
     DD_RUN(test_render_reserve_failure_leaves_output_unchanged);
     DD_RUN(test_parse_rejects_unrepresentable_address);
     DD_RUN(test_parse_rejects_out_of_range_ports);
+    DD_RUN(test_node_api_rejects_null_inputs);
     return DD_TEST_SUMMARY();
 }

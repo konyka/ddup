@@ -799,6 +799,8 @@
     空 node id，避免配置期崩溃或启用半初始化集群（Phase 237）
   - [x] 集群身份字段边界：超长 node ID/IP 被拒绝并保留既有状态，避免截断
     导致节点碰撞或错误公告地址（Phase 238）
+  - [x] 集群节点表输入校验：节点查找/新增仅接受 40 位小写十六进制 ID，
+    NULL、短 ID、非法字符和超长 ID 均 fail-closed（Phase 241）
   - [x] 集群总线构帧空输入保护：PING/PUBLISH/FAIL 构帧 API 对 NULL 数据和
     输出缓冲区 fail-closed，避免控制面崩溃（Phase 240）
   - [x] 复制主机字段边界：`REPLICAOF` 拒绝空或超长 master host，避免固定

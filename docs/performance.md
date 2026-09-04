@@ -1817,6 +1817,12 @@ Cluster node IDs and announced IPs are length-checked before copying into fixed
 metadata buffers. Valid updates remain allocation-free; oversized values are
 ignored without touching the active identity.
 
+### Phase 241: validated cluster node IDs
+
+Node-table lookup and insertion validate the fixed 40-byte hexadecimal identity
+before scanning the bounded table. Invalid calls return immediately with no
+allocation or table mutation.
+
 ### Phase 240: null-safe cluster bus builders
 
 Cluster bus frame builders validate database, output, and payload pointers before

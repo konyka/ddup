@@ -30,11 +30,26 @@ static int parse_u16_token(const char *s, uint16_t *out)
     return 0;
 }
 
+static int cluster_id_valid(const char *id)
+{
+    size_t i;
+    if (id == NULL || strlen(id) != 40)
+        return 0;
+    for (i = 0; i < 40; i++) {
+        char c = id[i];
+        if (!((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f')))
+            return 0;
+    }
+    return 1;
+}
+
 void cluster_gen_id(char out[41])
 {
     static const char hex[] = "0123456789abcdef";
     uint64_t x = pal_now_us() ^ 0x9E3779B97F4A7C15ULL;
     int i;
+    if (out == NULL)
+        return;
     for (i = 0; i < 40; i++) {
         x ^= x << 13;
         x ^= x >> 7;
@@ -46,6 +61,8 @@ void cluster_gen_id(char out[41])
 
 int cluster_node_id_load_or_create(const char *path, char out_id[41])
 {
+    if (path == NULL || out_id == NULL || path[0] == '\0')
+        return -1;
     if (pal_file_exists(path)) {
         pal_file *f = pal_file_open_read(path);
         char buf[41];
@@ -92,12 +109,16 @@ int cluster_node_id_load_or_create(const char *path, char out_id[41])
 
 void cluster_nodes_init(struct db *d)
 {
+    if (d == NULL)
+        return;
     d->nnodes = 0;
 }
 
 cluster_node *cluster_node_find(struct db *d, const char *id)
 {
     int i;
+    if (d == NULL || !cluster_id_valid(id))
+        return NULL;
     for (i = 0; i < d->nnodes; i++)
         if (memcmp(d->nodes[i].id, id, 40) == 0)
             return &d->nodes[i];
@@ -106,7 +127,12 @@ cluster_node *cluster_node_find(struct db *d, const char *id)
 
 cluster_node *cluster_node_add(struct db *d, const char *id)
 {
-    cluster_node *n = cluster_node_find(d, id);
+    cluster_node *n;
+    if (d == NULL || id == NULL)
+        return NULL;
+    if (!cluster_id_valid(id))
+        return NULL;
+    n = cluster_node_find(d, id);
     if (n != NULL)
         return n;
     if (d->nnodes >= CLUSTER_MAX_NODES)
