@@ -452,3 +452,6 @@ preventing malformed control-plane inputs from causing memory access faults.
 Cluster failure-report APIs now reject malformed reporter IDs and null state, and
 saturate timeout-window arithmetic so malformed gossip cannot crash or bypass
 failure expiry.
+
+Cluster bus receive handling now rejects null or empty frame inputs before parsing,
+keeping malformed gossip fail-closed without mutating cluster state.

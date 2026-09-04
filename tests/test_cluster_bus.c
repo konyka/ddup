@@ -138,6 +138,21 @@ static void test_build_rejects_null_inputs(void)
     db_destroy(&d);
 }
 
+static void test_handle_rejects_null_inputs(void)
+{
+    db d;
+    resp_buf out;
+    db_init(&d);
+    cluster_nodes_init(&d);
+    resp_buf_init(&out);
+    DD_CHECK_EQ_INT(-1, cluster_bus_handle_frame(NULL, NULL, 0, &out, 0));
+    DD_CHECK_EQ_INT(-1, cluster_bus_handle_frame(&d, NULL, 1, &out, 0));
+    DD_CHECK_EQ_INT(-1, cluster_bus_handle_frame(&d, "", 0, NULL, 0));
+    DD_CHECK_EQ_INT(-1, cluster_bus_handle_frame(&d, "", 0, &out, 0));
+    resp_buf_free(&out);
+    db_destroy(&d);
+}
+
 static void test_meet_convergence(void);
 static void test_gossip_carry(void);
 static void test_fail_detect(void);
@@ -148,6 +163,7 @@ int main(void)
     DD_RUN(test_frame_roundtrip);
     DD_RUN(test_build_failures_leave_output_unchanged);
     DD_RUN(test_build_rejects_null_inputs);
+    DD_RUN(test_handle_rejects_null_inputs);
     DD_RUN(test_meet_convergence);
     DD_RUN(test_gossip_carry);
     DD_RUN(test_fail_detect);

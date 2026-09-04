@@ -805,6 +805,8 @@
     返回或忽略，避免控制面边界调用崩溃（Phase 242）
   - [x] 集群故障报告 API 边界：报告、清除、计数和仲裁入口对 NULL 节点/ID
     安全返回，并防止 timeout*2 溢出（Phase 243）
+  - [x] 集群总线接收边界：帧处理入口拒绝 NULL 数据库、帧和回复缓冲区，
+    以及空帧，避免 malformed gossip 解引用崩溃（Phase 244）
   - [x] 集群总线构帧空输入保护：PING/PUBLISH/FAIL 构帧 API 对 NULL 数据和
     输出缓冲区 fail-closed，避免控制面崩溃（Phase 240）
   - [x] 复制主机字段边界：`REPLICAOF` 拒绝空或超长 master host，避免固定

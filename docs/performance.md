@@ -1844,3 +1844,8 @@ Valid operations retain the same O(1) bit access and allocation-free behavior.
 Failure-report and quorum helpers validate node IDs and pointers before touching
 report tables. Timeout-window multiplication is saturated to avoid wraparound;
 valid paths retain bounded in-place maintenance.
+
+### Phase 244: bounded cluster bus receive entry
+
+Cluster bus frame handling validates database, frame, and reply pointers before
+parsing. The guard is constant-time and leaves valid wire parsing unchanged.
