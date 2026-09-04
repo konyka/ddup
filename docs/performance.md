@@ -1959,3 +1959,8 @@ frame. Invalid shards fail before output mutation; valid framing remains bounded
 
 Iteration, scan, and random-entry helpers validate tables, callbacks, and output
 views before traversal. Valid scans retain the same bounded cursor behavior.
+
+### Phase 265: checked hash-table scan cursors
+
+SCAN validates the combined table capacity and rejects out-of-range cursors
+before traversal. Valid cursor scans keep the same bounded iteration cost.

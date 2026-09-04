@@ -57,6 +57,16 @@ static void test_iteration_api_rejects_null_inputs(void)
                                        NULL));
 }
 
+static void test_scan_rejects_invalid_cursor_state(void)
+{
+    rh_table t;
+    rh_init(&t);
+    DD_CHECK_EQ_INT(0, (long long)rh_scan(&t, SIZE_MAX, 1, NULL, NULL));
+    DD_CHECK_EQ_INT(0, (long long)rh_scan(&t, SIZE_MAX, 1,
+                                          (rh_scan_cb)0, NULL));
+    rh_destroy(&t);
+}
+
 static void test_overwrite(void)
 {
     rh_table t;
@@ -521,6 +531,7 @@ int main(void)
     DD_RUN(test_set_get);
     DD_RUN(test_api_rejects_null_inputs);
     DD_RUN(test_iteration_api_rejects_null_inputs);
+    DD_RUN(test_scan_rejects_invalid_cursor_state);
     DD_RUN(test_overwrite);
     DD_RUN(test_set_ex);
     DD_RUN(test_reject_unrepresentable_lengths);

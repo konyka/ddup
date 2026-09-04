@@ -266,7 +266,13 @@ size_t rh_scan(rh_table *t, size_t cursor, size_t count, rh_scan_cb cb,
                void *ctx)
 {
     size_t visited = 0;
+    size_t total;
     if (t == NULL || cb == NULL)
+        return 0;
+    if (t->cap > SIZE_MAX - t->old_cap)
+        return 0;
+    total = t->cap + t->old_cap;
+    if (cursor >= total)
         return 0;
     while (visited < count) {
         rh_entry *e;
@@ -294,7 +300,7 @@ size_t rh_scan(rh_table *t, size_t cursor, size_t count, rh_scan_cb cb,
         }
         visited++;
     }
-    if (cursor >= t->cap + t->old_cap)
+    if (cursor >= total)
         return 0;
     return cursor;
 }

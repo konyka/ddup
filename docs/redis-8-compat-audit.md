@@ -518,3 +518,6 @@ database callback, preventing invalid context dereferences during full sync.
 
 Hash-table iteration and SCAN helpers now reject null tables, callbacks, and output
 views before traversal, preventing malformed management scans from crashing.
+
+Hash-table SCAN now checks combined-capacity arithmetic and rejects out-of-range
+cursors, preventing unsigned wraparound during management iteration.

@@ -851,3 +851,5 @@
     避免回调使用无效上下文（Phase 262）
   - [x] 哈希表迭代入口边界：`rh_each`、`rh_scan` 和 `rh_random_entry` 对
     NULL 表、回调和输出参数安全返回，避免管理扫描路径崩溃（Phase 264）
+  - [x] 哈希表 SCAN 游标边界：检查 cap 总和溢出并拒绝越界 cursor，防止
+    管理遍历中的无符号回绕（Phase 265）
