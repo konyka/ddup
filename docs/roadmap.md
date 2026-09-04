@@ -807,6 +807,8 @@
     安全返回，并防止 timeout*2 溢出（Phase 243）
   - [x] 集群总线接收边界：帧处理入口拒绝 NULL 数据库、帧和回复缓冲区，
     以及空帧，避免 malformed gossip 解引用崩溃（Phase 244）
+  - [x] 集群总线构帧检查顺序：PUBLISH/FAIL 在访问输出长度前校验 NULL，
+    修复空输出缓冲区调用的潜在崩溃（Phase 245）
   - [x] 集群总线构帧空输入保护：PING/PUBLISH/FAIL 构帧 API 对 NULL 数据和
     输出缓冲区 fail-closed，避免控制面崩溃（Phase 240）
   - [x] 复制主机字段边界：`REPLICAOF` 拒绝空或超长 master host，避免固定

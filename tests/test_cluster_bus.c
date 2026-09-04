@@ -133,7 +133,9 @@ static void test_build_rejects_null_inputs(void)
     DD_CHECK_EQ_INT(-1, cluster_bus_build_frame(&d, CLUSTER_MSG_PING, NULL));
     DD_CHECK_EQ_INT(-1, cluster_bus_build_publish(&d, NULL, 1, "x", 1, &out));
     DD_CHECK_EQ_INT(-1, cluster_bus_build_publish(&d, "x", 1, NULL, 1, &out));
+    DD_CHECK_EQ_INT(-1, cluster_bus_build_publish(&d, "x", 1, "x", 1, NULL));
     DD_CHECK_EQ_INT(-1, cluster_bus_build_fail(&d, NULL, &out));
+    DD_CHECK_EQ_INT(-1, cluster_bus_build_fail(&d, ID1, NULL));
     resp_buf_free(&out);
     db_destroy(&d);
 }

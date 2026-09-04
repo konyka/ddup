@@ -455,3 +455,6 @@ failure expiry.
 
 Cluster bus receive handling now rejects null or empty frame inputs before parsing,
 keeping malformed gossip fail-closed without mutating cluster state.
+
+PUBLISH and FAIL frame builders now perform null-output checks before reading
+buffer lengths, eliminating a control-plane null dereference edge case.

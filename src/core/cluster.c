@@ -788,13 +788,14 @@ int cluster_bus_build_frame(struct db *d, int type, resp_buf *out)
 int cluster_bus_build_publish(struct db *d, const char *ch, size_t chlen,
                               const char *msg, size_t mlen, resp_buf *out)
 {
-    size_t start = out->len;
+    size_t start;
     size_t total;
     char *p;
     (void)d; /* publish frames carry no node record */
     if (out == NULL || (ch == NULL && chlen != 0) ||
         (msg == NULL && mlen != 0))
         return -1;
+    start = out->len;
     if (chlen > SIZE_MAX - 18 || mlen > SIZE_MAX - 18 - chlen)
         return -1;
     total = 18 + chlen + mlen;
@@ -816,11 +817,12 @@ int cluster_bus_build_publish(struct db *d, const char *ch, size_t chlen,
 
 int cluster_bus_build_fail(struct db *d, const char *subject_id, resp_buf *out)
 {
-    size_t start = out->len;
+    size_t start;
     char *p;
     (void)d; /* FAIL frames carry no node record */
     if (subject_id == NULL || out == NULL)
         return -1;
+    start = out->len;
     if (start > SIZE_MAX - 50)
         return -1;
     if (resp_buf_reserve(out, 50) != 0)

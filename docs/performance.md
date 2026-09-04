@@ -1849,3 +1849,9 @@ valid paths retain bounded in-place maintenance.
 
 Cluster bus frame handling validates database, frame, and reply pointers before
 parsing. The guard is constant-time and leaves valid wire parsing unchanged.
+
+### Phase 245: ordered bus-builder validation
+
+Publish and FAIL builders validate output pointers before reading buffer state,
+keeping malformed calls constant-time and crash-free while valid paths remain
+unchanged.
