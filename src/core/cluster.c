@@ -151,7 +151,8 @@ void cluster_report_failure(struct db *d, cluster_node *subject,
                             const char *reporter, uint64_t now_ms)
 {
     int i;
-    (void)d;
+    if (d == NULL || subject == NULL || !cluster_id_valid(reporter))
+        return;
     for (i = 0; i < subject->nreports; i++)
         if (memcmp(subject->reports[i].reporter, reporter, 40) == 0) {
             subject->reports[i].time_ms = now_ms; /* refresh */
@@ -169,7 +170,8 @@ void cluster_report_heal(struct db *d, cluster_node *subject,
                          const char *reporter)
 {
     int i;
-    (void)d;
+    if (d == NULL || subject == NULL || !cluster_id_valid(reporter))
+        return;
     for (i = 0; i < subject->nreports; i++)
         if (memcmp(subject->reports[i].reporter, reporter, 40) == 0) {
             subject->reports[i] = subject->reports[subject->nreports - 1];
@@ -180,8 +182,13 @@ void cluster_report_heal(struct db *d, cluster_node *subject,
 
 int cluster_report_count(struct db *d, cluster_node *subject, uint64_t now_ms)
 {
-    uint64_t window = d->cluster_node_timeout_ms * 2;
+    uint64_t window;
     int i = 0;
+    if (d == NULL || subject == NULL)
+        return 0;
+    window = d->cluster_node_timeout_ms > UINT64_MAX / 2
+                 ? UINT64_MAX
+                 : d->cluster_node_timeout_ms * 2;
     /* drop expired entries in place, then the remainder is the count */
     while (i < subject->nreports) {
         if (now_ms - subject->reports[i].time_ms > window) {
@@ -196,6 +203,8 @@ int cluster_report_count(struct db *d, cluster_node *subject, uint64_t now_ms)
 
 void cluster_mark_fail(struct db *d, cluster_node *subject, uint64_t now_ms)
 {
+    if (d == NULL || subject == NULL)
+        return;
     if (subject->flags & (CLUSTER_NODE_FAIL | CLUSTER_NODE_MYSELF))
         return;
     subject->flags &= ~(uint32_t)CLUSTER_NODE_PFAIL;
@@ -207,9 +216,13 @@ void cluster_mark_fail(struct db *d, cluster_node *subject, uint64_t now_ms)
 int cluster_mark_fail_if_quorum(struct db *d, cluster_node *subject,
                                 uint64_t now_ms)
 {
-    cluster_node *me = cluster_myself(d);
+    cluster_node *me;
     int masters = 0, failures, i;
     uint32_t sl;
+
+    if (d == NULL || subject == NULL)
+        return 0;
+    me = cluster_myself(d);
 
     /* local suspicion is required, and FAIL is terminal here */
     if (!(subject->flags & CLUSTER_NODE_PFAIL) ||

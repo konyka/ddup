@@ -1838,3 +1838,9 @@ check is a cold-path string bound and leaves the existing link/cache untouched.
 
 Slot bitmap helpers validate pointers and slot ranges before touching memory.
 Valid operations retain the same O(1) bit access and allocation-free behavior.
+
+### Phase 243: bounded failure-report APIs
+
+Failure-report and quorum helpers validate node IDs and pointers before touching
+report tables. Timeout-window multiplication is saturated to avoid wraparound;
+valid paths retain bounded in-place maintenance.

@@ -448,3 +448,7 @@ the link state, preventing silent truncation and inconsistent PSYNC resume data.
 
 Cluster slot bitmap helpers now fail closed on null buffers and out-of-range slots,
 preventing malformed control-plane inputs from causing memory access faults.
+
+Cluster failure-report APIs now reject malformed reporter IDs and null state, and
+saturate timeout-window arithmetic so malformed gossip cannot crash or bypass
+failure expiry.

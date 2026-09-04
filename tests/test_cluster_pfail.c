@@ -64,6 +64,19 @@ static void test_report_window(void)
     db_destroy(&d);
 }
 
+static void test_report_api_rejects_null_inputs(void)
+{
+    db d;
+    db_init(&d);
+    cluster_nodes_init(&d);
+    cluster_report_failure(NULL, NULL, NULL, 0);
+    cluster_report_heal(NULL, NULL, NULL);
+    DD_CHECK_EQ_INT(0, cluster_report_count(NULL, NULL, 0));
+    cluster_mark_fail(NULL, NULL, 0);
+    DD_CHECK_EQ_INT(0, cluster_mark_fail_if_quorum(NULL, NULL, 0));
+    db_destroy(&d);
+}
+
 /* ------------------------------------------------------------------ */
 /* gossip wiring: a PFAIL/FAIL flag about a known node in a master's  */
 /* gossip section becomes a failure report from the frame sender      */
@@ -676,6 +689,7 @@ int main(void)
 {
     setvbuf(stdout, NULL, _IONBF, 0);
     DD_RUN(test_report_window);
+    DD_RUN(test_report_api_rejects_null_inputs);
     DD_RUN(test_gossip_pfail_report);
     DD_RUN(test_direct_frame_clears_flags);
     DD_RUN(test_state_pfail_vs_fail);
