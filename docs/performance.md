@@ -1888,3 +1888,8 @@ existing transactional temporary-database behavior.
 Multi-database and sharded snapshot APIs validate contexts, callbacks, paths, and
 buffers before serialization or replay. Valid paths retain transactional swaps
 and bounded temporary allocations.
+
+### Phase 252: checked snapshot read growth
+
+Single-database snapshot loading checks capacity doubling before `realloc`,
+returning failure on overflow while preserving the existing linear-growth path.

@@ -1396,7 +1396,15 @@ int snapshot_load(db *d, const char *path, uint64_t now_ms)
     for (;;) {
         ptrdiff_t n;
         if (len == cap) {
-            size_t ncap = cap == 0 ? 65536 : cap * 2;
+            size_t ncap;
+            if (cap == 0)
+                ncap = 65536;
+            else if (cap > SIZE_MAX / 2) {
+                free(buf);
+                pal_file_close(f);
+                return -1;
+            } else
+                ncap = cap * 2;
             char *nb = (char *)realloc(buf, ncap);
             if (nb == NULL) {
                 free(buf);

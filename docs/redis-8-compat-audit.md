@@ -476,3 +476,6 @@ reject null or empty inputs before parsing or file operations.
 
 Sharded and multi-database snapshot entry points now reject null contexts,
 callbacks, paths, and buffers before serialization or replay mutation.
+
+Single-database snapshot loading now rejects capacity-doubling overflow before
+reallocation, preventing hostile file sizes from wrapping allocation lengths.
