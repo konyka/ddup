@@ -241,6 +241,8 @@ int cluster_mark_fail_if_quorum(struct db *d, cluster_node *subject,
 
 void cluster_slots_set(uint8_t *bm, uint32_t slot, int on)
 {
+    if (bm == NULL || slot >= 16384)
+        return;
     if (on)
         bm[slot / 8] |= (uint8_t)(1u << (slot % 8));
     else
@@ -249,6 +251,8 @@ void cluster_slots_set(uint8_t *bm, uint32_t slot, int on)
 
 int cluster_slots_get(const uint8_t *bm, uint32_t slot)
 {
+    if (bm == NULL || slot >= 16384)
+        return 0;
     return (bm[slot / 8] >> (slot % 8)) & 1;
 }
 
@@ -257,6 +261,8 @@ int cluster_slots_render(const uint8_t *bm, char *out, size_t cap)
     size_t n = 0;
     int s = -1;
     uint32_t i;
+    if (bm == NULL || out == NULL || cap == 0)
+        return -1;
     out[0] = '\0';
     for (i = 0; i <= 16384; i++) {
         int on = i < 16384 ? cluster_slots_get(bm, i) : 0;
@@ -283,7 +289,11 @@ int cluster_slots_render(const uint8_t *bm, char *out, size_t cap)
 void cluster_slots_parse(uint8_t *bm, const char *s, size_t len)
 {
     size_t i = 0;
+    if (bm == NULL)
+        return;
     memset(bm, 0, 2048);
+    if (s == NULL)
+        return;
     while (i < len) {
         unsigned long a = 0, b;
         while (i < len && s[i] == ' ')

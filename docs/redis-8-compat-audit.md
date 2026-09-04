@@ -445,3 +445,6 @@ keeping malformed control-plane calls fail-closed without changing valid frames.
 
 Replica configuration now rejects empty or oversized master hosts before changing
 the link state, preventing silent truncation and inconsistent PSYNC resume data.
+
+Cluster slot bitmap helpers now fail closed on null buffers and out-of-range slots,
+preventing malformed control-plane inputs from causing memory access faults.

@@ -801,6 +801,8 @@
     导致节点碰撞或错误公告地址（Phase 238）
   - [x] 集群节点表输入校验：节点查找/新增仅接受 40 位小写十六进制 ID，
     NULL、短 ID、非法字符和超长 ID 均 fail-closed（Phase 241）
+  - [x] 集群槽位位图 API 边界：NULL 位图、输出缓冲区和越界 slot 均安全
+    返回或忽略，避免控制面边界调用崩溃（Phase 242）
   - [x] 集群总线构帧空输入保护：PING/PUBLISH/FAIL 构帧 API 对 NULL 数据和
     输出缓冲区 fail-closed，避免控制面崩溃（Phase 240）
   - [x] 复制主机字段边界：`REPLICAOF` 拒绝空或超长 master host，避免固定

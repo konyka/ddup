@@ -1833,3 +1833,8 @@ for valid frame construction.
 
 `REPLICAOF` validates the master host length before updating replica state. The
 check is a cold-path string bound and leaves the existing link/cache untouched.
+
+### Phase 242: bounded slot bitmap APIs
+
+Slot bitmap helpers validate pointers and slot ranges before touching memory.
+Valid operations retain the same O(1) bit access and allocation-free behavior.

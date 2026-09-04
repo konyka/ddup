@@ -228,6 +228,20 @@ static void test_node_api_rejects_null_inputs(void)
     db_destroy(&d);
 }
 
+static void test_slot_api_rejects_null_inputs(void)
+{
+    uint8_t bm[2048];
+    char out[16];
+    memset(bm, 0, sizeof(bm));
+    DD_CHECK_EQ_INT(0, cluster_slots_get(NULL, 0));
+    cluster_slots_set(NULL, 0, 1);
+    DD_CHECK_EQ_INT(-1, cluster_slots_render(NULL, out, sizeof(out)));
+    DD_CHECK_EQ_INT(-1, cluster_slots_render(bm, NULL, sizeof(out)));
+    cluster_slots_parse(NULL, "0", 1);
+    cluster_slots_parse(bm, NULL, 1);
+    DD_CHECK_EQ_INT(0, cluster_slots_get(bm, 0));
+}
+
 int main(void)
 {
     DD_RUN(test_node_add_find);
@@ -238,5 +252,6 @@ int main(void)
     DD_RUN(test_parse_rejects_unrepresentable_address);
     DD_RUN(test_parse_rejects_out_of_range_ports);
     DD_RUN(test_node_api_rejects_null_inputs);
+    DD_RUN(test_slot_api_rejects_null_inputs);
     return DD_TEST_SUMMARY();
 }
