@@ -357,3 +357,8 @@ formatting.
 Unknown `CLIENT SETINFO` attributes now return `ERR Unrecognized option '<attr>'`
 with bounded stack formatting, matching Redis diagnostics without exposing
 unbounded input or changing ordinary command execution.
+
+Unknown subcommands for `ACL`, `LATENCY`, `MODULE`, `SENTINEL`, and `DEBUG` now
+use bounded diagnostic rendering. Inputs are truncated to a fixed prefix and
+the RESP writer receives only bytes actually present in the stack buffer,
+preventing malformed oversized arguments from causing out-of-bounds reads.

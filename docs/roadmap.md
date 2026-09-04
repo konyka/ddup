@@ -759,3 +759,5 @@
     可打印字符、支持空值清除，并在 `CLIENT INFO/LIST` 中安全输出（Phase 218）
   - [x] CLIENT SETINFO 错误兼容：未知属性返回 Redis 风格的
     `Unrecognized option '<attr>'`，使用固定栈缓冲区并限制属性长度（Phase 219）
+  - [x] 管理命令错误边界：ACL/LATENCY/MODULE/SENTINEL/DEBUG 未知子命令的
+    诊断输出限制为固定长度，避免超长 RESP 参数导致栈缓冲区越界（Phase 220）

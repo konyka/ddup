@@ -306,6 +306,29 @@ static void test_server_management_commands(void)
     DD_CHECK(strstr(g_out.data, "# Stats") != NULL);
 }
 
+static void test_management_error_bounds(void)
+{
+    char long_sub[320];
+    size_t i;
+
+    for (i = 0; i < sizeof(long_sub) - 1; i++)
+        long_sub[i] = 'X';
+    long_sub[sizeof(long_sub) - 1] = '\0';
+
+    cmd(3, "DEBUG", long_sub, "extra");
+    DD_CHECK(g_out.len <= 132);
+    DD_CHECK(strstr(g_out.data, "ERR Unknown DEBUG subcommand") != NULL);
+    DD_CHECK(strstr(g_out.data, "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX") != NULL);
+
+    cmd(3, "LATENCY", long_sub, "extra");
+    DD_CHECK(g_out.len <= 132);
+    DD_CHECK(strstr(g_out.data, "ERR Unknown LATENCY subcommand") != NULL);
+
+    cmd(3, "SENTINEL", long_sub, "extra");
+    DD_CHECK(g_out.len <= 132);
+    DD_CHECK(strstr(g_out.data, "ERR Unknown SENTINEL subcommand") != NULL);
+}
+
 int main(void)
 {
     db_init(&g_db);
@@ -322,6 +345,7 @@ int main(void)
     DD_RUN(test_object_encoding);
     DD_RUN(test_object_metadata_and_getkeysflags);
     DD_RUN(test_server_management_commands);
+    DD_RUN(test_management_error_bounds);
     resp_buf_free(&g_out);
     db_destroy(&g_db);
     return DD_TEST_SUMMARY();

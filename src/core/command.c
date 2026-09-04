@@ -11934,6 +11934,22 @@ static void command_replconf(session *s, const resp_value *argv, size_t argc,
     resp_write_simple_string(out, "OK", 2);
 }
 
+/* Keep diagnostic rendering bounded even when a client supplies a huge token. */
+static void write_unknown_subcommand_error(resp_buf *out, const char *prefix,
+                                           const char *sub, size_t sl)
+{
+    char msg[128];
+    size_t shown = sl > 64 ? 64 : sl;
+    int n = snprintf(msg, sizeof(msg), "ERR Unknown %s '%.*s'", prefix,
+                     (int)shown, sub);
+    if (n < 0)
+        resp_write_error(out, ERR_SYNTAX, sizeof(ERR_SYNTAX) - 1);
+    else if ((size_t)n >= sizeof(msg))
+        resp_write_error(out, msg, sizeof(msg) - 1);
+    else
+        resp_write_error(out, msg, (size_t)n);
+}
+
 static void command_failover(session *s, const resp_value *argv, size_t argc,
                              resp_buf *out)
 {
@@ -12185,14 +12201,7 @@ static void command_acl(session *s, const resp_value *argv, size_t argc,
         acl_log_write(reg, count, pal_wall_ms(), out);
         return;
     }
-    {
-        char msg[128];
-        int n = snprintf(msg, sizeof(msg),
-                         "ERR Unknown ACL subcommand or wrong number of "
-                         "arguments for '%.*s'",
-                         (int)sl, sub);
-        resp_write_error(out, msg, (size_t)n);
-    }
+    write_unknown_subcommand_error(out, "ACL subcommand or wrong number of arguments for", sub, sl);
     return;
 
 bad:
@@ -12272,14 +12281,7 @@ static void command_latency(session *s, const resp_value *argv, size_t argc,
         resp_write_array_header(out, 0);
         return;
     }
-    {
-        char msg[128];
-        int n = snprintf(msg, sizeof(msg),
-                         "ERR Unknown LATENCY subcommand or wrong number of "
-                         "arguments for '%.*s'",
-                         (int)sl, sub);
-        resp_write_error(out, msg, (size_t)n);
-    }
+    write_unknown_subcommand_error(out, "LATENCY subcommand or wrong number of arguments for", sub, sl);
     return;
 
 bad:
@@ -12324,14 +12326,7 @@ static void command_module(session *s, const resp_value *argv, size_t argc,
         resp_write_error(out, E, sizeof(E) - 1);
         return;
     }
-    {
-        char msg[128];
-        int n = snprintf(msg, sizeof(msg),
-                         "ERR Unknown MODULE subcommand or wrong number of "
-                         "arguments for '%.*s'",
-                         (int)sl, sub);
-        resp_write_error(out, msg, (size_t)n);
-    }
+    write_unknown_subcommand_error(out, "MODULE subcommand or wrong number of arguments for", sub, sl);
     return;
 
 bad:
@@ -12455,14 +12450,7 @@ static void command_sentinel(session *s, const resp_value *argv, size_t argc,
         resp_write_simple_string(out, "OK", 2);
         return;
     }
-    {
-        char msg[128];
-        int n = snprintf(msg, sizeof(msg),
-                         "ERR Unknown SENTINEL subcommand or wrong number of "
-                         "arguments for '%.*s'",
-                         (int)sl, sub);
-        resp_write_error(out, msg, (size_t)n);
-    }
+    write_unknown_subcommand_error(out, "SENTINEL subcommand or wrong number of arguments for", sub, sl);
     return;
 
 bad:
@@ -12531,14 +12519,7 @@ static void command_debug(session *s, const resp_value *argv, size_t argc,
         resp_write_error(out, E, sizeof(E) - 1);
         return;
     }
-    {
-        char msg[128];
-        int n = snprintf(msg, sizeof(msg),
-                         "ERR Unknown DEBUG subcommand or wrong number of "
-                         "arguments for '%.*s'",
-                         (int)sl, sub);
-        resp_write_error(out, msg, (size_t)n);
-    }
+    write_unknown_subcommand_error(out, "DEBUG subcommand or wrong number of arguments for", sub, sl);
     return;
 
 bad:

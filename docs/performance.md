@@ -1702,3 +1702,10 @@ guard. Metadata updates do not add work to ordinary data commands.
 Unknown SETINFO attributes are rendered into a fixed 128-byte stack buffer with
 bounded precision before returning the Redis-compatible error. The path is O(1)
 for the bounded attribute and adds no allocation or data-path overhead.
+
+### Phase 220: bounded management diagnostics
+
+Unknown subcommand errors for management containers use a shared fixed 128-byte
+stack renderer and show at most 64 bytes of attacker-controlled input. The
+diagnostic path performs no allocation and never passes an unbounded `snprintf`
+result length to the RESP writer.
