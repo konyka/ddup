@@ -137,6 +137,7 @@ static void test_persistence_paths_reject_truncation(void)
         DD_CHECK_EQ_INT(-1,
                         server_enable_tiering(s, long_dir, "tier.log", 0));
         server_set_nodes_path(s, NULL);
+        server_set_nodes_path(s, long_dir);
         server_destroy(s);
     }
 }

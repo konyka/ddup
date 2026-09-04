@@ -3987,9 +3987,12 @@ static int conn_flush(server *s, conn *c)
 
 void server_set_nodes_path(server *s, const char *path)
 {
+    int n;
     if (s == NULL || path == NULL)
         return;
-    (void)snprintf(s->nodes_path, sizeof(s->nodes_path), "%s", path);
+    n = snprintf(s->nodes_path, sizeof(s->nodes_path), "%s", path);
+    if (n < 0 || (size_t)n >= sizeof(s->nodes_path))
+        s->nodes_path[0] = '\0';
 }
 
 void server_set_node_timeout(server *s, uint64_t ms)

@@ -791,3 +791,5 @@
     （Phase 233）
   - [x] 单线程 tiering 路径边界：tier 日志路径与目录长度在打开存储前校验，
     节点路径 setter 对空指针 fail-safe（Phase 234）
+  - [x] 节点路径截断保护：超长 `nodes_path` 配置清空为禁用状态，避免后续
+    集群保存落到静默截断的错误文件（Phase 235）

@@ -1794,3 +1794,8 @@ format pass per worker, with no heap allocation and no change to steady-state I/
 Tiering rejects directories that cannot fit the fixed metadata buffer before
 opening its log store. The check is a single length comparison and adds no work
 to the data path; node-path updates remain allocation-free and null-safe.
+
+### Phase 235: node path truncation safety
+
+Oversized node persistence paths are rejected by clearing the path to the
+disabled state. The setter remains a fixed-buffer, allocation-free operation.
