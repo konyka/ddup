@@ -1905,3 +1905,9 @@ the normal append/index hot path.
 Tier replay now consumes each declared record body with bounded exact reads,
 rejecting truncated records before indexing. The steady-state append path is
 unchanged; replay overhead is proportional to persisted bytes.
+
+### Phase 255: bounded tier record IDs
+
+Tier record IDs and encoded record lengths are validated before index updates.
+Overflow checks are cold-path replay/append guards and do not affect normal lookup
+or append throughput.

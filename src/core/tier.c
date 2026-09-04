@@ -114,6 +114,15 @@ static int file_skip_exact(pal_file *f, uint64_t n)
     return 0;
 }
 
+static int tier_advance_id(tier_store *t, uint64_t rid)
+{
+    if (rid == UINT64_MAX)
+        return -1;
+    if (rid >= t->next_id)
+        t->next_id = rid + 1;
+    return 0;
+}
+
 static void index_set(rh_table *idx, uint64_t rid, const tier_loc *loc)
 {
     unsigned char key[8];
@@ -248,6 +257,12 @@ int tier_open(tier_store **out, const char *path, uint64_t max_disk_bytes)
                 uint64_t rid = get_u64le(hdr + 18);
                 uint64_t body = (uint64_t)klen + vlen;
                 tier_loc loc;
+                if (body > UINT32_MAX - sizeof(hdr) ||
+                    tier_advance_id(t, rid) != 0)
+                    {
+                        t->failed = 1;
+                        break;
+                    }
                 if (t->end > UINT64_MAX - sizeof(hdr) - body ||
                     file_skip_exact(f, body) != 0) {
                     t->failed = 1;
@@ -256,7 +271,6 @@ int tier_open(tier_store **out, const char *path, uint64_t max_disk_bytes)
                 if (op == TIER_OP_FLUSH_ALL) {
                     rh_destroy(&t->index);
                     rh_init(&t->index);
-                    t->next_id = rid > t->next_id ? rid + 1 : t->next_id;
                     t->end += sizeof(hdr) + body;
                     continue;
                 }
@@ -278,7 +292,6 @@ int tier_open(tier_store **out, const char *path, uint64_t max_disk_bytes)
                 }
                 if (op == TIER_OP_DEL) {
                     index_del(&t->index, rid);
-                    t->next_id = rid > t->next_id ? rid + 1 : t->next_id;
                     t->end += sizeof(hdr) + body;
                     continue;
                 }
@@ -297,7 +310,6 @@ int tier_open(tier_store **out, const char *path, uint64_t max_disk_bytes)
                 }
                 index_set(&t->index, rid, &loc);
                 (void)expire;
-                t->next_id = rid > t->next_id ? rid + 1 : t->next_id;
                 t->end += sizeof(hdr) + body;
             }
         }
@@ -337,7 +349,8 @@ int tier_put(tier_store *t, unsigned int db_index, const char *key,
         return -1;
     rid = t->next_id;
     body = klen + vlen;
-    if (body < klen || body < vlen ||
+    if (t->next_id == 0 || t->next_id == UINT64_MAX ||
+        body < klen || body < vlen || body > UINT32_MAX - sizeof(hdr) ||
         (uint64_t)body > UINT64_MAX - sizeof(hdr))
         return -1;
     hdr[0] = TIER_OP_PUT;

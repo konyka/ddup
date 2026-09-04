@@ -486,3 +486,6 @@ null or empty inputs before touching cold-layer files.
 Tier log replay now verifies every declared record body is fully readable before
 publishing its index entry, preventing truncated persistence data from appearing
 as valid cold records.
+
+Tier replay and append now reject maximum record IDs and lengths that cannot fit
+the fixed index representation, preventing ID wraparound and locator truncation.
