@@ -17459,10 +17459,12 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
                 cond = 4;
             } else {
                 char msg[128];
+                size_t shown = optl > 96 ? 96 : optl;
                 int n = snprintf(msg, sizeof(msg),
                                  "ERR unknown argument: %.*s",
-                                 (int)optl, opt);
-                resp_write_error(out, msg, (size_t)n);
+                                 (int)shown, opt);
+                resp_write_error(out, msg, n < 0 || (size_t)n >= sizeof(msg)
+                                           ? sizeof(msg) - 1 : (size_t)n);
                 return;
             }
         }

@@ -351,6 +351,10 @@ static void test_management_error_bounds(void)
     cmd(4, "CONFIG", "SET", long_sub, "x");
     DD_CHECK(g_out.len <= 132);
     DD_CHECK(strstr(g_out.data, "ERR Unsupported CONFIG parameter") != NULL);
+
+    cmd(6, "HPEXPIRE", "hash", "10", long_sub, "FIELDS", "1");
+    DD_CHECK(g_out.len <= 132);
+    DD_CHECK(strstr(g_out.data, "ERR unknown argument") != NULL);
 }
 
 int main(void)

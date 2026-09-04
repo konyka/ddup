@@ -375,3 +375,7 @@ large library metadata without exposing stack-buffer overreads.
 Unknown `CONFIG SET` parameter errors now use the same bounded rendering policy,
 preserving Redis-style diagnostics while preventing oversized parameter tokens
 from causing out-of-bounds RESP writes.
+
+Unknown options for `HEXPIRE`/`HPEXPIRE` and their absolute-time variants now
+use bounded diagnostics, preserving fail-closed parsing without exposing
+uninitialized stack bytes for oversized option tokens.

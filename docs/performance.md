@@ -1727,3 +1727,9 @@ and off the ordinary command hot path.
 Unknown `CONFIG SET` parameters are rendered with a fixed stack buffer and a
 96-byte input cap. Truncated `snprintf` results are clamped before RESP output,
 with no allocation or impact on recognized configuration updates.
+
+### Phase 224: bounded hash-TTL diagnostics
+
+Unknown options in hash-field expiration commands cap displayed input at 96
+bytes and clamp the formatted length before RESP output. Recognized expiration
+paths retain their existing allocation-free hot path.
