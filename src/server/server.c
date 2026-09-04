@@ -3287,6 +3287,8 @@ void server_set_repl_max_snapshot_bytes(server *s, size_t bytes)
 
 void server_set_snapshot_path(server *s, const char *path)
 {
+    if (s == NULL)
+        return;
     s->db.snapshot_path = path;
 }
 
@@ -3332,6 +3334,9 @@ void server_load_nodes(server *s, const char *path)
 void server_enable_cluster(server *s, const char *node_id)
 {
     cluster_node *me;
+
+    if (s == NULL || node_id == NULL || node_id[0] == '\0')
+        return;
 
     s->db.cluster_enabled = 1;
     snprintf(s->db.node_id, sizeof(s->db.node_id), "%s", node_id);

@@ -427,3 +427,7 @@ well-formed monitoring output under memory pressure.
 Replication snapshot and partial-resync headers now reject negative or truncated
 format results before converting lengths to `size_t`, preserving atomic frame
 construction under malformed or extreme state.
+
+Server control-plane entry points now safely ignore null snapshot paths and reject
+null or empty cluster node IDs, preventing configuration-time crashes and partial
+cluster initialization.

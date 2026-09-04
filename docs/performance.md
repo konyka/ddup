@@ -1804,3 +1804,9 @@ disabled state. The setter remains a fixed-buffer, allocation-free operation.
 
 Cluster metadata saves now validate the derived `.tmp` filename before opening
 it. The failure path is a constant-time check and leaves retry state untouched.
+
+### Phase 237: null-safe server control APIs
+
+Snapshot-path and cluster-enable control APIs now return without mutating state
+when passed null or empty identifiers. These cold-path checks add no data-path
+allocation or synchronization overhead.

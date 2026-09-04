@@ -131,6 +131,8 @@ static void test_persistence_paths_reject_truncation(void)
     DD_CHECK_EQ_INT(-1, server_enable_tiering(NULL, ".", "tier.log", 0));
     DD_CHECK_EQ_INT(-1, server_enable_tiering(NULL, NULL, "tier.log", 0));
     DD_CHECK_EQ_INT(-1, server_enable_tiering(NULL, ".", NULL, 0));
+    server_set_snapshot_path(NULL, long_dir);
+    server_enable_cluster(NULL, NULL);
 
     s = make_server();
     if (s != NULL) {
