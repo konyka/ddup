@@ -376,6 +376,29 @@ static void test_management_error_bounds(void)
     DD_CHECK(strstr(g_out.data, "ERR unknown argument") != NULL);
 }
 
+static void test_info_render_bounds(void)
+{
+    info_stats st;
+    db d;
+    resp_buf out;
+    size_t i;
+    db_init(&d);
+    memset(&st, 0, sizeof(st));
+    st.ndbs = INFO_STATS_MAX_DBS;
+    d.tier_enabled = 1;
+    memset(d.tier_dir, 'd', sizeof(d.tier_dir) - 1);
+    d.tier_dir[sizeof(d.tier_dir) - 1] = '\0';
+    for (i = 0; i < INFO_STATS_MAX_DBS; i++)
+        st.db_keys[i] = 1;
+    for (i = 1; i < CMD_STATS_SLOTS; i++)
+        st.cmd_calls[i] = 1;
+    resp_buf_init(&out);
+    command_info_render(&d, NULL, &st, &out);
+    DD_CHECK(out.len > 0);
+    resp_buf_free(&out);
+    db_destroy(&d);
+}
+
 int main(void)
 {
     db_init(&g_db);
@@ -393,6 +416,7 @@ int main(void)
     DD_RUN(test_object_metadata_and_getkeysflags);
     DD_RUN(test_server_management_commands);
     DD_RUN(test_management_error_bounds);
+    DD_RUN(test_info_render_bounds);
     resp_buf_free(&g_out);
     db_destroy(&g_db);
     return DD_TEST_SUMMARY();

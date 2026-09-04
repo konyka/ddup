@@ -395,3 +395,7 @@ the RESP write beyond initialized stack storage.
 Pub/Sub subscribed-context rejection errors now clamp `snprintf` output lengths,
 so long command tokens cannot make RESP read past the initialized diagnostic
 buffer.
+
+INFO multi-section snapshots use bounded append semantics, and ACL metadata is
+covered with maximum-size rule sets to ensure fixed-buffer RESP rendering stays
+within initialized storage under adversarial configuration sizes.

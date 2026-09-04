@@ -12,6 +12,7 @@
 #include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdarg.h>
 #include <string.h>
 
 #include "ds/obj.h"
@@ -3096,6 +3097,26 @@ static void human_bytes(uint64_t b, char *buf, size_t cap)
         snprintf(buf, cap, "%.2fG", (double)b / (1024.0 * 1024.0 * 1024.0));
 }
 
+/* Append formatted INFO data without allowing a truncated result to poison
+ * the next buffer offset or size calculation. */
+static int info_appendf(char *buf, size_t cap, int used, const char *fmt, ...)
+{
+    va_list ap;
+    int n;
+    size_t avail;
+    if (used < 0)
+        used = 0;
+    if ((size_t)used >= cap)
+        return (int)(cap - 1);
+    avail = cap - (size_t)used;
+    va_start(ap, fmt);
+    n = vsnprintf(buf + used, avail, fmt, ap);
+    va_end(ap);
+    if (n < 0 || (size_t)n >= avail)
+        return (int)(cap - 1);
+    return used + n;
+}
+
 /* ------------------------------------------------------------------ */
 /* INFO                                                                 */
 /* ------------------------------------------------------------------ */
@@ -3188,14 +3209,14 @@ static void info_format_stats(const info_stats *st, resp_buf *out)
                   (unsigned long long)st->io.bytes_written);
     for (i = 0; i < st->ndbs; i++) {
         if (st->db_keys[i] > 0)
-            n2 += snprintf(buf + n2, sizeof(buf) - (size_t)n2,
+            n2 = info_appendf(buf, sizeof(buf), n2,
                            "db:%d:%llu:%llu\r\n", i,
                            (unsigned long long)st->db_keys[i],
                            (unsigned long long)st->db_expires[i]);
     }
     for (id = 1; id <= CMD_MAX; id++) {
         if (st->cmd_calls[id] > 0)
-            n2 += snprintf(buf + n2, sizeof(buf) - (size_t)n2,
+            n2 = info_appendf(buf, sizeof(buf), n2,
                            "c:%u:%llu:%llu\r\n", (unsigned)id,
                            (unsigned long long)st->cmd_calls[id],
                            (unsigned long long)st->cmd_usecs[id]);
@@ -3246,7 +3267,7 @@ void command_info_render(const db *home, const repl_info *repl,
     /* Redis-style per-db keyspace sections for non-empty dbs */
     for (i = 0; i < st->ndbs; i++) {
         if (st->db_keys[i] > 0)
-            n2 += snprintf(buf + n2, sizeof(buf) - (size_t)n2,
+            n2 = info_appendf(buf, sizeof(buf), n2,
                            "db%d:keys=%llu,expires=%llu,avg_ttl=0\r\n", i,
                            (unsigned long long)st->db_keys[i],
                            (unsigned long long)st->db_expires[i]);
@@ -3256,7 +3277,7 @@ void command_info_render(const db *home, const repl_info *repl,
         uint64_t total_cmds = 0;
         for (id = 1; id <= CMD_MAX; id++)
             total_cmds += st->cmd_calls[id];
-        n2 += snprintf(buf + n2, sizeof(buf) - (size_t)n2,
+        n2 = info_appendf(buf, sizeof(buf), n2,
                        "# IO\r\n"
                        "io_loops:%llu\r\n"
                        "io_events:%llu\r\n"
@@ -3273,7 +3294,7 @@ void command_info_render(const db *home, const repl_info *repl,
                        (unsigned long long)st->io.bytes_written,
                        (unsigned long long)total_cmds);
     }
-    n2 += snprintf(buf + n2, sizeof(buf) - (size_t)n2,
+    n2 = info_appendf(buf, sizeof(buf), n2,
                    "# Cluster\r\n"
                    "cluster_enabled:%d\r\n",
                    home->cluster_enabled);
@@ -3282,11 +3303,11 @@ void command_info_render(const db *home, const repl_info *repl,
         if (st->cmd_calls[id] > 0) {
             const cmd_entry *e = cmd_table_entry(id);
             if (!any) {
-                n2 += snprintf(buf + n2, sizeof(buf) - (size_t)n2,
+                n2 = info_appendf(buf, sizeof(buf), n2,
                                "# Commandstats\r\n");
                 any = 1;
             }
-            n2 += snprintf(buf + n2, sizeof(buf) - (size_t)n2,
+            n2 = info_appendf(buf, sizeof(buf), n2,
                            "cmdstat_%s:calls=%llu,usec=%llu,"
                            "usec_per_call=%.2f\r\n",
                            e->name,
@@ -3297,7 +3318,7 @@ void command_info_render(const db *home, const repl_info *repl,
         }
     }
     if (repl != NULL) {
-        n2 += snprintf(buf + n2, sizeof(buf) - (size_t)n2,
+        n2 = info_appendf(buf, sizeof(buf), n2,
                        "# Replication\r\n"
                        "role:%s\r\n"
                        "connected_slaves:%llu\r\n"
@@ -3311,7 +3332,7 @@ void command_info_render(const db *home, const repl_info *repl,
                            : repl->replid,
                        (unsigned long long)repl->offset);
         if (repl->role == SESSION_ROLE_REPLICA)
-            n2 += snprintf(buf + n2, sizeof(buf) - (size_t)n2,
+            n2 = info_appendf(buf, sizeof(buf), n2,
                            "master_host:%s\r\n"
                            "master_port:%u\r\n"
                            "master_link_status:%s\r\n",

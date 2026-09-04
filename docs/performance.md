@@ -1756,3 +1756,10 @@ existing allocation-free parsing path.
 
 Commands rejected while subscribed now clamp the fixed-buffer diagnostic length
 before RESP output. Command-name normalization remains bounded and allocation-free.
+
+### Phase 229: bounded INFO and ACL metadata rendering
+
+INFO snapshot renderers now append through a fixed-buffer helper that clamps
+truncated `vsnprintf` results before the next offset calculation. ACL rule-line
+rendering is covered with maximum key/channel pattern sets; both paths avoid
+heap allocation in the normal metadata response.

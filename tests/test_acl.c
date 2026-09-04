@@ -1139,6 +1139,38 @@ static void test_acl_rule_line_capacity_covers_channel_patterns(void)
     resp_buf_free(&out);
 }
 
+static void test_acl_rule_line_never_exceeds_buffer(void)
+{
+    acl_registry r;
+    resp_value rules[ACL_MAX_PATTERNS + ACL_MAX_CHANNELS + 4];
+    char vals[ACL_MAX_PATTERNS + ACL_MAX_CHANNELS][ACL_MAX_PATTERN];
+    resp_buf out;
+    const acl_user *u;
+    size_t i, n = 0;
+    acl_init(&r, NULL);
+    rules[n++] = rv("on");
+    rules[n++] = rv(">password");
+    for (i = 0; i < ACL_MAX_PATTERNS; i++) {
+        memset(vals[i], 'k', sizeof(vals[i]) - 1);
+        vals[i][sizeof(vals[i]) - 1] = '\0';
+        vals[i][0] = '~';
+        rules[n++] = rv(vals[i]);
+    }
+    for (i = 0; i < ACL_MAX_CHANNELS; i++) {
+        memset(vals[ACL_MAX_PATTERNS + i], 'c', sizeof(vals[0]) - 1);
+        vals[ACL_MAX_PATTERNS + i][sizeof(vals[0]) - 1] = '\0';
+        vals[ACL_MAX_PATTERNS + i][0] = '&';
+        rules[n++] = rv(vals[ACL_MAX_PATTERNS + i]);
+    }
+    DD_CHECK(acl_setuser(&r, "wide", 4, rules, n) == 0);
+    u = acl_find_const(&r, "wide", 4);
+    resp_buf_init(&out);
+    acl_write_rule_line(u, &out);
+    DD_CHECK(out.len > 2 && out.data[out.len - 2] == '\r' &&
+             out.data[out.len - 1] == '\n');
+    resp_buf_free(&out);
+}
+
 static void test_acl_log_coalesces_identical_events(void)
 {
     acl_registry r;
@@ -1278,6 +1310,7 @@ int main(void)
     DD_RUN(test_acl_ddup_control_and_himport_key_positions);
     DD_RUN(test_acl_key_authorization_fails_closed_on_malformed_values);
     DD_RUN(test_acl_rule_line_capacity_covers_channel_patterns);
+    DD_RUN(test_acl_rule_line_never_exceeds_buffer);
     DD_RUN(test_acl_log_coalesces_identical_events);
     DD_RUN(test_acl_getuser_flags_do_not_mislabel_commands);
     DD_RUN(test_acl_getuser_keys_keep_tilde_prefix);
