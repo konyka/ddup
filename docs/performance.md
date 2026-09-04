@@ -1810,3 +1810,9 @@ it. The failure path is a constant-time check and leaves retry state untouched.
 Snapshot-path and cluster-enable control APIs now return without mutating state
 when passed null or empty identifiers. These cold-path checks add no data-path
 allocation or synchronization overhead.
+
+### Phase 238: bounded cluster identity fields
+
+Cluster node IDs and announced IPs are length-checked before copying into fixed
+metadata buffers. Valid updates remain allocation-free; oversized values are
+ignored without touching the active identity.

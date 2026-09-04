@@ -144,6 +144,26 @@ static void test_persistence_paths_reject_truncation(void)
     }
 }
 
+static void test_cluster_identity_rejects_truncation(void)
+{
+    server *s;
+    char long_id[96];
+    char long_ip[96];
+    memset(long_id, 'i', sizeof(long_id) - 1);
+    long_id[sizeof(long_id) - 1] = '\0';
+    memset(long_ip, 'a', sizeof(long_ip) - 1);
+    long_ip[sizeof(long_ip) - 1] = '\0';
+
+    s = make_server();
+    if (s != NULL) {
+        server_enable_cluster(s, long_id);
+        DD_CHECK(server_db(s)->cluster_enabled == 0);
+        server_set_cluster_announce(s, long_ip, 7000);
+        DD_CHECK_STR("127.0.0.1", server_db(s)->cluster_ip);
+        server_destroy(s);
+    }
+}
+
 static void test_ping_set_get(void)
 {
     server *s = make_server();
@@ -1541,6 +1561,7 @@ static void run_all_tests(void)
 {
     DD_RUN(test_cluster_save_close_failure_preserves_state);
     DD_RUN(test_persistence_paths_reject_truncation);
+    DD_RUN(test_cluster_identity_rejects_truncation);
     DD_RUN(test_ping_set_get);
     DD_RUN(test_client_reply_modes);
     DD_RUN(test_client_tracking_redirect_validation);

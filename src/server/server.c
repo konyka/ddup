@@ -2880,8 +2880,8 @@ server *server_create_ex(const char *host, uint16_t port, int backend)
     rh_init(&s->channels);
     rh_init(&s->schannels);
     rh_init(&s->patterns);
-    if (host != NULL)
-        snprintf(s->db.cluster_ip, sizeof(s->db.cluster_ip), "%s", host);
+    if (host != NULL && strlen(host) < sizeof(s->db.cluster_ip))
+        (void)snprintf(s->db.cluster_ip, sizeof(s->db.cluster_ip), "%s", host);
     s->db.cluster_port = s->port;
     s->role = SESSION_ROLE_MASTER;
     buf_pool_init(&s->pool);
@@ -3337,6 +3337,8 @@ void server_enable_cluster(server *s, const char *node_id)
 
     if (s == NULL || node_id == NULL || node_id[0] == '\0')
         return;
+    if (strlen(node_id) >= sizeof(s->db.node_id))
+        return;
 
     s->db.cluster_enabled = 1;
     snprintf(s->db.node_id, sizeof(s->db.node_id), "%s", node_id);
@@ -3368,8 +3370,8 @@ void server_set_cluster_announce(server *s, const char *ip, uint16_t port)
 {
     if (s == NULL)
         return;
-    if (ip != NULL && ip[0] != '\0')
-        snprintf(s->db.cluster_ip, sizeof(s->db.cluster_ip), "%s", ip);
+    if (ip != NULL && ip[0] != '\0' && strlen(ip) < sizeof(s->db.cluster_ip))
+        (void)snprintf(s->db.cluster_ip, sizeof(s->db.cluster_ip), "%s", ip);
     s->db.cluster_port = port;
 }
 

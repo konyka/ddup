@@ -431,3 +431,7 @@ construction under malformed or extreme state.
 Server control-plane entry points now safely ignore null snapshot paths and reject
 null or empty cluster node IDs, preventing configuration-time crashes and partial
 cluster initialization.
+
+Cluster identity configuration now rejects oversized node IDs and announced IPs
+instead of silently truncating them, preserving stable node identity and routing
+metadata.
