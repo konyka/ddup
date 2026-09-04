@@ -24052,7 +24052,8 @@ static void session_execute_at_raw(session *s, const resp_value *argv,
                      "(P)UNSUBSCRIBE / PING / QUIT / SHUTDOWN are allowed in "
                      "this context",
                      lc);
-        resp_write_error(out, msg, (size_t)n);
+        resp_write_error(out, msg, n < 0 || (size_t)n >= sizeof(msg)
+                                  ? sizeof(msg) - 1 : (size_t)n);
         return;
     }
 

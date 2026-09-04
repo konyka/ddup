@@ -1751,3 +1751,8 @@ allocation-free for both valid and invalid events.
 The shared `HSETEX` option parser caps unknown-option text at 96 bytes and
 clamps the formatted result before writing RESP. Valid field writes retain the
 existing allocation-free parsing path.
+
+### Phase 228: bounded Pub/Sub context diagnostics
+
+Commands rejected while subscribed now clamp the fixed-buffer diagnostic length
+before RESP output. Command-name normalization remains bounded and allocation-free.

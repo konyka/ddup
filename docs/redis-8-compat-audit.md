@@ -391,3 +391,7 @@ unbounded input lengths to escape fixed stack storage.
 `HSETEX` unknown-option diagnostics now follow the same bounded policy as the
 hash expiration family, preventing oversized field-write options from extending
 the RESP write beyond initialized stack storage.
+
+Pub/Sub subscribed-context rejection errors now clamp `snprintf` output lengths,
+so long command tokens cannot make RESP read past the initialized diagnostic
+buffer.
