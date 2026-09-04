@@ -371,3 +371,7 @@ RESP output lengths never exceed initialized stack storage.
 Duplicate `FUNCTION LOAD` library diagnostics now use bounded library-name
 rendering and checked output lengths, preserving useful Redis-style errors for
 large library metadata without exposing stack-buffer overreads.
+
+Unknown `CONFIG SET` parameter errors now use the same bounded rendering policy,
+preserving Redis-style diagnostics while preventing oversized parameter tokens
+from causing out-of-bounds RESP writes.

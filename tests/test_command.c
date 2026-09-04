@@ -347,6 +347,10 @@ static void test_management_error_bounds(void)
         DD_CHECK(g_out.len <= 100);
         DD_CHECK(strstr(g_out.data, "ERR Library '") != NULL);
     }
+
+    cmd(4, "CONFIG", "SET", long_sub, "x");
+    DD_CHECK(g_out.len <= 132);
+    DD_CHECK(strstr(g_out.data, "ERR Unsupported CONFIG parameter") != NULL);
 }
 
 int main(void)

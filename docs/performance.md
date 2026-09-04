@@ -1721,3 +1721,9 @@ fixed stack renderer, keeping malformed requests allocation-free and bounded.
 Duplicate FUNCTION library errors cap the library name at 64 bytes and pass
 only initialized bytes to the RESP writer. The validation remains allocation-free
 and off the ordinary command hot path.
+
+### Phase 223: bounded CONFIG diagnostics
+
+Unknown `CONFIG SET` parameters are rendered with a fixed stack buffer and a
+96-byte input cap. Truncated `snprintf` results are clamped before RESP output,
+with no allocation or impact on recognized configuration updates.

@@ -17146,10 +17146,12 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
             }
             {
                 char msg[128];
+                size_t shown = pl > 96 ? 96 : pl;
                 int n2 = snprintf(msg, sizeof(msg),
                                   "ERR Unsupported CONFIG parameter: %.*s",
-                                  (int)pl, p);
-                resp_write_error(out, msg, (size_t)n2);
+                                  (int)shown, p);
+                resp_write_error(out, msg, n2 < 0 || (size_t)n2 >= sizeof(msg)
+                                           ? sizeof(msg) - 1 : (size_t)n2);
             }
             return;
         }
