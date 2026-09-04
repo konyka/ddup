@@ -835,3 +835,5 @@
     输出缓冲区 fail-closed，避免控制面崩溃（Phase 240）
   - [x] 复制主机字段边界：`REPLICAOF` 拒绝空或超长 master host，避免固定
     缓冲区静默截断导致错误连接与 PSYNC 状态污染（Phase 239）
+  - [x] Tier 重放操作码校验：未知记录类型在读取 body 前立即拒绝，避免
+    未定义操作被当作合法持久化记录处理（Phase 257）

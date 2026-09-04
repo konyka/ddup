@@ -1917,3 +1917,8 @@ or append throughput.
 Tier append and compaction paths now check total-offset arithmetic and propagate
 index insertion failures. Normal writes retain the same single-pass I/O and index
 update behavior.
+
+### Phase 257: tier replay opcode validation
+
+Tier replay rejects unknown record operations before body processing or index
+mutation. Valid log replay retains the same bounded sequential scan.

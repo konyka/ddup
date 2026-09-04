@@ -265,6 +265,11 @@ int tier_open(tier_store **out, const char *path, uint64_t max_disk_bytes)
                 uint64_t rid = get_u64le(hdr + 18);
                 uint64_t body = (uint64_t)klen + vlen;
                 tier_loc loc;
+                if (op != TIER_OP_PUT && op != TIER_OP_DEL &&
+                    op != TIER_OP_FLUSH_DB && op != TIER_OP_FLUSH_ALL) {
+                    t->failed = 1;
+                    break;
+                }
                 if (body > UINT32_MAX - sizeof(hdr) ||
                     tier_advance_id(t, rid) != 0)
                     {

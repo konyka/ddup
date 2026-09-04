@@ -492,3 +492,6 @@ the fixed index representation, preventing ID wraparound and locator truncation.
 
 Tier append and compaction now fail closed on offset arithmetic overflow or index
 insertion failure, preventing durable records from becoming unaddressable.
+
+Tier replay now rejects unknown operation codes before consuming record bodies,
+preventing undefined persistence operations from mutating recovery state.
