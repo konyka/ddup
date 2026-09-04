@@ -867,3 +867,5 @@
     在 UINT64_MAX 处饱和，避免控制面崩溃和回绕（Phase 271）
   - [x] 集群 hash-slot 输入防护：CRC16、标签提取和槽位计算拒绝非零长度
     NULL key，标签输出允许 NULL 仅跳过复制，保持路由路径安全（Phase 272）
+  - [x] 复制 backlog 状态一致性：读写入口校验 start/len/cap 关系，损坏环状态
+    fail-closed，避免环形偏移下溢和越界复制（Phase 273）

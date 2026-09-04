@@ -10,6 +10,12 @@ static size_t ring_advance(size_t pos, size_t n, size_t cap)
     return n >= tail ? n - tail : pos + n;
 }
 
+static int backlog_state_valid(const repl_backlog *b)
+{
+    return b != NULL && b->buf != NULL && b->cap != 0 &&
+           b->start < b->cap && b->len <= b->cap;
+}
+
 int repl_backlog_init(repl_backlog *b, size_t cap)
 {
     if (b == NULL)
@@ -47,6 +53,8 @@ void repl_backlog_append(repl_backlog *b, const char *data, size_t n)
     size_t tail;
     if (b == NULL || (data == NULL && n != 0))
         return;
+    if (b->buf != NULL && !backlog_state_valid(b))
+        return;
     if (n > UINT64_MAX - b->offset)
         b->offset = UINT64_MAX;
     else
@@ -78,8 +86,7 @@ size_t repl_backlog_read(const repl_backlog *b, char *out, size_t max)
 {
     size_t n;
     size_t tail;
-    if (b == NULL || out == NULL || b->buf == NULL || b->cap == 0 ||
-        b->len == 0 || max == 0)
+    if (out == NULL || !backlog_state_valid(b) || b->len == 0 || max == 0)
         return 0;
     n = b->len < max ? b->len : max;
     tail = b->cap - b->start;
@@ -101,8 +108,7 @@ size_t repl_backlog_read_from(const repl_backlog *b, uint64_t from_offset,
     size_t n;
     size_t pos;
     size_t tail;
-    if (b == NULL || out == NULL || b->buf == NULL || b->cap == 0 ||
-        b->len == 0 || max == 0)
+    if (out == NULL || !backlog_state_valid(b) || b->len == 0 || max == 0)
         return 0;
     if (from_offset >= b->offset)
         return 0;

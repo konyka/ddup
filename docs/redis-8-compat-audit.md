@@ -547,3 +547,7 @@ from causing pointer faults or offset wraparound.
 Cluster CRC16/hash-slot helpers now reject non-empty null keys and safely handle
 null hashtag output buffers, preventing malformed routing inputs from crashing
 the command path while preserving Redis hashtag semantics for valid keys.
+
+Replication backlog operations now validate ring metadata before arithmetic and
+fail closed on corrupt state, preventing offset underflow or out-of-bounds data
+movement during partial-resync handling.

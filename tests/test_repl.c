@@ -98,6 +98,29 @@ static void test_backlog_null_and_offset_safety(void)
     repl_backlog_free(&b);
 }
 
+static void test_backlog_corrupt_state_fails_closed(void)
+{
+    repl_backlog b;
+    char out[8] = {'s', 'e', 'n', 't', 'i', 'n', 'e', 'l'};
+
+    DD_CHECK_EQ_INT(0, repl_backlog_init(&b, 8));
+    repl_backlog_append(&b, "safe", 4);
+    b.len = 9;
+    b.offset = 4;
+    repl_backlog_append(&b, "x", 1);
+    DD_CHECK_EQ_INT(4, (long long)b.offset);
+    DD_CHECK_EQ_INT(0, (long long)repl_backlog_read(&b, out, sizeof(out)));
+    DD_CHECK_EQ_INT(0, (long long)repl_backlog_read_from(&b, 0, out,
+                                                        sizeof(out)));
+
+    b.len = 0;
+    b.start = 8;
+    repl_backlog_append(&b, "x", 1);
+    DD_CHECK_EQ_INT(4, (long long)b.offset);
+    DD_CHECK_EQ_INT(0, (long long)repl_backlog_read(&b, out, sizeof(out)));
+    repl_backlog_free(&b);
+}
+
 static void test_backlog_boundaries_and_offsets(void)
 {
     repl_backlog b;
@@ -161,6 +184,7 @@ int main(void)
     DD_RUN(test_backlog_wrap);
     DD_RUN(test_backlog_empty_state);
     DD_RUN(test_backlog_null_and_offset_safety);
+    DD_RUN(test_backlog_corrupt_state_fails_closed);
     DD_RUN(test_backlog_boundaries_and_offsets);
     DD_RUN(test_sync_master);
     DD_RUN(test_psync_fullresync);

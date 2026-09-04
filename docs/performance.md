@@ -2011,3 +2011,10 @@ CRC16 and slot/tag helpers now fail closed for non-empty null keys; hashtag
 rendering treats a null output as a deliberate no-copy request. Valid routing
 continues to use the read-only 256-entry CRC table with no allocation or extra
 per-byte branches beyond the existing loop.
+
+### Phase 273: validated replication backlog state
+
+Backlog reads and appends reject inconsistent `start`, `len`, and `cap` metadata
+before ring arithmetic. The validation is a single predictable branch on the
+replication helper boundary; valid append/read operations retain the existing
+O(1) wrap-aware copies.
