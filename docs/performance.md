@@ -1970,3 +1970,8 @@ before traversal. Valid cursor scans keep the same bounded iteration cost.
 Hash-table operations reject zero-capacity or missing-slot states before probing.
 The guard is a predictable cold/error branch and does not alter initialized-table
 throughput.
+
+### Phase 267: checked hash-table capacity helpers
+
+Capacity arithmetic helpers validate output pointers before writing sizes. This
+affects only diagnostics/tests and leaves the insert hot path unchanged.

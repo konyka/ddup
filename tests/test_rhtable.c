@@ -86,6 +86,17 @@ static void test_uninitialized_table_fails_closed(void)
     DD_CHECK_EQ_INT(0, rh_random_entry(&t, 0, &v, &vl, &v, &vl, NULL));
 }
 
+static void test_test_helpers_reject_null_outputs(void)
+{
+#ifdef DDUP_TESTING
+    size_t bytes = 0;
+    DD_CHECK_EQ_INT(-1, rh_test_slot_bytes(16, NULL));
+    DD_CHECK_EQ_INT(-1, rh_test_grow_capacity(16, NULL));
+    DD_CHECK_EQ_INT(0, rh_test_slot_bytes(16, &bytes));
+    DD_CHECK(bytes > 0);
+#endif
+}
+
 static void test_overwrite(void)
 {
     rh_table t;
@@ -552,6 +563,7 @@ int main(void)
     DD_RUN(test_iteration_api_rejects_null_inputs);
     DD_RUN(test_scan_rejects_invalid_cursor_state);
     DD_RUN(test_uninitialized_table_fails_closed);
+    DD_RUN(test_test_helpers_reject_null_outputs);
     DD_RUN(test_overwrite);
     DD_RUN(test_set_ex);
     DD_RUN(test_reject_unrepresentable_lengths);

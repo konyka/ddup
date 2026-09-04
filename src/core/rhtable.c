@@ -13,6 +13,8 @@
 
 static int rh_slot_bytes(size_t cap, size_t *bytes)
 {
+    if (bytes == NULL)
+        return -1;
     if (cap > SIZE_MAX / sizeof(rh_entry))
         return -1;
     *bytes = cap * sizeof(rh_entry);
@@ -22,6 +24,8 @@ static int rh_slot_bytes(size_t cap, size_t *bytes)
 static int rh_grow_capacity(size_t cap, size_t *new_cap)
 {
     size_t doubled;
+    if (new_cap == NULL)
+        return -1;
     if (cap > SIZE_MAX / 2)
         return -1;
     doubled = cap * 2;

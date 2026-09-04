@@ -524,3 +524,6 @@ cursors, preventing unsigned wraparound during management iteration.
 
 Hash-table operations now fail closed on uninitialized storage handles, preventing
 zero-capacity masking and invalid slot dereferences in shared data paths.
+
+Hash-table capacity helpers now reject null output pointers before arithmetic,
+keeping diagnostics and test seams fail-closed.
