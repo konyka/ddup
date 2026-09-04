@@ -467,3 +467,6 @@ buffers before touching persistence state.
 
 Cluster state helpers now reject null databases, claimants, and bitmaps before
 mutation, keeping malformed control-plane requests fail-closed.
+
+AOF open, logging, flushing, callback injection, replay, and delta-copy entry
+points now reject null or empty inputs before file operations.

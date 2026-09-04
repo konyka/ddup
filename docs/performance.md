@@ -1870,3 +1870,9 @@ accessing bounded node tables or response buffers. Valid paths remain unchanged.
 
 Epoch, claim-merge, failover, and myself helpers now validate state pointers
 before mutation. Valid paths retain bounded array scans with no new allocation.
+
+### Phase 249: null-safe AOF APIs
+
+AOF control APIs validate writer, payload, callback, and path inputs before
+touching file state. Valid flush and copy-delta paths retain their existing
+buffered I/O behavior.

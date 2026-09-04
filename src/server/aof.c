@@ -63,6 +63,8 @@ static int aof_clone_db_data(db *dst, db *src)
 
 aof *aof_open(const char *path)
 {
+    if (path == NULL || path[0] == '\0')
+        return NULL;
     aof *a = (aof *)calloc(1, sizeof(*a));
     if (a == NULL)
         return NULL;
@@ -89,7 +91,7 @@ aof *aof_open(const char *path)
 void aof_log_cmd(aof *a, const resp_value *argv, size_t argc)
 {
     size_t i;
-    if (a->failed)
+    if (a == NULL || (argv == NULL && argc != 0) || a->failed)
         return;
     resp_write_array_header(&a->pending, argc);
     for (i = 0; i < argc; i++) {
@@ -104,6 +106,8 @@ void aof_log_cmd(aof *a, const resp_value *argv, size_t argc)
 
 void aof_set_fsync_mode(aof *a, int mode)
 {
+    if (a == NULL)
+        return;
     a->fsync_mode = mode;
 }
 
@@ -128,7 +132,8 @@ int aof_flush(aof *a)
 {
     size_t written = 0;
     int had_pending;
-    if (a->failed)
+    if (a == NULL || a->f == NULL || a->write_fn == NULL ||
+        a->sync_fn == NULL || a->now_fn == NULL || a->failed)
         return -1;
     had_pending = a->pending.len > 0;
     while (written < a->pending.len) {
@@ -162,17 +167,20 @@ int aof_flush(aof *a)
 void aof_test_set_write_fn(
     aof *a, ptrdiff_t (*write_fn)(pal_file *f, const void *buf, size_t n))
 {
-    a->write_fn = write_fn != NULL ? write_fn : pal_file_write;
+    if (a != NULL)
+        a->write_fn = write_fn != NULL ? write_fn : pal_file_write;
 }
 
 void aof_test_set_sync_fn(aof *a, int (*sync_fn)(pal_file *f))
 {
-    a->sync_fn = sync_fn != NULL ? sync_fn : pal_file_sync;
+    if (a != NULL)
+        a->sync_fn = sync_fn != NULL ? sync_fn : pal_file_sync;
 }
 
 void aof_test_set_now_fn(aof *a, uint64_t (*now_fn)(void))
 {
-    a->now_fn = now_fn != NULL ? now_fn : pal_wall_ms;
+    if (a != NULL)
+        a->now_fn = now_fn != NULL ? now_fn : pal_wall_ms;
 }
 
 void aof_close(aof *a)
@@ -206,7 +214,7 @@ int aof_copy_delta(aof *a, uint64_t offset, const char *path)
     ptrdiff_t n;
     int rc = -1;
     size_t plen;
-    if (a == NULL || a->path == NULL || path == NULL ||
+    if (a == NULL || a->path == NULL || path == NULL || path[0] == '\0' ||
         aof_durable_offset(a) == UINT64_MAX)
         return -1;
     src = pal_file_open_read(a->path);

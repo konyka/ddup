@@ -118,6 +118,14 @@ static void test_aof_serialization(void)
     remove(TMP_AOF);
 }
 
+static void test_aof_api_rejects_null_inputs(void)
+{
+    DD_CHECK(aof_open(NULL) == NULL);
+    DD_CHECK_EQ_INT(-1, aof_copy_delta(NULL, 0, "x"));
+    DD_CHECK_EQ_INT(-1, aof_replay(NULL, "x"));
+    DD_CHECK_EQ_INT(-1, aof_replay_session(NULL, "x"));
+}
+
 static void test_aof_replay(void)
 {
     db d, d2;
@@ -746,6 +754,7 @@ static void test_aof_session_late_corruption_does_not_mutate_dbs(void)
 int main(void)
 {
     DD_RUN(test_aof_serialization);
+    DD_RUN(test_aof_api_rejects_null_inputs);
     DD_RUN(test_aof_replay);
     DD_RUN(test_aof_incomplete_tail);
     DD_RUN(test_aof_malformed_replay_fails);
