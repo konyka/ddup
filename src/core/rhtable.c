@@ -104,12 +104,16 @@ void rh_destroy(rh_table *t)
 {
     if (t == NULL)
         return;
-    for (size_t i = 0; i < t->cap; i++)
-        if (t->slots[i].psl >= 0)
-            free(t->slots[i].kv);
-    for (size_t i = 0; i < t->old_cap; i++)
-        if (t->old_slots[i].psl >= 0)
-            free(t->old_slots[i].kv);
+    if (t->slots != NULL) {
+        for (size_t i = 0; i < t->cap; i++)
+            if (t->slots[i].psl >= 0)
+                free(t->slots[i].kv);
+    }
+    if (t->old_slots != NULL && t->old_slots != t->slots) {
+        for (size_t i = 0; i < t->old_cap; i++)
+            if (t->old_slots[i].psl >= 0)
+                free(t->old_slots[i].kv);
+    }
     free(t->slots);
     free(t->old_slots);
     t->slots = NULL;
@@ -252,13 +256,15 @@ size_t rh_size(const rh_table *t)
 void rh_each(const rh_table *t, rh_iter_fn fn, void *ctx)
 {
     size_t i;
-    if (t == NULL || fn == NULL)
+    if (t == NULL || fn == NULL || t->slots == NULL || t->cap == 0)
         return;
     for (i = 0; i < t->cap; i++) {
         const rh_entry *e = &t->slots[i];
         if (e->psl >= 0)
             fn(e->kv, e->klen, e->kv + e->klen, e->vlen, ctx);
     }
+    if (t->old_slots == NULL || t->old_cap == 0)
+        return;
     for (i = 0; i < t->old_cap; i++) {
         const rh_entry *e = &t->old_slots[i];
         if (e->psl >= 0)
@@ -322,7 +328,7 @@ int rh_get(rh_table *t, const char *key, size_t klen,
     long i = rh_find_in(t->slots, t->cap, h, key, klen);
     if (i >= 0) {
         e = &t->slots[i];
-    } else if (t->old_slots) {
+    } else if (t->old_slots != NULL && t->old_cap != 0) {
         long oi = rh_find_in(t->old_slots, t->old_cap, h, key, klen);
         if (oi >= 0)
             e = &t->old_slots[oi];
@@ -347,7 +353,7 @@ int rh_get_touch(rh_table *t, const char *key, size_t klen,
     long i = rh_find_in(t->slots, t->cap, h, key, klen);
     if (i >= 0) {
         e = &t->slots[i];
-    } else if (t->old_slots) {
+    } else if (t->old_slots != NULL && t->old_cap != 0) {
         long oi = rh_find_in(t->old_slots, t->old_cap, h, key, klen);
         if (oi >= 0)
             e = &t->old_slots[oi];
@@ -375,7 +381,7 @@ int rh_set(rh_table *t, const char *key, size_t klen,
     rh_entry *target = NULL;
     if (i >= 0) {
         target = &t->slots[i];
-    } else if (t->old_slots) {
+    } else if (t->old_slots != NULL && t->old_cap != 0) {
         long oi = rh_find_in(t->old_slots, t->old_cap, h, key, klen);
         if (oi >= 0)
             target = &t->old_slots[oi];
@@ -439,7 +445,7 @@ int rh_set_ex2(rh_table *t, const char *key, size_t klen, const char *v1,
     rh_entry *target = NULL;
     if (i >= 0) {
         target = &t->slots[i];
-    } else if (t->old_slots) {
+    } else if (t->old_slots != NULL && t->old_cap != 0) {
         long oi = rh_find_in(t->old_slots, t->old_cap, h, key, klen);
         if (oi >= 0)
             target = &t->old_slots[oi];
@@ -502,7 +508,7 @@ uint32_t rh_meta_of(rh_table *t, const char *key, size_t klen)
     long i = rh_find_in(t->slots, t->cap, h, key, klen);
     if (i >= 0)
         return t->slots[i].meta;
-    if (t->old_slots) {
+    if (t->old_slots != NULL && t->old_cap != 0) {
         long oi = rh_find_in(t->old_slots, t->old_cap, h, key, klen);
         if (oi >= 0)
             return t->old_slots[oi].meta;
@@ -530,7 +536,7 @@ int rh_random_entry(rh_table *t, uint32_t rand, const char **key, size_t *klen,
         klen == NULL || val == NULL || vlen == NULL || t->size == 0)
         return 0;
     e = rh_scan_occupied(t->slots, t->cap, (size_t)rand & (t->cap - 1));
-    if (e == NULL && t->old_slots != NULL)
+    if (e == NULL && t->old_slots != NULL && t->old_cap != 0)
         e = rh_scan_occupied(t->old_slots, t->old_cap,
                              (size_t)rand & (t->old_cap - 1));
     if (e == NULL)
@@ -554,7 +560,7 @@ int rh_touch(rh_table *t, const char *key, size_t klen, uint32_t meta)
     long i = rh_find_in(t->slots, t->cap, h, key, klen);
     if (i >= 0) {
         e = &t->slots[i];
-    } else if (t->old_slots) {
+    } else if (t->old_slots != NULL && t->old_cap != 0) {
         long oi = rh_find_in(t->old_slots, t->old_cap, h, key, klen);
         if (oi >= 0)
             e = &t->old_slots[oi];
@@ -578,7 +584,7 @@ int rh_del(rh_table *t, const char *key, size_t klen)
         t->size--;
         return 1;
     }
-    if (t->old_slots) {
+    if (t->old_slots != NULL && t->old_cap != 0) {
         long oi = rh_find_in(t->old_slots, t->old_cap, h, key, klen);
         if (oi >= 0) {
             rh_delete_at(t->old_slots, t->old_cap, (size_t)oi);

@@ -527,3 +527,8 @@ zero-capacity masking and invalid slot dereferences in shared data paths.
 
 Hash-table capacity helpers now reject null output pointers before arithmetic,
 keeping diagnostics and test seams fail-closed.
+
+Hash-table iteration, lookup, random sampling, and teardown now fail closed on
+inconsistent slot-array metadata and avoid double-free on aliased storage,
+improving resilience against corrupted internal handles without changing valid
+Redis command behavior.

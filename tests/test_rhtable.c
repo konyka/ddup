@@ -111,6 +111,51 @@ static void test_overwrite(void)
     rh_destroy(&t);
 }
 
+static void noop_iter(const char *key, size_t klen, const char *val,
+                      size_t vlen, void *ctx)
+{
+    (void)key;
+    (void)klen;
+    (void)val;
+    (void)vlen;
+    (void)ctx;
+}
+
+static void test_inconsistent_table_state_fails_closed(void)
+{
+    rh_table t;
+    const char *v = NULL;
+    size_t vl = 0;
+
+    /* A partially initialized table must not make read-only APIs dereference
+     * a missing slot array or apply a zero-capacity mask. */
+    memset(&t, 0, sizeof(t));
+    t.cap = 1;
+    t.size = 1;
+    rh_each(&t, noop_iter, NULL);
+    DD_CHECK_EQ_INT(0, rh_get(&t, "k", 1, &v, &vl));
+    DD_CHECK_EQ_INT(0, rh_random_entry(&t, 0, &v, &vl, &v, &vl, NULL));
+    rh_destroy(&t);
+
+    rh_init(&t);
+    t.old_cap = 8;
+    t.old_live = 1;
+    t.old_slots = NULL;
+    rh_each(&t, noop_iter, NULL);
+    DD_CHECK_EQ_INT(0, rh_get(&t, "missing", 7, &v, &vl));
+    rh_destroy(&t);
+
+    rh_init(&t);
+    t.old_cap = 0;
+    t.old_live = 1;
+    t.old_slots = t.slots;
+    DD_CHECK_EQ_INT(0, rh_get(&t, "missing", 7, &v, &vl));
+    DD_CHECK_EQ_INT(0, rh_random_entry(&t, 0, &v, &vl, &v, &vl, NULL));
+    /* Prevent the intentionally aliased old_slots from being freed twice. */
+    t.old_slots = NULL;
+    rh_destroy(&t);
+}
+
 static void test_set_ex(void)
 {
     rh_table t;
@@ -563,6 +608,7 @@ int main(void)
     DD_RUN(test_iteration_api_rejects_null_inputs);
     DD_RUN(test_scan_rejects_invalid_cursor_state);
     DD_RUN(test_uninitialized_table_fails_closed);
+    DD_RUN(test_inconsistent_table_state_fails_closed);
     DD_RUN(test_test_helpers_reject_null_outputs);
     DD_RUN(test_overwrite);
     DD_RUN(test_set_ex);

@@ -1975,3 +1975,11 @@ throughput.
 
 Capacity arithmetic helpers validate output pointers before writing sizes. This
 affects only diagnostics/tests and leaves the insert hot path unchanged.
+
+### Phase 268: defensive hash-table state handling
+
+Iteration and teardown now skip absent or zero-capacity slot arrays, and lookup
+paths ignore malformed old-table metadata. These checks are cold/error branches;
+initialized-table probing and migration retain the same allocation and branch
+profile. Teardown also detects aliased slot arrays to avoid double-free when a
+corrupted handle is released.
