@@ -94,11 +94,13 @@ int cluster_node_id_load_or_create(const char *path, char out_id[41])
             return -1;
         len = snprintf(line, sizeof(line),
                        "%s :0@0 myself,master - 0 0 1 connected\n", out_id);
-        if (pal_file_write(f, line, (size_t)len) != len) {
+        if (len < 0 || (size_t)len >= sizeof(line) ||
+            pal_file_write(f, line, (size_t)len) != len) {
             pal_file_close(f);
             return -1;
         }
-        pal_file_close(f);
+        if (pal_file_close(f) != 0)
+            return -1;
     }
     return 0;
 }

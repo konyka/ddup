@@ -456,6 +456,9 @@ failure expiry.
 Cluster bus receive handling now rejects null or empty frame inputs before parsing,
 keeping malformed gossip fail-closed without mutating cluster state.
 
+Cluster node-ID persistence now rejects formatting truncation and close failures,
+so identity creation cannot report success after an incomplete durable write.
+
 PUBLISH and FAIL frame builders now perform null-output checks before reading
 buffer lengths, eliminating a control-plane null dereference edge case.
 

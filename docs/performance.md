@@ -1850,6 +1850,11 @@ valid paths retain bounded in-place maintenance.
 Cluster bus frame handling validates database, frame, and reply pointers before
 parsing. The guard is constant-time and leaves valid wire parsing unchanged.
 
+### Phase 248: checked node-ID persistence writes
+
+Generated cluster identity records validate formatting before writing and now
+propagate close failures. The fixed stack record remains allocation-free.
+
 ### Phase 245: ordered bus-builder validation
 
 Publish and FAIL builders validate output pointers before reading buffer state,

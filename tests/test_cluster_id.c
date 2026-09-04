@@ -80,11 +80,21 @@ static void test_id_bad_file(void)
     remove(TMP_NODES);
 }
 
+static void test_id_rejects_overlong_path(void)
+{
+    char path[1200];
+    char id[41];
+    memset(path, 'p', sizeof(path) - 1);
+    path[sizeof(path) - 1] = '\0';
+    DD_CHECK_EQ_INT(-1, cluster_node_id_load_or_create(path, id));
+}
+
 int main(void)
 {
     DD_RUN(test_config_defaults);
     DD_RUN(test_config_parse);
     DD_RUN(test_id_generate_and_persist);
     DD_RUN(test_id_bad_file);
+    DD_RUN(test_id_rejects_overlong_path);
     return DD_TEST_SUMMARY();
 }
