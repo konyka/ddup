@@ -248,6 +248,8 @@ size_t rh_size(const rh_table *t)
 void rh_each(const rh_table *t, rh_iter_fn fn, void *ctx)
 {
     size_t i;
+    if (t == NULL || fn == NULL)
+        return;
     for (i = 0; i < t->cap; i++) {
         const rh_entry *e = &t->slots[i];
         if (e->psl >= 0)
@@ -264,6 +266,8 @@ size_t rh_scan(rh_table *t, size_t cursor, size_t count, rh_scan_cb cb,
                void *ctx)
 {
     size_t visited = 0;
+    if (t == NULL || cb == NULL)
+        return 0;
     while (visited < count) {
         rh_entry *e;
         if (cursor < t->cap) {
@@ -507,7 +511,8 @@ int rh_random_entry(rh_table *t, uint32_t rand, const char **key, size_t *klen,
                     const char **val, size_t *vlen, uint32_t *meta)
 {
     const rh_entry *e = NULL;
-    if (t->size == 0)
+    if (t == NULL || key == NULL || klen == NULL || val == NULL ||
+        vlen == NULL || t->size == 0)
         return 0;
     e = rh_scan_occupied(t->slots, t->cap, (size_t)rand & (t->cap - 1));
     if (e == NULL && t->old_slots != NULL)

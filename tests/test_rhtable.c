@@ -46,6 +46,17 @@ static void test_api_rejects_null_inputs(void)
     rh_destroy(&t);
 }
 
+static void test_iteration_api_rejects_null_inputs(void)
+{
+    const char *key = NULL;
+    const char *val = NULL;
+    size_t klen = 0, vlen = 0;
+    DD_CHECK_EQ_INT(0, (long long)rh_scan(NULL, 0, 1, NULL, NULL));
+    rh_each(NULL, NULL, NULL);
+    DD_CHECK_EQ_INT(0, rh_random_entry(NULL, 0, &key, &klen, &val, &vlen,
+                                       NULL));
+}
+
 static void test_overwrite(void)
 {
     rh_table t;
@@ -509,6 +520,7 @@ int main(void)
     DD_RUN(test_cached_growth_threshold);
     DD_RUN(test_set_get);
     DD_RUN(test_api_rejects_null_inputs);
+    DD_RUN(test_iteration_api_rejects_null_inputs);
     DD_RUN(test_overwrite);
     DD_RUN(test_set_ex);
     DD_RUN(test_reject_unrepresentable_lengths);

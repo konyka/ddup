@@ -1954,3 +1954,8 @@ rebuild.
 
 Sharded snapshot serialization validates each shard context before appending its
 frame. Invalid shards fail before output mutation; valid framing remains bounded.
+
+### Phase 264: null-safe hash-table iteration
+
+Iteration, scan, and random-entry helpers validate tables, callbacks, and output
+views before traversal. Valid scans retain the same bounded cursor behavior.

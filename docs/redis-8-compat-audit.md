@@ -515,3 +515,6 @@ preventing subsequent writes against an uncertain cold-layer file state.
 
 Sharded snapshot serialization now rejects null shard contexts before invoking the
 database callback, preventing invalid context dereferences during full sync.
+
+Hash-table iteration and SCAN helpers now reject null tables, callbacks, and output
+views before traversal, preventing malformed management scans from crashing.

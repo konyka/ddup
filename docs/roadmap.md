@@ -849,3 +849,5 @@
     并锁存 failed 状态阻止继续写入（Phase 260）
   - [x] 分片快照上下文校验：分片序列化在写入头部前拒绝 NULL shard context，
     避免回调使用无效上下文（Phase 262）
+  - [x] 哈希表迭代入口边界：`rh_each`、`rh_scan` 和 `rh_random_entry` 对
+    NULL 表、回调和输出参数安全返回，避免管理扫描路径崩溃（Phase 264）
