@@ -1739,3 +1739,9 @@ paths retain their existing allocation-free hot path.
 Unknown ACL users are rendered with a 96-byte input cap and checked output
 length. The authorization and command-dispatch hot paths remain unchanged and
 allocation-free.
+
+### Phase 226: bounded LATENCY diagnostics
+
+No-sample errors from `LATENCY GRAPH/HISTORY` cap event names at 96 bytes and
+clamp the formatted length before RESP output. The latency query path remains
+allocation-free for both valid and invalid events.

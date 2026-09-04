@@ -359,6 +359,17 @@ static void test_management_error_bounds(void)
     cmd(5, "ACL", "DRYRUN", long_sub, "PING", "x");
     DD_CHECK(g_out.len <= 132);
     DD_CHECK(strstr(g_out.data, "ERR User '") != NULL);
+
+    cmd(3, "CONFIG", "SET", long_sub);
+    DD_CHECK(g_out.len <= 132);
+
+    cmd(2, "DEBUG", long_sub);
+    DD_CHECK(g_out.len <= 132);
+
+    cmd(3, "LATENCY", "GRAPH", long_sub);
+    DD_CHECK(g_out.len <= 132);
+    cmd(3, "LATENCY", "HISTORY", long_sub);
+    DD_CHECK(g_out.len <= 132);
 }
 
 int main(void)

@@ -383,3 +383,7 @@ uninitialized stack bytes for oversized option tokens.
 `ACL DRYRUN` now bounds the missing-user diagnostic as well, retaining the
 Redis-style error while preventing oversized usernames from extending the RESP
 write beyond initialized stack storage.
+
+`LATENCY GRAPH` and `LATENCY HISTORY` no-sample diagnostics now safely truncate
+oversized event names, preserving Redis-compatible errors without allowing
+unbounded input lengths to escape fixed stack storage.

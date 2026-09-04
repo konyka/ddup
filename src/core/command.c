@@ -12260,10 +12260,12 @@ static void command_latency(session *s, const resp_value *argv, size_t argc,
         }
         {
             char msg[128];
+            size_t shown = el > 96 ? 96 : el;
             int n = snprintf(msg, sizeof(msg),
                              "ERR No samples available for event '%.*s'",
-                             (int)el, event);
-            resp_write_error(out, msg, (size_t)n);
+                             (int)shown, event);
+            resp_write_error(out, msg, n < 0 || (size_t)n >= sizeof(msg)
+                                      ? sizeof(msg) - 1 : (size_t)n);
         }
         return;
     }
@@ -12282,10 +12284,12 @@ static void command_latency(session *s, const resp_value *argv, size_t argc,
         }
         {
             char msg[128];
+            size_t shown = el > 96 ? 96 : el;
             int n = snprintf(msg, sizeof(msg),
                              "ERR No samples available for event '%.*s'",
-                             (int)el, event);
-            resp_write_error(out, msg, (size_t)n);
+                             (int)shown, event);
+            resp_write_error(out, msg, n < 0 || (size_t)n >= sizeof(msg)
+                                      ? sizeof(msg) - 1 : (size_t)n);
         }
         return;
     }
