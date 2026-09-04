@@ -2018,3 +2018,10 @@ Backlog reads and appends reject inconsistent `start`, `len`, and `cap` metadata
 before ring arithmetic. The validation is a single predictable branch on the
 replication helper boundary; valid append/read operations retain the existing
 O(1) wrap-aware copies.
+
+### Phase 274: fail-closed session ownership
+
+Session lifecycle and command-queue helpers validate object, argument, and
+string-view inputs before dereferencing. Partial deep copies are rolled back on
+invalid entries, preventing leaks and dangling ownership; valid MULTI/blocking
+paths retain the existing bounded allocations and queue growth behavior.

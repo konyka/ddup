@@ -869,3 +869,5 @@
     NULL key，标签输出允许 NULL 仅跳过复制，保持路由路径安全（Phase 272）
   - [x] 复制 backlog 状态一致性：读写入口校验 start/len/cap 关系，损坏环状态
     fail-closed，避免环形偏移下溢和越界复制（Phase 273）
+  - [x] Session 生命周期输入防护：队列、阻塞、WATCH 和释放入口拒绝 NULL/
+    非法 RESP 字符串，并在深拷贝失败时完整回滚已分配参数（Phase 274）

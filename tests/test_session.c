@@ -37,6 +37,50 @@ static void test_queue_allocation_size_overflow(void)
     DD_CHECK_EQ_INT(123, (long long)cap);
     DD_CHECK(session_test_queue_growth(0, &cap) == 0);
     DD_CHECK_EQ_INT(8, (long long)cap);
+    DD_CHECK_EQ_INT(-1, session_test_queue_bytes(1, NULL));
+    DD_CHECK_EQ_INT(-1, session_test_queue_growth(1, NULL));
+}
+
+static void test_session_api_rejects_null_inputs(void)
+{
+    db d;
+    session s;
+    resp_value arg;
+
+    db_init(&d);
+    memset(&arg, 0, sizeof(arg));
+    arg.type = RESP_BULK_STRING;
+    arg.str = "x";
+    arg.len = 1;
+
+    session_init(NULL, &d);
+    session_queue_clear(NULL);
+    session_block_clear(NULL);
+    session_watch_clear(NULL);
+    session_release(NULL);
+    DD_CHECK_EQ_INT(-1, session_block_start(NULL, &arg, 1, 1, 0));
+    DD_CHECK_EQ_INT(-1, session_block_start(&s, NULL, 1, 1, 0));
+    DD_CHECK_EQ_INT(-1, session_queue_push(NULL, &arg, 1));
+    session_watch_add(NULL, "x", 1, 0, 0, 0);
+
+    session_init(&s, &d);
+    DD_CHECK_EQ_INT(-1, session_queue_push(&s, NULL, 1));
+    DD_CHECK_EQ_INT(-1, session_block_start(&s, NULL, 1, 1, 0));
+    session_watch_add(&s, NULL, 1, 0, 0, 0);
+    {
+        resp_value bad[2];
+        memset(bad, 0, sizeof(bad));
+        bad[0] = arg;
+        bad[1].type = RESP_BULK_STRING;
+        bad[1].str = NULL;
+        bad[1].len = 1;
+        DD_CHECK_EQ_INT(-1, session_queue_push(&s, bad, 2));
+        DD_CHECK_EQ_INT(-1, session_block_start(&s, bad, 2, 1, 0));
+        DD_CHECK_EQ_INT(0, (long long)s.queue_len);
+        DD_CHECK_EQ_INT(0, (long long)s.blocked_argc);
+    }
+    session_release(&s);
+    db_destroy(&d);
 }
 
 static void test_session_basic(void)
@@ -503,6 +547,7 @@ static void test_readonly_readwrite(void)
 int main(void)
 {
     DD_RUN(test_queue_allocation_size_overflow);
+    DD_RUN(test_session_api_rejects_null_inputs);
     DD_RUN(test_session_basic);
     DD_RUN(test_client_no_touch_preserves_lru);
     DD_RUN(test_client_tracking_state_machine);

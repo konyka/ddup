@@ -10,6 +10,8 @@
 
 void session_init(session *s, db *d)
 {
+    if (s == NULL)
+        return;
     memset(s, 0, sizeof(*s));
     s->d = d;
     s->authed = 1; /* no password configured: start authenticated */
@@ -19,6 +21,8 @@ void session_init(session *s, db *d)
 void session_queue_clear(session *s)
 {
     size_t i, j;
+    if (s == NULL)
+        return;
     for (i = 0; i < s->queue_len; i++) {
         for (j = 0; j < s->queue[i].argc; j++)
             free((void *)s->queue[i].argv[j].str);
@@ -30,6 +34,8 @@ void session_queue_clear(session *s)
 void session_block_clear(session *s)
 {
     size_t i;
+    if (s == NULL)
+        return;
     if (!s->blocked)
         return;
     for (i = 0; i < s->blocked_argc; i++)
@@ -47,12 +53,19 @@ int session_block_start(session *s, const resp_value *argv, size_t argc,
 {
     resp_value *copy_argv;
     size_t i;
-    if (argc > SIZE_MAX / sizeof(*copy_argv))
+    if (s == NULL || (argv == NULL && argc != 0) ||
+        argc > SIZE_MAX / sizeof(*copy_argv))
         return -1;
     copy_argv = (resp_value *)malloc(argc * sizeof(*copy_argv));
     if (copy_argv == NULL)
         return -1;
     for (i = 0; i < argc; i++) {
+        if (argv[i].str == NULL && argv[i].len != 0) {
+            while (i > 0)
+                free((void *)copy_argv[--i].str);
+            free(copy_argv);
+            return -1;
+        }
         char *copy = (char *)malloc(argv[i].len);
         if (copy == NULL) {
             while (i > 0)
@@ -77,6 +90,8 @@ int session_block_start(session *s, const resp_value *argv, size_t argc,
 void session_watch_clear(session *s)
 {
     size_t i;
+    if (s == NULL)
+        return;
     for (i = 0; i < s->nwatch; i++)
         free(s->watches[i].key);
     if (s->d != NULL) {
@@ -94,6 +109,8 @@ void session_watch_clear(session *s)
 void session_release(session *s)
 {
     size_t i, j;
+    if (s == NULL)
+        return;
     session_block_clear(s);
     session_queue_clear(s);
     session_watch_clear(s);
@@ -146,6 +163,8 @@ static void *xmalloc(size_t n)
 
 static int session_queue_bytes(size_t count, size_t *bytes)
 {
+    if (bytes == NULL)
+        return -1;
     if (count > SIZE_MAX / sizeof(resp_value))
         return -1;
     *bytes = count * sizeof(resp_value);
@@ -154,6 +173,8 @@ static int session_queue_bytes(size_t count, size_t *bytes)
 
 static int session_queue_growth(size_t cap, size_t *new_cap)
 {
+    if (new_cap == NULL)
+        return -1;
     if (cap == 0) {
         *new_cap = 8;
         return 0;
@@ -181,16 +202,24 @@ int session_queue_push(session *s, const resp_value *argv, size_t argc)
     queued_cmd *qc;
     resp_value *copy_argv;
     size_t argv_bytes;
-    size_t ncap = s->queue_cap;
+    size_t ncap;
     size_t i;
-    if (session_queue_bytes(argc, &argv_bytes) != 0)
+    if (s == NULL || (argv == NULL && argc != 0) ||
+        session_queue_bytes(argc, &argv_bytes) != 0)
         return -1;
+    ncap = s->queue_cap;
     if (s->queue_len == s->queue_cap &&
         (session_queue_growth(s->queue_cap, &ncap) != 0 ||
          ncap > SIZE_MAX / sizeof(*s->queue)))
         return -1;
     copy_argv = (resp_value *)xmalloc(argv_bytes);
     for (i = 0; i < argc; i++) {
+        if (argv[i].str == NULL && argv[i].len != 0) {
+            while (i > 0)
+                free((void *)copy_argv[--i].str);
+            free(copy_argv);
+            return -1;
+        }
         char *copy = (char *)xmalloc(argv[i].len);
         memcpy(copy, argv[i].str, argv[i].len);
         copy_argv[i] = argv[i];
@@ -218,6 +247,8 @@ void session_watch_add(session *s, const char *key, size_t klen,
                        uint64_t version, uint64_t epoch, int db_index)
 {
     watch_entry *w;
+    if (s == NULL || (key == NULL && klen != 0))
+        return;
     if (s->nwatch == s->watch_cap) {
         size_t ncap = s->watch_cap == 0 ? 4 : s->watch_cap * 2;
         watch_entry *nw =

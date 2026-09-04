@@ -551,3 +551,7 @@ the command path while preserving Redis hashtag semantics for valid keys.
 Replication backlog operations now validate ring metadata before arithmetic and
 fail closed on corrupt state, preventing offset underflow or out-of-bounds data
 movement during partial-resync handling.
+
+Session queue, blocking, WATCH, and teardown APIs now reject null or malformed
+RESP views and roll back partial copies, preventing malformed client requests
+from leaking memory or corrupting connection state.
