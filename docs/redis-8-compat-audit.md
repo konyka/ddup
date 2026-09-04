@@ -498,3 +498,7 @@ preventing undefined persistence operations from mutating recovery state.
 
 Tier replay now rejects DEL/FLUSH records carrying unexpected key/value bodies,
 preventing hidden bytes from being silently accepted during recovery.
+
+Tier reads now validate persisted offsets and value bounds before file access and
+clear output parameters on failure, preventing corrupt indexes from causing
+out-of-range reads.

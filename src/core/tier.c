@@ -401,9 +401,17 @@ int tier_get(tier_store *t, uint64_t record_id, char **val, size_t *vlen,
 {
     tier_loc loc;
     char *buf;
+    if (val != NULL)
+        *val = NULL;
+    if (vlen != NULL)
+        *vlen = 0;
     if (t == NULL || t->failed || val == NULL || vlen == NULL)
         return -1;
     if (!index_get(&t->index, record_id, &loc))
+        return -1;
+    if (loc.off > t->end || (uint64_t)loc.value_off > UINT64_MAX - loc.off ||
+        (uint64_t)loc.len > t->end - loc.off ||
+        loc.value_off > loc.len || loc.vlen > loc.len - loc.value_off)
         return -1;
     buf = (char *)malloc(loc.vlen == 0 ? 1 : loc.vlen);
     if (buf == NULL)

@@ -839,3 +839,5 @@
     未定义操作被当作合法持久化记录处理（Phase 257）
   - [x] Tier 控制记录体校验：DEL/FLUSH 记录必须无 key/value body，拒绝附加
     数据，避免恢复时跳过隐藏内容（Phase 258）
+  - [x] Tier 读取输出与定位校验：失败时清零输出参数，并验证索引 offset/
+    value_off/vlen 均落在文件末端范围内，避免损坏索引触发越界读取（Phase 259）

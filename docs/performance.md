@@ -1927,3 +1927,9 @@ mutation. Valid log replay retains the same bounded sequential scan.
 
 DEL and FLUSH replay records now require zero key/value lengths before body
 consumption. The check is constant-time and leaves valid control-log replay intact.
+
+### Phase 259: bounded tier reads
+
+Tier reads initialize output parameters on failure and validate stored locations
+against the current file end before seeking. Valid reads retain one index lookup
+and one value allocation.

@@ -265,6 +265,19 @@ static void test_tier_record_id_boundary(void)
     tier_close(t);
 }
 
+static void test_tier_get_initializes_outputs_on_failure(void)
+{
+    char *val = (char *)(uintptr_t)1;
+    size_t vlen = 123;
+    tier_store *t;
+    pal_file_unlink(PATH);
+    DD_CHECK_EQ_INT(0, tier_open(&t, PATH, 0));
+    DD_CHECK_EQ_INT(-1, tier_get(t, 999, &val, &vlen, NULL));
+    DD_CHECK(val == NULL);
+    DD_CHECK_EQ_INT(0, (long long)vlen);
+    tier_close(t);
+}
+
 int main(void)
 {
     setvbuf(stdout, NULL, _IONBF, 0);
@@ -280,6 +293,7 @@ int main(void)
     DD_RUN(test_disk_limit);
     DD_RUN(test_tier_api_rejects_null_inputs);
     DD_RUN(test_tier_record_id_boundary);
+    DD_RUN(test_tier_get_initializes_outputs_on_failure);
     pal_file_unlink(PATH);
     return DD_TEST_SUMMARY();
 }
