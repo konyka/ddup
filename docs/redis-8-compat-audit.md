@@ -399,3 +399,8 @@ buffer.
 INFO multi-section snapshots use bounded append semantics, and ACL metadata is
 covered with maximum-size rule sets to ensure fixed-buffer RESP rendering stays
 within initialized storage under adversarial configuration sizes.
+
+ACL rule-line rendering now bounds every appended password, key pattern, and
+channel pattern and preserves a complete `CRLF` terminator when the fixed
+buffer fills. This keeps policy exports well-formed under maximum configuration
+cardinality.

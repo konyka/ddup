@@ -3,6 +3,24 @@
 #include <string.h>
 #include <stdio.h>
 #include <limits.h>
+#include <stdarg.h>
+
+static size_t acl_appendf(char *buf, size_t cap, size_t used,
+                          const char *fmt, ...)
+{
+    va_list ap;
+    int n;
+    size_t avail;
+    if (used >= cap)
+        return cap - 1;
+    avail = cap - used;
+    va_start(ap, fmt);
+    n = vsnprintf(buf + used, avail, fmt, ap);
+    va_end(ap);
+    if (n < 0 || (size_t)n >= avail)
+        return cap - 1;
+    return used + (size_t)n;
+}
 
 static int eq(const char *a, size_t al, const char *b)
 {
@@ -810,16 +828,17 @@ void acl_write_rule_line(const acl_user *u, resp_buf *out)
         }
         buf[w] = '\0'; n = (int)w;
     }
-    if (u->password[0]) n += snprintf(buf + n, sizeof(buf) - (size_t)n,
-                                      " >%s", u->password);
-    else if (u->no_password && (size_t)n < sizeof(buf))
-        n += snprintf(buf + n, sizeof(buf) - (size_t)n, " nopass");
-    for (i = 0; i < u->pattern_count && (size_t)n < sizeof(buf); i++)
-        n += snprintf(buf + n, sizeof(buf) - (size_t)n, " ~%s", u->patterns[i]);
-    for (i = 0; i < u->channel_count && (size_t)n < sizeof(buf); i++)
-        n += snprintf(buf + n, sizeof(buf) - (size_t)n, " &%s", u->channels[i]);
-    if (u->all_channels && (size_t)n < sizeof(buf))
-        n += snprintf(buf + n, sizeof(buf) - (size_t)n, " &*");
+    if (u->password[0]) n = (int)acl_appendf(buf, sizeof(buf), (size_t)n,
+                                              " >%s", u->password);
+    else if (u->no_password)
+        n = (int)acl_appendf(buf, sizeof(buf), (size_t)n, " nopass");
+    for (i = 0; i < u->pattern_count; i++)
+        n = (int)acl_appendf(buf, sizeof(buf), (size_t)n, " ~%s", u->patterns[i]);
+    for (i = 0; i < u->channel_count; i++)
+        n = (int)acl_appendf(buf, sizeof(buf), (size_t)n, " &%s", u->channels[i]);
+    if (u->all_channels)
+        n = (int)acl_appendf(buf, sizeof(buf), (size_t)n, " &*");
     if ((size_t)n + 2 < sizeof(buf)) { buf[n++] = '\r'; buf[n++] = '\n'; buf[n] = '\0'; }
+    else { n = (int)sizeof(buf) - 1; buf[n - 2] = '\r'; buf[n - 1] = '\n'; }
     if (resp_buf_reserve(out, (size_t)n) == 0) { memcpy(out->data + out->len, buf, (size_t)n); out->len += (size_t)n; }
 }

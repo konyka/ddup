@@ -1763,3 +1763,10 @@ INFO snapshot renderers now append through a fixed-buffer helper that clamps
 truncated `vsnprintf` results before the next offset calculation. ACL rule-line
 rendering is covered with maximum key/channel pattern sets; both paths avoid
 heap allocation in the normal metadata response.
+
+### Phase 230: bounded ACL rule-line appends
+
+ACL rule-line metadata now uses a fixed-buffer variadic append helper for every
+optional rule segment. Once full, appends become constant-time no-ops and the
+renderer reserves the final two bytes for `CRLF`, avoiding length poisoning or
+heap allocation.
