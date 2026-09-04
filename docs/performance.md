@@ -1816,3 +1816,8 @@ allocation or synchronization overhead.
 Cluster node IDs and announced IPs are length-checked before copying into fixed
 metadata buffers. Valid updates remain allocation-free; oversized values are
 ignored without touching the active identity.
+
+### Phase 239: bounded replication master host
+
+`REPLICAOF` validates the master host length before updating replica state. The
+check is a cold-path string bound and leaves the existing link/cache untouched.

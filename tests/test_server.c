@@ -164,6 +164,20 @@ static void test_cluster_identity_rejects_truncation(void)
     }
 }
 
+static void test_replica_host_rejects_truncation(void)
+{
+    server *s;
+    char long_host[96];
+    memset(long_host, 'h', sizeof(long_host) - 1);
+    long_host[sizeof(long_host) - 1] = '\0';
+    s = make_server();
+    if (s != NULL) {
+        DD_CHECK_EQ_INT(-1, server_replicaof(s, long_host, 6379));
+        DD_CHECK(server_db(s)->cluster_enabled == 0);
+        server_destroy(s);
+    }
+}
+
 static void test_ping_set_get(void)
 {
     server *s = make_server();
@@ -1562,6 +1576,7 @@ static void run_all_tests(void)
     DD_RUN(test_cluster_save_close_failure_preserves_state);
     DD_RUN(test_persistence_paths_reject_truncation);
     DD_RUN(test_cluster_identity_rejects_truncation);
+    DD_RUN(test_replica_host_rejects_truncation);
     DD_RUN(test_ping_set_get);
     DD_RUN(test_client_reply_modes);
     DD_RUN(test_client_tracking_redirect_validation);

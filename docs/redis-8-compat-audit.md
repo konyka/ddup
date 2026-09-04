@@ -435,3 +435,6 @@ cluster initialization.
 Cluster identity configuration now rejects oversized node IDs and announced IPs
 instead of silently truncating them, preserving stable node identity and routing
 metadata.
+
+Replica configuration now rejects empty or oversized master hosts before changing
+the link state, preventing silent truncation and inconsistent PSYNC resume data.

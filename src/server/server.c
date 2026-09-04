@@ -1587,6 +1587,8 @@ static int srv_replicaof(void *ctx, const char *host, uint16_t port)
         srv->repl.link_up = 0;
         return 0;
     }
+    if (host[0] == '\0' || strlen(host) >= sizeof(srv->repl.master_host))
+        return -1;
     /* pointing at a different master invalidates the PSYNC resume cache */
     if (strcmp(srv->repl.master_host, host) != 0 ||
         srv->repl.master_port != port) {
