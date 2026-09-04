@@ -809,6 +809,8 @@
     以及空帧，避免 malformed gossip 解引用崩溃（Phase 244）
   - [x] 集群总线构帧检查顺序：PUBLISH/FAIL 在访问输出长度前校验 NULL，
     修复空输出缓冲区调用的潜在崩溃（Phase 245）
+  - [x] nodes.conf 渲染/解析入口边界：NULL 数据库、行和输出缓冲区安全
+    返回，避免持久化控制面解引用崩溃（Phase 247）
   - [x] 集群状态 API 边界：epoch、claim 合并、故障转移和 myself 查询对 NULL
     输入安全返回，避免状态控制面解引用崩溃（Phase 246）
   - [x] 集群总线构帧空输入保护：PING/PUBLISH/FAIL 构帧 API 对 NULL 数据和

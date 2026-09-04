@@ -1856,6 +1856,11 @@ Publish and FAIL builders validate output pointers before reading buffer state,
 keeping malformed calls constant-time and crash-free while valid paths remain
 unchanged.
 
+### Phase 247: bounded nodes.conf APIs
+
+Nodes configuration render and parse entry points validate pointers before
+accessing bounded node tables or response buffers. Valid paths remain unchanged.
+
 ### Phase 246: null-safe cluster state APIs
 
 Epoch, claim-merge, failover, and myself helpers now validate state pointers

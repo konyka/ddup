@@ -508,6 +508,8 @@ static uint32_t flags_parse(const char *s, size_t len)
 int cluster_nodes_render(struct db *d, resp_buf *out)
 {
     int i;
+    if (d == NULL || out == NULL)
+        return -1;
     for (i = 0; i < d->nnodes; i++) {
         cluster_node *n = &d->nodes[i];
         char flags[64], slots[256];
@@ -542,6 +544,9 @@ int cluster_nodes_parse_line(struct db *d, const char *line, size_t len)
     unsigned long long ping, pong, epoch;
     cluster_node *n;
     int used;
+
+    if (d == NULL || line == NULL)
+        return -1;
 
     memset(ip, 0, sizeof(ip));
     memset(flags, 0, sizeof(flags));
