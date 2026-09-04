@@ -72,6 +72,15 @@ static void test_snapshot_empty_payload_accepts_null_source(void)
     resp_buf_free(&out);
 }
 
+static void test_snapshot_shards_reject_null_context(void)
+{
+    void *ctxs[1] = {NULL};
+    resp_buf out;
+    resp_buf_init(&out);
+    DD_CHECK_EQ_INT(-1, snapshot_serialize_multi_shards(ctxs, NULL, 1, 1, &out));
+    resp_buf_free(&out);
+}
+
 #define EXPECT(out, s) DD_CHECK_MEM((s), strlen(s), (out).data, (out).len)
 
 #define T0 1000000ULL
@@ -762,6 +771,7 @@ int main(void)
     DD_RUN(test_snapshot_api_rejects_null_inputs);
     DD_RUN(test_snapshot_multi_api_rejects_null_inputs);
     DD_RUN(test_snapshot_empty_payload_accepts_null_source);
+    DD_RUN(test_snapshot_shards_reject_null_context);
     DD_RUN(test_roundtrip_all_types);
     DD_RUN(test_expired_keys_skipped_at_load);
     DD_RUN(test_corrupt_and_atomic);

@@ -1017,6 +1017,10 @@ int snapshot_serialize_multi_shards(void *const *ctxs, snapshot_db_get get,
     }
     for (i = 0; i < nshards; i++) {
         resp_buf shard;
+        if (ctxs[i] == NULL) {
+            out->len = start;
+            return -1;
+        }
         resp_buf_init(&shard);
         if (snapshot_serialize_multi(ctxs[i], get, ndbs, &shard) != 0 ||
             shard.len > UINT32_MAX ||

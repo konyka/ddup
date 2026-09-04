@@ -1944,3 +1944,8 @@ and one value allocation.
 Compaction rename/reopen failures latch the store as failed and prevent further
 writes. The successful compaction path remains a single atomic rename plus index
 rebuild.
+
+### Phase 262: validated shard contexts
+
+Sharded snapshot serialization validates each shard context before appending its
+frame. Invalid shards fail before output mutation; valid framing remains bounded.

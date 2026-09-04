@@ -845,3 +845,5 @@
     value_off/vlen 均落在文件末端范围内，避免损坏索引触发越界读取（Phase 259）
   - [x] Tier 压缩替换失败锁存：rename 失败后重新打开旧文件仅作恢复尝试，
     并锁存 failed 状态阻止继续写入（Phase 260）
+  - [x] 分片快照上下文校验：分片序列化在写入头部前拒绝 NULL shard context，
+    避免回调使用无效上下文（Phase 262）

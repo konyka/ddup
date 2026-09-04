@@ -508,3 +508,6 @@ out-of-range reads.
 
 Tier compaction now latches failure when atomic replacement or reopening fails,
 preventing subsequent writes against an uncertain cold-layer file state.
+
+Sharded snapshot serialization now rejects null shard contexts before invoking the
+database callback, preventing invalid context dereferences during full sync.
