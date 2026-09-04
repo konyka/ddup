@@ -373,6 +373,10 @@ worker paths before applying settings. This keeps persistence control-plane setu
 fail-closed and prevents distinct configurations from silently sharing a truncated
 filename.
 
+Tiering control-plane setup now rejects truncated log paths and overlong tier
+directories before opening storage. Node path configuration safely ignores null
+inputs, preventing accidental dereference during cluster setup.
+
 Duplicate `FUNCTION LOAD` library diagnostics now use bounded library-name
 rendering and checked output lengths, preserving useful Redis-style errors for
 large library metadata without exposing stack-buffer overreads.

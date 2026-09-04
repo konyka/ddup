@@ -1788,3 +1788,9 @@ the steady-state command or backlog append paths.
 Worker AOF and snapshot paths are formatted into a fixed stack buffer and checked
 for truncation before any worker state is changed. Configuration adds one bounded
 format pass per worker, with no heap allocation and no change to steady-state I/O.
+
+### Phase 234: bounded tiering control paths
+
+Tiering rejects directories that cannot fit the fixed metadata buffer before
+opening its log store. The check is a single length comparison and adds no work
+to the data path; node-path updates remain allocation-free and null-safe.

@@ -3253,13 +3253,19 @@ int server_enable_tiering(server *s, const char *dir, const char *logname,
     if (s == NULL || dir == NULL || logname == NULL || dir[0] == '\0' ||
         logname[0] == '\0')
         return -1;
-    snprintf(path, sizeof(path), "%s/%s", dir, logname);
+    if (strlen(dir) >= sizeof(s->db.tier_dir))
+        return -1;
+    {
+        int n = snprintf(path, sizeof(path), "%s/%s", dir, logname);
+        if (n < 0 || (size_t)n >= sizeof(path))
+            return -1;
+    }
     if (tier_open(&tier, path, max_disk_bytes) != 0)
         return -1;
     for (i = 0; i < s->ndbs; i++) {
         db *d = srv_select_db(s, i);
         db_set_tier(d, tier, i);
-        snprintf(d->tier_dir, sizeof(d->tier_dir), "%s", dir);
+        (void)snprintf(d->tier_dir, sizeof(d->tier_dir), "%s", dir);
         d->tier_max_disk_bytes = max_disk_bytes;
         d->tier_enabled = 1;
     }
@@ -3981,7 +3987,9 @@ static int conn_flush(server *s, conn *c)
 
 void server_set_nodes_path(server *s, const char *path)
 {
-    snprintf(s->nodes_path, sizeof(s->nodes_path), "%s", path);
+    if (s == NULL || path == NULL)
+        return;
+    (void)snprintf(s->nodes_path, sizeof(s->nodes_path), "%s", path);
 }
 
 void server_set_node_timeout(server *s, uint64_t ms)

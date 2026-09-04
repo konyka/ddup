@@ -121,6 +121,26 @@ static void test_cluster_save_close_failure_preserves_state(void)
     (void)remove("test_server_nodes.conf.tmp");
 }
 
+static void test_persistence_paths_reject_truncation(void)
+{
+    server *s;
+    char long_dir[1200];
+    memset(long_dir, 'd', sizeof(long_dir) - 1);
+    long_dir[sizeof(long_dir) - 1] = '\0';
+
+    DD_CHECK_EQ_INT(-1, server_enable_tiering(NULL, ".", "tier.log", 0));
+    DD_CHECK_EQ_INT(-1, server_enable_tiering(NULL, NULL, "tier.log", 0));
+    DD_CHECK_EQ_INT(-1, server_enable_tiering(NULL, ".", NULL, 0));
+
+    s = make_server();
+    if (s != NULL) {
+        DD_CHECK_EQ_INT(-1,
+                        server_enable_tiering(s, long_dir, "tier.log", 0));
+        server_set_nodes_path(s, NULL);
+        server_destroy(s);
+    }
+}
+
 static void test_ping_set_get(void)
 {
     server *s = make_server();
@@ -1517,6 +1537,7 @@ static void test_info_io_counters(void)
 static void run_all_tests(void)
 {
     DD_RUN(test_cluster_save_close_failure_preserves_state);
+    DD_RUN(test_persistence_paths_reject_truncation);
     DD_RUN(test_ping_set_get);
     DD_RUN(test_client_reply_modes);
     DD_RUN(test_client_tracking_redirect_validation);

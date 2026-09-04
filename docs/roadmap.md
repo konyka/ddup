@@ -789,3 +789,5 @@
   - [x] 多线程持久化路径 fail-closed：AOF/快照配置拒绝空参数，并在任何
     worker 应用配置前验证路径未被 `snprintf` 截断，避免路径碰撞或错误加载
     （Phase 233）
+  - [x] 单线程 tiering 路径边界：tier 日志路径与目录长度在打开存储前校验，
+    节点路径 setter 对空指针 fail-safe（Phase 234）
