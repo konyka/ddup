@@ -436,5 +436,8 @@ Cluster identity configuration now rejects oversized node IDs and announced IPs
 instead of silently truncating them, preserving stable node identity and routing
 metadata.
 
+Cluster bus PING/PUBLISH/FAIL builders now reject null inputs before buffer writes,
+keeping malformed control-plane calls fail-closed without changing valid frames.
+
 Replica configuration now rejects empty or oversized master hosts before changing
 the link state, preventing silent truncation and inconsistent PSYNC resume data.

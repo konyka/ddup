@@ -1817,6 +1817,12 @@ Cluster node IDs and announced IPs are length-checked before copying into fixed
 metadata buffers. Valid updates remain allocation-free; oversized values are
 ignored without touching the active identity.
 
+### Phase 240: null-safe cluster bus builders
+
+Cluster bus frame builders validate database, output, and payload pointers before
+reserving buffers. Checks are cold-path only and preserve zero-allocation behavior
+for valid frame construction.
+
 ### Phase 239: bounded replication master host
 
 `REPLICAOF` validates the master host length before updating replica state. The

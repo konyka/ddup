@@ -17,6 +17,8 @@ static void make_node(db *d, const char *id, const char *ip, uint16_t port,
                       uint32_t flags, int full_slots)
 {
     cluster_node *n = cluster_node_add(d, id);
+    if (n == NULL)
+        return;
     snprintf(n->ip, sizeof(n->ip), "%s", ip);
     n->port = port;
     n->bus_port = (uint16_t)(port + 10000);
@@ -120,6 +122,22 @@ static void test_build_failures_leave_output_unchanged(void)
     db_destroy(&d);
 }
 
+static void test_build_rejects_null_inputs(void)
+{
+    db d;
+    resp_buf out;
+    db_init(&d);
+    cluster_nodes_init(&d);
+    resp_buf_init(&out);
+    DD_CHECK_EQ_INT(-1, cluster_bus_build_frame(NULL, CLUSTER_MSG_PING, &out));
+    DD_CHECK_EQ_INT(-1, cluster_bus_build_frame(&d, CLUSTER_MSG_PING, NULL));
+    DD_CHECK_EQ_INT(-1, cluster_bus_build_publish(&d, NULL, 1, "x", 1, &out));
+    DD_CHECK_EQ_INT(-1, cluster_bus_build_publish(&d, "x", 1, NULL, 1, &out));
+    DD_CHECK_EQ_INT(-1, cluster_bus_build_fail(&d, NULL, &out));
+    resp_buf_free(&out);
+    db_destroy(&d);
+}
+
 static void test_meet_convergence(void);
 static void test_gossip_carry(void);
 static void test_fail_detect(void);
@@ -129,6 +147,7 @@ int main(void)
 {
     DD_RUN(test_frame_roundtrip);
     DD_RUN(test_build_failures_leave_output_unchanged);
+    DD_RUN(test_build_rejects_null_inputs);
     DD_RUN(test_meet_convergence);
     DD_RUN(test_gossip_carry);
     DD_RUN(test_fail_detect);
