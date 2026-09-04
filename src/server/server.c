@@ -884,11 +884,11 @@ static int srv_monitor_start(void *ctx, session *sess)
     return 0;
 }
 
-static void monitor_append_quoted(resp_buf *out, const char *s, size_t len)
+static int monitor_append_quoted(resp_buf *out, const char *s, size_t len)
 {
     size_t i;
-    if (resp_buf_reserve(out, len * 2 + 2) != 0)
-        return;
+    if (len > (SIZE_MAX - 2) / 2 || resp_buf_reserve(out, len * 2 + 2) != 0)
+        return -1;
     out->data[out->len++] = '"';
     for (i = 0; i < len; i++) {
         unsigned char c = (unsigned char)s[i];
@@ -897,6 +897,7 @@ static void monitor_append_quoted(resp_buf *out, const char *s, size_t len)
         out->data[out->len++] = (c >= 0x20 && c != 0x7f) ? (char)c : '?';
     }
     out->data[out->len++] = '"';
+    return 0;
 }
 
 static void srv_monitor_emit(server *srv, const conn *source,
@@ -908,18 +909,25 @@ static void srv_monitor_emit(server *srv, const conn *source,
         conn *c = srv->conns[i];
         char head[96];
         int n;
+        size_t start;
         if (c == source || c->sess == NULL || !c->sess->monitor_enabled)
             continue;
         n = snprintf(head, sizeof(head), "%llu [0 0.0.0.0] ",
                      (unsigned long long)now);
         if (n < 0 || resp_buf_reserve(&c->out, (size_t)n + 3) != 0)
             continue;
+        start = c->out.len;
         memcpy(c->out.data + c->out.len, head, (size_t)n);
         c->out.len += (size_t)n;
         for (j = 0; j < argc; j++) {
             if (j != 0)
                 c->out.data[c->out.len++] = ' ';
-            monitor_append_quoted(&c->out, argv[j].str, argv[j].len);
+            if (monitor_append_quoted(&c->out, argv[j].str, argv[j].len) != 0)
+                break;
+        }
+        if (j != argc) {
+            c->out.len = start;
+            continue;
         }
         c->out.data[c->out.len++] = '\r';
         c->out.data[c->out.len++] = '\n';

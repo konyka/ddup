@@ -404,3 +404,7 @@ ACL rule-line rendering now bounds every appended password, key pattern, and
 channel pattern and preserves a complete `CRLF` terminator when the fixed
 buffer fills. This keeps policy exports well-formed under maximum configuration
 cardinality.
+
+MONITOR output now treats each emitted command as a transactional append:
+oversized quoted arguments fail safely and discard the partial frame, preserving
+well-formed monitoring output under memory pressure.

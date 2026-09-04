@@ -1770,3 +1770,9 @@ ACL rule-line metadata now uses a fixed-buffer variadic append helper for every
 optional rule segment. Once full, appends become constant-time no-ops and the
 renderer reserves the final two bytes for `CRLF`, avoiding length poisoning or
 heap allocation.
+
+### Phase 231: transactional MONITOR appends
+
+MONITOR quoted-argument rendering now checks `len * 2 + 2` overflow and
+propagates reserve failures. A failed argument rolls the connection buffer back
+to the message start, preserving protocol framing without extra allocations.
