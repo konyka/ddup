@@ -1997,3 +1997,10 @@ the same bounded slot scan.
 Teardown now skips the second slot-array free when a malformed handle aliases
 `old_slots` to `slots`. The comparison is outside normal CRUD/lookup paths and
 therefore has no effect on initialized-table throughput.
+
+### Phase 271: bounded replication backlog inputs
+
+Backlog lifecycle, append, and read helpers now reject null objects and buffers
+before touching state. The absolute replication offset uses saturating addition
+to prevent wraparound under malformed or adversarial append sizes; normal ring
+writes retain the same O(1) copy path.

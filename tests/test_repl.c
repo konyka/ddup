@@ -70,6 +70,34 @@ static void test_backlog_empty_state(void)
     repl_backlog_free(&b);
 }
 
+static void test_backlog_null_and_offset_safety(void)
+{
+    repl_backlog b;
+    char out[8] = {'s', 'e', 'n', 't', 'i', 'n', 'e', 'l'};
+
+    repl_backlog_free(NULL);
+    repl_backlog_append(NULL, "x", 1);
+    DD_CHECK_EQ_INT(0, (long long)repl_backlog_read(NULL, out, sizeof(out)));
+    DD_CHECK_EQ_INT(0, (long long)repl_backlog_read_from(NULL, 0, out,
+                                                         sizeof(out)));
+
+    memset(&b, 0, sizeof(b));
+    DD_CHECK_EQ_INT(0, repl_backlog_init(&b, 8));
+    repl_backlog_append(&b, NULL, 1);
+    DD_CHECK_EQ_INT(0, (long long)b.offset);
+    DD_CHECK_EQ_INT(0, (long long)repl_backlog_read(&b, NULL, 1));
+    DD_CHECK_EQ_INT(0, (long long)repl_backlog_read_from(&b, 0, NULL, 1));
+    repl_backlog_free(&b);
+
+    DD_CHECK_EQ_INT(0, repl_backlog_init(&b, 8));
+    b.offset = UINT64_MAX - 1;
+    repl_backlog_append(&b, "abc", 3);
+    DD_CHECK_EQ_INT(UINT64_MAX, (long long)b.offset);
+    DD_CHECK_EQ_INT(3, (long long)repl_backlog_read(&b, out, sizeof(out)));
+    DD_CHECK_MEM("abc", 3, out, 3);
+    repl_backlog_free(&b);
+}
+
 static void test_backlog_boundaries_and_offsets(void)
 {
     repl_backlog b;
@@ -132,6 +160,7 @@ int main(void)
     DD_RUN(test_backlog_basic);
     DD_RUN(test_backlog_wrap);
     DD_RUN(test_backlog_empty_state);
+    DD_RUN(test_backlog_null_and_offset_safety);
     DD_RUN(test_backlog_boundaries_and_offsets);
     DD_RUN(test_sync_master);
     DD_RUN(test_psync_fullresync);

@@ -539,3 +539,7 @@ views, preventing stale pointers from escaping into command and eviction paths.
 
 Hash-table teardown now handles aliased primary/old slot arrays without a second
 free, keeping corrupted internal handles fail-closed during cleanup.
+
+Replication backlog helpers now fail closed on null inputs and saturate the
+absolute stream offset at `UINT64_MAX`, preventing malformed replication data
+from causing pointer faults or offset wraparound.

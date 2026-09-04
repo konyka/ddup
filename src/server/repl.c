@@ -12,6 +12,8 @@ static size_t ring_advance(size_t pos, size_t n, size_t cap)
 
 int repl_backlog_init(repl_backlog *b, size_t cap)
 {
+    if (b == NULL)
+        return -1;
     b->buf = NULL;
     b->cap = 0;
     b->start = 0;
@@ -28,6 +30,8 @@ int repl_backlog_init(repl_backlog *b, size_t cap)
 
 void repl_backlog_free(repl_backlog *b)
 {
+    if (b == NULL)
+        return;
     free(b->buf);
     b->buf = NULL;
     b->cap = 0;
@@ -41,7 +45,12 @@ void repl_backlog_append(repl_backlog *b, const char *data, size_t n)
     size_t drop;
     size_t pos;
     size_t tail;
-    b->offset += n;
+    if (b == NULL || (data == NULL && n != 0))
+        return;
+    if (n > UINT64_MAX - b->offset)
+        b->offset = UINT64_MAX;
+    else
+        b->offset += n;
     if (b->buf == NULL || b->cap == 0 || n == 0)
         return;
     if (n >= b->cap) { /* keep only the newest cap bytes */
@@ -69,7 +78,8 @@ size_t repl_backlog_read(const repl_backlog *b, char *out, size_t max)
 {
     size_t n;
     size_t tail;
-    if (b->buf == NULL || b->cap == 0 || b->len == 0 || max == 0)
+    if (b == NULL || out == NULL || b->buf == NULL || b->cap == 0 ||
+        b->len == 0 || max == 0)
         return 0;
     n = b->len < max ? b->len : max;
     tail = b->cap - b->start;
@@ -91,7 +101,8 @@ size_t repl_backlog_read_from(const repl_backlog *b, uint64_t from_offset,
     size_t n;
     size_t pos;
     size_t tail;
-    if (b->buf == NULL || b->cap == 0 || b->len == 0 || max == 0)
+    if (b == NULL || out == NULL || b->buf == NULL || b->cap == 0 ||
+        b->len == 0 || max == 0)
         return 0;
     if (from_offset >= b->offset)
         return 0;
