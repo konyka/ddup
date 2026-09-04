@@ -159,6 +159,24 @@ static void test_disk_limit(void)
     tier_close(t);
 }
 
+static void test_tier_api_rejects_null_inputs(void)
+{
+    tier_store *t = NULL;
+    uint64_t rid;
+    char *val;
+    size_t vlen;
+    DD_CHECK_EQ_INT(-1, tier_open(NULL, PATH, 0));
+    DD_CHECK_EQ_INT(-1, tier_open(&t, NULL, 0));
+    DD_CHECK_EQ_INT(-1, tier_open(&t, "", 0));
+    DD_CHECK_EQ_INT(-1, tier_put(NULL, 0, "k", 1, "v", 1, 0, &rid));
+    DD_CHECK_EQ_INT(-1, tier_put(t, 0, NULL, 1, "v", 1, 0, &rid));
+    DD_CHECK_EQ_INT(-1, tier_put(t, 0, "k", 1, NULL, 1, 0, &rid));
+    DD_CHECK_EQ_INT(-1, tier_get(NULL, 1, &val, &vlen, NULL));
+    DD_CHECK_EQ_INT(-1, tier_del(NULL, 1));
+    DD_CHECK_EQ_INT(-1, tier_flush_db(NULL, 0));
+    DD_CHECK_EQ_INT(-1, tier_compact(NULL));
+}
+
 int main(void)
 {
     setvbuf(stdout, NULL, _IONBF, 0);
@@ -168,6 +186,7 @@ int main(void)
     DD_RUN(test_flush_db_keeps_other_db);
     DD_RUN(test_compact_keeps_live);
     DD_RUN(test_disk_limit);
+    DD_RUN(test_tier_api_rejects_null_inputs);
     pal_file_unlink(PATH);
     return DD_TEST_SUMMARY();
 }

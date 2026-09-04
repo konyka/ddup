@@ -1893,3 +1893,9 @@ and bounded temporary allocations.
 
 Single-database snapshot loading checks capacity doubling before `realloc`,
 returning failure on overflow while preserving the existing linear-growth path.
+
+### Phase 253: null-safe tier APIs
+
+Tier storage entry points validate paths, payload pointers, and writer state
+before file operations. Compaction checks temporary-path sizing without changing
+the normal append/index hot path.

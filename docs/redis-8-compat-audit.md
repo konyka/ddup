@@ -479,3 +479,6 @@ callbacks, paths, and buffers before serialization or replay mutation.
 
 Single-database snapshot loading now rejects capacity-doubling overflow before
 reallocation, preventing hostile file sizes from wrapping allocation lengths.
+
+Tier storage open, append, read, delete, flush, and compaction APIs now reject
+null or empty inputs before touching cold-layer files.

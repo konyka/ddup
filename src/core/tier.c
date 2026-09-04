@@ -164,7 +164,7 @@ int tier_open(tier_store **out, const char *path, uint64_t max_disk_bytes)
     pal_file *f;
     int existed;
 
-    if (out == NULL)
+    if (out == NULL || path == NULL || path[0] == '\0')
         return -1;
     *out = NULL;
     existed = pal_file_exists(path);
@@ -313,8 +313,9 @@ int tier_put(tier_store *t, unsigned int db_index, const char *key,
     uint64_t rid;
     tier_loc loc;
     size_t body;
-    if (t == NULL || t->failed || db_index > 255 || klen > UINT32_MAX ||
-        vlen > UINT32_MAX)
+    if (t == NULL || t->failed || db_index > 255 ||
+        (key == NULL && klen != 0) || (val == NULL && vlen != 0) ||
+        klen > UINT32_MAX || vlen > UINT32_MAX)
         return -1;
     rid = t->next_id;
     body = klen + vlen;
@@ -483,12 +484,18 @@ int tier_compact(tier_store *t)
     size_t i;
     int ok = 1;
 
-    if (t == NULL || t->failed)
+    if (t == NULL || t->failed || t->path == NULL || t->path[0] == '\0')
         return -1;
-    tmp_path = (char *)malloc(strlen(t->path) + 8);
+    {
+        size_t plen = strlen(t->path);
+        if (plen > SIZE_MAX - sizeof(".tmp"))
+            return -1;
+        tmp_path = (char *)malloc(plen + sizeof(".tmp"));
+    }
     if (tmp_path == NULL)
         return -1;
-    sprintf(tmp_path, "%s.tmp", t->path);
+    (void)snprintf(tmp_path, strlen(t->path) + sizeof(".tmp"), "%s.tmp",
+                   t->path);
     nf = pal_file_open_write(tmp_path);
     if (nf == NULL) {
         free(tmp_path);
