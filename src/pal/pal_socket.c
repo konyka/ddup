@@ -106,6 +106,9 @@ int pal_tcp_connect_start(const char *host, uint16_t port,
     pal_socket_t fd = PAL_SOCKET_INVALID;
     int rc = -1;
 
+    if (host == NULL || out_fd == NULL)
+        return -1;
+
     snprintf(port_str, sizeof(port_str), "%u", (unsigned)port);
     memset(&hints, 0, sizeof(hints));
     hints.ai_family = AF_UNSPEC;
@@ -150,6 +153,8 @@ int pal_connect_finish(pal_socket_t fd)
 {
     int err = 0;
     pal_socklen_t el = (pal_socklen_t)sizeof(err);
+    if (fd == PAL_SOCKET_INVALID)
+        return -1;
 #if DDUP_OS_WINDOWS
     if (getsockopt((SOCKET)fd, SOL_SOCKET, SO_ERROR, (char *)&err, &el) != 0)
 #else
@@ -161,6 +166,8 @@ int pal_connect_finish(pal_socket_t fd)
 
 int pal_set_nonblocking(pal_socket_t fd, int on)
 {
+    if (fd == PAL_SOCKET_INVALID)
+        return -1;
 #if DDUP_OS_WINDOWS
     u_long mode = on ? 1u : 0u;
     return ioctlsocket((SOCKET)fd, FIONBIO, &mode) == 0 ? 0 : -1;
@@ -178,6 +185,8 @@ int pal_set_nonblocking(pal_socket_t fd, int on)
 
 int pal_set_tcp_nodelay(pal_socket_t fd, int on)
 {
+    if (fd == PAL_SOCKET_INVALID)
+        return -1;
     int v = on ? 1 : 0;
 #if DDUP_OS_WINDOWS
     return setsockopt((SOCKET)fd, IPPROTO_TCP, TCP_NODELAY,
@@ -216,6 +225,8 @@ pal_socket_t pal_tcp_listen(const char *host, uint16_t port, int backlog,
     struct addrinfo *ai;
     pal_socket_t fd = PAL_SOCKET_INVALID;
 
+    if (backlog <= 0)
+        return PAL_SOCKET_INVALID;
     snprintf(port_str, sizeof(port_str), "%u", (unsigned)port);
     memset(&hints, 0, sizeof(hints));
     hints.ai_family = AF_UNSPEC;
@@ -300,6 +311,8 @@ pal_socket_t pal_tcp_connect(const char *host, uint16_t port)
     struct addrinfo *ai;
     pal_socket_t fd = PAL_SOCKET_INVALID;
 
+    if (host == NULL)
+        return PAL_SOCKET_INVALID;
     snprintf(port_str, sizeof(port_str), "%u", (unsigned)port);
     memset(&hints, 0, sizeof(hints));
     hints.ai_family = AF_UNSPEC;
@@ -333,6 +346,8 @@ pal_socket_t pal_tcp_connect(const char *host, uint16_t port)
 
 pal_socket_t pal_accept(pal_socket_t listen_fd)
 {
+    if (listen_fd == PAL_SOCKET_INVALID)
+        return PAL_SOCKET_INVALID;
     pal_socket_t fd = (pal_socket_t)accept(listen_fd, NULL, NULL);
     pal_no_sigpipe(fd);
     return fd;
@@ -381,6 +396,8 @@ void pal_close(pal_socket_t fd)
 
 int pal_get_peer_ip(pal_socket_t fd, char *out, size_t cap)
 {
+    if (fd == PAL_SOCKET_INVALID || out == NULL || cap == 0)
+        return -1;
 #if DDUP_OS_WINDOWS
     struct sockaddr_in sa;
     int salen = sizeof(sa);

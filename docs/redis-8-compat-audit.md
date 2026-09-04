@@ -555,3 +555,7 @@ movement during partial-resync handling.
 Session queue, blocking, WATCH, and teardown APIs now reject null or malformed
 RESP views and roll back partial copies, preventing malformed client requests
 from leaking memory or corrupting connection state.
+
+The cross-platform socket layer now rejects invalid handles and null network
+arguments before platform calls, preventing malformed client/replication setup
+from causing process faults while preserving valid TCP behavior.

@@ -871,3 +871,5 @@
     fail-closed，避免环形偏移下溢和越界复制（Phase 273）
   - [x] Session 生命周期输入防护：队列、阻塞、WATCH 和释放入口拒绝 NULL/
     非法 RESP 字符串，并在深拷贝失败时完整回滚已分配参数（Phase 274）
+  - [x] PAL socket 参数防护：异步连接、完成、监听、accept、套接字选项和
+    peer 地址入口拒绝 NULL/无效句柄，避免平台 syscall 崩溃（Phase 275）

@@ -2025,3 +2025,10 @@ Session lifecycle and command-queue helpers validate object, argument, and
 string-view inputs before dereferencing. Partial deep copies are rolled back on
 invalid entries, preventing leaks and dangling ownership; valid MULTI/blocking
 paths retain the existing bounded allocations and queue growth behavior.
+
+### Phase 275: fail-closed PAL socket boundaries
+
+Socket helpers validate invalid handles, null host/output pointers, and
+non-positive listen backlogs before entering platform syscalls. These checks are
+error-path branches; valid connect, accept, and option-setting paths retain the
+same syscall count and nonblocking behavior.

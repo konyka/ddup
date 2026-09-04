@@ -13,6 +13,20 @@ static void test_init_cleanup(void)
     pal_socket_cleanup();
 }
 
+static void test_invalid_socket_arguments_fail_closed(void)
+{
+    pal_socket_t fd = PAL_SOCKET_INVALID;
+
+    DD_CHECK_EQ_INT(-1, pal_tcp_connect_start(NULL, 6379, &fd));
+    DD_CHECK_EQ_INT(-1, pal_tcp_connect_start("127.0.0.1", 6379, NULL));
+    DD_CHECK_EQ_INT(-1, pal_connect_finish(PAL_SOCKET_INVALID));
+    DD_CHECK_EQ_INT(-1, pal_set_nonblocking(PAL_SOCKET_INVALID, 1));
+    DD_CHECK_EQ_INT(-1, pal_set_tcp_nodelay(PAL_SOCKET_INVALID, 1));
+    DD_CHECK_EQ_INT(-1, pal_get_peer_ip(PAL_SOCKET_INVALID, NULL, 0));
+    DD_CHECK_EQ_INT(-1, pal_get_peer_ip(PAL_SOCKET_INVALID, NULL, 16));
+    DD_CHECK(pal_accept(PAL_SOCKET_INVALID) == PAL_SOCKET_INVALID);
+}
+
 static void test_listen_connect_echo(void)
 {
     uint16_t port = 0;
@@ -97,6 +111,7 @@ static void test_tcp_nodelay(void)
 int main(void)
 {
     DD_RUN(test_init_cleanup);
+    DD_RUN(test_invalid_socket_arguments_fail_closed);
     DD_RUN(test_listen_connect_echo);
     DD_RUN(test_listen_failure);
     DD_RUN(test_tcp_nodelay);
