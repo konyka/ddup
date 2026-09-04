@@ -331,6 +331,8 @@ void cluster_slots_parse(uint8_t *bm, const char *s, size_t len)
 
 uint64_t cluster_next_epoch(struct db *d)
 {
+    if (d == NULL)
+        return 0;
     return ++d->cluster_current_epoch;
 }
 
@@ -339,6 +341,8 @@ void cluster_adopt_claims(struct db *d, cluster_node *claimant,
 {
     uint32_t s;
     int i;
+    if (d == NULL || claimant == NULL || bm == NULL)
+        return;
     if (epoch > claimant->epoch)
         claimant->epoch = epoch;
     if (epoch > d->cluster_current_epoch)
@@ -357,10 +361,13 @@ void cluster_adopt_claims(struct db *d, cluster_node *claimant,
 
 int cluster_failover_promote(struct db *d)
 {
-    cluster_node *me = cluster_myself(d);
+    cluster_node *me;
     cluster_node *master;
     char mid[41];
     uint32_t s;
+    if (d == NULL)
+        return 0;
+    me = cluster_myself(d);
     if (me == NULL || !(me->flags & CLUSTER_NODE_SLAVE))
         return 0;
     memcpy(mid, me->master_id, sizeof(mid));
@@ -386,9 +393,12 @@ int cluster_failover_promote(struct db *d)
 void cluster_merge_claims(struct db *d, cluster_node *claimant,
                           const uint8_t *bm, uint64_t epoch)
 {
-    cluster_node *me = cluster_myself(d);
+    cluster_node *me;
     uint32_t s;
     int i;
+    if (d == NULL || claimant == NULL || bm == NULL)
+        return;
+    me = cluster_myself(d);
     if (epoch > claimant->epoch)
         claimant->epoch = epoch;
     if (epoch > d->cluster_current_epoch)
@@ -1017,6 +1027,8 @@ int cluster_bus_handle_frame(struct db *d, const char *frame, size_t len,
 cluster_node *cluster_myself(struct db *d)
 {
     int i;
+    if (d == NULL)
+        return NULL;
     for (i = 0; i < d->nnodes; i++)
         if (d->nodes[i].flags & CLUSTER_NODE_MYSELF)
             return &d->nodes[i];

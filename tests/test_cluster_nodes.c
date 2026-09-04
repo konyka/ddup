@@ -242,6 +242,24 @@ static void test_slot_api_rejects_null_inputs(void)
     DD_CHECK_EQ_INT(0, cluster_slots_get(bm, 0));
 }
 
+static void test_cluster_state_api_rejects_null_inputs(void)
+{
+    db d;
+    uint8_t bm[2048];
+    db_init(&d);
+    cluster_nodes_init(&d);
+    memset(bm, 0, sizeof(bm));
+    DD_CHECK_EQ_INT(0, (long long)cluster_next_epoch(NULL));
+    cluster_adopt_claims(NULL, NULL, NULL, 1);
+    cluster_merge_claims(NULL, NULL, NULL, 1);
+    DD_CHECK(cluster_myself(NULL) == NULL);
+    DD_CHECK_EQ_INT(1, cluster_state_is_ok(NULL));
+    DD_CHECK_EQ_INT(0, cluster_state_is_minority(NULL));
+    cluster_adopt_claims(&d, NULL, bm, 1);
+    cluster_merge_claims(&d, NULL, bm, 1);
+    db_destroy(&d);
+}
+
 int main(void)
 {
     DD_RUN(test_node_add_find);
@@ -253,5 +271,6 @@ int main(void)
     DD_RUN(test_parse_rejects_out_of_range_ports);
     DD_RUN(test_node_api_rejects_null_inputs);
     DD_RUN(test_slot_api_rejects_null_inputs);
+    DD_RUN(test_cluster_state_api_rejects_null_inputs);
     return DD_TEST_SUMMARY();
 }

@@ -1855,3 +1855,8 @@ parsing. The guard is constant-time and leaves valid wire parsing unchanged.
 Publish and FAIL builders validate output pointers before reading buffer state,
 keeping malformed calls constant-time and crash-free while valid paths remain
 unchanged.
+
+### Phase 246: null-safe cluster state APIs
+
+Epoch, claim-merge, failover, and myself helpers now validate state pointers
+before mutation. Valid paths retain bounded array scans with no new allocation.

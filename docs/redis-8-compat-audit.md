@@ -458,3 +458,6 @@ keeping malformed gossip fail-closed without mutating cluster state.
 
 PUBLISH and FAIL frame builders now perform null-output checks before reading
 buffer lengths, eliminating a control-plane null dereference edge case.
+
+Cluster state helpers now reject null databases, claimants, and bitmaps before
+mutation, keeping malformed control-plane requests fail-closed.
