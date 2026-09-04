@@ -1899,3 +1899,9 @@ returning failure on overflow while preserving the existing linear-growth path.
 Tier storage entry points validate paths, payload pointers, and writer state
 before file operations. Compaction checks temporary-path sizing without changing
 the normal append/index hot path.
+
+### Phase 254: exact tier replay reads
+
+Tier replay now consumes each declared record body with bounded exact reads,
+rejecting truncated records before indexing. The steady-state append path is
+unchanged; replay overhead is proportional to persisted bytes.

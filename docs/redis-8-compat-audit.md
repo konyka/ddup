@@ -482,3 +482,7 @@ reallocation, preventing hostile file sizes from wrapping allocation lengths.
 
 Tier storage open, append, read, delete, flush, and compaction APIs now reject
 null or empty inputs before touching cold-layer files.
+
+Tier log replay now verifies every declared record body is fully readable before
+publishing its index entry, preventing truncated persistence data from appearing
+as valid cold records.

@@ -101,6 +101,19 @@ static int file_read_all(pal_file *f, void *buf, size_t n)
     return 0;
 }
 
+static int file_skip_exact(pal_file *f, uint64_t n)
+{
+    unsigned char scratch[4096];
+    while (n > 0) {
+        size_t want = n > sizeof(scratch) ? sizeof(scratch) : (size_t)n;
+        ptrdiff_t r = pal_file_read(f, scratch, want);
+        if (r <= 0 || (size_t)r != want)
+            return -1;
+        n -= (uint64_t)r;
+    }
+    return 0;
+}
+
 static void index_set(rh_table *idx, uint64_t rid, const tier_loc *loc)
 {
     unsigned char key[8];
@@ -235,6 +248,11 @@ int tier_open(tier_store **out, const char *path, uint64_t max_disk_bytes)
                 uint64_t rid = get_u64le(hdr + 18);
                 uint64_t body = (uint64_t)klen + vlen;
                 tier_loc loc;
+                if (t->end > UINT64_MAX - sizeof(hdr) - body ||
+                    file_skip_exact(f, body) != 0) {
+                    t->failed = 1;
+                    break;
+                }
                 if (op == TIER_OP_FLUSH_ALL) {
                     rh_destroy(&t->index);
                     rh_init(&t->index);
