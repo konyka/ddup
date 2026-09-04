@@ -1745,3 +1745,9 @@ allocation-free.
 No-sample errors from `LATENCY GRAPH/HISTORY` cap event names at 96 bytes and
 clamp the formatted length before RESP output. The latency query path remains
 allocation-free for both valid and invalid events.
+
+### Phase 227: bounded HSETEX option diagnostics
+
+The shared `HSETEX` option parser caps unknown-option text at 96 bytes and
+clamps the formatted result before writing RESP. Valid field writes retain the
+existing allocation-free parsing path.
