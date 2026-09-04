@@ -1715,3 +1715,9 @@ result length to the RESP writer.
 Top-level and queued-command unknown-name errors now cap attacker-controlled
 command text before formatting. SCRIPT subcommand diagnostics share the same
 fixed stack renderer, keeping malformed requests allocation-free and bounded.
+
+### Phase 222: bounded FUNCTION library diagnostics
+
+Duplicate FUNCTION library errors cap the library name at 64 bytes and pass
+only initialized bytes to the RESP writer. The validation remains allocation-free
+and off the ordinary command hot path.

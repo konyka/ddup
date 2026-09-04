@@ -335,6 +335,18 @@ static void test_management_error_bounds(void)
     cmd(3, "SCRIPT", long_sub, "extra");
     DD_CHECK(g_out.len <= 132);
     DD_CHECK(strstr(g_out.data, "ERR Unknown SCRIPT subcommand") != NULL);
+
+    {
+        char code[256];
+        memcpy(code, "#!lua name=", 11);
+        for (i = 11; i < sizeof(code) - 1; i++)
+            code[i] = 'L';
+        code[sizeof(code) - 1] = '\0';
+        cmd(3, "FUNCTION", "LOAD", code);
+        cmd(3, "FUNCTION", "LOAD", code);
+        DD_CHECK(g_out.len <= 100);
+        DD_CHECK(strstr(g_out.data, "ERR Library '") != NULL);
+    }
 }
 
 int main(void)

@@ -11670,10 +11670,12 @@ static void command_function(session *s, const resp_value *argv, size_t argc,
         if (!replace && rh_get(&d->function_libs, lib, liblen, &body,
                                &bodylen)) {
             char msg[96];
+            size_t shown = liblen > 64 ? 64 : liblen;
             int n = snprintf(msg, sizeof(msg),
                              "ERR Library '%.*s' already exists",
-                             (int)liblen, lib);
-            resp_write_error(out, msg, (size_t)n);
+                             (int)shown, lib);
+            resp_write_error(out, msg, n < 0 || (size_t)n >= sizeof(msg)
+                                      ? sizeof(msg) - 1 : (size_t)n);
             return;
         }
         if (rh_set(&d->function_libs, lib, liblen, code, codelen) < 0) {
