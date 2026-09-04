@@ -380,6 +380,9 @@ inputs, preventing accidental dereference during cluster setup.
 Node persistence path updates now clear the configured path when formatting would
 truncate, preventing cluster metadata from being written to an unintended file.
 
+Cluster nodes persistence also validates the derived temporary filename before
+opening it, preserving dirty state when formatting would truncate.
+
 Duplicate `FUNCTION LOAD` library diagnostics now use bounded library-name
 rendering and checked output lengths, preserving useful Redis-style errors for
 large library metadata without exposing stack-buffer overreads.

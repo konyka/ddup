@@ -4553,7 +4553,13 @@ static void cluster_nodes_save(server *s)
         resp_buf_free(&buf);
         return;
     }
-    snprintf(tmp, sizeof(tmp), "%s.tmp", s->nodes_path);
+    {
+        int n = snprintf(tmp, sizeof(tmp), "%s.tmp", s->nodes_path);
+        if (n < 0 || (size_t)n >= sizeof(tmp)) {
+            resp_buf_free(&buf);
+            return;
+        }
+    }
     f = pal_file_open_write(tmp);
     if (f != NULL) {
         if (pal_file_write(f, buf.data, buf.len) == (ptrdiff_t)buf.len &&

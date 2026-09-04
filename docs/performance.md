@@ -1799,3 +1799,8 @@ to the data path; node-path updates remain allocation-free and null-safe.
 
 Oversized node persistence paths are rejected by clearing the path to the
 disabled state. The setter remains a fixed-buffer, allocation-free operation.
+
+### Phase 236: bounded cluster temporary paths
+
+Cluster metadata saves now validate the derived `.tmp` filename before opening
+it. The failure path is a constant-time check and leaves retry state untouched.
