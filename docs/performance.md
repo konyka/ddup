@@ -1964,3 +1964,9 @@ views before traversal. Valid scans retain the same bounded cursor behavior.
 
 SCAN validates the combined table capacity and rejects out-of-range cursors
 before traversal. Valid cursor scans keep the same bounded iteration cost.
+
+### Phase 266: uninitialized hash-table guards
+
+Hash-table operations reject zero-capacity or missing-slot states before probing.
+The guard is a predictable cold/error branch and does not alter initialized-table
+throughput.

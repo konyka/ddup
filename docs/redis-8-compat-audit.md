@@ -521,3 +521,6 @@ views before traversal, preventing malformed management scans from crashing.
 
 Hash-table SCAN now checks combined-capacity arithmetic and rejects out-of-range
 cursors, preventing unsigned wraparound during management iteration.
+
+Hash-table operations now fail closed on uninitialized storage handles, preventing
+zero-capacity masking and invalid slot dereferences in shared data paths.

@@ -67,6 +67,25 @@ static void test_scan_rejects_invalid_cursor_state(void)
     rh_destroy(&t);
 }
 
+static void test_uninitialized_table_fails_closed(void)
+{
+    rh_table t;
+    const char *v = NULL;
+    size_t vl = 0;
+    char *old = NULL;
+    size_t old_len = 0;
+    memset(&t, 0, sizeof(t));
+    DD_CHECK_EQ_INT(0, rh_get(&t, "k", 1, &v, &vl));
+    DD_CHECK_EQ_INT(0, rh_get_touch(&t, "k", 1, &v, &vl, 0));
+    DD_CHECK_EQ_INT(-1, rh_set(&t, "k", 1, "v", 1));
+    DD_CHECK_EQ_INT(-1, rh_set_ex2(&t, "k", 1, "v", 1, NULL, 0, 0,
+                                   &old, &old_len));
+    DD_CHECK_EQ_INT(0, rh_meta_of(&t, "k", 1));
+    DD_CHECK_EQ_INT(0, rh_del(&t, "k", 1));
+    DD_CHECK_EQ_INT(0, rh_touch(&t, "k", 1, 0));
+    DD_CHECK_EQ_INT(0, rh_random_entry(&t, 0, &v, &vl, &v, &vl, NULL));
+}
+
 static void test_overwrite(void)
 {
     rh_table t;
@@ -532,6 +551,7 @@ int main(void)
     DD_RUN(test_api_rejects_null_inputs);
     DD_RUN(test_iteration_api_rejects_null_inputs);
     DD_RUN(test_scan_rejects_invalid_cursor_state);
+    DD_RUN(test_uninitialized_table_fails_closed);
     DD_RUN(test_overwrite);
     DD_RUN(test_set_ex);
     DD_RUN(test_reject_unrepresentable_lengths);

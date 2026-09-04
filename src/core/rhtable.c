@@ -267,7 +267,7 @@ size_t rh_scan(rh_table *t, size_t cursor, size_t count, rh_scan_cb cb,
 {
     size_t visited = 0;
     size_t total;
-    if (t == NULL || cb == NULL)
+    if (t == NULL || t->slots == NULL || t->cap == 0 || cb == NULL)
         return 0;
     if (t->cap > SIZE_MAX - t->old_cap)
         return 0;
@@ -308,7 +308,8 @@ size_t rh_scan(rh_table *t, size_t cursor, size_t count, rh_scan_cb cb,
 int rh_get(rh_table *t, const char *key, size_t klen,
            const char **val, size_t *vlen)
 {
-    if (t == NULL || (key == NULL && klen != 0) || val == NULL ||
+    if (t == NULL || t->slots == NULL || t->cap == 0 ||
+        (key == NULL && klen != 0) || val == NULL ||
         vlen == NULL)
         return 0;
     rh_migrate_some(t);
@@ -332,7 +333,8 @@ int rh_get(rh_table *t, const char *key, size_t klen,
 int rh_get_touch(rh_table *t, const char *key, size_t klen,
                  const char **val, size_t *vlen, uint32_t meta)
 {
-    if (t == NULL || (key == NULL && klen != 0) || val == NULL ||
+    if (t == NULL || t->slots == NULL || t->cap == 0 ||
+        (key == NULL && klen != 0) || val == NULL ||
         vlen == NULL)
         return 0;
     rh_migrate_some(t);
@@ -357,7 +359,8 @@ int rh_get_touch(rh_table *t, const char *key, size_t klen,
 int rh_set(rh_table *t, const char *key, size_t klen,
            const char *val, size_t vlen)
 {
-    if (t == NULL || (key == NULL && klen != 0) ||
+    if (t == NULL || t->slots == NULL || t->cap == 0 ||
+        (key == NULL && klen != 0) ||
         (val == NULL && vlen != 0) || klen > UINT32_MAX ||
         vlen > UINT32_MAX || klen > SIZE_MAX - vlen)
         return -1;
@@ -414,7 +417,8 @@ int rh_set_ex2(rh_table *t, const char *key, size_t klen, const char *v1,
 {
     size_t vlen;
 
-    if (t == NULL || (key == NULL && klen != 0) ||
+    if (t == NULL || t->slots == NULL || t->cap == 0 ||
+        (key == NULL && klen != 0) ||
         (v1 == NULL && n1 != 0) || (v2 == NULL && n2 != 0) ||
         old_kv == NULL || old_vlen == NULL || klen > UINT32_MAX ||
         n1 > UINT32_MAX || n2 > UINT32_MAX ||
@@ -487,7 +491,8 @@ int rh_set_ex(rh_table *t, const char *key, size_t klen, const char *val,
 
 uint32_t rh_meta_of(rh_table *t, const char *key, size_t klen)
 {
-    if (t == NULL || (key == NULL && klen != 0))
+    if (t == NULL || t->slots == NULL || t->cap == 0 ||
+        (key == NULL && klen != 0))
         return 0;
     uint64_t h = rh_hash(key, klen);
     long i = rh_find_in(t->slots, t->cap, h, key, klen);
@@ -517,8 +522,8 @@ int rh_random_entry(rh_table *t, uint32_t rand, const char **key, size_t *klen,
                     const char **val, size_t *vlen, uint32_t *meta)
 {
     const rh_entry *e = NULL;
-    if (t == NULL || key == NULL || klen == NULL || val == NULL ||
-        vlen == NULL || t->size == 0)
+    if (t == NULL || t->slots == NULL || t->cap == 0 || key == NULL ||
+        klen == NULL || val == NULL || vlen == NULL || t->size == 0)
         return 0;
     e = rh_scan_occupied(t->slots, t->cap, (size_t)rand & (t->cap - 1));
     if (e == NULL && t->old_slots != NULL)
@@ -537,7 +542,8 @@ int rh_random_entry(rh_table *t, uint32_t rand, const char **key, size_t *klen,
 
 int rh_touch(rh_table *t, const char *key, size_t klen, uint32_t meta)
 {
-    if (t == NULL || (key == NULL && klen != 0))
+    if (t == NULL || t->slots == NULL || t->cap == 0 ||
+        (key == NULL && klen != 0))
         return 0;
     uint64_t h = rh_hash(key, klen);
     rh_entry *e = NULL;
@@ -557,7 +563,8 @@ int rh_touch(rh_table *t, const char *key, size_t klen, uint32_t meta)
 
 int rh_del(rh_table *t, const char *key, size_t klen)
 {
-    if (t == NULL || (key == NULL && klen != 0))
+    if (t == NULL || t->slots == NULL || t->cap == 0 ||
+        (key == NULL && klen != 0))
         return 0;
     rh_migrate_some(t);
     uint64_t h = rh_hash(key, klen);
