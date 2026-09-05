@@ -2038,6 +2038,18 @@ int server_test_publish_frame_validation(void)
         return -1;
     return 0;
 }
+
+int server_test_bus_protocol_rejects_invalid(void)
+{
+    server s;
+    memset(&s, 0, sizeof(s));
+    s.bus_protocol = SERVER_BUS_PROTOCOL_REDIS;
+    server_set_bus_protocol(&s, 99);
+    if (s.bus_protocol != SERVER_BUS_PROTOCOL_REDIS)
+        return -1;
+    server_set_bus_protocol(&s, SERVER_BUS_PROTOCOL_DDUP);
+    return s.bus_protocol == SERVER_BUS_PROTOCOL_DDUP ? 0 : -1;
+}
 #endif
 
 static conn *conn_create(server *srv, pal_socket_t fd)
@@ -4188,7 +4200,8 @@ void server_set_node_timeout(server *s, uint64_t ms)
 
 void server_set_bus_protocol(server *s, int proto)
 {
-    if (s != NULL)
+    if (s != NULL && (proto == SERVER_BUS_PROTOCOL_DDUP ||
+                      proto == SERVER_BUS_PROTOCOL_REDIS))
         s->bus_protocol = proto;
 }
 

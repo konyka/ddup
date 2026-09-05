@@ -969,3 +969,5 @@
     Redis gossip 计数和精确 payload 边界，禁止 malformed 帧绕过 codec（Phase 320）
   - [x] 集群回归夹具分配检查：migrate、failover 与 pfail 夹具在写入 node
     字段前验证创建结果，消除 LTO 下潜在 NULL 解引用和警告（Phase 321）
+  - [x] Cluster bus 协议 setter 严格枚举：控制面仅接受 ddup/Redis 两种已知
+    协议值，非法整数保持原配置不变（Phase 322）
