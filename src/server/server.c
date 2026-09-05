@@ -1643,12 +1643,16 @@ int server_set_replica_tls(server *s, int enabled, const char *ca_file)
 
 int server_replicaof(server *s, const char *host, uint16_t port)
 {
+    if (s == NULL)
+        return -1;
     return srv_replicaof(s, host, port);
 }
 
 int server_set_backlog_size(server *s, size_t bytes)
 {
     repl_backlog replacement;
+    if (s == NULL)
+        return -1;
     if (repl_backlog_init(&replacement, bytes) != 0)
         return -1;
     replacement.offset = s->backlog.offset;

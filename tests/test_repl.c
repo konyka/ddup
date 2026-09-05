@@ -98,6 +98,14 @@ static void test_backlog_null_and_offset_safety(void)
     repl_backlog_free(&b);
 }
 
+static void test_server_replication_api_null_safety(void)
+{
+    DD_CHECK_EQ_INT(-1, server_replicaof(NULL, "127.0.0.1", 6379));
+    DD_CHECK_EQ_INT(-1, server_set_backlog_size(NULL, 1024));
+    DD_CHECK_EQ_INT(-1, server_set_replica_tls(NULL, 1, NULL));
+    DD_CHECK_EQ_INT(-1, server_set_replica_tls(NULL, 0, NULL));
+}
+
 static void test_backlog_corrupt_state_fails_closed(void)
 {
     repl_backlog b;
@@ -184,6 +192,7 @@ int main(void)
     DD_RUN(test_backlog_wrap);
     DD_RUN(test_backlog_empty_state);
     DD_RUN(test_backlog_null_and_offset_safety);
+    DD_RUN(test_server_replication_api_null_safety);
     DD_RUN(test_backlog_corrupt_state_fails_closed);
     DD_RUN(test_backlog_boundaries_and_offsets);
     DD_RUN(test_sync_master);

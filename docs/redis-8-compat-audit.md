@@ -44,6 +44,9 @@ ACL 密码生成等安全路径把无效指针传给平台随机数接口。
 持久化边界回归覆盖空路径、空句柄及 NULL 数据组合，保证 AOF、快照和 Tier
 调用共享同一跨平台失败语义。
 
+复制控制面补充：REPLICAOF、backlog resize 和 TLS replication 配置入口对空
+server fail-closed，避免非法管理调用破坏复制状态。
+
 历史缺口集中在三块，当前 Redis 8.10.1 命令级审计已清零：
 
 1. Redis 8.8 新增 `ARRAY` 类型（18 个 `AR*` 命令）。

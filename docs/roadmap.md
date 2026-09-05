@@ -904,3 +904,5 @@
     （Phase 288）
   - [x] PAL 文件 I/O 边界回归扩展：测试覆盖空路径、空文件句柄和 NULL 数据
     组合，确保跨平台实现契约一致（Phase 289）
+  - [x] 复制控制 API NULL 防护：`server_replicaof`、backlog resize 与复制 TLS
+    配置入口拒绝空 server，避免控制面解引用和状态污染（Phase 290）
