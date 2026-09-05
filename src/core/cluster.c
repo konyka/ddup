@@ -155,7 +155,9 @@ void cluster_report_failure(struct db *d, cluster_node *subject,
                             const char *reporter, uint64_t now_ms)
 {
     int i;
-    if (d == NULL || subject == NULL || !cluster_id_valid(reporter))
+    if (d == NULL || d->nnodes < 0 || d->nnodes > CLUSTER_MAX_NODES ||
+        subject == NULL || subject->nreports < 0 ||
+        subject->nreports > CLUSTER_MAX_NODES || !cluster_id_valid(reporter))
         return;
     for (i = 0; i < subject->nreports; i++)
         if (memcmp(subject->reports[i].reporter, reporter, 40) == 0) {
@@ -174,7 +176,9 @@ void cluster_report_heal(struct db *d, cluster_node *subject,
                          const char *reporter)
 {
     int i;
-    if (d == NULL || subject == NULL || !cluster_id_valid(reporter))
+    if (d == NULL || d->nnodes < 0 || d->nnodes > CLUSTER_MAX_NODES ||
+        subject == NULL || subject->nreports < 0 ||
+        subject->nreports > CLUSTER_MAX_NODES || !cluster_id_valid(reporter))
         return;
     for (i = 0; i < subject->nreports; i++)
         if (memcmp(subject->reports[i].reporter, reporter, 40) == 0) {
@@ -188,7 +192,9 @@ int cluster_report_count(struct db *d, cluster_node *subject, uint64_t now_ms)
 {
     uint64_t window;
     int i = 0;
-    if (d == NULL || subject == NULL)
+    if (d == NULL || d->nnodes < 0 || d->nnodes > CLUSTER_MAX_NODES ||
+        subject == NULL || subject->nreports < 0 ||
+        subject->nreports > CLUSTER_MAX_NODES)
         return 0;
     window = d->cluster_node_timeout_ms > UINT64_MAX / 2
                  ? UINT64_MAX
@@ -224,7 +230,9 @@ int cluster_mark_fail_if_quorum(struct db *d, cluster_node *subject,
     int masters = 0, failures, i;
     uint32_t sl;
 
-    if (d == NULL || subject == NULL)
+    if (d == NULL || d->nnodes < 0 || d->nnodes > CLUSTER_MAX_NODES ||
+        subject == NULL || subject->nreports < 0 ||
+        subject->nreports > CLUSTER_MAX_NODES)
         return 0;
     me = cluster_myself(d);
 
@@ -1038,7 +1046,7 @@ int cluster_bus_handle_frame(struct db *d, const char *frame, size_t len,
 cluster_node *cluster_myself(struct db *d)
 {
     int i;
-    if (d == NULL)
+    if (d == NULL || d->nnodes < 0 || d->nnodes > CLUSTER_MAX_NODES)
         return NULL;
     for (i = 0; i < d->nnodes; i++)
         if (d->nodes[i].flags & CLUSTER_NODE_MYSELF)
@@ -1153,6 +1161,8 @@ void cluster_state_snapshot(const struct db *d, cluster_state *out)
 void cluster_state_restore(struct db *d, const cluster_state *in)
 {
     if (d == NULL || in == NULL)
+        return;
+    if (in->nnodes < 0 || in->nnodes > CLUSTER_MAX_NODES)
         return;
     d->cluster_enabled = in->cluster_enabled;
     memcpy(d->node_id, in->node_id, sizeof(d->node_id));

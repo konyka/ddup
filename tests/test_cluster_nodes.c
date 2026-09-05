@@ -280,6 +280,40 @@ static void test_corrupt_node_count_fails_closed(void)
     db_destroy(&d);
 }
 
+static void test_corrupt_report_count_fails_closed(void)
+{
+    db d;
+    cluster_node *n;
+
+    db_init(&d);
+    cluster_nodes_init(&d);
+    n = cluster_node_add(&d, ID1);
+    DD_CHECK(n != NULL);
+    if (n != NULL) {
+        n->nreports = CLUSTER_MAX_NODES + 1;
+        cluster_report_failure(&d, n, ID2, 1);
+        cluster_report_heal(&d, n, ID2);
+        DD_CHECK_EQ_INT(0, cluster_report_count(&d, n, 1));
+        DD_CHECK_EQ_INT(0, cluster_mark_fail_if_quorum(&d, n, 1));
+    }
+    db_destroy(&d);
+}
+
+static void test_state_restore_rejects_corrupt_node_count(void)
+{
+    db d;
+    cluster_state state;
+
+    db_init(&d);
+    cluster_nodes_init(&d);
+    memset(&state, 0, sizeof(state));
+    state.nnodes = CLUSTER_MAX_NODES + 1;
+    d.nnodes = 0;
+    cluster_state_restore(&d, &state);
+    DD_CHECK_EQ_INT(0, d.nnodes);
+    db_destroy(&d);
+}
+
 static void test_nodes_persistence_api_rejects_null_inputs(void)
 {
     db d;
@@ -309,6 +343,8 @@ int main(void)
     DD_RUN(test_slot_api_rejects_null_inputs);
     DD_RUN(test_cluster_state_api_rejects_null_inputs);
     DD_RUN(test_corrupt_node_count_fails_closed);
+    DD_RUN(test_corrupt_report_count_fails_closed);
+    DD_RUN(test_state_restore_rejects_corrupt_node_count);
     DD_RUN(test_nodes_persistence_api_rejects_null_inputs);
     return DD_TEST_SUMMARY();
 }
