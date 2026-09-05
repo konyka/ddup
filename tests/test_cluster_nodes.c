@@ -264,10 +264,12 @@ static void test_corrupt_node_count_fails_closed(void)
 {
     db d;
     resp_buf out;
+    uint8_t bm[2048];
 
     db_init(&d);
     cluster_nodes_init(&d);
     resp_buf_init(&out);
+    memset(bm, 0, sizeof(bm));
     d.cluster_enabled = 1;
     d.nnodes = CLUSTER_MAX_NODES + 1;
     DD_CHECK(cluster_node_find(&d, ID1) == NULL);
@@ -276,6 +278,9 @@ static void test_corrupt_node_count_fails_closed(void)
     DD_CHECK_EQ_INT(-1, cluster_bus_build_frame(&d, CLUSTER_MSG_PING, &out));
     DD_CHECK_EQ_INT(0, cluster_state_is_ok(&d));
     DD_CHECK_EQ_INT(0, cluster_state_is_minority(&d));
+    cluster_adopt_claims(&d, &d.nodes[0], bm, 1);
+    cluster_merge_claims(&d, &d.nodes[0], bm, 1);
+    DD_CHECK_EQ_INT(0, cluster_failover_promote(&d));
     resp_buf_free(&out);
     db_destroy(&d);
 }
@@ -314,6 +319,21 @@ static void test_state_restore_rejects_corrupt_node_count(void)
     db_destroy(&d);
 }
 
+static void test_state_restore_rejects_corrupt_report_count(void)
+{
+    db d;
+    cluster_state state;
+
+    db_init(&d);
+    cluster_nodes_init(&d);
+    memset(&state, 0, sizeof(state));
+    state.nnodes = 1;
+    state.nodes[0].nreports = CLUSTER_MAX_NODES + 1;
+    cluster_state_restore(&d, &state);
+    DD_CHECK_EQ_INT(0, d.nnodes);
+    db_destroy(&d);
+}
+
 static void test_nodes_persistence_api_rejects_null_inputs(void)
 {
     db d;
@@ -345,6 +365,7 @@ int main(void)
     DD_RUN(test_corrupt_node_count_fails_closed);
     DD_RUN(test_corrupt_report_count_fails_closed);
     DD_RUN(test_state_restore_rejects_corrupt_node_count);
+    DD_RUN(test_state_restore_rejects_corrupt_report_count);
     DD_RUN(test_nodes_persistence_api_rejects_null_inputs);
     return DD_TEST_SUMMARY();
 }

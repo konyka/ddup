@@ -353,7 +353,8 @@ void cluster_adopt_claims(struct db *d, cluster_node *claimant,
 {
     uint32_t s;
     int i;
-    if (d == NULL || claimant == NULL || bm == NULL)
+    if (d == NULL || d->nnodes < 0 || d->nnodes > CLUSTER_MAX_NODES ||
+        claimant == NULL || bm == NULL)
         return;
     if (epoch > claimant->epoch)
         claimant->epoch = epoch;
@@ -377,7 +378,7 @@ int cluster_failover_promote(struct db *d)
     cluster_node *master;
     char mid[41];
     uint32_t s;
-    if (d == NULL)
+    if (d == NULL || d->nnodes < 0 || d->nnodes > CLUSTER_MAX_NODES)
         return 0;
     me = cluster_myself(d);
     if (me == NULL || !(me->flags & CLUSTER_NODE_SLAVE))
@@ -408,7 +409,8 @@ void cluster_merge_claims(struct db *d, cluster_node *claimant,
     cluster_node *me;
     uint32_t s;
     int i;
-    if (d == NULL || claimant == NULL || bm == NULL)
+    if (d == NULL || d->nnodes < 0 || d->nnodes > CLUSTER_MAX_NODES ||
+        claimant == NULL || bm == NULL)
         return;
     me = cluster_myself(d);
     if (epoch > claimant->epoch)
@@ -1058,6 +1060,8 @@ static uint64_t cluster_state_signature(const struct db *d)
 {
     uint64_t sig = 1469598103934665603ULL;
     int i;
+    if (d == NULL || d->nnodes < 0 || d->nnodes > CLUSTER_MAX_NODES)
+        return 0;
     for (i = 0; i < d->nnodes; i++) {
         sig ^= (uint64_t)d->nodes[i].flags;
         sig *= 1099511628211ULL;
@@ -1077,7 +1081,9 @@ int cluster_state_is_ok(struct db *d)
     int masters = 0, reachable = 0, fail_slots = 0;
     int i, s;
 
-    if (d == NULL || !d->cluster_enabled)
+    if (d == NULL || d->nnodes < 0 || d->nnodes > CLUSTER_MAX_NODES)
+        return d == NULL || !d->cluster_enabled ? 1 : 0;
+    if (!d->cluster_enabled)
         return 1;
     sig = cluster_state_signature(d);
     if (d->cluster_state_cache_valid &&
@@ -1121,6 +1127,8 @@ int cluster_state_is_ok(struct db *d)
 
 int cluster_state_is_minority(struct db *d)
 {
+    if (d == NULL || d->nnodes < 0 || d->nnodes > CLUSTER_MAX_NODES)
+        return 0;
     (void)cluster_state_is_ok(d);
     return d != NULL && d->cluster_enabled &&
            d->cluster_state_cache_covered == 16384 &&
@@ -1160,10 +1168,15 @@ void cluster_state_snapshot(const struct db *d, cluster_state *out)
 
 void cluster_state_restore(struct db *d, const cluster_state *in)
 {
+    int i;
     if (d == NULL || in == NULL)
         return;
     if (in->nnodes < 0 || in->nnodes > CLUSTER_MAX_NODES)
         return;
+    for (i = 0; i < in->nnodes; i++)
+        if (in->nodes[i].nreports < 0 ||
+            in->nodes[i].nreports > CLUSTER_MAX_NODES)
+            return;
     d->cluster_enabled = in->cluster_enabled;
     memcpy(d->node_id, in->node_id, sizeof(d->node_id));
     memcpy(d->nodes, in->nodes, sizeof(d->nodes));

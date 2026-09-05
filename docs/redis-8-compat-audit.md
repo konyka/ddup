@@ -68,6 +68,9 @@ server fail-closed，避免无效管理调用破坏集群状态。
 集群故障状态补充：`nreports` 异常值 fail-closed，跨 worker 恢复状态在复制前
 验证节点数量，防止损坏 topology 或报告表扩散成越界访问。
 
+状态恢复补充：逐节点验证故障报告计数，任何异常都拒绝整份 topology 快照，
+避免部分恢复造成 worker 间集群状态分叉。
+
 历史缺口集中在三块，当前 Redis 8.10.1 命令级审计已清零：
 
 1. Redis 8.8 新增 `ARRAY` 类型（18 个 `AR*` 命令）。
