@@ -2216,3 +2216,10 @@ The native Redis cluster-bus decoder validates fixed 40-byte sender, gossip,
 UPDATE/FAIL, and slave-of identities before applying topology changes. Each
 validation is a bounded constant-size scan; valid frames retain the existing
 decode and epoch-merge path.
+
+### Phase 314: Redis cluster-bus frame integrity
+
+The native decoder now validates count multiplication and exact payload length
+for PING/PONG/MEET, UPDATE, FAIL, and failover-auth frames. These cold bounds
+checks prevent trailing or truncated payloads from reaching topology code while
+leaving valid frame decoding allocation-free.

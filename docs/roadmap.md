@@ -952,3 +952,5 @@
     地址字段，清除 LTO stringop-overflow 警告（Phase 312）
   - [x] Redis 原生 cluster bus 身份校验：sender/gossip、UPDATE/FAIL 和
     slaveof 字段统一验证 40 位小写十六进制格式，非法帧在拓扑变更前拒绝（Phase 313）
+  - [x] Redis 原生 cluster bus 帧完整性：按消息类型严格匹配 gossip/UPDATE/FAIL/
+    AUTH 负载长度并检查计数乘法溢出，拒绝尾随或截断 payload（Phase 314）

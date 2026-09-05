@@ -77,6 +77,10 @@ Redis 原生 cluster bus 复核：sender/gossip 及 UPDATE/FAIL/AUTH 相关节�
 按 40 位小写十六进制契约校验，非法身份帧在节点表或槽位状态更新前被拒绝，避免
 伪造节点参与原生 Redis 集群故障和选主流程。
 
+Redis 原生 cluster bus 帧完整性复核：不同消息类型现在严格匹配 gossip count
+及 payload 长度，检查 count 乘法溢出并拒绝尾随数据；UPDATE/FAIL/AUTH 截断或
+伪造负载不会进入槽位、故障或选主状态机。
+
 MT 管理命令复核：SWAPDB 的 worker 快路径现拒绝前导空格、尾随字符和溢出
 数据库索引，避免 libc 宽松解析造成错误数据库交换；合法索引行为保持不变。
 

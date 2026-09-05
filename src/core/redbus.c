@@ -466,8 +466,24 @@ int redbus_handle_frame(struct db *d, const char *frame, size_t len,
         return -1;
     type = get16be(frame + 12);
     count = get16be(frame + 14);
-    if (len < REDBUS_HDR_LEN + (size_t)count * REDBUS_GOSSIP_LEN)
+    if ((size_t)count > (SIZE_MAX - REDBUS_HDR_LEN) / REDBUS_GOSSIP_LEN ||
+        len < REDBUS_HDR_LEN + (size_t)count * REDBUS_GOSSIP_LEN)
         return -1;
+
+    if (type == REDBUS_TYPE_PING || type == REDBUS_TYPE_PONG ||
+        type == REDBUS_TYPE_MEET) {
+        if (len != REDBUS_HDR_LEN + (size_t)count * REDBUS_GOSSIP_LEN)
+            return -1;
+    } else if (type == REDBUS_TYPE_UPDATE) {
+        if (count != 0 || len != REDBUS_HDR_LEN + 8 + 40 + 2048)
+            return -1;
+    } else if (type == REDBUS_TYPE_FAIL ||
+               type == REDBUS_TYPE_AUTH_REQUEST ||
+               type == REDBUS_TYPE_AUTH_ACK) {
+        size_t payload = type == REDBUS_TYPE_FAIL ? 40 : 0;
+        if (count != 0 || len != REDBUS_HDR_LEN + payload)
+            return -1;
+    }
 
     if (type == REDBUS_TYPE_UPDATE) {
         /* clusterMsgDataUpdate: u64 configEpoch BE, nodename[40], slots */

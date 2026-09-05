@@ -262,6 +262,47 @@ done:
     db_destroy(&source);
 }
 
+static void test_rejects_trailing_wire_payload(void)
+{
+    db source, target;
+    resp_buf frame, reply;
+    size_t old_len;
+
+    db_init(&source);
+    db_init(&target);
+    cluster_nodes_init(&source);
+    cluster_nodes_init(&target);
+    resp_buf_init(&frame);
+    resp_buf_init(&reply);
+    {
+        cluster_node *me = cluster_node_add(&source, ID1);
+        DD_CHECK(me != NULL);
+        if (me == NULL)
+            goto done;
+        me->flags = CLUSTER_NODE_MYSELF | CLUSTER_NODE_MASTER;
+        snprintf(me->ip, sizeof(me->ip), "127.0.0.1");
+        me->port = 7001;
+    }
+    DD_CHECK_EQ_INT(0, redbus_build_frame(&source, REDBUS_TYPE_PING, &frame));
+    old_len = frame.len;
+    DD_CHECK_EQ_INT(0, resp_buf_reserve(&frame, 1));
+    frame.data[frame.len++] = 'x';
+    frame.data[4] = (char)((frame.len >> 24) & 0xffu);
+    frame.data[5] = (char)((frame.len >> 16) & 0xffu);
+    frame.data[6] = (char)((frame.len >> 8) & 0xffu);
+    frame.data[7] = (char)(frame.len & 0xffu);
+    DD_CHECK_EQ_INT(-1, redbus_handle_frame(&target, frame.data, frame.len,
+                                            &reply, T0, NULL));
+    DD_CHECK_EQ_INT(0, target.nnodes);
+    DD_CHECK(old_len + 1 == frame.len);
+
+done:
+    resp_buf_free(&reply);
+    resp_buf_free(&frame);
+    db_destroy(&target);
+    db_destroy(&source);
+}
+
 static void test_update_fail_and_tolerance(void)
 {
     db d;
@@ -432,6 +473,7 @@ int main(void)
     DD_RUN(test_fixture_decode);
     DD_RUN(test_roundtrip);
     DD_RUN(test_rejects_invalid_wire_identities);
+    DD_RUN(test_rejects_trailing_wire_payload);
     DD_RUN(test_update_fail_and_tolerance);
     DD_RUN(test_update_to_self_adopts);
     DD_RUN(test_empty_myip_auto_discovery);
