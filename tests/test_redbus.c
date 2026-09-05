@@ -215,6 +215,53 @@ static void test_roundtrip(void)
     db_destroy(&d1);
 }
 
+static void test_rejects_invalid_wire_identities(void)
+{
+    db source, target;
+    resp_buf frame, reply;
+    cluster_node *extra;
+
+    db_init(&source);
+    db_init(&target);
+    cluster_nodes_init(&source);
+    cluster_nodes_init(&target);
+    resp_buf_init(&frame);
+    resp_buf_init(&reply);
+    extra = cluster_node_add(&source, ID1);
+    DD_CHECK(extra != NULL);
+    if (extra == NULL)
+        goto done;
+    extra->flags = CLUSTER_NODE_MYSELF | CLUSTER_NODE_MASTER;
+    snprintf(extra->ip, sizeof(extra->ip), "127.0.0.1");
+    extra->port = 7001;
+    extra = cluster_node_add(&source, ID2);
+    DD_CHECK(extra != NULL);
+    if (extra == NULL)
+        goto done;
+    snprintf(extra->ip, sizeof(extra->ip), "127.0.0.2");
+    extra->port = 7002;
+    DD_CHECK_EQ_INT(0, redbus_build_frame(&source, REDBUS_TYPE_PING, &frame));
+
+    /* Sender identity is at offset 40; reject before publishing topology. */
+    frame.data[40] = 'G';
+    DD_CHECK_EQ_INT(-1, redbus_handle_frame(&target, frame.data, frame.len,
+                                            &reply, T0, NULL));
+    DD_CHECK_EQ_INT(0, target.nnodes);
+    frame.data[40] = ID1[0];
+
+    /* Gossip identity is the first 40-byte record after the header. */
+    frame.data[REDBUS_HDR_LEN] = 'G';
+    DD_CHECK_EQ_INT(-1, redbus_handle_frame(&target, frame.data, frame.len,
+                                            &reply, T0, NULL));
+    DD_CHECK_EQ_INT(0, target.nnodes);
+
+done:
+    resp_buf_free(&reply);
+    resp_buf_free(&frame);
+    db_destroy(&target);
+    db_destroy(&source);
+}
+
 static void test_update_fail_and_tolerance(void)
 {
     db d;
@@ -384,6 +431,7 @@ int main(void)
 {
     DD_RUN(test_fixture_decode);
     DD_RUN(test_roundtrip);
+    DD_RUN(test_rejects_invalid_wire_identities);
     DD_RUN(test_update_fail_and_tolerance);
     DD_RUN(test_update_to_self_adopts);
     DD_RUN(test_empty_myip_auto_discovery);

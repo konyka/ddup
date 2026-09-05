@@ -2209,3 +2209,10 @@ branch; normal streaming and PSYNC resume paths retain their existing costs.
 The Redis cluster-bus regression fixture validates node allocation before
 writing fixed address fields. This is test-only hardening that removes LTO
 warning noise without affecting the production codec or wire-path cost.
+
+### Phase 313: Redis cluster-bus identity validation
+
+The native Redis cluster-bus decoder validates fixed 40-byte sender, gossip,
+UPDATE/FAIL, and slave-of identities before applying topology changes. Each
+validation is a bounded constant-size scan; valid frames retain the existing
+decode and epoch-merge path.

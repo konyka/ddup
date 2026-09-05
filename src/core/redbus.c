@@ -119,6 +119,20 @@ static int name_is_zero(const char *p)
     return 1;
 }
 
+static int wire_id_valid(const char *p)
+{
+    size_t i;
+    if (p == NULL)
+        return 0;
+    for (i = 0; i < 40; i++) {
+        char c = p[i];
+        if (!((c >= '0' && c <= '9') ||
+              (c >= 'a' && c <= 'f')))
+            return 0;
+    }
+    return 1;
+}
+
 static void put_ip(char *p, const char *ip)
 {
     size_t l = strlen(ip);
@@ -314,6 +328,8 @@ static cluster_node *apply_node(struct db *d, const char *id, const char *ip,
         if (name_is_zero(slaveof))
             snprintf(n->master_id, sizeof(n->master_id), "-");
         else {
+            if (!wire_id_valid(slaveof))
+                return NULL;
             memcpy(n->master_id, slaveof, 40);
             n->master_id[40] = '\0';
         }
@@ -461,8 +477,10 @@ int redbus_handle_frame(struct db *d, const char *frame, size_t len,
         if (len < REDBUS_HDR_LEN + 8 + 40 + 2048)
             return -1;
         uepoch = get64be(u);
-        memcpy(id, u + 8, 40);
-        id[40] = '\0';
+    memcpy(id, u + 8, 40);
+    id[40] = '\0';
+        if (!wire_id_valid(id))
+            return -1;
         owner = cluster_node_find(d, id);
         if (owner != NULL) {
             if (owner->flags & CLUSTER_NODE_MYSELF)
@@ -482,6 +500,8 @@ int redbus_handle_frame(struct db *d, const char *frame, size_t len,
             return -1;
         memcpy(id, frame + REDBUS_HDR_LEN, 40);
         id[40] = '\0';
+        if (!wire_id_valid(id))
+            return -1;
         n = cluster_node_find(d, id);
         if (n != NULL)
             cluster_mark_fail(d, n, now_ms);
@@ -508,12 +528,22 @@ int redbus_handle_frame(struct db *d, const char *frame, size_t len,
     config_epoch = get64be(frame + 24);
     memcpy(id, frame + 40, 40);
     id[40] = '\0';
+    if (!wire_id_valid(id))
+        return -1;
     memcpy(slaveof, frame + 2128, 40);
     slaveof[40] = '\0';
+    if (!name_is_zero(slaveof) && !wire_id_valid(slaveof))
+        return -1;
     memcpy(ip, frame + 2168, 46);
     ip[46] = '\0';
     cport = get16be(frame + 2248);
     wflags = get16be(frame + 2250);
+
+    /* Validate all gossip records before publishing the sender. */
+    p = frame + REDBUS_HDR_LEN;
+    for (j = 0; j < count; j++, p += REDBUS_GOSSIP_LEN)
+        if (!wire_id_valid(p))
+            return -1;
 
     n = apply_node(d, id, ip, port, cport, wflags, slaveof, config_epoch, 0,
                    src_ip);
@@ -533,6 +563,8 @@ int redbus_handle_frame(struct db *d, const char *frame, size_t len,
         cluster_node *g;
         memcpy(id, p, 40);
         id[40] = '\0';
+        if (!wire_id_valid(id))
+            return -1;
         memcpy(ip, p + 48, 46);
         ip[46] = '\0';
         gflags = get16be(p + 98);
