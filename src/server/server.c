@@ -1342,7 +1342,7 @@ static int srv_backup_command(void *ctx, const resp_value *argv, size_t argc,
             return resp_write_error(out, "ERR backup already in progress",
                                     sizeof("ERR backup already in progress") - 1), 0;
         if (srv->backup_state == BACKUP_SEALED)
-            return resp_write_error(out, "ERR backup is sealed", 21), 0;
+            return resp_write_error(out, "ERR backup is sealed", sizeof("ERR backup is sealed") - 1), 0;
         if (srv->db.snapshot_path == NULL || srv->db.snapshot_path[0] == '\0') {
             srv->backup_state = BACKUP_FAILED;
             snprintf(srv->backup_error, sizeof(srv->backup_error),
@@ -1371,7 +1371,7 @@ static int srv_backup_command(void *ctx, const resp_value *argv, size_t argc,
                 srv->backup_state = BACKUP_FAILED;
                 snprintf(srv->backup_error, sizeof(srv->backup_error),
                          "aof flush failed");
-                return resp_write_error(out, "ERR backup AOF flush failed", 28), 0;
+                return resp_write_error(out, "ERR backup AOF flush failed", sizeof("ERR backup AOF flush failed") - 1), 0;
             }
             srv->backup_aof_path = (char *)malloc(strlen(srv->backup_path) + 5);
             if (srv->backup_aof_path == NULL) {
@@ -1428,14 +1428,14 @@ static int srv_backup_command(void *ctx, const resp_value *argv, size_t argc,
             return resp_write_error(out, "ERR wrong number of arguments",
                                     sizeof("ERR wrong number of arguments") - 1), 0;
         if (srv->backup_state != BACKUP_INCREMENTING)
-            return resp_write_error(out, "ERR no pending backup", 22), 0;
+            return resp_write_error(out, "ERR no pending backup", sizeof("ERR no pending backup") - 1), 0;
         if (srv->backup_aof_path != NULL &&
             aof_copy_delta(srv->aof, srv->backup_aof_offset,
                            srv->backup_aof_path) != 0) {
             srv->backup_state = BACKUP_FAILED;
             snprintf(srv->backup_error, sizeof(srv->backup_error),
                      "aof delta copy failed");
-            return resp_write_error(out, "ERR backup AOF seal failed", 27), 0;
+            return resp_write_error(out, "ERR backup AOF seal failed", sizeof("ERR backup AOF seal failed") - 1), 0;
         }
         srv->backup_state = BACKUP_SEALED;
         resp_write_simple_string(out, "OK", 2);
@@ -1446,7 +1446,7 @@ static int srv_backup_command(void *ctx, const resp_value *argv, size_t argc,
             return resp_write_error(out, "ERR wrong number of arguments",
                                     sizeof("ERR wrong number of arguments") - 1), 0;
         if (srv->backup_state == BACKUP_SEALED)
-            return resp_write_error(out, "ERR backup is sealed", 21), 0;
+            return resp_write_error(out, "ERR backup is sealed", sizeof("ERR backup is sealed") - 1), 0;
         if (srv->backup_path != NULL)
             pal_file_unlink(srv->backup_path);
         if (srv->backup_aof_path != NULL)
@@ -1468,14 +1468,14 @@ static int srv_backup_command(void *ctx, const resp_value *argv, size_t argc,
             return resp_write_error(out, "ERR wrong number of arguments",
                                     sizeof("ERR wrong number of arguments") - 1), 0;
         if (srv->backup_state != BACKUP_SEALED)
-            return resp_write_error(out, "ERR no sealed backup", 21), 0;
+            return resp_write_error(out, "ERR no sealed backup", sizeof("ERR no sealed backup") - 1), 0;
         if (srv->backup_path != NULL && pal_file_unlink(srv->backup_path) != 0 &&
             pal_file_exists(srv->backup_path))
-            return resp_write_error(out, "ERR backup cleanup failed", 27), 0;
+            return resp_write_error(out, "ERR backup cleanup failed", sizeof("ERR backup cleanup failed") - 1), 0;
         if (srv->backup_aof_path != NULL &&
             pal_file_unlink(srv->backup_aof_path) != 0 &&
             pal_file_exists(srv->backup_aof_path))
-            return resp_write_error(out, "ERR backup AOF cleanup failed", 31), 0;
+            return resp_write_error(out, "ERR backup AOF cleanup failed", sizeof("ERR backup AOF cleanup failed") - 1), 0;
         srv->backup_state = BACKUP_IDLE;
         free(srv->backup_path);
         srv->backup_path = NULL;
@@ -1485,7 +1485,7 @@ static int srv_backup_command(void *ctx, const resp_value *argv, size_t argc,
         resp_write_simple_string(out, "OK", 2);
         return 0;
     }
-    resp_write_error(out, "ERR unknown BACKUP subcommand", 30);
+    resp_write_error(out, "ERR unknown BACKUP subcommand", sizeof("ERR unknown BACKUP subcommand") - 1);
     return 0;
 }
 
@@ -2786,8 +2786,7 @@ static void srv_bgrewriteaof(void *ctx, resp_buf *out)
     if (srv->aof != NULL && !srv->aof_failed && aof_flush(srv->aof) != 0) {
         srv->aof_failed = 1;
         srv->shutdown_flag = 1;
-        resp_write_error(out, "MISCONF Errors writing to the AOF file",
-                         35);
+        resp_write_error(out, "MISCONF Errors writing to the AOF file", sizeof("MISCONF Errors writing to the AOF file") - 1);
         return;
     }
     resp_write_simple_string(out,

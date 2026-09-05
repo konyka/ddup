@@ -368,7 +368,7 @@ static void test_redis8_management_containers(void)
     cmd(3, "HGET", "alice", "age");
     EXPECT_REPLY("$2\r\n37\r\n");
     cmd(5, "HIMPORT", "SET", "broken", "person", "only-one");
-    DD_CHECK(g_out.len > 0 && g_out.data[0] == '-');
+    EXPECT_REPLY("-ERR value count does not match fieldset field count\r\n");
     cmd(3, "HIMPORT", "DISCARD", "person");
     EXPECT_REPLY(":1\r\n");
     cmd(6, "HIMPORT", "SET", "gone", "person", "Ada", "37");

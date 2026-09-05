@@ -890,3 +890,5 @@
     解引用和全量构建 stringop-overflow 警告（Phase 282）
   - [x] PAL wakeup 生命周期边界：create/kick/drain/destroy 拒绝 NULL/无效句柄，
     保持已销毁唤醒对象可重复清理（Phase 283）
+  - [x] HIMPORT 字段数错误帧完整性：字段集值数不匹配的 RESP 错误消息改用
+    编译期长度，避免固定长度截断协议帧（Phase 284）

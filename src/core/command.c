@@ -1169,7 +1169,9 @@ static void command_himport(session *s, const resp_value *argv, size_t argc,
             return;
         }
         if (argc - 4 != fs->count) {
-            resp_write_error(out, "ERR value count does not match fieldset field count", 48);
+            static const char E[] =
+                "ERR value count does not match fieldset field count";
+            resp_write_error(out, E, sizeof(E) - 1);
             return;
         }
         if (!storage_key_ok(key_len) || oom_blocked(s->d, out))
@@ -1607,7 +1609,7 @@ static int setop_eval(db *d, resp_buf *out, const resp_value *kargv,
         int rc;
         if (!arg_str(&kargv[i], &k, &kl)) {
             free(sets);
-            resp_write_error(out, "ERR invalid argument type", 24);
+            resp_write_error(out, "ERR invalid argument type", sizeof("ERR invalid argument type") - 1);
             return -1;
         }
         rc = get_set(d, out, k, kl, 0, now_ms, &s);
@@ -2043,7 +2045,7 @@ static int parse_absolute_expiry(resp_buf *out, const resp_value *v,
     return 1;
 
 bad_arg:
-    resp_write_error(out, "ERR invalid argument type", 24);
+    resp_write_error(out, "ERR invalid argument type", sizeof("ERR invalid argument type") - 1);
     return 0;
 }
 
@@ -2122,7 +2124,7 @@ static int zset_resolve_operands(db *d, resp_buf *out, const resp_value *kargv,
         int rc;
         if (!arg_str(&kargv[i], &k, &kl)) {
             free(sets);
-            resp_write_error(out, "ERR invalid argument type", 24);
+            resp_write_error(out, "ERR invalid argument type", sizeof("ERR invalid argument type") - 1);
             return -1;
         }
         rc = get_zset(d, out, k, kl, 0, now_ms, &z);
@@ -2160,7 +2162,7 @@ static int zsetop_parse(db *d, resp_buf *out, const resp_value *argv,
     if (limit != NULL)
         *limit = 0;
     if (numkeys_idx >= argc || !arg_str(&argv[numkeys_idx], &nv, &nvl)) {
-        resp_write_error(out, "ERR invalid argument type", 24);
+        resp_write_error(out, "ERR invalid argument type", sizeof("ERR invalid argument type") - 1);
         return -1;
     }
     if (!parse_i64(nv, nvl, &nk)) {
@@ -2193,7 +2195,7 @@ static int zsetop_parse(db *d, resp_buf *out, const resp_value *argv,
         size_t tokl;
         if (!arg_str(&argv[i], &tok, &tokl)) {
             zsetop_args_free(args);
-            resp_write_error(out, "ERR invalid argument type", 24);
+            resp_write_error(out, "ERR invalid argument type", sizeof("ERR invalid argument type") - 1);
             return -1;
         }
         if (has_withscores && ci_equal(tok, tokl, "WITHSCORES")) {
@@ -2644,7 +2646,7 @@ static void cmd_bitop(db *d, const resp_value *argv, size_t argc,
     return;
 
 bitop_badtype:
-    resp_write_error(out, "ERR invalid argument type", 24);
+    resp_write_error(out, "ERR invalid argument type", sizeof("ERR invalid argument type") - 1);
 }
 
 #define BF_GET 0
@@ -2849,7 +2851,7 @@ static void cmd_bitfield(db *d, const resp_value *argv, size_t argc,
         return;
     }
     if (!arg_str(&argv[1], &k, &kl)) {
-        resp_write_error(out, "ERR invalid argument type", 24);
+        resp_write_error(out, "ERR invalid argument type", sizeof("ERR invalid argument type") - 1);
         return;
     }
     if (!storage_key_ok(kl)) {
@@ -2863,7 +2865,7 @@ static void cmd_bitfield(db *d, const resp_value *argv, size_t argc,
         size_t tokl;
         bf_op op;
         if (!arg_str(&argv[i], &tok, &tokl)) {
-            resp_write_error(out, "ERR invalid argument type", 24);
+            resp_write_error(out, "ERR invalid argument type", sizeof("ERR invalid argument type") - 1);
             goto bitfield_fail;
         }
         if (ci_equal(tok, tokl, "OVERFLOW")) {
@@ -3361,7 +3363,7 @@ static void cmd_expire(db *d, const resp_value *argv, size_t argc,
     size_t i;
 
     if (!arg_str(&argv[1], &k, &kl) || !arg_str(&argv[2], &t, &tl)) {
-        resp_write_error(out, "ERR invalid argument type", 24);
+        resp_write_error(out, "ERR invalid argument type", sizeof("ERR invalid argument type") - 1);
         return;
     }
     if (!storage_key_ok(kl)) {
@@ -3376,7 +3378,7 @@ static void cmd_expire(db *d, const resp_value *argv, size_t argc,
         const char *o;
         size_t ol;
         if (!arg_str(&argv[i], &o, &ol)) {
-            resp_write_error(out, "ERR invalid argument type", 24);
+            resp_write_error(out, "ERR invalid argument type", sizeof("ERR invalid argument type") - 1);
             return;
         }
         if (ci_equal(o, ol, "NX") && !nx && !xx) {
@@ -3469,7 +3471,7 @@ static void cmd_ttl(db *d, const resp_value *argv, resp_buf *out, uint64_t now,
     size_t vl;
 
     if (!arg_str(&argv[1], &k, &kl)) {
-        resp_write_error(out, "ERR invalid argument type", 24);
+        resp_write_error(out, "ERR invalid argument type", sizeof("ERR invalid argument type") - 1);
         return;
     }
     if (!db_get(d, k, kl, &v, &vl, now)) {
@@ -3632,7 +3634,7 @@ static int parse_object_scan(const resp_value *argv, size_t argc,
     size_t i;
 
     if (!arg_str(&argv[2], &cur, &curl)) {
-        resp_write_error(out, "ERR invalid argument type", 24);
+        resp_write_error(out, "ERR invalid argument type", sizeof("ERR invalid argument type") - 1);
         return -1;
     }
     if (!parse_cursor(cur, curl, &opt->cursor)) {
@@ -3651,7 +3653,7 @@ static int parse_object_scan(const resp_value *argv, size_t argc,
         }
         if (!arg_str(&argv[i], &name, &namel) ||
             !arg_str(&argv[i + 1], &val, &vall)) {
-            resp_write_error(out, "ERR invalid argument type", 24);
+            resp_write_error(out, "ERR invalid argument type", sizeof("ERR invalid argument type") - 1);
             return -1;
         }
         if (ci_equal(name, namel, "MATCH")) {
@@ -4185,7 +4187,7 @@ static void cmd_pfadd(db *d, const resp_value *argv, size_t argc,
     return;
 
 bad_type:
-    resp_write_error(out, "ERR invalid argument type", 24);
+    resp_write_error(out, "ERR invalid argument type", sizeof("ERR invalid argument type") - 1);
 }
 
 static void cmd_pfcount(db *d, const resp_value *argv, size_t argc,
@@ -4269,7 +4271,7 @@ static void cmd_pfcount(db *d, const resp_value *argv, size_t argc,
     return;
 
 bad_type:
-    resp_write_error(out, "ERR invalid argument type", 24);
+    resp_write_error(out, "ERR invalid argument type", sizeof("ERR invalid argument type") - 1);
 }
 
 static void cmd_pfmerge(db *d, const resp_value *argv, size_t argc,
@@ -4338,7 +4340,7 @@ static void cmd_pfmerge(db *d, const resp_value *argv, size_t argc,
     return;
 
 bad_type:
-    resp_write_error(out, "ERR invalid argument type", 24);
+    resp_write_error(out, "ERR invalid argument type", sizeof("ERR invalid argument type") - 1);
 }
 
 static void cmd_pfdebug(db *d, const resp_value *argv, size_t argc,
@@ -4393,11 +4395,11 @@ static void cmd_pfdebug(db *d, const resp_value *argv, size_t argc,
         resp_write_simple_string(out, "OK", 2);
         return;
     }
-    resp_write_error(out, "ERR Unknown PFDEBUG subcommand", 29);
+    resp_write_error(out, "ERR Unknown PFDEBUG subcommand", sizeof("ERR Unknown PFDEBUG subcommand") - 1);
     return;
 
 bad_type:
-    resp_write_error(out, "ERR invalid argument type", 24);
+    resp_write_error(out, "ERR invalid argument type", sizeof("ERR invalid argument type") - 1);
 }
 
 static void cmd_pfselftest(db *d, const resp_value *argv, size_t argc,
@@ -6177,7 +6179,7 @@ static int geo_parse_opts(const resp_value *argv, size_t argc, size_t start,
     return 0;
 
 bad_type:
-    resp_write_error(out, "ERR invalid argument type", 24);
+    resp_write_error(out, "ERR invalid argument type", sizeof("ERR invalid argument type") - 1);
     return -1;
 }
 
@@ -6467,7 +6469,7 @@ static void cmd_geoadd(db *d, const resp_value *argv, size_t argc,
     return;
 
 bad_type:
-    resp_write_error(out, "ERR invalid argument type", 24);
+    resp_write_error(out, "ERR invalid argument type", sizeof("ERR invalid argument type") - 1);
 }
 
 static void cmd_geopos(db *d, const resp_value *argv, size_t argc,
@@ -6509,7 +6511,7 @@ static void cmd_geopos(db *d, const resp_value *argv, size_t argc,
     return;
 
 bad_type:
-    resp_write_error(out, "ERR invalid argument type", 24);
+    resp_write_error(out, "ERR invalid argument type", sizeof("ERR invalid argument type") - 1);
 }
 
 static void cmd_geohash(db *d, const resp_value *argv, size_t argc,
@@ -6553,7 +6555,7 @@ static void cmd_geohash(db *d, const resp_value *argv, size_t argc,
     return;
 
 bad_type:
-    resp_write_error(out, "ERR invalid argument type", 24);
+    resp_write_error(out, "ERR invalid argument type", sizeof("ERR invalid argument type") - 1);
 }
 
 static void cmd_geodist(db *d, const resp_value *argv, size_t argc,
@@ -6604,7 +6606,7 @@ static void cmd_geodist(db *d, const resp_value *argv, size_t argc,
     return;
 
 bad_type:
-    resp_write_error(out, "ERR invalid argument type", 24);
+    resp_write_error(out, "ERR invalid argument type", sizeof("ERR invalid argument type") - 1);
 }
 
 
@@ -6767,7 +6769,7 @@ static void geo_radius_command(db *d, const resp_value *argv, size_t argc,
     return;
 
 bad_type:
-    resp_write_error(out, "ERR invalid argument type", 24);
+    resp_write_error(out, "ERR invalid argument type", sizeof("ERR invalid argument type") - 1);
 }
 
 static void cmd_georadius(db *d, const resp_value *argv, size_t argc,
@@ -6971,7 +6973,7 @@ static void geo_search_command(db *d, const resp_value *argv, size_t argc,
     return;
 
 bad_type:
-    resp_write_error(out, "ERR invalid argument type", 24);
+    resp_write_error(out, "ERR invalid argument type", sizeof("ERR invalid argument type") - 1);
 }
 
 static void cmd_geosearch(db *d, const resp_value *argv, size_t argc,
@@ -7376,7 +7378,7 @@ static void command_command(session *s, const resp_value *argv, size_t argc,
     return;
 
 bad_type:
-    resp_write_error(out, "ERR invalid argument type", 24);
+    resp_write_error(out, "ERR invalid argument type", sizeof("ERR invalid argument type") - 1);
 }
 
 static void command_client(session *s, const resp_value *argv, size_t argc,
@@ -7590,12 +7592,12 @@ static void command_client(session *s, const resp_value *argv, size_t argc,
         }
         if (ci_equal(mode, mode_len, "YES")) {
             if (s->tracking_mode != 2) {
-                resp_write_error(out, "ERR CLIENT CACHING YES is only valid when tracking is enabled in OPTIN mode.", 77);
+                resp_write_error(out, "ERR CLIENT CACHING YES is only valid when tracking is enabled in OPTIN mode.", sizeof("ERR CLIENT CACHING YES is only valid when tracking is enabled in OPTIN mode.") - 1);
                 return;
             }
         } else if (ci_equal(mode, mode_len, "NO")) {
             if (s->tracking_mode != 3) {
-                resp_write_error(out, "ERR CLIENT CACHING NO is only valid when tracking is enabled in OPTOUT mode.", 77);
+                resp_write_error(out, "ERR CLIENT CACHING NO is only valid when tracking is enabled in OPTOUT mode.", sizeof("ERR CLIENT CACHING NO is only valid when tracking is enabled in OPTOUT mode.") - 1);
                 return;
             }
         } else {
@@ -7855,7 +7857,7 @@ static void command_client(session *s, const resp_value *argv, size_t argc,
     return;
 
 bad_type:
-    resp_write_error(out, "ERR invalid argument type", 24);
+    resp_write_error(out, "ERR invalid argument type", sizeof("ERR invalid argument type") - 1);
 }
 
 static uint64_t command_memory_usage(db *d, const char *key, size_t klen,
@@ -7949,7 +7951,7 @@ static void command_memory(session *s, const resp_value *argv, size_t argc,
     return;
 
 bad_type:
-    resp_write_error(out, "ERR invalid argument type", 24);
+    resp_write_error(out, "ERR invalid argument type", sizeof("ERR invalid argument type") - 1);
 }
 
 static void command_slowlog(session *s, const resp_value *argv, size_t argc,
@@ -8007,7 +8009,7 @@ static void command_slowlog(session *s, const resp_value *argv, size_t argc,
     return;
 
 bad_type:
-    resp_write_error(out, "ERR invalid argument type", 24);
+    resp_write_error(out, "ERR invalid argument type", sizeof("ERR invalid argument type") - 1);
 }
 
 static void command_bgsave(session *s, const resp_value *argv, size_t argc,
@@ -8340,7 +8342,7 @@ syntax:
     resp_write_error(out, ERR_SYNTAX, sizeof(ERR_SYNTAX) - 1);
     return;
 bad_type:
-    resp_write_error(out, "ERR invalid argument type", 24);
+    resp_write_error(out, "ERR invalid argument type", sizeof("ERR invalid argument type") - 1);
 }
 
 static void command_xlen(session *s, const resp_value *argv, size_t argc,
@@ -8363,7 +8365,7 @@ static void command_xlen(session *s, const resp_value *argv, size_t argc,
     resp_write_integer(out, rc == 0 ? 0 : (long long)obj_stream_len(st));
     return;
 bad_type:
-    resp_write_error(out, "ERR invalid argument type", 24);
+    resp_write_error(out, "ERR invalid argument type", sizeof("ERR invalid argument type") - 1);
 }
 
 static void command_xrange_rev(session *s, const resp_value *argv, size_t argc,
@@ -8468,7 +8470,7 @@ static void command_xrange_rev(session *s, const resp_value *argv, size_t argc,
     }
     return;
 bad_type:
-    resp_write_error(out, "ERR invalid argument type", 24);
+    resp_write_error(out, "ERR invalid argument type", sizeof("ERR invalid argument type") - 1);
 }
 
 /* Delete strategy for XDELEX/XACKDEL. */
@@ -8529,7 +8531,7 @@ static void command_xdel(session *s, const resp_value *argv, size_t argc,
     resp_write_integer(out, deleted);
     return;
 bad_type:
-    resp_write_error(out, "ERR invalid argument type", 24);
+    resp_write_error(out, "ERR invalid argument type", sizeof("ERR invalid argument type") - 1);
 }
 
 static void command_xdelex(session *s, const resp_value *argv, size_t argc,
@@ -8615,7 +8617,7 @@ static void command_xdelex(session *s, const resp_value *argv, size_t argc,
 
 bad_type:
     free(ids);
-    resp_write_error(out, "ERR invalid argument type", 24);
+    resp_write_error(out, "ERR invalid argument type", sizeof("ERR invalid argument type") - 1);
 }
 
 static void command_xtrim(session *s, const resp_value *argv, size_t argc,
@@ -8660,7 +8662,7 @@ static void command_xtrim(session *s, const resp_value *argv, size_t argc,
     resp_write_integer(out, (long long)removed);
     return;
 bad_type:
-    resp_write_error(out, "ERR invalid argument type", 24);
+    resp_write_error(out, "ERR invalid argument type", sizeof("ERR invalid argument type") - 1);
 }
 
 static void command_xsetid(session *s, const resp_value *argv, size_t argc,
@@ -8735,7 +8737,7 @@ syntax:
     resp_write_error(out, ERR_SYNTAX, sizeof(ERR_SYNTAX) - 1);
     return;
 bad_type:
-    resp_write_error(out, "ERR invalid argument type", 24);
+    resp_write_error(out, "ERR invalid argument type", sizeof("ERR invalid argument type") - 1);
 }
 
 static int stream_entry_index(const obj_stream *st, uint64_t ms, uint64_t seq,
@@ -8801,7 +8803,7 @@ syntax:
     resp_write_error(out, ERR_SYNTAX, sizeof(ERR_SYNTAX) - 1);
     return;
 bad_type:
-    resp_write_error(out, "ERR invalid argument type", 24);
+    resp_write_error(out, "ERR invalid argument type", sizeof("ERR invalid argument type") - 1);
 }
 
 static void command_xidmprecord(session *s, const resp_value *argv,
@@ -8854,7 +8856,7 @@ static void command_xidmprecord(session *s, const resp_value *argv,
     return;
 
 bad_type:
-    resp_write_error(out, "ERR invalid argument type", 24);
+    resp_write_error(out, "ERR invalid argument type", sizeof("ERR invalid argument type") - 1);
 }
 
 /* ------------------------------------------------------------------ */
@@ -8997,7 +8999,7 @@ ex_syntax:
     resp_write_error(out, ERR_SYNTAX, sizeof(ERR_SYNTAX) - 1);
     return -1;
 ex_bad_arg:
-    resp_write_error(out, "ERR invalid argument type", 24);
+    resp_write_error(out, "ERR invalid argument type", sizeof("ERR invalid argument type") - 1);
     return -1;
 }
 
@@ -9178,7 +9180,7 @@ syntax:
     resp_write_error(out, ERR_SYNTAX, sizeof(ERR_SYNTAX) - 1);
     return;
 bad_type:
-    resp_write_error(out, "ERR invalid argument type", 24);
+    resp_write_error(out, "ERR invalid argument type", sizeof("ERR invalid argument type") - 1);
 }
 
 static void command_xack(session *s, const resp_value *argv, size_t argc,
@@ -9225,7 +9227,7 @@ static void command_xack(session *s, const resp_value *argv, size_t argc,
     resp_write_integer(out, (long long)acked);
     return;
 bad_type:
-    resp_write_error(out, "ERR invalid argument type", 24);
+    resp_write_error(out, "ERR invalid argument type", sizeof("ERR invalid argument type") - 1);
 }
 
 static void command_xackdel(session *s, const resp_value *argv, size_t argc,
@@ -9313,7 +9315,7 @@ static void command_xackdel(session *s, const resp_value *argv, size_t argc,
 
 bad_type:
     free(ids);
-    resp_write_error(out, "ERR invalid argument type", 24);
+    resp_write_error(out, "ERR invalid argument type", sizeof("ERR invalid argument type") - 1);
 }
 
 static void command_xpending(session *s, const resp_value *argv, size_t argc,
@@ -9440,7 +9442,7 @@ syntax:
     resp_write_error(out, ERR_SYNTAX, sizeof(ERR_SYNTAX) - 1);
     return;
 bad_type:
-    resp_write_error(out, "ERR invalid argument type", 24);
+    resp_write_error(out, "ERR invalid argument type", sizeof("ERR invalid argument type") - 1);
 }
 
 static void command_xclaim(session *s, const resp_value *argv, size_t argc,
@@ -9610,7 +9612,7 @@ syntax:
     resp_write_error(out, ERR_SYNTAX, sizeof(ERR_SYNTAX) - 1);
     return;
 bad_type:
-    resp_write_error(out, "ERR invalid argument type", 24);
+    resp_write_error(out, "ERR invalid argument type", sizeof("ERR invalid argument type") - 1);
 }
 
 static void command_xautoclaim(session *s, const resp_value *argv, size_t argc,
@@ -9761,7 +9763,7 @@ syntax:
     resp_write_error(out, ERR_SYNTAX, sizeof(ERR_SYNTAX) - 1);
     return;
 bad_type:
-    resp_write_error(out, "ERR invalid argument type", 24);
+    resp_write_error(out, "ERR invalid argument type", sizeof("ERR invalid argument type") - 1);
 }
 
 static void command_xnack(session *s, const resp_value *argv, size_t argc,
@@ -9934,7 +9936,7 @@ static void command_xnack(session *s, const resp_value *argv, size_t argc,
 
 bad_type:
     free(ids);
-    resp_write_error(out, "ERR invalid argument type", 24);
+    resp_write_error(out, "ERR invalid argument type", sizeof("ERR invalid argument type") - 1);
 }
 
 static void command_xread(session *s, const resp_value *argv, size_t argc,
@@ -10037,7 +10039,7 @@ syntax:
     resp_write_error(out, ERR_SYNTAX, sizeof(ERR_SYNTAX) - 1);
     return;
 bad_type:
-    resp_write_error(out, "ERR invalid argument type", 24);
+    resp_write_error(out, "ERR invalid argument type", sizeof("ERR invalid argument type") - 1);
 }
 
 static void command_xreadgroup(session *s, const resp_value *argv, size_t argc,
@@ -10207,7 +10209,7 @@ syntax:
     resp_write_error(out, ERR_SYNTAX, sizeof(ERR_SYNTAX) - 1);
     return;
 bad_type:
-    resp_write_error(out, "ERR invalid argument type", 24);
+    resp_write_error(out, "ERR invalid argument type", sizeof("ERR invalid argument type") - 1);
 }
 
 static void command_xinfo(session *s, const resp_value *argv, size_t argc,
@@ -10355,7 +10357,7 @@ syntax:
     resp_write_error(out, ERR_SYNTAX, sizeof(ERR_SYNTAX) - 1);
     return;
 bad_type:
-    resp_write_error(out, "ERR invalid argument type", 24);
+    resp_write_error(out, "ERR invalid argument type", sizeof("ERR invalid argument type") - 1);
 }
 
 
@@ -10420,7 +10422,7 @@ static int blocking_first_list(db *d, resp_buf *out,
         obj_list *cur;
         int rc;
         if (!arg_str(&argv[i], &k, &kl)) {
-            resp_write_error(out, "ERR invalid argument type", 24);
+            resp_write_error(out, "ERR invalid argument type", sizeof("ERR invalid argument type") - 1);
             return -1;
         }
         rc = get_list(d, out, k, kl, 0, now_ms, &cur);
@@ -10449,7 +10451,7 @@ static int blocking_first_zset(db *d, resp_buf *out,
         obj_zset *cur;
         int rc;
         if (!arg_str(&argv[i], &k, &kl)) {
-            resp_write_error(out, "ERR invalid argument type", 24);
+            resp_write_error(out, "ERR invalid argument type", sizeof("ERR invalid argument type") - 1);
             return -1;
         }
         rc = get_zset(d, out, k, kl, 0, now_ms, &cur);
@@ -10585,7 +10587,7 @@ static int lmovem_parse_options(const resp_value *argv, size_t argc,
     return 0;
 
 lmovem_bad_arg:
-    resp_write_error(out, "ERR invalid argument type", 24);
+    resp_write_error(out, "ERR invalid argument type", sizeof("ERR invalid argument type") - 1);
     return -1;
 }
 
@@ -10779,7 +10781,7 @@ static void lmovem_execute(db *d, resp_buf *out, const resp_value *argv,
     return;
 
 lmovem_bad_type:
-    resp_write_error(out, "ERR invalid argument type", 24);
+    resp_write_error(out, "ERR invalid argument type", sizeof("ERR invalid argument type") - 1);
 }
 
 /* The blocking-command executor shared by first dispatch and server retry.
@@ -11214,7 +11216,7 @@ static int blocking_pop_try(session *s, const resp_value *argv, size_t argc,
     }
 
 bad_blocking_arg:
-    resp_write_error(out, "ERR invalid argument type", 24);
+    resp_write_error(out, "ERR invalid argument type", sizeof("ERR invalid argument type") - 1);
     return 1;
 }
 
@@ -11889,7 +11891,7 @@ static void command_function(session *s, const resp_value *argv, size_t argc,
     return;
 
 bad:
-    resp_write_error(out, "ERR invalid argument type", 24);
+    resp_write_error(out, "ERR invalid argument type", sizeof("ERR invalid argument type") - 1);
 }
 
 static void command_wait(session *s, const resp_value *argv, size_t argc,
@@ -11906,7 +11908,7 @@ static void command_wait(session *s, const resp_value *argv, size_t argc,
         return;
     }
     if (numreplicas < 0) {
-        resp_write_error(out, "ERR Number of replicas can't be negative", 41);
+        resp_write_error(out, "ERR Number of replicas can't be negative", sizeof("ERR Number of replicas can't be negative") - 1);
         return;
     }
     (void)timeout;
@@ -12036,7 +12038,7 @@ static void command_acl(session *s, const resp_value *argv, size_t argc,
     size_t sl;
     acl_registry *reg = (acl_registry *)s->acl_ctx;
     if (!s->authed) {
-        resp_write_error(out, "NOAUTH Authentication required.", 32);
+        resp_write_error(out, "NOAUTH Authentication required.", sizeof("NOAUTH Authentication required.") - 1);
         return;
     }
     if (argc < 2 || !arg_str(&argv[1], &sub, &sl))
@@ -12046,13 +12048,13 @@ static void command_acl(session *s, const resp_value *argv, size_t argc,
          ci_equal(sub, sl, "GETUSER") || ci_equal(sub, sl, "DELUSER") ||
          ci_equal(sub, sl, "SETUSER") || ci_equal(sub, sl, "SAVE") ||
          ci_equal(sub, sl, "LOAD") || ci_equal(sub, sl, "LOG"))) {
-        resp_write_error(out, "NOPERM ACL administration requires the default user", 49);
+        resp_write_error(out, "NOPERM ACL administration requires the default user", sizeof("NOPERM ACL administration requires the default user") - 1);
         return;
     }
     if (argc >= 2 && (ci_equal(sub, sl, "SETUSER") ||
                       ci_equal(sub, sl, "DELUSER")) &&
         strcmp(s->acl_username, "default") != 0) {
-        resp_write_error(out, "NOPERM ACL configuration is restricted to the default user", 59);
+        resp_write_error(out, "NOPERM ACL configuration is restricted to the default user", sizeof("NOPERM ACL configuration is restricted to the default user") - 1);
         return;
     }
     if (ci_equal(sub, sl, "HELP") && argc == 2) {
@@ -12166,7 +12168,7 @@ static void command_acl(session *s, const resp_value *argv, size_t argc,
     }
     if (ci_equal(sub, sl, "SETUSER") && argc >= 3) {
         const char *un; size_t ul; size_t i;
-        if (!arg_str(&argv[2], &un, &ul) || reg == NULL || acl_setuser(reg, un, ul, argv + 3, argc - 3) != 0) { resp_write_error(out, "ERR ACL SETUSER failed", 23); return; }
+        if (!arg_str(&argv[2], &un, &ul) || reg == NULL || acl_setuser(reg, un, ul, argv + 3, argc - 3) != 0) { resp_write_error(out, "ERR ACL SETUSER failed", sizeof("ERR ACL SETUSER failed") - 1); return; }
         (void)i; resp_write_simple_string(out, "OK", 2);
         return;
     }
@@ -12202,7 +12204,7 @@ static void command_acl(session *s, const resp_value *argv, size_t argc,
         }
         id = cmd_resolve(sub, sl);
         if (id == CMD_ID_UNKNOWN || !acl_authorize(u, id, argv + 3, argc - 3)) {
-            resp_write_error(out, "NOPERM this user has no permissions to run the command or access the key", 69);
+            resp_write_error(out, "NOPERM this user has no permissions to run the command or access the key", sizeof("NOPERM this user has no permissions to run the command or access the key") - 1);
             return;
         }
         resp_write_simple_string(out, "OK", 2);
@@ -12233,7 +12235,7 @@ static void command_acl(session *s, const resp_value *argv, size_t argc,
                 return;
             }
             if (!parse_i64(opt, opl, &count)) {
-                resp_write_error(out, "ERR ACL LOG count must be a non-negative integer", 46);
+                resp_write_error(out, "ERR ACL LOG count must be a non-negative integer", sizeof("ERR ACL LOG count must be a non-negative integer") - 1);
                 return;
             }
             if (count < 0) count = 0;
@@ -12245,7 +12247,7 @@ static void command_acl(session *s, const resp_value *argv, size_t argc,
     return;
 
 bad:
-    resp_write_error(out, "ERR invalid argument type", 24);
+    resp_write_error(out, "ERR invalid argument type", sizeof("ERR invalid argument type") - 1);
 }
 
 static void command_latency(session *s, const resp_value *argv, size_t argc,
@@ -12329,7 +12331,7 @@ static void command_latency(session *s, const resp_value *argv, size_t argc,
     return;
 
 bad:
-    resp_write_error(out, "ERR invalid argument type", 24);
+    resp_write_error(out, "ERR invalid argument type", sizeof("ERR invalid argument type") - 1);
 }
 
 static void command_module(session *s, const resp_value *argv, size_t argc,
@@ -12374,7 +12376,7 @@ static void command_module(session *s, const resp_value *argv, size_t argc,
     return;
 
 bad:
-    resp_write_error(out, "ERR invalid argument type", 24);
+    resp_write_error(out, "ERR invalid argument type", sizeof("ERR invalid argument type") - 1);
 }
 
 static void command_sentinel(session *s, const resp_value *argv, size_t argc,
@@ -12498,7 +12500,7 @@ static void command_sentinel(session *s, const resp_value *argv, size_t argc,
     return;
 
 bad:
-    resp_write_error(out, "ERR invalid argument type", 24);
+    resp_write_error(out, "ERR invalid argument type", sizeof("ERR invalid argument type") - 1);
 }
 
 static void command_debug(session *s, const resp_value *argv, size_t argc,
@@ -12567,7 +12569,7 @@ static void command_debug(session *s, const resp_value *argv, size_t argc,
     return;
 
 bad:
-    resp_write_error(out, "ERR invalid argument type", 24);
+    resp_write_error(out, "ERR invalid argument type", sizeof("ERR invalid argument type") - 1);
 }
 
 static int hash_parse_field_list(const resp_value *argv, size_t argc,
@@ -12709,7 +12711,7 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
     const char *name;
     size_t nlen;
     if (!arg_str(&argv[0], &name, &nlen)) {
-        resp_write_error(out, "ERR invalid command name", 23);
+        resp_write_error(out, "ERR invalid command name", sizeof("ERR invalid command name") - 1);
         return;
     }
     const uint16_t cmd_id = cmd_resolve(name, nlen);
@@ -13010,7 +13012,7 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
             }
             if (end < start || rc == 0) { resp_write_array_header(out, 0); return; }
             n = end - start + 1;
-            if (n > SIZE_MAX) { resp_write_error(out, "ERR range too large", 20); return; }
+            if (n > SIZE_MAX) { resp_write_error(out, "ERR range too large", sizeof("ERR range too large") - 1); return; }
             resp_write_array_header(out, (size_t)n);
             for (i = 0; i < n; i++) {
                 const char *v; size_t vl;
@@ -16802,7 +16804,7 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
         int own_idx = -1;
         memset(flushed, 0, sizeof(flushed));
         if (!d->cluster_enabled) {
-            resp_write_error(out, "ERR This instance has cluster support disabled", 44);
+            resp_write_error(out, "ERR This instance has cluster support disabled", sizeof("ERR This instance has cluster support disabled") - 1);
             return;
         }
         if (argc >= 3) {
@@ -16835,7 +16837,7 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
             if (!arg_str(&argv[i], &a, &al) || !arg_str(&argv[i + 1], &b, &bl) ||
                 !parse_i64(a, al, &first) || !parse_i64(b, bl, &last) ||
                 first < 0 || last >= 16384 || first > last) {
-                resp_write_error(out, "ERR Invalid slot range", 23);
+                resp_write_error(out, "ERR Invalid slot range", sizeof("ERR Invalid slot range") - 1);
                 return;
             }
             for (; first <= last; first++) {
@@ -16880,7 +16882,7 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
         size_t tl;
         memset(selected, 0, sizeof(selected));
         if (!d->cluster_enabled) {
-            resp_write_error(out, "ERR This instance has cluster support disabled", 44);
+            resp_write_error(out, "ERR This instance has cluster support disabled", sizeof("ERR This instance has cluster support disabled") - 1);
             return;
         }
         if (argc < 5 || !arg_str(&argv[1], &tok, &tl) ||
@@ -16907,7 +16909,7 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
             if (!arg_str(&argv[p], &a, &al) || !arg_str(&argv[p + 1], &b, &bl) ||
                 !parse_i64(a, al, &first) || !parse_i64(b, bl, &last) ||
                 first < 0 || last >= 16384 || first > last) {
-                resp_write_error(out, "ERR Invalid slot range", 23);
+                resp_write_error(out, "ERR Invalid slot range", sizeof("ERR Invalid slot range") - 1);
                 return;
             }
             for (; first <= last; first++) {
@@ -21366,7 +21368,7 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
                     if (!arg_str(&argv[3], &minv, &minvl) ||
                         !arg_str(&argv[4], &maxv, &maxvl)) {
                         obj_zset_free(result);
-                        resp_write_error(out, "ERR invalid argument type", 24);
+                        resp_write_error(out, "ERR invalid argument type", sizeof("ERR invalid argument type") - 1);
                         return;
                     }
                     if (!parse_bound(minv, minvl, &spec.min, &spec.minex) ||
@@ -21425,7 +21427,7 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
                     if (!arg_str(&argv[3], &minv, &minvl) ||
                         !arg_str(&argv[4], &maxv, &maxvl)) {
                         obj_zset_free(result);
-                        resp_write_error(out, "ERR invalid argument type", 24);
+                        resp_write_error(out, "ERR invalid argument type", sizeof("ERR invalid argument type") - 1);
                         return;
                     }
                     if (!parse_lex_bound(minv, minvl, &spec.min) ||
@@ -21485,7 +21487,7 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
                     if (!arg_str(&argv[3], &sv, &svl) ||
                         !arg_str(&argv[4], &ev, &evl)) {
                         obj_zset_free(result);
-                        resp_write_error(out, "ERR invalid argument type", 24);
+                        resp_write_error(out, "ERR invalid argument type", sizeof("ERR invalid argument type") - 1);
                         return;
                     }
                     if (!parse_i64(sv, svl, &start) ||
@@ -21600,7 +21602,7 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
             }
             if (!arg_str(&argv[i + 1], &opt, &optl) ||
                 !arg_str(&argv[i + 2], &cv, &cvl)) {
-                resp_write_error(out, "ERR invalid argument type", 24);
+                resp_write_error(out, "ERR invalid argument type", sizeof("ERR invalid argument type") - 1);
                 return;
             }
             if (!ci_equal(opt, optl, "COUNT")) {
@@ -22071,7 +22073,7 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
                 resp_write_array_header(out, 0);
             return;
         }
-        resp_write_error(out, "ERR Unknown PUBSUB subcommand", 27);
+        resp_write_error(out, "ERR Unknown PUBSUB subcommand", sizeof("ERR Unknown PUBSUB subcommand") - 1);
         return;
     }
 
@@ -22282,8 +22284,7 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
             s->request_shutdown(s->shutdown_ctx);
             return;
         }
-        resp_write_error(out, "ERR shutdown not supported in this context",
-                         44);
+        resp_write_error(out, "ERR shutdown not supported in this context", sizeof("ERR shutdown not supported in this context") - 1);
         return;
     }
 
@@ -22293,8 +22294,7 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
             return;
         }
         if (s->sync_hook == NULL) {
-            resp_write_error(out, "ERR sync not supported in this context",
-                             41);
+            resp_write_error(out, "ERR sync not supported in this context", sizeof("ERR sync not supported in this context") - 1);
             return;
         }
         /* the server writes the $<len> snapshot frame itself and marks the
@@ -22330,8 +22330,7 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
             }
         }
         if (s->psync_hook == NULL) {
-            resp_write_error(out, "ERR psync not supported in this context",
-                             42);
+            resp_write_error(out, "ERR psync not supported in this context", sizeof("ERR psync not supported in this context") - 1);
             return;
         }
         {
@@ -22381,7 +22380,7 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
             hostbuf[hl] = '\0';
             if (s->replicaof_hook(s->replicaof_ctx, hostbuf, (uint16_t)p) !=
                 0) {
-                resp_write_error(out, "ERR could not connect to master", 29);
+                resp_write_error(out, "ERR could not connect to master", sizeof("ERR could not connect to master") - 1);
                 return;
             }
         }
@@ -22484,7 +22483,7 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
                         return;
                     }
                     if (first < 0 || last >= 16384 || first > last) {
-                        resp_write_error(out, "ERR Invalid slot range", 23);
+                        resp_write_error(out, "ERR Invalid slot range", sizeof("ERR Invalid slot range") - 1);
                         return;
                     }
                     /* The writer needs the exact array length; rebuild via a
@@ -22655,7 +22654,7 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
                 if (cluster_nodes_render(d, &lines) != 0) {
                     resp_buf_free(&lines);
                     resp_write_error(out,
-                                     "ERR node table render failed", 27);
+                                     "ERR node table render failed", sizeof("ERR node table render failed") - 1);
                     return;
                 }
                 resp_write_bulk(out, lines.data, lines.len);
@@ -22921,7 +22920,7 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
                 {
                     char hostbuf[64];
                     if (ipl >= sizeof(hostbuf)) {
-                        resp_write_error(out, "ERR invalid ip", 16);
+                        resp_write_error(out, "ERR invalid ip", sizeof("ERR invalid ip") - 1);
                         return;
                     }
                     memcpy(hostbuf, ip, ipl);
@@ -22930,7 +22929,7 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
                         s->cluster_meet(s->cluster_ctx, hostbuf,
                                         (uint16_t)port) != 0) {
                         resp_write_error(out,
-                                         "ERR cluster meet failed", 22);
+                                         "ERR cluster meet failed", sizeof("ERR cluster meet failed") - 1);
                         return;
                     }
                 }
@@ -23345,7 +23344,7 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
     return;
 
 bad_type:
-    resp_write_error(out, "ERR invalid argument type", 24);
+    resp_write_error(out, "ERR invalid argument type", sizeof("ERR invalid argument type") - 1);
 }
 
 /* ------------------------------------------------------------------ */
@@ -23788,7 +23787,7 @@ static int queue_validate(session *s, const resp_value *argv, size_t argc,
     const cmd_entry *ce;
     if (!arg_str(&argv[0], &name, &nlen)) {
         s->multi_error = 1;
-        resp_write_error(out, "ERR invalid command name", 23);
+        resp_write_error(out, "ERR invalid command name", sizeof("ERR invalid command name") - 1);
         return -1;
     }
     cmd_id = cmd_resolve(name, nlen);
@@ -24047,7 +24046,7 @@ static void session_execute_at_raw(session *s, const resp_value *argv,
         acl_log_event((acl_registry *)s->acl_ctx, "command",
                       s->acl_username, strlen(s->acl_username), name, nlen,
                       pal_wall_ms());
-        resp_write_error(out, "NOPERM this user has no permissions to run the command or access the key", 69);
+        resp_write_error(out, "NOPERM this user has no permissions to run the command or access the key", sizeof("NOPERM this user has no permissions to run the command or access the key") - 1);
         return;
     }
 
@@ -24240,7 +24239,7 @@ static void session_execute_at_raw(session *s, const resp_value *argv,
     return;
 
 bad_type:
-    resp_write_error(out, "ERR invalid argument type", 24);
+    resp_write_error(out, "ERR invalid argument type", sizeof("ERR invalid argument type") - 1);
 }
 
 void session_execute_at(session *s, const resp_value *argv, size_t argc,

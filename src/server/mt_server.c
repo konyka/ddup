@@ -1524,7 +1524,7 @@ static void mt_pubsub_stats_execute(worker *w, mt_task *t)
             resp_write_integer(&t->reply, count);
         }
     } else {
-        resp_write_error(&t->reply, "ERR Unknown PUBSUB subcommand", 27);
+        resp_write_error(&t->reply, "ERR Unknown PUBSUB subcommand", sizeof("ERR Unknown PUBSUB subcommand") - 1);
     }
     arena_destroy(&ar);
 }
@@ -1740,7 +1740,7 @@ static void mt_agg_finish(server *srv, void *conn, mt_conn_state *st,
                                        agg->raw, agg->rawlen);
         if (agg->err)
             resp_write_error(&fin->reply,
-                             "ERR command failed on a worker", 29);
+                             "ERR command failed on a worker", sizeof("ERR command failed on a worker") - 1);
         else if (agg->cmd == CMD_INFO)
             command_info_render(server_db_at(agg->home->srv, agg->db_index),
                                 server_repl_info(
@@ -2937,7 +2937,7 @@ static void mt_client_kill_exec(worker *w, const resp_value *argv, size_t argc,
     char filter[128];
     size_t i, n = 0;
     if (argc < 3) {
-        resp_write_error(out, "ERR wrong number of arguments for 'client|kill' command", 52);
+        resp_write_error(out, "ERR wrong number of arguments for 'client|kill' command", sizeof("ERR wrong number of arguments for 'client|kill' command") - 1);
         return;
     }
     for (i = 2; i < argc; i++) {
@@ -4902,12 +4902,11 @@ static void mt_route_replicaof(worker *home, const resp_value *argv,
     hostbuf[argv[1].len] = '\0';
     if (!mt_parse_ll(argv[2].str, argv[2].len, &port) || port <= 0 ||
         port > 65535) {
-        resp_write_error(out, "ERR value is not an integer or out of range",
-                         44);
+        resp_write_error(out, "ERR value is not an integer or out of range", sizeof("ERR value is not an integer or out of range") - 1);
         return;
     }
     if (mt_server_replicaof(ms, hostbuf, (uint16_t)port) != 0) {
-        resp_write_error(out, "ERR could not connect to master", 29);
+        resp_write_error(out, "ERR could not connect to master", sizeof("ERR could not connect to master") - 1);
         return;
     }
     resp_write_simple_string(out, "OK", 2);
@@ -5045,7 +5044,7 @@ static void mt_exec_task(worker *w, mt_task *t)
             } else {
                 t->nwatch_out = 0;
                 t->watch_failed = 1;
-                resp_write_error(&t->reply, "ERR out of memory", 18);
+                resp_write_error(&t->reply, "ERR out of memory", sizeof("ERR out of memory") - 1);
             }
         }
         if (!t->watch_failed)
