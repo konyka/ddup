@@ -5253,6 +5253,9 @@ int server_run_once(server *s, int timeout_ms)
     int nev;
     int i;
 
+    if (s == NULL)
+        return -1;
+
     s->io.loops++;
     server_process_blocked(s);
     timeout_ms = server_blocked_wait_ms(s, timeout_ms);

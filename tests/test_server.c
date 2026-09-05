@@ -159,6 +159,7 @@ static void test_persistence_paths_reject_truncation(void)
     server_set_slowlog_threshold(NULL, 1);
     server_set_save_interval(NULL, 1);
     DD_CHECK_EQ_INT(0, server_shutdown_requested(NULL));
+    DD_CHECK_EQ_INT(-1, server_run_once(NULL, 0));
     server_graceful_stop(NULL);
     server_close_listener(NULL);
     DD_CHECK_EQ_INT(-1, server_adopt_fd(NULL, PAL_SOCKET_INVALID));

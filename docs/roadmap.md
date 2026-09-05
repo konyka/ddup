@@ -912,3 +912,5 @@
     输出 API 拒绝 NULL/无效 fd，错误路径不再二次解引用空连接（Phase 292）
   - [x] Server 基础查询边界：端口/backend、缓冲池/计数器、数据库选择和
     I/O 计数查询对 NULL/越界输入返回确定值，避免路由控制面崩溃（Phase 293）
+  - [x] Server 事件循环入口边界：`server_run_once(NULL, ...)` fail-closed，
+    与监听、连接和配置 API 保持一致的生命周期契约（Phase 294）
