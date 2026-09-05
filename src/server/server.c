@@ -2295,6 +2295,11 @@ static int repl_link_connect(server *srv)
             conn_free(c);
             return -1;
         }
+        if (pal_tls_set_peer_name(c->tls, srv->repl.master_host) != 0 &&
+            srv->repl_tls_ctx != NULL) {
+            conn_free(c);
+            return -1;
+        }
         c->tls_client = 1;
         c->tls_handshaking = 1;
     }
@@ -4330,6 +4335,10 @@ static bus_conn *bus_connect(server *s, const char *ip, uint16_t bus_port)
             bus_conn_free(s, bc);
             return NULL;
         }
+        if (pal_tls_set_peer_name(bc->tls, ip) != 0) {
+            bus_conn_free(s, bc);
+            return NULL;
+        }
         bc->tls_client = 1;
         bc->tls_handshaking = 1;
         bc->want_write = 1;
@@ -5494,6 +5503,11 @@ service_io:
                         int hs;
                         c->tls = pal_tls_new(s->repl_tls_ctx, c->fd);
                         if (c->tls == NULL) {
+                            conn_close(s, idx);
+                            continue;
+                        }
+                        if (pal_tls_set_peer_name(c->tls,
+                                                  s->repl.master_host) != 0) {
                             conn_close(s, idx);
                             continue;
                         }

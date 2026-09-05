@@ -39,6 +39,10 @@ Redis cluster bus 发布补充复核：原生 `PUBLISH` 与 `PUBLISHSHARD` 在�
 长度之和精确覆盖帧尾。截断或尾随 payload 被丢弃，未知消息类型仍保持 Redis
 兼容的容忍忽略行为。
 
+TLS 复制与 cluster bus 补充复核：在配置 CA 时，outbound TLS 客户端除验证
+证书链外还将握手绑定到 `REPLICAOF` master host 或 cluster peer 地址；不匹配
+的受信任证书不能建立链接。未配置 CA 的显式兼容模式仍维持原有不校验证书语义。
+
 集群持久化/总线槽位文本的输入复核：槽位解析按有界 token 扫描，拒绝非数字、
 缺失范围端点和溢出十进制值；错误 token 不会阻断后续合法槽位恢复，且不会导致
 加载或 gossip 处理线程进入死循环。该防御不改变合法 Redis cluster node slot

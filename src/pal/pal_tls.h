@@ -30,6 +30,9 @@ pal_tls_ctx *pal_tls_ctx_new_client(const char *ca_file);
 void pal_tls_ctx_free(pal_tls_ctx *ctx);
 
 pal_tls *pal_tls_new(pal_tls_ctx *ctx, pal_socket_t fd);
+/* Bind the client handshake to the expected DNS name or address. Must be
+ * called before pal_tls_connect_handshake_nb(); returns 0 on success. */
+int pal_tls_set_peer_name(pal_tls *t, const char *name);
 /* Blocking server-side handshake. 0 on success, -1 on error. */
 int pal_tls_accept_handshake(pal_tls *t);
 /* Non-blocking handshake step (fd must be non-blocking):

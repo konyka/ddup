@@ -297,14 +297,16 @@ static void test_tls_replication_master_link(void)
     DD_CHECK(master != NULL && replica != NULL);
     if (master == NULL || replica == NULL)
         goto cleanup;
-    DD_CHECK_EQ_INT(0, server_enable_tls(master, "127.0.0.1", 0,
+    DD_CHECK_EQ_INT(0, server_enable_tls(master, "localhost", 0,
                                          DDUP_TEST_CERT_DIR "/cert.pem",
                                          DDUP_TEST_CERT_DIR "/key.pem"));
     tls_port = server_tls_port(master);
     DD_CHECK(tls_port != 0);
     DD_CHECK_EQ_INT(0, server_set_replica_tls(replica, 1,
                                                DDUP_TEST_CERT_DIR "/cert.pem"));
-    DD_CHECK_EQ_INT(0, server_replicaof(replica, "127.0.0.1", tls_port));
+    /* The trusted test certificate has CN=localhost, so this also exercises
+     * the replica client's authenticated peer-name binding. */
+    DD_CHECK_EQ_INT(0, server_replicaof(replica, "localhost", tls_port));
 
     for (i = 0; i < 1000; i++) {
         server_run_once(master, 1);
@@ -343,6 +345,81 @@ cleanup:
         server_destroy(replica);
     if (master != NULL)
         server_destroy(master);
+    pal_socket_cleanup();
+}
+
+static void test_tls_client_rejects_wrong_peer_name(void)
+{
+    server *s = NULL;
+    pal_socket_t fd = PAL_SOCKET_INVALID;
+    pal_tls_ctx *ctx = NULL;
+    pal_tls *tls = NULL;
+    uint64_t deadline;
+    int hs = 0;
+
+    DD_CHECK_EQ_INT(0, pal_socket_init());
+    s = server_create("127.0.0.1", 0);
+    DD_CHECK(s != NULL);
+    if (s == NULL)
+        goto cleanup;
+    DD_CHECK_EQ_INT(0, server_enable_tls(s, "127.0.0.1", 0,
+                                         DDUP_TEST_CERT_DIR "/cert.pem",
+                                         DDUP_TEST_CERT_DIR "/key.pem"));
+    ctx = pal_tls_ctx_new_client(DDUP_TEST_CERT_DIR "/cert.pem");
+    DD_CHECK(ctx != NULL);
+    fd = pal_tcp_connect("127.0.0.1", server_tls_port(s));
+    DD_CHECK(fd != PAL_SOCKET_INVALID);
+    if (ctx == NULL || fd == PAL_SOCKET_INVALID)
+        goto cleanup;
+    DD_CHECK_EQ_INT(0, pal_set_nonblocking(fd, 1));
+    tls = pal_tls_new(ctx, fd);
+    DD_CHECK(tls != NULL);
+    if (tls == NULL)
+        goto cleanup;
+    DD_CHECK_EQ_INT(-1, pal_tls_set_peer_name(tls, NULL));
+    DD_CHECK_EQ_INT(-1, pal_tls_set_peer_name(tls, ""));
+    DD_CHECK_EQ_INT(0, pal_tls_set_peer_name(tls, "127.0.0.1"));
+    DD_CHECK_EQ_INT(0, pal_tls_set_peer_name(tls, "not-localhost"));
+    deadline = pal_now_ms() + 10000;
+    while (pal_now_ms() < deadline) {
+        hs = pal_tls_connect_handshake_nb(tls);
+        if (hs != 0)
+            break;
+        server_run_once(s, 1);
+    }
+    DD_CHECK_EQ_INT(-1, hs);
+
+    pal_tls_free(tls);
+    tls = NULL;
+    pal_close(fd);
+    fd = PAL_SOCKET_INVALID;
+    fd = pal_tcp_connect("127.0.0.1", server_tls_port(s));
+    DD_CHECK(fd != PAL_SOCKET_INVALID);
+    if (fd == PAL_SOCKET_INVALID)
+        goto cleanup;
+    DD_CHECK_EQ_INT(0, pal_set_nonblocking(fd, 1));
+    tls = pal_tls_new(ctx, fd);
+    DD_CHECK(tls != NULL);
+    if (tls == NULL)
+        goto cleanup;
+    DD_CHECK_EQ_INT(0, pal_tls_set_peer_name(tls, "localhost"));
+    hs = 0;
+    deadline = pal_now_ms() + 10000;
+    while (pal_now_ms() < deadline) {
+        hs = pal_tls_connect_handshake_nb(tls);
+        if (hs != 0)
+            break;
+        server_run_once(s, 1);
+    }
+    DD_CHECK_EQ_INT(1, hs);
+
+cleanup:
+    pal_tls_free(tls);
+    if (fd != PAL_SOCKET_INVALID)
+        pal_close(fd);
+    pal_tls_ctx_free(ctx);
+    if (s != NULL)
+        server_destroy(s);
     pal_socket_cleanup();
 }
 
@@ -631,6 +708,7 @@ int main(void)
     DD_RUN(test_tls_init_is_thread_safe);
     DD_RUN(test_tls_server_roundtrip);
     DD_RUN(test_tls_replication_master_link);
+    DD_RUN(test_tls_client_rejects_wrong_peer_name);
     DD_RUN(test_mt_tls_roundtrip);
     DD_RUN(test_cluster_tls_configuration);
     DD_RUN(test_cluster_bus_tls_roundtrip);

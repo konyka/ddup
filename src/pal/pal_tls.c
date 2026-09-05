@@ -17,7 +17,9 @@
 
 #if DDUP_OS_WINDOWS
 #include <windows.h>
+#include <ws2tcpip.h>
 #else
+#include <arpa/inet.h>
 #include <pthread.h>
 #endif
 
@@ -145,6 +147,22 @@ pal_tls *pal_tls_new(pal_tls_ctx *ctx, pal_socket_t fd)
     return t;
 }
 
+int pal_tls_set_peer_name(pal_tls *t, const char *name)
+{
+    unsigned char addr[16];
+
+    if (t == NULL || t->ssl == NULL || name == NULL || name[0] == '\0')
+        return -1;
+    if (inet_pton(AF_INET, name, addr) == 1 ||
+        inet_pton(AF_INET6, name, addr) == 1) {
+        X509_VERIFY_PARAM *param = SSL_get0_param(t->ssl);
+        return param != NULL && X509_VERIFY_PARAM_set1_ip_asc(param, name) == 1
+                   ? 0
+                   : -1;
+    }
+    return SSL_set1_host(t->ssl, name) == 1 ? 0 : -1;
+}
+
 int pal_tls_accept_handshake(pal_tls *t)
 {
     if (t == NULL || t->ssl == NULL)
@@ -257,6 +275,13 @@ pal_tls *pal_tls_new(pal_tls_ctx *ctx, pal_socket_t fd)
     (void)ctx;
     (void)fd;
     return NULL;
+}
+
+int pal_tls_set_peer_name(pal_tls *t, const char *name)
+{
+    (void)t;
+    (void)name;
+    return -1;
 }
 
 int pal_tls_accept_handshake(pal_tls *t)

@@ -963,3 +963,5 @@
     状态（Phase 317）
   - [x] Redis 原生发布总线帧完整性：PUBLISH/PUBLISHSHARD 精确校验 payload
     长度与 gossip 计数，拒绝截断或尾随字节后才进入本地投递（Phase 318）
+  - [x] TLS 客户端端点绑定：复制 master-link 与 cluster bus outbound 握手
+    在证书链校验之外绑定目标主机名/IP，错误名称 fail-closed（Phase 319）
