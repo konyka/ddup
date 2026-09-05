@@ -29,6 +29,11 @@ python3 tools/audit_redis_compat.py \
 错误文本长度漂移造成截断或越界读取；`HIMPORT SET` 字段数错误已由命令测试
 锁定完整 wire 响应。
 
+复制协议补充复核：PSYNC 服务端在计算 backlog 可恢复范围和生成 `+CONTINUE`
+前验证环形缓冲元数据（容量、起点、长度及绝对偏移关系）。检测到内部损坏时
+直接拒绝握手，不写入响应缓冲，也不增加 replica 计数；合法 FULLRESYNC 与
+partial-resync 语义保持不变。
+
 集群持久化/总线槽位文本的输入复核：槽位解析按有界 token 扫描，拒绝非数字、
 缺失范围端点和溢出十进制值；错误 token 不会阻断后续合法槽位恢复，且不会导致
 加载或 gossip 处理线程进入死循环。该防御不改变合法 Redis cluster node slot

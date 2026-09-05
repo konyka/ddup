@@ -185,6 +185,7 @@ static void test_replica_full_cycle_iocp(void);
 static void test_replica_reconnect_resync(void);
 static void test_replica_reconnect_resync_iocp(void);
 static void test_psync_continue_reserve_failure(void);
+static void test_psync_corrupt_backlog_rejected(void);
 
 int main(void)
 {
@@ -208,12 +209,19 @@ int main(void)
     DD_RUN(test_replica_reconnect_resync);
     DD_RUN(test_replica_reconnect_resync_iocp);
     DD_RUN(test_psync_continue_reserve_failure);
+    DD_RUN(test_psync_corrupt_backlog_rejected);
     return DD_TEST_SUMMARY();
 }
 
 static void test_psync_continue_reserve_failure(void)
 {
     DD_CHECK_EQ_INT(0, server_test_psync_continue_reserve_failure());
+}
+
+static void test_psync_corrupt_backlog_rejected(void)
+{
+    /* offset < len would underflow the partial-resync lower bound. */
+    DD_CHECK_EQ_INT(0, server_test_psync_corrupt_backlog_rejected());
 }
 
 /* ------------------------------------------------------------------ */

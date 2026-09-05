@@ -1750,10 +1750,16 @@ static int srv_write_continue(server *srv, resp_buf *out, uint64_t offset,
 {
     char hdr[96];
     size_t backlog_len, frame_len, copied = 0, start = out->len;
-    int hl = snprintf(hdr, sizeof(hdr), "+CONTINUE %s\r\n", srv->repl.replid);
+    int hl;
 
-    if (hl < 0 || (size_t)hl >= sizeof(hdr) ||
+    if (srv == NULL || out == NULL || srv->backlog.buf == NULL ||
+        srv->backlog.cap == 0 || srv->backlog.start >= srv->backlog.cap ||
+        srv->backlog.len > srv->backlog.cap ||
+        srv->backlog.len > srv->backlog.offset ||
         offset > srv->backlog.offset)
+        return -1;
+    hl = snprintf(hdr, sizeof(hdr), "+CONTINUE %s\r\n", srv->repl.replid);
+    if (hl < 0 || (size_t)hl >= sizeof(hdr))
         return -1;
     backlog_len = (size_t)(srv->backlog.offset - offset);
     if ((uint64_t)backlog_len != srv->backlog.offset - offset ||
@@ -1844,6 +1850,45 @@ int server_test_psync_continue_reserve_failure(void)
     return 0;
 }
 
+int server_test_psync_corrupt_backlog_rejected(void)
+{
+    server *srv = (server *)calloc(1, sizeof(*srv));
+    conn c;
+    session sess;
+    int rc;
+
+    if (srv == NULL)
+        return -1;
+    if (repl_backlog_init(&srv->backlog, 16) != 0) {
+        free(srv);
+        return -1;
+    }
+    memcpy(srv->repl.replid, "0123456789abcdef0123456789abcdef01234567", 41);
+    repl_backlog_append(&srv->backlog, "abc", 3);
+    /* Simulate corrupted metadata that would make offset - len underflow. */
+    srv->backlog.offset = 2;
+    srv->backlog.len = 3;
+    memset(&c, 0, sizeof(c));
+    memset(&sess, 0, sizeof(sess));
+    c.srv = srv;
+    c.sess = &sess;
+    sess.owner = &c;
+    resp_buf_init(&c.out);
+
+    rc = srv_psync(srv, &sess, srv->repl.replid, 40, 0);
+    if (rc == 0 || c.is_replica != 0 || srv->repl.connected_slaves != 0 ||
+        srv->backlog_used != 0 || c.out.len != 0) {
+        resp_buf_free(&c.out);
+        repl_backlog_free(&srv->backlog);
+        free(srv);
+        return -1;
+    }
+    resp_buf_free(&c.out);
+    repl_backlog_free(&srv->backlog);
+    free(srv);
+    return 0;
+}
+
 static int srv_psync(void *ctx, session *sess, const char *replid,
                      size_t replid_len, long long offset)
 {
@@ -1851,6 +1896,16 @@ static int srv_psync(void *ctx, session *sess, const char *replid,
     conn *c = (conn *)sess->owner;
     char hdr[96];
     int hl;
+
+    /* A damaged ring must never enter either partial-resync arithmetic or
+     * snapshot promotion; fail closed before touching the connection. */
+    if (srv == NULL || c == NULL)
+        return -2;
+    if (srv->backlog.buf != NULL &&
+        (srv->backlog.cap == 0 || srv->backlog.start >= srv->backlog.cap ||
+         srv->backlog.len > srv->backlog.cap ||
+         srv->backlog.len > srv->backlog.offset))
+        return -2;
 
     /* partial resync: same history and the resume point is still covered
      * by the backlog ring */

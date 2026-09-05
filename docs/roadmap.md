@@ -958,3 +958,6 @@
     sender/slaveof 身份，非法 master ID 不再留下半初始化节点（Phase 315）
   - [x] Redis 原生 cluster bus API 边界：构帧和解析入口拒绝 NULL db/output/
     frame/非零长度 payload，避免管理与连接错误路径崩溃（Phase 316）
+  - [x] PSYNC backlog 元数据一致性：服务端在 partial/full resync 前校验环形
+    缓冲区边界与 `len <= offset`，损坏状态 fail-closed 且不提升 replica
+    状态（Phase 317）

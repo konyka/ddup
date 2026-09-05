@@ -301,6 +301,8 @@ const io_counters *server_io_counters(server *s);
 /* Focused invariant seams used by length-integrity tests. */
 int server_test_pubsub_rejected_subscribe(void);
 int server_test_psync_continue_reserve_failure(void);
+/* Reject PSYNC output when backlog metadata is internally inconsistent. */
+int server_test_psync_corrupt_backlog_rejected(void);
 void server_test_set_aof_write_fn(
     server *s,
     ptrdiff_t (*write_fn)(pal_file *f, const void *buf, size_t n));
