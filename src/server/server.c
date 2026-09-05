@@ -359,6 +359,7 @@ static void srv_spublish_bus(void *ctx, const char *ch, size_t chlen,
 static void cluster_broadcast_fail(server *s);
 static int bus_publish_frame_status(int protocol, const char *frame,
                                     uint32_t totlen);
+static int bus_try_publish(server *s, const char *frame, uint32_t totlen);
 
 /* ------------------------------------------------------------------ */
 /* proactor dispatch (Windows IOCP / Linux io_uring op-mode share one  */
@@ -2010,6 +2011,7 @@ int server_test_publish_frame_validation(void)
 {
     char redis[REDBUS_HDR_LEN + 9];
     char rcm2[19];
+    server s;
     memset(redis, 0, sizeof(redis));
     memcpy(redis, "RCmb", 4);
     redis[12] = 0;
@@ -2029,6 +2031,10 @@ int server_test_publish_frame_validation(void)
     rcm2[4] = (char)(sizeof(rcm2) & 0xff);
     if (bus_publish_frame_status(SERVER_BUS_PROTOCOL_DDUP, rcm2,
                                  (uint32_t)sizeof(rcm2)) != -1)
+        return -1;
+    memset(&s, 0, sizeof(s));
+    rcm2[8] = CLUSTER_MSG_PING;
+    if (bus_try_publish(&s, rcm2, (uint32_t)sizeof(rcm2)) != 0)
         return -1;
     return 0;
 }
@@ -4477,7 +4483,28 @@ static int bus_publish_frame_status(int protocol, const char *frame,
 
 static int bus_try_publish(server *s, const char *frame, uint32_t totlen)
 {
-    int status = bus_publish_frame_status(s->bus_protocol, frame, totlen);
+    int status;
+
+    /* Leave every non-publish frame, including a damaged envelope, to the
+     * topology codec so its established disconnect semantics are preserved. */
+    if (s->bus_protocol == SERVER_BUS_PROTOCOL_REDIS) {
+        uint16_t type;
+        if (totlen < 14)
+            return 0;
+        type = (uint16_t)(((uint16_t)(uint8_t)frame[12] << 8) |
+                          (uint16_t)(uint8_t)frame[13]);
+        if (type != REDBUS_TYPE_PUBLISH && type != REDBUS_TYPE_PUBLISHSHARD)
+            return 0;
+    } else {
+        uint16_t type;
+        if (totlen < 10)
+            return 0;
+        type = (uint16_t)((uint16_t)(uint8_t)frame[8] |
+                          ((uint16_t)(uint8_t)frame[9] << 8));
+        if (type != CLUSTER_MSG_PUBLISH)
+            return 0;
+    }
+    status = bus_publish_frame_status(s->bus_protocol, frame, totlen);
 
     if (status <= 0)
         return status < 0 ? 1 : 0; /* malformed frames are dropped */
