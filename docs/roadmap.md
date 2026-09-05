@@ -926,3 +926,5 @@
     malformed topology 穿透 gossip/FAIL/PONG 合并流程（Phase 299）
   - [x] 集群槽位文本解析边界：无效 token、缺失范围端点与 32 位十进制溢出
     均被跳过，解析游标始终单调推进，后续合法槽位仍可恢复（Phase 300）
+  - [x] 集群 nodes.conf 数值字段边界：ping/pong/config epoch 使用长度有界
+    的 64 位十进制解析，非法或溢出元数据原子拒绝且不发布半初始化节点（Phase 301）

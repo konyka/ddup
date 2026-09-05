@@ -30,6 +30,32 @@ static int parse_u16_token(const char *s, uint16_t *out)
     return 0;
 }
 
+/* Parse one space-delimited unsigned field without reading beyond end. */
+static int parse_u64_field(const char **pp, const char *end, uint64_t *out)
+{
+    const char *p;
+    uint64_t value = 0;
+
+    if (pp == NULL || *pp == NULL || end == NULL || out == NULL ||
+        *pp >= end)
+        return -1;
+    p = *pp;
+    while (p < end && *p != ' ') {
+        unsigned digit;
+        if (*p < '0' || *p > '9')
+            return -1;
+        digit = (unsigned)(*p++ - '0');
+        if (value > (UINT64_MAX - digit) / 10u)
+            return -1;
+        value = value * 10u + digit;
+    }
+    if (p == *pp)
+        return -1;
+    *pp = p;
+    *out = value;
+    return 0;
+}
+
 static int cluster_id_valid(const char *id)
 {
     size_t i;
@@ -605,7 +631,7 @@ int cluster_nodes_parse_line(struct db *d, const char *line, size_t len)
 {
     char id[41], ip[64], flags[64], slots[512], addr[128], master[41];
     uint16_t port = 0, bus = 0;
-    unsigned long long ping, pong, epoch;
+    uint64_t ping, pong, epoch;
     cluster_node *n;
     int used;
 
@@ -661,13 +687,16 @@ int cluster_nodes_parse_line(struct db *d, const char *line, size_t len)
         /* ping pong epoch link */
         while (p < end && *p == ' ')
             p++;
-        ping = strtoull(p, (char **)&p, 10);
+        if (parse_u64_field(&p, end, &ping) != 0)
+            return -1;
         while (p < end && *p == ' ')
             p++;
-        pong = strtoull(p, (char **)&p, 10);
+        if (parse_u64_field(&p, end, &pong) != 0)
+            return -1;
         while (p < end && *p == ' ')
             p++;
-        epoch = strtoull(p, (char **)&p, 10);
+        if (parse_u64_field(&p, end, &epoch) != 0)
+            return -1;
         while (p < end && *p == ' ')
             p++;
         s = p;

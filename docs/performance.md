@@ -2128,3 +2128,11 @@ parse loop. Decimal range ends are accumulated in `uint32_t` with a pre-multiply
 overflow check; valid ranges retain the existing bitmap-only, allocation-free
 write path. Out-of-range starts and malformed/overflowing tokens are discarded,
 while an end above 16383 retains the historical clamp for a valid in-range start.
+
+### Phase 301: bounded cluster node metadata parsing
+
+The three fixed 64-bit node metadata fields are parsed directly from the
+length-delimited input span, eliminating libc token scans that could inspect
+bytes beyond a persisted-line boundary. Successful parsing remains allocation
+free and linear in the line size. Invalid or overflowing fields return before
+the node-table insertion, so recovery does not retain partially trusted state.

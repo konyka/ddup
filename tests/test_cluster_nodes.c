@@ -211,6 +211,21 @@ static void test_parse_rejects_out_of_range_ports(void)
     db_destroy(&d);
 }
 
+static void test_parse_rejects_malformed_node_metadata(void)
+{
+    db d;
+    const char line[] =
+        "0123456789012345678901234567890123456789 "
+        "127.0.0.1:7000@17000 master - invalid 0 1 connected 0";
+
+    db_init(&d);
+    cluster_nodes_init(&d);
+    /* A malformed fixed-field number must not publish a partial node. */
+    DD_CHECK_EQ_INT(-1, cluster_nodes_parse_line(&d, line, sizeof(line) - 1));
+    DD_CHECK_EQ_INT(0, d.nnodes);
+    db_destroy(&d);
+}
+
 static void test_node_api_rejects_null_inputs(void)
 {
     db d;
@@ -399,6 +414,7 @@ int main(void)
     DD_RUN(test_render_reserve_failure_leaves_output_unchanged);
     DD_RUN(test_parse_rejects_unrepresentable_address);
     DD_RUN(test_parse_rejects_out_of_range_ports);
+    DD_RUN(test_parse_rejects_malformed_node_metadata);
     DD_RUN(test_node_api_rejects_null_inputs);
     DD_RUN(test_slot_api_rejects_null_inputs);
     DD_RUN(test_slots_parse_skips_malformed_tokens);

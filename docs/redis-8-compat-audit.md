@@ -34,6 +34,10 @@ python3 tools/audit_redis_compat.py \
 加载或 gossip 处理线程进入死循环。该防御不改变合法 Redis cluster node slot
 范围的渲染和解析语义。
 
+nodes.conf 复核：ping、pong 和 config epoch 以输入行的明确长度为界进行严格
+64 位十进制解析；非数字或溢出字段会在节点表更新前被拒绝。这保留有效 Redis
+节点行的兼容性，同时消除无 NUL 终止持久化数据上的越界 libc 解析风险。
+
 PAL 可靠性补充：io_uring pbuf/SQPOLL 状态和测试注入入口对空 ring 统一
 fail-closed，避免管理/诊断调用破坏服务进程。
 
