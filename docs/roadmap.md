@@ -974,3 +974,5 @@
   - [x] io_uring SEND_ZC notification 统一清理：live/zombie completion 共用
     fixed buffer 释放与发送状态复位 helper，避免关闭后通知路径生命周期分叉
     （Phase 323）
+  - [x] MIGRATE 公共 API 输入边界：拒绝空目标主机、空 key 数组与非零数量
+    组合，保留零 key no-op，避免迁移路径解引用无效请求（Phase 324）

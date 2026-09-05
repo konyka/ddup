@@ -37,6 +37,8 @@
   不增加分配、锁或系统调用，非法控制面输入在冷分支中忽略。
 - SEND_ZC notification 清理 helper 仅复用既有 fixed-buffer 释放和状态写入，
   不增加 CQE 数量、系统调用或连接热路径分配；仅关闭/通知冷路径执行额外保护。
+- MIGRATE 输入检查仅在调用入口执行一次；合法多 key 迁移仍使用单次 idx 分配、
+  pipeline 和既有序列化路径，空 key no-op 不触发网络连接。
 - 复制控制 API 仅在公共入口增加 NULL 判断；正常 PSYNC/backlog 数据路径不增加
   分配、锁或额外系统调用。
 - server 配置入口保护仅作用于无效调用；有效 TLS/AOF/快照/运行周期路径保持

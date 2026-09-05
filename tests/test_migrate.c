@@ -120,6 +120,18 @@ static void test_migrate_string(void)
     free2(a, b);
 }
 
+static void test_migrate_api_rejects_null_key_array(void)
+{
+    db d;
+    db_init(&d);
+    DD_CHECK_EQ_INT(MIGRATE_IOERR,
+                    migrate_run(&d, "127.0.0.1", 1, NULL, 1, 1, 0, 0, 0));
+    DD_CHECK_EQ_INT(MIGRATE_IOERR,
+                    migrate_run(NULL, "127.0.0.1", 1, NULL, 0, 1, 0, 0,
+                                0));
+    db_destroy(&d);
+}
+
 static void test_migrate_hash_and_zset(void)
 {
     server *a, *b;
@@ -383,6 +395,7 @@ int main(void)
 {
     DD_CHECK_EQ_INT(0, migrate_test_output_failures());
     DD_RUN(test_migrate_string);
+    DD_RUN(test_migrate_api_rejects_null_key_array);
     DD_RUN(test_migrate_hash_and_zset);
     DD_RUN(test_migrate_nokey_and_dbid);
     DD_RUN(test_migrate_copy);

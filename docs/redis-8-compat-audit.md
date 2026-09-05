@@ -58,6 +58,10 @@ io_uring 发送可靠性补充复核：SEND_ZC 的 fixed buffer 和 notification
 由统一 helper 在 live/zombie completion 中释放和复位；连接关闭后仍等待最终
 CQE，再回收连接对象，避免内核仍持有 buffer 时发生复用或泄漏。
 
+迁移控制面补充复核：`MIGRATE` 内部 API 对目标 host、key 数组和数量组合做
+fail-closed 校验；`nkeys == 0` 仍返回 no-op，合法的 `KEYS`/多 key 迁移协议
+和目标确认后删除语义不变。
+
 集群持久化/总线槽位文本的输入复核：槽位解析按有界 token 扫描，拒绝非数字、
 缺失范围端点和溢出十进制值；错误 token 不会阻断后续合法槽位恢复，且不会导致
 加载或 gossip 处理线程进入死循环。该防御不改变合法 Redis cluster node slot
