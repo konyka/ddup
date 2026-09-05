@@ -158,6 +158,12 @@ static void test_persistence_paths_reject_truncation(void)
     server_load_nodes(NULL, NULL);
     server_set_slowlog_threshold(NULL, 1);
     server_set_save_interval(NULL, 1);
+    server_set_node_timeout(NULL, 1);
+    server_set_bus_protocol(NULL, SERVER_BUS_PROTOCOL_REDIS);
+    DD_CHECK_EQ_INT(-1, server_set_cluster_tls(NULL, 0, NULL, NULL, NULL));
+#ifdef DDUP_TESTING
+    server_test_cluster_nodes_save(NULL);
+#endif
     DD_CHECK_EQ_INT(0, server_shutdown_requested(NULL));
     DD_CHECK_EQ_INT(-1, server_run_once(NULL, 0));
     server_graceful_stop(NULL);

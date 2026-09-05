@@ -914,3 +914,5 @@
     I/O 计数查询对 NULL/越界输入返回确定值，避免路由控制面崩溃（Phase 293）
   - [x] Server 事件循环入口边界：`server_run_once(NULL, ...)` fail-closed，
     与监听、连接和配置 API 保持一致的生命周期契约（Phase 294）
+  - [x] 集群控制 setter 边界：节点超时、总线协议、TLS 配置和 nodes.conf
+    测试保存入口拒绝 NULL server，避免集群控制面解引用崩溃（Phase 295）

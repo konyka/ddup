@@ -59,6 +59,9 @@ fail-closed；输出失败路径不会再访问空连接。
 事件循环补充：`server_run_once` 对空 server 统一返回失败，防止生命周期错误
 穿透到过期处理、路由和后端 I/O 调度。
 
+集群控制补充：节点超时、总线协议、集群 TLS 和 nodes.conf 保存辅助入口对空
+server fail-closed，避免无效管理调用破坏集群状态。
+
 历史缺口集中在三块，当前 Redis 8.10.1 命令级审计已清零：
 
 1. Redis 8.8 新增 `ARRAY` 类型（18 个 `AR*` 命令）。

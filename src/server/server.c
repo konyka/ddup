@@ -4062,13 +4062,16 @@ void server_set_nodes_path(server *s, const char *path)
 
 void server_set_node_timeout(server *s, uint64_t ms)
 {
+    if (s == NULL)
+        return;
     s->node_timeout_ms = ms;
     s->db.cluster_node_timeout_ms = ms;
 }
 
 void server_set_bus_protocol(server *s, int proto)
 {
-    s->bus_protocol = proto;
+    if (s != NULL)
+        s->bus_protocol = proto;
 }
 
 int server_set_cluster_tls(server *s, int enabled, const char *cert_file,
@@ -4646,7 +4649,8 @@ static void cluster_nodes_save(server *s)
 #ifdef DDUP_TESTING
 void server_test_cluster_nodes_save(server *s)
 {
-    cluster_nodes_save(s);
+    if (s != NULL)
+        cluster_nodes_save(s);
 }
 #endif
 
