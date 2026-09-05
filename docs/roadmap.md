@@ -902,3 +902,5 @@
   - [x] PAL 文件 I/O 生命周期边界：文件打开、读写、flush、seek、sync、存在性、
     rename 和 unlink 入口拒绝 NULL/空路径/无效句柄，避免持久化控制面崩溃
     （Phase 288）
+  - [x] PAL 文件 I/O 边界回归扩展：测试覆盖空路径、空文件句柄和 NULL 数据
+    组合，确保跨平台实现契约一致（Phase 289）
