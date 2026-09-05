@@ -961,3 +961,5 @@
   - [x] PSYNC backlog 元数据一致性：服务端在 partial/full resync 前校验环形
     缓冲区边界与 `len <= offset`，损坏状态 fail-closed 且不提升 replica
     状态（Phase 317）
+  - [x] Redis 原生发布总线帧完整性：PUBLISH/PUBLISHSHARD 精确校验 payload
+    长度与 gossip 计数，拒绝截断或尾随字节后才进入本地投递（Phase 318）

@@ -378,15 +378,23 @@ static void test_update_fail_and_tolerance(void)
     DD_CHECK(n->flags & CLUSTER_NODE_FAIL);
     DD_CHECK(!(n->flags & CLUSTER_NODE_PFAIL));
 
-    /* PUBLISH and unknown types are tolerated (ignored, no reply) */
+    /* Well-formed PUBLISH/PUBLISHSHARD and unknown types are tolerated
+     * (ignored by this topology codec, no reply). */
+    memset(frame, 0, REDBUS_HDR_LEN + 8);
+    memcpy(frame, "RCmb", 4);
+    put32be(frame + 4, REDBUS_HDR_LEN + 8);
     put16be(frame + 12, REDBUS_TYPE_PUBLISH);
     reply.len = 0;
     DD_CHECK_EQ_INT(0,
-                    redbus_handle_frame(&d, frame, REDBUS_HDR_LEN + 40,
+                    redbus_handle_frame(&d, frame, REDBUS_HDR_LEN + 8,
                                         &reply, T0, NULL));
-    put16be(frame + 12, 10);
+    put16be(frame + 12, REDBUS_TYPE_PUBLISHSHARD);
     DD_CHECK_EQ_INT(0,
-                    redbus_handle_frame(&d, frame, REDBUS_HDR_LEN + 40,
+                    redbus_handle_frame(&d, frame, REDBUS_HDR_LEN + 8,
+                                        &reply, T0, NULL));
+    put16be(frame + 12, 99);
+    DD_CHECK_EQ_INT(0,
+                    redbus_handle_frame(&d, frame, REDBUS_HDR_LEN + 8,
                                         &reply, T0, NULL));
 
     resp_buf_free(&reply);
@@ -528,6 +536,36 @@ static void test_redbus_api_rejects_invalid_inputs(void)
     db_destroy(&d);
 }
 
+static void test_publish_payload_is_exact(void)
+{
+    db d;
+    resp_buf frame, reply;
+    cluster_node *me;
+
+    db_init(&d);
+    cluster_nodes_init(&d);
+    me = cluster_node_add(&d, ID1);
+    DD_CHECK(me != NULL);
+    if (me != NULL)
+        me->flags = CLUSTER_NODE_MYSELF | CLUSTER_NODE_MASTER;
+    resp_buf_init(&frame);
+    resp_buf_init(&reply);
+
+    DD_CHECK_EQ_INT(0, redbus_build_publish(&d, REDBUS_TYPE_PUBLISH,
+                                             "chan", 4, "msg", 3, &frame));
+    DD_CHECK_EQ_INT(0, redbus_handle_frame(&d, frame.data, frame.len, &reply,
+                                            T0, NULL));
+    DD_CHECK_EQ_INT(0, resp_buf_reserve(&frame, 1));
+    frame.data[frame.len++] = 'x';
+    put32be(frame.data + 4, (uint32_t)frame.len);
+    DD_CHECK_EQ_INT(-1, redbus_handle_frame(&d, frame.data, frame.len, &reply,
+                                             T0, NULL));
+
+    resp_buf_free(&reply);
+    resp_buf_free(&frame);
+    db_destroy(&d);
+}
+
 int main(void)
 {
     DD_RUN(test_fixture_decode);
@@ -540,5 +578,6 @@ int main(void)
     DD_RUN(test_empty_myip_auto_discovery);
     DD_RUN(test_build_failures_leave_output_unchanged);
     DD_RUN(test_redbus_api_rejects_invalid_inputs);
+    DD_RUN(test_publish_payload_is_exact);
     return DD_TEST_SUMMARY();
 }

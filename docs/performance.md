@@ -24,6 +24,8 @@
   热路径分支之外的开销。
 - PSYNC backlog 一致性检查仅在复制握手和 CONTINUE 构帧入口读取固定元数据；
   合法 partial-resync 不增加分配、复制或系统调用，损坏状态在冷错误分支中拒绝。
+- Redis cluster PUBLISH/PUBLISHSHARD 的长度验证仅做固定头部读取与 O(1)
+  加法比较；合法发布帧仍以零分配方式交给既有本地订阅者投递路径。
 - 复制控制 API 仅在公共入口增加 NULL 判断；正常 PSYNC/backlog 数据路径不增加
   分配、锁或额外系统调用。
 - server 配置入口保护仅作用于无效调用；有效 TLS/AOF/快照/运行周期路径保持

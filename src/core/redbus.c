@@ -497,6 +497,22 @@ int redbus_handle_frame(struct db *d, const char *frame, size_t len,
         size_t payload = type == REDBUS_TYPE_FAIL ? 40 : 0;
         if (count != 0 || len != REDBUS_HDR_LEN + payload)
             return -1;
+    } else if (type == REDBUS_TYPE_PUBLISH ||
+               type == REDBUS_TYPE_PUBLISHSHARD) {
+        const char *payload;
+        uint32_t chlen, mlen;
+        size_t content_len;
+
+        if (count != 0 || len < REDBUS_HDR_LEN + 8)
+            return -1;
+        payload = frame + REDBUS_HDR_LEN;
+        chlen = get32be(payload);
+        mlen = get32be(payload + 4);
+        content_len = (size_t)chlen + (size_t)mlen;
+        if (content_len < (size_t)chlen ||
+            content_len > len - REDBUS_HDR_LEN - 8 ||
+            len != REDBUS_HDR_LEN + 8 + content_len)
+            return -1;
     }
 
     if (type == REDBUS_TYPE_UPDATE) {

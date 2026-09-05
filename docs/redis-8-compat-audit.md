@@ -34,6 +34,11 @@ python3 tools/audit_redis_compat.py \
 直接拒绝握手，不写入响应缓冲，也不增加 replica 计数；合法 FULLRESYNC 与
 partial-resync 语义保持不变。
 
+Redis cluster bus 发布补充复核：原生 `PUBLISH` 与 `PUBLISHSHARD` 在被服务
+端投递前必须携带零 gossip、完整的 8 字节长度字段，并且 channel/message
+长度之和精确覆盖帧尾。截断或尾随 payload 被丢弃，未知消息类型仍保持 Redis
+兼容的容忍忽略行为。
+
 集群持久化/总线槽位文本的输入复核：槽位解析按有界 token 扫描，拒绝非数字、
 缺失范围端点和溢出十进制值；错误 token 不会阻断后续合法槽位恢复，且不会导致
 加载或 gossip 处理线程进入死循环。该防御不改变合法 Redis cluster node slot
