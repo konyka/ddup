@@ -195,6 +195,14 @@ static void test_persistence_paths_reject_truncation(void)
     }
 }
 
+static void test_send_zc_error_releases_notification_reference(void)
+{
+#ifdef DDUP_TESTING
+    /* An error CQE may arrive without a later SEND_ZC notification. */
+    DD_CHECK_EQ_INT(0, server_test_send_zc_error_cleanup());
+#endif
+}
+
 static void test_cluster_identity_rejects_truncation(void)
 {
     server *s;
@@ -1652,6 +1660,7 @@ static void run_all_tests(void)
     DD_RUN(test_request_limit_fragmentation);
     DD_RUN(test_iouring_multishot_complete_at_limit);
     DD_RUN(test_readiness_complete_at_limit);
+    DD_RUN(test_send_zc_error_releases_notification_reference);
     DD_RUN(test_proactor_destroy_with_open_connection);
     DD_RUN(test_pubsub_over_socket);
     DD_RUN(test_psubscribe_over_socket);

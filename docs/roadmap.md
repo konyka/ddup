@@ -936,3 +936,5 @@
     `sbuf_acquire` 持有的 buffer id，避免提前释放导致内存生命周期违规（Phase 304）
   - [x] 集群 gossip 地址边界：预检与实际解码统一拒绝不可表示的地址长度，防止
     恶意 gossip `ipl` 写越界固定地址缓冲区（Phase 305）
+  - [x] SEND_ZC 错误 CQE 生命周期：终止发送先保留通知挂起状态完成 pending-op
+    计数，再释放固定槽位并清除标志，避免僵尸连接引用泄漏（Phase 306）

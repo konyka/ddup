@@ -2163,3 +2163,10 @@ path, while premature release or forged IDs fail before kernel submission.
 Gossip preflight and decode now reject address lengths that cannot fit the fixed
 64-byte address buffer. The check is a cold, constant-time branch per gossip
 entry; valid frames retain the existing bounded copy and merge path.
+
+### Phase 306: SEND_ZC terminal-error cleanup
+
+The proactor send error path now uses one helper to release the fixed slot,
+decrement the notification-backed pending operation, and clear state in a
+defined order. This adds no work to successful completions; the helper is only
+entered on a terminal error CQE and prevents zombie-connection leaks.

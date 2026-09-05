@@ -139,6 +139,7 @@ static void srv_monitor_emit_session(void *ctx, session *source,
                                      const resp_value *argv, size_t argc);
 static int server_token_eq(const char *s, size_t len, const char *word);
 static int server_parse_ll(const resp_value *v, long long *out);
+static void conn_send_zc_error(server *s, conn *c);
 static int srv_backup_command(void *ctx, const resp_value *argv, size_t argc,
                               resp_buf *out);
 static void srv_hotkeys_record(server *srv, const session *source,
@@ -4652,6 +4653,20 @@ void server_test_cluster_nodes_save(server *s)
     if (s != NULL)
         cluster_nodes_save(s);
 }
+
+int server_test_send_zc_error_cleanup(void)
+{
+    server s;
+    conn c;
+    memset(&s, 0, sizeof(s));
+    memset(&c, 0, sizeof(c));
+    c.send_fixed_id = 3;
+    c.send_zc_notif_pending = 1;
+    c.pending_ops = 1;
+    conn_send_zc_error(&s, &c);
+    return c.send_fixed_id == -1 && c.pending_ops == 0 &&
+           c.send_zc_notif_pending == 0 && c.send_outstanding == 0 ? 0 : -1;
+}
 #endif
 
 /* Parse and execute all complete commands in the conn recv buffer and
@@ -4795,6 +4810,24 @@ static void kick_flush(server *s, conn *c)
         if (idx < s->nconns)
             conn_close(s, idx);
     }
+}
+
+/* Release SEND_ZC resources on a terminal error CQE. */
+static void conn_send_zc_error(server *s, conn *c)
+{
+    int zc_pending;
+    if (c == NULL)
+        return;
+    zc_pending = c->send_zc_notif_pending;
+    if (c->send_fixed_id >= 0) {
+        if (s != NULL && s->iou != NULL)
+            pal_iouring_sbuf_release(s->iou, c->send_fixed_id);
+        c->send_fixed_id = -1;
+    }
+    c->send_outstanding = 0;
+    if (zc_pending && c->pending_ops > 0)
+        c->pending_ops--;
+    c->send_zc_notif_pending = 0;
 }
 
 /* Arm/rearm the multishot recv of a live conn (io_uring ms mode only);
@@ -5107,14 +5140,7 @@ static int server_run_once_proactor(server *s, int timeout_ms)
             }
         } else if (ev->op == PAL_IOCP_SEND) {
             if (ev->bytes < 0) {
-                if (c->send_fixed_id >= 0) {
-                    pal_iouring_sbuf_release(s->iou, c->send_fixed_id);
-                    c->send_fixed_id = -1;
-                    c->send_zc_notif_pending = 0;
-                }
-                c->send_outstanding = 0;
-                if (c->send_zc_notif_pending)
-                    c->pending_ops--;
+                conn_send_zc_error(s, c);
                 conn_close(s, idx);
                 continue;
             }
