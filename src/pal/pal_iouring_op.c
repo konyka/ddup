@@ -466,7 +466,7 @@ pal_socket_t pal_iouring_listen(pal_iouring *r, const char *host,
                                 uint16_t port, uint16_t *bound_port,
                                 void *userdata)
 {
-    if (r == NULL || host == NULL)
+    if (r == NULL)
         return PAL_SOCKET_INVALID;
     pal_socket_t fd = pal_tcp_listen(host, port, 511, bound_port);
     if (fd == PAL_SOCKET_INVALID)

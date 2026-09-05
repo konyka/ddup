@@ -26,7 +26,7 @@ static void test_iouring_null_api_inputs(void)
     int bid = 7;
     pal_iouring_event ev;
 
-    DD_CHECK(pal_iouring_listen(NULL, NULL, 0, NULL, NULL) ==
+    DD_CHECK(pal_iouring_listen(NULL, "127.0.0.1", 0, NULL, NULL) ==
              PAL_SOCKET_INVALID);
     DD_CHECK_EQ_INT(-1, pal_iouring_accept_post(NULL, PAL_SOCKET_INVALID,
                                                 NULL));
