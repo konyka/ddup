@@ -43,6 +43,10 @@ TLS 复制与 cluster bus 补充复核：在配置 CA 时，outbound TLS 客户�
 证书链外还将握手绑定到 `REPLICAOF` master host 或 cluster peer 地址；不匹配
 的受信任证书不能建立链接。未配置 CA 的显式兼容模式仍维持原有不校验证书语义。
 
+Cluster bus 服务端补充复核：在 topology codec 之前的发布快速投递路径同样
+验证协议 magic、内嵌总长度、Redis 原生零 gossip 和 payload 精确边界，确保
+带尾随数据或伪造长度的发布帧不会被本地订阅者接收。
+
 集群持久化/总线槽位文本的输入复核：槽位解析按有界 token 扫描，拒绝非数字、
 缺失范围端点和溢出十进制值；错误 token 不会阻断后续合法槽位恢复，且不会导致
 加载或 gossip 处理线程进入死循环。该防御不改变合法 Redis cluster node slot

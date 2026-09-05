@@ -357,6 +357,8 @@ static int srv_cluster_meet(void *ctx, const char *ip, uint16_t port);
 static void srv_spublish_bus(void *ctx, const char *ch, size_t chlen,
                              const char *msg, size_t mlen);
 static void cluster_broadcast_fail(server *s);
+static int bus_publish_frame_status(int protocol, const char *frame,
+                                    uint32_t totlen);
 
 /* ------------------------------------------------------------------ */
 /* proactor dispatch (Windows IOCP / Linux io_uring op-mode share one  */
@@ -2002,6 +2004,33 @@ int server_test_config_appendfsync(const char *value, resp_buf *out)
     s.aof_fsync_mode = AOF_FSYNC_EVERYSEC;
     return srv_config_command(&s, "GET", 3, "appendfsync", 11, value,
                               value == NULL ? 0 : strlen(value), out);
+}
+
+int server_test_publish_frame_validation(void)
+{
+    char redis[REDBUS_HDR_LEN + 9];
+    char rcm2[19];
+    memset(redis, 0, sizeof(redis));
+    memcpy(redis, "RCmb", 4);
+    redis[12] = 0;
+    redis[13] = REDBUS_TYPE_PUBLISH;
+    redis[REDBUS_HDR_LEN + 8] = 'x';
+    redis[4] = (char)((sizeof(redis) >> 24) & 0xff);
+    redis[5] = (char)((sizeof(redis) >> 16) & 0xff);
+    redis[6] = (char)((sizeof(redis) >> 8) & 0xff);
+    redis[7] = (char)(sizeof(redis) & 0xff);
+    if (bus_publish_frame_status(SERVER_BUS_PROTOCOL_REDIS, redis,
+                                 (uint32_t)sizeof(redis)) != -1)
+        return -1;
+    memset(rcm2, 0, sizeof(rcm2));
+    memcpy(rcm2, "RCM2", 4);
+    rcm2[8] = CLUSTER_MSG_PUBLISH;
+    rcm2[18] = 'x';
+    rcm2[4] = (char)(sizeof(rcm2) & 0xff);
+    if (bus_publish_frame_status(SERVER_BUS_PROTOCOL_DDUP, rcm2,
+                                 (uint32_t)sizeof(rcm2)) != -1)
+        return -1;
+    return 0;
 }
 #endif
 
@@ -4379,19 +4408,32 @@ static void srv_spublish_bus(void *ctx, const char *ch, size_t chlen,
  * (delivered, or dropped as malformed), 0 when it is not a publish
  * frame. redbus type 4 feeds regular subscribers ("message"), redbus
  * type 10 and RCM2 CLUSTER_MSG_PUBLISH feed shard ones ("smessage"). */
-static int bus_try_publish(server *s, const char *frame, uint32_t totlen)
+/* 1 = valid publish, 0 = another message type, -1 = malformed publish or
+ * invalid envelope. Kept allocation-free because every bus frame crosses it. */
+static int bus_publish_frame_status(int protocol, const char *frame,
+                                    uint32_t totlen)
 {
-    if (s->bus_protocol == SERVER_BUS_PROTOCOL_REDIS) {
+    if (frame == NULL)
+        return -1;
+    if (protocol == SERVER_BUS_PROTOCOL_REDIS) {
         uint16_t wt;
         uint32_t cl, ml;
         if (totlen < 14)
-            return 0;
+            return -1;
+        if (memcmp(frame, "RCmb", 4) != 0 ||
+            ((uint32_t)(uint8_t)frame[4] << 24 |
+             (uint32_t)(uint8_t)frame[5] << 16 |
+             (uint32_t)(uint8_t)frame[6] << 8 |
+             (uint32_t)(uint8_t)frame[7]) != totlen)
+            return -1;
         wt = (uint16_t)(((uint16_t)(uint8_t)frame[12] << 8) |
                         (uint16_t)(uint8_t)frame[13]);
         if (wt != REDBUS_TYPE_PUBLISH && wt != REDBUS_TYPE_PUBLISHSHARD)
             return 0;
         if (totlen < REDBUS_HDR_LEN + 8)
-            return 1; /* malformed: drop */
+            return -1;
+        if (frame[14] != 0 || frame[15] != 0)
+            return -1;
         cl = ((uint32_t)(uint8_t)frame[REDBUS_HDR_LEN] << 24) |
              ((uint32_t)(uint8_t)frame[REDBUS_HDR_LEN + 1] << 16) |
              ((uint32_t)(uint8_t)frame[REDBUS_HDR_LEN + 2] << 8) |
@@ -4400,8 +4442,56 @@ static int bus_try_publish(server *s, const char *frame, uint32_t totlen)
              ((uint32_t)(uint8_t)frame[REDBUS_HDR_LEN + 5] << 16) |
              ((uint32_t)(uint8_t)frame[REDBUS_HDR_LEN + 6] << 8) |
              (uint32_t)(uint8_t)frame[REDBUS_HDR_LEN + 7];
-        if ((uint64_t)REDBUS_HDR_LEN + 8 + cl + ml > totlen)
-            return 1; /* malformed: drop */
+        if ((uint64_t)REDBUS_HDR_LEN + 8 + cl + ml != totlen)
+            return -1;
+        return 1;
+    }
+    {
+        uint16_t wt;
+        uint32_t cl, ml;
+        if (totlen < 10 || memcmp(frame, "RCM2", 4) != 0 ||
+            ((uint32_t)(uint8_t)frame[4] |
+             (uint32_t)(uint8_t)frame[5] << 8 |
+             (uint32_t)(uint8_t)frame[6] << 16 |
+             (uint32_t)(uint8_t)frame[7] << 24) != totlen)
+            return -1;
+        wt = (uint16_t)((uint16_t)(uint8_t)frame[8] |
+                        ((uint16_t)(uint8_t)frame[9] << 8));
+        if (wt != CLUSTER_MSG_PUBLISH)
+            return 0;
+        if (totlen < 18)
+            return -1;
+        cl = (uint32_t)(uint8_t)frame[10] |
+             ((uint32_t)(uint8_t)frame[11] << 8) |
+             ((uint32_t)(uint8_t)frame[12] << 16) |
+             ((uint32_t)(uint8_t)frame[13] << 24);
+        if ((uint64_t)18 + cl > totlen)
+            return -1;
+        ml = (uint32_t)(uint8_t)frame[14 + cl] |
+             ((uint32_t)(uint8_t)frame[15 + cl] << 8) |
+             ((uint32_t)(uint8_t)frame[16 + cl] << 16) |
+             ((uint32_t)(uint8_t)frame[17 + cl] << 24);
+        return (uint64_t)18 + cl + ml == totlen ? 1 : -1;
+    }
+}
+
+static int bus_try_publish(server *s, const char *frame, uint32_t totlen)
+{
+    int status = bus_publish_frame_status(s->bus_protocol, frame, totlen);
+
+    if (status <= 0)
+        return status < 0 ? 1 : 0; /* malformed frames are dropped */
+    if (s->bus_protocol == SERVER_BUS_PROTOCOL_REDIS) {
+        uint16_t wt = (uint16_t)(((uint16_t)(uint8_t)frame[12] << 8) |
+                                 (uint16_t)(uint8_t)frame[13]);
+        uint32_t cl = ((uint32_t)(uint8_t)frame[REDBUS_HDR_LEN] << 24) |
+                      ((uint32_t)(uint8_t)frame[REDBUS_HDR_LEN + 1] << 16) |
+                      ((uint32_t)(uint8_t)frame[REDBUS_HDR_LEN + 2] << 8) |
+                      (uint32_t)(uint8_t)frame[REDBUS_HDR_LEN + 3];
+        uint32_t ml = ((uint32_t)(uint8_t)frame[REDBUS_HDR_LEN + 4] << 24) |
+                      ((uint32_t)(uint8_t)frame[REDBUS_HDR_LEN + 5] << 16) |
+                      ((uint32_t)(uint8_t)frame[REDBUS_HDR_LEN + 6] << 8) |
+                      (uint32_t)(uint8_t)frame[REDBUS_HDR_LEN + 7];
         if (wt == REDBUS_TYPE_PUBLISHSHARD)
             srv_spublish(s, frame + REDBUS_HDR_LEN + 8, cl,
                          frame + REDBUS_HDR_LEN + 8 + cl, ml);
@@ -4411,25 +4501,14 @@ static int bus_try_publish(server *s, const char *frame, uint32_t totlen)
         return 1;
     }
     {
-        uint16_t wt = (uint16_t)((uint16_t)(uint8_t)frame[8] |
-                                 ((uint16_t)(uint8_t)frame[9] << 8));
-        uint32_t cl, ml;
-        if (wt != CLUSTER_MSG_PUBLISH)
-            return 0;
-        if (totlen < 18)
-            return 1; /* malformed: drop */
-        cl = (uint32_t)(uint8_t)frame[10] |
+        uint32_t cl = (uint32_t)(uint8_t)frame[10] |
              ((uint32_t)(uint8_t)frame[11] << 8) |
              ((uint32_t)(uint8_t)frame[12] << 16) |
              ((uint32_t)(uint8_t)frame[13] << 24);
-        if ((uint64_t)18 + cl > totlen)
-            return 1; /* malformed: drop */
-        ml = (uint32_t)(uint8_t)frame[14 + cl] |
+        uint32_t ml = (uint32_t)(uint8_t)frame[14 + cl] |
              ((uint32_t)(uint8_t)frame[15 + cl] << 8) |
              ((uint32_t)(uint8_t)frame[16 + cl] << 16) |
              ((uint32_t)(uint8_t)frame[17 + cl] << 24);
-        if ((uint64_t)18 + cl + ml > totlen)
-            return 1; /* malformed: drop */
         srv_spublish(s, frame + 14, cl, frame + 18 + cl, ml);
         return 1;
     }

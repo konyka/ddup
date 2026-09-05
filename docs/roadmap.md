@@ -965,3 +965,5 @@
     长度与 gossip 计数，拒绝截断或尾随字节后才进入本地投递（Phase 318）
   - [x] TLS 客户端端点绑定：复制 master-link 与 cluster bus outbound 握手
     在证书链校验之外绑定目标主机名/IP，错误名称 fail-closed（Phase 319）
+  - [x] Cluster bus 快速发布路径完整性：本地投递前校验 wire magic、总长度、
+    Redis gossip 计数和精确 payload 边界，禁止 malformed 帧绕过 codec（Phase 320）
