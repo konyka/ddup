@@ -113,6 +113,7 @@ void server_test_cluster_nodes_save(server *s);
 int server_test_config_appendfsync(const char *value, resp_buf *out);
 /* Validate SEND_ZC error cleanup without depending on kernel support. */
 int server_test_send_zc_error_cleanup(void);
+int server_test_send_zc_zombie_completion(void);
 #endif
 /* Node failure timeout in ms (default 15000; tests can shrink it). */
 void server_set_node_timeout(server *s, uint64_t ms);

@@ -971,3 +971,6 @@
     字段前验证创建结果，消除 LTO 下潜在 NULL 解引用和警告（Phase 321）
   - [x] Cluster bus 协议 setter 严格枚举：控制面仅接受 ddup/Redis 两种已知
     协议值，非法整数保持原配置不变（Phase 322）
+  - [x] io_uring SEND_ZC notification 统一清理：live/zombie completion 共用
+    fixed buffer 释放与发送状态复位 helper，避免关闭后通知路径生命周期分叉
+    （Phase 323）

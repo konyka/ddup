@@ -140,6 +140,7 @@ static void srv_monitor_emit_session(void *ctx, session *source,
 static int server_token_eq(const char *s, size_t len, const char *word);
 static int server_parse_ll(const resp_value *v, long long *out);
 static void conn_send_zc_error(server *s, conn *c);
+static void conn_send_zc_notif_complete(server *s, conn *c);
 
 static int replid_valid(const char *id)
 {
@@ -4872,6 +4873,25 @@ int server_test_send_zc_error_cleanup(void)
     return c.send_fixed_id == -1 && c.pending_ops == 0 &&
            c.send_zc_notif_pending == 0 && c.send_outstanding == 0 ? 0 : -1;
 }
+
+int server_test_send_zc_zombie_completion(void)
+{
+    server s;
+    conn c;
+    memset(&s, 0, sizeof(s));
+    memset(&c, 0, sizeof(c));
+    c.zombie = 1;
+    c.send_fixed_id = 2;
+    c.send_zc_notif_pending = 1;
+    c.pending_ops = 1;
+    /* A notification-only completion must release the fixed slot and the
+     * notification reference before zombie reclamation. */
+    conn_send_zc_notif_complete(&s, &c);
+    if (c.send_fixed_id != -1 || c.send_zc_notif_pending != 0 ||
+        c.send_outstanding != 0 || c.pending_ops != 1)
+        return -1;
+    return 0;
+}
 #endif
 
 /* Parse and execute all complete commands in the conn recv buffer and
@@ -5035,6 +5055,19 @@ static void conn_send_zc_error(server *s, conn *c)
     c->send_zc_notif_pending = 0;
 }
 
+static void conn_send_zc_notif_complete(server *s, conn *c)
+{
+    if (c == NULL)
+        return;
+    if (c->send_fixed_id >= 0) {
+        if (s != NULL && s->iou != NULL)
+            pal_iouring_sbuf_release(s->iou, c->send_fixed_id);
+        c->send_fixed_id = -1;
+    }
+    c->send_zc_notif_pending = 0;
+    c->send_outstanding = 0;
+}
+
 /* Arm/rearm the multishot recv of a live conn (io_uring ms mode only);
  * one armed request counts as one pending op until its final CQE. */
 static void iou_ms_rearm(server *s, conn *c, size_t idx)
@@ -5170,9 +5203,7 @@ static int server_run_once_proactor(server *s, int timeout_ms)
             if (ev->buf_id >= 0)
                 pal_iouring_recycle(s->iou, ev->buf_id);
             if (ev->notif && c->send_fixed_id >= 0) {
-                pal_iouring_sbuf_release(s->iou, c->send_fixed_id);
-                c->send_fixed_id = -1;
-                c->send_zc_notif_pending = 0;
+                conn_send_zc_notif_complete(s, c);
             }
             if (ev->op_done)
                 c->pending_ops--;
@@ -5366,13 +5397,11 @@ static int server_run_once_proactor(server *s, int timeout_ms)
                 c->sbuf_pool_size = 0;
             }
             if (ev->notif && c->send_fixed_id >= 0) {
-                pal_iouring_sbuf_release(s->iou, c->send_fixed_id);
-                c->send_fixed_id = -1;
-                c->send_zc_notif_pending = 0;
-                c->send_outstanding = 0;
+                conn_send_zc_notif_complete(s, c);
             } else if (!c->send_zc_notif_pending) {
-                c->send_outstanding = 0;
-            }
+    c->send_outstanding = 0;
+}
+
             if (c->send_zc_notif_pending && !ev->notif)
                 continue;
             if (c->close_after_send && c->sbuf == NULL && c->out.len == 0) {

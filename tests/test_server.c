@@ -203,6 +203,13 @@ static void test_send_zc_error_releases_notification_reference(void)
 #endif
 }
 
+static void test_send_zc_zombie_completion_keeps_notification_reference(void)
+{
+#ifdef DDUP_TESTING
+    DD_CHECK_EQ_INT(0, server_test_send_zc_zombie_completion());
+#endif
+}
+
 static void test_bus_publish_fast_path_rejects_trailing_payload(void)
 {
 #ifdef DDUP_TESTING
@@ -1675,6 +1682,7 @@ static void run_all_tests(void)
     DD_RUN(test_iouring_multishot_complete_at_limit);
     DD_RUN(test_readiness_complete_at_limit);
     DD_RUN(test_send_zc_error_releases_notification_reference);
+    DD_RUN(test_send_zc_zombie_completion_keeps_notification_reference);
     DD_RUN(test_bus_publish_fast_path_rejects_trailing_payload);
     DD_RUN(test_bus_protocol_rejects_invalid);
     DD_RUN(test_proactor_destroy_with_open_connection);
