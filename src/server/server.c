@@ -2922,42 +2922,44 @@ server *server_create(const char *host, uint16_t port)
 
 uint16_t server_port(const server *s)
 {
-    return s->port;
+    return s == NULL ? 0 : s->port;
 }
 
 int server_backend(const server *s)
 {
-    return s->backend;
+    return s == NULL ? 0 : s->backend;
 }
 
 int server_is_proactor(const server *s)
 {
-    return srv_proactor(s);
+    return s == NULL ? 0 : srv_proactor(s);
 }
 
 const buf_pool *server_buf_pool(const server *s)
 {
-    return &s->pool;
+    return s == NULL ? NULL : &s->pool;
 }
 
 size_t server_pool_hits(const server *s)
 {
-    return s->pool.hits;
+    return s == NULL ? 0 : s->pool.hits;
 }
 
 size_t server_pool_allocs(const server *s)
 {
-    return s->pool.allocs;
+    return s == NULL ? 0 : s->pool.allocs;
 }
 
 db *server_db(server *s)
 {
-    return &s->db;
+    return s == NULL ? NULL : &s->db;
 }
 
 static db *srv_select_db(void *ctx, int idx)
 {
     server *srv = (server *)ctx;
+    if (srv == NULL || idx < 0 || idx >= srv->ndbs)
+        return NULL;
     if (idx == 0)
         return &srv->db;
     return &srv->extra_dbs[idx - 1];
@@ -2975,12 +2977,12 @@ db *server_select_db(void *ctx, int idx)
 
 int server_ndbs(const server *s)
 {
-    return s->ndbs;
+    return s == NULL ? 0 : s->ndbs;
 }
 
 const io_counters *server_io_counters(server *s)
 {
-    return &s->io;
+    return s == NULL ? NULL : &s->io;
 }
 
 /* shared AOF writer with the multi-db SELECT prefix rule */

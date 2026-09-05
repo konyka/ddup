@@ -135,6 +135,17 @@ static void test_persistence_paths_reject_truncation(void)
     DD_CHECK_EQ_INT(-1, server_tls_ctx_init(NULL, NULL, NULL));
     DD_CHECK_EQ_INT(0, server_tls_port(NULL));
     DD_CHECK_EQ_INT(-1, server_enable_aof(NULL, "x"));
+    DD_CHECK_EQ_INT(0, server_port(NULL));
+    DD_CHECK_EQ_INT(0, server_backend(NULL));
+    DD_CHECK_EQ_INT(0, server_is_proactor(NULL));
+    DD_CHECK(server_buf_pool(NULL) == NULL);
+    DD_CHECK_EQ_INT(0, (long long)server_pool_hits(NULL));
+    DD_CHECK_EQ_INT(0, (long long)server_pool_allocs(NULL));
+    DD_CHECK(server_db(NULL) == NULL);
+    DD_CHECK(server_db_at(NULL, 0) == NULL);
+    DD_CHECK(server_select_db(NULL, 0) == NULL);
+    DD_CHECK_EQ_INT(0, server_ndbs(NULL));
+    DD_CHECK(server_io_counters(NULL) == NULL);
     DD_CHECK_EQ_INT(0, server_test_aof_failed(NULL));
     DD_CHECK_EQ_INT(0, (long long)server_test_aof_pending_bytes(NULL));
     server_test_set_aof_write_fn(NULL, NULL);
