@@ -3081,6 +3081,8 @@ size_t server_test_aof_pending_bytes(const server *s)
 int server_enable_tls(server *s, const char *host, uint16_t port,
                       const char *cert_file, const char *key_file)
 {
+    if (s == NULL)
+        return -1;
     if (server_tls_ctx_init(s, cert_file, key_file) != 0)
         return -1;
     s->tls_listen_fd = pal_tcp_listen(host, port, 511, &s->tls_port);
@@ -3102,6 +3104,8 @@ int server_enable_tls(server *s, const char *host, uint16_t port,
 int server_tls_ctx_init(server *s, const char *cert_file,
                         const char *key_file)
 {
+    if (s == NULL)
+        return -1;
     if (srv_proactor(s))
         return -1; /* TLS needs the readiness backend (documented) */
     if (s->tls_ctx != NULL)
@@ -3112,11 +3116,13 @@ int server_tls_ctx_init(server *s, const char *cert_file,
 
 uint16_t server_tls_port(const server *s)
 {
-    return s->tls_port;
+    return s == NULL ? 0 : s->tls_port;
 }
 
 int server_enable_aof(server *s, const char *path)
 {
+    if (s == NULL || path == NULL || path[0] == '\0')
+        return -1;
     if (pal_file_exists(path)) {
         int rc;
         /* replay through a session with the selection hook so embedded
@@ -3140,6 +3146,8 @@ int server_enable_aof(server *s, const char *path)
 
 void server_set_appendfsync(server *s, int mode)
 {
+    if (s == NULL)
+        return;
     s->aof_fsync_mode = mode;
     if (s->aof != NULL)
         aof_set_fsync_mode(s->aof, mode);
@@ -3214,6 +3222,8 @@ int server_hotkeys_command(server *s, const resp_value *argv, size_t argc,
 
 void server_set_requirepass(server *s, const char *pw)
 {
+    if (s == NULL)
+        return;
     s->requirepass = pw;
     acl_init(&s->acl, pw);
     /* Existing connections must observe the new default credential policy. */
@@ -3248,6 +3258,8 @@ void server_set_client_id_allocator(server *s, uint64_t first,
 void server_set_maxmemory(server *s, uint64_t bytes, int policy)
 {
     int i;
+    if (s == NULL)
+        return;
     for (i = 0; i < s->ndbs; i++) {
         db *d = srv_select_db(s, i);
         d->maxmemory = bytes;
@@ -3287,13 +3299,13 @@ int server_enable_tiering(server *s, const char *dir, const char *logname,
 
 void server_set_proto_max_request_bytes(server *s, size_t bytes)
 {
-    if (bytes > 0)
+    if (s != NULL && bytes > 0)
         s->proto_max_request_bytes = bytes;
 }
 
 void server_set_repl_max_snapshot_bytes(server *s, size_t bytes)
 {
-    if (bytes > 0)
+    if (s != NULL && bytes > 0)
         s->repl_max_snapshot_bytes = bytes;
 }
 
@@ -3306,6 +3318,8 @@ void server_set_snapshot_path(server *s, const char *path)
 
 int server_load_snapshot(server *s)
 {
+    if (s == NULL)
+        return -1;
     if (s->db.snapshot_path == NULL)
         return -1;
     return snapshot_load_multi(s, srv_select_db, s->ndbs,
@@ -3318,7 +3332,8 @@ void server_load_nodes(server *s, const char *path)
 {
     pal_file *f;
     char line[512];
-    if (!pal_file_exists(path))
+    if (s == NULL || path == NULL || path[0] == '\0' ||
+        !pal_file_exists(path))
         return;
     f = pal_file_open_read(path);
     if (f == NULL)
@@ -3492,11 +3507,14 @@ void server_repl_stream_append_db(server *s, int db_index, const char *raw,
 
 void server_set_slowlog_threshold(server *s, uint64_t usec)
 {
-    s->slowlog_threshold_us = usec;
+    if (s != NULL)
+        s->slowlog_threshold_us = usec;
 }
 
 void server_set_save_interval(server *s, int sec)
 {
+    if (s == NULL)
+        return;
     s->save_sec = sec;
     s->last_save_check = pal_now_ms();
     s->dirty_at_last_save = s->db.dirty;
@@ -3504,11 +3522,13 @@ void server_set_save_interval(server *s, int sec)
 
 int server_shutdown_requested(const server *s)
 {
-    return s->shutdown_flag;
+    return s == NULL ? 0 : s->shutdown_flag;
 }
 
 void server_graceful_stop(server *s)
 {
+    if (s == NULL)
+        return;
     /* snapshot only when an interval was configured (and AOF is off);
      * the AOF is flushed by server_destroy -> aof_close. */
     if (s->aof == NULL && s->save_sec > 0 &&

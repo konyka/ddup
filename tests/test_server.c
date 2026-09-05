@@ -131,6 +131,20 @@ static void test_persistence_paths_reject_truncation(void)
     DD_CHECK_EQ_INT(-1, server_enable_tiering(NULL, ".", "tier.log", 0));
     DD_CHECK_EQ_INT(-1, server_enable_tiering(NULL, NULL, "tier.log", 0));
     DD_CHECK_EQ_INT(-1, server_enable_tiering(NULL, ".", NULL, 0));
+    DD_CHECK_EQ_INT(-1, server_enable_tls(NULL, "127.0.0.1", 0, NULL, NULL));
+    DD_CHECK_EQ_INT(-1, server_tls_ctx_init(NULL, NULL, NULL));
+    DD_CHECK_EQ_INT(0, server_tls_port(NULL));
+    DD_CHECK_EQ_INT(-1, server_enable_aof(NULL, "x"));
+    server_set_appendfsync(NULL, AOF_FSYNC_ALWAYS);
+    server_set_maxmemory(NULL, 1, 0);
+    server_set_proto_max_request_bytes(NULL, 1);
+    server_set_repl_max_snapshot_bytes(NULL, 1);
+    DD_CHECK_EQ_INT(-1, server_load_snapshot(NULL));
+    server_load_nodes(NULL, NULL);
+    server_set_slowlog_threshold(NULL, 1);
+    server_set_save_interval(NULL, 1);
+    DD_CHECK_EQ_INT(0, server_shutdown_requested(NULL));
+    server_graceful_stop(NULL);
     server_set_snapshot_path(NULL, long_dir);
     server_enable_cluster(NULL, NULL);
 

@@ -906,3 +906,5 @@
     组合，确保跨平台实现契约一致（Phase 289）
   - [x] 复制控制 API NULL 防护：`server_replicaof`、backlog resize 与复制 TLS
     配置入口拒绝空 server，避免控制面解引用和状态污染（Phase 290）
+  - [x] Server 配置控制面 NULL 防护：TLS/AOF、内存/协议限制、快照/节点加载、
+    slowlog/保存周期和优雅停止入口对空 server 或空路径安全返回（Phase 291）

@@ -47,6 +47,9 @@ ACL 密码生成等安全路径把无效指针传给平台随机数接口。
 复制控制面补充：REPLICAOF、backlog resize 和 TLS replication 配置入口对空
 server fail-closed，避免非法管理调用破坏复制状态。
 
+服务器配置面补充：TLS/AOF、快照、节点加载、资源限制和生命周期入口统一拒绝
+空 server/空路径，避免管理调用导致进程崩溃或半初始化状态。
+
 历史缺口集中在三块，当前 Redis 8.10.1 命令级审计已清零：
 
 1. Redis 8.8 新增 `ARRAY` 类型（18 个 `AR*` 命令）。
