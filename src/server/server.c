@@ -140,6 +140,20 @@ static void srv_monitor_emit_session(void *ctx, session *source,
 static int server_token_eq(const char *s, size_t len, const char *word);
 static int server_parse_ll(const resp_value *v, long long *out);
 static void conn_send_zc_error(server *s, conn *c);
+
+static int replid_valid(const char *id)
+{
+    size_t i;
+    if (id == NULL)
+        return 0;
+    for (i = 0; i < 40; i++) {
+        char c = id[i];
+        if (!((c >= '0' && c <= '9') ||
+              (c >= 'a' && c <= 'f')))
+            return 0;
+    }
+    return 1;
+}
 static int srv_backup_command(void *ctx, const resp_value *argv, size_t argc,
                               resp_buf *out);
 static void srv_hotkeys_record(server *srv, const session *source,
@@ -2344,6 +2358,10 @@ static void repl_link_feed(server *srv, conn *c)
                 }
                 memcpy(c->pending_replid, c->rbuf + 12, 40);
                 c->pending_replid[40] = '\0';
+                if (!replid_valid(c->pending_replid)) {
+                    repl_link_close_fatal(srv);
+                    return;
+                }
                 if (c->rbuf[pos - 1] != '\r' || pos <= 12 + 40 + 1 ||
                     c->rbuf[12 + 40 + 1] < '0' ||
                     c->rbuf[12 + 40 + 1] > '9') {
@@ -2369,6 +2387,10 @@ static void repl_link_feed(server *srv, conn *c)
                 }
                 memcpy(srv->repl.master_replid, c->rbuf + 10, 40);
                 srv->repl.master_replid[40] = '\0';
+                if (!replid_valid(srv->repl.master_replid)) {
+                    repl_link_close_fatal(srv);
+                    return;
+                }
                 memmove(c->rbuf, c->rbuf + pos + 1, c->rlen - pos - 1);
                 c->rlen -= pos + 1;
                 c->link_state = LINK_STREAMING;

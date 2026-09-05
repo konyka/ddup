@@ -1014,7 +1014,7 @@ static void test_rejected_fullresync_does_not_cache_psync(void)
         DD_CHECK(got > 0 && strstr(req, "$40\r\nabcdef0123456789abcdef0123456789abcdef01\r\n") != NULL);
         {
             const char invalid[] =
-                "+FULLRESYNC 0123456789abcdef0123456789abcdef0123 99\r\n$10\r\nX";
+                "+FULLRESYNC G123456789abcdef0123456789abcdef0123 99\r\n$10\r\nX";
             DD_CHECK_EQ_INT((long long)strlen(invalid),
                             (long long)pal_send(master_link, invalid,
                                                 strlen(invalid)));

@@ -2197,3 +2197,9 @@ The worker-side SWAPDB fast path now parses database indexes directly from the
 bounded RESP lengths using the existing strict integer helper. Valid requests
 retain the same O(1) swap and replication path; malformed values fail before
 any database mutation.
+
+### Phase 311: replication replid validation
+
+Master-link FULLRESYNC and CONTINUE headers now validate the 40-byte replication
+ID before caching it. The fixed-length hexadecimal scan is a cold handshake
+branch; normal streaming and PSYNC resume paths retain their existing costs.

@@ -946,3 +946,5 @@
     消除 LTO 下潜在 NULL 解引用和 stringop-overflow 警告（Phase 309）
   - [x] MT SWAPDB 严格索引解析：worker 快路径复用有界十进制解析，拒绝前导空格、
     后缀和溢出索引，保持与单线程 Redis 整数语义一致（Phase 310）
+  - [x] 复制 replid 身份校验：FULLRESYNC/CONTINUE 握手严格验证 40 位小写十六进制
+    replid，非法复制历史标识在进入 master-link 状态前拒绝（Phase 311）
