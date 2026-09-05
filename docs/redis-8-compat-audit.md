@@ -70,6 +70,9 @@ OOM 产生未定义写入，从而使协议边界结论可重复。
 复制握手复核：FULLRESYNC/CONTINUE 返回的 replid 现在必须是 40 位小写十六进制，
 非法 replid 在缓存或切换 streaming 状态前被拒绝，避免伪造复制历史污染 PSYNC。
 
+Redis cluster bus 回归夹具同步检查节点分配结果，避免模拟 OOM 时出现未定义字段
+写入，使 redbus 编解码兼容性结论在严格警告构建下可重复。
+
 MT 管理命令复核：SWAPDB 的 worker 快路径现拒绝前导空格、尾随字符和溢出
 数据库索引，避免 libc 宽松解析造成错误数据库交换；合法索引行为保持不变。
 

@@ -138,6 +138,9 @@ static cluster_node *mk_node(db *d, const char *id, const char *ip,
                              uint16_t port, uint32_t flags)
 {
     cluster_node *n = cluster_node_add(d, id);
+    DD_CHECK(n != NULL);
+    if (n == NULL)
+        return NULL;
     snprintf(n->ip, sizeof(n->ip), "%s", ip);
     n->port = port;
     n->bus_port = (uint16_t)(port + 10000);

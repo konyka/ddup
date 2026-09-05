@@ -2203,3 +2203,9 @@ any database mutation.
 Master-link FULLRESYNC and CONTINUE headers now validate the 40-byte replication
 ID before caching it. The fixed-length hexadecimal scan is a cold handshake
 branch; normal streaming and PSYNC resume paths retain their existing costs.
+
+### Phase 312: redbus fixture allocation checks
+
+The Redis cluster-bus regression fixture validates node allocation before
+writing fixed address fields. This is test-only hardening that removes LTO
+warning noise without affecting the production codec or wire-path cost.

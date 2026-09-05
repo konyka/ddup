@@ -948,3 +948,5 @@
     后缀和溢出索引，保持与单线程 Redis 整数语义一致（Phase 310）
   - [x] 复制 replid 身份校验：FULLRESYNC/CONTINUE 握手严格验证 40 位小写十六进制
     replid，非法复制历史标识在进入 master-link 状态前拒绝（Phase 311）
+  - [x] Redis cluster bus 测试夹具分配检查：redbus 节点创建结果先验证再写入
+    地址字段，清除 LTO stringop-overflow 警告（Phase 312）
