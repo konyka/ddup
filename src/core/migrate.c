@@ -47,6 +47,12 @@ static size_t decimal_len(size_t n)
     return len;
 }
 
+static uint64_t migrate_deadline(uint64_t now_ms, uint64_t timeout_ms)
+{
+    return timeout_ms > UINT64_MAX - now_ms ? UINT64_MAX
+                                             : now_ms + timeout_ms;
+}
+
 static int bulk_wire_size(size_t len, size_t *out)
 {
     size_t total = decimal_len(len);
@@ -211,7 +217,7 @@ int migrate_run(db *d, const char *host, uint16_t port,
         pal_close(fd);
         goto out;
     }
-    deadline = pal_now_ms() + timeout_ms;
+    deadline = migrate_deadline(pal_now_ms(), timeout_ms);
     if (send_all(fd, pipebuf.data, pipebuf.len, deadline) == 0) {
         char line[256];
         /* one ASKING + one RESTORE reply per key, both must be +OK */
@@ -253,6 +259,9 @@ int migrate_test_output_failures(void)
     out.cap = 1;
     rc = migrate_append_restore(&out, &byte, SIZE_MAX, &byte, 1, &byte, 1, 0);
     if (rc != -1 || out.len != 0 || byte != 'x')
+        return -1;
+    if (migrate_deadline(UINT64_MAX - 1, 2) != UINT64_MAX ||
+        migrate_deadline(7, 3) != 10)
         return -1;
     out.data = NULL;
     out.cap = 0;

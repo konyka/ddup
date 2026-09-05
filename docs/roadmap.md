@@ -976,3 +976,5 @@
     （Phase 323）
   - [x] MIGRATE 公共 API 输入边界：拒绝空目标主机、空 key 数组与非零数量
     组合，保留零 key no-op，避免迁移路径解引用无效请求（Phase 324）
+  - [x] MIGRATE 超时 deadline 饱和：极大 timeout 不再在 wall-clock 相加时回绕
+    成过期值，迁移 I/O 等待保持可预期的上界（Phase 325）
