@@ -956,3 +956,5 @@
     AUTH 负载长度并检查计数乘法溢出，拒绝尾随或截断 payload（Phase 314）
   - [x] Redis 原生 cluster bus 原子身份发布：`apply_node` 在节点表插入前校验
     sender/slaveof 身份，非法 master ID 不再留下半初始化节点（Phase 315）
+  - [x] Redis 原生 cluster bus API 边界：构帧和解析入口拒绝 NULL db/output/
+    frame/非零长度 payload，避免管理与连接错误路径崩溃（Phase 316）

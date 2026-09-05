@@ -500,6 +500,34 @@ static void test_build_failures_leave_output_unchanged(void)
     db_destroy(&d);
 }
 
+static void test_redbus_api_rejects_invalid_inputs(void)
+{
+    db d;
+    resp_buf out;
+
+    db_init(&d);
+    cluster_nodes_init(&d);
+    resp_buf_init(&out);
+    DD_CHECK_EQ_INT(-1, redbus_build_frame(NULL, REDBUS_TYPE_PING, &out));
+    DD_CHECK_EQ_INT(-1, redbus_build_frame(&d, REDBUS_TYPE_PING, NULL));
+    DD_CHECK_EQ_INT(-1, redbus_build_publish(NULL, REDBUS_TYPE_PUBLISH,
+                                             "c", 1, "m", 1, &out));
+    DD_CHECK_EQ_INT(-1, redbus_build_publish(&d, REDBUS_TYPE_PUBLISH,
+                                             NULL, 1, "m", 1, &out));
+    DD_CHECK_EQ_INT(-1, redbus_build_publish(&d, REDBUS_TYPE_PUBLISH,
+                                             "c", 1, NULL, 1, &out));
+    DD_CHECK_EQ_INT(-1, redbus_build_publish(&d, REDBUS_TYPE_PUBLISH,
+                                             "c", 1, "m", 1, NULL));
+    DD_CHECK_EQ_INT(-1, redbus_build_fail(NULL, ID1, &out));
+    DD_CHECK_EQ_INT(-1, redbus_build_fail(&d, NULL, &out));
+    DD_CHECK_EQ_INT(-1, redbus_build_fail(&d, ID1, NULL));
+    DD_CHECK_EQ_INT(-1, redbus_handle_frame(NULL, NULL, 0, &out, T0, NULL));
+    DD_CHECK_EQ_INT(-1, redbus_handle_frame(&d, NULL, 1, &out, T0, NULL));
+    DD_CHECK_EQ_INT(-1, redbus_handle_frame(&d, "", 0, NULL, T0, NULL));
+    resp_buf_free(&out);
+    db_destroy(&d);
+}
+
 int main(void)
 {
     DD_RUN(test_fixture_decode);
@@ -511,5 +539,6 @@ int main(void)
     DD_RUN(test_update_to_self_adopts);
     DD_RUN(test_empty_myip_auto_discovery);
     DD_RUN(test_build_failures_leave_output_unchanged);
+    DD_RUN(test_redbus_api_rejects_invalid_inputs);
     return DD_TEST_SUMMARY();
 }

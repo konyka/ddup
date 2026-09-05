@@ -2229,3 +2229,9 @@ leaving valid frame decoding allocation-free.
 The native `apply_node` path validates sender and slave-of identities before
 calling `cluster_node_add`. Malformed master IDs now fail on a cold branch with
 no topology mutation; valid node updates retain the same fixed-field writes.
+
+### Phase 316: redbus API boundary validation
+
+Public native cluster-bus build and parse APIs now reject null objects and
+non-empty null payloads before any frame access. These cold boundary checks leave
+valid wire encoding and decoding allocation-free and unchanged.

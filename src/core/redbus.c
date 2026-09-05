@@ -199,12 +199,15 @@ static char *write_header(struct db *d, const cluster_node *sn, int type,
 
 int redbus_build_frame(struct db *d, int type, resp_buf *out)
 {
-    const cluster_node *sn = find_sender(d);
+    const cluster_node *sn;
     size_t start, total;
     char *p, *cp;
     uint16_t gc = 0;
     int i;
 
+    if (d == NULL || out == NULL)
+        return -1;
+    sn = find_sender(d);
     if (sn == NULL)
         return -1;
 
@@ -241,10 +244,14 @@ int redbus_build_publish(struct db *d, int type, const char *ch,
                          size_t chlen, const char *msg, size_t mlen,
                          resp_buf *out)
 {
-    const cluster_node *sn = find_sender(d);
+    const cluster_node *sn;
     size_t start, total;
     char *p, *cp;
 
+    if (d == NULL || out == NULL || (ch == NULL && chlen != 0) ||
+        (msg == NULL && mlen != 0))
+        return -1;
+    sn = find_sender(d);
     if (sn == NULL)
         return -1;
 
@@ -277,10 +284,13 @@ int redbus_build_publish(struct db *d, int type, const char *ch,
 
 int redbus_build_fail(struct db *d, const char *subject_id, resp_buf *out)
 {
-    const cluster_node *sn = find_sender(d);
+    const cluster_node *sn;
     size_t start, total;
     char *p, *cp;
 
+    if (d == NULL || subject_id == NULL || out == NULL)
+        return -1;
+    sn = find_sender(d);
     if (sn == NULL)
         return -1;
 
@@ -463,7 +473,8 @@ int redbus_handle_frame(struct db *d, const char *frame, size_t len,
     char id[41], ip[47], slaveof[41];
     cluster_node *n;
 
-    if (len < REDBUS_HDR_LEN || memcmp(frame, "RCmb", 4) != 0)
+    if (d == NULL || frame == NULL || reply_out == NULL ||
+        len < REDBUS_HDR_LEN || memcmp(frame, "RCmb", 4) != 0)
         return -1;
     totlen = get32be(frame + 4);
     if (totlen != len || totlen < REDBUS_HDR_LEN)

@@ -84,6 +84,9 @@ Redis 原生 cluster bus 帧完整性复核：不同消息类型现在严格匹�
 原生 cluster bus 节点发布复核：sender/slaveof 身份在 `apply_node` 插入节点表前
 完成校验，非法 master ID 会原子拒绝，不会留下半初始化拓扑节点。
 
+原生 cluster bus API 边界复核：构帧和接收入口现在拒绝 NULL 节点表、输出、帧及
+非零长度 NULL channel/message，避免异常管理或网络错误路径解引用无效对象。
+
 MT 管理命令复核：SWAPDB 的 worker 快路径现拒绝前导空格、尾随字符和溢出
 数据库索引，避免 libc 宽松解析造成错误数据库交换；合法索引行为保持不变。
 
