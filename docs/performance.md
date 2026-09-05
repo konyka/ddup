@@ -2142,3 +2142,11 @@ the node-table insertion, so recovery does not retain partially trusted state.
 The v2 sender extension is length-checked before the sender node is inserted or
 updated. Truncated frames take a cold rejection branch with no topology
 mutation; valid frames keep the same lookup and bitmap merge behavior.
+
+### Phase 303: atomic cluster-bus gossip preflight
+
+Before mutating topology, the receiver now walks the bounded gossip tail and
+validates every entry's address, slot payload, and v2 metadata extension. The
+preflight is linear in frame size and allocation-free; valid frames pay one
+additional sequential bounds pass, while malformed frames cannot leave partial
+gossip nodes behind.

@@ -42,6 +42,10 @@ nodes.conf 复核：ping、pong 和 config epoch 以输入行的明确长度为�
 长度的帧不会留下半初始化节点状态；有效 PING/PONG/MEET 的 gossip 与槽位合并
 路径保持不变。
 
+集群 gossip 完整性复核：接收 RCM2/RCMB 节点帧时，先预检 gossip count 及每个
+条目的地址、槽位文本和 epoch 扩展，再发布 sender 或 gossip 节点。截断 gossip
+帧会原子拒绝，不会把部分拓扑状态暴露给后续路由与故障检测。
+
 PAL 可靠性补充：io_uring pbuf/SQPOLL 状态和测试注入入口对空 ring 统一
 fail-closed，避免管理/诊断调用破坏服务进程。
 

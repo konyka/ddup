@@ -1017,6 +1017,41 @@ int cluster_bus_handle_frame(struct db *d, const char *frame, size_t len,
         epoch = 0; /* v1: no epochs on the wire */
     }
 
+    /* Preflight the gossip tail before mutating the node table. */
+    {
+        const char *q = p + 2048 + (v2 ? 48 : 0);
+        uint16_t gc, j;
+        if ((size_t)(end - q) < 2)
+            return -1;
+        gc = get16(q);
+        q += 2;
+        for (j = 0; j < gc; j++) {
+            uint16_t glen, slen;
+            if ((size_t)(end - q) < 42)
+                return -1;
+            q += 40;
+            glen = get16(q);
+            q += 2;
+            if ((size_t)(end - q) < (size_t)glen + 10)
+                return -1;
+            q += glen + 2 + 2 + 4;
+            if ((size_t)(end - q) < 2)
+                return -1;
+            slen = get16(q);
+            q += 2;
+            if ((size_t)(end - q) < (size_t)slen)
+                return -1;
+            q += slen;
+            if (v2) {
+                if ((size_t)(end - q) < 48)
+                    return -1;
+                q += 48;
+            }
+        }
+        if (q != end)
+            return -1;
+    }
+
     /* Validate the sender extension before publishing any topology state. */
     n = cluster_node_add(d, id);
     if (n == NULL)
