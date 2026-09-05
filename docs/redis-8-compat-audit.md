@@ -579,3 +579,6 @@ connection-control calls from crashing the server.
 Empty RESP bulk arguments now remain valid zero-length session views, and server
 error rendering uses exact compile-time message lengths, preserving Redis wire
 semantics while eliminating allocator-dependent OOM behavior and over-reads.
+
+Session MULTI and blocking state now preserve valid zero-argument lists without
+`malloc(0)`, preventing allocator-dependent failures on empty protocol frames.

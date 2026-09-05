@@ -93,6 +93,13 @@ static void test_session_api_rejects_null_inputs(void)
         DD_CHECK(s.blocked_argv[0].str == NULL);
         session_block_clear(&s);
     }
+    DD_CHECK_EQ_INT(0, session_queue_push(&s, NULL, 0));
+    DD_CHECK_EQ_INT(1, (long long)s.queue_len);
+    DD_CHECK_EQ_INT(0, s.queue[s.queue_len - 1].argc);
+    session_queue_clear(&s);
+    DD_CHECK_EQ_INT(0, session_block_start(&s, NULL, 0, 1, 0));
+    DD_CHECK_EQ_INT(0, (long long)s.blocked_argc);
+    session_block_clear(&s);
     session_release(&s);
     db_destroy(&d);
 }

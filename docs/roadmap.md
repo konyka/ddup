@@ -884,3 +884,5 @@
     空事件输出、非法 max/timeout，避免后端状态解引用（Phase 279）
   - [x] Session 零长度参数与 RESP 错误长度：空 bulk 参数采用 NULL 视图无分配，
     固定错误消息长度改为编译期计算，消除 OOM 误判和 stringop-overread（Phase 280）
+  - [x] Session 零参数队列：`argc == 0` 不再依赖 `malloc(0)`，MULTI/阻塞状态
+    可安全保存空参数列表（Phase 281）

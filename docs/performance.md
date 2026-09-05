@@ -2069,3 +2069,10 @@ Session deep-copy paths no longer call `malloc(0)` for empty RESP arguments;
 they preserve a null zero-length view without allocation. Fixed server error
 frames use compile-time string lengths, removing over-read warnings and keeping
 the existing allocation-free error path.
+
+### Phase 281: zero-argument session queues
+
+Queue and blocking-state deep copies represent `argc == 0` with a null argv
+pointer instead of allocating zero bytes. This removes allocator variance and
+keeps the valid empty-list path allocation-free; non-empty command behavior is
+unchanged.

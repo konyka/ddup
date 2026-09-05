@@ -56,8 +56,9 @@ int session_block_start(session *s, const resp_value *argv, size_t argc,
     if (s == NULL || (argv == NULL && argc != 0) ||
         argc > SIZE_MAX / sizeof(*copy_argv))
         return -1;
-    copy_argv = (resp_value *)malloc(argc * sizeof(*copy_argv));
-    if (copy_argv == NULL)
+    copy_argv = argc == 0 ? NULL
+                          : (resp_value *)malloc(argc * sizeof(*copy_argv));
+    if (argc != 0 && copy_argv == NULL)
         return -1;
     for (i = 0; i < argc; i++) {
         if (argv[i].str == NULL && argv[i].len != 0) {
@@ -215,7 +216,7 @@ int session_queue_push(session *s, const resp_value *argv, size_t argc)
         (session_queue_growth(s->queue_cap, &ncap) != 0 ||
          ncap > SIZE_MAX / sizeof(*s->queue)))
         return -1;
-    copy_argv = (resp_value *)xmalloc(argv_bytes);
+    copy_argv = argv_bytes == 0 ? NULL : (resp_value *)xmalloc(argv_bytes);
     for (i = 0; i < argc; i++) {
         if (argv[i].str == NULL && argv[i].len != 0) {
             while (i > 0)
