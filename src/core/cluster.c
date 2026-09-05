@@ -1007,6 +1007,17 @@ int cluster_bus_handle_frame(struct db *d, const char *frame, size_t len,
     flags = get32(p);
     p += 4;
 
+    if (v2) {
+        if ((size_t)(end - p) < 2048 + 48)
+            return -1;
+        memcpy(master_id, p + 2048, 40);
+        master_id[40] = '\0';
+        epoch = get64(p + 2048 + 40);
+    } else {
+        epoch = 0; /* v1: no epochs on the wire */
+    }
+
+    /* Validate the sender extension before publishing any topology state. */
     n = cluster_node_add(d, id);
     if (n == NULL)
         return -1;
@@ -1017,16 +1028,8 @@ int cluster_bus_handle_frame(struct db *d, const char *frame, size_t len,
     if (type == CLUSTER_MSG_MEET)
         n->flags &= ~(uint32_t)CLUSTER_NODE_HANDSHAKE;
     n->last_seen_ms = now_ms;
-    if (v2) {
-        if ((size_t)(end - p) < 2048 + 48)
-            return -1;
-        memcpy(master_id, p + 2048, 40);
-        master_id[40] = '\0';
-        epoch = get64(p + 2048 + 40);
+    if (v2)
         snprintf(n->master_id, sizeof(n->master_id), "%s", master_id);
-    } else {
-        epoch = 0; /* v1: no epochs on the wire */
-    }
     /* slot claims go through epoch conflict resolution */
     cluster_merge_claims(d, n, (const uint8_t *)p, epoch);
     p += 2048;

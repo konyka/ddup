@@ -155,6 +155,41 @@ static void test_handle_rejects_null_inputs(void)
     db_destroy(&d);
 }
 
+static void test_handle_rejects_truncated_v2_before_node_publish(void)
+{
+    db source, target;
+    resp_buf frame, reply;
+    uint32_t short_len;
+
+    db_init(&source);
+    db_init(&target);
+    cluster_nodes_init(&source);
+    cluster_nodes_init(&target);
+    resp_buf_init(&frame);
+    resp_buf_init(&reply);
+    make_node(&source, ID1, "127.0.0.1", 7001,
+              CLUSTER_NODE_MYSELF | CLUSTER_NODE_MASTER, 1);
+    DD_CHECK_EQ_INT(0, cluster_bus_build_frame(&source, CLUSTER_MSG_PING,
+                                               &frame));
+
+    /* Keep a consistent header while removing the v2 epoch/master extension. */
+    DD_CHECK(frame.len > 48);
+    short_len = (uint32_t)(frame.len - 48);
+    frame.data[4] = (char)(short_len & 0xffu);
+    frame.data[5] = (char)((short_len >> 8) & 0xffu);
+    frame.data[6] = (char)((short_len >> 16) & 0xffu);
+    frame.data[7] = (char)((short_len >> 24) & 0xffu);
+    frame.len = short_len;
+    DD_CHECK_EQ_INT(-1, cluster_bus_handle_frame(&target, frame.data,
+                                                 frame.len, &reply, T0));
+    DD_CHECK_EQ_INT(0, target.nnodes);
+
+    resp_buf_free(&reply);
+    resp_buf_free(&frame);
+    db_destroy(&target);
+    db_destroy(&source);
+}
+
 static void test_meet_convergence(void);
 static void test_gossip_carry(void);
 static void test_fail_detect(void);
@@ -166,6 +201,7 @@ int main(void)
     DD_RUN(test_build_failures_leave_output_unchanged);
     DD_RUN(test_build_rejects_null_inputs);
     DD_RUN(test_handle_rejects_null_inputs);
+    DD_RUN(test_handle_rejects_truncated_v2_before_node_publish);
     DD_RUN(test_meet_convergence);
     DD_RUN(test_gossip_carry);
     DD_RUN(test_fail_detect);
