@@ -181,6 +181,19 @@ static void test_aggregate_allocation_size_overflow(void)
     DD_CHECK(bytes == 2 * sizeof(resp_value));
 }
 
+static void test_parser_null_inputs_fail_closed(void)
+{
+    resp_value v;
+    arena a;
+
+    arena_init(&a, 128);
+    DD_CHECK_EQ_INT(-1, (long long)resp_parse(NULL, 1, &v, &a));
+    DD_CHECK_EQ_INT(-1, (long long)resp_parse("+OK\r\n", 5, NULL, &a));
+    DD_CHECK_EQ_INT(-1, (long long)resp_parse("+OK\r\n", 5, &v, NULL));
+    DD_CHECK_EQ_INT(0, (long long)resp_parse(NULL, 0, &v, &a));
+    arena_destroy(&a);
+}
+
 static void test_nested_array(void)
 {
     const char *cmd = "*2\r\n*2\r\n:1\r\n:2\r\n$3\r\nend\r\n";
@@ -329,6 +342,7 @@ int main(void)
     DD_RUN(test_null_bulk_string);
     DD_RUN(test_array);
     DD_RUN(test_aggregate_allocation_size_overflow);
+    DD_RUN(test_parser_null_inputs_fail_closed);
     DD_RUN(test_nested_array);
     DD_RUN(test_null_and_empty_array);
     DD_RUN(test_incomplete_returns_zero);

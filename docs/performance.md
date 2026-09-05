@@ -2039,3 +2039,11 @@ Send/receive helpers validate handles and non-empty buffers before entering the
 OS syscall, while asynchronous connect initializes its output descriptor to the
 invalid sentinel on every failure path. These are predictable error branches;
 valid I/O keeps the same syscall and copy behavior.
+
+### Phase 277: bounded RESP parser/writer inputs
+
+RESP parsing now rejects invalid buffers, output values, and arenas before the
+recursive descent; writers validate destination buffers and non-empty sources
+before reserve/copy. These checks are predictable API-boundary branches, while
+valid protocol parsing and serialization retain their existing zero-copy views
+and amortized buffer growth.

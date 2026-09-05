@@ -11,6 +11,8 @@
 
 void resp_buf_init(resp_buf *b)
 {
+    if (b == NULL)
+        return;
     b->data = NULL;
     b->len = 0;
     b->cap = 0;
@@ -20,6 +22,8 @@ void resp_buf_init(resp_buf *b)
 
 void resp_buf_free(resp_buf *b)
 {
+    if (b == NULL)
+        return;
     if (b->pool != NULL && b->data != NULL) {
         buf_pool_put(b->pool, b->data, b->pool_size);
     } else {
@@ -34,6 +38,8 @@ void resp_buf_free(resp_buf *b)
 int resp_buf_reserve(resp_buf *b, size_t n)
 {
     size_t cap, needed;
+    if (b == NULL)
+        return -1;
     if (n > SIZE_MAX - b->len)
         return -1;
     needed = b->len + n;
@@ -75,6 +81,8 @@ int resp_buf_reserve(resp_buf *b, size_t n)
 
 static int buf_append(resp_buf *b, const char *s, size_t n)
 {
+    if (b == NULL || (s == NULL && n != 0))
+        return -1;
     if (resp_buf_reserve(b, n) != 0)
         return -1;
     memcpy(b->data + b->len, s, n);
@@ -161,16 +169,22 @@ static void write_header(resp_buf *b, char type, size_t n)
 
 void resp_write_simple_string(resp_buf *b, const char *s, size_t len)
 {
+    if (b == NULL || (s == NULL && len != 0))
+        return;
     write_typed_line(b, '+', s, len);
 }
 
 void resp_write_error(resp_buf *b, const char *s, size_t len)
 {
+    if (b == NULL || (s == NULL && len != 0))
+        return;
     write_typed_line(b, '-', s, len);
 }
 
 void resp_write_integer(resp_buf *b, long long v)
 {
+    if (b == NULL)
+        return;
     char num[24];
     size_t len = ll_to_str(num, v);
     write_typed_line(b, ':', num, len);
@@ -178,6 +192,8 @@ void resp_write_integer(resp_buf *b, long long v)
 
 void resp_write_bulk(resp_buf *b, const char *s, size_t len)
 {
+    if (b == NULL || (s == NULL && len != 0))
+        return;
     if (!s) {
         buf_append(b, "$-1\r\n", 5);
         return;
@@ -201,21 +217,29 @@ void resp_write_bulk(resp_buf *b, const char *s, size_t len)
 
 void resp_write_array_header(resp_buf *b, size_t n)
 {
+    if (b == NULL)
+        return;
     write_header(b, '*', n);
 }
 
 void resp_write_null(resp_buf *b)
 {
+    if (b == NULL)
+        return;
     buf_append(b, "_\r\n", 3);
 }
 
 void resp_write_boolean(resp_buf *b, int v)
 {
+    if (b == NULL)
+        return;
     buf_append(b, v ? "#t\r\n" : "#f\r\n", 4);
 }
 
 void resp_write_double(resp_buf *b, double v)
 {
+    if (b == NULL)
+        return;
     if (isinf(v)) {
         buf_append(b, v > 0 ? ",inf\r\n" : ",-inf\r\n", v > 0 ? 6 : 7);
         return;
@@ -231,26 +255,36 @@ void resp_write_double(resp_buf *b, double v)
 
 void resp_write_big_number(resp_buf *b, const char *digits, size_t len)
 {
+    if (b == NULL || (digits == NULL && len != 0))
+        return;
     write_typed_line(b, '(', digits, len);
 }
 
 void resp_write_map_header(resp_buf *b, size_t pairs)
 {
+    if (b == NULL)
+        return;
     write_header(b, '%', pairs);
 }
 
 void resp_write_set_header(resp_buf *b, size_t n)
 {
+    if (b == NULL)
+        return;
     write_header(b, '~', n);
 }
 
 void resp_write_push_header(resp_buf *b, size_t n)
 {
+    if (b == NULL)
+        return;
     write_header(b, '>', n);
 }
 
 void resp_write_value(resp_buf *b, const resp_value *v)
 {
+    if (b == NULL || v == NULL)
+        return;
     switch (v->type) {
     case RESP_SIMPLE_STRING:
         resp_write_simple_string(b, v->str, v->len);

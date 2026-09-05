@@ -875,3 +875,5 @@
     peer 地址入口拒绝 NULL/无效句柄，避免平台 syscall 崩溃（Phase 275）
   - [x] PAL socket 收发边界：`pal_recv`/`pal_send` 拒绝无效句柄与非零长度
     NULL 缓冲区，异步连接失败时清零输出句柄，避免陈旧 fd 泄漏（Phase 276）
+  - [x] RESP parser/writer 边界：解析、缓冲区生命周期和所有写入器拒绝 NULL/
+    非零长度 NULL 输入，避免 malformed 请求触发解引用或 memcpy 崩溃（Phase 277）

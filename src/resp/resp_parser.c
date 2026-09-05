@@ -19,6 +19,8 @@
 
 static int resp_aggregate_bytes(size_t slots, size_t *bytes)
 {
+    if (bytes == NULL)
+        return -1;
     if (slots > SIZE_MAX / sizeof(resp_value))
         return -1;
     *bytes = slots * sizeof(resp_value);
@@ -370,6 +372,10 @@ ptrdiff_t resp_parse(const char *buf, size_t len, resp_value *out, arena *a)
 {
     const char *pos = buf;
     arena_mark mark;
+    if (out == NULL || a == NULL || (buf == NULL && len != 0))
+        return -1;
+    if (buf == NULL)
+        return 0;
     arena_mark_get(a, &mark);
     int r = parse_at(buf, buf + len, &pos, out, a, 0);
     if (r < 0) {

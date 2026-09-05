@@ -563,3 +563,7 @@ from causing process faults while preserving valid TCP behavior.
 PAL send/receive and asynchronous-connect APIs now reject malformed buffers or
 handles and clear failed output descriptors, preventing stale sockets from
 escaping into client and replication connection state.
+
+RESP parser and writer entry points now fail closed on null objects, buffers, and
+non-empty null payloads, preventing malformed protocol input from causing memory
+faults without changing valid RESP2/RESP3 wire behavior.

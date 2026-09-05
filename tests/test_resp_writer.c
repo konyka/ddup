@@ -268,6 +268,25 @@ static void test_resp_buf_reserve_overflow(void)
     b.cap = 0;
 }
 
+static void test_writer_null_inputs_fail_closed(void)
+{
+    resp_buf b;
+
+    resp_buf_init(NULL);
+    resp_buf_free(NULL);
+    DD_CHECK_EQ_INT(-1, resp_buf_reserve(NULL, 1));
+
+    resp_buf_init(&b);
+    resp_write_simple_string(NULL, "x", 1);
+    resp_write_error(NULL, "x", 1);
+    resp_write_integer(NULL, 1);
+    resp_write_bulk(NULL, "x", 1);
+    resp_write_bulk(&b, NULL, 1);
+    resp_write_big_number(&b, NULL, 1);
+    resp_write_value(NULL, NULL);
+    resp_buf_free(&b);
+}
+
 int main(void)
 {
     DD_RUN(test_scalars);
@@ -278,5 +297,6 @@ int main(void)
     DD_RUN(test_resp_buf_pool_reuse);
     DD_RUN(test_resp_buf_pool_growth);
     DD_RUN(test_resp_buf_reserve_overflow);
+    DD_RUN(test_writer_null_inputs_fail_closed);
     return DD_TEST_SUMMARY();
 }
