@@ -2062,3 +2062,10 @@ descriptors, event arrays, and timeout/count values consistently across epoll,
 kqueue, and select backends. These are API-boundary error branches; valid event
 registration and polling retain the existing backend syscalls and allocation
 behavior.
+
+### Phase 280: zero-length session views and bounded errors
+
+Session deep-copy paths no longer call `malloc(0)` for empty RESP arguments;
+they preserve a null zero-length view without allocation. Fixed server error
+frames use compile-time string lengths, removing over-read warnings and keeping
+the existing allocation-free error path.

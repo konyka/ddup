@@ -66,8 +66,11 @@ int session_block_start(session *s, const resp_value *argv, size_t argc,
             free(copy_argv);
             return -1;
         }
-        char *copy = (char *)malloc(argv[i].len);
-        if (copy == NULL) {
+        char *copy = NULL;
+        if (argv[i].len != 0) {
+            copy = (char *)malloc(argv[i].len);
+        }
+        if (argv[i].len != 0 && copy == NULL) {
             while (i > 0)
                 free((void *)copy_argv[--i].str);
             free(copy_argv);
@@ -220,8 +223,11 @@ int session_queue_push(session *s, const resp_value *argv, size_t argc)
             free(copy_argv);
             return -1;
         }
-        char *copy = (char *)xmalloc(argv[i].len);
-        memcpy(copy, argv[i].str, argv[i].len);
+        char *copy = NULL;
+        if (argv[i].len != 0) {
+            copy = (char *)xmalloc(argv[i].len);
+            memcpy(copy, argv[i].str, argv[i].len);
+        }
         copy_argv[i] = argv[i];
         copy_argv[i].str = copy;
         copy_argv[i].items = NULL;

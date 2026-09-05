@@ -7653,7 +7653,8 @@ static void command_client(session *s, const resp_value *argv, size_t argc,
         if (!arg_str(&argv[2], &name, &nl))
             goto bad_type;
         if (s->client_setname(s->client_ctx, s, name, nl) != 0) {
-            resp_write_error(out, "ERR client name is too long", 29);
+            resp_write_error(out, "ERR client name is too long",
+                             sizeof("ERR client name is too long") - 1);
             return;
         }
         resp_write_simple_string(out, "OK", 2);
@@ -12146,7 +12147,8 @@ static void command_acl(session *s, const resp_value *argv, size_t argc,
             }
         }
         if (bits <= 0 || bits > 4096) {
-            resp_write_error(out, "ERR ACL GENPASS argument must be the number of bits for the output password, a positive number up to 4096", 109);
+            resp_write_error(out, "ERR ACL GENPASS argument must be the number of bits for the output password, a positive number up to 4096",
+                             sizeof("ERR ACL GENPASS argument must be the number of bits for the output password, a positive number up to 4096") - 1);
             return;
         }
         chars = ((size_t)bits + 3) / 4;

@@ -1328,16 +1328,19 @@ static int srv_backup_command(void *ctx, const resp_value *argv, size_t argc,
     size_t len;
     if (argc < 2 || argv[1].str == NULL ||
         (argv[1].type != RESP_BULK_STRING && argv[1].type != RESP_SIMPLE_STRING))
-        return resp_write_error(out, "ERR wrong number of arguments", 31), 0;
+        return resp_write_error(out, "ERR wrong number of arguments",
+                                sizeof("ERR wrong number of arguments") - 1), 0;
     sub = argv[1].str;
     len = argv[1].len;
     if (server_token_eq(sub, len, "START")) {
         if (argc != 2)
-            return resp_write_error(out, "ERR wrong number of arguments", 31), 0;
+            return resp_write_error(out, "ERR wrong number of arguments",
+                                    sizeof("ERR wrong number of arguments") - 1), 0;
         if (srv->backup_state == BACKUP_PENDING ||
             srv->backup_state == BACKUP_SNAPSHOT ||
             srv->backup_state == BACKUP_INCREMENTING)
-            return resp_write_error(out, "ERR backup already in progress", 31), 0;
+            return resp_write_error(out, "ERR backup already in progress",
+                                    sizeof("ERR backup already in progress") - 1), 0;
         if (srv->backup_state == BACKUP_SEALED)
             return resp_write_error(out, "ERR backup is sealed", 21), 0;
         if (srv->db.snapshot_path == NULL || srv->db.snapshot_path[0] == '\0') {
@@ -1387,7 +1390,8 @@ static int srv_backup_command(void *ctx, const resp_value *argv, size_t argc,
                                 srv->backup_path) != 0) {
             srv->backup_state = BACKUP_FAILED;
             snprintf(srv->backup_error, sizeof(srv->backup_error), "snapshot save failed");
-            return resp_write_error(out, "ERR backup snapshot failed", 28), 0;
+            return resp_write_error(out, "ERR backup snapshot failed",
+                                    sizeof("ERR backup snapshot failed") - 1), 0;
         }
         srv->backup_state = BACKUP_INCREMENTING;
         srv->backup_end_ms = pal_wall_ms();
@@ -1421,7 +1425,8 @@ static int srv_backup_command(void *ctx, const resp_value *argv, size_t argc,
     }
     if (server_token_eq(sub, len, "SEAL")) {
         if (argc != 2)
-            return resp_write_error(out, "ERR wrong number of arguments", 31), 0;
+            return resp_write_error(out, "ERR wrong number of arguments",
+                                    sizeof("ERR wrong number of arguments") - 1), 0;
         if (srv->backup_state != BACKUP_INCREMENTING)
             return resp_write_error(out, "ERR no pending backup", 22), 0;
         if (srv->backup_aof_path != NULL &&
@@ -1438,7 +1443,8 @@ static int srv_backup_command(void *ctx, const resp_value *argv, size_t argc,
     }
     if (server_token_eq(sub, len, "ABORT")) {
         if (argc != 2)
-            return resp_write_error(out, "ERR wrong number of arguments", 31), 0;
+            return resp_write_error(out, "ERR wrong number of arguments",
+                                    sizeof("ERR wrong number of arguments") - 1), 0;
         if (srv->backup_state == BACKUP_SEALED)
             return resp_write_error(out, "ERR backup is sealed", 21), 0;
         if (srv->backup_path != NULL)
@@ -1459,7 +1465,8 @@ static int srv_backup_command(void *ctx, const resp_value *argv, size_t argc,
     }
     if (server_token_eq(sub, len, "CLEANUP")) {
         if (argc != 2)
-            return resp_write_error(out, "ERR wrong number of arguments", 31), 0;
+            return resp_write_error(out, "ERR wrong number of arguments",
+                                    sizeof("ERR wrong number of arguments") - 1), 0;
         if (srv->backup_state != BACKUP_SEALED)
             return resp_write_error(out, "ERR no sealed backup", 21), 0;
         if (srv->backup_path != NULL && pal_file_unlink(srv->backup_path) != 0 &&

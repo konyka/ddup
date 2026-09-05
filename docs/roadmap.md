@@ -882,3 +882,5 @@
     无效锁解引用（Phase 278）
   - [x] PAL 事件循环边界：epoll/kqueue/select 统一拒绝 NULL loop、无效 fd、
     空事件输出、非法 max/timeout，避免后端状态解引用（Phase 279）
+  - [x] Session 零长度参数与 RESP 错误长度：空 bulk 参数采用 NULL 视图无分配，
+    固定错误消息长度改为编译期计算，消除 OOM 误判和 stringop-overread（Phase 280）
