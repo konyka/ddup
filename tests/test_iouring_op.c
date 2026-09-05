@@ -112,6 +112,33 @@ static void test_registered_send_buffer_rotation(void)
     pal_iouring_free(p);
 }
 
+static void test_fixed_send_requires_owned_buffer(void)
+{
+    pal_iouring *p = pal_iouring_create();
+    pal_socket_t listener = PAL_SOCKET_INVALID;
+    uint16_t port = 0;
+
+    DD_CHECK(p != NULL);
+    if (p == NULL)
+        return;
+    if (pal_iouring_enable_sbuf(p, 1, SBUF_SIZE) != 0) {
+        printf("registered send buffers unsupported; skipping ownership\n");
+        pal_iouring_free(p);
+        return;
+    }
+    listener = pal_tcp_listen("127.0.0.1", 0, 1, &port);
+    DD_CHECK(listener != PAL_SOCKET_INVALID);
+    if (listener == PAL_SOCKET_INVALID) {
+        pal_iouring_free(p);
+        return;
+    }
+    /* A buffer id is not usable until the caller owns the pool slot. */
+    DD_CHECK_EQ_INT(-1, pal_iouring_send_fixed(p, listener, 0,
+                                               0, 1, NULL));
+    pal_close(listener);
+    pal_iouring_free(p);
+}
+
 static void test_send_zc_fixed_completion(void)
 {
     pal_iouring *p = pal_iouring_create();
@@ -545,6 +572,7 @@ int main(void)
     DD_RUN(test_iouring_null_api_inputs);
     DD_RUN(test_registered_send_buffers);
     DD_RUN(test_registered_send_buffer_rotation);
+    DD_RUN(test_fixed_send_requires_owned_buffer);
     DD_RUN(test_send_zc_fixed_completion);
     pal_iouring *probe;
 

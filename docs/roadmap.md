@@ -932,3 +932,5 @@
     不再留下半初始化拓扑节点（Phase 302）
   - [x] 集群总线 gossip 预检：sender 发布前完整验证 gossip 计数、槽位文本和
     v2 扩展长度，截断 gossip 帧不会部分修改节点拓扑（Phase 303）
+  - [x] io_uring 固定发送槽位所有权：`send_fixed`/`SEND_ZC` 拒绝未被
+    `sbuf_acquire` 持有的 buffer id，避免提前释放导致内存生命周期违规（Phase 304）

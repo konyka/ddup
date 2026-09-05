@@ -46,6 +46,10 @@ nodes.conf 复核：ping、pong 和 config epoch 以输入行的明确长度为�
 条目的地址、槽位文本和 epoch 扩展，再发布 sender 或 gossip 节点。截断 gossip
 帧会原子拒绝，不会把部分拓扑状态暴露给后续路由与故障检测。
 
+io_uring 发送生命周期复核：固定 buffer 与 `SEND_ZC` 提交现在要求槽位处于
+`sbuf_acquire` 持有状态，防止调用方提前 release 后仍提交内核请求；正常注册
+缓冲区和零拷贝通知语义保持不变。
+
 PAL 可靠性补充：io_uring pbuf/SQPOLL 状态和测试注入入口对空 ring 统一
 fail-closed，避免管理/诊断调用破坏服务进程。
 

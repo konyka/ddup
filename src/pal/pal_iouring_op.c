@@ -575,6 +575,7 @@ static int iou_send_fixed_common(pal_iouring *r, pal_socket_t fd, int bid,
         return -1;
     pal_mutex_lock(&r->lock);
     if (!r->sbuf_registered || bid < 0 || (unsigned)bid >= r->sbuf_count ||
+        r->sbuf_busy[bid] == 0 ||
         offset > r->sbuf_size || n > r->sbuf_size - offset) {
         pal_mutex_unlock(&r->lock);
         return -1;

@@ -2150,3 +2150,10 @@ validates every entry's address, slot payload, and v2 metadata extension. The
 preflight is linear in frame size and allocation-free; valid frames pay one
 additional sequential bounds pass, while malformed frames cannot leave partial
 gossip nodes behind.
+
+### Phase 304: fixed-send buffer ownership gate
+
+Fixed and zero-copy sends now require the selected pool slot to be marked busy by
+`sbuf_acquire`. The check is a single predictable branch under the existing pool
+mutex; valid sends retain the same SQE construction and registered-buffer fast
+path, while premature release or forged IDs fail before kernel submission.
