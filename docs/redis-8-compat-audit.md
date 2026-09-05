@@ -582,3 +582,7 @@ semantics while eliminating allocator-dependent OOM behavior and over-reads.
 
 Session MULTI and blocking state now preserve valid zero-argument lists without
 `malloc(0)`, preventing allocator-dependent failures on empty protocol frames.
+
+Cluster regression fixtures now validate node allocation before field setup, so
+the compatibility test suite remains free of undefined behavior under allocation
+failure instrumentation.

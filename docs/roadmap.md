@@ -886,3 +886,5 @@
     固定错误消息长度改为编译期计算，消除 OOM 误判和 stringop-overread（Phase 280）
   - [x] Session 零参数队列：`argc == 0` 不再依赖 `malloc(0)`，MULTI/阻塞状态
     可安全保存空参数列表（Phase 281）
+  - [x] 集群测试夹具可靠性：节点创建结果先验证再写入字段，移除潜在 NULL
+    解引用和全量构建 stringop-overflow 警告（Phase 282）

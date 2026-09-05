@@ -1861,6 +1861,12 @@ Publish and FAIL builders validate output pointers before reading buffer state,
 keeping malformed calls constant-time and crash-free while valid paths remain
 unchanged.
 
+### Phase 282: checked cluster test fixtures
+
+Cluster test constructors now stop before dereferencing a failed node allocation.
+This affects test-only setup, removes undefined behavior from the TDD signal,
+and leaves production routing performance unchanged.
+
 ### Phase 247: bounded nodes.conf APIs
 
 Nodes configuration render and parse entry points validate pointers before

@@ -46,6 +46,9 @@ static void put64be(char *p, uint64_t v)
 static cluster_node *mk(db *d, const char *id, uint32_t flags, uint16_t port)
 {
     cluster_node *n = cluster_node_add(d, id);
+    DD_CHECK(n != NULL);
+    if (n == NULL)
+        return NULL;
     snprintf(n->ip, sizeof(n->ip), "10.0.0.9");
     n->port = port;
     n->bus_port = (uint16_t)(port + 10000);

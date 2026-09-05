@@ -40,6 +40,9 @@ static session *fresh_session(db *d)
     snprintf(d->cluster_ip, sizeof(d->cluster_ip), "127.0.0.1");
     d->cluster_port = 7777;
     me = cluster_node_add(d, TEST_ID);
+    DD_CHECK(me != NULL);
+    if (me == NULL)
+        return s;
     snprintf(me->ip, sizeof(me->ip), "127.0.0.1");
     me->port = 7777;
     me->bus_port = 17777;
