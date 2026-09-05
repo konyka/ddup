@@ -29,6 +29,11 @@ python3 tools/audit_redis_compat.py \
 错误文本长度漂移造成截断或越界读取；`HIMPORT SET` 字段数错误已由命令测试
 锁定完整 wire 响应。
 
+集群持久化/总线槽位文本的输入复核：槽位解析按有界 token 扫描，拒绝非数字、
+缺失范围端点和溢出十进制值；错误 token 不会阻断后续合法槽位恢复，且不会导致
+加载或 gossip 处理线程进入死循环。该防御不改变合法 Redis cluster node slot
+范围的渲染和解析语义。
+
 PAL 可靠性补充：io_uring pbuf/SQPOLL 状态和测试注入入口对空 ring 统一
 fail-closed，避免管理/诊断调用破坏服务进程。
 

@@ -320,24 +320,73 @@ void cluster_slots_parse(uint8_t *bm, const char *s, size_t len)
     if (s == NULL)
         return;
     while (i < len) {
-        unsigned long a = 0, b;
-        while (i < len && s[i] == ' ')
+        size_t start, end, dash = SIZE_MAX;
+        uint32_t a = 0, b = 0;
+        int invalid = 0;
+
+        while (i < len && (s[i] == ' ' || s[i] == '\t' ||
+                           s[i] == '\r' || s[i] == '\n'))
             i++;
         if (i >= len)
             break;
-        while (i < len && s[i] >= '0' && s[i] <= '9')
-            a = a * 10 + (unsigned long)(s[i++] - '0');
-        b = a;
-        if (i < len && s[i] == '-') {
+        start = i;
+        while (i < len && s[i] != ' ' && s[i] != '\t' &&
+               s[i] != '\r' && s[i] != '\n') {
+            if (s[i] == '-') {
+                if (dash != SIZE_MAX)
+                    invalid = 1;
+                else
+                    dash = i;
+            }
             i++;
-            b = 0;
-            while (i < len && s[i] >= '0' && s[i] <= '9')
-                b = b * 10 + (unsigned long)(s[i++] - '0');
         }
+        end = i;
+
+        /* Parse each side with overflow detection; malformed tokens are ignored. */
+        {
+            size_t p = start;
+            size_t stop = dash == SIZE_MAX ? end : dash;
+            if (p == stop)
+                invalid = 1;
+            while (!invalid && p < stop) {
+                unsigned digit;
+                if (s[p] < '0' || s[p] > '9') {
+                    invalid = 1;
+                    break;
+                }
+                digit = (unsigned)(s[p++] - '0');
+                if (a > (UINT32_MAX - digit) / 10u) {
+                    invalid = 1;
+                    break;
+                }
+                a = a * 10u + digit;
+            }
+            b = a;
+            if (!invalid && dash != SIZE_MAX) {
+                p = dash + 1;
+                if (p == end)
+                    invalid = 1;
+                while (!invalid && p < end) {
+                    unsigned digit;
+                    if (s[p] < '0' || s[p] > '9') {
+                        invalid = 1;
+                        break;
+                    }
+                    digit = (unsigned)(s[p++] - '0');
+                    if (b > (UINT32_MAX - digit) / 10u) {
+                        invalid = 1;
+                        break;
+                    }
+                    b = b * 10u + digit;
+                }
+            }
+        }
+        if (invalid || a > 16383 || b < a)
+            continue;
         if (b > 16383)
             b = 16383;
         for (; a <= b; a++)
-            cluster_slots_set(bm, (uint32_t)a, 1);
+            cluster_slots_set(bm, a, 1);
     }
 }
 

@@ -2119,3 +2119,12 @@ Queue and blocking-state deep copies represent `argc == 0` with a null argv
 pointer instead of allocating zero bytes. This removes allocator variance and
 keeps the valid empty-list path allocation-free; non-empty command behavior is
 unchanged.
+
+### Phase 300: bounded cluster slot-text parsing
+
+Cluster slot text is scanned once by whitespace-delimited token, so malformed
+input always advances the cursor and cannot pin a recovery/load worker in a
+parse loop. Decimal range ends are accumulated in `uint32_t` with a pre-multiply
+overflow check; valid ranges retain the existing bitmap-only, allocation-free
+write path. Out-of-range starts and malformed/overflowing tokens are discarded,
+while an end above 16383 retains the historical clamp for a valid in-range start.

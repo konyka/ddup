@@ -242,6 +242,29 @@ static void test_slot_api_rejects_null_inputs(void)
     DD_CHECK_EQ_INT(0, cluster_slots_get(bm, 0));
 }
 
+static void test_slots_parse_skips_malformed_tokens(void)
+{
+    uint8_t bm[2048];
+
+    /* Invalid tokens must not stall parsing or prevent later valid tokens. */
+    memset(bm, 0, sizeof(bm));
+    cluster_slots_parse(bm, "x 7", 3);
+    DD_CHECK_EQ_INT(1, cluster_slots_get(bm, 7));
+    DD_CHECK_EQ_INT(0, cluster_slots_get(bm, 0));
+}
+
+static void test_slots_parse_rejects_decimal_overflow(void)
+{
+    uint8_t bm[2048];
+    const char input[] = "18446744073709551616 42";
+
+    /* Overflowing values must be ignored rather than wrapping to slot zero. */
+    memset(bm, 0, sizeof(bm));
+    cluster_slots_parse(bm, input, sizeof(input) - 1);
+    DD_CHECK_EQ_INT(1, cluster_slots_get(bm, 42));
+    DD_CHECK_EQ_INT(0, cluster_slots_get(bm, 0));
+}
+
 static void test_cluster_state_api_rejects_null_inputs(void)
 {
     db d;
@@ -378,6 +401,8 @@ int main(void)
     DD_RUN(test_parse_rejects_out_of_range_ports);
     DD_RUN(test_node_api_rejects_null_inputs);
     DD_RUN(test_slot_api_rejects_null_inputs);
+    DD_RUN(test_slots_parse_skips_malformed_tokens);
+    DD_RUN(test_slots_parse_rejects_decimal_overflow);
     DD_RUN(test_cluster_state_api_rejects_null_inputs);
     DD_RUN(test_corrupt_node_count_fails_closed);
     DD_RUN(test_corrupt_report_count_fails_closed);
