@@ -908,3 +908,5 @@
     配置入口拒绝空 server，避免控制面解引用和状态污染（Phase 290）
   - [x] Server 配置控制面 NULL 防护：TLS/AOF、内存/协议限制、快照/节点加载、
     slowlog/保存周期和优雅停止入口对空 server 或空路径安全返回（Phase 291）
+  - [x] Server 诊断与连接辅助边界：AOF 测试查询、监听/唤醒、路由及连接迁移/
+    输出 API 拒绝 NULL/无效 fd，错误路径不再二次解引用空连接（Phase 292）

@@ -3053,7 +3053,7 @@ static void srv_aof_flush(server *srv)
 void server_aof_log_cmd(server *s, int db_index, const resp_value *argv,
                         size_t argc)
 {
-    if (s->aof != NULL && !s->aof_failed)
+    if (s != NULL && s->aof != NULL && !s->aof_failed)
         srv_aof_log(s, db_index, argv, argc);
 }
 
@@ -3061,18 +3061,18 @@ void server_test_set_aof_write_fn(
     server *s,
     ptrdiff_t (*write_fn)(pal_file *f, const void *buf, size_t n))
 {
-    if (s->aof != NULL)
+    if (s != NULL && s->aof != NULL)
         aof_test_set_write_fn(s->aof, write_fn);
 }
 
 int server_test_aof_failed(const server *s)
 {
-    return s->aof_failed;
+    return s == NULL ? 0 : s->aof_failed;
 }
 
 size_t server_test_aof_pending_bytes(const server *s)
 {
-    return s->aof != NULL ? s->aof->pending.len : 0;
+    return s != NULL && s->aof != NULL ? s->aof->pending.len : 0;
 }
 
 /* Start a TLS listener alongside the plain one (port 0 = ephemeral).
@@ -3624,6 +3624,8 @@ void server_free_connections(server *s)
 
 void server_close_listener(server *s)
 {
+    if (s == NULL)
+        return;
     if (s->listen_fd == PAL_SOCKET_INVALID)
         return;
     if (s->loop != NULL && !srv_proactor(s))
@@ -3635,6 +3637,8 @@ void server_close_listener(server *s)
 int server_adopt_fd(server *s, pal_socket_t fd)
 {
     conn *c;
+    if (s == NULL || fd == PAL_SOCKET_INVALID)
+        return -1;
     if (srv_proactor(s)) {
         /* completion model: register the conn and post the first recv */
         server_accept_pro(s, fd);
@@ -3672,7 +3676,7 @@ int server_adopt_fd_tls(server *s, pal_socket_t fd)
 {
     conn *c;
     pal_tls *tls;
-    if (s->tls_ctx == NULL)
+    if (s == NULL || fd == PAL_SOCKET_INVALID || s->tls_ctx == NULL)
         return -1;
     (void)pal_set_tcp_nodelay(fd, 1);
     if (pal_set_nonblocking(fd, 1) != 0) {
@@ -3713,6 +3717,8 @@ int server_adopt_fd_tls(server *s, pal_socket_t fd)
 int server_set_wakeup(server *s, pal_socket_t fd, void (*cb)(void *ctx),
                       void *ctx)
 {
+    if (s == NULL || fd == PAL_SOCKET_INVALID)
+        return -1;
     if (srv_proactor(s)) {
         /* no fd registration: kicks arrive as WAKEUP completions posted
          * via server_wakeup_kick() */
@@ -3730,6 +3736,8 @@ int server_set_wakeup(server *s, pal_socket_t fd, void (*cb)(void *ctx),
 
 void server_wakeup_kick(server *s)
 {
+    if (s == NULL)
+        return;
     if (srv_proactor(s) && (s->iocp != NULL || s->iou != NULL))
         (void)pro_kick(s);
 }
@@ -3738,6 +3746,8 @@ void server_set_route(server *s, server_route_fn fn,
                       server_route_flush_fn flush_fn,
                       void (*mt_state_free)(void *ctx, void *st), void *ctx)
 {
+    if (s == NULL)
+        return;
     s->route_fn = fn;
     s->route_flush_fn = flush_fn;
     s->mt_state_free = mt_state_free;
@@ -3746,22 +3756,26 @@ void server_set_route(server *s, server_route_fn fn,
 
 void server_set_mt_close(server *s, server_mt_close_fn fn)
 {
-    s->mt_close_fn = fn;
+    if (s != NULL)
+        s->mt_close_fn = fn;
 }
 
 void *server_conn_mt_state(void *conn_ptr)
 {
-    return ((conn *)conn_ptr)->mt_state;
+    return conn_ptr == NULL ? NULL : ((conn *)conn_ptr)->mt_state;
 }
 
 void server_conn_set_mt_state(void *conn_ptr, void *st)
 {
-    ((conn *)conn_ptr)->mt_state = st;
+    if (conn_ptr != NULL)
+        ((conn *)conn_ptr)->mt_state = st;
 }
 
 void server_conn_free_now(server *s, void *conn_ptr)
 {
     conn *c = (conn *)conn_ptr;
+    if (s == NULL || c == NULL)
+        return;
     if (srv_proactor(s)) {
         if (c->pending_ops > 0) {
             /* overlapped ops still in flight: the loop frees the conn
@@ -3788,6 +3802,8 @@ int server_conn_detach(server *s, void *conn_ptr)
 {
     conn *c = (conn *)conn_ptr;
     size_t i;
+    if (s == NULL || c == NULL)
+        return -1;
     for (i = 0; i < s->nconns; i++)
         if (s->conns[i] == c)
             break;
@@ -3802,6 +3818,8 @@ int server_conn_detach(server *s, void *conn_ptr)
 void server_conn_rehome(server *s, void *conn_ptr)
 {
     conn *c = (conn *)conn_ptr;
+    if (s == NULL || c == NULL || c->sess == NULL)
+        return;
     c->srv = s;
     /* rewire the session to the new worker's server, preserving the
      * selected database (SELECT state travels with the connection) */
@@ -3830,6 +3848,8 @@ void server_conn_rehome(server *s, void *conn_ptr)
 int server_conn_adopt(server *s, void *conn_ptr)
 {
     conn *c = (conn *)conn_ptr;
+    if (s == NULL || c == NULL || c->fd == PAL_SOCKET_INVALID)
+        return -1;
     if (s->nconns == s->cap) {
         size_t ncap = s->cap == 0 ? 16 : s->cap * 2;
         conn **nc = (conn **)realloc(s->conns, ncap * sizeof(*nc));
@@ -3867,8 +3887,10 @@ int server_conn_out_append(server *s, void *conn_ptr, const char *data,
 {
     conn *c = (conn *)conn_ptr;
     (void)s;
-    if (resp_buf_reserve(&c->out, len) != 0) {
-        c->close_after_send = 1;
+    if (s == NULL || c == NULL || (data == NULL && len != 0) ||
+        resp_buf_reserve(&c->out, len) != 0) {
+        if (c != NULL)
+            c->close_after_send = 1;
         return -1;
     }
     memcpy(c->out.data + c->out.len, data, len);
@@ -3878,6 +3900,8 @@ int server_conn_out_append(server *s, void *conn_ptr, const char *data,
 
 int server_conn_flush(server *s, void *conn_ptr)
 {
+    if (s == NULL || conn_ptr == NULL)
+        return -1;
     if (srv_proactor(s)) {
         /* completion model: post an overlapped send if none is in flight */
         kick_flush(s, (conn *)conn_ptr);

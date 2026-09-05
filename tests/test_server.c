@@ -135,6 +135,10 @@ static void test_persistence_paths_reject_truncation(void)
     DD_CHECK_EQ_INT(-1, server_tls_ctx_init(NULL, NULL, NULL));
     DD_CHECK_EQ_INT(0, server_tls_port(NULL));
     DD_CHECK_EQ_INT(-1, server_enable_aof(NULL, "x"));
+    DD_CHECK_EQ_INT(0, server_test_aof_failed(NULL));
+    DD_CHECK_EQ_INT(0, (long long)server_test_aof_pending_bytes(NULL));
+    server_test_set_aof_write_fn(NULL, NULL);
+    server_aof_log_cmd(NULL, 0, NULL, 0);
     server_set_appendfsync(NULL, AOF_FSYNC_ALWAYS);
     server_set_maxmemory(NULL, 1, 0);
     server_set_proto_max_request_bytes(NULL, 1);
@@ -145,6 +149,21 @@ static void test_persistence_paths_reject_truncation(void)
     server_set_save_interval(NULL, 1);
     DD_CHECK_EQ_INT(0, server_shutdown_requested(NULL));
     server_graceful_stop(NULL);
+    server_close_listener(NULL);
+    DD_CHECK_EQ_INT(-1, server_adopt_fd(NULL, PAL_SOCKET_INVALID));
+    DD_CHECK_EQ_INT(-1, server_adopt_fd_tls(NULL, PAL_SOCKET_INVALID));
+    DD_CHECK_EQ_INT(-1, server_set_wakeup(NULL, PAL_SOCKET_INVALID, NULL, NULL));
+    server_wakeup_kick(NULL);
+    server_set_route(NULL, NULL, NULL, NULL, NULL);
+    server_set_mt_close(NULL, NULL);
+    DD_CHECK(server_conn_mt_state(NULL) == NULL);
+    server_conn_set_mt_state(NULL, NULL);
+    server_conn_free_now(NULL, NULL);
+    DD_CHECK_EQ_INT(-1, server_conn_detach(NULL, NULL));
+    server_conn_rehome(NULL, NULL);
+    DD_CHECK_EQ_INT(-1, server_conn_adopt(NULL, NULL));
+    DD_CHECK_EQ_INT(-1, server_conn_out_append(NULL, NULL, NULL, 0));
+    DD_CHECK_EQ_INT(-1, server_conn_flush(NULL, NULL));
     server_set_snapshot_path(NULL, long_dir);
     server_enable_cluster(NULL, NULL);
 
