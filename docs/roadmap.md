@@ -967,3 +967,5 @@
     在证书链校验之外绑定目标主机名/IP，错误名称 fail-closed（Phase 319）
   - [x] Cluster bus 快速发布路径完整性：本地投递前校验 wire magic、总长度、
     Redis gossip 计数和精确 payload 边界，禁止 malformed 帧绕过 codec（Phase 320）
+  - [x] 集群回归夹具分配检查：migrate、failover 与 pfail 夹具在写入 node
+    字段前验证创建结果，消除 LTO 下潜在 NULL 解引用和警告（Phase 321）

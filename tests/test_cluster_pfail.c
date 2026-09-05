@@ -21,6 +21,8 @@
 static cluster_node *mknode(db *d, const char *id, uint32_t flags)
 {
     cluster_node *n = cluster_node_add(d, id);
+    if (n == NULL)
+        return NULL;
     snprintf(n->ip, sizeof(n->ip), "127.0.0.1");
     n->port = 7001;
     n->bus_port = 17001;

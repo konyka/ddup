@@ -44,6 +44,8 @@ static session *fresh_session(db *d)
     snprintf(d->cluster_ip, sizeof(d->cluster_ip), "127.0.0.1");
     d->cluster_port = 7777;
     me = cluster_node_add(d, TEST_ID);
+    if (me == NULL)
+        return s;
     snprintf(me->ip, sizeof(me->ip), "127.0.0.1");
     me->port = 7777;
     me->bus_port = 17777;
@@ -54,6 +56,8 @@ static session *fresh_session(db *d)
 static cluster_node *add_other(db *d)
 {
     cluster_node *n = cluster_node_add(d, OTHER_ID);
+    if (n == NULL)
+        return NULL;
     snprintf(n->ip, sizeof(n->ip), "10.0.0.2");
     n->port = 7002;
     n->bus_port = 17002;

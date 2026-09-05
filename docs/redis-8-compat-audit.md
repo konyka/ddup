@@ -47,6 +47,10 @@ Cluster bus 服务端补充复核：在 topology codec 之前的发布快速投�
 验证协议 magic、内嵌总长度、Redis 原生零 gossip 和 payload 精确边界，确保
 带尾随数据或伪造长度的发布帧不会被本地订阅者接收。
 
+测试可靠性补充：cluster migrate、failover 和 pfail 回归夹具在写入节点固定
+字段前检查 `cluster_node_add()` 返回值，避免在内存失败注入或 LTO 静态分析下
+掩盖有效的协议语义回归。
+
 集群持久化/总线槽位文本的输入复核：槽位解析按有界 token 扫描，拒绝非数字、
 缺失范围端点和溢出十进制值；错误 token 不会阻断后续合法槽位恢复，且不会导致
 加载或 gossip 处理线程进入死循环。该防御不改变合法 Redis cluster node slot
