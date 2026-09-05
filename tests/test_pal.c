@@ -7,6 +7,7 @@
 #include "pal/pal_simd.h"
 #include "pal/pal_time.h"
 #include "pal/pal_thread.h"
+#include "pal/pal_file.h"
 
 #if DDUP_OS_LINUX
 #include <signal.h>
@@ -103,6 +104,28 @@ static void test_secure_random_input_bounds(void)
     DD_CHECK_EQ_INT(-1, pal_secure_random(NULL, 1));
     DD_CHECK_EQ_INT(0, pal_secure_random(NULL, 0));
     DD_CHECK_EQ_INT(0, pal_secure_random(bytes, sizeof(bytes)));
+}
+
+static void test_file_io_input_bounds(void)
+{
+    char byte = 0;
+
+    DD_CHECK_EQ_INT(-1, (long long)pal_file_write(NULL, &byte, 1));
+    DD_CHECK_EQ_INT(-1, (long long)pal_file_write(NULL, NULL, 0));
+    DD_CHECK_EQ_INT(-1, (long long)pal_file_read(NULL, &byte, 1));
+    DD_CHECK_EQ_INT(-1, (long long)pal_file_read(NULL, NULL, 0));
+    DD_CHECK_EQ_INT(-1, pal_file_flush(NULL));
+    DD_CHECK_EQ_INT(-1, pal_file_seek(NULL, 0));
+    DD_CHECK_EQ_INT(0, (long long)pal_file_tell(NULL));
+    DD_CHECK_EQ_INT(-1, pal_file_sync(NULL));
+    DD_CHECK(pal_file_open_append(NULL) == NULL);
+    DD_CHECK(pal_file_open_read("") == NULL);
+    DD_CHECK(pal_file_open_write(NULL) == NULL);
+    DD_CHECK(pal_file_open_update("") == NULL);
+    DD_CHECK_EQ_INT(0, pal_file_exists(NULL));
+    DD_CHECK_EQ_INT(-1, pal_file_rename(NULL, "x"));
+    DD_CHECK_EQ_INT(-1, pal_file_rename("x", NULL));
+    DD_CHECK_EQ_INT(-1, pal_file_unlink(NULL));
 }
 
 #if DDUP_OS_LINUX
@@ -227,6 +250,7 @@ int main(void)
     DD_RUN(test_time_concurrent_first_use);
     DD_RUN(test_wall_clock_sane);
     DD_RUN(test_secure_random_input_bounds);
+    DD_RUN(test_file_io_input_bounds);
 #if DDUP_OS_LINUX
     DD_RUN(test_sleep_completes_after_signal);
 #endif

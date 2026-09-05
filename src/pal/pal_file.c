@@ -113,16 +113,22 @@ static pal_file *wrap(FILE *fp)
 
 pal_file *pal_file_open_append(const char *path)
 {
+    if (path == NULL || path[0] == '\0')
+        return NULL;
     return wrap(fopen(path, "ab"));
 }
 
 pal_file *pal_file_open_read(const char *path)
 {
+    if (path == NULL || path[0] == '\0')
+        return NULL;
     return wrap(fopen(path, "rb"));
 }
 
 pal_file *pal_file_open_write(const char *path)
 {
+    if (path == NULL || path[0] == '\0')
+        return NULL;
 #ifdef DDUP_TESTING
     pal_file_open_write_count++;
 #endif
@@ -131,7 +137,10 @@ pal_file *pal_file_open_write(const char *path)
 
 pal_file *pal_file_open_update(const char *path)
 {
-    FILE *fp = fopen(path, "r+b");
+    FILE *fp;
+    if (path == NULL || path[0] == '\0')
+        return NULL;
+    fp = fopen(path, "r+b");
     if (fp == NULL)
         fp = fopen(path, "w+b");
     return wrap(fp);
@@ -139,6 +148,8 @@ pal_file *pal_file_open_update(const char *path)
 
 ptrdiff_t pal_file_write(pal_file *f, const void *buf, size_t n)
 {
+    if (f == NULL || f->fp == NULL || (buf == NULL && n != 0))
+        return -1;
     size_t w = fwrite(buf, 1, n, f->fp);
     if (w < n && ferror(f->fp))
         return -1;
@@ -147,6 +158,8 @@ ptrdiff_t pal_file_write(pal_file *f, const void *buf, size_t n)
 
 ptrdiff_t pal_file_read(pal_file *f, void *buf, size_t n)
 {
+    if (f == NULL || f->fp == NULL || (buf == NULL && n != 0))
+        return -1;
     size_t r = fread(buf, 1, n, f->fp);
     if (r < n && ferror(f->fp))
         return -1;
@@ -155,6 +168,8 @@ ptrdiff_t pal_file_read(pal_file *f, void *buf, size_t n)
 
 int pal_file_flush(pal_file *f)
 {
+    if (f == NULL || f->fp == NULL)
+        return -1;
 #ifdef DDUP_TESTING
     if (pal_file_fail_next_flush) {
         pal_file_fail_next_flush = 0;
@@ -166,6 +181,8 @@ int pal_file_flush(pal_file *f)
 
 int pal_file_seek(pal_file *f, uint64_t pos)
 {
+    if (f == NULL || f->fp == NULL)
+        return -1;
 #if DDUP_OS_WINDOWS
     return _fseeki64(f->fp, (long long)pos, SEEK_SET) == 0 ? 0 : -1;
 #else
@@ -175,6 +192,8 @@ int pal_file_seek(pal_file *f, uint64_t pos)
 
 uint64_t pal_file_tell(pal_file *f)
 {
+    if (f == NULL || f->fp == NULL)
+        return 0;
 #if DDUP_OS_WINDOWS
     long long pos = _ftelli64(f->fp);
 #else
@@ -187,6 +206,8 @@ uint64_t pal_file_tell(pal_file *f)
 
 int pal_file_sync(pal_file *f)
 {
+    if (f == NULL || f->fp == NULL)
+        return -1;
 #ifdef DDUP_TESTING
     if (pal_file_fail_next_sync) {
         pal_file_fail_next_sync = 0;
@@ -221,6 +242,8 @@ int pal_file_close(pal_file *f)
 
 int pal_file_exists(const char *path)
 {
+    if (path == NULL || path[0] == '\0')
+        return 0;
     FILE *fp = fopen(path, "rb");
     if (fp == NULL)
         return 0;
@@ -230,6 +253,8 @@ int pal_file_exists(const char *path)
 
 int pal_file_rename(const char *from, const char *to)
 {
+    if (from == NULL || to == NULL || from[0] == '\0' || to[0] == '\0')
+        return -1;
 #ifdef DDUP_TESTING
     if (pal_file_fail_next_rename) {
         pal_file_fail_next_rename = 0;
@@ -246,5 +271,7 @@ int pal_file_rename(const char *from, const char *to)
 
 int pal_file_unlink(const char *path)
 {
+    if (path == NULL || path[0] == '\0')
+        return -1;
     return remove(path) == 0 ? 0 : -1;
 }
