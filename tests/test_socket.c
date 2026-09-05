@@ -25,6 +25,12 @@ static void test_invalid_socket_arguments_fail_closed(void)
     DD_CHECK_EQ_INT(-1, pal_get_peer_ip(PAL_SOCKET_INVALID, NULL, 0));
     DD_CHECK_EQ_INT(-1, pal_get_peer_ip(PAL_SOCKET_INVALID, NULL, 16));
     DD_CHECK(pal_accept(PAL_SOCKET_INVALID) == PAL_SOCKET_INVALID);
+    DD_CHECK_EQ_INT(-1, pal_recv(PAL_SOCKET_INVALID, NULL, 1));
+    DD_CHECK_EQ_INT(-1, pal_send(PAL_SOCKET_INVALID, NULL, 1));
+
+    fd = (pal_socket_t)123;
+    DD_CHECK_EQ_INT(-1, pal_tcp_connect_start(NULL, 6379, &fd));
+    DD_CHECK(fd == PAL_SOCKET_INVALID);
 }
 
 static void test_listen_connect_echo(void)

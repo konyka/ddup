@@ -873,3 +873,5 @@
     非法 RESP 字符串，并在深拷贝失败时完整回滚已分配参数（Phase 274）
   - [x] PAL socket 参数防护：异步连接、完成、监听、accept、套接字选项和
     peer 地址入口拒绝 NULL/无效句柄，避免平台 syscall 崩溃（Phase 275）
+  - [x] PAL socket 收发边界：`pal_recv`/`pal_send` 拒绝无效句柄与非零长度
+    NULL 缓冲区，异步连接失败时清零输出句柄，避免陈旧 fd 泄漏（Phase 276）

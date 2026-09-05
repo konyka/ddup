@@ -106,6 +106,8 @@ int pal_tcp_connect_start(const char *host, uint16_t port,
     pal_socket_t fd = PAL_SOCKET_INVALID;
     int rc = -1;
 
+    if (out_fd != NULL)
+        *out_fd = PAL_SOCKET_INVALID;
     if (host == NULL || out_fd == NULL)
         return -1;
 
@@ -355,6 +357,8 @@ pal_socket_t pal_accept(pal_socket_t listen_fd)
 
 ptrdiff_t pal_recv(pal_socket_t fd, void *buf, size_t n)
 {
+    if (fd == PAL_SOCKET_INVALID || (buf == NULL && n != 0))
+        return -1;
 #if DDUP_OS_WINDOWS
     int rc = recv((SOCKET)fd, (char *)buf, (int)n, 0);
     if (rc == SOCKET_ERROR)
@@ -370,6 +374,8 @@ ptrdiff_t pal_recv(pal_socket_t fd, void *buf, size_t n)
 
 ptrdiff_t pal_send(pal_socket_t fd, const void *buf, size_t n)
 {
+    if (fd == PAL_SOCKET_INVALID || (buf == NULL && n != 0))
+        return -1;
 #if DDUP_OS_WINDOWS
     int rc = send((SOCKET)fd, (const char *)buf, (int)n, 0);
     if (rc == SOCKET_ERROR)

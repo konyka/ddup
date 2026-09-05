@@ -559,3 +559,7 @@ from leaking memory or corrupting connection state.
 The cross-platform socket layer now rejects invalid handles and null network
 arguments before platform calls, preventing malformed client/replication setup
 from causing process faults while preserving valid TCP behavior.
+
+PAL send/receive and asynchronous-connect APIs now reject malformed buffers or
+handles and clear failed output descriptors, preventing stale sockets from
+escaping into client and replication connection state.

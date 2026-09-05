@@ -2032,3 +2032,10 @@ Socket helpers validate invalid handles, null host/output pointers, and
 non-positive listen backlogs before entering platform syscalls. These checks are
 error-path branches; valid connect, accept, and option-setting paths retain the
 same syscall count and nonblocking behavior.
+
+### Phase 276: bounded PAL socket I/O arguments
+
+Send/receive helpers validate handles and non-empty buffers before entering the
+OS syscall, while asynchronous connect initializes its output descriptor to the
+invalid sentinel on every failure path. These are predictable error branches;
+valid I/O keeps the same syscall and copy behavior.
