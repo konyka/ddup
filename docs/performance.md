@@ -2157,3 +2157,9 @@ Fixed and zero-copy sends now require the selected pool slot to be marked busy b
 `sbuf_acquire`. The check is a single predictable branch under the existing pool
 mutex; valid sends retain the same SQE construction and registered-buffer fast
 path, while premature release or forged IDs fail before kernel submission.
+
+### Phase 305: bounded cluster gossip addresses
+
+Gossip preflight and decode now reject address lengths that cannot fit the fixed
+64-byte address buffer. The check is a cold, constant-time branch per gossip
+entry; valid frames retain the existing bounded copy and merge path.

@@ -1032,7 +1032,7 @@ int cluster_bus_handle_frame(struct db *d, const char *frame, size_t len,
             q += 40;
             glen = get16(q);
             q += 2;
-            if ((size_t)(end - q) < (size_t)glen + 10)
+            if (glen >= 64 || (size_t)(end - q) < (size_t)glen + 10)
                 return -1;
             q += glen + 2 + 2 + 4;
             if ((size_t)(end - q) < 2)
@@ -1089,6 +1089,8 @@ int cluster_bus_handle_frame(struct db *d, const char *frame, size_t len,
             ipl = get16(p);
             p += 2;
             if ((size_t)(end - p) < (size_t)ipl + 10)
+                return -1;
+            if (ipl >= sizeof(ip))
                 return -1;
             memcpy(ip, p, ipl);
             ip[ipl] = '\0';

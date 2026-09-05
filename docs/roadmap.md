@@ -934,3 +934,5 @@
     v2 扩展长度，截断 gossip 帧不会部分修改节点拓扑（Phase 303）
   - [x] io_uring 固定发送槽位所有权：`send_fixed`/`SEND_ZC` 拒绝未被
     `sbuf_acquire` 持有的 buffer id，避免提前释放导致内存生命周期违规（Phase 304）
+  - [x] 集群 gossip 地址边界：预检与实际解码统一拒绝不可表示的地址长度，防止
+    恶意 gossip `ipl` 写越界固定地址缓冲区（Phase 305）

@@ -224,6 +224,54 @@ static void test_handle_rejects_truncated_gossip_without_topology_mutation(void)
     db_destroy(&source);
 }
 
+static void test_handle_rejects_oversized_gossip_address(void)
+{
+    db source, target;
+    resp_buf frame, reply;
+    size_t gossip_ip_len_off;
+    size_t gossip_ip_data_off;
+    uint16_t ip_len = 64;
+
+    db_init(&source);
+    db_init(&target);
+    cluster_nodes_init(&source);
+    cluster_nodes_init(&target);
+    resp_buf_init(&frame);
+    resp_buf_init(&reply);
+    make_node(&source, ID1, "127.0.0.1", 7001,
+              CLUSTER_NODE_MYSELF | CLUSTER_NODE_MASTER, 1);
+    make_node(&source, ID2, "127.0.0.1", 7002, CLUSTER_NODE_MASTER, 0);
+    DD_CHECK_EQ_INT(0, cluster_bus_build_frame(&source, CLUSTER_MSG_PING,
+                                               &frame));
+    /* Header + sender record + v2 extension + gossip count + id. */
+    gossip_ip_len_off = 10 + 40 + 2 + strlen("127.0.0.1") + 2 + 2 + 4 +
+                        2048 + 48 + 2 + 40;
+    DD_CHECK(gossip_ip_len_off + 2 <= frame.len);
+    gossip_ip_data_off = gossip_ip_len_off + 2;
+    /* Keep the frame otherwise valid: expand the address payload in place. */
+    DD_CHECK_EQ_INT(0, resp_buf_reserve(&frame, 64 - strlen("127.0.0.1")));
+    memmove(frame.data + gossip_ip_data_off + ip_len,
+            frame.data + gossip_ip_data_off + strlen("127.0.0.1"),
+            frame.len - gossip_ip_data_off - strlen("127.0.0.1"));
+    memset(frame.data + gossip_ip_data_off + strlen("127.0.0.1"), 'x',
+           ip_len - strlen("127.0.0.1"));
+    frame.len += ip_len - strlen("127.0.0.1");
+    frame.data[gossip_ip_len_off] = (char)(ip_len & 0xffu);
+    frame.data[gossip_ip_len_off + 1] = (char)(ip_len >> 8);
+    frame.data[4] = (char)(frame.len & 0xffu);
+    frame.data[5] = (char)((frame.len >> 8) & 0xffu);
+    frame.data[6] = (char)((frame.len >> 16) & 0xffu);
+    frame.data[7] = (char)((frame.len >> 24) & 0xffu);
+    DD_CHECK_EQ_INT(-1, cluster_bus_handle_frame(&target, frame.data,
+                                                 frame.len, &reply, T0));
+    DD_CHECK_EQ_INT(0, target.nnodes);
+
+    resp_buf_free(&reply);
+    resp_buf_free(&frame);
+    db_destroy(&target);
+    db_destroy(&source);
+}
+
 static void test_meet_convergence(void);
 static void test_gossip_carry(void);
 static void test_fail_detect(void);
@@ -237,6 +285,7 @@ int main(void)
     DD_RUN(test_handle_rejects_null_inputs);
     DD_RUN(test_handle_rejects_truncated_v2_before_node_publish);
     DD_RUN(test_handle_rejects_truncated_gossip_without_topology_mutation);
+    DD_RUN(test_handle_rejects_oversized_gossip_address);
     DD_RUN(test_meet_convergence);
     DD_RUN(test_gossip_carry);
     DD_RUN(test_fail_detect);

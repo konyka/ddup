@@ -50,6 +50,9 @@ io_uring 发送生命周期复核：固定 buffer 与 `SEND_ZC` 提交现在要�
 `sbuf_acquire` 持有状态，防止调用方提前 release 后仍提交内核请求；正常注册
 缓冲区和零拷贝通知语义保持不变。
 
+集群 gossip 地址复核：gossip 条目的 `ipl` 在预检和解码阶段均限制在本地固定
+地址字段可表示范围内，超长地址帧被拒绝且不修改拓扑；合法节点地址行为不变。
+
 PAL 可靠性补充：io_uring pbuf/SQPOLL 状态和测试注入入口对空 ring 统一
 fail-closed，避免管理/诊断调用破坏服务进程。
 
