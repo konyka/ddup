@@ -466,6 +466,8 @@ pal_socket_t pal_iouring_listen(pal_iouring *r, const char *host,
                                 uint16_t port, uint16_t *bound_port,
                                 void *userdata)
 {
+    if (r == NULL || host == NULL)
+        return PAL_SOCKET_INVALID;
     pal_socket_t fd = pal_tcp_listen(host, port, 511, bound_port);
     if (fd == PAL_SOCKET_INVALID)
         return PAL_SOCKET_INVALID;
@@ -482,6 +484,8 @@ int pal_iouring_accept_post(pal_iouring *r, pal_socket_t listen_fd,
     struct io_uring_sqe *sqe;
     unsigned tail;
     int rc;
+    if (r == NULL || listen_fd == PAL_SOCKET_INVALID)
+        return -1;
     pal_mutex_lock(&r->lock);
     if (r->accept_armed) {
         /* multishot accept still live: it keeps producing completions */
@@ -512,6 +516,9 @@ int pal_iouring_recv(pal_iouring *r, pal_socket_t fd, void *buf, size_t cap,
     struct io_uring_sqe *sqe;
     unsigned tail;
     int rc;
+    if (r == NULL || fd == PAL_SOCKET_INVALID ||
+        (buf == NULL && cap != 0) || cap > UINT32_MAX)
+        return -1;
     pal_mutex_lock(&r->lock);
     sqe = iou_reserve_sqe(r, &tail);
     if (sqe == NULL) {
@@ -536,6 +543,9 @@ int pal_iouring_send(pal_iouring *r, pal_socket_t fd, const void *buf,
     struct io_uring_sqe *sqe;
     unsigned tail;
     int rc;
+    if (r == NULL || fd == PAL_SOCKET_INVALID ||
+        (buf == NULL && n != 0) || n > UINT32_MAX)
+        return -1;
     pal_mutex_lock(&r->lock);
     sqe = iou_reserve_sqe(r, &tail);
     if (sqe == NULL) {
@@ -561,6 +571,8 @@ static int iou_send_fixed_common(pal_iouring *r, pal_socket_t fd, int bid,
     struct io_uring_sqe *sqe;
     unsigned tail;
     int rc;
+    if (r == NULL || fd == PAL_SOCKET_INVALID || n > UINT32_MAX)
+        return -1;
     pal_mutex_lock(&r->lock);
     if (!r->sbuf_registered || bid < 0 || (unsigned)bid >= r->sbuf_count ||
         offset > r->sbuf_size || n > r->sbuf_size - offset) {
@@ -662,9 +674,10 @@ void *pal_iouring_sbuf_acquire(pal_iouring *r, int *bid)
     unsigned i;
     unsigned start;
     void *buf = NULL;
+    if (bid != NULL)
+        *bid = -1;
     if (r == NULL || bid == NULL)
         return NULL;
-    *bid = -1;
     pal_mutex_lock(&r->lock);
     if (!r->sbuf_registered)
         goto done;
@@ -806,6 +819,8 @@ int pal_iouring_recv_ms(pal_iouring *r, pal_socket_t fd, void *userdata)
     struct io_uring_sqe *sqe;
     unsigned tail;
     int rc;
+    if (r == NULL || fd == PAL_SOCKET_INVALID)
+        return -1;
     pal_mutex_lock(&r->lock);
     if (r->pbuf_ring == NULL) {
         pal_mutex_unlock(&r->lock);
@@ -837,6 +852,8 @@ int pal_iouring_recv_ms(pal_iouring *r, pal_socket_t fd, void *userdata)
 const void *pal_iouring_buf(const pal_iouring *r, int bid)
 {
     const void *buf;
+    if (r == NULL)
+        return NULL;
     pal_mutex_lock((pal_mutex *)&r->lock);
     if (r->pbuf_ring == NULL || bid < 0 || (unsigned)bid >= r->pbuf_count) {
         pal_mutex_unlock((pal_mutex *)&r->lock);
@@ -853,7 +870,8 @@ void pal_iouring_recycle(pal_iouring *r, int bid)
     /* single consumer (the reap thread): read tail, fill, release-store */
     unsigned short tail;
     struct io_uring_buf *b;
-    if (r->pbuf_ring == NULL || bid < 0 || (unsigned)bid >= r->pbuf_count)
+    if (r == NULL || r->pbuf_ring == NULL || bid < 0 ||
+        (unsigned)bid >= r->pbuf_count)
         return;
     pal_mutex_lock(&r->lock);
     if (r->pbuf_ring == NULL || (unsigned)bid >= r->pbuf_count) {
@@ -881,6 +899,8 @@ int pal_iouring_post(pal_iouring *r, void *userdata)
     struct io_uring_sqe *sqe;
     unsigned tail;
     int rc;
+    if (r == NULL)
+        return -1;
     pal_mutex_lock(&r->lock);
     sqe = iou_reserve_sqe(r, &tail);
     if (sqe == NULL) {
@@ -910,6 +930,8 @@ int pal_iouring_wait(pal_iouring *r, pal_iouring_event *evs, int max,
     int nev = 0;
     int rc = 0;
 
+    if (r == NULL || evs == NULL || max <= 0 || timeout_ms < 0)
+        return -1;
     pal_mutex_lock(&r->lock);
     if (timeout_ms > 0) {
         /* relative timeout so a fully idle loop still wakes up; count=1

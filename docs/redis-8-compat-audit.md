@@ -567,3 +567,7 @@ escaping into client and replication connection state.
 RESP parser and writer entry points now fail closed on null objects, buffers, and
 non-empty null payloads, preventing malformed protocol input from causing memory
 faults without changing valid RESP2/RESP3 wire behavior.
+
+The io_uring proactor PAL now rejects malformed ring, fd, buffer, and wait
+arguments before SQE publication, preventing invalid asynchronous operations or
+length truncation from destabilizing client and replication paths.

@@ -2047,3 +2047,10 @@ recursive descent; writers validate destination buffers and non-empty sources
 before reserve/copy. These checks are predictable API-boundary branches, while
 valid protocol parsing and serialization retain their existing zero-copy views
 and amortized buffer growth.
+
+### Phase 278: bounded io_uring operation inputs
+
+io_uring operation helpers validate ring handles, socket descriptors, buffer
+views, timeout arguments, and 32-bit SQE lengths before locking or publishing.
+The checks are cold error branches; valid submissions retain one lock, one SQE,
+and the existing registered/fixed-buffer fast path.

@@ -877,3 +877,6 @@
     NULL 缓冲区，异步连接失败时清零输出句柄，避免陈旧 fd 泄漏（Phase 276）
   - [x] RESP parser/writer 边界：解析、缓冲区生命周期和所有写入器拒绝 NULL/
     非零长度 NULL 输入，避免 malformed 请求触发解引用或 memcpy 崩溃（Phase 277）
+  - [x] io_uring 操作入口防护：listen/accept/recv/send、fixed buffer、wait、
+    pbuf 和 wakeup API 校验 ring、fd、长度及输出参数，避免内核 SQE 截断和
+    无效锁解引用（Phase 278）

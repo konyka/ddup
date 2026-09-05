@@ -21,6 +21,34 @@
 static int wait_for_accept(pal_iouring *p, pal_socket_t listener,
                            pal_iouring_event *ev);
 
+static void test_iouring_null_api_inputs(void)
+{
+    int bid = 7;
+    pal_iouring_event ev;
+
+    DD_CHECK(pal_iouring_listen(NULL, NULL, 0, NULL, NULL) ==
+             PAL_SOCKET_INVALID);
+    DD_CHECK_EQ_INT(-1, pal_iouring_accept_post(NULL, PAL_SOCKET_INVALID,
+                                                NULL));
+    DD_CHECK_EQ_INT(-1, pal_iouring_recv(NULL, PAL_SOCKET_INVALID, NULL, 1,
+                                         NULL));
+    DD_CHECK_EQ_INT(-1, pal_iouring_send(NULL, PAL_SOCKET_INVALID, NULL, 1,
+                                         NULL));
+    DD_CHECK_EQ_INT(-1, pal_iouring_send_fixed(NULL, PAL_SOCKET_INVALID, -1,
+                                               0, 1, NULL));
+    DD_CHECK_EQ_INT(-1, pal_iouring_send_zc_fixed(NULL, PAL_SOCKET_INVALID, -1,
+                                                  0, 1, NULL));
+    DD_CHECK(pal_iouring_sbuf_acquire(NULL, &bid) == NULL);
+    DD_CHECK_EQ_INT(-1, bid);
+    pal_iouring_sbuf_release(NULL, 0);
+    DD_CHECK_EQ_INT(-1, pal_iouring_wait(NULL, &ev, 1, 0));
+    DD_CHECK_EQ_INT(-1, pal_iouring_recv_ms(NULL, PAL_SOCKET_INVALID, NULL));
+    DD_CHECK(pal_iouring_buf(NULL, 0) == NULL);
+    pal_iouring_recycle(NULL, 0);
+    DD_CHECK_EQ_INT(-1, pal_iouring_post(NULL, NULL));
+    pal_iouring_close(NULL, PAL_SOCKET_INVALID);
+}
+
 static void test_registered_send_buffers(void)
 {
     pal_iouring *p = pal_iouring_create();
@@ -510,6 +538,7 @@ cleanup:
 
 int main(void)
 {
+    DD_RUN(test_iouring_null_api_inputs);
     DD_RUN(test_registered_send_buffers);
     DD_RUN(test_registered_send_buffer_rotation);
     DD_RUN(test_send_zc_fixed_completion);
