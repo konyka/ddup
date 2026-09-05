@@ -119,7 +119,8 @@ void cluster_nodes_init(struct db *d)
 cluster_node *cluster_node_find(struct db *d, const char *id)
 {
     int i;
-    if (d == NULL || !cluster_id_valid(id))
+    if (d == NULL || d->nnodes < 0 || d->nnodes > CLUSTER_MAX_NODES ||
+        !cluster_id_valid(id))
         return NULL;
     for (i = 0; i < d->nnodes; i++)
         if (memcmp(d->nodes[i].id, id, 40) == 0)
@@ -130,7 +131,8 @@ cluster_node *cluster_node_find(struct db *d, const char *id)
 cluster_node *cluster_node_add(struct db *d, const char *id)
 {
     cluster_node *n;
-    if (d == NULL || id == NULL)
+    if (d == NULL || d->nnodes < 0 || d->nnodes > CLUSTER_MAX_NODES ||
+        id == NULL)
         return NULL;
     if (!cluster_id_valid(id))
         return NULL;
@@ -510,7 +512,8 @@ static uint32_t flags_parse(const char *s, size_t len)
 int cluster_nodes_render(struct db *d, resp_buf *out)
 {
     int i;
-    if (d == NULL || out == NULL)
+    if (d == NULL || d->nnodes < 0 || d->nnodes > CLUSTER_MAX_NODES ||
+        out == NULL)
         return -1;
     for (i = 0; i < d->nnodes; i++) {
         cluster_node *n = &d->nodes[i];
@@ -719,7 +722,8 @@ int cluster_bus_build_frame(struct db *d, int type, resp_buf *out)
     uint16_t gc = 0;
     int i;
 
-    if (d == NULL || out == NULL)
+    if (d == NULL || d->nnodes < 0 || d->nnodes > CLUSTER_MAX_NODES ||
+        out == NULL)
         return -1;
     for (i = 0; i < d->nnodes; i++)
         if (d->nodes[i].flags & CLUSTER_NODE_MYSELF) {

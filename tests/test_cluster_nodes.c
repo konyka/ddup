@@ -260,6 +260,26 @@ static void test_cluster_state_api_rejects_null_inputs(void)
     db_destroy(&d);
 }
 
+static void test_corrupt_node_count_fails_closed(void)
+{
+    db d;
+    resp_buf out;
+
+    db_init(&d);
+    cluster_nodes_init(&d);
+    resp_buf_init(&out);
+    d.cluster_enabled = 1;
+    d.nnodes = CLUSTER_MAX_NODES + 1;
+    DD_CHECK(cluster_node_find(&d, ID1) == NULL);
+    DD_CHECK(cluster_node_add(&d, ID1) == NULL);
+    DD_CHECK_EQ_INT(-1, cluster_nodes_render(&d, &out));
+    DD_CHECK_EQ_INT(-1, cluster_bus_build_frame(&d, CLUSTER_MSG_PING, &out));
+    DD_CHECK_EQ_INT(0, cluster_state_is_ok(&d));
+    DD_CHECK_EQ_INT(0, cluster_state_is_minority(&d));
+    resp_buf_free(&out);
+    db_destroy(&d);
+}
+
 static void test_nodes_persistence_api_rejects_null_inputs(void)
 {
     db d;
@@ -288,6 +308,7 @@ int main(void)
     DD_RUN(test_node_api_rejects_null_inputs);
     DD_RUN(test_slot_api_rejects_null_inputs);
     DD_RUN(test_cluster_state_api_rejects_null_inputs);
+    DD_RUN(test_corrupt_node_count_fails_closed);
     DD_RUN(test_nodes_persistence_api_rejects_null_inputs);
     return DD_TEST_SUMMARY();
 }

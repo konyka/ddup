@@ -62,6 +62,9 @@ fail-closed；输出失败路径不会再访问空连接。
 集群控制补充：节点超时、总线协议、集群 TLS 和 nodes.conf 保存辅助入口对空
 server fail-closed，避免无效管理调用破坏集群状态。
 
+集群节点表补充：检测损坏的 `nnodes` 元数据并在查找、渲染、构帧和状态判定中
+拒绝越界遍历，防止 malformed topology 触发内存破坏。
+
 历史缺口集中在三块，当前 Redis 8.10.1 命令级审计已清零：
 
 1. Redis 8.8 新增 `ARRAY` 类型（18 个 `AR*` 命令）。
