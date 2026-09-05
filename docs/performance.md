@@ -2136,3 +2136,9 @@ length-delimited input span, eliminating libc token scans that could inspect
 bytes beyond a persisted-line boundary. Successful parsing remains allocation
 free and linear in the line size. Invalid or overflowing fields return before
 the node-table insertion, so recovery does not retain partially trusted state.
+
+### Phase 302: atomic cluster-bus sender publication
+
+The v2 sender extension is length-checked before the sender node is inserted or
+updated. Truncated frames take a cold rejection branch with no topology
+mutation; valid frames keep the same lookup and bitmap merge behavior.

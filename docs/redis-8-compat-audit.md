@@ -38,6 +38,10 @@ nodes.conf 复核：ping、pong 和 config epoch 以输入行的明确长度为�
 64 位十进制解析；非数字或溢出字段会在节点表更新前被拒绝。这保留有效 Redis
 节点行的兼容性，同时消除无 NUL 终止持久化数据上的越界 libc 解析风险。
 
+集群总线帧复核：RCM2 sender 扩展在节点发布前完成完整长度校验，截断或伪造
+长度的帧不会留下半初始化节点状态；有效 PING/PONG/MEET 的 gossip 与槽位合并
+路径保持不变。
+
 PAL 可靠性补充：io_uring pbuf/SQPOLL 状态和测试注入入口对空 ring 统一
 fail-closed，避免管理/诊断调用破坏服务进程。
 
