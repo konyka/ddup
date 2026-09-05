@@ -75,6 +75,29 @@ static void test_create_free(void)
     pal_loop_free(l);
 }
 
+static void test_invalid_loop_arguments_fail_closed(void)
+{
+    pal_loop *l = pal_loop_create();
+    pal_event ev;
+
+    DD_CHECK(l != NULL);
+    DD_CHECK_EQ_INT(-1, pal_loop_add(NULL, PAL_SOCKET_INVALID, 1, 0, NULL));
+    DD_CHECK_EQ_INT(-1, pal_loop_mod(NULL, PAL_SOCKET_INVALID, 1, 0, NULL));
+    DD_CHECK_EQ_INT(-1, pal_loop_del(NULL, PAL_SOCKET_INVALID));
+    DD_CHECK_EQ_INT(-1, pal_loop_wait(NULL, &ev, 1, 0));
+    if (l != NULL) {
+        DD_CHECK_EQ_INT(-1,
+                        pal_loop_add(l, PAL_SOCKET_INVALID, 1, 0, NULL));
+        DD_CHECK_EQ_INT(-1,
+                        pal_loop_mod(l, PAL_SOCKET_INVALID, 1, 0, NULL));
+        DD_CHECK_EQ_INT(-1, pal_loop_del(l, PAL_SOCKET_INVALID));
+        DD_CHECK_EQ_INT(-1, pal_loop_wait(l, NULL, 1, 0));
+        DD_CHECK_EQ_INT(-1, pal_loop_wait(l, &ev, 0, 0));
+        DD_CHECK_EQ_INT(-1, pal_loop_wait(l, &ev, 1, -2));
+    }
+    pal_loop_free(l);
+}
+
 /* Build listener + client + accepted server fd; all blocking. */
 static pal_socket_t make_pair(pal_socket_t *listener, pal_socket_t *client)
 {
@@ -341,6 +364,7 @@ cleanup:
 static void run_all(void)
 {
     DD_RUN(test_create_free);
+    DD_RUN(test_invalid_loop_arguments_fail_closed);
     DD_RUN(test_read_readiness);
     DD_RUN(test_write_readiness_and_mod);
     DD_RUN(test_del);

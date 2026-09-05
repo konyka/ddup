@@ -301,6 +301,8 @@ static int ep_ctl(pal_loop *l, int op, ep_reg *r, int want_read,
 int pal_loop_add(pal_loop *l, pal_socket_t fd, int want_read, int want_write,
                  void *userdata)
 {
+    if (l == NULL || fd == PAL_SOCKET_INVALID)
+        return -1;
     ep_reg *r = (ep_reg *)calloc(1, sizeof(*r));
     if (r == NULL)
         return -1;
@@ -327,6 +329,8 @@ int pal_loop_add(pal_loop *l, pal_socket_t fd, int want_read, int want_write,
 int pal_loop_mod(pal_loop *l, pal_socket_t fd, int want_read, int want_write,
                  void *userdata)
 {
+    if (l == NULL || fd == PAL_SOCKET_INVALID)
+        return -1;
     ep_reg *r = ep_find(l, fd);
     if (r == NULL)
         return -1;
@@ -347,6 +351,8 @@ int pal_loop_mod(pal_loop *l, pal_socket_t fd, int want_read, int want_write,
 
 int pal_loop_del(pal_loop *l, pal_socket_t fd)
 {
+    if (l == NULL || fd == PAL_SOCKET_INVALID)
+        return -1;
     ep_reg **prev = &l->regs;
     while (*prev != NULL && (*prev)->fd != fd)
         prev = &(*prev)->next;
@@ -449,6 +455,8 @@ int pal_loop_wait(pal_loop *l, pal_event *events, int max, int timeout_ms)
     struct epoll_event evs[128];
     int nreq = max < 128 ? max : 128;
     int n;
+    if (l == NULL || events == NULL || max <= 0 || timeout_ms < -1)
+        return -1;
     if (l->use_iouring)
         return uring_wait(l, events, max, timeout_ms);
     n = epoll_wait(l->epfd, evs, nreq, timeout_ms);
@@ -518,18 +526,24 @@ static int kq_apply(pal_loop *l, pal_socket_t fd, int want_read,
 int pal_loop_add(pal_loop *l, pal_socket_t fd, int want_read, int want_write,
                  void *userdata)
 {
+    if (l == NULL || fd == PAL_SOCKET_INVALID)
+        return -1;
     return kq_apply(l, fd, want_read, want_write, userdata);
 }
 
 int pal_loop_mod(pal_loop *l, pal_socket_t fd, int want_read, int want_write,
                  void *userdata)
 {
+    if (l == NULL || fd == PAL_SOCKET_INVALID)
+        return -1;
     return kq_apply(l, fd, want_read, want_write, userdata);
 }
 
 int pal_loop_del(pal_loop *l, pal_socket_t fd)
 {
     struct kevent kev[2];
+    if (l == NULL || fd == PAL_SOCKET_INVALID)
+        return -1;
     EV_SET(&kev[0], (uintptr_t)fd, EVFILT_READ, EV_DELETE, 0, 0, NULL);
     EV_SET(&kev[1], (uintptr_t)fd, EVFILT_WRITE, EV_DELETE, 0, 0, NULL);
     return kevent(l->kq, kev, 2, NULL, 0, NULL);
@@ -542,6 +556,8 @@ int pal_loop_wait(pal_loop *l, pal_event *events, int max, int timeout_ms)
     struct timespec *tsp = NULL;
     int nreq = max < 128 ? max : 128;
     int n;
+    if (l == NULL || events == NULL || max <= 0 || timeout_ms < -1)
+        return -1;
     if (timeout_ms >= 0) {
         ts.tv_sec = timeout_ms / 1000;
         ts.tv_nsec = (long)(timeout_ms % 1000) * 1000000L;
@@ -615,6 +631,8 @@ static sel_reg *sel_find(pal_loop *l, pal_socket_t fd)
 int pal_loop_add(pal_loop *l, pal_socket_t fd, int want_read, int want_write,
                  void *userdata)
 {
+    if (l == NULL || fd == PAL_SOCKET_INVALID)
+        return -1;
     if (sel_find(l, fd) != NULL)
         return -1;
     if (l->count == l->cap) {
@@ -636,6 +654,8 @@ int pal_loop_add(pal_loop *l, pal_socket_t fd, int want_read, int want_write,
 int pal_loop_mod(pal_loop *l, pal_socket_t fd, int want_read, int want_write,
                  void *userdata)
 {
+    if (l == NULL || fd == PAL_SOCKET_INVALID)
+        return -1;
     sel_reg *r = sel_find(l, fd);
     if (r == NULL)
         return -1;
@@ -648,6 +668,8 @@ int pal_loop_mod(pal_loop *l, pal_socket_t fd, int want_read, int want_write,
 int pal_loop_del(pal_loop *l, pal_socket_t fd)
 {
     size_t i;
+    if (l == NULL || fd == PAL_SOCKET_INVALID)
+        return -1;
     for (i = 0; i < l->count; i++) {
         if (l->regs[i].fd == fd) {
             l->regs[i] = l->regs[l->count - 1];
@@ -666,6 +688,9 @@ int pal_loop_wait(pal_loop *l, pal_event *events, int max, int timeout_ms)
     size_t i;
     int nev = 0;
     int rc;
+
+    if (l == NULL || events == NULL || max <= 0 || timeout_ms < -1)
+        return -1;
 
     if (l->count == 0) {
         /* select() with no fds is a portable-ish sleep; on Windows it

@@ -880,3 +880,5 @@
   - [x] io_uring 操作入口防护：listen/accept/recv/send、fixed buffer、wait、
     pbuf 和 wakeup API 校验 ring、fd、长度及输出参数，避免内核 SQE 截断和
     无效锁解引用（Phase 278）
+  - [x] PAL 事件循环边界：epoll/kqueue/select 统一拒绝 NULL loop、无效 fd、
+    空事件输出、非法 max/timeout，避免后端状态解引用（Phase 279）

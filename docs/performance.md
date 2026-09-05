@@ -2054,3 +2054,11 @@ io_uring operation helpers validate ring handles, socket descriptors, buffer
 views, timeout arguments, and 32-bit SQE lengths before locking or publishing.
 The checks are cold error branches; valid submissions retain one lock, one SQE,
 and the existing registered/fixed-buffer fast path.
+
+### Phase 279: bounded readiness-loop inputs
+
+Readiness loop add/mod/del/wait entry points now reject invalid loop handles,
+descriptors, event arrays, and timeout/count values consistently across epoll,
+kqueue, and select backends. These are API-boundary error branches; valid event
+registration and polling retain the existing backend syscalls and allocation
+behavior.

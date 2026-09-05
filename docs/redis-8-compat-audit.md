@@ -571,3 +571,7 @@ faults without changing valid RESP2/RESP3 wire behavior.
 The io_uring proactor PAL now rejects malformed ring, fd, buffer, and wait
 arguments before SQE publication, preventing invalid asynchronous operations or
 length truncation from destabilizing client and replication paths.
+
+The cross-platform readiness loop now fails closed on invalid loop, descriptor,
+event-buffer, and timeout arguments across all backends, preventing malformed
+connection-control calls from crashing the server.
