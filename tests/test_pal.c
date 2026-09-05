@@ -96,6 +96,15 @@ static void test_wall_clock_sane(void)
     }
 }
 
+static void test_secure_random_input_bounds(void)
+{
+    unsigned char bytes[16];
+
+    DD_CHECK_EQ_INT(-1, pal_secure_random(NULL, 1));
+    DD_CHECK_EQ_INT(0, pal_secure_random(NULL, 0));
+    DD_CHECK_EQ_INT(0, pal_secure_random(bytes, sizeof(bytes)));
+}
+
 #if DDUP_OS_LINUX
 static volatile sig_atomic_t alarm_seen;
 
@@ -217,6 +226,7 @@ int main(void)
     DD_RUN(test_us_at_least_ms_resolution);
     DD_RUN(test_time_concurrent_first_use);
     DD_RUN(test_wall_clock_sane);
+    DD_RUN(test_secure_random_input_bounds);
 #if DDUP_OS_LINUX
     DD_RUN(test_sleep_completes_after_signal);
 #endif

@@ -35,6 +35,9 @@ fail-closed，避免管理/诊断调用破坏服务进程。
 TLS 可靠性补充：PAL TLS 上下文、握手和 I/O 入口拒绝空对象、空证书路径及
 无效套接字；真实 TLS replication/cluster 测试仍覆盖成功握手与失败回收。
 
+安全随机源补充：`pal_secure_random` 对非零长度空缓冲区 fail-closed，避免
+ACL 密码生成等安全路径把无效指针传给平台随机数接口。
+
 历史缺口集中在三块，当前 Redis 8.10.1 命令级审计已清零：
 
 1. Redis 8.8 新增 `ARRAY` 类型（18 个 `AR*` 命令）。

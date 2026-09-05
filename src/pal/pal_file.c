@@ -21,6 +21,8 @@
 
 int pal_secure_random(void *buf, size_t len)
 {
+    if (buf == NULL && len != 0)
+        return -1;
 #if DDUP_OS_WINDOWS
     return BCryptGenRandom(NULL, (PUCHAR)buf, (ULONG)len,
                            BCRYPT_USE_SYSTEM_PREFERRED_RNG) == 0 ? 0 : -1;
