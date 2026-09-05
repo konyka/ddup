@@ -30,7 +30,7 @@
 -- Performing Test CMAKE_HAVE_LIBC_PTHREAD - Success
 -- Found Threads: TRUE
 -- ddup: TLS enabled (OpenSSL 3.0.13)
--- Configuring done (12.8s)
+-- Configuring done (12.4s)
 -- Generating done (0.2s)
 -- Build files have been written to: /home/runner/work/ddup/ddup/build
 [  1%] Building C object CMakeFiles/ddup_lua.dir/deps/lua/lapi.c.o
@@ -379,22 +379,6 @@ In function ‘snprintf’,
 /usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
    54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
       |          ^
-In function ‘memcpy’,
-    inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:143:5,
-    inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:138:13,
-    inlined from ‘resp_write_error’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:169:5,
-    inlined from ‘command_client’ at /home/runner/work/ddup/ddup/src/core/command.c:7656:13:
-/usr/include/x86_64-linux-gnu/bits/string_fortified.h:29:10: warning: ‘__builtin_memcpy’ reading 29 bytes from a region of size 28 [-Wstringop-overread]
-   29 |   return __builtin___memcpy_chk (__dest, __src, __len,
-      |          ^
-In function ‘memcpy’,
-    inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:143:5,
-    inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:138:13,
-    inlined from ‘resp_write_error’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:169:5,
-    inlined from ‘command_acl’ at /home/runner/work/ddup/ddup/src/core/command.c:12149:13:
-/usr/include/x86_64-linux-gnu/bits/string_fortified.h:29:10: warning: ‘__builtin_memcpy’ reading 109 bytes from a region of size 106 [-Wstringop-overread]
-   29 |   return __builtin___memcpy_chk (__dest, __src, __len,
-      |          ^
 [ 58%] Built target test_command
 [ 59%] Building C object CMakeFiles/test_tier.dir/tests/test_tier.c.o
 [ 59%] Linking C executable test_tier
@@ -435,14 +419,6 @@ In function ‘snprintf’,
 /usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
    54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
       |          ^
-In function ‘memcpy’,
-    inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:143:5,
-    inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:138:13,
-    inlined from ‘resp_write_error’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:169:5,
-    inlined from ‘command_client’ at /home/runner/work/ddup/ddup/src/core/command.c:7656:13:
-/usr/include/x86_64-linux-gnu/bits/string_fortified.h:29:10: warning: ‘__builtin_memcpy’ reading 29 bytes from a region of size 28 [-Wstringop-overread]
-   29 |   return __builtin___memcpy_chk (__dest, __src, __len,
-      |          ^
 [ 60%] Built target test_tier_db
 [ 61%] Building C object CMakeFiles/test_glob.dir/tests/test_glob.c.o
 [ 61%] Linking C executable test_glob
@@ -469,14 +445,6 @@ In function ‘snprintf’,
 /usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
    54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
       |          ^
-In function ‘memcpy’,
-    inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:143:5,
-    inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:138:13,
-    inlined from ‘resp_write_error’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:169:5,
-    inlined from ‘command_client’ at /home/runner/work/ddup/ddup/src/core/command.c:7656:13:
-/usr/include/x86_64-linux-gnu/bits/string_fortified.h:29:10: warning: ‘__builtin_memcpy’ reading 29 bytes from a region of size 28 [-Wstringop-overread]
-   29 |   return __builtin___memcpy_chk (__dest, __src, __len,
-      |          ^
 In function ‘snprintf’,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:423:9,
     inlined from ‘obj_zset_first_in_lex_range’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1559:39,
@@ -490,14 +458,6 @@ In function ‘snprintf’,
     inlined from ‘obj_zset_last_in_lex_range’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1574:5:
 /usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
    54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
-      |          ^
-In function ‘memcpy’,
-    inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:143:5,
-    inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:138:13,
-    inlined from ‘resp_write_error’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:169:5,
-    inlined from ‘command_acl’ at /home/runner/work/ddup/ddup/src/core/command.c:12149:13:
-/usr/include/x86_64-linux-gnu/bits/string_fortified.h:29:10: warning: ‘__builtin_memcpy’ reading 109 bytes from a region of size 106 [-Wstringop-overread]
-   29 |   return __builtin___memcpy_chk (__dest, __src, __len,
       |          ^
 [ 62%] Built target test_keys
 [ 62%] Building C object CMakeFiles/test_stringx.dir/tests/test_stringx.c.o
@@ -536,33 +496,9 @@ In function ‘snprintf’,
 /usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
    54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
       |          ^
-In function ‘memcpy’,
-    inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:143:5,
-    inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:138:13,
-    inlined from ‘resp_write_error’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:169:5,
-    inlined from ‘command_acl’ at /home/runner/work/ddup/ddup/src/core/command.c:12149:13:
-/usr/include/x86_64-linux-gnu/bits/string_fortified.h:29:10: warning: ‘__builtin_memcpy’ reading 109 bytes from a region of size 106 [-Wstringop-overread]
-   29 |   return __builtin___memcpy_chk (__dest, __src, __len,
-      |          ^
-In function ‘memcpy’,
-    inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:143:5,
-    inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:138:13,
-    inlined from ‘resp_write_error’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:169:5,
-    inlined from ‘command_client’ at /home/runner/work/ddup/ddup/src/core/command.c:7656:13:
-/usr/include/x86_64-linux-gnu/bits/string_fortified.h:29:10: warning: ‘__builtin_memcpy’ reading 29 bytes from a region of size 28 [-Wstringop-overread]
-   29 |   return __builtin___memcpy_chk (__dest, __src, __len,
-      |          ^
 [ 62%] Built target test_stringx
 [ 63%] Building C object CMakeFiles/test_sort.dir/tests/test_sort.c.o
 [ 63%] Linking C executable test_sort
-In function ‘memcpy’,
-    inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:143:5,
-    inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:138:13,
-    inlined from ‘resp_write_error’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:169:5,
-    inlined from ‘command_client’ at /home/runner/work/ddup/ddup/src/core/command.c:7656:13:
-/usr/include/x86_64-linux-gnu/bits/string_fortified.h:29:10: warning: ‘__builtin_memcpy’ reading 29 bytes from a region of size 28 [-Wstringop-overread]
-   29 |   return __builtin___memcpy_chk (__dest, __src, __len,
-      |          ^
 In function ‘snprintf’,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:423:9,
     inlined from ‘zlp_cmp_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1117:31,
@@ -671,14 +607,6 @@ In function ‘snprintf’,
 /usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
    54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
       |          ^
-In function ‘memcpy’,
-    inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:143:5,
-    inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:138:13,
-    inlined from ‘resp_write_error’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:169:5,
-    inlined from ‘command_client’ at /home/runner/work/ddup/ddup/src/core/command.c:7656:13:
-/usr/include/x86_64-linux-gnu/bits/string_fortified.h:29:10: warning: ‘__builtin_memcpy’ reading 29 bytes from a region of size 28 [-Wstringop-overread]
-   29 |   return __builtin___memcpy_chk (__dest, __src, __len,
-      |          ^
 [ 65%] Built target test_geo
 [ 66%] Building C object CMakeFiles/test_admin.dir/tests/test_admin.c.o
 [ 66%] Linking C executable test_admin
@@ -739,14 +667,6 @@ In function ‘snprintf’,
 /usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
    54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
       |          ^
-In function ‘memcpy’,
-    inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:143:5,
-    inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:138:13,
-    inlined from ‘resp_write_error’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:169:5,
-    inlined from ‘command_client’ at /home/runner/work/ddup/ddup/src/core/command.c:7656:13:
-/usr/include/x86_64-linux-gnu/bits/string_fortified.h:29:10: warning: ‘__builtin_memcpy’ reading 29 bytes from a region of size 28 [-Wstringop-overread]
-   29 |   return __builtin___memcpy_chk (__dest, __src, __len,
-      |          ^
 In function ‘snprintf’,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:423:9,
     inlined from ‘obj_zset_first_in_lex_range’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1559:39,
@@ -760,14 +680,6 @@ In function ‘snprintf’,
     inlined from ‘obj_zset_last_in_lex_range’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1574:5:
 /usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
    54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
-      |          ^
-In function ‘memcpy’,
-    inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:143:5,
-    inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:138:13,
-    inlined from ‘resp_write_error’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:169:5,
-    inlined from ‘command_acl’ at /home/runner/work/ddup/ddup/src/core/command.c:12149:13:
-/usr/include/x86_64-linux-gnu/bits/string_fortified.h:29:10: warning: ‘__builtin_memcpy’ reading 109 bytes from a region of size 106 [-Wstringop-overread]
-   29 |   return __builtin___memcpy_chk (__dest, __src, __len,
       |          ^
 [ 67%] Built target test_bitmap
 [ 67%] Building C object CMakeFiles/test_expire.dir/tests/test_expire.c.o
@@ -806,22 +718,6 @@ In function ‘snprintf’,
 /usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
    54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
       |          ^
-In function ‘memcpy’,
-    inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:143:5,
-    inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:138:13,
-    inlined from ‘resp_write_error’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:169:5,
-    inlined from ‘command_client’ at /home/runner/work/ddup/ddup/src/core/command.c:7656:13:
-/usr/include/x86_64-linux-gnu/bits/string_fortified.h:29:10: warning: ‘__builtin_memcpy’ reading 29 bytes from a region of size 28 [-Wstringop-overread]
-   29 |   return __builtin___memcpy_chk (__dest, __src, __len,
-      |          ^
-In function ‘memcpy’,
-    inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:143:5,
-    inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:138:13,
-    inlined from ‘resp_write_error’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:169:5,
-    inlined from ‘command_acl’ at /home/runner/work/ddup/ddup/src/core/command.c:12149:13:
-/usr/include/x86_64-linux-gnu/bits/string_fortified.h:29:10: warning: ‘__builtin_memcpy’ reading 109 bytes from a region of size 106 [-Wstringop-overread]
-   29 |   return __builtin___memcpy_chk (__dest, __src, __len,
-      |          ^
 [ 67%] Built target test_expire
 [ 67%] Building C object CMakeFiles/test_eviction.dir/tests/test_eviction.c.o
 [ 68%] Linking C executable test_eviction
@@ -858,14 +754,6 @@ In function ‘snprintf’,
     inlined from ‘obj_zset_last_in_lex_range’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1574:5:
 /usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
    54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
-      |          ^
-In function ‘memcpy’,
-    inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:143:5,
-    inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:138:13,
-    inlined from ‘resp_write_error’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:169:5,
-    inlined from ‘command_client’ at /home/runner/work/ddup/ddup/src/core/command.c:7656:13:
-/usr/include/x86_64-linux-gnu/bits/string_fortified.h:29:10: warning: ‘__builtin_memcpy’ reading 29 bytes from a region of size 28 [-Wstringop-overread]
-   29 |   return __builtin___memcpy_chk (__dest, __src, __len,
       |          ^
 [ 68%] Built target test_eviction
 [ 68%] Building C object CMakeFiles/test_hash.dir/tests/test_hash.c.o
@@ -904,22 +792,6 @@ In function ‘snprintf’,
 /usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
    54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
       |          ^
-In function ‘memcpy’,
-    inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:143:5,
-    inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:138:13,
-    inlined from ‘resp_write_error’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:169:5,
-    inlined from ‘command_client’ at /home/runner/work/ddup/ddup/src/core/command.c:7656:13:
-/usr/include/x86_64-linux-gnu/bits/string_fortified.h:29:10: warning: ‘__builtin_memcpy’ reading 29 bytes from a region of size 28 [-Wstringop-overread]
-   29 |   return __builtin___memcpy_chk (__dest, __src, __len,
-      |          ^
-In function ‘memcpy’,
-    inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:143:5,
-    inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:138:13,
-    inlined from ‘resp_write_error’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:169:5,
-    inlined from ‘command_acl’ at /home/runner/work/ddup/ddup/src/core/command.c:12149:13:
-/usr/include/x86_64-linux-gnu/bits/string_fortified.h:29:10: warning: ‘__builtin_memcpy’ reading 109 bytes from a region of size 106 [-Wstringop-overread]
-   29 |   return __builtin___memcpy_chk (__dest, __src, __len,
-      |          ^
 [ 69%] Built target test_hash
 [ 69%] Building C object CMakeFiles/test_list.dir/tests/test_list.c.o
 [ 69%] Linking C executable test_list
@@ -956,22 +828,6 @@ In function ‘snprintf’,
     inlined from ‘obj_set_convert’ at /home/runner/work/ddup/ddup/src/ds/obj.c:963:35:
 /usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
    54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
-      |          ^
-In function ‘memcpy’,
-    inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:143:5,
-    inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:138:13,
-    inlined from ‘resp_write_error’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:169:5,
-    inlined from ‘command_client’ at /home/runner/work/ddup/ddup/src/core/command.c:7656:13:
-/usr/include/x86_64-linux-gnu/bits/string_fortified.h:29:10: warning: ‘__builtin_memcpy’ reading 29 bytes from a region of size 28 [-Wstringop-overread]
-   29 |   return __builtin___memcpy_chk (__dest, __src, __len,
-      |          ^
-In function ‘memcpy’,
-    inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:143:5,
-    inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:138:13,
-    inlined from ‘resp_write_error’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:169:5,
-    inlined from ‘command_acl’ at /home/runner/work/ddup/ddup/src/core/command.c:12149:13:
-/usr/include/x86_64-linux-gnu/bits/string_fortified.h:29:10: warning: ‘__builtin_memcpy’ reading 109 bytes from a region of size 106 [-Wstringop-overread]
-   29 |   return __builtin___memcpy_chk (__dest, __src, __len,
       |          ^
 [ 69%] Built target test_list
 [ 70%] Building C object CMakeFiles/test_listpack.dir/tests/test_listpack.c.o
@@ -1019,22 +875,6 @@ In function ‘snprintf’,
 /usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
    54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
       |          ^
-In function ‘memcpy’,
-    inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:143:5,
-    inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:138:13,
-    inlined from ‘resp_write_error’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:169:5,
-    inlined from ‘command_acl’ at /home/runner/work/ddup/ddup/src/core/command.c:12149:13:
-/usr/include/x86_64-linux-gnu/bits/string_fortified.h:29:10: warning: ‘__builtin_memcpy’ reading 109 bytes from a region of size 106 [-Wstringop-overread]
-   29 |   return __builtin___memcpy_chk (__dest, __src, __len,
-      |          ^
-In function ‘memcpy’,
-    inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:143:5,
-    inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:138:13,
-    inlined from ‘resp_write_error’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:169:5,
-    inlined from ‘command_client’ at /home/runner/work/ddup/ddup/src/core/command.c:7656:13:
-/usr/include/x86_64-linux-gnu/bits/string_fortified.h:29:10: warning: ‘__builtin_memcpy’ reading 29 bytes from a region of size 28 [-Wstringop-overread]
-   29 |   return __builtin___memcpy_chk (__dest, __src, __len,
-      |          ^
 [ 73%] Built target test_set
 [ 73%] Building C object CMakeFiles/test_zset.dir/tests/test_zset.c.o
 [ 74%] Linking C executable test_zset
@@ -1071,22 +911,6 @@ In function ‘snprintf’,
     inlined from ‘obj_set_convert’ at /home/runner/work/ddup/ddup/src/ds/obj.c:963:35:
 /usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
    54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
-      |          ^
-In function ‘memcpy’,
-    inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:143:5,
-    inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:138:13,
-    inlined from ‘resp_write_error’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:169:5,
-    inlined from ‘command_client’ at /home/runner/work/ddup/ddup/src/core/command.c:7656:13:
-/usr/include/x86_64-linux-gnu/bits/string_fortified.h:29:10: warning: ‘__builtin_memcpy’ reading 29 bytes from a region of size 28 [-Wstringop-overread]
-   29 |   return __builtin___memcpy_chk (__dest, __src, __len,
-      |          ^
-In function ‘memcpy’,
-    inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:143:5,
-    inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:138:13,
-    inlined from ‘resp_write_error’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:169:5,
-    inlined from ‘command_acl’ at /home/runner/work/ddup/ddup/src/core/command.c:12149:13:
-/usr/include/x86_64-linux-gnu/bits/string_fortified.h:29:10: warning: ‘__builtin_memcpy’ reading 109 bytes from a region of size 106 [-Wstringop-overread]
-   29 |   return __builtin___memcpy_chk (__dest, __src, __len,
       |          ^
 [ 74%] Built target test_zset
 [ 74%] Building C object CMakeFiles/test_stream.dir/tests/test_stream.c.o
@@ -1125,33 +949,9 @@ In function ‘snprintf’,
 /usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
    54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
       |          ^
-In function ‘memcpy’,
-    inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:143:5,
-    inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:138:13,
-    inlined from ‘resp_write_error’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:169:5,
-    inlined from ‘command_client’ at /home/runner/work/ddup/ddup/src/core/command.c:7656:13:
-/usr/include/x86_64-linux-gnu/bits/string_fortified.h:29:10: warning: ‘__builtin_memcpy’ reading 29 bytes from a region of size 28 [-Wstringop-overread]
-   29 |   return __builtin___memcpy_chk (__dest, __src, __len,
-      |          ^
-In function ‘memcpy’,
-    inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:143:5,
-    inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:138:13,
-    inlined from ‘resp_write_error’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:169:5,
-    inlined from ‘command_acl’ at /home/runner/work/ddup/ddup/src/core/command.c:12149:13:
-/usr/include/x86_64-linux-gnu/bits/string_fortified.h:29:10: warning: ‘__builtin_memcpy’ reading 109 bytes from a region of size 106 [-Wstringop-overread]
-   29 |   return __builtin___memcpy_chk (__dest, __src, __len,
-      |          ^
 [ 75%] Built target test_stream
 [ 75%] Building C object CMakeFiles/test_array.dir/tests/test_array.c.o
 [ 75%] Linking C executable test_array
-In function ‘memcpy’,
-    inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:143:5,
-    inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:138:13,
-    inlined from ‘resp_write_error’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:169:5,
-    inlined from ‘command_client’ at /home/runner/work/ddup/ddup/src/core/command.c:7656:13:
-/usr/include/x86_64-linux-gnu/bits/string_fortified.h:29:10: warning: ‘__builtin_memcpy’ reading 29 bytes from a region of size 28 [-Wstringop-overread]
-   29 |   return __builtin___memcpy_chk (__dest, __src, __len,
-      |          ^
 In function ‘snprintf’,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:423:9,
     inlined from ‘zlp_cmp_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1117:31,
@@ -1189,14 +989,6 @@ In function ‘snprintf’,
 [ 75%] Built target test_array
 [ 75%] Building C object CMakeFiles/test_session.dir/tests/test_session.c.o
 [ 75%] Linking C executable test_session
-In function ‘memcpy’,
-    inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:143:5,
-    inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:138:13,
-    inlined from ‘resp_write_error’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:169:5,
-    inlined from ‘command_client’ at /home/runner/work/ddup/ddup/src/core/command.c:7656:13:
-/usr/include/x86_64-linux-gnu/bits/string_fortified.h:29:10: warning: ‘__builtin_memcpy’ reading 29 bytes from a region of size 28 [-Wstringop-overread]
-   29 |   return __builtin___memcpy_chk (__dest, __src, __len,
-      |          ^
 In function ‘snprintf’,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:423:9,
     inlined from ‘zlp_cmp_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1117:31,
@@ -1210,14 +1002,6 @@ In function ‘snprintf’,
     inlined from ‘obj_zset_iter_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1423:13:
 /usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
    54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
-      |          ^
-In function ‘memcpy’,
-    inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:143:5,
-    inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:138:13,
-    inlined from ‘resp_write_error’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:169:5,
-    inlined from ‘command_acl’ at /home/runner/work/ddup/ddup/src/core/command.c:12149:13:
-/usr/include/x86_64-linux-gnu/bits/string_fortified.h:29:10: warning: ‘__builtin_memcpy’ reading 109 bytes from a region of size 106 [-Wstringop-overread]
-   29 |   return __builtin___memcpy_chk (__dest, __src, __len,
       |          ^
 In function ‘snprintf’,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:423:9,
@@ -1276,22 +1060,6 @@ In function ‘snprintf’,
 /usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
    54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
       |          ^
-In function ‘memcpy’,
-    inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:143:5,
-    inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:138:13,
-    inlined from ‘resp_write_error’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:169:5,
-    inlined from ‘command_client’ at /home/runner/work/ddup/ddup/src/core/command.c:7656:13:
-/usr/include/x86_64-linux-gnu/bits/string_fortified.h:29:10: warning: ‘__builtin_memcpy’ reading 29 bytes from a region of size 28 [-Wstringop-overread]
-   29 |   return __builtin___memcpy_chk (__dest, __src, __len,
-      |          ^
-In function ‘memcpy’,
-    inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:143:5,
-    inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:138:13,
-    inlined from ‘resp_write_error’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:169:5,
-    inlined from ‘command_acl’ at /home/runner/work/ddup/ddup/src/core/command.c:12149:13:
-/usr/include/x86_64-linux-gnu/bits/string_fortified.h:29:10: warning: ‘__builtin_memcpy’ reading 109 bytes from a region of size 106 [-Wstringop-overread]
-   29 |   return __builtin___memcpy_chk (__dest, __src, __len,
-      |          ^
 [ 75%] Built target test_acl
 [ 76%] Building C object CMakeFiles/test_multidb.dir/tests/test_multidb.c.o
 [ 76%] Linking C executable test_multidb
@@ -1315,14 +1083,6 @@ In function ‘snprintf’,
 /usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
    54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
       |          ^
-In function ‘memcpy’,
-    inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:143:5,
-    inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:138:13,
-    inlined from ‘resp_write_error’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:169:5,
-    inlined from ‘command_client’ at /home/runner/work/ddup/ddup/src/core/command.c:7656:13:
-/usr/include/x86_64-linux-gnu/bits/string_fortified.h:29:10: warning: ‘__builtin_memcpy’ reading 29 bytes from a region of size 28 [-Wstringop-overread]
-   29 |   return __builtin___memcpy_chk (__dest, __src, __len,
-      |          ^
 In function ‘snprintf’,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:423:9,
     inlined from ‘obj_zset_first_in_lex_range’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1559:39,
@@ -1336,14 +1096,6 @@ In function ‘snprintf’,
     inlined from ‘obj_zset_last_in_lex_range’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1574:5:
 /usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
    54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
-      |          ^
-In function ‘memcpy’,
-    inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:143:5,
-    inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:138:13,
-    inlined from ‘resp_write_error’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:169:5,
-    inlined from ‘command_acl’ at /home/runner/work/ddup/ddup/src/core/command.c:12149:13:
-/usr/include/x86_64-linux-gnu/bits/string_fortified.h:29:10: warning: ‘__builtin_memcpy’ reading 109 bytes from a region of size 106 [-Wstringop-overread]
-   29 |   return __builtin___memcpy_chk (__dest, __src, __len,
       |          ^
 [ 76%] Built target test_multidb
 [ 76%] Building C object CMakeFiles/test_multi.dir/tests/test_multi.c.o
@@ -1382,33 +1134,9 @@ In function ‘snprintf’,
 /usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
    54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
       |          ^
-In function ‘memcpy’,
-    inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:143:5,
-    inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:138:13,
-    inlined from ‘resp_write_error’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:169:5,
-    inlined from ‘command_client’ at /home/runner/work/ddup/ddup/src/core/command.c:7656:13:
-/usr/include/x86_64-linux-gnu/bits/string_fortified.h:29:10: warning: ‘__builtin_memcpy’ reading 29 bytes from a region of size 28 [-Wstringop-overread]
-   29 |   return __builtin___memcpy_chk (__dest, __src, __len,
-      |          ^
-In function ‘memcpy’,
-    inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:143:5,
-    inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:138:13,
-    inlined from ‘resp_write_error’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:169:5,
-    inlined from ‘command_acl’ at /home/runner/work/ddup/ddup/src/core/command.c:12149:13:
-/usr/include/x86_64-linux-gnu/bits/string_fortified.h:29:10: warning: ‘__builtin_memcpy’ reading 109 bytes from a region of size 106 [-Wstringop-overread]
-   29 |   return __builtin___memcpy_chk (__dest, __src, __len,
-      |          ^
 [ 76%] Built target test_multi
 [ 77%] Building C object CMakeFiles/test_pubsub.dir/tests/test_pubsub.c.o
 [ 77%] Linking C executable test_pubsub
-In function ‘memcpy’,
-    inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:143:5,
-    inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:138:13,
-    inlined from ‘resp_write_error’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:169:5,
-    inlined from ‘command_client’ at /home/runner/work/ddup/ddup/src/core/command.c:7656:13:
-/usr/include/x86_64-linux-gnu/bits/string_fortified.h:29:10: warning: ‘__builtin_memcpy’ reading 29 bytes from a region of size 28 [-Wstringop-overread]
-   29 |   return __builtin___memcpy_chk (__dest, __src, __len,
-      |          ^
 In function ‘snprintf’,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:423:9,
     inlined from ‘zlp_cmp_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1117:31,
@@ -1486,14 +1214,6 @@ In function ‘snprintf’,
 [ 79%] Built target test_config
 [ 79%] Building C object CMakeFiles/test_aof.dir/tests/test_aof.c.o
 [ 80%] Linking C executable test_aof
-In function ‘memcpy’,
-    inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:143:5,
-    inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:138:13,
-    inlined from ‘resp_write_error’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:169:5,
-    inlined from ‘command_client’ at /home/runner/work/ddup/ddup/src/core/command.c:7656:13:
-/usr/include/x86_64-linux-gnu/bits/string_fortified.h:29:10: warning: ‘__builtin_memcpy’ reading 29 bytes from a region of size 28 [-Wstringop-overread]
-   29 |   return __builtin___memcpy_chk (__dest, __src, __len,
-      |          ^
 In function ‘snprintf’,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:423:9,
     inlined from ‘zlp_cmp_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1117:31,
@@ -1513,14 +1233,6 @@ In function ‘snprintf’,
     inlined from ‘obj_set_convert’ at /home/runner/work/ddup/ddup/src/ds/obj.c:963:35:
 /usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
    54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
-      |          ^
-In function ‘memcpy’,
-    inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:143:5,
-    inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:138:13,
-    inlined from ‘resp_write_error’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:169:5,
-    inlined from ‘command_acl’ at /home/runner/work/ddup/ddup/src/core/command.c:12149:13:
-/usr/include/x86_64-linux-gnu/bits/string_fortified.h:29:10: warning: ‘__builtin_memcpy’ reading 109 bytes from a region of size 106 [-Wstringop-overread]
-   29 |   return __builtin___memcpy_chk (__dest, __src, __len,
       |          ^
 In function ‘snprintf’,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:423:9,
@@ -1619,14 +1331,6 @@ In function ‘snprintf’,
 [ 82%] Built target test_cluster_id
 [ 82%] Building C object CMakeFiles/test_cluster_cmds.dir/tests/test_cluster_cmds.c.o
 [ 82%] Linking C executable test_cluster_cmds
-In function ‘memcpy’,
-    inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:143:5,
-    inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:138:13,
-    inlined from ‘resp_write_error’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:169:5,
-    inlined from ‘command_client’ at /home/runner/work/ddup/ddup/src/core/command.c:7656:13:
-/usr/include/x86_64-linux-gnu/bits/string_fortified.h:29:10: warning: ‘__builtin_memcpy’ reading 29 bytes from a region of size 28 [-Wstringop-overread]
-   29 |   return __builtin___memcpy_chk (__dest, __src, __len,
-      |          ^
 In function ‘snprintf’,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:423:9,
     inlined from ‘zlp_cmp_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1117:31,
@@ -1646,14 +1350,6 @@ In function ‘snprintf’,
     inlined from ‘obj_set_convert’ at /home/runner/work/ddup/ddup/src/ds/obj.c:963:35:
 /usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
    54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
-      |          ^
-In function ‘memcpy’,
-    inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:143:5,
-    inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:138:13,
-    inlined from ‘resp_write_error’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:169:5,
-    inlined from ‘command_acl’ at /home/runner/work/ddup/ddup/src/core/command.c:12149:13:
-/usr/include/x86_64-linux-gnu/bits/string_fortified.h:29:10: warning: ‘__builtin_memcpy’ reading 109 bytes from a region of size 106 [-Wstringop-overread]
-   29 |   return __builtin___memcpy_chk (__dest, __src, __len,
       |          ^
 In function ‘snprintf’,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:423:9,
@@ -1691,14 +1387,6 @@ In function ‘snprintf’,
     inlined from ‘obj_set_convert’ at /home/runner/work/ddup/ddup/src/ds/obj.c:963:35:
 /usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
    54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
-      |          ^
-In function ‘memcpy’,
-    inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:143:5,
-    inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:138:13,
-    inlined from ‘resp_write_error’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:169:5,
-    inlined from ‘command_client’ at /home/runner/work/ddup/ddup/src/core/command.c:7656:13:
-/usr/include/x86_64-linux-gnu/bits/string_fortified.h:29:10: warning: ‘__builtin_memcpy’ reading 29 bytes from a region of size 28 [-Wstringop-overread]
-   29 |   return __builtin___memcpy_chk (__dest, __src, __len,
       |          ^
 In function ‘snprintf’,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:423:9,
@@ -1788,22 +1476,6 @@ In function ‘snprintf’,
 /usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
    54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
       |          ^
-In function ‘memcpy’,
-    inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:143:5,
-    inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:138:13,
-    inlined from ‘resp_write_error’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:169:5,
-    inlined from ‘command_client’ at /home/runner/work/ddup/ddup/src/core/command.c:7656:13:
-/usr/include/x86_64-linux-gnu/bits/string_fortified.h:29:10: warning: ‘__builtin_memcpy’ reading 29 bytes from a region of size 28 [-Wstringop-overread]
-   29 |   return __builtin___memcpy_chk (__dest, __src, __len,
-      |          ^
-In function ‘memcpy’,
-    inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:143:5,
-    inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:138:13,
-    inlined from ‘resp_write_error’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:169:5,
-    inlined from ‘command_acl’ at /home/runner/work/ddup/ddup/src/core/command.c:12149:13:
-/usr/include/x86_64-linux-gnu/bits/string_fortified.h:29:10: warning: ‘__builtin_memcpy’ reading 109 bytes from a region of size 106 [-Wstringop-overread]
-   29 |   return __builtin___memcpy_chk (__dest, __src, __len,
-      |          ^
 [ 85%] Built target test_cluster_slots
 [ 85%] Building C object CMakeFiles/test_dump.dir/tests/test_dump.c.o
 [ 85%] Linking C executable test_dump
@@ -1840,22 +1512,6 @@ In function ‘snprintf’,
     inlined from ‘obj_zset_last_in_lex_range’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1574:5:
 /usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
    54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
-      |          ^
-In function ‘memcpy’,
-    inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:143:5,
-    inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:138:13,
-    inlined from ‘resp_write_error’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:169:5,
-    inlined from ‘command_client’ at /home/runner/work/ddup/ddup/src/core/command.c:7656:13:
-/usr/include/x86_64-linux-gnu/bits/string_fortified.h:29:10: warning: ‘__builtin_memcpy’ reading 29 bytes from a region of size 28 [-Wstringop-overread]
-   29 |   return __builtin___memcpy_chk (__dest, __src, __len,
-      |          ^
-In function ‘memcpy’,
-    inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:143:5,
-    inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:138:13,
-    inlined from ‘resp_write_error’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:169:5,
-    inlined from ‘command_acl’ at /home/runner/work/ddup/ddup/src/core/command.c:12149:13:
-/usr/include/x86_64-linux-gnu/bits/string_fortified.h:29:10: warning: ‘__builtin_memcpy’ reading 109 bytes from a region of size 106 [-Wstringop-overread]
-   29 |   return __builtin___memcpy_chk (__dest, __src, __len,
       |          ^
 [ 85%] Built target test_dump
 [ 85%] Building C object CMakeFiles/test_migrate.dir/tests/test_migrate.c.o
@@ -2232,22 +1888,6 @@ In function ‘snprintf’,
 /usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
    54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
       |          ^
-In function ‘memcpy’,
-    inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:143:5,
-    inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:138:13,
-    inlined from ‘resp_write_error’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:169:5,
-    inlined from ‘command_client’ at /home/runner/work/ddup/ddup/src/core/command.c:7656:13:
-/usr/include/x86_64-linux-gnu/bits/string_fortified.h:29:10: warning: ‘__builtin_memcpy’ reading 29 bytes from a region of size 28 [-Wstringop-overread]
-   29 |   return __builtin___memcpy_chk (__dest, __src, __len,
-      |          ^
-In function ‘memcpy’,
-    inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:143:5,
-    inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:138:13,
-    inlined from ‘resp_write_error’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:169:5,
-    inlined from ‘command_acl’ at /home/runner/work/ddup/ddup/src/core/command.c:12149:13:
-/usr/include/x86_64-linux-gnu/bits/string_fortified.h:29:10: warning: ‘__builtin_memcpy’ reading 109 bytes from a region of size 106 [-Wstringop-overread]
-   29 |   return __builtin___memcpy_chk (__dest, __src, __len,
-      |          ^
 [ 95%] Built target test_redbus
 [ 96%] Building C object CMakeFiles/test_redbus_bus.dir/tests/test_redbus_bus.c.o
 [ 96%] Linking C executable test_redbus_bus
@@ -2321,14 +1961,6 @@ In function ‘snprintf’,
     inlined from ‘obj_zset_last_in_lex_range’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1574:5:
 /usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
    54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
-      |          ^
-In function ‘memcpy’,
-    inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:143:5,
-    inlined from ‘write_typed_line’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:138:13,
-    inlined from ‘resp_write_error’ at /home/runner/work/ddup/ddup/src/resp/resp_writer.c:169:5,
-    inlined from ‘command_client’ at /home/runner/work/ddup/ddup/src/core/command.c:7656:13:
-/usr/include/x86_64-linux-gnu/bits/string_fortified.h:29:10: warning: ‘__builtin_memcpy’ reading 29 bytes from a region of size 28 [-Wstringop-overread]
-   29 |   return __builtin___memcpy_chk (__dest, __src, __len,
       |          ^
 [ 97%] Built target test_redbus_failover
 [ 98%] Building C object CMakeFiles/test_redbus_elect.dir/tests/test_redbus_elect.c.o
@@ -2437,7 +2069,7 @@ Get:11 http://azure.archive.ubuntu.com/ubuntu noble/main amd64 libsource-highlig
 Get:12 http://azure.archive.ubuntu.com/ubuntu noble-updates/main amd64 gdb amd64 15.1-1ubuntu1~24.04.1 [4083 kB]
 Get:13 http://azure.archive.ubuntu.com/ubuntu noble-updates/main amd64 libc6-dbg amd64 2.39-0ubuntu8.8 [7461 kB]
 Preconfiguring packages ...
-Fetched 13.6 MB in 0s (56.9 MB/s)
+Fetched 13.6 MB in 0s (92.9 MB/s)
 Selecting previously unselected package libdebuginfod-common.
 (Reading database ... (Reading database ... 5%(Reading database ... 10%(Reading database ... 15%(Reading database ... 20%(Reading database ... 25%(Reading database ... 30%(Reading database ... 35%(Reading database ... 40%(Reading database ... 45%(Reading database ... 50%(Reading database ... 55%(Reading database ... 60%(Reading database ... 65%(Reading database ... 70%(Reading database ... 75%(Reading database ... 80%(Reading database ... 85%(Reading database ... 90%(Reading database ... 95%(Reading database ... 100%(Reading database ... 201676 files and directories currently installed.)
 Preparing to unpack .../00-libdebuginfod-common_0.190-1.1ubuntu0.1_all.deb ...
