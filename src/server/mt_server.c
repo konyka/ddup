@@ -2687,7 +2687,6 @@ static void mt_swapdb_exec(worker *w, int log_db_index, const resp_value *v,
                            resp_buf *dst)
 {
     char ta[16], tb[16];
-    char *ea, *eb;
     long long ai, bi;
     if (v->count != 3 || v->items[1].str == NULL ||
         v->items[2].str == NULL) {
@@ -2705,9 +2704,8 @@ static void mt_swapdb_exec(worker *w, int log_db_index, const resp_value *v,
     ta[v->items[1].len] = '\0';
     memcpy(tb, v->items[2].str, v->items[2].len);
     tb[v->items[2].len] = '\0';
-    ai = strtoll(ta, &ea, 10);
-    bi = strtoll(tb, &eb, 10);
-    if (*ea != '\0' || *eb != '\0' || ai < 0 || bi < 0 || ai >= 16 ||
+    if (!mt_parse_ll(ta, v->items[1].len, &ai) ||
+        !mt_parse_ll(tb, v->items[2].len, &bi) || ai < 0 || bi < 0 || ai >= 16 ||
         bi >= 16) {
         static const char E[] = "ERR DB index is out of range";
         resp_write_error(dst, E, sizeof(E) - 1);

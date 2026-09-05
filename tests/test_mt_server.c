@@ -2323,6 +2323,29 @@ static void test_aggregate_dbsize_and_flushdb(void)
     pal_socket_cleanup();
 }
 
+static void test_swapdb_rejects_noncanonical_indices(void)
+{
+    mt_server *ms;
+    pal_socket_t c;
+
+    DD_CHECK_EQ_INT(0, pal_socket_init());
+    ms = mt_server_create("127.0.0.1", 0, 2);
+    DD_CHECK(ms != NULL);
+    if (ms == NULL) {
+        pal_socket_cleanup();
+        return;
+    }
+    DD_CHECK_EQ_INT(0, mt_server_start(ms));
+    c = connect_client(mt_server_port(ms));
+    /* Redis integer arguments are strict: leading whitespace is invalid. */
+    roundtrip(c, "*3\r\n$6\r\nSWAPDB\r\n$2\r\n 0\r\n$1\r\n1\r\n",
+              "-ERR command failed on a worker\r\n");
+    pal_close(c);
+    mt_server_stop(ms);
+    mt_server_destroy(ms);
+    pal_socket_cleanup();
+}
+
 static void test_aggregate_alloc_failure_fails_closed(void)
 {
     mt_server *ms;
@@ -3776,6 +3799,7 @@ int main(void)
     DD_RUN(test_copy_same_worker);
     DD_RUN(test_quit_closes_connection_mt);
     DD_RUN(test_aggregate_dbsize_and_flushdb);
+    DD_RUN(test_swapdb_rejects_noncanonical_indices);
     DD_RUN(test_aggregate_alloc_failure_fails_closed);
     DD_RUN(test_info_aggregation);
     DD_RUN(test_three_worker_aggregate_completion);

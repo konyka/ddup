@@ -944,3 +944,5 @@
     v2 master ID 必须为合法 ID 或 `-`，伪造身份帧原子拒绝（Phase 308）
   - [x] 集群测试夹具分配检查：epoch 总线测试在写入节点字段前验证创建结果，
     消除 LTO 下潜在 NULL 解引用和 stringop-overflow 警告（Phase 309）
+  - [x] MT SWAPDB 严格索引解析：worker 快路径复用有界十进制解析，拒绝前导空格、
+    后缀和溢出索引，保持与单线程 Redis 整数语义一致（Phase 310）

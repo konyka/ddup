@@ -2190,3 +2190,10 @@ on the frame path; valid gossip retains its existing allocation-free merge flow.
 Epoch test fixtures now validate node allocation before populating fixed fields.
 This affects only test setup and removes undefined behavior and warning noise;
 the production cluster path and hot-loop costs are unchanged.
+
+### Phase 310: strict MT SWAPDB index parsing
+
+The worker-side SWAPDB fast path now parses database indexes directly from the
+bounded RESP lengths using the existing strict integer helper. Valid requests
+retain the same O(1) swap and replication path; malformed values fail before
+any database mutation.
