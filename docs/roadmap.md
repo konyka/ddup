@@ -922,3 +922,5 @@
     恢复快照先校验 `nnodes`，避免损坏元数据跨 worker 扩散（Phase 297）
   - [x] 集群状态恢复深度校验：恢复前逐节点验证 `nreports` 上限，任一损坏
     报告表使整份状态原子拒绝，保持目标数据库不变（Phase 298）
+  - [x] 集群总线损坏状态门禁：总线帧处理入口先验证本地 `nnodes` 有界，拒绝
+    malformed topology 穿透 gossip/FAIL/PONG 合并流程（Phase 299）

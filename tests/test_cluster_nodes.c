@@ -304,6 +304,23 @@ static void test_corrupt_report_count_fails_closed(void)
     db_destroy(&d);
 }
 
+static void test_bus_rejects_corrupt_node_count(void)
+{
+    db d;
+    resp_buf frame, reply;
+
+    db_init(&d);
+    cluster_nodes_init(&d);
+    resp_buf_init(&frame);
+    resp_buf_init(&reply);
+    d.nnodes = CLUSTER_MAX_NODES + 1;
+    DD_CHECK_EQ_INT(-1, cluster_bus_handle_frame(&d, "RCM2", 4, &reply, 0));
+    DD_CHECK_EQ_INT(0, (long long)reply.len);
+    resp_buf_free(&reply);
+    resp_buf_free(&frame);
+    db_destroy(&d);
+}
+
 static void test_state_restore_rejects_corrupt_node_count(void)
 {
     db d;
@@ -364,6 +381,7 @@ int main(void)
     DD_RUN(test_cluster_state_api_rejects_null_inputs);
     DD_RUN(test_corrupt_node_count_fails_closed);
     DD_RUN(test_corrupt_report_count_fails_closed);
+    DD_RUN(test_bus_rejects_corrupt_node_count);
     DD_RUN(test_state_restore_rejects_corrupt_node_count);
     DD_RUN(test_state_restore_rejects_corrupt_report_count);
     DD_RUN(test_nodes_persistence_api_rejects_null_inputs);

@@ -878,7 +878,8 @@ int cluster_bus_handle_frame(struct db *d, const char *frame, size_t len,
     int v2;
     cluster_node *n;
 
-    if (d == NULL || frame == NULL || reply_out == NULL || len < 10)
+    if (d == NULL || d->nnodes < 0 || d->nnodes > CLUSTER_MAX_NODES ||
+        frame == NULL || reply_out == NULL || len < 10)
         return -1;
     if (memcmp(frame, CLUSTER_BUS_MAGIC_V2, 4) == 0) {
         v2 = 1;
