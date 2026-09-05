@@ -41,6 +41,10 @@ static void test_iouring_null_api_inputs(void)
     DD_CHECK(pal_iouring_sbuf_acquire(NULL, &bid) == NULL);
     DD_CHECK_EQ_INT(-1, bid);
     pal_iouring_sbuf_release(NULL, 0);
+    DD_CHECK_EQ_INT(0, pal_iouring_pbuf_active(NULL));
+    DD_CHECK_EQ_INT(0, pal_iouring_sqpoll_active(NULL));
+    DD_CHECK_EQ_INT(-1, pal_iouring_enable_pbuf(NULL, 1, PBUF_SIZE));
+    pal_iouring_test_fail_next_sqpoll_wake(NULL, 0);
     DD_CHECK_EQ_INT(-1, pal_iouring_wait(NULL, &ev, 1, 0));
     DD_CHECK_EQ_INT(-1, pal_iouring_recv_ms(NULL, PAL_SOCKET_INVALID, NULL));
     DD_CHECK(pal_iouring_buf(NULL, 0) == NULL);

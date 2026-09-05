@@ -29,6 +29,9 @@ python3 tools/audit_redis_compat.py \
 错误文本长度漂移造成截断或越界读取；`HIMPORT SET` 字段数错误已由命令测试
 锁定完整 wire 响应。
 
+PAL 可靠性补充：io_uring pbuf/SQPOLL 状态和测试注入入口对空 ring 统一
+fail-closed，避免管理/诊断调用破坏服务进程。
+
 历史缺口集中在三块，当前 Redis 8.10.1 命令级审计已清零：
 
 1. Redis 8.8 新增 `ARRAY` 类型（18 个 `AR*` 命令）。

@@ -724,6 +724,8 @@ int pal_iouring_enable_pbuf(pal_iouring *r, unsigned count, size_t size)
     long page_size;
     unsigned i;
 
+    if (r == NULL)
+        return -1;
     pal_mutex_lock(&r->lock);
     if (r->pbuf_ring != NULL) {
         pal_mutex_unlock(&r->lock);
@@ -795,6 +797,8 @@ invalid:
 int pal_iouring_pbuf_active(const pal_iouring *r)
 {
     int active;
+    if (r == NULL)
+        return 0;
     pal_mutex_lock((pal_mutex *)&r->lock);
     active = r->pbuf_ring != NULL;
     pal_mutex_unlock((pal_mutex *)&r->lock);
@@ -803,11 +807,15 @@ int pal_iouring_pbuf_active(const pal_iouring *r)
 
 int pal_iouring_sqpoll_active(const pal_iouring *r)
 {
+    if (r == NULL)
+        return 0;
     return r->sqpoll;
 }
 
 void pal_iouring_test_fail_next_sqpoll_wake(pal_iouring *r, int err)
 {
+    if (r == NULL)
+        return;
     pal_mutex_lock(&r->lock);
     r->test_fail_wake_once = err == 0 ? EIO : err;
     pal_mutex_unlock(&r->lock);

@@ -892,3 +892,6 @@
     保持已销毁唤醒对象可重复清理（Phase 283）
   - [x] HIMPORT 字段数错误帧完整性：字段集值数不匹配的 RESP 错误消息改用
     编译期长度，避免固定长度截断协议帧（Phase 284）
+  - [x] io_uring 状态查询 NULL 防护：pbuf/SQPOLL 状态查询、pbuf 启用和
+    SQPOLL 故障注入入口对 NULL ring fail-closed，避免诊断路径解引用崩溃
+    （Phase 285）
