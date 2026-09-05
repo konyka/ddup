@@ -272,6 +272,61 @@ static void test_handle_rejects_oversized_gossip_address(void)
     db_destroy(&source);
 }
 
+static void test_handle_rejects_invalid_sender_identity(void)
+{
+    db source, target;
+    resp_buf frame, reply;
+
+    db_init(&source);
+    db_init(&target);
+    cluster_nodes_init(&source);
+    cluster_nodes_init(&target);
+    resp_buf_init(&frame);
+    resp_buf_init(&reply);
+    make_node(&source, ID1, "127.0.0.1", 7001,
+              CLUSTER_NODE_MYSELF | CLUSTER_NODE_MASTER, 1);
+    DD_CHECK_EQ_INT(0, cluster_bus_build_frame(&source, CLUSTER_MSG_PING,
+                                               &frame));
+    frame.data[10] = 'G'; /* sender ID begins immediately after the header */
+    DD_CHECK_EQ_INT(-1, cluster_bus_handle_frame(&target, frame.data,
+                                                 frame.len, &reply, T0));
+    DD_CHECK_EQ_INT(0, target.nnodes);
+
+    resp_buf_free(&reply);
+    resp_buf_free(&frame);
+    db_destroy(&target);
+    db_destroy(&source);
+}
+
+static void test_handle_rejects_invalid_master_identity(void)
+{
+    db source, target;
+    resp_buf frame, reply;
+    size_t master_id_off;
+
+    db_init(&source);
+    db_init(&target);
+    cluster_nodes_init(&source);
+    cluster_nodes_init(&target);
+    resp_buf_init(&frame);
+    resp_buf_init(&reply);
+    make_node(&source, ID1, "127.0.0.1", 7001,
+              CLUSTER_NODE_MYSELF | CLUSTER_NODE_MASTER, 1);
+    DD_CHECK_EQ_INT(0, cluster_bus_build_frame(&source, CLUSTER_MSG_PING,
+                                               &frame));
+    master_id_off = 10 + 40 + 2 + strlen("127.0.0.1") + 2 + 2 + 4 + 2048;
+    DD_CHECK(master_id_off < frame.len);
+    frame.data[master_id_off] = 'G';
+    DD_CHECK_EQ_INT(-1, cluster_bus_handle_frame(&target, frame.data,
+                                                 frame.len, &reply, T0));
+    DD_CHECK_EQ_INT(0, target.nnodes);
+
+    resp_buf_free(&reply);
+    resp_buf_free(&frame);
+    db_destroy(&target);
+    db_destroy(&source);
+}
+
 static void test_meet_convergence(void);
 static void test_gossip_carry(void);
 static void test_fail_detect(void);
@@ -286,6 +341,8 @@ int main(void)
     DD_RUN(test_handle_rejects_truncated_v2_before_node_publish);
     DD_RUN(test_handle_rejects_truncated_gossip_without_topology_mutation);
     DD_RUN(test_handle_rejects_oversized_gossip_address);
+    DD_RUN(test_handle_rejects_invalid_sender_identity);
+    DD_RUN(test_handle_rejects_invalid_master_identity);
     DD_RUN(test_meet_convergence);
     DD_RUN(test_gossip_carry);
     DD_RUN(test_fail_detect);

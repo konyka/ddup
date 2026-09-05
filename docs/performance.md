@@ -2177,3 +2177,16 @@ The every-second throttle now skips `sync` only when the wall clock is monotonic
 and remains inside the one-second window. A clock rollback takes the cold sync
 branch instead of unsigned-underflowing into a multi-year throttle; monotonic
 flushes retain the same comparison and syscall behavior.
+
+### Phase 308: cluster-bus identity validation
+
+Sender and gossip node IDs are validated against the existing 40-byte lowercase
+hexadecimal identity contract before topology mutation. v2 master IDs accept the
+sentinel `-` or the same canonical form. The checks are fixed 40-character scans
+on the frame path; valid gossip retains its existing allocation-free merge flow.
+
+### Phase 309: cluster fixture allocation checks
+
+Epoch test fixtures now validate node allocation before populating fixed fields.
+This affects only test setup and removes undefined behavior and warning noise;
+the production cluster path and hot-loop costs are unchanged.

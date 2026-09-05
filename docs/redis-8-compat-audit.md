@@ -60,6 +60,13 @@ AOF 持久化复核：`appendfsync everysec` 在墙钟回拨后不会因无符�
 跳过同步，而是在下一次 flush 建立新的 durability barrier；单调时钟下仍保持
 Redis 兼容的一秒节流语义。
 
+集群总线身份复核：sender/gossip node ID 现在必须满足 40 位小写十六进制节点
+标识契约，v2 master ID 仅允许合法节点标识或 `-`。不符合格式的帧在拓扑变更前
+被拒绝，避免伪造身份参与槽位声明和故障仲裁。
+
+集群回归夹具同步完成分配结果检查，确保身份/epoch 兼容性测试本身不会因模拟
+OOM 产生未定义写入，从而使协议边界结论可重复。
+
 PAL 可靠性补充：io_uring pbuf/SQPOLL 状态和测试注入入口对空 ring 统一
 fail-closed，避免管理/诊断调用破坏服务进程。
 

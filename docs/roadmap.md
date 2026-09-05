@@ -940,3 +940,7 @@
     计数，再释放固定槽位并清除标志，避免僵尸连接引用泄漏（Phase 306）
   - [x] AOF everysec 时钟回拨：墙钟回退时不使用无符号下溢跳过同步，确保回拨
     后下一次 flush 立即重新建立持久性屏障（Phase 307）
+  - [x] 集群总线身份字段校验：sender/gossip node ID 必须为 40 位小写十六进制，
+    v2 master ID 必须为合法 ID 或 `-`，伪造身份帧原子拒绝（Phase 308）
+  - [x] 集群测试夹具分配检查：epoch 总线测试在写入节点字段前验证创建结果，
+    消除 LTO 下潜在 NULL 解引用和 stringop-overflow 警告（Phase 309）

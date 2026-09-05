@@ -951,7 +951,7 @@ int cluster_bus_handle_frame(struct db *d, const char *frame, size_t len,
     const char *p, *end;
     uint32_t totlen, flags;
     uint16_t type, ipl, port, busport;
-    char id[41], ip[64], master_id[41];
+    char id[41], gossip_id[41], ip[64], master_id[41];
     uint64_t epoch;
     int v2;
     cluster_node *n;
@@ -992,6 +992,9 @@ int cluster_bus_handle_frame(struct db *d, const char *frame, size_t len,
         return -1;
     memcpy(id, p, 40);
     id[40] = '\0';
+    if (!cluster_id_valid(id)) {
+        return -1;
+    }
     p += 40;
     ipl = get16(p);
     p += 2;
@@ -1012,6 +1015,9 @@ int cluster_bus_handle_frame(struct db *d, const char *frame, size_t len,
             return -1;
         memcpy(master_id, p + 2048, 40);
         master_id[40] = '\0';
+        if (!(master_id[0] == '-' && master_id[1] == '\0') &&
+            !cluster_id_valid(master_id))
+            return -1;
         epoch = get64(p + 2048 + 40);
     } else {
         epoch = 0; /* v1: no epochs on the wire */
@@ -1029,6 +1035,11 @@ int cluster_bus_handle_frame(struct db *d, const char *frame, size_t len,
             uint16_t glen, slen;
             if ((size_t)(end - q) < 42)
                 return -1;
+            memcpy(gossip_id, q, 40);
+            gossip_id[40] = '\0';
+            if (!cluster_id_valid(gossip_id)) {
+                return -1;
+            }
             q += 40;
             glen = get16(q);
             q += 2;
@@ -1085,6 +1096,8 @@ int cluster_bus_handle_frame(struct db *d, const char *frame, size_t len,
                 return -1;
             memcpy(id, p, 40);
             id[40] = '\0';
+            if (!cluster_id_valid(id))
+                return -1;
             p += 40;
             ipl = get16(p);
             p += 2;
@@ -1107,6 +1120,11 @@ int cluster_bus_handle_frame(struct db *d, const char *frame, size_t len,
                 return -1;
             if (v2) {
                 if ((size_t)(end - p) < (size_t)sl + 48)
+                    return -1;
+                memcpy(master_id, p + sl, 40);
+                master_id[40] = '\0';
+                if (!(master_id[0] == '-' && master_id[1] == '\0') &&
+                    !cluster_id_valid(master_id))
                     return -1;
             }
             /* unseen nodes are added, then claims merged (epoch rules);
