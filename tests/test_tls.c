@@ -41,6 +41,30 @@ static void test_tls_new_rejects_invalid_fd(void)
     }
 }
 
+static void test_tls_null_api_inputs(void)
+{
+    char byte = 0;
+    pal_tls_ctx *ctx;
+
+    DD_CHECK(pal_tls_ctx_new(NULL, NULL) == NULL);
+    DD_CHECK(pal_tls_new(NULL, PAL_SOCKET_INVALID) == NULL);
+    DD_CHECK(pal_tls_new(NULL, (pal_socket_t)0) == NULL);
+    DD_CHECK_EQ_INT(-1, pal_tls_accept_handshake(NULL));
+    DD_CHECK_EQ_INT(-1, pal_tls_handshake_nb(NULL));
+    DD_CHECK_EQ_INT(-1, pal_tls_connect_handshake_nb(NULL));
+    DD_CHECK_EQ_INT(-1, (long long)pal_tls_read(NULL, &byte, 1));
+    DD_CHECK_EQ_INT(-1, (long long)pal_tls_write(NULL, &byte, 1));
+    pal_tls_shutdown(NULL);
+    pal_tls_free(NULL);
+
+    ctx = pal_tls_ctx_new_client(NULL);
+    DD_CHECK(ctx != NULL);
+    if (ctx != NULL) {
+        DD_CHECK_EQ_INT(-1, (long long)pal_tls_read(NULL, NULL, 0));
+        pal_tls_ctx_free(ctx);
+    }
+}
+
 static void test_tls_rejects_lengths_over_int_max(void)
 {
     pal_tls_ctx *ctx;
@@ -602,6 +626,7 @@ int main(void)
     DD_RUN(test_ctx_load);
     DD_RUN(test_ctx_bad_files);
     DD_RUN(test_tls_new_rejects_invalid_fd);
+    DD_RUN(test_tls_null_api_inputs);
     DD_RUN(test_tls_rejects_lengths_over_int_max);
     DD_RUN(test_tls_init_is_thread_safe);
     DD_RUN(test_tls_server_roundtrip);

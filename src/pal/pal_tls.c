@@ -63,6 +63,9 @@ pal_tls_ctx *pal_tls_ctx_new(const char *cert_file, const char *key_file)
 {
     pal_tls_ctx *c;
     SSL_CTX *ctx;
+    if (cert_file == NULL || key_file == NULL || cert_file[0] == '\0' ||
+        key_file[0] == '\0')
+        return NULL;
     pal_tls_lib_init();
     c = (pal_tls_ctx *)calloc(1, sizeof(*c));
     if (c == NULL)
@@ -123,6 +126,8 @@ void pal_tls_ctx_free(pal_tls_ctx *ctx)
 
 pal_tls *pal_tls_new(pal_tls_ctx *ctx, pal_socket_t fd)
 {
+    if (ctx == NULL || ctx->ctx == NULL || fd == PAL_SOCKET_INVALID)
+        return NULL;
     pal_tls *t = (pal_tls *)calloc(1, sizeof(*t));
     if (t == NULL)
         return NULL;
@@ -142,11 +147,15 @@ pal_tls *pal_tls_new(pal_tls_ctx *ctx, pal_socket_t fd)
 
 int pal_tls_accept_handshake(pal_tls *t)
 {
+    if (t == NULL || t->ssl == NULL)
+        return -1;
     return SSL_accept(t->ssl) == 1 ? 0 : -1;
 }
 
 int pal_tls_handshake_nb(pal_tls *t)
 {
+    if (t == NULL || t->ssl == NULL)
+        return -1;
     int rc = SSL_accept(t->ssl);
     int err;
     if (rc == 1)
@@ -161,6 +170,8 @@ int pal_tls_handshake_nb(pal_tls *t)
 
 int pal_tls_connect_handshake_nb(pal_tls *t)
 {
+    if (t == NULL || t->ssl == NULL)
+        return -1;
     int rc = SSL_connect(t->ssl);
     int err;
     if (rc == 1)
@@ -175,7 +186,8 @@ int pal_tls_connect_handshake_nb(pal_tls *t)
 
 ptrdiff_t pal_tls_read(pal_tls *t, void *buf, size_t n)
 {
-    if (n > (size_t)INT_MAX)
+    if (t == NULL || t->ssl == NULL || (buf == NULL && n != 0) ||
+        n > (size_t)INT_MAX)
         return -1;
     int rc = SSL_read(t->ssl, buf, (int)n);
     int err;
@@ -193,7 +205,8 @@ ptrdiff_t pal_tls_read(pal_tls *t, void *buf, size_t n)
 
 ptrdiff_t pal_tls_write(pal_tls *t, const void *buf, size_t n)
 {
-    if (n > (size_t)INT_MAX)
+    if (t == NULL || t->ssl == NULL || (buf == NULL && n != 0) ||
+        n > (size_t)INT_MAX)
         return -1;
     int rc = SSL_write(t->ssl, buf, (int)n);
     int err;

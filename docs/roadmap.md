@@ -895,3 +895,5 @@
   - [x] io_uring 状态查询 NULL 防护：pbuf/SQPOLL 状态查询、pbuf 启用和
     SQPOLL 故障注入入口对 NULL ring fail-closed，避免诊断路径解引用崩溃
     （Phase 285）
+  - [x] TLS PAL 生命周期边界：上下文构造、TLS 对象创建、握手及读写入口
+    拒绝 NULL/空路径/无效 fd，避免握手和 I/O 控制面解引用崩溃（Phase 286）
