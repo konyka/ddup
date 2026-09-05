@@ -1867,6 +1867,12 @@ Cluster test constructors now stop before dereferencing a failed node allocation
 This affects test-only setup, removes undefined behavior from the TDD signal,
 and leaves production routing performance unchanged.
 
+### Phase 283: bounded wakeup lifecycle
+
+Wakeup creation, kick, drain, and destroy now validate null objects and invalid
+socket ends before platform I/O. Valid cross-thread kicks retain the same single
+byte write and drain loop; repeated cleanup is safe without extra allocations.
+
 ### Phase 247: bounded nodes.conf APIs
 
 Nodes configuration render and parse entry points validate pointers before

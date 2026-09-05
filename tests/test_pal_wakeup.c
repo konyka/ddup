@@ -40,6 +40,24 @@ static void test_kick_makes_wait_fd_readable(void)
     pal_socket_cleanup();
 }
 
+static void test_wakeup_invalid_inputs_fail_closed(void)
+{
+    pal_wakeup w;
+
+    DD_CHECK_EQ_INT(-1, pal_wakeup_create(NULL));
+    DD_CHECK_EQ_INT(-1, pal_wakeup_kick(NULL));
+    DD_CHECK_EQ_INT(0, pal_wakeup_drain(NULL));
+    pal_wakeup_destroy(NULL);
+
+    w.wait_fd = PAL_SOCKET_INVALID;
+    w.kick_fd = PAL_SOCKET_INVALID;
+    DD_CHECK_EQ_INT(-1, pal_wakeup_kick(&w));
+    DD_CHECK_EQ_INT(0, pal_wakeup_drain(&w));
+    pal_wakeup_destroy(&w);
+    DD_CHECK(w.wait_fd == PAL_SOCKET_INVALID);
+    DD_CHECK(w.kick_fd == PAL_SOCKET_INVALID);
+}
+
 static void test_multiple_kicks_drain_together(void)
 {
     pal_wakeup w;
@@ -84,6 +102,7 @@ static void test_full_wakeup_queue_is_already_pending(void)
 
 int main(void)
 {
+    DD_RUN(test_wakeup_invalid_inputs_fail_closed);
     DD_RUN(test_kick_makes_wait_fd_readable);
     DD_RUN(test_multiple_kicks_drain_together);
     DD_RUN(test_full_wakeup_queue_is_already_pending);

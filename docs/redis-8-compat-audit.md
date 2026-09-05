@@ -586,3 +586,7 @@ Session MULTI and blocking state now preserve valid zero-argument lists without
 Cluster regression fixtures now validate node allocation before field setup, so
 the compatibility test suite remains free of undefined behavior under allocation
 failure instrumentation.
+
+The cross-platform wakeup primitive now fails closed on null or invalid handles,
+keeping multi-thread connection-control notifications safe during startup and
+teardown.

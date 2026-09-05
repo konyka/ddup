@@ -888,3 +888,5 @@
     可安全保存空参数列表（Phase 281）
   - [x] 集群测试夹具可靠性：节点创建结果先验证再写入字段，移除潜在 NULL
     解引用和全量构建 stringop-overflow 警告（Phase 282）
+  - [x] PAL wakeup 生命周期边界：create/kick/drain/destroy 拒绝 NULL/无效句柄，
+    保持已销毁唤醒对象可重复清理（Phase 283）
