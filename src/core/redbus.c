@@ -470,8 +470,7 @@ int redbus_handle_frame(struct db *d, const char *frame, size_t len,
         return -1;
     type = get16be(frame + 12);
     count = get16be(frame + 14);
-    if ((size_t)count > (SIZE_MAX - REDBUS_HDR_LEN) / REDBUS_GOSSIP_LEN ||
-        len < REDBUS_HDR_LEN + (size_t)count * REDBUS_GOSSIP_LEN)
+    if (len < REDBUS_HDR_LEN + (size_t)count * REDBUS_GOSSIP_LEN)
         return -1;
 
     if (type == REDBUS_TYPE_PING || type == REDBUS_TYPE_PONG ||
