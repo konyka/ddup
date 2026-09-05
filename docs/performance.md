@@ -2170,3 +2170,10 @@ The proactor send error path now uses one helper to release the fixed slot,
 decrement the notification-backed pending operation, and clear state in a
 defined order. This adds no work to successful completions; the helper is only
 entered on a terminal error CQE and prevents zombie-connection leaks.
+
+### Phase 307: AOF everysec clock rollback
+
+The every-second throttle now skips `sync` only when the wall clock is monotonic
+and remains inside the one-second window. A clock rollback takes the cold sync
+branch instead of unsigned-underflowing into a multi-year throttle; monotonic
+flushes retain the same comparison and syscall behavior.

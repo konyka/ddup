@@ -56,6 +56,10 @@ io_uring 发送生命周期复核：固定 buffer 与 `SEND_ZC` 提交现在要�
 io_uring SEND_ZC 错误路径复核：终止 CQE 现在在清除通知标志前完成固定槽位释放
 和 pending-op 计数，确保异常关闭与僵尸连接回收不会遗留异步引用。
 
+AOF 持久化复核：`appendfsync everysec` 在墙钟回拨后不会因无符号时间差下溢而
+跳过同步，而是在下一次 flush 建立新的 durability barrier；单调时钟下仍保持
+Redis 兼容的一秒节流语义。
+
 PAL 可靠性补充：io_uring pbuf/SQPOLL 状态和测试注入入口对空 ring 统一
 fail-closed，避免管理/诊断调用破坏服务进程。
 

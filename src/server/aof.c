@@ -120,7 +120,7 @@ static int aof_policy_sync(aof *a)
         return 0;
     now = a->now_fn();
     if (a->fsync_mode == AOF_FSYNC_EVERYSEC &&
-        now - a->last_sync_ms < 1000)
+        now >= a->last_sync_ms && now - a->last_sync_ms < 1000)
         return 0;
     if (a->sync_fn(a->f) != 0)
         return -1;

@@ -539,6 +539,29 @@ static void test_aof_fsync_everysec_throttles(void)
     remove(TMP_AOF);
 }
 
+static void test_aof_fsync_everysec_syncs_after_clock_rollback(void)
+{
+    aof *a = aof_open(TMP_AOF);
+    DD_CHECK(a != NULL);
+    if (a == NULL)
+        return;
+    sync_calls = 0;
+    sync_fail_call = -1;
+    fake_now = 100000;
+    aof_test_set_sync_fn(a, counting_sync);
+    aof_test_set_now_fn(a, now_fake);
+    aof_set_fsync_mode(a, AOF_FSYNC_EVERYSEC);
+    log_set(a);
+    DD_CHECK_EQ_INT(0, aof_flush(a));
+    DD_CHECK_EQ_INT(1, sync_calls);
+    fake_now = 90000; /* wall clock moved backwards: force a new sync */
+    log_set(a);
+    DD_CHECK_EQ_INT(0, aof_flush(a));
+    DD_CHECK_EQ_INT(2, sync_calls);
+    aof_close(a);
+    remove(TMP_AOF);
+}
+
 static void test_aof_fsync_no_never_syncs(void)
 {
     aof *a = aof_open(TMP_AOF);
@@ -769,6 +792,7 @@ int main(void)
     DD_RUN(test_pal_file_sync_roundtrip);
     DD_RUN(test_aof_fsync_always_syncs_every_flush);
     DD_RUN(test_aof_fsync_everysec_throttles);
+    DD_RUN(test_aof_fsync_everysec_syncs_after_clock_rollback);
     DD_RUN(test_aof_fsync_no_never_syncs);
     DD_RUN(test_aof_close_final_sync_everysec);
     DD_RUN(test_aof_sync_failure_latches_fail_closed);
