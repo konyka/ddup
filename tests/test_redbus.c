@@ -303,6 +303,38 @@ done:
     db_destroy(&source);
 }
 
+static void test_rejects_invalid_slaveof_without_publish(void)
+{
+    db source, target;
+    resp_buf frame, reply;
+    cluster_node *me;
+
+    db_init(&source);
+    db_init(&target);
+    cluster_nodes_init(&source);
+    cluster_nodes_init(&target);
+    resp_buf_init(&frame);
+    resp_buf_init(&reply);
+    me = cluster_node_add(&source, ID1);
+    DD_CHECK(me != NULL);
+    if (me == NULL)
+        goto done;
+    me->flags = CLUSTER_NODE_MYSELF | CLUSTER_NODE_MASTER;
+    snprintf(me->ip, sizeof(me->ip), "127.0.0.1");
+    me->port = 7001;
+    DD_CHECK_EQ_INT(0, redbus_build_frame(&source, REDBUS_TYPE_PING, &frame));
+    frame.data[2128] = 'G';
+    DD_CHECK_EQ_INT(-1, redbus_handle_frame(&target, frame.data, frame.len,
+                                            &reply, T0, NULL));
+    DD_CHECK_EQ_INT(0, target.nnodes);
+
+done:
+    resp_buf_free(&reply);
+    resp_buf_free(&frame);
+    db_destroy(&target);
+    db_destroy(&source);
+}
+
 static void test_update_fail_and_tolerance(void)
 {
     db d;
@@ -474,6 +506,7 @@ int main(void)
     DD_RUN(test_roundtrip);
     DD_RUN(test_rejects_invalid_wire_identities);
     DD_RUN(test_rejects_trailing_wire_payload);
+    DD_RUN(test_rejects_invalid_slaveof_without_publish);
     DD_RUN(test_update_fail_and_tolerance);
     DD_RUN(test_update_to_self_adopts);
     DD_RUN(test_empty_myip_auto_discovery);

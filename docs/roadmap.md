@@ -954,3 +954,5 @@
     slaveof 字段统一验证 40 位小写十六进制格式，非法帧在拓扑变更前拒绝（Phase 313）
   - [x] Redis 原生 cluster bus 帧完整性：按消息类型严格匹配 gossip/UPDATE/FAIL/
     AUTH 负载长度并检查计数乘法溢出，拒绝尾随或截断 payload（Phase 314）
+  - [x] Redis 原生 cluster bus 原子身份发布：`apply_node` 在节点表插入前校验
+    sender/slaveof 身份，非法 master ID 不再留下半初始化节点（Phase 315）

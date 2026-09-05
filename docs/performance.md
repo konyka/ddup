@@ -2223,3 +2223,9 @@ The native decoder now validates count multiplication and exact payload length
 for PING/PONG/MEET, UPDATE, FAIL, and failover-auth frames. These cold bounds
 checks prevent trailing or truncated payloads from reaching topology code while
 leaving valid frame decoding allocation-free.
+
+### Phase 315: atomic redbus identity publication
+
+The native `apply_node` path validates sender and slave-of identities before
+calling `cluster_node_add`. Malformed master IDs now fail on a cold branch with
+no topology mutation; valid node updates retain the same fixed-field writes.

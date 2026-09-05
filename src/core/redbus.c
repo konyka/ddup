@@ -315,8 +315,14 @@ static cluster_node *apply_node(struct db *d, const char *id, const char *ip,
                                 const char *slaveof, uint64_t epoch,
                                 uint32_t extra_flags, const char *src_ip)
 {
-    cluster_node *n = cluster_node_add(d, id);
+    cluster_node *n;
     const char *use_ip = ip[0] != '\0' ? ip : src_ip;
+
+    if (id == NULL || !wire_id_valid(id) ||
+        (slaveof != NULL && !name_is_zero(slaveof) &&
+         !wire_id_valid(slaveof)))
+        return NULL;
+    n = cluster_node_add(d, id);
     if (n == NULL)
         return NULL;
     if (use_ip != NULL && use_ip[0] != '\0')
@@ -328,8 +334,6 @@ static cluster_node *apply_node(struct db *d, const char *id, const char *ip,
         if (name_is_zero(slaveof))
             snprintf(n->master_id, sizeof(n->master_id), "-");
         else {
-            if (!wire_id_valid(slaveof))
-                return NULL;
             memcpy(n->master_id, slaveof, 40);
             n->master_id[40] = '\0';
         }
