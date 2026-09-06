@@ -47,6 +47,15 @@ static void test_zset_rejects_unrepresentable_member(void)
     obj_zset_free(z);
 }
 
+static void test_zset_api_rejects_null_object(void)
+{
+    double score = 1.0;
+    DD_CHECK_EQ_INT(0, (long long)obj_zset_mem(NULL));
+    DD_CHECK_EQ_INT(0, (long long)obj_zset_len(NULL));
+    DD_CHECK(!obj_zset_is_listpack(NULL));
+    DD_CHECK_EQ_INT(0, obj_zset_score(NULL, "m", 1, &score));
+}
+
 static void fill_abc(db *d, resp_buf *out)
 {
     exec_cmd(d, T0, out, 8, "ZADD", "z", "1", "a", "2.5", "b", "3", "c");
@@ -1129,6 +1138,7 @@ static void test_zadd_options_and_unified_zrange(void)
 int main(void)
 {
     DD_RUN(test_obj_str_zero_length_blob);
+    DD_RUN(test_zset_api_rejects_null_object);
     DD_RUN(test_zset_rejects_unrepresentable_member);
     DD_RUN(test_zadd_zscore_zcard);
     DD_RUN(test_zincrby_zrem);

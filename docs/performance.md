@@ -2314,6 +2314,12 @@ Runtime object-encoding limit setters/getters now reject null configuration and
 output pointers before copying state. The guard is only on management calls;
 normal startup applies limits with no additional hot-path work or synchronization.
 
+### Phase 340: list/set/zset query guards
+
+List, set, and sorted-set memory/length/encoding and common member-score query
+helpers now reject null objects on cold branches. Valid compact/listpack and
+hash/skiplist probes retain their existing costs and allocations.
+
 ### Phase 338: stream query API guards
 
 Stream memory, length, indexed access, and lower-bound helpers now reject null

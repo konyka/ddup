@@ -1007,3 +1007,5 @@
     对空 stream 返回确定值，避免管理面空对象解引用（Phase 338）
   - [x] Hash 查询 API NULL fail-closed：内存、长度、编码、字段查询及 TTL
     查询对空 hash 返回确定值，避免控制面空对象解引用（Phase 339）
+  - [x] List/Set/ZSet 查询 API NULL fail-closed：基础内存、长度、编码及成员
+    查询对空对象返回确定值，避免管理控制面解引用无效状态（Phase 340）

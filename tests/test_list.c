@@ -68,6 +68,12 @@ static void test_list_rejects_unrepresentable_elements(void)
     obj_list_free(l);
 }
 
+static void test_list_api_rejects_null_object(void)
+{
+    DD_CHECK_EQ_INT(0, (long long)obj_list_mem(NULL));
+    DD_CHECK_EQ_INT(0, (long long)obj_list_len(NULL));
+}
+
 static void test_list_commands_reject_transactionally(void)
 {
     db d;
@@ -1093,6 +1099,7 @@ static void test_lpop_rpop_count(void)
 
 int main(void)
 {
+    DD_RUN(test_list_api_rejects_null_object);
     DD_RUN(test_list_rejects_unrepresentable_elements);
     DD_RUN(test_list_commands_reject_transactionally);
     DD_RUN(test_push_len_range);

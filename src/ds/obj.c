@@ -827,12 +827,12 @@ void obj_list_free(obj_list *l)
 
 uint64_t obj_list_mem(const obj_list *l)
 {
-    return ql_mem(&l->ql);
+    return l == NULL ? 0 : ql_mem(&l->ql);
 }
 
 uint64_t obj_list_len(const obj_list *l)
 {
-    return l->ql.len;
+    return l == NULL ? 0 : l->ql.len;
 }
 
 int obj_list_push(obj_list *l, int left, const char *data, size_t len)
@@ -949,11 +949,13 @@ void obj_set_free(obj_set *s)
 
 uint64_t obj_set_mem(const obj_set *s)
 {
-    return s->mem;
+    return s == NULL ? 0 : s->mem;
 }
 
 uint64_t obj_set_len(const obj_set *s)
 {
+    if (s == NULL)
+        return 0;
     if (s->encoding == OBJ_SET_LP)
         return lp_length(s->lp);
     return rh_size(&s->members);
@@ -961,7 +963,7 @@ uint64_t obj_set_len(const obj_set *s)
 
 int obj_set_is_listpack(const obj_set *s)
 {
-    return s->encoding == OBJ_SET_LP;
+    return s != NULL && s->encoding == OBJ_SET_LP;
 }
 
 /* One-way conversion LP -> HT. */
@@ -1017,6 +1019,8 @@ int obj_set_add(obj_set *s, const char *m, size_t mlen)
 
 int obj_set_has(obj_set *s, const char *m, size_t mlen)
 {
+    if (s == NULL || (m == NULL && mlen != 0))
+        return 0;
     if (s->encoding == OBJ_SET_LP) {
         if (mlen > UINT32_MAX)
             return 0;
@@ -1227,6 +1231,8 @@ void obj_zset_free(obj_zset *z)
 
 uint64_t obj_zset_mem(const obj_zset *z)
 {
+    if (z == NULL)
+        return 0;
     if (z->encoding == OBJ_ZSET_LP)
         return zset_lp_mem(z);
     return (uint64_t)sizeof(*z) + z->dict_mem + z->sl->mem;
@@ -1234,6 +1240,8 @@ uint64_t obj_zset_mem(const obj_zset *z)
 
 uint64_t obj_zset_len(const obj_zset *z)
 {
+    if (z == NULL)
+        return 0;
     if (z->encoding == OBJ_ZSET_LP)
         return lp_length(z->lp) / 2;
     return rh_size(&z->dict);
@@ -1241,7 +1249,7 @@ uint64_t obj_zset_len(const obj_zset *z)
 
 int obj_zset_is_listpack(const obj_zset *z)
 {
-    return z->encoding == OBJ_ZSET_LP;
+    return z != NULL && z->encoding == OBJ_ZSET_LP;
 }
 
 /* One-way conversion LP -> HT. */
@@ -1321,6 +1329,8 @@ int obj_zset_add(obj_zset *z, const char *m, size_t mlen, double score)
 
 int obj_zset_score(obj_zset *z, const char *m, size_t mlen, double *score)
 {
+    if (z == NULL || score == NULL || (m == NULL && mlen != 0))
+        return 0;
     if (z->encoding == OBJ_ZSET_LP) {
         unsigned char sbuf[24];
         unsigned char *mp = zlp_find_member(z, m, mlen);
