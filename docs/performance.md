@@ -2504,3 +2504,9 @@ Valid reads retain their existing borrowing and linear index behavior.
 Expiration purge, length-at-time, and iteration-at-time helpers add fixed cold
 null checks before the existing scan. Valid expiry handling keeps the same table
 walk and lazy deletion cost; malformed calls perform no scan or allocation.
+
+### Phase 370: zero-length view copy safety
+
+Listpack, Quicklist, and Session ownership paths skip copies when the length is
+zero. Non-empty hot-path copies are unchanged; empty values avoid undefined
+null-pointer `memcpy` behavior with one predictable branch.

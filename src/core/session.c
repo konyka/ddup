@@ -77,7 +77,8 @@ int session_block_start(session *s, const resp_value *argv, size_t argc,
             free(copy_argv);
             return -1;
         }
-        memcpy(copy, argv[i].str, argv[i].len);
+        if (argv[i].len != 0)
+            memcpy(copy, argv[i].str, argv[i].len);
         copy_argv[i] = argv[i];
         copy_argv[i].str = copy;
         copy_argv[i].items = NULL;

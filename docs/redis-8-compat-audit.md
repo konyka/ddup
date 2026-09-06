@@ -801,6 +801,11 @@ Hash expiration wrappers now fail closed for null objects or callbacks before
 scanning the expiration table. `len_at(NULL)` returns zero and purge/each calls
 become safe no-ops without changing valid expiry behavior.
 
+Zero-length NULL views are now copied conditionally across listpack encoding,
+Quicklist pop, and Session argument ownership paths. Empty values remain valid,
+while non-empty copies retain their existing byte-for-byte behavior without
+invoking `memcpy` on null pointers.
+
 List batch pushes now prevalidate every element pointer and length before the
 first quicklist mutation. A malformed middle element returns an error with no
 partial list update, preserving the documented atomic batch behavior.

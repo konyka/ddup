@@ -481,12 +481,14 @@ static uint64_t lp_encode_entry(unsigned char *buf, const unsigned char *s,
     } else {
         if (slen <= 63) {
             buf[0] = (unsigned char)(LP_ENC_6BIT_STR | slen);
-            memcpy(buf + 1, s, slen);
+            if (slen != 0)
+                memcpy(buf + 1, s, slen);
             enclen = 1 + slen;
         } else if (slen <= 4095) {
             buf[0] = (unsigned char)(LP_ENC_12BIT_STR | (slen >> 8));
             buf[1] = (unsigned char)(slen & 0xFFu);
-            memcpy(buf + 2, s, slen);
+            if (slen != 0)
+                memcpy(buf + 2, s, slen);
             enclen = 2 + slen;
         } else {
             buf[0] = LP_ENC_32BIT_STR;
@@ -494,7 +496,8 @@ static uint64_t lp_encode_entry(unsigned char *buf, const unsigned char *s,
             buf[2] = (unsigned char)((slen >> 8) & 0xFFu);
             buf[3] = (unsigned char)((slen >> 16) & 0xFFu);
             buf[4] = (unsigned char)((slen >> 24) & 0xFFu);
-            memcpy(buf + 5, s, slen);
+            if (slen != 0)
+                memcpy(buf + 5, s, slen);
             enclen = 5 + slen;
         }
     }

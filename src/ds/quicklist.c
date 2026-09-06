@@ -230,7 +230,8 @@ int ql_pop(quicklist *ql, int left, char **data, size_t *len)
     *data = (char *)malloc(vlen ? vlen : 1);
     if (*data == NULL)
         ql_die_oom();
-    memcpy(*data, v, vlen);
+    if (vlen != 0)
+        memcpy(*data, v, vlen);
     *len = vlen;
     old_bytes = n->bytes;
     n->lp = lp_delete(n->lp, entry, NULL);

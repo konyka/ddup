@@ -52,6 +52,19 @@ static void test_new_empty(void)
     lp_free(lp);
 }
 
+static void test_empty_null_payload_is_safe(void)
+{
+    unsigned char *lp = lp_new();
+    uint32_t len = 123;
+    int64_t value = 0;
+
+    lp = lp_append(lp, NULL, 0);
+    DD_CHECK_EQ_INT(1, (long long)lp_length(lp));
+    DD_CHECK(lp_get(lp_first(lp), &len, &value) != NULL);
+    DD_CHECK_EQ_INT(0, (long long)len);
+    lp_free(lp);
+}
+
 static void test_append_strings(void)
 {
     unsigned char *lp = lp_new();
@@ -338,6 +351,7 @@ static void test_reverse_iteration(void)
 int main(void)
 {
     DD_RUN(test_new_empty);
+    DD_RUN(test_empty_null_payload_is_safe);
     DD_RUN(test_append_strings);
     DD_RUN(test_prepend);
     DD_RUN(test_int_encodings);

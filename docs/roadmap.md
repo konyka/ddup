@@ -1067,3 +1067,5 @@
     拒绝空对象、空字段输出或不成对的值输出指针（Phase 368）
   - [x] Hash 过期包装器空句柄校验：purge/len_at/each_at 对空对象或回调安全
     no-op，避免过期表扫描解引用 NULL（Phase 369）
+  - [x] 零长度 NULL 视图安全复制：listpack、Quicklist 和 Session 复制路径对
+    `len == 0` 跳过 `memcpy`，保留空值语义并消除未定义行为（Phase 370）
