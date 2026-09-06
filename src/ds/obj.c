@@ -837,6 +837,8 @@ uint64_t obj_list_len(const obj_list *l)
 
 int obj_list_push(obj_list *l, int left, const char *data, size_t len)
 {
+    if (l == NULL || (data == NULL && len != 0))
+        return -1;
     return ql_push(&l->ql, left, data, len);
 }
 
@@ -844,6 +846,9 @@ int obj_list_push_many(obj_list *l, int left, const char *const *data,
                        const size_t *lens, size_t count)
 {
     size_t i;
+    if (l == NULL || (data == NULL && count != 0) ||
+        (lens == NULL && count != 0))
+        return -1;
     /* prevalidate so a length error commits nothing */
     for (i = 0; i < count; i++) {
         if (lens[i] > UINT32_MAX)
@@ -858,21 +863,29 @@ int obj_list_push_many(obj_list *l, int left, const char *const *data,
 
 int obj_list_pop(obj_list *l, int left, char **data, size_t *len)
 {
+    if (l == NULL)
+        return 0;
     return ql_pop(&l->ql, left, data, len);
 }
 
 int obj_list_seek(obj_list *l, size_t idx, obj_list_iter *it)
 {
+    if (l == NULL)
+        return 0;
     return ql_seek(&l->ql, idx, it);
 }
 
 int obj_list_first(obj_list *l, obj_list_iter *it)
 {
+    if (l == NULL)
+        return 0;
     return ql_first(&l->ql, it);
 }
 
 int obj_list_last(obj_list *l, obj_list_iter *it)
 {
+    if (l == NULL)
+        return 0;
     return ql_last(&l->ql, it);
 }
 
@@ -894,7 +907,7 @@ const char *obj_list_iter_value(obj_list_iter *it, size_t *len)
 int obj_list_set_at(obj_list *l, size_t idx, const char *data, size_t len)
 {
     obj_list_iter it;
-    if (len > UINT32_MAX)
+    if (l == NULL || (data == NULL && len != 0) || len > UINT32_MAX)
         return -1;
     if (!ql_seek(&l->ql, idx, &it))
         return 0;
@@ -988,7 +1001,7 @@ static void obj_set_convert(obj_set *s)
 
 int obj_set_add(obj_set *s, const char *m, size_t mlen)
 {
-    if (mlen > UINT32_MAX)
+    if (s == NULL || (m == NULL && mlen != 0) || mlen > UINT32_MAX)
         return -1;
     if (s->encoding == OBJ_SET_LP) {
         if (mlen <= (size_t)g_obj_limits.set_value &&
@@ -1036,6 +1049,8 @@ int obj_set_has(obj_set *s, const char *m, size_t mlen)
 
 int obj_set_rem(obj_set *s, const char *m, size_t mlen)
 {
+    if (s == NULL || (m == NULL && mlen != 0))
+        return 0;
     if (s->encoding == OBJ_SET_LP) {
         unsigned char *p;
         if (mlen > UINT32_MAX)
@@ -1279,7 +1294,7 @@ static void obj_zset_convert(obj_zset *z)
 
 int obj_zset_add(obj_zset *z, const char *m, size_t mlen, double score)
 {
-    if (mlen > UINT32_MAX)
+    if (z == NULL || (m == NULL && mlen != 0) || mlen > UINT32_MAX)
         return -1;
     if (z->encoding == OBJ_ZSET_LP) {
         unsigned char *mp = NULL;
@@ -1351,6 +1366,8 @@ int obj_zset_score(obj_zset *z, const char *m, size_t mlen, double *score)
 
 int obj_zset_rem(obj_zset *z, const char *m, size_t mlen)
 {
+    if (z == NULL || (m == NULL && mlen != 0))
+        return 0;
     if (z->encoding == OBJ_ZSET_LP) {
         unsigned char *mp = zlp_find_member(z, m, mlen);
         if (mp == NULL)

@@ -1017,3 +1017,5 @@
     对空 skiplist 或范围返回确定的 miss/empty 结果（Phase 343）
   - [x] Skiplist 写入 API NULL fail-closed：insert/delete 对空对象及非零长度
     空 member 返回确定状态，避免 ZSET 底层写路径崩溃（Phase 344）
+  - [x] List/Set/ZSet 写入 API NULL fail-closed：push/add/rem/set 等变更入口对
+    空对象或非法 payload 返回确定状态，避免集合变更路径解引用崩溃（Phase 345）

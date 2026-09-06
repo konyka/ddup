@@ -74,6 +74,16 @@ static void test_list_api_rejects_null_object(void)
     DD_CHECK_EQ_INT(0, (long long)obj_list_len(NULL));
 }
 
+static void test_list_mutation_rejects_null_object(void)
+{
+    char *data = NULL;
+    size_t len = 0;
+    DD_CHECK_EQ_INT(-1, obj_list_push(NULL, 0, "x", 1));
+    DD_CHECK_EQ_INT(-1, obj_list_push(NULL, 0, NULL, 1));
+    DD_CHECK_EQ_INT(0, obj_list_pop(NULL, 0, &data, &len));
+    DD_CHECK_EQ_INT(-1, obj_list_set_at(NULL, 0, "x", 1));
+}
+
 static void test_list_commands_reject_transactionally(void)
 {
     db d;
@@ -1100,6 +1110,7 @@ static void test_lpop_rpop_count(void)
 int main(void)
 {
     DD_RUN(test_list_api_rejects_null_object);
+    DD_RUN(test_list_mutation_rejects_null_object);
     DD_RUN(test_list_rejects_unrepresentable_elements);
     DD_RUN(test_list_commands_reject_transactionally);
     DD_RUN(test_push_len_range);

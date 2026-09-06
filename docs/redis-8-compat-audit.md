@@ -807,3 +807,7 @@ are unchanged.
 
 Skiplist mutation helpers now fail closed on null list/member views, returning
 deterministic status without changing valid sorted-set insertion or deletion.
+
+Collection mutation helpers now fail closed on null object/payload views, keeping
+valid list/set/zset write semantics unchanged while preventing invalid API calls
+from reaching storage internals.

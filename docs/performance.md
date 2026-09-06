@@ -2344,6 +2344,13 @@ Skiplist insert/delete now reject null list handles and non-empty null members
 on cold branches. Valid ZSET mutations retain the same span updates and member
 ordering behavior.
 
+### Phase 345: collection mutation guards
+
+List, set, and sorted-set mutation helpers now reject null objects and non-empty
+null payloads before entering quicklist/listpack/skiplist code. Valid writes keep
+their existing allocation and probe behavior; only malformed control calls take
+the cold guard branches.
+
 ### Phase 338: stream query API guards
 
 Stream memory, length, indexed access, and lower-bound helpers now reject null

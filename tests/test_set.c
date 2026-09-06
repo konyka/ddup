@@ -62,6 +62,13 @@ static void test_set_api_rejects_null_object(void)
     DD_CHECK_EQ_INT(0, obj_set_has(NULL, "m", 1));
 }
 
+static void test_set_mutation_rejects_null_object(void)
+{
+    DD_CHECK_EQ_INT(-1, obj_set_add(NULL, "m", 1));
+    DD_CHECK_EQ_INT(0, obj_set_rem(NULL, "m", 1));
+    DD_CHECK_EQ_INT(-1, obj_set_add(NULL, NULL, 0));
+}
+
 static void test_smove_rejection_preserves_both_sets(void)
 {
     db d;
@@ -857,6 +864,7 @@ static void test_sunioncard_sdiffcard(void)
 int main(void)
 {
     DD_RUN(test_set_api_rejects_null_object);
+    DD_RUN(test_set_mutation_rejects_null_object);
     DD_RUN(test_set_rejects_unrepresentable_member);
     DD_RUN(test_smove_rejection_preserves_both_sets);
     DD_RUN(test_sadd_basics);
