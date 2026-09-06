@@ -2301,3 +2301,9 @@ loops.
 `obj_array_get` now checks its object handle before encoding an index or probing
 the hash table. This is a cold, constant-time guard for malformed callers; valid
 ARRAY lookups retain the same key encoding and single-table probe cost.
+
+### Phase 337: object-limit API guards
+
+Runtime object-encoding limit setters/getters now reject null configuration and
+output pointers before copying state. The guard is only on management calls;
+normal startup applies limits with no additional hot-path work or synchronization.

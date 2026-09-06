@@ -119,9 +119,23 @@ static void test_array_api_rejects_null_object(void)
     DD_CHECK_EQ_INT(0, (long long)length);
 }
 
+static void test_object_limits_reject_null_outputs(void)
+{
+    obj_limits saved;
+    obj_limits current;
+    obj_limits_get(&saved);
+    obj_limits_get(NULL);
+    obj_limits_apply(NULL);
+    obj_limits_get(&current);
+    DD_CHECK_EQ_INT(saved.list_fill, current.list_fill);
+    DD_CHECK_EQ_INT(saved.hash_entries, current.hash_entries);
+    DD_CHECK_EQ_INT(saved.zset_value, current.zset_value);
+}
+
 int main(void)
 {
     DD_RUN(test_array_core);
     DD_RUN(test_array_api_rejects_null_object);
+    DD_RUN(test_object_limits_reject_null_outputs);
     return DD_TEST_SUMMARY();
 }

@@ -1001,3 +1001,5 @@
     秒到毫秒转换统一防止 uint64 回绕，极大合法 TTL 保持为远期过期（Phase 335）
   - [x] ARRAY API NULL fail-closed：`obj_array_get(NULL, ...)` 返回确定的未命中
     结果并初始化输出，避免管理/测试控制面空对象解引用（Phase 336）
+  - [x] 对象编码限制 API NULL fail-closed：`obj_limits_apply/get` 忽略空配置或
+    输出指针，保持现有运行时限制不被意外清零或崩溃（Phase 337）

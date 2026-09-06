@@ -352,12 +352,16 @@ static obj_limits g_obj_limits = {
 
 void obj_limits_apply(const obj_limits *lim)
 {
+    if (lim == NULL)
+        return;
     g_obj_limits = *lim;
     quicklist_set_fill(lim->list_fill);
 }
 
 void obj_limits_get(obj_limits *out)
 {
+    if (out == NULL)
+        return;
     *out = g_obj_limits;
 }
 

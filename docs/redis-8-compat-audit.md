@@ -778,3 +778,6 @@ future expirations rather than wrapping into immediate deletion.
 ARRAY management lookups now fail closed on a null object handle, returning a
 deterministic miss instead of dereferencing invalid state; valid ARGET semantics
 are unchanged.
+
+Object encoding limit management now fails closed on null configuration/output
+handles, preserving the active limits and preventing control-plane crashes.
