@@ -2479,3 +2479,10 @@ Hash `set`, `set_at`, and `del` add fixed pointer/length checks before expiry
 lookup and storage mutation. Valid writes retain the same listpack/hash-table
 path; malformed control inputs take a cold branch without allocation or table
 work, and zero-length views remain supported.
+
+### Phase 366: atomic list batch prevalidation
+
+`obj_list_push_many` adds a linear pointer/length validation pass before the
+existing quicklist loop. Valid batches pay one predictable metadata scan and
+retain the same packed writes; malformed batches allocate nothing and leave the
+list unchanged.

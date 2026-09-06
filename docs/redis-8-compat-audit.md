@@ -797,6 +797,10 @@ Quicklist push now rejects null list handles and malformed non-empty data views
 before allocating or mutating a node. Zero-length values remain valid and retain
 their existing empty-element behavior.
 
+List batch pushes now prevalidate every element pointer and length before the
+first quicklist mutation. A malformed middle element returns an error with no
+partial list update, preserving the documented atomic batch behavior.
+
 Hash mutation APIs now reject null hash handles and malformed non-empty field or
 value views before consulting expiration state or mutating listpack/hash-table
 storage. Empty field/value views remain valid and preserve existing semantics.

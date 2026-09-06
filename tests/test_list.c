@@ -84,6 +84,17 @@ static void test_list_mutation_rejects_null_object(void)
     DD_CHECK_EQ_INT(-1, obj_list_set_at(NULL, 0, "x", 1));
 }
 
+static void test_list_push_many_prevalidates_views(void)
+{
+    obj_list *l = obj_list_new();
+    const char *values[] = {"ok", NULL};
+    const size_t lengths[] = {2, 1};
+
+    DD_CHECK_EQ_INT(-1, obj_list_push_many(l, 0, values, lengths, 2));
+    DD_CHECK_EQ_INT(0, (long long)obj_list_len(l));
+    obj_list_free(l);
+}
+
 static void test_list_commands_reject_transactionally(void)
 {
     db d;
@@ -1111,6 +1122,7 @@ int main(void)
 {
     DD_RUN(test_list_api_rejects_null_object);
     DD_RUN(test_list_mutation_rejects_null_object);
+    DD_RUN(test_list_push_many_prevalidates_views);
     DD_RUN(test_list_rejects_unrepresentable_elements);
     DD_RUN(test_list_commands_reject_transactionally);
     DD_RUN(test_push_len_range);

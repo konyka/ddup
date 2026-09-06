@@ -858,7 +858,7 @@ int obj_list_push_many(obj_list *l, int left, const char *const *data,
         return -1;
     /* prevalidate so a length error commits nothing */
     for (i = 0; i < count; i++) {
-        if (lens[i] > UINT32_MAX)
+        if ((data[i] == NULL && lens[i] != 0) || lens[i] > UINT32_MAX)
             return -1;
     }
     for (i = 0; i < count; i++) {

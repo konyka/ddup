@@ -1059,3 +1059,5 @@
     保持空值元素可安全写入（Phase 364）
   - [x] Hash 写入输入校验：`obj_hash_set/set_at/del` 拒绝空对象及非零长度
     NULL 字段/值视图，保持零长度字段和值可用（Phase 365）
+  - [x] List 批量推入原子预校验：`obj_list_push_many` 在任何分配或写入前拒绝
+    非零长度 NULL 元素，避免部分提交（Phase 366）
