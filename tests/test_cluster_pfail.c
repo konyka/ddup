@@ -54,6 +54,12 @@ static void test_report_window(void)
     DD_CHECK_EQ_INT(1, cluster_report_count(&d, subj, T0 + 900 + 1999));
     DD_CHECK_EQ_INT(0, cluster_report_count(&d, subj, T0 + 900 + 2001));
 
+    /* A wall-clock rollback keeps an otherwise fresh report instead of
+     * underflowing its age into an immediate expiry. */
+    cluster_report_failure(&d, subj, NC, T0 + 5000);
+    DD_CHECK_EQ_INT(1, cluster_report_count(&d, subj, T0 + 4999));
+    cluster_report_heal(&d, subj, NC);
+
     /* distinct reporters add up; heal retracts one reporter only */
     cluster_report_failure(&d, subj, NC, T0 + 4000);
     cluster_report_failure(&d, subj, ME, T0 + 4000);

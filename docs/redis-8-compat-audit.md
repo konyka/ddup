@@ -76,6 +76,10 @@ Cluster announce 一致性补充复核：已绑定 cluster bus listener 后公�
 ACL 诊断补充复核：`ACL LOG` 的 `age-seconds` 在 wall-clock 回拨时饱和为零，
 避免无符号减法将近期安全事件显示为异常大的年龄；正向时间语义不变。
 
+Cluster 故障检测补充复核：failure report 有效期与 peer liveness 在时钟前进
+时才计算 elapsed；wall-clock 回拨不会把新鲜报告删除或把近期节点误标为
+PFAIL，正向 timeout/quorum 语义不变。
+
 集群持久化/总线槽位文本的输入复核：槽位解析按有界 token 扫描，拒绝非数字、
 缺失范围端点和溢出十进制值；错误 token 不会阻断后续合法槽位恢复，且不会导致
 加载或 gossip 处理线程进入死循环。该防御不改变合法 Redis cluster node slot

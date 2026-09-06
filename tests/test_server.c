@@ -238,6 +238,13 @@ static void test_cluster_announce_consistency(void)
 #endif
 }
 
+static void test_cluster_clock_rollback_preserves_liveness(void)
+{
+#ifdef DDUP_TESTING
+    DD_CHECK_EQ_INT(0, server_test_cluster_clock_rollback_preserves_liveness());
+#endif
+}
+
 static void test_cluster_identity_rejects_truncation(void)
 {
     server *s;
@@ -1701,6 +1708,7 @@ static void run_all_tests(void)
     DD_RUN(test_bus_protocol_rejects_invalid);
     DD_RUN(test_cluster_bus_port_validation);
     DD_RUN(test_cluster_announce_consistency);
+    DD_RUN(test_cluster_clock_rollback_preserves_liveness);
     DD_RUN(test_proactor_destroy_with_open_connection);
     DD_RUN(test_pubsub_over_socket);
     DD_RUN(test_psubscribe_over_socket);

@@ -361,6 +361,7 @@ static void cluster_broadcast_fail(server *s);
 static int bus_publish_frame_status(int protocol, const char *frame,
                                     uint32_t totlen);
 static int bus_try_publish(server *s, const char *frame, uint32_t totlen);
+static void cluster_fail_check(server *s, uint64_t now_ms);
 
 static int cluster_bus_port(uint16_t port, uint16_t *out)
 {
@@ -2099,6 +2100,21 @@ int server_test_cluster_announce_consistency(void)
     }
     server_destroy(s);
     return 0;
+}
+
+int server_test_cluster_clock_rollback_preserves_liveness(void)
+{
+    server s;
+    memset(&s, 0, sizeof(s));
+    s.db.nnodes = 1;
+    s.node_timeout_ms = 1000;
+    s.db.nodes[0].flags = CLUSTER_NODE_MASTER;
+    s.db.nodes[0].last_seen_ms = 1000;
+    cluster_fail_check(&s, 999);
+    return (s.db.nodes[0].flags &
+            (CLUSTER_NODE_DISCONNECTED | CLUSTER_NODE_PFAIL)) == 0
+               ? 0
+               : -1;
 }
 #endif
 
@@ -4771,7 +4787,7 @@ static void cluster_fail_check(server *s, uint64_t now_ms)
         cluster_node *n = &s->db.nodes[i];
         if ((n->flags & (CLUSTER_NODE_MYSELF | CLUSTER_NODE_DISCONNECTED)) ==
             0 &&
-            n->last_seen_ms > 0 &&
+            n->last_seen_ms > 0 && now_ms >= n->last_seen_ms &&
             now_ms - n->last_seen_ms > s->node_timeout_ms) {
             n->flags |= CLUSTER_NODE_DISCONNECTED | CLUSTER_NODE_PFAIL;
             s->nodes_dirty = 1;

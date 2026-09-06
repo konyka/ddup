@@ -308,6 +308,7 @@ int server_test_publish_frame_validation(void);
 int server_test_bus_protocol_rejects_invalid(void);
 int server_test_cluster_bus_port_validation(void);
 int server_test_cluster_announce_consistency(void);
+int server_test_cluster_clock_rollback_preserves_liveness(void);
 void server_test_set_aof_write_fn(
     server *s,
     ptrdiff_t (*write_fn)(pal_file *f, const void *buf, size_t n));

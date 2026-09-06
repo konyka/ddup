@@ -984,3 +984,5 @@
     合法 IP 更新同步发布到 myself node，避免公告与实际端点漂移（Phase 327）
   - [x] ACL LOG 时钟回拨：`age-seconds` 在 wall-clock 回退时饱和为零，避免
     无符号下溢输出异常年龄（Phase 328）
+  - [x] Cluster 故障检测时钟回拨：报告有效期与节点 liveness 仅在时钟前进时
+    计算 elapsed，回退不会误删报告或伪造 PFAIL（Phase 329）

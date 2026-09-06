@@ -227,7 +227,8 @@ int cluster_report_count(struct db *d, cluster_node *subject, uint64_t now_ms)
                  : d->cluster_node_timeout_ms * 2;
     /* drop expired entries in place, then the remainder is the count */
     while (i < subject->nreports) {
-        if (now_ms - subject->reports[i].time_ms > window) {
+        if (now_ms >= subject->reports[i].time_ms &&
+            now_ms - subject->reports[i].time_ms > window) {
             subject->reports[i] = subject->reports[subject->nreports - 1];
             subject->nreports--;
         } else {
