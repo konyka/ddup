@@ -990,3 +990,6 @@
     回退不会无符号下溢并提前停止采样（Phase 330）
   - [x] MIGRATE 零 key no-op：在任何分配前直接完成合法的空迁移，避免依赖
     `malloc(0)` 的平台行为（Phase 331）
+  - [x] Server 周期调度时钟回拨防护：过期清理、自动快照、复制重连、集群
+    gossip 与 nodes.conf 保存统一使用单调 elapsed 检查，回拨不会触发无符号
+    下溢导致的提前执行（Phase 332）

@@ -365,6 +365,11 @@ static int bus_publish_frame_status(int protocol, const char *frame,
 static int bus_try_publish(server *s, const char *frame, uint32_t totlen);
 static void cluster_fail_check(server *s, uint64_t now_ms);
 
+static int elapsed_ge(uint64_t now_ms, uint64_t then_ms, uint64_t interval_ms)
+{
+    return now_ms >= then_ms && now_ms - then_ms >= interval_ms;
+}
+
 static int cluster_bus_port(uint16_t port, uint16_t *out)
 {
     uint32_t value = (uint32_t)port + 10000u;
@@ -2131,6 +2136,18 @@ int server_test_hotkeys_clock_rollback(void)
 {
     return !hotkeys_expired(999, 1000, 1) &&
            hotkeys_expired(1001, 1000, 1) ? 0 : -1;
+}
+
+int server_test_scheduler_clock_rollback(void)
+{
+    /* A monotonic scheduler must not treat a clock rollback as elapsed time. */
+    if (elapsed_ge(999, 1000, 1))
+        return -1;
+    if (!elapsed_ge(1001, 1000, 1))
+        return -1;
+    if (!elapsed_ge(1000, 1000, 0))
+        return -1;
+    return 0;
 }
 #endif
 
@@ -5638,7 +5655,7 @@ int server_run_once(server *s, int timeout_ms)
      * every logical db gets a pass (empty expires tables exit in O(1)) */
     {
         uint64_t now = pal_now_ms();
-        if (now - s->last_active_expire >= 100) {
+        if (elapsed_ge(now, s->last_active_expire, 100)) {
             int i;
             s->last_active_expire = now;
             for (i = 0; i < s->ndbs; i++)
@@ -5650,7 +5667,8 @@ int server_run_once(server *s, int timeout_ms)
     if (s->aof == NULL && s->save_sec > 0 &&
         s->db.snapshot_path != NULL) {
         uint64_t now = pal_now_ms();
-        if (now - s->last_save_check >= (uint64_t)s->save_sec * 1000) {
+        if (elapsed_ge(now, s->last_save_check,
+                       (uint64_t)s->save_sec * 1000)) {
             s->last_save_check = now;
             if (s->db.dirty != s->dirty_at_last_save &&
                 snapshot_save_multi(s, srv_select_db, s->ndbs,
@@ -5663,19 +5681,19 @@ int server_run_once(server *s, int timeout_ms)
 
     /* replica: reconnect a dead master link (full resync every time) */
     if (s->role == SESSION_ROLE_REPLICA && s->master_link == NULL &&
-        pal_now_ms() - s->last_reconnect >= 500)
+        elapsed_ge(pal_now_ms(), s->last_reconnect, 500))
         (void)repl_link_connect(s);
 
     /* cluster bus: gossip round, failure detection, nodes.conf persistence */
     if (s->db.cluster_enabled) {
         uint64_t now = pal_now_ms();
-        if (now - s->last_gossip >= 1000) {
+        if (elapsed_ge(now, s->last_gossip, 1000)) {
             s->last_gossip = now;
             cluster_gossip_round(s);
             cluster_fail_check(s, pal_wall_ms());
             cluster_failover_check(s, pal_wall_ms());
         }
-        if (now - s->last_nodes_save >= 10000) {
+        if (elapsed_ge(now, s->last_nodes_save, 10000)) {
             s->last_nodes_save = now;
             cluster_nodes_save(s);
         }

@@ -2210,6 +2210,14 @@ and remains inside the one-second window. A clock rollback takes the cold sync
 branch instead of unsigned-underflowing into a multi-year throttle; monotonic
 flushes retain the same comparison and syscall behavior.
 
+### Phase 332: scheduler clock rollback
+
+Periodic server tasks now share a small unsigned-safe elapsed check that treats a
+wall-clock rollback as not elapsed. The helper is inlined by optimizing builds
+and adds one ordered comparison to each timer gate; valid monotonic schedules
+retain the same O(1) checks and task cadence while rollback avoids premature
+expire, snapshot, reconnect, gossip, or nodes.conf work.
+
 ### Phase 308: cluster-bus identity validation
 
 Sender and gossip node IDs are validated against the existing 40-byte lowercase

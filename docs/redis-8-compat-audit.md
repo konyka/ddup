@@ -757,3 +757,8 @@ failure instrumentation.
 The cross-platform wakeup primitive now fails closed on null or invalid handles,
 keeping multi-thread connection-control notifications safe during startup and
 teardown.
+
+Server periodic maintenance timers now handle wall-clock rollback safely:
+expiration, snapshot checks, replica reconnect, cluster gossip, and nodes.conf
+persistence only run after a forward elapsed interval, preserving Redis timing
+semantics without unsigned-underflow-triggered bursts.
