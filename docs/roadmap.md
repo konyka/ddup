@@ -1023,3 +1023,5 @@
     pending 计数对空对象或非法 payload 返回确定值（Phase 346）
   - [x] Stream consumer/PEL API NULL fail-closed：consumer 生命周期、pending
     查询/新增/删除及 group PEL 操作对空句柄返回确定状态（Phase 347）
+  - [x] Tier 重放记录 ID 单调性：PUT 记录拒绝保留 ID 0 和重复/回退 ID，防止
+    损坏日志覆盖内存索引或在重启后改变记录身份（Phase 348）

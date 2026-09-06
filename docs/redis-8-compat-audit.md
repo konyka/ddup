@@ -819,3 +819,7 @@ remain unchanged.
 Stream consumer and PEL management helpers now fail closed on null handles,
 preserving valid XGROUP consumer/pending semantics while preventing invalid
 internal calls from dereferencing storage state.
+
+Tier log replay now rejects reserved zero PUT IDs and duplicate/decreasing IDs,
+so a corrupted append-only log cannot silently replace a live index entry or
+change record identity after restart. Valid tier writes and reads are unchanged.

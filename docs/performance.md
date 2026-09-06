@@ -2368,3 +2368,9 @@ their existing linear scans and amortized growth behavior.
 Stream memory, length, indexed access, and lower-bound helpers now reject null
 objects on a cold branch. Valid stream reads retain their existing O(1) or
 O(log n) behavior and do not allocate or add synchronization.
+
+### Phase 348: monotonic tier replay IDs
+
+Tier replay now rejects zero or decreasing PUT record IDs before index mutation.
+This is a constant-time cold-path validation; valid sequential replay keeps the
+same bounded scan and in-memory index cost.
