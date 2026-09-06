@@ -1039,3 +1039,5 @@
     仅复制非空长度，避免 `malloc(0)` 和零长度 NULL memcpy 的平台差异（Phase 354）
   - [x] Robin Hood 销毁状态清零：`rh_destroy` 释放槽位后同步清除 size/capacity/
     rehash 元数据，避免销毁句柄继续暴露过期计数（Phase 355）
+  - [x] RESP typed-line NULL fail-closed：BLOB_ERROR/简单字符串/错误等统一检查
+    非零长度 NULL payload，并允许零长度 payload 安全编码（Phase 356）

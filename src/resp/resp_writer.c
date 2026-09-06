@@ -145,10 +145,13 @@ static size_t ll_to_str(char *out, long long v)
 
 static void write_typed_line(resp_buf *b, char type, const char *s, size_t len)
 {
+    if (b == NULL || (s == NULL && len != 0))
+        return;
     if (len > SIZE_MAX - 3 || resp_buf_reserve(b, len + 3) != 0)
         return;
     b->data[b->len++] = type;
-    memcpy(b->data + b->len, s, len);
+    if (len > 0)
+        memcpy(b->data + b->len, s, len);
     b->len += len;
     b->data[b->len++] = '\r';
     b->data[b->len++] = '\n';

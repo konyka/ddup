@@ -2416,3 +2416,9 @@ removes allocator/UB variance without changing probe complexity.
 `rh_destroy` now clears size, capacity, growth, and migration metadata after
 freeing storage. This is teardown-only work and adds no cost to lookup or update
 hot paths.
+
+### Phase 356: RESP typed-line input guard
+
+Typed-line RESP writers now reject non-empty NULL payloads before reserving or
+copying. Valid scalar writes retain the same single reserve/copy path; empty
+payloads avoid a zero-length NULL `memcpy`.

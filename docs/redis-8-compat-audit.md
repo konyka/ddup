@@ -851,3 +851,7 @@ portable behavior for valid empty RESP payloads.
 Destroyed Robin Hood tables now report zero size and no residual rehash state,
 so administrative metrics cannot observe stale cardinality after teardown or
 object replacement.
+
+RESP BLOB_ERROR and other typed-line values now fail closed on malformed
+non-empty NULL payloads instead of dereferencing them. Valid empty and non-empty
+wire values retain their existing serialization.

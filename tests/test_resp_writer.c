@@ -271,6 +271,7 @@ static void test_resp_buf_reserve_overflow(void)
 static void test_writer_null_inputs_fail_closed(void)
 {
     resp_buf b;
+    resp_value malformed;
 
     resp_buf_init(NULL);
     resp_buf_free(NULL);
@@ -284,6 +285,12 @@ static void test_writer_null_inputs_fail_closed(void)
     resp_write_bulk(&b, NULL, 1);
     resp_write_big_number(&b, NULL, 1);
     resp_write_value(NULL, NULL);
+    memset(&malformed, 0, sizeof(malformed));
+    malformed.type = RESP_BLOB_ERROR;
+    malformed.str = NULL;
+    malformed.len = 1;
+    resp_write_value(&b, &malformed);
+    DD_CHECK_EQ_INT(0, (long long)b.len);
     resp_buf_free(&b);
 }
 
