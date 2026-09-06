@@ -827,3 +827,6 @@ change record identity after restart. Valid tier writes and reads are unchanged.
 Snapshot file loading now treats a close failure as an I/O error for both
 single-database and multi-database APIs. The decoded database is not touched
 until the file is closed successfully, preserving transactional restore behavior.
+
+The PAL listener now initializes `bound_port` to zero before attempting setup,
+so DNS/bind/listen failures cannot leave stale endpoint metadata for callers.

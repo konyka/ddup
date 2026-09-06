@@ -2380,3 +2380,9 @@ same bounded scan and in-memory index cost.
 Single- and multi-database snapshot loaders now propagate file-close failures and
 release the read buffer before returning. This is a cold I/O completion branch;
 successful loads retain the same buffered read and transactional decode path.
+
+### Phase 350: listener output fail-closed
+
+`pal_tcp_listen` clears the optional bound-port output before DNS, socket, bind,
+or listen work. The branch is constant-time and cold; successful listener setup
+retains the same address iteration and socket-option path.

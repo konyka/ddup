@@ -227,6 +227,8 @@ pal_socket_t pal_tcp_listen(const char *host, uint16_t port, int backlog,
     struct addrinfo *ai;
     pal_socket_t fd = PAL_SOCKET_INVALID;
 
+    if (bound_port != NULL)
+        *bound_port = 0;
     if (backlog <= 0)
         return PAL_SOCKET_INVALID;
     snprintf(port_str, sizeof(port_str), "%u", (unsigned)port);

@@ -8,6 +8,7 @@
 #include "pal/pal_time.h"
 #include "pal/pal_thread.h"
 #include "pal/pal_file.h"
+#include "pal/pal_socket.h"
 
 #if DDUP_OS_LINUX
 #include <signal.h>
@@ -126,6 +127,33 @@ static void test_file_io_input_bounds(void)
     DD_CHECK_EQ_INT(-1, pal_file_rename(NULL, "x"));
     DD_CHECK_EQ_INT(-1, pal_file_rename("x", NULL));
     DD_CHECK_EQ_INT(-1, pal_file_unlink(NULL));
+}
+
+static void test_socket_input_bounds(void)
+{
+    pal_socket_t fd = PAL_SOCKET_INVALID;
+    char byte = 0;
+    char ip[64];
+    uint16_t port = 1234;
+
+    DD_CHECK_EQ_INT(-1, pal_tcp_listen("127.0.0.1", 0, 0, &port));
+    port = 1234;
+    DD_CHECK_EQ_INT(-1,
+                    pal_tcp_listen("does-not-exist.invalid", 0, 1, &port));
+    DD_CHECK_EQ_INT(0, (long long)port);
+    DD_CHECK_EQ_INT(-1, pal_tcp_connect_start(NULL, 1, &fd));
+    DD_CHECK(fd == PAL_SOCKET_INVALID);
+    DD_CHECK_EQ_INT(-1, pal_tcp_connect_start("127.0.0.1", 1, NULL));
+    DD_CHECK_EQ_INT(-1, pal_connect_finish(PAL_SOCKET_INVALID));
+    DD_CHECK_EQ_INT(-1, pal_connect_wait(PAL_SOCKET_INVALID, 0));
+    DD_CHECK_EQ_INT(-1, pal_connect_wait(PAL_SOCKET_INVALID, -1));
+    DD_CHECK_EQ_INT(-1, pal_set_nonblocking(PAL_SOCKET_INVALID, 1));
+    DD_CHECK_EQ_INT(-1, pal_set_tcp_nodelay(PAL_SOCKET_INVALID, 1));
+    DD_CHECK_EQ_INT(-1, (long long)pal_recv(PAL_SOCKET_INVALID, &byte, 1));
+    DD_CHECK_EQ_INT(-1, (long long)pal_recv(PAL_SOCKET_INVALID, NULL, 0));
+    DD_CHECK_EQ_INT(-1, (long long)pal_send(PAL_SOCKET_INVALID, &byte, 1));
+    DD_CHECK_EQ_INT(-1, (long long)pal_send(PAL_SOCKET_INVALID, NULL, 0));
+    DD_CHECK_EQ_INT(-1, pal_get_peer_ip(PAL_SOCKET_INVALID, ip, sizeof(ip)));
 }
 
 #if DDUP_OS_LINUX
@@ -251,6 +279,7 @@ int main(void)
     DD_RUN(test_wall_clock_sane);
     DD_RUN(test_secure_random_input_bounds);
     DD_RUN(test_file_io_input_bounds);
+    DD_RUN(test_socket_input_bounds);
 #if DDUP_OS_LINUX
     DD_RUN(test_sleep_completes_after_signal);
 #endif
