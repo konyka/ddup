@@ -1,188 +1,186 @@
-=== n/a diag port 7776 (01:50:20) ==
-redis      13042  0.0  0.1  98120 18244 ?        Ssl  01:37   0:00 /usr/bin/redis-server 127.0.0.1:6379
-runner     13375  0.6  0.2 187336 41064 ?        S    01:37   0:04 /home/runner/work/ddup/ddup/build/ddup-server --port 7771 --io select
-runner     13376  0.5  0.3 466616 64392 ?        Sl   01:37   0:04 /home/runner/work/ddup/ddup/build/ddup-server --port 7774 --io-threads 4
-runner     13377  0.6  0.2 187656 41832 ?        S    01:37   0:04 /home/runner/work/ddup/ddup/build/ddup-server --port 7775 --io iouring
-runner     13378 99.2  0.1  26436 19272 ?        R    01:37  12:23 /home/runner/work/ddup/ddup/build/ddup-server --port 7776 --io iouring-op
-runner     13379 59.3  0.2  42828 35440 ?        R    01:37   7:24 /home/runner/work/ddup/ddup/build/ddup-server --port 7777 --io iouring-op
-runner     13380  0.2  0.1 100684 18356 ?        Sl   01:37   0:02 redis-server *:7773
-runner     13381  0.7  0.8 275336420 134152 ?    Sl   01:37   0:05 dotnet /home/runner/work/_temp/garnet-out/GarnetServer.dll --bind 127.0.0.1 --port 7772
-  13378 R    00:12:23 -
+=== n/a diag port 7776 (01:50:54) ==
+redis      13123  0.1  0.1  98120 18264 ?        Ssl  01:39   0:00 /usr/bin/redis-server 127.0.0.1:6379
+runner     13432  0.7  0.2 187472 39572 ?        S    01:40   0:04 /home/runner/work/ddup/ddup/build/ddup-server --port 7771 --io select
+runner     13433  0.6  0.4 466616 69016 ?        Sl   01:40   0:04 /home/runner/work/ddup/ddup/build/ddup-server --port 7774 --io-threads 4
+runner     13434  0.8  0.2 187652 40048 ?        S    01:40   0:05 /home/runner/work/ddup/ddup/build/ddup-server --port 7775 --io iouring
+runner     13435 99.2  0.1  26436 19300 ?        R    01:40  10:25 /home/runner/work/ddup/ddup/build/ddup-server --port 7776 --io iouring-op
+runner     13436 70.5  0.2  42836 35756 ?        R    01:40   7:24 /home/runner/work/ddup/ddup/build/ddup-server --port 7777 --io iouring-op
+runner     13437  0.3  0.1 100684 18372 ?        Sl   01:40   0:02 redis-server *:7773
+runner     13438  0.8  0.8 275336416 132856 ?    Sl   01:40   0:05 dotnet /home/runner/work/_temp/garnet-out/GarnetServer.dll --bind 127.0.0.1 --port 7772
+  13435 R    00:10:25 -
 FDSize:	256
 VmSize:	   26436 kB
-VmRSS:	   19272 kB
+VmRSS:	   19300 kB
 open fds: 59
 fds during hanging ping: 59
-CLOSE-WAIT 1      0                127.0.0.1:7776               127.0.0.1:58220 users:(("ddup-server",pid=13378,fd=43))    
-CLOSE-WAIT 1      0                127.0.0.1:7776               127.0.0.1:57924 users:(("ddup-server",pid=13378,fd=11))    
-CLOSE-WAIT 78     0                127.0.0.1:7776               127.0.0.1:55062                                            
-CLOSE-WAIT 1      0                127.0.0.1:7776               127.0.0.1:58146 users:(("ddup-server",pid=13378,fd=36))    
-CLOSE-WAIT 1      0                127.0.0.1:7776               127.0.0.1:58346 users:(("ddup-server",pid=13378,fd=55))    
+CLOSE-WAIT 1      0                127.0.0.1:7776               127.0.0.1:49498 users:(("ddup-server",pid=13435,fd=38))    
+CLOSE-WAIT 1      0                127.0.0.1:7776               127.0.0.1:49448 users:(("ddup-server",pid=13435,fd=33))    
+CLOSE-WAIT 1      0                127.0.0.1:7776               127.0.0.1:49564 users:(("ddup-server",pid=13435,fd=47))    
+CLOSE-WAIT 1      0                127.0.0.1:7776               127.0.0.1:49536 users:(("ddup-server",pid=13435,fd=43))    
+CLOSE-WAIT 1      0                127.0.0.1:7776               127.0.0.1:49322 users:(("ddup-server",pid=13435,fd=17))    
 INFO failed
 [Thread debugging using libthread_db enabled]
 Using host libthread_db library "/lib/x86_64-linux-gnu/libthread_db.so.1".
-0x0000557962e0f655 in server_process_blocked ()
+0x000055a4bfd2e7be in server_process_blocked ()
 
-Thread 1 (Thread 0x7f01c31ae080 (LWP 13378) "ddup-server"):
-#0  0x0000557962e0f655 in server_process_blocked ()
-#1  0x0000557962e0fcf6 in server_run_once ()
-#2  0x0000557962df14e3 in main ()
-[Inferior 1 (process 13378) detached]
+Thread 1 (Thread 0x7fa9d8659080 (LWP 13435) "ddup-server"):
+#0  0x000055a4bfd2e7be in server_process_blocked ()
+#1  0x000055a4bfd2f097 in server_run_once ()
+#2  0x000055a4bfd104e3 in main ()
+[Inferior 1 (process 13435) detached]
 ping FAILED
-=== n/a diag port 7777 (01:51:45) ==
-redis      13042  0.0  0.1  98120 18244 ?        Ssl  01:37   0:00 /usr/bin/redis-server 127.0.0.1:6379
-runner     13375  0.5  0.2 187336 41064 ?        S    01:37   0:04 /home/runner/work/ddup/ddup/build/ddup-server --port 7771 --io select
-runner     13376  0.5  0.3 466616 64392 ?        Sl   01:37   0:04 /home/runner/work/ddup/ddup/build/ddup-server --port 7774 --io-threads 4
-runner     13377  0.5  0.2 187656 41832 ?        S    01:37   0:04 /home/runner/work/ddup/ddup/build/ddup-server --port 7775 --io iouring
-runner     13378 99.3  0.1  26436 19272 ?        R    01:37  13:48 /home/runner/work/ddup/ddup/build/ddup-server --port 7776 --io iouring-op
-runner     13379 63.5  0.2  42828 35440 ?        R    01:37   8:49 /home/runner/work/ddup/ddup/build/ddup-server --port 7777 --io iouring-op
-runner     13380  0.2  0.1 100684 18356 ?        Sl   01:37   0:02 redis-server *:7773
-runner     13381  0.6  0.8 275336420 134160 ?    Sl   01:37   0:05 dotnet /home/runner/work/_temp/garnet-out/GarnetServer.dll --bind 127.0.0.1 --port 7772
-  13379 R    00:08:49 -
+=== n/a diag port 7777 (01:52:18) ==
+redis      13123  0.1  0.1  98120 18264 ?        Ssl  01:39   0:00 /usr/bin/redis-server 127.0.0.1:6379
+runner     13432  0.6  0.2 187472 39572 ?        S    01:40   0:04 /home/runner/work/ddup/ddup/build/ddup-server --port 7771 --io select
+runner     13433  0.6  0.4 466616 69016 ?        Sl   01:40   0:04 /home/runner/work/ddup/ddup/build/ddup-server --port 7774 --io-threads 4
+runner     13434  0.7  0.2 187652 40048 ?        S    01:40   0:05 /home/runner/work/ddup/ddup/build/ddup-server --port 7775 --io iouring
+runner     13435 99.2  0.1  26436 19300 ?        R    01:40  11:49 /home/runner/work/ddup/ddup/build/ddup-server --port 7776 --io iouring-op
+runner     13436 74.0  0.2  42836 35756 ?        R    01:40   8:49 /home/runner/work/ddup/ddup/build/ddup-server --port 7777 --io iouring-op
+runner     13437  0.3  0.1 100684 18372 ?        Sl   01:40   0:02 redis-server *:7773
+runner     13438  0.7  0.8 275336416 132856 ?    Sl   01:40   0:05 dotnet /home/runner/work/_temp/garnet-out/GarnetServer.dll --bind 127.0.0.1 --port 7772
+  13436 R    00:08:49 -
 FDSize:	256
-VmSize:	   42828 kB
-VmRSS:	   35440 kB
+VmSize:	   42836 kB
+VmRSS:	   35756 kB
 open fds: 59
 fds during hanging ping: 59
-CLOSE-WAIT 0      0                127.0.0.1:7777               127.0.0.1:39560 users:(("ddup-server",pid=13379,fd=19))    
-CLOSE-WAIT 0      0                127.0.0.1:7777               127.0.0.1:39796 users:(("ddup-server",pid=13379,fd=43))    
-CLOSE-WAIT 0      0                127.0.0.1:7777               127.0.0.1:39408 users:(("ddup-server",pid=13379,fd=6))     
-CLOSE-WAIT 0      0                127.0.0.1:7777               127.0.0.1:39530 users:(("ddup-server",pid=13379,fd=16))    
-CLOSE-WAIT 78     0                127.0.0.1:7777               127.0.0.1:55032                                            
+CLOSE-WAIT 0      0                127.0.0.1:7777               127.0.0.1:56460 users:(("ddup-server",pid=13436,fd=13))    
+CLOSE-WAIT 0      0                127.0.0.1:7777               127.0.0.1:56746 users:(("ddup-server",pid=13436,fd=48))    
+CLOSE-WAIT 0      0                127.0.0.1:7777               127.0.0.1:56714 users:(("ddup-server",pid=13436,fd=43))    
+CLOSE-WAIT 78     0                127.0.0.1:7777               127.0.0.1:52786                                            
+CLOSE-WAIT 0      0                127.0.0.1:7777               127.0.0.1:56514 users:(("ddup-server",pid=13436,fd=21))    
 INFO failed
 [Thread debugging using libthread_db enabled]
 Using host libthread_db library "/lib/x86_64-linux-gnu/libthread_db.so.1".
-0x00005563f0f74662 in server_process_blocked ()
+0x0000555df35687ca in server_process_blocked ()
 
-Thread 1 (Thread 0x7f3687191080 (LWP 13379) "ddup-server"):
-#0  0x00005563f0f74662 in server_process_blocked ()
-#1  0x00005563f0f74cf6 in server_run_once ()
-#2  0x00005563f0f564e3 in main ()
-[Inferior 1 (process 13379) detached]
+Thread 1 (Thread 0x7f00b7ce3080 (LWP 13436) "ddup-server"):
+#0  0x0000555df35687ca in server_process_blocked ()
+#1  0x0000555df3569097 in server_run_once ()
+#2  0x0000555df354a4e3 in main ()
+[Inferior 1 (process 13436) detached]
 ping FAILED
-=== n/a diag port 7776 (01:53:32) ==
-redis      13042  0.0  0.1  98120 18244 ?        Ssl  01:37   0:00 /usr/bin/redis-server 127.0.0.1:6379
-runner     13375  0.7  0.7 187336 129368 ?       S    01:37   0:06 /home/runner/work/ddup/ddup/build/ddup-server --port 7771 --io select
-runner     13376  0.8  0.4 466616 74824 ?        Sl   01:37   0:07 /home/runner/work/ddup/ddup/build/ddup-server --port 7774 --io-threads 4
-runner     13377  0.7  0.2 187912 45660 ?        S    01:37   0:07 /home/runner/work/ddup/ddup/build/ddup-server --port 7775 --io iouring
-runner     13378 99.4  0.1  26436 19272 ?        R    01:37  15:35 /home/runner/work/ddup/ddup/build/ddup-server --port 7776 --io iouring-op
-runner     13379 67.6  0.2  42828 35440 ?        R    01:37  10:36 /home/runner/work/ddup/ddup/build/ddup-server --port 7777 --io iouring-op
-runner     13380  0.4  0.1 174924 18280 ?        Sl   01:37   0:04 redis-server *:7773
-runner     13381  0.8  1.4 275336404 232100 ?    Sl   01:37   0:08 dotnet /home/runner/work/_temp/garnet-out/GarnetServer.dll --bind 127.0.0.1 --port 7772
-  13378 R    00:15:35 -
-FDSize:	256
-VmSize:	   26436 kB
-VmRSS:	   19272 kB
-open fds: 59
-fds during hanging ping: 59
-CLOSE-WAIT 1      0                127.0.0.1:7776               127.0.0.1:58220 users:(("ddup-server",pid=13378,fd=43))    
-CLOSE-WAIT 1      0                127.0.0.1:7776               127.0.0.1:57924 users:(("ddup-server",pid=13378,fd=11))    
-CLOSE-WAIT 78     0                127.0.0.1:7776               127.0.0.1:55062                                            
-CLOSE-WAIT 1      0                127.0.0.1:7776               127.0.0.1:58146 users:(("ddup-server",pid=13378,fd=36))    
-CLOSE-WAIT 1      0                127.0.0.1:7776               127.0.0.1:58346 users:(("ddup-server",pid=13378,fd=55))    
-INFO failed
-[Thread debugging using libthread_db enabled]
-Using host libthread_db library "/lib/x86_64-linux-gnu/libthread_db.so.1".
-0x0000557962e0f652 in server_process_blocked ()
-
-Thread 1 (Thread 0x7f01c31ae080 (LWP 13378) "ddup-server"):
-#0  0x0000557962e0f652 in server_process_blocked ()
-#1  0x0000557962e10087 in server_run_once ()
-#2  0x0000557962df14e3 in main ()
-[Inferior 1 (process 13378) detached]
-ping FAILED
-=== n/a diag port 7777 (01:54:56) ==
-redis      13042  0.0  0.1  98120 18244 ?        Ssl  01:37   0:00 /usr/bin/redis-server 127.0.0.1:6379
-runner     13375  0.6  1.0 187336 178620 ?       S    01:37   0:06 /home/runner/work/ddup/ddup/build/ddup-server --port 7771 --io select
-runner     13376  0.7  0.4 466616 74824 ?        Sl   01:37   0:08 /home/runner/work/ddup/ddup/build/ddup-server --port 7774 --io-threads 4
-runner     13377  0.7  0.5 187912 90108 ?        S    01:37   0:07 /home/runner/work/ddup/ddup/build/ddup-server --port 7775 --io iouring
-runner     13378 99.4  0.1  26436 19272 ?        R    01:37  16:59 /home/runner/work/ddup/ddup/build/ddup-server --port 7776 --io iouring-op
-runner     13379 70.2  0.2  42828 35440 ?        R    01:37  12:00 /home/runner/work/ddup/ddup/build/ddup-server --port 7777 --io iouring-op
-runner     13380  0.4  0.1 174924 18280 ?        Sl   01:37   0:04 redis-server *:7773
-runner     13381  0.7  1.4 275336404 232100 ?    Sl   01:37   0:08 dotnet /home/runner/work/_temp/garnet-out/GarnetServer.dll --bind 127.0.0.1 --port 7772
-  13379 R    00:12:00 -
-FDSize:	256
-VmSize:	   42828 kB
-VmRSS:	   35440 kB
-open fds: 59
-fds during hanging ping: 59
-CLOSE-WAIT 78     0                127.0.0.1:7777               127.0.0.1:47644                                            
-CLOSE-WAIT 0      0                127.0.0.1:7777               127.0.0.1:39560 users:(("ddup-server",pid=13379,fd=19))    
-CLOSE-WAIT 0      0                127.0.0.1:7777               127.0.0.1:39796 users:(("ddup-server",pid=13379,fd=43))    
-CLOSE-WAIT 0      0                127.0.0.1:7777               127.0.0.1:39408 users:(("ddup-server",pid=13379,fd=6))     
-CLOSE-WAIT 0      0                127.0.0.1:7777               127.0.0.1:39530 users:(("ddup-server",pid=13379,fd=16))    
-INFO failed
-[Thread debugging using libthread_db enabled]
-Using host libthread_db library "/lib/x86_64-linux-gnu/libthread_db.so.1".
-0x00007f3687337bfb in ?? ()
-
-Thread 1 (Thread 0x7f3687191080 (LWP 13379) "ddup-server"):
-#0  0x00007f3687337bfb in ?? ()
-#1  0x00007f36868eca6d in __GI___clock_gettime (clock_id=<optimized out>, tp=<optimized out>) at ../sysdeps/unix/sysv/linux/clock_gettime.c:42
-#2  0x00005563f0f74601 in server_process_blocked ()
-#3  0x00005563f0f74cf6 in server_run_once ()
-#4  0x00005563f0f564e3 in main ()
-[Inferior 1 (process 13379) detached]
-ping FAILED
-=== n/a diag port 7776 (01:56:36) ==
-redis      13042  0.0  0.1  98120 18244 ?        Ssl  01:37   0:00 /usr/bin/redis-server 127.0.0.1:6379
-runner     13375  0.7  1.0 187336 178716 ?       S    01:37   0:08 /home/runner/work/ddup/ddup/build/ddup-server --port 7771 --io select
-runner     13376  0.9  0.4 466616 78212 ?        Sl   01:37   0:11 /home/runner/work/ddup/ddup/build/ddup-server --port 7774 --io-threads 4
-runner     13377  0.8  1.1 187912 180404 ?       S    01:37   0:09 /home/runner/work/ddup/ddup/build/ddup-server --port 7775 --io iouring
-runner     13378 99.4  0.1  26436 19272 ?        R    01:37  18:38 /home/runner/work/ddup/ddup/build/ddup-server --port 7776 --io iouring-op
-runner     13379 72.9  0.2  42828 35440 ?        R    01:37  13:39 /home/runner/work/ddup/ddup/build/ddup-server --port 7777 --io iouring-op
-runner     13380  0.5  0.1 174924 18332 ?        Sl   01:37   0:05 redis-server *:7773
-runner     13381  0.8  1.9 275336404 317516 ?    Sl   01:37   0:09 dotnet /home/runner/work/_temp/garnet-out/GarnetServer.dll --bind 127.0.0.1 --port 7772
-  13378 R    00:18:38 -
+=== n/a diag port 7776 (01:54:06) ==
+redis      13123  0.1  0.1  98120 18264 ?        Ssl  01:39   0:01 /usr/bin/redis-server 127.0.0.1:6379
+runner     13432  0.8  0.8 187472 134276 ?       S    01:40   0:07 /home/runner/work/ddup/ddup/build/ddup-server --port 7771 --io select
+runner     13433  1.0  0.4 466616 75472 ?        Sl   01:40   0:08 /home/runner/work/ddup/ddup/build/ddup-server --port 7774 --io-threads 4
+runner     13434  0.9  0.2 187908 43968 ?        S    01:40   0:07 /home/runner/work/ddup/ddup/build/ddup-server --port 7775 --io iouring
+runner     13435 99.3  0.1  26436 19300 ?        R    01:40  13:36 /home/runner/work/ddup/ddup/build/ddup-server --port 7776 --io iouring-op
+runner     13436 77.4  0.2  42836 35756 ?        R    01:40  10:36 /home/runner/work/ddup/ddup/build/ddup-server --port 7777 --io iouring-op
+runner     13437  0.5  0.1 174924 18236 ?        Sl   01:40   0:04 redis-server *:7773
+runner     13438  1.0  1.6 275336416 265168 ?    Sl   01:40   0:08 dotnet /home/runner/work/_temp/garnet-out/GarnetServer.dll --bind 127.0.0.1 --port 7772
+  13435 R    00:13:36 -
 FDSize:	256
 VmSize:	   26436 kB
-VmRSS:	   19272 kB
+VmRSS:	   19300 kB
 open fds: 59
 fds during hanging ping: 59
-CLOSE-WAIT 1      0                127.0.0.1:7776               127.0.0.1:58220 users:(("ddup-server",pid=13378,fd=43))    
-CLOSE-WAIT 1      0                127.0.0.1:7776               127.0.0.1:57924 users:(("ddup-server",pid=13378,fd=11))    
-CLOSE-WAIT 78     0                127.0.0.1:7776               127.0.0.1:55062                                            
-CLOSE-WAIT 1      0                127.0.0.1:7776               127.0.0.1:58146 users:(("ddup-server",pid=13378,fd=36))    
-CLOSE-WAIT 1      0                127.0.0.1:7776               127.0.0.1:58346 users:(("ddup-server",pid=13378,fd=55))    
+CLOSE-WAIT 1      0                127.0.0.1:7776               127.0.0.1:49498 users:(("ddup-server",pid=13435,fd=38))    
+CLOSE-WAIT 1      0                127.0.0.1:7776               127.0.0.1:49448 users:(("ddup-server",pid=13435,fd=33))    
+CLOSE-WAIT 1      0                127.0.0.1:7776               127.0.0.1:49564 users:(("ddup-server",pid=13435,fd=47))    
+CLOSE-WAIT 1      0                127.0.0.1:7776               127.0.0.1:49536 users:(("ddup-server",pid=13435,fd=43))    
+CLOSE-WAIT 1      0                127.0.0.1:7776               127.0.0.1:49322 users:(("ddup-server",pid=13435,fd=17))    
 INFO failed
 [Thread debugging using libthread_db enabled]
 Using host libthread_db library "/lib/x86_64-linux-gnu/libthread_db.so.1".
-0x0000557962e0f662 in server_process_blocked ()
+0x000055a4bfd2e7be in server_process_blocked ()
 
-Thread 1 (Thread 0x7f01c31ae080 (LWP 13378) "ddup-server"):
-#0  0x0000557962e0f662 in server_process_blocked ()
-#1  0x0000557962e10087 in server_run_once ()
-#2  0x0000557962df14e3 in main ()
-[Inferior 1 (process 13378) detached]
+Thread 1 (Thread 0x7fa9d8659080 (LWP 13435) "ddup-server"):
+#0  0x000055a4bfd2e7be in server_process_blocked ()
+#1  0x000055a4bfd2ed07 in server_run_once ()
+#2  0x000055a4bfd104e3 in main ()
+[Inferior 1 (process 13435) detached]
 ping FAILED
-=== n/a diag port 7777 (01:58:00) ==
-redis      13042  0.0  0.1  98120 18244 ?        Ssl  01:37   0:01 /usr/bin/redis-server 127.0.0.1:6379
-runner     13375  0.7  1.0 187336 178716 ?       S    01:37   0:08 /home/runner/work/ddup/ddup/build/ddup-server --port 7771 --io select
-runner     13376  0.9  0.4 466616 78212 ?        Sl   01:37   0:11 /home/runner/work/ddup/ddup/build/ddup-server --port 7774 --io-threads 4
-runner     13377  0.7  1.1 187912 180404 ?       S    01:37   0:09 /home/runner/work/ddup/ddup/build/ddup-server --port 7775 --io iouring
-runner     13378 99.5  0.1  26436 19272 ?        R    01:37  20:02 /home/runner/work/ddup/ddup/build/ddup-server --port 7776 --io iouring-op
-runner     13379 74.7  0.2  42828 35440 ?        R    01:37  15:04 /home/runner/work/ddup/ddup/build/ddup-server --port 7777 --io iouring-op
-runner     13380  0.4  0.1 174924 18332 ?        Sl   01:37   0:05 redis-server *:7773
-runner     13381  0.7  2.0 275336404 338900 ?    Sl   01:37   0:09 dotnet /home/runner/work/_temp/garnet-out/GarnetServer.dll --bind 127.0.0.1 --port 7772
-  13379 R    00:15:04 -
+=== n/a diag port 7777 (01:55:30) ==
+redis      13123  0.1  0.1  98120 18264 ?        Ssl  01:39   0:01 /usr/bin/redis-server 127.0.0.1:6379
+runner     13432  0.7  1.0 187472 178584 ?       S    01:40   0:07 /home/runner/work/ddup/ddup/build/ddup-server --port 7771 --io select
+runner     13433  0.9  0.4 466616 75472 ?        Sl   01:40   0:08 /home/runner/work/ddup/ddup/build/ddup-server --port 7774 --io-threads 4
+runner     13434  0.8  0.5 187908 95968 ?        S    01:40   0:07 /home/runner/work/ddup/ddup/build/ddup-server --port 7775 --io iouring
+runner     13435 99.4  0.1  26436 19300 ?        R    01:40  15:01 /home/runner/work/ddup/ddup/build/ddup-server --port 7776 --io iouring-op
+runner     13436 79.5  0.2  42836 35756 ?        R    01:40  12:00 /home/runner/work/ddup/ddup/build/ddup-server --port 7777 --io iouring-op
+runner     13437  0.5  0.1 174924 18236 ?        Sl   01:40   0:04 redis-server *:7773
+runner     13438  0.9  1.6 275336416 265168 ?    Sl   01:40   0:08 dotnet /home/runner/work/_temp/garnet-out/GarnetServer.dll --bind 127.0.0.1 --port 7772
+  13436 R    00:12:00 -
 FDSize:	256
-VmSize:	   42828 kB
-VmRSS:	   35440 kB
+VmSize:	   42836 kB
+VmRSS:	   35756 kB
 open fds: 59
 fds during hanging ping: 59
-CLOSE-WAIT 78     0                127.0.0.1:7777               127.0.0.1:47644                                            
-CLOSE-WAIT 0      0                127.0.0.1:7777               127.0.0.1:39560 users:(("ddup-server",pid=13379,fd=19))    
-CLOSE-WAIT 0      0                127.0.0.1:7777               127.0.0.1:39796 users:(("ddup-server",pid=13379,fd=43))    
-CLOSE-WAIT 0      0                127.0.0.1:7777               127.0.0.1:39408 users:(("ddup-server",pid=13379,fd=6))     
-CLOSE-WAIT 15     0                127.0.0.1:7777               127.0.0.1:58042                                            
+CLOSE-WAIT 0      0                127.0.0.1:7777               127.0.0.1:56460 users:(("ddup-server",pid=13436,fd=13))    
+CLOSE-WAIT 0      0                127.0.0.1:7777               127.0.0.1:56746 users:(("ddup-server",pid=13436,fd=48))    
+CLOSE-WAIT 0      0                127.0.0.1:7777               127.0.0.1:56714 users:(("ddup-server",pid=13436,fd=43))    
+CLOSE-WAIT 78     0                127.0.0.1:7777               127.0.0.1:52786                                            
+CLOSE-WAIT 0      0                127.0.0.1:7777               127.0.0.1:56514 users:(("ddup-server",pid=13436,fd=21))    
 INFO failed
 [Thread debugging using libthread_db enabled]
 Using host libthread_db library "/lib/x86_64-linux-gnu/libthread_db.so.1".
-0x00005563f0f747ba in server_process_blocked ()
+0x0000555df3568672 in server_process_blocked ()
 
-Thread 1 (Thread 0x7f3687191080 (LWP 13379) "ddup-server"):
-#0  0x00005563f0f747ba in server_process_blocked ()
-#1  0x00005563f0f74cf6 in server_run_once ()
-#2  0x00005563f0f564e3 in main ()
-[Inferior 1 (process 13379) detached]
+Thread 1 (Thread 0x7f00b7ce3080 (LWP 13436) "ddup-server"):
+#0  0x0000555df3568672 in server_process_blocked ()
+#1  0x0000555df3568d07 in server_run_once ()
+#2  0x0000555df354a4e3 in main ()
+[Inferior 1 (process 13436) detached]
+ping FAILED
+=== n/a diag port 7776 (01:57:10) ==
+redis      13123  0.1  0.1  98120 18264 ?        Ssl  01:39   0:01 /usr/bin/redis-server 127.0.0.1:6379
+runner     13432  0.8  1.0 187472 178948 ?       S    01:40   0:08 /home/runner/work/ddup/ddup/build/ddup-server --port 7771 --io select
+runner     13433  1.1  0.4 466616 78048 ?        Sl   01:40   0:11 /home/runner/work/ddup/ddup/build/ddup-server --port 7774 --io-threads 4
+runner     13434  0.9  1.1 187908 180636 ?       S    01:40   0:09 /home/runner/work/ddup/ddup/build/ddup-server --port 7775 --io iouring
+runner     13435 99.4  0.1  26436 19300 ?        R    01:40  16:40 /home/runner/work/ddup/ddup/build/ddup-server --port 7776 --io iouring-op
+runner     13436 81.5  0.2  42836 35756 ?        R    01:40  13:39 /home/runner/work/ddup/ddup/build/ddup-server --port 7777 --io iouring-op
+runner     13437  0.5  0.1 174924 18320 ?        Sl   01:40   0:05 redis-server *:7773
+runner     13438  0.9  1.9 275336412 322932 ?    Sl   01:40   0:09 dotnet /home/runner/work/_temp/garnet-out/GarnetServer.dll --bind 127.0.0.1 --port 7772
+  13435 R    00:16:40 -
+FDSize:	256
+VmSize:	   26436 kB
+VmRSS:	   19300 kB
+open fds: 59
+fds during hanging ping: 59
+CLOSE-WAIT 1      0                127.0.0.1:7776               127.0.0.1:49498 users:(("ddup-server",pid=13435,fd=38))    
+CLOSE-WAIT 1      0                127.0.0.1:7776               127.0.0.1:49448 users:(("ddup-server",pid=13435,fd=33))    
+CLOSE-WAIT 1      0                127.0.0.1:7776               127.0.0.1:49564 users:(("ddup-server",pid=13435,fd=47))    
+CLOSE-WAIT 1      0                127.0.0.1:7776               127.0.0.1:49536 users:(("ddup-server",pid=13435,fd=43))    
+CLOSE-WAIT 1      0                127.0.0.1:7776               127.0.0.1:49322 users:(("ddup-server",pid=13435,fd=17))    
+INFO failed
+[Thread debugging using libthread_db enabled]
+Using host libthread_db library "/lib/x86_64-linux-gnu/libthread_db.so.1".
+0x000055a4bfd2e7cc in server_process_blocked ()
+
+Thread 1 (Thread 0x7fa9d8659080 (LWP 13435) "ddup-server"):
+#0  0x000055a4bfd2e7cc in server_process_blocked ()
+#1  0x000055a4bfd2ed07 in server_run_once ()
+#2  0x000055a4bfd104e3 in main ()
+[Inferior 1 (process 13435) detached]
+ping FAILED
+=== n/a diag port 7777 (01:58:34) ==
+redis      13123  0.1  0.1  98120 18264 ?        Ssl  01:39   0:01 /usr/bin/redis-server 127.0.0.1:6379
+runner     13432  0.8  1.0 187472 178948 ?       S    01:40   0:08 /home/runner/work/ddup/ddup/build/ddup-server --port 7771 --io select
+runner     13433  1.0  0.4 466616 78048 ?        Sl   01:40   0:11 /home/runner/work/ddup/ddup/build/ddup-server --port 7774 --io-threads 4
+runner     13434  0.8  1.1 187908 180636 ?       S    01:40   0:09 /home/runner/work/ddup/ddup/build/ddup-server --port 7775 --io iouring
+runner     13435 99.4  0.1  26436 19300 ?        R    01:40  18:04 /home/runner/work/ddup/ddup/build/ddup-server --port 7776 --io iouring-op
+runner     13436 82.9  0.2  42836 35756 ?        R    01:40  15:04 /home/runner/work/ddup/ddup/build/ddup-server --port 7777 --io iouring-op
+runner     13437  0.5  0.1 174924 18320 ?        Sl   01:40   0:06 redis-server *:7773
+runner     13438  0.8  2.0 275336412 340020 ?    Sl   01:40   0:09 dotnet /home/runner/work/_temp/garnet-out/GarnetServer.dll --bind 127.0.0.1 --port 7772
+  13436 R    00:15:04 -
+FDSize:	256
+VmSize:	   42836 kB
+VmRSS:	   35756 kB
+open fds: 59
+fds during hanging ping: 59
+CLOSE-WAIT 0      0                127.0.0.1:7777               127.0.0.1:56460 users:(("ddup-server",pid=13436,fd=13))    
+CLOSE-WAIT 0      0                127.0.0.1:7777               127.0.0.1:56746 users:(("ddup-server",pid=13436,fd=48))    
+CLOSE-WAIT 0      0                127.0.0.1:7777               127.0.0.1:56714 users:(("ddup-server",pid=13436,fd=43))    
+CLOSE-WAIT 78     0                127.0.0.1:7777               127.0.0.1:52786                                            
+CLOSE-WAIT 0      0                127.0.0.1:7777               127.0.0.1:56514 users:(("ddup-server",pid=13436,fd=21))    
+INFO failed
+[Thread debugging using libthread_db enabled]
+Using host libthread_db library "/lib/x86_64-linux-gnu/libthread_db.so.1".
+0x0000555df35687ca in server_process_blocked ()
+
+Thread 1 (Thread 0x7f00b7ce3080 (LWP 13436) "ddup-server"):
+#0  0x0000555df35687ca in server_process_blocked ()
+#1  0x0000555df3568d07 in server_run_once ()
+#2  0x0000555df354a4e3 in main ()
+[Inferior 1 (process 13436) detached]
 ping FAILED
