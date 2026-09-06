@@ -191,7 +191,7 @@ int ql_push(quicklist *ql, int left, const char *data, size_t len)
 {
     ql_node *n;
     uint64_t old_bytes;
-    if (len > UINT32_MAX)
+    if (ql == NULL || (data == NULL && len != 0) || len > UINT32_MAX)
         return -1;
     n = left ? ql->head : ql->tail;
     if (n == NULL || n->count >= g_ql_fill) {

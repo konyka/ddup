@@ -1055,3 +1055,5 @@
     RESP 视图进入 memcpy 解引用路径（Phase 362）
   - [x] ZSET 弹出输出校验：`obj_zset_pop` 拒绝空对象或空输出指针，避免弹出
     路径写入无效结果地址（Phase 363）
+  - [x] Quicklist 推入输入校验：`ql_push` 拒绝空句柄及非零长度 NULL 数据视图，
+    保持空值元素可安全写入（Phase 364）

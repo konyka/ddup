@@ -2466,3 +2466,9 @@ allocation/copy path.
 `obj_zset_pop` adds a fixed null check before the existing listpack/skiplist
 dispatch. The valid hot path remains unchanged; malformed control calls exit
 without allocation, traversal, or mutation.
+
+### Phase 364: quicklist push input validation
+
+`ql_push` adds a fixed null/length guard before the existing end-node fast path.
+Valid pushes retain the same node packing and listpack cost; malformed calls exit
+without allocation or mutation, while zero-length values remain supported.

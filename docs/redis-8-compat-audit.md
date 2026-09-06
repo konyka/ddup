@@ -793,6 +793,10 @@ List, set, and sorted-set management queries now fail closed on null handles wit
 deterministic zero or miss results; valid collection command semantics remain
 unchanged.
 
+Quicklist push now rejects null list handles and malformed non-empty data views
+before allocating or mutating a node. Zero-length values remain valid and retain
+their existing empty-element behavior.
+
 Quicklist-backed list helpers now fail closed on null handles or output views,
 returning deterministic empty results without affecting valid list command
 semantics.
@@ -884,3 +888,7 @@ ZSET pop now validates the object and all result output pointers before touching
 the sorted-set encoding. Invalid internal/control calls return a deterministic
 miss and leave the set unchanged, while normal ZPOPMIN/ZPOPMAX behavior is
 unchanged.
+
+Quicklist push now rejects null list handles and malformed non-empty data views
+before allocating or mutating a node. Zero-length values remain valid and retain
+their existing empty-element behavior.

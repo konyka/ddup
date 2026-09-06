@@ -93,6 +93,16 @@ static void test_null_iterator_handles(void)
     ql_remove(NULL);
 }
 
+static void test_push_rejects_null_inputs(void)
+{
+    quicklist *ql = ql_new();
+    DD_CHECK_EQ_INT(-1, ql_push(NULL, 0, "x", 1));
+    DD_CHECK_EQ_INT(-1, ql_push(ql, 0, NULL, 1));
+    DD_CHECK_EQ_INT(0, ql_push(ql, 0, NULL, 0));
+    DD_CHECK_EQ_INT(1, (long long)ql->len);
+    ql_free(ql);
+}
+
 static void test_push_pop_ends(void)
 {
     quicklist *ql = ql_new();
@@ -680,6 +690,7 @@ int main(void)
 {
     DD_RUN(test_null_query_handles);
     DD_RUN(test_null_iterator_handles);
+    DD_RUN(test_push_rejects_null_inputs);
     DD_RUN(test_new_empty);
     DD_RUN(test_push_pop_ends);
     DD_RUN(test_fill_split);
