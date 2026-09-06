@@ -801,6 +801,10 @@ List batch pushes now prevalidate every element pointer and length before the
 first quicklist mutation. A malformed middle element returns an error with no
 partial list update, preserving the documented atomic batch behavior.
 
+Set iteration and indexed-member APIs now fail closed on null objects, callbacks,
+or output pointers. Valid listpack and hash-table traversal remains unchanged,
+while malformed administrative calls no longer crash.
+
 Hash mutation APIs now reject null hash handles and malformed non-empty field or
 value views before consulting expiration state or mutating listpack/hash-table
 storage. Empty field/value views remain valid and preserve existing semantics.

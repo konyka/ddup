@@ -1082,6 +1082,8 @@ int obj_set_rem(obj_set *s, const char *m, size_t mlen)
 
 void obj_set_each(obj_set *s, rh_iter_fn fn, void *ctx)
 {
+    if (s == NULL || fn == NULL)
+        return;
     if (s->encoding == OBJ_SET_LP) {
         unsigned char *p = lp_first(s->lp);
         while (p != NULL) {
@@ -1101,7 +1103,8 @@ int obj_set_member_at(obj_set *s, uint64_t idx, const char **m, size_t *mlen)
     unsigned char *p;
     uint32_t ml = 0;
     const unsigned char *mv;
-    if (s->encoding != OBJ_SET_LP || idx >= lp_length(s->lp) ||
+    if (s == NULL || m == NULL || mlen == NULL ||
+        s->encoding != OBJ_SET_LP || idx >= lp_length(s->lp) ||
         idx > (uint64_t)LONG_MAX)
         return 0;
     p = lp_seek(s->lp, (long)idx);

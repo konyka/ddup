@@ -2486,3 +2486,9 @@ work, and zero-length views remain supported.
 existing quicklist loop. Valid batches pay one predictable metadata scan and
 retain the same packed writes; malformed batches allocate nothing and leave the
 list unchanged.
+
+### Phase 367: set iteration output validation
+
+Set traversal adds a cold null callback/object guard, and indexed lookup adds a
+fixed output-pointer check before listpack navigation. Valid iteration and index
+lookups retain their existing O(1)/linear behavior without extra allocation.

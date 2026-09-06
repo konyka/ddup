@@ -1061,3 +1061,5 @@
     NULL 字段/值视图，保持零长度字段和值可用（Phase 365）
   - [x] List 批量推入原子预校验：`obj_list_push_many` 在任何分配或写入前拒绝
     非零长度 NULL 元素，避免部分提交（Phase 366）
+  - [x] Set 遍历/索引输出校验：`obj_set_each` 忽略空对象/回调，`obj_set_member_at`
+    拒绝空对象或空输出指针，避免控制面解引用无效地址（Phase 367）

@@ -69,6 +69,20 @@ static void test_set_mutation_rejects_null_object(void)
     DD_CHECK_EQ_INT(-1, obj_set_add(NULL, NULL, 0));
 }
 
+static void test_set_each_and_member_at_reject_invalid_outputs(void)
+{
+    obj_set *s = obj_set_new();
+    const char *member = NULL;
+    size_t mlen = 123;
+
+    DD_CHECK_EQ_INT(0, obj_set_member_at(NULL, 0, &member, &mlen));
+    DD_CHECK_EQ_INT(0, obj_set_member_at(s, 0, NULL, &mlen));
+    DD_CHECK_EQ_INT(0, obj_set_member_at(s, 0, &member, NULL));
+    obj_set_each(NULL, NULL, NULL);
+    obj_set_each(s, NULL, NULL);
+    obj_set_free(s);
+}
+
 static void test_smove_rejection_preserves_both_sets(void)
 {
     db d;
@@ -865,6 +879,7 @@ int main(void)
 {
     DD_RUN(test_set_api_rejects_null_object);
     DD_RUN(test_set_mutation_rejects_null_object);
+    DD_RUN(test_set_each_and_member_at_reject_invalid_outputs);
     DD_RUN(test_set_rejects_unrepresentable_member);
     DD_RUN(test_smove_rejection_preserves_both_sets);
     DD_RUN(test_sadd_basics);
