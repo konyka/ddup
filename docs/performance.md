@@ -2498,3 +2498,9 @@ lookups retain their existing O(1)/linear behavior without extra allocation.
 Hash traversal adds a cold object/callback guard, while pair lookup validates the
 required field outputs and optional value outputs before listpack navigation.
 Valid reads retain their existing borrowing and linear index behavior.
+
+### Phase 369: hash expiry-wrapper guards
+
+Expiration purge, length-at-time, and iteration-at-time helpers add fixed cold
+null checks before the existing scan. Valid expiry handling keeps the same table
+walk and lazy deletion cost; malformed calls perform no scan or allocation.

@@ -797,6 +797,10 @@ Quicklist push now rejects null list handles and malformed non-empty data views
 before allocating or mutating a node. Zero-length values remain valid and retain
 their existing empty-element behavior.
 
+Hash expiration wrappers now fail closed for null objects or callbacks before
+scanning the expiration table. `len_at(NULL)` returns zero and purge/each calls
+become safe no-ops without changing valid expiry behavior.
+
 List batch pushes now prevalidate every element pointer and length before the
 first quicklist mutation. A malformed middle element returns an error with no
 partial list update, preserving the documented atomic batch behavior.

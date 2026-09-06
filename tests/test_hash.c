@@ -115,6 +115,17 @@ static void test_hash_iteration_outputs_fail_closed(void)
     obj_hash_free(h);
 }
 
+static void test_hash_expiry_wrappers_fail_closed(void)
+{
+    obj_hash *h = obj_hash_new();
+
+    obj_hash_purge_expired(NULL, 0);
+    DD_CHECK_EQ_INT(0, (long long)obj_hash_len_at(NULL, 0));
+    obj_hash_each_at(NULL, NULL, NULL, 0);
+    DD_CHECK_EQ_INT(0, (long long)obj_hash_len_at(h, 0));
+    obj_hash_free(h);
+}
+
 static void test_hset_hget(void)
 {
     db d;
@@ -883,6 +894,7 @@ int main(void)
     DD_RUN(test_hash_api_rejects_null_object);
     DD_RUN(test_hash_mutation_rejects_malformed_views);
     DD_RUN(test_hash_iteration_outputs_fail_closed);
+    DD_RUN(test_hash_expiry_wrappers_fail_closed);
     DD_RUN(test_hset_hget);
     DD_RUN(test_hdel_auto_delete);
     DD_RUN(test_hexists_hlen_hsetnx);

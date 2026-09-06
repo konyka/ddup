@@ -1065,3 +1065,5 @@
     拒绝空对象或空输出指针，避免控制面解引用无效地址（Phase 367）
   - [x] Hash 遍历/索引输出校验：`obj_hash_each` 忽略空对象/回调，`obj_hash_pair_at`
     拒绝空对象、空字段输出或不成对的值输出指针（Phase 368）
+  - [x] Hash 过期包装器空句柄校验：purge/len_at/each_at 对空对象或回调安全
+    no-op，避免过期表扫描解引用 NULL（Phase 369）

@@ -750,6 +750,8 @@ static int hash_purge_cb(const char *key, size_t klen, const char *val,
 void obj_hash_purge_expired(obj_hash *h, uint64_t now_ms)
 {
     hash_purge_ctx ctx;
+    if (h == NULL)
+        return;
     ctx.h = h;
     ctx.now_ms = now_ms;
     (void)rh_scan(&h->expires, 0, SIZE_MAX, hash_purge_cb, &ctx);
@@ -757,12 +759,16 @@ void obj_hash_purge_expired(obj_hash *h, uint64_t now_ms)
 
 uint64_t obj_hash_len_at(obj_hash *h, uint64_t now_ms)
 {
+    if (h == NULL)
+        return 0;
     obj_hash_purge_expired(h, now_ms);
     return obj_hash_len(h);
 }
 
 void obj_hash_each_at(obj_hash *h, rh_iter_fn fn, void *ctx, uint64_t now_ms)
 {
+    if (h == NULL || fn == NULL)
+        return;
     obj_hash_purge_expired(h, now_ms);
     obj_hash_each(h, fn, ctx);
 }
