@@ -39,6 +39,10 @@ static void test_api_rejects_null_inputs(void)
     DD_CHECK_EQ_INT(-1, rh_set(&t, "k", 1, NULL, 1));
     DD_CHECK_EQ_INT(-1, rh_set_ex2(&t, "k", 1, NULL, 1, NULL, 0, 0,
                                    &old, &old_len));
+    /* Empty binary views may use NULL pointers, but must remain usable. */
+    DD_CHECK_EQ_INT(0, rh_set(&t, NULL, 0, NULL, 0));
+    DD_CHECK(rh_get(&t, NULL, 0, &v, &vl) == 1);
+    DD_CHECK_EQ_INT(0, (long long)vl);
     DD_CHECK_EQ_INT(0, rh_del(NULL, "k", 1));
     DD_CHECK_EQ_INT(0, rh_touch(NULL, "k", 1, 0));
     DD_CHECK_EQ_INT(0, rh_meta_of(NULL, "k", 1));

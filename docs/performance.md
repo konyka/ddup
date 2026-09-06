@@ -2404,3 +2404,9 @@ work to valid ACL rule parsing or authorization.
 `acl_authorize` performs one bounded pre-scan of the command argument vector and
 rejects malformed non-empty bulk views before command-specific parsing. Valid
 ACL checks retain the same command/key policy work after this cold validation.
+
+### Phase 354: zero-length hash-table views
+
+Hash-table entries with empty keys or values now use a one-byte allocation and
+skip zero-length copies. Non-empty hot-path copies remain unchanged; the guard
+removes allocator/UB variance without changing probe complexity.

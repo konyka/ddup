@@ -1035,3 +1035,5 @@
     malformed RESP 控制输入进入字符串匹配路径（Phase 352）
   - [x] ACL 授权参数视图校验：授权入口预扫描 bulk 参数，拒绝非零长度 NULL
     字符串，覆盖 EVAL/发布/选项分支的直接解析路径（Phase 353）
+  - [x] Robin Hood 空二进制视图：哈希表对 `NULL + 0` 键值使用最小非零存储并
+    仅复制非空长度，避免 `malloc(0)` 和零长度 NULL memcpy 的平台差异（Phase 354）

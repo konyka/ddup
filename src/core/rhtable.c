@@ -86,6 +86,17 @@ static rh_entry *rh_alloc_slots(size_t cap)
     return s;
 }
 
+/* Keep empty binary entries addressable without relying on malloc(0). */
+static char *rh_alloc_kv(size_t bytes)
+{
+    char *kv = (char *)malloc(bytes == 0 ? 1 : bytes);
+    if (kv == NULL) {
+        fprintf(stderr, "ddup: out of memory\n");
+        exit(1);
+    }
+    return kv;
+}
+
 void rh_init(rh_table *t)
 {
     if (t == NULL)
@@ -390,13 +401,11 @@ int rh_set(rh_table *t, const char *key, size_t klen,
 
     if (target) {
         /* overwrite: keep key, replace the whole owned block */
-        char *kv = malloc(klen + vlen);
-        if (!kv) {
-            fprintf(stderr, "ddup: out of memory\n");
-            exit(1);
-        }
-        memcpy(kv, key, klen);
-        memcpy(kv + klen, val, vlen);
+        char *kv = rh_alloc_kv(klen + vlen);
+        if (klen > 0)
+            memcpy(kv, key, klen);
+        if (vlen > 0)
+            memcpy(kv + klen, val, vlen);
         free(target->kv);
         target->kv = kv;
         target->vlen = (uint32_t)vlen;
@@ -408,13 +417,11 @@ int rh_set(rh_table *t, const char *key, size_t klen,
     e.hash = h;
     e.klen = (uint32_t)klen;
     e.vlen = (uint32_t)vlen;
-    e.kv = malloc(klen + vlen);
-    if (!e.kv) {
-        fprintf(stderr, "ddup: out of memory\n");
-        exit(1);
-    }
-    memcpy(e.kv, key, klen);
-    memcpy(e.kv + klen, val, vlen);
+    e.kv = rh_alloc_kv(klen + vlen);
+    if (klen > 0)
+        memcpy(e.kv, key, klen);
+    if (vlen > 0)
+        memcpy(e.kv + klen, val, vlen);
     e.psl = 0;
     e.meta = 0;
     rh_insert_entry(t->slots, t->cap, e);
@@ -459,13 +466,11 @@ int rh_set_ex2(rh_table *t, const char *key, size_t klen, const char *v1,
     if (target) {
         /* overwrite: keep key, swap in the new owned block, hand the old
          * one back unfreed (caller tears it down) */
-        char *kv = malloc(klen + vlen);
-        if (!kv) {
-            fprintf(stderr, "ddup: out of memory\n");
-            exit(1);
-        }
-        memcpy(kv, key, klen);
-        memcpy(kv + klen, v1, n1);
+        char *kv = rh_alloc_kv(klen + vlen);
+        if (klen > 0)
+            memcpy(kv, key, klen);
+        if (n1 > 0)
+            memcpy(kv + klen, v1, n1);
         if (n2 > 0)
             memcpy(kv + klen + n1, v2, n2);
         *old_kv = target->kv;
@@ -481,13 +486,11 @@ int rh_set_ex2(rh_table *t, const char *key, size_t klen, const char *v1,
     e.hash = h;
     e.klen = (uint32_t)klen;
     e.vlen = (uint32_t)vlen;
-    e.kv = malloc(klen + vlen);
-    if (!e.kv) {
-        fprintf(stderr, "ddup: out of memory\n");
-        exit(1);
-    }
-    memcpy(e.kv, key, klen);
-    memcpy(e.kv + klen, v1, n1);
+    e.kv = rh_alloc_kv(klen + vlen);
+    if (klen > 0)
+        memcpy(e.kv, key, klen);
+    if (n1 > 0)
+        memcpy(e.kv + klen, v1, n1);
     if (n2 > 0)
         memcpy(e.kv + klen + n1, v2, n2);
     e.psl = 0;

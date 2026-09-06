@@ -843,3 +843,7 @@ string matching.
 ACL authorization now rejects malformed non-empty bulk arguments before parsing
 command-specific positions, preventing EVAL and option branches from dereferencing
 NULL strings while preserving valid command/key policy decisions.
+
+Robin Hood table writes now handle empty binary key/value views without relying
+on `malloc(0)` or passing NULL pointers to zero-length `memcpy`, preserving
+portable behavior for valid empty RESP payloads.
