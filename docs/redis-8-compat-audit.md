@@ -863,3 +863,7 @@ frames in the output buffer.
 RESP parsing now initializes `resp_value` on every call, including incomplete and
 malformed input returns. Callers therefore receive a deterministic empty view
 instead of stale data from a prior command.
+
+Arena lifecycle APIs now reject null handles and clear `block_size` on destroy,
+preventing malformed parser/control calls from dereferencing invalid allocator
+state while preserving normal per-request allocation behavior.

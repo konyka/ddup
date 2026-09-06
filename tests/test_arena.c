@@ -108,6 +108,20 @@ static void test_mark_rewind_preserves_prior_allocations(void)
     arena_destroy(&a);
 }
 
+static void test_null_handles_fail_closed(void)
+{
+    arena_mark mark;
+
+    arena_init(NULL, 64);
+    DD_CHECK(arena_alloc(NULL, 1) == NULL);
+    arena_mark_get(NULL, &mark);
+    arena_mark_get(NULL, NULL);
+    arena_rewind(NULL, &mark);
+    arena_rewind(NULL, NULL);
+    arena_reset(NULL);
+    arena_destroy(NULL);
+}
+
 int main(void)
 {
     DD_RUN(test_alloc_returns_aligned_distinct);
@@ -118,5 +132,6 @@ int main(void)
     DD_RUN(test_many_allocs);
     DD_RUN(test_zero_size_alloc);
     DD_RUN(test_mark_rewind_preserves_prior_allocations);
+    DD_RUN(test_null_handles_fail_closed);
     return DD_TEST_SUMMARY();
 }

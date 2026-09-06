@@ -2434,3 +2434,9 @@ take one predictable cold branch and leave the output buffer unchanged.
 `resp_parse` clears the caller's output view before parsing. This is a fixed-size
 copy on the parser entry path; successful decode cost is unchanged, while error
 and incomplete results no longer expose stale pointers or lengths.
+
+### Phase 359: arena API null guards
+
+Arena lifecycle and allocation helpers now fail closed on null handles. Valid
+allocations retain the same bump-pointer alignment and zero-malloc steady-state;
+only teardown/control calls take the new cold branches.

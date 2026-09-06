@@ -1045,3 +1045,5 @@
     拒绝非零长度 NULL payload，避免生成残缺帧（Phase 357）
   - [x] RESP parser 输出清零：解析失败或不完整时初始化 `resp_value`，避免
     调用方误用上一次解析留下的陈旧类型、指针和长度（Phase 358）
+  - [x] Arena 公共 API NULL fail-closed：初始化、分配、mark/rewind、reset 和
+    destroy 拒绝空句柄，销毁后清除 block 元数据（Phase 359）
