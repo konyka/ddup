@@ -23,6 +23,11 @@ static int lua_redis_pcall(lua_State *L);
 #define SCRIPT_INSTRUCTION_BUDGET 1000000U
 #define SCRIPT_TIME_BUDGET_MS 5000U
 
+static uint64_t script_deadline(uint64_t now_ms, uint64_t budget_ms)
+{
+    return budget_ms > UINT64_MAX - now_ms ? UINT64_MAX : now_ms + budget_ms;
+}
+
 static void lua_script_limit_hook(lua_State *L, lua_Debug *ar)
 {
     uint64_t deadline;
@@ -217,6 +222,12 @@ void script_test_reset_blocked_probes(void)
 unsigned script_test_blocked_probes(void)
 {
     return script_blocked_probe_count;
+}
+
+int script_test_deadline_saturates(void)
+{
+    return script_deadline(UINT64_MAX - 1, 2) == UINT64_MAX &&
+           script_deadline(7, 3) == 10 ? 0 : -1;
 }
 #endif
 
@@ -527,7 +538,8 @@ void script_exec(session *s, const char *sha1, const resp_value *argv,
 
     lua_pushnumber(L, (lua_Number)SCRIPT_INSTRUCTION_BUDGET);
     lua_setfield(L, LUA_REGISTRYINDEX, "ddup_script_budget");
-    lua_pushnumber(L, (lua_Number)(pal_now_ms() + SCRIPT_TIME_BUDGET_MS));
+    lua_pushnumber(L, (lua_Number)script_deadline(pal_now_ms(),
+                                                  SCRIPT_TIME_BUDGET_MS));
     lua_setfield(L, LUA_REGISTRYINDEX, "ddup_script_deadline_ms");
     lua_sethook(L, lua_script_limit_hook, LUA_MASKCOUNT,
                 SCRIPT_HOOK_INSTRUCTIONS);

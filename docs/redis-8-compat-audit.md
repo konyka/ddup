@@ -766,3 +766,7 @@ semantics without unsigned-underflow-triggered bursts.
 Cluster failover election and retry deadlines now use saturating arithmetic, so
 an extreme timestamp cannot wrap a future election into an immediate promotion
 attempt.
+
+Lua script execution deadlines now saturate at `UINT64_MAX`, preserving the
+configured execution budget when the platform clock is near its numeric limit
+instead of wrapping into an already-expired deadline.

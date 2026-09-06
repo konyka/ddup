@@ -2225,6 +2225,13 @@ The helper runs only when a failover is scheduled or retried, not in the normal
 gossip path; common values retain a single addition, while extreme clock values
 remain safely pinned at `UINT64_MAX` instead of immediately expiring.
 
+### Phase 334: Lua script deadline saturation
+
+Script execution now computes its five-second budget with a saturating add. This
+helper is evaluated once per script invocation and is optimized to the same
+constant-time arithmetic for normal timestamps; only near-`UINT64_MAX` clocks
+take the overflow branch, preventing false time-limit errors.
+
 ### Phase 308: cluster-bus identity validation
 
 Sender and gossip node IDs are validated against the existing 40-byte lowercase

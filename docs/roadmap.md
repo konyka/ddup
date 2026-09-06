@@ -995,3 +995,5 @@
     下溢导致的提前执行（Phase 332）
   - [x] Cluster failover deadline 饱和：选举延迟和重试 deadline 使用饱和加法，
     极端时钟值不会回绕为已过期 deadline 并提前触发提升（Phase 333）
+  - [x] Lua 脚本执行 deadline 饱和：脚本时间预算使用饱和加法，避免时钟值
+    接近上限时回绕并立即中止合法脚本（Phase 334）

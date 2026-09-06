@@ -39,6 +39,13 @@ static void test_command_fn_once_publish(void)
     DD_CHECK_EQ_INT(1, script_test_command_ready());
 }
 
+static void test_deadline_saturates(void)
+{
+#ifdef DDUP_TESTING
+    DD_CHECK_EQ_INT(0, script_test_deadline_saturates());
+#endif
+}
+
 static void test_sha1_vectors(void)
 {
     char out[41];
@@ -187,6 +194,7 @@ static void test_flush(void)
 int main(void)
 {
     DD_RUN(test_command_fn_once_publish);
+    DD_RUN(test_deadline_saturates);
     DD_RUN(test_sha1_vectors);
     DD_RUN(test_cache_load_hit_miss);
     DD_RUN(test_cache_sha_validation);
