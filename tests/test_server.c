@@ -259,6 +259,13 @@ static void test_scheduler_clock_rollback(void)
 #endif
 }
 
+static void test_failover_deadline_saturates(void)
+{
+#ifdef DDUP_TESTING
+    DD_CHECK_EQ_INT(0, server_test_failover_deadline_saturates());
+#endif
+}
+
 static void test_cluster_identity_rejects_truncation(void)
 {
     server *s;
@@ -1725,6 +1732,7 @@ static void run_all_tests(void)
     DD_RUN(test_cluster_clock_rollback_preserves_liveness);
     DD_RUN(test_hotkeys_clock_rollback);
     DD_RUN(test_scheduler_clock_rollback);
+    DD_RUN(test_failover_deadline_saturates);
     DD_RUN(test_proactor_destroy_with_open_connection);
     DD_RUN(test_pubsub_over_socket);
     DD_RUN(test_psubscribe_over_socket);

@@ -370,6 +370,11 @@ static int elapsed_ge(uint64_t now_ms, uint64_t then_ms, uint64_t interval_ms)
     return now_ms >= then_ms && now_ms - then_ms >= interval_ms;
 }
 
+static uint64_t deadline_after(uint64_t now_ms, uint64_t delay_ms)
+{
+    return delay_ms > UINT64_MAX - now_ms ? UINT64_MAX : now_ms + delay_ms;
+}
+
 static int cluster_bus_port(uint16_t port, uint16_t *out)
 {
     uint32_t value = (uint32_t)port + 10000u;
@@ -2148,6 +2153,12 @@ int server_test_scheduler_clock_rollback(void)
     if (!elapsed_ge(1000, 1000, 0))
         return -1;
     return 0;
+}
+
+int server_test_failover_deadline_saturates(void)
+{
+    return deadline_after(UINT64_MAX - 1, 2) == UINT64_MAX &&
+           deadline_after(7, 3) == 10 ? 0 : -1;
 }
 #endif
 
@@ -4850,8 +4861,8 @@ static void cluster_fail_check(server *s, uint64_t now_ms)
             uint32_t sl;
             for (sl = 0; sl < 16384; sl++)
                 if (cluster_slots_get(m->slots, sl)) {
-                    s->failover_deadline_ms =
-                        now_ms + s->node_timeout_ms + 500;
+                    s->failover_deadline_ms = deadline_after(
+                        deadline_after(now_ms, s->node_timeout_ms), 500);
                     break;
                 }
         }
@@ -4897,7 +4908,8 @@ static void cluster_failover_check(server *s, uint64_t now_ms)
             d->failover_ack_mask = 0;
             d->failover_ack_count = 0;
             cluster_request_votes(s);
-            s->failover_deadline_ms = now_ms + s->node_timeout_ms;
+            s->failover_deadline_ms =
+                deadline_after(now_ms, s->node_timeout_ms);
             return;
         }
         /* election window closed: promote on a majority of slot-serving
@@ -4925,7 +4937,7 @@ static void cluster_failover_check(server *s, uint64_t now_ms)
                 }
             } else {
                 d->failover_req_epoch = 0;
-                s->failover_deadline_ms = now_ms + 500; /* retry election */
+                s->failover_deadline_ms = deadline_after(now_ms, 500);
             }
             return;
         }

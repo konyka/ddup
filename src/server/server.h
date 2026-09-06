@@ -311,6 +311,7 @@ int server_test_cluster_announce_consistency(void);
 int server_test_cluster_clock_rollback_preserves_liveness(void);
 int server_test_hotkeys_clock_rollback(void);
 int server_test_scheduler_clock_rollback(void);
+int server_test_failover_deadline_saturates(void);
 void server_test_set_aof_write_fn(
     server *s,
     ptrdiff_t (*write_fn)(pal_file *f, const void *buf, size_t n));

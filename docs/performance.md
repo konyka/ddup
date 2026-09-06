@@ -2218,6 +2218,13 @@ and adds one ordered comparison to each timer gate; valid monotonic schedules
 retain the same O(1) checks and task cadence while rollback avoids premature
 expire, snapshot, reconnect, gossip, or nodes.conf work.
 
+### Phase 333: failover deadline saturation
+
+Cluster failover scheduling now uses a branch-only saturating deadline helper.
+The helper runs only when a failover is scheduled or retried, not in the normal
+gossip path; common values retain a single addition, while extreme clock values
+remain safely pinned at `UINT64_MAX` instead of immediately expiring.
+
 ### Phase 308: cluster-bus identity validation
 
 Sender and gossip node IDs are validated against the existing 40-byte lowercase

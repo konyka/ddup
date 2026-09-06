@@ -762,3 +762,7 @@ Server periodic maintenance timers now handle wall-clock rollback safely:
 expiration, snapshot checks, replica reconnect, cluster gossip, and nodes.conf
 persistence only run after a forward elapsed interval, preserving Redis timing
 semantics without unsigned-underflow-triggered bursts.
+
+Cluster failover election and retry deadlines now use saturating arithmetic, so
+an extreme timestamp cannot wrap a future election into an immediate promotion
+attempt.

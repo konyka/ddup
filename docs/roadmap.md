@@ -993,3 +993,5 @@
   - [x] Server 周期调度时钟回拨防护：过期清理、自动快照、复制重连、集群
     gossip 与 nodes.conf 保存统一使用单调 elapsed 检查，回拨不会触发无符号
     下溢导致的提前执行（Phase 332）
+  - [x] Cluster failover deadline 饱和：选举延迟和重试 deadline 使用饱和加法，
+    极端时钟值不会回绕为已过期 deadline 并提前触发提升（Phase 333）
