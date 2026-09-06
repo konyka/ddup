@@ -1764,6 +1764,8 @@ uint64_t obj_zset_rem_range_by_lex(obj_zset *z, const zlexrangespec *r)
 int obj_zset_pop(obj_zset *z, int min, char **member, size_t *mlen,
                  double *score)
 {
+    if (z == NULL || member == NULL || mlen == NULL || score == NULL)
+        return 0;
     if (z->encoding == OBJ_ZSET_LP) {
         unsigned char mbuf[24], sbuf[24];
         unsigned char *mp;

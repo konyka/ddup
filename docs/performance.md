@@ -2460,3 +2460,9 @@ no allocation or extra work on the common valid path.
 before allocation. Valid appends retain the same packed data layout and copy
 cost; malformed non-empty views take a cold error branch and never reach the
 allocation/copy path.
+
+### Phase 363: ZSET pop output validation
+
+`obj_zset_pop` adds a fixed null check before the existing listpack/skiplist
+dispatch. The valid hot path remains unchanged; malformed control calls exit
+without allocation, traversal, or mutation.

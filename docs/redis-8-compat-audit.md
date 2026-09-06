@@ -879,3 +879,8 @@ including 20-digit inputs that previously could wrap an unsigned accumulator.
 Stream append now rejects non-empty field or value lengths with NULL element
 pointers before allocating or copying entry data. Malformed RESP-derived views
 therefore return an explicit append error instead of crashing in `memcpy`.
+
+ZSET pop now validates the object and all result output pointers before touching
+the sorted-set encoding. Invalid internal/control calls return a deterministic
+miss and leave the set unchanged, while normal ZPOPMIN/ZPOPMAX behavior is
+unchanged.
