@@ -2302,6 +2302,12 @@ loops.
 the hash table. This is a cold, constant-time guard for malformed callers; valid
 ARRAY lookups retain the same key encoding and single-table probe cost.
 
+### Phase 339: hash query API guards
+
+Hash memory, length, encoding, field, and TTL query helpers now reject null
+objects (and invalid output pointers) on cold branches. Valid hash lookups keep
+their existing listpack/robin-hood probe costs without additional allocation.
+
 ### Phase 337: object-limit API guards
 
 Runtime object-encoding limit setters/getters now reject null configuration and

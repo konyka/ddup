@@ -432,11 +432,13 @@ void obj_hash_free(obj_hash *h)
 
 uint64_t obj_hash_mem(const obj_hash *h)
 {
-    return h->mem;
+    return h == NULL ? 0 : h->mem;
 }
 
 uint64_t obj_hash_len(const obj_hash *h)
 {
+    if (h == NULL)
+        return 0;
     if (h->encoding == OBJ_HASH_LP)
         return lp_length(h->lp) / 2;
     return rh_size(&h->fields);
@@ -444,7 +446,7 @@ uint64_t obj_hash_len(const obj_hash *h)
 
 int obj_hash_is_listpack(const obj_hash *h)
 {
-    return h->encoding == OBJ_HASH_LP;
+    return h != NULL && h->encoding == OBJ_HASH_LP;
 }
 
 /* One-way conversion LP -> HT. */
@@ -528,6 +530,9 @@ int obj_hash_set(obj_hash *h, const char *f, size_t flen, const char *v,
 int obj_hash_get(obj_hash *h, const char *f, size_t flen, const char **v,
                  size_t *vlen)
 {
+    if (h == NULL || v == NULL || vlen == NULL ||
+        (f == NULL && flen != 0))
+        return 0;
     if (h->encoding == OBJ_HASH_LP) {
         unsigned char *fp;
         unsigned char *vp;
@@ -603,6 +608,8 @@ int obj_hash_get_at(obj_hash *h, const char *f, size_t flen, uint64_t now_ms,
 {
     const char *ev;
     size_t evl;
+    if (h == NULL)
+        return -1;
     if (rh_get(&h->expires, f, flen, &ev, &evl) &&
         unpack_expire(ev) <= now_ms) {
         (void)obj_hash_del(h, f, flen);
@@ -658,7 +665,7 @@ int obj_hash_expire_get(obj_hash *h, const char *f, size_t flen,
 {
     const char *ev;
     size_t evl;
-    if (!obj_hash_get(h, f, flen, &ev, &evl))
+    if (h == NULL || !obj_hash_get(h, f, flen, &ev, &evl))
         return -1;
     if (!rh_get(&h->expires, f, flen, &ev, &evl))
         return 0;
@@ -708,7 +715,8 @@ int obj_hash_ttl(obj_hash *h, const char *f, size_t flen, uint64_t now_ms,
     const char *v;
     size_t vl;
     uint64_t expire;
-    if (!obj_hash_get_at(h, f, flen, now_ms, &v, &vl))
+    if (h == NULL || ttl_ms == NULL ||
+        !obj_hash_get_at(h, f, flen, now_ms, &v, &vl))
         return -1;
     if (!rh_get(&h->expires, f, flen, &v, &vl))
         return 0;

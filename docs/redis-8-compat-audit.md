@@ -779,6 +779,10 @@ ARRAY management lookups now fail closed on a null object handle, returning a
 deterministic miss instead of dereferencing invalid state; valid ARGET semantics
 are unchanged.
 
+Hash management queries now fail closed on null handles with deterministic misses
+or zero lengths, preserving valid HGET/HPTTL behavior while preventing invalid
+control-plane dereferences.
+
 Object encoding limit management now fails closed on null configuration/output
 handles, preserving the active limits and preventing control-plane crashes.
 

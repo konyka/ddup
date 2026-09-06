@@ -62,6 +62,21 @@ static void test_hash_rejects_unrepresentable_lengths(void)
     obj_hash_free(h);
 }
 
+static void test_hash_api_rejects_null_object(void)
+{
+    const char *value = NULL;
+    size_t length = 0;
+    uint64_t when = 123;
+    uint64_t ttl = 123;
+    DD_CHECK_EQ_INT(0, (long long)obj_hash_mem(NULL));
+    DD_CHECK_EQ_INT(0, (long long)obj_hash_len(NULL));
+    DD_CHECK(!obj_hash_is_listpack(NULL));
+    DD_CHECK_EQ_INT(0, obj_hash_get(NULL, "f", 1, &value, &length));
+    DD_CHECK_EQ_INT(-1, obj_hash_get_at(NULL, "f", 1, 0, &value, &length));
+    DD_CHECK_EQ_INT(-1, obj_hash_expire_get(NULL, "f", 1, &when));
+    DD_CHECK_EQ_INT(-1, obj_hash_ttl(NULL, "f", 1, 0, &ttl));
+}
+
 static void test_hset_hget(void)
 {
     db d;
@@ -827,6 +842,7 @@ static void test_hscan(void)
 int main(void)
 {
     DD_RUN(test_hash_rejects_unrepresentable_lengths);
+    DD_RUN(test_hash_api_rejects_null_object);
     DD_RUN(test_hset_hget);
     DD_RUN(test_hdel_auto_delete);
     DD_RUN(test_hexists_hlen_hsetnx);
