@@ -277,6 +277,8 @@ int obj_array_get(obj_array *a, uint64_t index, const char **value,
                   size_t *length)
 {
     char key[8];
+    if (a == NULL)
+        return 0;
     array_key(key, index);
     return rh_get(&a->values, key, sizeof(key), value, length);
 }

@@ -3,6 +3,7 @@
 #include <string.h>
 
 #include "core/command.h"
+#include "ds/obj.h"
 #include "test.h"
 
 static void exec_cmd(db *d, resp_buf *out, int argc, ...)
@@ -109,8 +110,18 @@ static void test_array_core(void)
     db_destroy(&d);
 }
 
+static void test_array_api_rejects_null_object(void)
+{
+    const char *value = NULL;
+    size_t length = 0;
+    DD_CHECK_EQ_INT(0, obj_array_get(NULL, 0, &value, &length));
+    DD_CHECK(value == NULL);
+    DD_CHECK_EQ_INT(0, (long long)length);
+}
+
 int main(void)
 {
     DD_RUN(test_array_core);
+    DD_RUN(test_array_api_rejects_null_object);
     return DD_TEST_SUMMARY();
 }

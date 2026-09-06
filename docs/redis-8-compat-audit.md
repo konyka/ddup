@@ -774,3 +774,7 @@ instead of wrapping into an already-expired deadline.
 Relative expiration commands now saturate both timestamp addition and
 seconds-to-milliseconds conversion. Extremely large valid TTLs therefore remain
 future expirations rather than wrapping into immediate deletion.
+
+ARRAY management lookups now fail closed on a null object handle, returning a
+deterministic miss instead of dereferencing invalid state; valid ARGET semantics
+are unchanged.

@@ -2295,3 +2295,9 @@ SET-family, RESTORE, and HEXPIRE paths. Normal TTLs take the same arithmetic
 cost as before; only overflow boundaries branch to `UINT64_MAX`, preventing
 malformed expiry scheduling without adding work to key lookup or storage hot
 loops.
+
+### Phase 336: ARRAY NULL API guard
+
+`obj_array_get` now checks its object handle before encoding an index or probing
+the hash table. This is a cold, constant-time guard for malformed callers; valid
+ARRAY lookups retain the same key encoding and single-table probe cost.
