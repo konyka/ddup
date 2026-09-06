@@ -769,6 +769,8 @@ void obj_hash_each_at(obj_hash *h, rh_iter_fn fn, void *ctx, uint64_t now_ms)
 
 void obj_hash_each(obj_hash *h, rh_iter_fn fn, void *ctx)
 {
+    if (h == NULL || fn == NULL)
+        return;
     if (h->encoding == OBJ_HASH_LP) {
         unsigned char *p = lp_first(h->lp);
         while (p != NULL) {
@@ -792,7 +794,9 @@ int obj_hash_pair_at(obj_hash *h, uint64_t idx, const char **f, size_t *flen,
     unsigned char *p;
     uint32_t fl = 0;
     const unsigned char *fv;
-    if (h->encoding != OBJ_HASH_LP || idx >= lp_length(h->lp) / 2)
+    if (h == NULL || f == NULL || flen == NULL ||
+        (v == NULL) != (vlen == NULL) || h->encoding != OBJ_HASH_LP ||
+        idx >= lp_length(h->lp) / 2)
         return 0;
     p = lp_seek(h->lp, (long)(idx * 2));
     if (p == NULL)

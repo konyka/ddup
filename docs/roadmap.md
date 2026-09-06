@@ -1063,3 +1063,5 @@
     非零长度 NULL 元素，避免部分提交（Phase 366）
   - [x] Set 遍历/索引输出校验：`obj_set_each` 忽略空对象/回调，`obj_set_member_at`
     拒绝空对象或空输出指针，避免控制面解引用无效地址（Phase 367）
+  - [x] Hash 遍历/索引输出校验：`obj_hash_each` 忽略空对象/回调，`obj_hash_pair_at`
+    拒绝空对象、空字段输出或不成对的值输出指针（Phase 368）

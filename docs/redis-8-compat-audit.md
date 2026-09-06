@@ -805,6 +805,10 @@ Set iteration and indexed-member APIs now fail closed on null objects, callbacks
 or output pointers. Valid listpack and hash-table traversal remains unchanged,
 while malformed administrative calls no longer crash.
 
+Hash iteration and insertion-order pair lookup now fail closed on null objects,
+callbacks, field outputs, or mismatched value output pointers. Valid listpack and
+hash-table reads retain their existing borrowing and traversal semantics.
+
 Hash mutation APIs now reject null hash handles and malformed non-empty field or
 value views before consulting expiration state or mutating listpack/hash-table
 storage. Empty field/value views remain valid and preserve existing semantics.

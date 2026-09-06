@@ -2492,3 +2492,9 @@ list unchanged.
 Set traversal adds a cold null callback/object guard, and indexed lookup adds a
 fixed output-pointer check before listpack navigation. Valid iteration and index
 lookups retain their existing O(1)/linear behavior without extra allocation.
+
+### Phase 368: hash iteration output validation
+
+Hash traversal adds a cold object/callback guard, while pair lookup validates the
+required field outputs and optional value outputs before listpack navigation.
+Valid reads retain their existing borrowing and linear index behavior.
