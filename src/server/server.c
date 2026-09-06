@@ -159,6 +159,8 @@ static int srv_backup_command(void *ctx, const resp_value *argv, size_t argc,
                               resp_buf *out);
 static void srv_hotkeys_record(server *srv, const session *source,
                                const resp_value *argv, size_t argc);
+static int hotkeys_expired(uint64_t now_ms, uint64_t start_ms,
+                           uint64_t duration_ms);
 static int srv_acl_check(void *ctx, const struct acl_user *user,
                          uint16_t cmd_id, const resp_value *argv, size_t argc)
 { (void)ctx; return acl_authorize(user, cmd_id, argv, argc); }
@@ -971,8 +973,8 @@ static void srv_monitor_emit_session(void *ctx, session *source,
     server *srv = (server *)ctx;
     if (srv->hotkeys_active && argc > 0 && argv[0].str != NULL &&
         !server_token_eq(argv[0].str, argv[0].len, "HOTKEYS")) {
-        if (srv->hotkeys_duration_ms != 0 &&
-            pal_wall_ms() - srv->hotkeys_start_ms >= srv->hotkeys_duration_ms)
+        if (hotkeys_expired(pal_wall_ms(), srv->hotkeys_start_ms,
+                            srv->hotkeys_duration_ms))
             srv->hotkeys_active = 0;
     }
     if (srv->hotkeys_active && argc > 0 && argv[0].str != NULL &&
@@ -1250,8 +1252,9 @@ static int srv_hotkeys_command(void *ctx, const resp_value *argv, size_t argc,
         return 0;
     }
     if (server_token_eq(sub, sl, "GET")) {
-        if (srv->hotkeys_active && srv->hotkeys_duration_ms != 0 &&
-            pal_wall_ms() - srv->hotkeys_start_ms >= srv->hotkeys_duration_ms)
+        if (srv->hotkeys_active &&
+            hotkeys_expired(pal_wall_ms(), srv->hotkeys_start_ms,
+                            srv->hotkeys_duration_ms))
             srv->hotkeys_active = 0;
         if (!srv->hotkeys_initialized) {
             resp_write_null(out);
@@ -1331,6 +1334,13 @@ static int srv_hotkeys_command(void *ctx, const resp_value *argv, size_t argc,
     }
     resp_write_error(out, "ERR unknown HOTKEYS subcommand", 30);
     return 0;
+}
+
+static int hotkeys_expired(uint64_t now_ms, uint64_t start_ms,
+                           uint64_t duration_ms)
+{
+    return duration_ms != 0 && now_ms >= start_ms &&
+           now_ms - start_ms >= duration_ms;
 }
 
 enum {
@@ -2115,6 +2125,12 @@ int server_test_cluster_clock_rollback_preserves_liveness(void)
             (CLUSTER_NODE_DISCONNECTED | CLUSTER_NODE_PFAIL)) == 0
                ? 0
                : -1;
+}
+
+int server_test_hotkeys_clock_rollback(void)
+{
+    return !hotkeys_expired(999, 1000, 1) &&
+           hotkeys_expired(1001, 1000, 1) ? 0 : -1;
 }
 #endif
 

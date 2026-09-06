@@ -50,6 +50,8 @@
 - Cluster failure report 清理和 liveness 检查各增加一次时间顺序比较；正常
   gossip/failover 的 O(nodes + reports) 扫描与网络 I/O 不变，回拨仅走保留状态
   的冷防护分支。
+- HOTKEYS duration 检查采用一次有界 64 位比较；仅在命令/GET 控制面执行，
+  不影响 key 采样、排序或普通命令热路径，回拨时保持当前采样窗口。
 - 复制控制 API 仅在公共入口增加 NULL 判断；正常 PSYNC/backlog 数据路径不增加
   分配、锁或额外系统调用。
 - server 配置入口保护仅作用于无效调用；有效 TLS/AOF/快照/运行周期路径保持

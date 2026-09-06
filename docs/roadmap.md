@@ -986,3 +986,5 @@
     无符号下溢输出异常年龄（Phase 328）
   - [x] Cluster 故障检测时钟回拨：报告有效期与节点 liveness 仅在时钟前进时
     计算 elapsed，回退不会误删报告或伪造 PFAIL（Phase 329）
+  - [x] HOTKEYS 采样窗口时钟回拨：duration 仅在 wall-clock 前进时到期，
+    回退不会无符号下溢并提前停止采样（Phase 330）

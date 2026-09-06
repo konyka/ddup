@@ -80,6 +80,9 @@ Cluster 故障检测补充复核：failure report 有效期与 peer liveness 在
 时才计算 elapsed；wall-clock 回拨不会把新鲜报告删除或把近期节点误标为
 PFAIL，正向 timeout/quorum 语义不变。
 
+HOTKEYS 诊断补充复核：采样窗口 duration 使用有界 elapsed 检查；wall-clock
+回拨不会因无符号下溢提前停止采样，正常 START/GET/STOP 生命周期不变。
+
 集群持久化/总线槽位文本的输入复核：槽位解析按有界 token 扫描，拒绝非数字、
 缺失范围端点和溢出十进制值；错误 token 不会阻断后续合法槽位恢复，且不会导致
 加载或 gossip 处理线程进入死循环。该防御不改变合法 Redis cluster node slot
