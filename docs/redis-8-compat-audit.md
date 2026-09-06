@@ -73,6 +73,9 @@ Cluster announce 一致性补充复核：已绑定 cluster bus listener 后公�
 再被修改，避免 peer 获得未监听地址；合法 IP 公告变更同步写入 myself node，
 后续 gossip/slots 响应使用同一地址状态。
 
+ACL 诊断补充复核：`ACL LOG` 的 `age-seconds` 在 wall-clock 回拨时饱和为零，
+避免无符号减法将近期安全事件显示为异常大的年龄；正向时间语义不变。
+
 集群持久化/总线槽位文本的输入复核：槽位解析按有界 token 扫描，拒绝非数字、
 缺失范围端点和溢出十进制值；错误 token 不会阻断后续合法槽位恢复，且不会导致
 加载或 gossip 处理线程进入死循环。该防御不改变合法 Redis cluster node slot

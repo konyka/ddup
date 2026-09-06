@@ -1244,6 +1244,18 @@ static void test_acl_log_negative_count_returns_empty(void)
     resp_buf_free(&out); session_release(&s); db_destroy(&d);
 }
 
+static void test_acl_log_clock_rollback_has_zero_age(void)
+{
+    acl_registry r;
+    resp_buf out;
+    acl_init(&r, NULL);
+    acl_log_event(&r, "auth", "alice", 5, "", 0, 1000);
+    resp_buf_init(&out);
+    acl_log_write(&r, 1, 999, &out);
+    DD_CHECK(strstr(out.data, "age-seconds\r\n,0\r\n") != NULL);
+    resp_buf_free(&out);
+}
+
 int main(void)
 {
     DD_RUN(test_acl_users);
@@ -1316,5 +1328,6 @@ int main(void)
     DD_RUN(test_acl_getuser_keys_keep_tilde_prefix);
     DD_RUN(test_acl_log_null_fields_are_safe);
     DD_RUN(test_acl_log_negative_count_returns_empty);
+    DD_RUN(test_acl_log_clock_rollback_has_zero_age);
     return DD_TEST_SUMMARY();
 }
