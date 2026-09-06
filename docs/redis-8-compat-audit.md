@@ -69,6 +69,10 @@ Cluster bus 地址补充复核：自身监听、节点公告和 `CLUSTER MEET` �
 均验证 `base_port + 10000` 可表示为 16 位端口；超范围输入被拒绝而不会回绕
 到无关端口，合法 Redis 端口映射保持不变。
 
+Cluster announce 一致性补充复核：已绑定 cluster bus listener 后公告端口不能
+再被修改，避免 peer 获得未监听地址；合法 IP 公告变更同步写入 myself node，
+后续 gossip/slots 响应使用同一地址状态。
+
 集群持久化/总线槽位文本的输入复核：槽位解析按有界 token 扫描，拒绝非数字、
 缺失范围端点和溢出十进制值；错误 token 不会阻断后续合法槽位恢复，且不会导致
 加载或 gossip 处理线程进入死循环。该防御不改变合法 Redis cluster node slot

@@ -2071,6 +2071,35 @@ int server_test_cluster_bus_port_validation(void)
         return -1;
     return 0;
 }
+
+int server_test_cluster_announce_consistency(void)
+{
+    server *s = server_create("127.0.0.1", 0);
+    cluster_node *me;
+    uint16_t old_port;
+    if (s == NULL)
+        return -1;
+    server_enable_cluster(s, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+    me = cluster_myself(&s->db);
+    if (me == NULL) {
+        server_destroy(s);
+        return -1;
+    }
+    old_port = s->db.cluster_port;
+    server_set_cluster_announce(s, "10.0.0.8", old_port);
+    if (strcmp(s->db.cluster_ip, "10.0.0.8") != 0 ||
+        strcmp(me->ip, "10.0.0.8") != 0 || me->port != old_port) {
+        server_destroy(s);
+        return -1;
+    }
+    server_set_cluster_announce(s, "10.0.0.9", (uint16_t)(old_port + 1));
+    if (s->db.cluster_port != old_port) {
+        server_destroy(s);
+        return -1;
+    }
+    server_destroy(s);
+    return 0;
+}
 #endif
 
 static conn *conn_create(server *srv, pal_socket_t fd)
@@ -3553,11 +3582,26 @@ void server_enable_cluster(server *s, const char *node_id)
 
 void server_set_cluster_announce(server *s, const char *ip, uint16_t port)
 {
+    cluster_node *me;
+    uint16_t bus_port;
     if (s == NULL)
+        return;
+    if (cluster_bus_port(port, &bus_port) != 0)
+        return;
+    if (s->db.cluster_enabled && s->bus_listen_fd != PAL_SOCKET_INVALID &&
+        port != s->db.cluster_port)
         return;
     if (ip != NULL && ip[0] != '\0' && strlen(ip) < sizeof(s->db.cluster_ip))
         (void)snprintf(s->db.cluster_ip, sizeof(s->db.cluster_ip), "%s", ip);
     s->db.cluster_port = port;
+    me = cluster_myself(&s->db);
+    if (me != NULL) {
+        me->port = port;
+        me->bus_port = bus_port;
+        if (ip != NULL && ip[0] != '\0' && strlen(ip) < sizeof(me->ip))
+            (void)snprintf(me->ip, sizeof(me->ip), "%s", ip);
+        s->nodes_dirty = 1;
+    }
 }
 
 void server_set_cluster_control(server *s, int on)

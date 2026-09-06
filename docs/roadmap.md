@@ -980,3 +980,5 @@
     成过期值，迁移 I/O 等待保持可预期的上界（Phase 325）
   - [x] Cluster bus 端口转换边界：`cluster_port + 10000` 在监听、MEET 和
     节点公告前做 16 位可表示性校验，拒绝回绕到错误端口（Phase 326）
+  - [x] Cluster 公告原子一致性：bus listener 已绑定时拒绝变更公告端口，
+    合法 IP 更新同步发布到 myself node，避免公告与实际端点漂移（Phase 327）
