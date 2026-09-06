@@ -796,3 +796,7 @@ unchanged.
 Quicklist-backed list helpers now fail closed on null handles or output views,
 returning deterministic empty results without affecting valid list command
 semantics.
+
+Quicklist iterator mutation helpers now fail closed on null iterators or invalid
+payload views, returning deterministic status without changing valid list
+iteration behavior.

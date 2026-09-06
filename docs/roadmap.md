@@ -1011,3 +1011,5 @@
     查询对空对象返回确定值，避免管理控制面解引用无效状态（Phase 340）
   - [x] Quicklist 查询 API NULL fail-closed：内存、迭代定位、首尾访问、弹出与
     当前值查询在空句柄或空输出时返回确定值，避免底层集合辅助路径崩溃（Phase 341）
+  - [x] Quicklist 迭代器写操作 NULL fail-closed：next/prev/set/insert/remove
+    对空迭代器及非法空 payload 返回确定值，避免底层链表控制面崩溃（Phase 342）

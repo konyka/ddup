@@ -305,7 +305,7 @@ int ql_last(quicklist *ql, ql_iter *it)
 int ql_iter_next(ql_iter *it)
 {
     unsigned char *next;
-    if (it->entry == NULL)
+    if (it == NULL || it->entry == NULL)
         return 0;
     next = lp_next(it->node->lp, it->entry);
     if (next != NULL) {
@@ -324,7 +324,7 @@ int ql_iter_next(ql_iter *it)
 int ql_iter_prev(ql_iter *it)
 {
     unsigned char *prev;
-    if (it->entry == NULL)
+    if (it == NULL || it->entry == NULL)
         return 0;
     prev = lp_prev(it->node->lp, it->entry);
     if (prev != NULL) {
@@ -359,7 +359,8 @@ int ql_set(ql_iter *it, const char *data, size_t len)
     ql_node *n;
     size_t off;
     uint64_t old_bytes;
-    if (it->entry == NULL || len > UINT32_MAX)
+    if (it == NULL || it->entry == NULL || (data == NULL && len != 0) ||
+        len > UINT32_MAX)
         return -1;
     n = it->node;
     off = (size_t)(it->entry - n->lp);
@@ -377,7 +378,8 @@ int ql_insert(ql_iter *it, int after, const char *data, size_t len)
     ql_node *n;
     uint64_t old_bytes;
     unsigned char *newp = NULL;
-    if (it->entry == NULL || len > UINT32_MAX)
+    if (it == NULL || it->entry == NULL || (data == NULL && len != 0) ||
+        len > UINT32_MAX)
         return -1;
     n = it->node;
     old_bytes = n->bytes;
@@ -393,6 +395,8 @@ int ql_insert(ql_iter *it, int after, const char *data, size_t len)
 
 void ql_remove(ql_iter *it)
 {
+    if (it == NULL)
+        return;
     quicklist *ql = it->ql;
     ql_node *n = it->node;
     ql_node *next_node = n->next;

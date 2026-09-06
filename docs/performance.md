@@ -2326,6 +2326,12 @@ Quicklist query and pop helpers now reject null list, iterator, and output
 handles on cold branches. Valid list operations retain their existing node-local
 listpack traversal and allocation behavior.
 
+### Phase 342: quicklist iterator guards
+
+Iterator advance, mutation, and removal helpers now reject null iterators and
+non-empty null payloads on cold branches. Valid iterator operations retain the
+same node-local listpack mutation and repositioning costs.
+
 ### Phase 338: stream query API guards
 
 Stream memory, length, indexed access, and lower-bound helpers now reject null

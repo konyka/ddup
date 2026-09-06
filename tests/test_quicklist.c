@@ -84,6 +84,15 @@ static void test_null_query_handles(void)
     DD_CHECK_EQ_INT(0, (long long)len);
 }
 
+static void test_null_iterator_handles(void)
+{
+    DD_CHECK_EQ_INT(0, ql_iter_next(NULL));
+    DD_CHECK_EQ_INT(0, ql_iter_prev(NULL));
+    DD_CHECK_EQ_INT(-1, ql_set(NULL, "x", 1));
+    DD_CHECK_EQ_INT(-1, ql_insert(NULL, 0, "x", 1));
+    ql_remove(NULL);
+}
+
 static void test_push_pop_ends(void)
 {
     quicklist *ql = ql_new();
@@ -670,6 +679,7 @@ static void test_merge_disabled_tiny_fill(void)
 int main(void)
 {
     DD_RUN(test_null_query_handles);
+    DD_RUN(test_null_iterator_handles);
     DD_RUN(test_new_empty);
     DD_RUN(test_push_pop_ends);
     DD_RUN(test_fill_split);
