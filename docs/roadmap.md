@@ -1021,3 +1021,5 @@
     空对象或非法 payload 返回确定状态，避免集合变更路径解引用崩溃（Phase 345）
   - [x] Stream 写入/管理 API NULL fail-closed：append/delete/trim、消费组查询与
     pending 计数对空对象或非法 payload 返回确定值（Phase 346）
+  - [x] Stream consumer/PEL API NULL fail-closed：consumer 生命周期、pending
+    查询/新增/删除及 group PEL 操作对空句柄返回确定状态（Phase 347）

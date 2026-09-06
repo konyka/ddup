@@ -437,6 +437,8 @@ stream_consumer *obj_stream_consumer_get(stream_group *g, const char *name,
                                          size_t name_len)
 {
     size_t i;
+    if (g == NULL || (name == NULL && name_len != 0))
+        return NULL;
     for (i = 0; i < g->nconsumers; i++)
         if (stream_name_eq(g->consumers[i].name, g->consumers[i].name_len,
                            name, name_len))
@@ -448,6 +450,8 @@ stream_consumer *obj_stream_consumer_create(stream_group *g,
                                             const char *name,
                                             size_t name_len)
 {
+    if (g == NULL || (name == NULL && name_len != 0))
+        return NULL;
     stream_consumer *c = obj_stream_consumer_get(g, name, name_len);
     uint64_t mem;
     if (c != NULL)
@@ -488,6 +492,8 @@ int obj_stream_consumer_destroy(stream_group *g, const char *name,
                                 size_t name_len)
 {
     size_t i;
+    if (g == NULL || (name == NULL && name_len != 0))
+        return 0;
     for (i = 0; i < g->nconsumers; i++) {
         stream_consumer *c = &g->consumers[i];
         uint64_t mem = 0;
@@ -519,6 +525,9 @@ stream_pending *obj_stream_consumer_pel_add(stream_group *g,
                                             uint64_t idle,
                                             uint64_t delivery_count)
 {
+    if (g == NULL || c == NULL ||
+        (c->pel == NULL && c->pel_len != 0))
+        return NULL;
     stream_pending *p = obj_stream_consumer_pel_find(c, ms, seq);
     if (p != NULL)
         return p;
@@ -551,6 +560,8 @@ stream_pending *obj_stream_consumer_pel_find(stream_consumer *c,
                                              uint64_t ms, uint64_t seq)
 {
     size_t i;
+    if (c == NULL)
+        return NULL;
     for (i = 0; i < c->pel_len; i++)
         if (c->pel[i].ms == ms && c->pel[i].seq == seq)
             return &c->pel[i];
@@ -561,6 +572,8 @@ int obj_stream_consumer_pel_remove(stream_consumer *c, uint64_t ms,
                                    uint64_t seq)
 {
     size_t i;
+    if (c == NULL)
+        return 0;
     for (i = 0; i < c->pel_len; i++) {
         if (c->pel[i].ms == ms && c->pel[i].seq == seq) {
             /* caller provides the owning group through group_pel_remove;
@@ -578,6 +591,8 @@ int obj_stream_consumer_pel_remove(stream_consumer *c, uint64_t ms,
 int obj_stream_group_pel_remove(stream_group *g, uint64_t ms, uint64_t seq)
 {
     size_t i;
+    if (g == NULL)
+        return 0;
     for (i = 0; i < g->nconsumers; i++) {
         if (obj_stream_consumer_pel_remove(&g->consumers[i], ms, seq)) {
             stream_group_mem_sub(g->stream,

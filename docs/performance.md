@@ -2357,6 +2357,12 @@ Stream append/delete/trim and consumer-group management helpers now reject null
 streams, groups, and non-empty null payload arrays on cold branches. Valid stream
 append and trim paths retain their existing allocation and ordered-index costs.
 
+### Phase 347: stream consumer/PEL guards
+
+Consumer lifecycle and pending-entry helpers now reject null groups/consumers or
+malformed PEL state on cold branches. Valid consumer and PEL operations retain
+their existing linear scans and amortized growth behavior.
+
 ### Phase 338: stream query API guards
 
 Stream memory, length, indexed access, and lower-bound helpers now reject null

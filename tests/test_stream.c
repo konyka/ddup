@@ -120,6 +120,16 @@ static void test_stream_mutation_api_rejects_null_object(void)
     DD_CHECK_EQ_INT(0, (long long)obj_stream_group_pending_count(NULL));
 }
 
+static void test_stream_consumer_api_rejects_null_object(void)
+{
+    DD_CHECK(obj_stream_consumer_get(NULL, "c", 1) == NULL);
+    DD_CHECK(obj_stream_consumer_create(NULL, "c", 1) == NULL);
+    DD_CHECK_EQ_INT(0, obj_stream_consumer_destroy(NULL, "c", 1));
+    DD_CHECK(obj_stream_consumer_pel_find(NULL, 1, 0) == NULL);
+    DD_CHECK_EQ_INT(0, obj_stream_consumer_pel_remove(NULL, 1, 0));
+    DD_CHECK(obj_stream_consumer_pel_add(NULL, NULL, 1, 0, 0, 1) == NULL);
+}
+
 static void test_xrange_xrevrange(void)
 {
     db d;
@@ -594,6 +604,7 @@ int main(void)
 {
     DD_RUN(test_stream_api_rejects_null_object);
     DD_RUN(test_stream_mutation_api_rejects_null_object);
+    DD_RUN(test_stream_consumer_api_rejects_null_object);
     DD_RUN(test_xadd_xlen);
     DD_RUN(test_xrange_xrevrange);
     DD_RUN(test_xdel_xtrim_xsetid);
