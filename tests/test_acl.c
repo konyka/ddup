@@ -1261,6 +1261,7 @@ static void test_acl_public_inputs_fail_closed(void)
     acl_registry r;
     resp_value rule = rv("on");
     resp_value malformed;
+    resp_value eval_bad[3];
     resp_buf out;
     const acl_user *u;
 
@@ -1269,6 +1270,9 @@ static void test_acl_public_inputs_fail_closed(void)
     memset(&malformed, 0, sizeof(malformed));
     malformed.type = RESP_BULK_STRING;
     malformed.len = 2;
+    eval_bad[0] = rv("EVAL");
+    eval_bad[1] = rv("return 1");
+    eval_bad[2] = malformed;
     resp_buf_init(&out);
     DD_CHECK(acl_find(NULL, "default", 7) == NULL);
     DD_CHECK(acl_find(&r, NULL, 1) == NULL);
@@ -1286,6 +1290,7 @@ static void test_acl_public_inputs_fail_closed(void)
     DD_CHECK(u != NULL);
     DD_CHECK_EQ_INT(0, acl_authorize(u, CMD_GET, NULL, 2));
     DD_CHECK_EQ_INT(0, acl_authorize(NULL, CMD_GET, NULL, 2));
+    DD_CHECK_EQ_INT(0, acl_authorize(u, CMD_EVAL, eval_bad, 3));
     acl_write_user(NULL, &out);
     acl_write_rule_line(NULL, &out);
     acl_log_write(NULL, 1, 0, NULL);

@@ -2398,3 +2398,9 @@ and command checks retain their existing constant-time bitset/pattern behavior.
 `acl_setuser` now rejects non-empty rules whose RESP string pointer is NULL
 before matching. The check is a constant-time cold validation and does not add
 work to valid ACL rule parsing or authorization.
+
+### Phase 353: ACL authorization view validation
+
+`acl_authorize` performs one bounded pre-scan of the command argument vector and
+rejects malformed non-empty bulk views before command-specific parsing. Valid
+ACL checks retain the same command/key policy work after this cold validation.

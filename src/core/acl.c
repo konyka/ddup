@@ -370,9 +370,14 @@ int acl_authorize(const acl_user *u, uint16_t cmd_id, const resp_value *argv,
 {
     size_t i, first = 1, step = 1, nkeys = 0;
     int keyless = 0;
+    size_t argi;
     if (u == NULL || !u->enabled || cmd_id >= CMD_STATS_SLOTS ||
         (argv == NULL && argc != 0))
         return 0;
+    for (argi = 0; argi < argc; argi++)
+        if (argv[argi].type == RESP_BULK_STRING &&
+            argv[argi].str == NULL && argv[argi].len != 0)
+            return 0;
     if (!u->all_commands && !(u->allow[cmd_id / 64] & (UINT64_C(1) << (cmd_id % 64)))) return 0;
     if (u->deny[cmd_id / 64] & (UINT64_C(1) << (cmd_id % 64))) return 0;
     if (argc < 2) return 1;

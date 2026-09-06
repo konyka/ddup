@@ -839,3 +839,7 @@ calls no longer dereference invalid state.
 ACL rule updates now also reject malformed non-empty RESP views with a NULL
 string pointer, preserving the existing user state instead of entering unsafe
 string matching.
+
+ACL authorization now rejects malformed non-empty bulk arguments before parsing
+command-specific positions, preventing EVAL and option branches from dereferencing
+NULL strings while preserving valid command/key policy decisions.
