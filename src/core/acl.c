@@ -69,6 +69,8 @@ static int acl_parse_ll(const char *s, size_t len, long long *out)
 
 void acl_init(acl_registry *r, const char *requirepass)
 {
+    if (r == NULL)
+        return;
     memset(r, 0, sizeof(*r));
     r->count = 1;
     memcpy(r->users[0].name, "default", 8);
@@ -89,6 +91,8 @@ void acl_init(acl_registry *r, const char *requirepass)
 acl_user *acl_find(acl_registry *r, const char *name, size_t nlen)
 {
     size_t i;
+    if (r == NULL || (name == NULL && nlen != 0))
+        return NULL;
     for (i = 0; i < r->count; i++)
         if (r->users[i].name[0] != '\0' && eq(name, nlen, r->users[i].name)) return &r->users[i];
     return NULL;
@@ -159,7 +163,9 @@ int acl_setuser(acl_registry *r, const char *name, size_t nlen,
     size_t i;
     const char *p;
     size_t n;
-    if (nlen == 0 || nlen >= ACL_MAX_NAME || !rules) return -1;
+    if (r == NULL || name == NULL || nlen == 0 || nlen >= ACL_MAX_NAME ||
+        (rules == NULL && nrules != 0))
+        return -1;
     u = acl_find(r, name, nlen);
     if (u == NULL) {
         for (i = 0; i < r->count; i++) if (r->users[i].name[0] == '\0') { u = &r->users[i]; break; }
@@ -232,6 +238,7 @@ int acl_setuser(acl_registry *r, const char *name, size_t nlen,
 int acl_deluser(acl_registry *r, const char *name, size_t nlen)
 {
     size_t i;
+    if (r == NULL || (name == NULL && nlen != 0)) return -1;
     if (eq(name, nlen, "default")) return 0;
     for (i = 0; i < r->count; i++) {
         if (eq(name, nlen, r->users[i].name)) {
@@ -251,9 +258,13 @@ const acl_user *acl_authenticate(const acl_registry *r, const char *name,
                                  size_t nlen, const char *password,
                                  size_t plen)
 {
-    const acl_user *u = acl_find_const(r, name, nlen);
+    const acl_user *u;
     size_t i;
     unsigned char diff = 0;
+    if (r == NULL || (name == NULL && nlen != 0) ||
+        (password == NULL && plen != 0))
+        return NULL;
+    u = acl_find_const(r, name, nlen);
     if (u == NULL || !u->enabled) return NULL;
     if (u->no_password) return u;
     if (strlen(u->password) != plen) return NULL;
@@ -264,6 +275,8 @@ const acl_user *acl_authenticate(const acl_registry *r, const char *name,
 int acl_match_pattern(const char *pat, size_t plen, const char *key, size_t klen)
 {
     size_t pi = 0, ki = 0, star = SIZE_MAX, mark = 0;
+    if ((pat == NULL && plen != 0) || (key == NULL && klen != 0))
+        return 0;
     while (ki < klen) {
         if (pi < plen && (pat[pi] == '?' || pat[pi] == key[ki])) { pi++; ki++; }
         else if (pi < plen && pat[pi] == '*') { star = pi++; mark = ki; }
@@ -332,6 +345,7 @@ void acl_log_write(const acl_registry *r, long long count, uint64_t now_ms,
                    resp_buf *out)
 {
     size_t take, i, idx;
+    if (out == NULL) return;
     if (r == NULL) { resp_write_array_header(out, 0); return; }
     if (count < 0) count = 0;
     take = (size_t)count < r->log_len ? (size_t)count : r->log_len;
@@ -355,7 +369,9 @@ int acl_authorize(const acl_user *u, uint16_t cmd_id, const resp_value *argv,
 {
     size_t i, first = 1, step = 1, nkeys = 0;
     int keyless = 0;
-    if (u == NULL || !u->enabled || cmd_id >= CMD_STATS_SLOTS) return 0;
+    if (u == NULL || !u->enabled || cmd_id >= CMD_STATS_SLOTS ||
+        (argv == NULL && argc != 0))
+        return 0;
     if (!u->all_commands && !(u->allow[cmd_id / 64] & (UINT64_C(1) << (cmd_id % 64)))) return 0;
     if (u->deny[cmd_id / 64] & (UINT64_C(1) << (cmd_id % 64))) return 0;
     if (argc < 2) return 1;
@@ -753,6 +769,7 @@ int acl_authorize(const acl_user *u, uint16_t cmd_id, const resp_value *argv,
 void acl_write_user(const acl_user *u, resp_buf *out)
 {
     size_t i;
+    if (u == NULL || out == NULL) return;
     resp_write_array_header(out, 10);
     resp_write_bulk(out, "flags", 5);
     resp_write_array_header(out, u->no_password ? 3 : 2);
@@ -802,7 +819,9 @@ void acl_write_rule_line(const acl_user *u, resp_buf *out)
     size_t i;
     char buf[ACL_MAX_NAME + ACL_MAX_PASSWORD +
              (ACL_MAX_PATTERNS + ACL_MAX_CHANNELS) * ACL_MAX_PATTERN + 128];
-    int n = snprintf(buf, sizeof(buf), "user %s %s %s", u->name,
+    int n;
+    if (u == NULL || out == NULL) return;
+    n = snprintf(buf, sizeof(buf), "user %s %s %s", u->name,
                      u->enabled ? "on" : "off",
                      u->all_commands ? "allcommands" : "nocommands");
     if (n < 0 || (size_t)n >= sizeof(buf)) return;

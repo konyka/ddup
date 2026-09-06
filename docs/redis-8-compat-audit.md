@@ -830,3 +830,8 @@ until the file is closed successfully, preserving transactional restore behavior
 
 The PAL listener now initializes `bound_port` to zero before attempting setup,
 so DNS/bind/listen failures cannot leave stale endpoint metadata for callers.
+
+ACL management and authorization helpers now fail closed on null registries,
+users, argument vectors, passwords, patterns, and output buffers. Existing
+valid ACL rule and command semantics remain unchanged while malformed control
+calls no longer dereference invalid state.

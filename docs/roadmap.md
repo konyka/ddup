@@ -1029,3 +1029,5 @@
     失败时丢弃临时缓冲并返回错误，避免 I/O 不完整被误报成功（Phase 349）
   - [x] PAL listener 输出清零：`pal_tcp_listen` 在任何失败路径先清除
     `bound_port`，避免调用方继续使用未初始化/陈旧端口（Phase 350）
+  - [x] ACL 公共 API NULL fail-closed：初始化、用户查找/变更、认证、模式匹配、
+    授权与规则/日志输出拒绝空句柄，避免控制面空指针解引用（Phase 351）

@@ -1256,6 +1256,38 @@ static void test_acl_log_clock_rollback_has_zero_age(void)
     resp_buf_free(&out);
 }
 
+static void test_acl_public_inputs_fail_closed(void)
+{
+    acl_registry r;
+    resp_value rule = rv("on");
+    resp_buf out;
+    const acl_user *u;
+
+    acl_init(NULL, NULL);
+    acl_init(&r, NULL);
+    resp_buf_init(&out);
+    DD_CHECK(acl_find(NULL, "default", 7) == NULL);
+    DD_CHECK(acl_find(&r, NULL, 1) == NULL);
+    DD_CHECK_EQ_INT(-1, acl_setuser(NULL, "u", 1, &rule, 1));
+    DD_CHECK_EQ_INT(-1, acl_setuser(&r, NULL, 1, &rule, 1));
+    DD_CHECK_EQ_INT(-1, acl_deluser(NULL, "u", 1));
+    DD_CHECK_EQ_INT(-1, acl_deluser(&r, NULL, 1));
+    DD_CHECK(acl_authenticate(NULL, "default", 7, "", 0) == NULL);
+    DD_CHECK(acl_authenticate(&r, NULL, 1, "", 0) == NULL);
+    DD_CHECK(acl_authenticate(&r, "default", 7, NULL, 1) == NULL);
+    DD_CHECK_EQ_INT(0, acl_match_pattern(NULL, 1, "k", 1));
+    DD_CHECK_EQ_INT(0, acl_match_pattern("*", 1, NULL, 1));
+    u = acl_find_const(&r, "default", 7);
+    DD_CHECK(u != NULL);
+    DD_CHECK_EQ_INT(0, acl_authorize(u, CMD_GET, NULL, 2));
+    DD_CHECK_EQ_INT(0, acl_authorize(NULL, CMD_GET, NULL, 2));
+    acl_write_user(NULL, &out);
+    acl_write_rule_line(NULL, &out);
+    acl_log_write(NULL, 1, 0, NULL);
+    DD_CHECK_EQ_INT(0, (long long)out.len);
+    resp_buf_free(&out);
+}
+
 int main(void)
 {
     DD_RUN(test_acl_users);
@@ -1329,5 +1361,6 @@ int main(void)
     DD_RUN(test_acl_log_null_fields_are_safe);
     DD_RUN(test_acl_log_negative_count_returns_empty);
     DD_RUN(test_acl_log_clock_rollback_has_zero_age);
+    DD_RUN(test_acl_public_inputs_fail_closed);
     return DD_TEST_SUMMARY();
 }

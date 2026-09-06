@@ -2386,3 +2386,9 @@ successful loads retain the same buffered read and transactional decode path.
 `pal_tcp_listen` clears the optional bound-port output before DNS, socket, bind,
 or listen work. The branch is constant-time and cold; successful listener setup
 retains the same address iteration and socket-option path.
+
+### Phase 351: ACL API null guards
+
+ACL management, authorization, pattern matching, and rendering helpers now reject
+null handles or malformed non-empty views on cold branches. Valid authentication
+and command checks retain their existing constant-time bitset/pattern behavior.
