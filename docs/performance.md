@@ -2338,6 +2338,12 @@ Skiplist rank/index and score/lex range queries now reject null list or range
 objects on cold branches. Valid ZSET operations retain their existing span-walk
 O(log n) behavior and range traversal costs.
 
+### Phase 344: skiplist mutation guards
+
+Skiplist insert/delete now reject null list handles and non-empty null members
+on cold branches. Valid ZSET mutations retain the same span updates and member
+ordering behavior.
+
 ### Phase 338: stream query API guards
 
 Stream memory, length, indexed access, and lower-bound helpers now reject null

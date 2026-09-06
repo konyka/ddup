@@ -60,6 +60,18 @@ static void test_null_query_handles(void)
     DD_CHECK(zsl_last_in_lex_range(NULL, &lr) == NULL);
 }
 
+static void test_null_mutation_handles(void)
+{
+    const char byte = 'x';
+    zskiplist *z = zsl_create();
+    DD_CHECK_EQ_INT(-1, zsl_insert(NULL, 1.0, "x", 1));
+    DD_CHECK_EQ_INT(0, zsl_delete(NULL, 1.0, "x", 1));
+    DD_CHECK_EQ_INT(-1, zsl_insert(z, 1.0, NULL, 1));
+    DD_CHECK_EQ_INT(0, zsl_delete(z, 1.0, NULL, 1));
+    DD_CHECK_EQ_INT(0, zsl_insert(z, 1.0, &byte, 1));
+    zsl_free(z);
+}
+
 static void test_reject_unrepresentable_member_length(void)
 {
 #if SIZE_MAX > UINT32_MAX
@@ -361,6 +373,7 @@ static void test_lex_ranges(void)
 int main(void)
 {
     DD_RUN(test_null_query_handles);
+    DD_RUN(test_null_mutation_handles);
     DD_RUN(test_insert_order);
     DD_RUN(test_reject_unrepresentable_member_length);
     DD_RUN(test_duplicate_score_tiebreak);

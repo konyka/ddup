@@ -1015,3 +1015,5 @@
     对空迭代器及非法空 payload 返回确定值，避免底层链表控制面崩溃（Phase 342）
   - [x] Skiplist 查询 API NULL fail-closed：rank/index、score/lex range 查询
     对空 skiplist 或范围返回确定的 miss/empty 结果（Phase 343）
+  - [x] Skiplist 写入 API NULL fail-closed：insert/delete 对空对象及非零长度
+    空 member 返回确定状态，避免 ZSET 底层写路径崩溃（Phase 344）

@@ -804,3 +804,6 @@ iteration behavior.
 Skiplist-backed ZSET range and rank helpers now fail closed on null list/range
 handles with deterministic misses or empty counts; valid sorted-set semantics
 are unchanged.
+
+Skiplist mutation helpers now fail closed on null list/member views, returning
+deterministic status without changing valid sorted-set insertion or deletion.

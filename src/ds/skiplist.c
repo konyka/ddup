@@ -133,7 +133,7 @@ int zsl_insert(zskiplist *z, double score, const char *member, size_t mlen)
     int level;
     int i;
 
-    if (mlen > UINT32_MAX)
+    if (z == NULL || (member == NULL && mlen != 0) || mlen > UINT32_MAX)
         return -1;
     x = z->header;
     for (i = z->level - 1; i >= 0; i--) {
@@ -191,6 +191,8 @@ int zsl_delete(zskiplist *z, double score, const char *member, size_t mlen)
     int i;
     int level = 0;
 
+    if (z == NULL || (member == NULL && mlen != 0))
+        return 0;
     x = z->header;
     for (i = z->level - 1; i >= 0; i--) {
         while (x->level[i].forward != NULL &&
