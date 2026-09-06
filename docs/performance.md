@@ -2446,3 +2446,10 @@ only teardown/control calls take the new cold branches.
 Buffer-pool lifecycle and borrow/return helpers now reject null pool, output, or
 buffer handles. Normal tier lookup and free-list operations retain their existing
 constant-time hot path; teardown also clears tier metadata.
+
+### Phase 361: listpack integer overflow guard
+
+Listpack decimal parsing now performs a division-based limit check before each
+multiply/add step. Valid canonical integers keep the same linear digit scan and
+compact encoding; only out-of-range input takes the early rejection branch, with
+no allocation or extra work on the common valid path.

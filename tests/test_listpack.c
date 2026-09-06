@@ -177,6 +177,10 @@ static void test_strict_int_parse_fallback(void)
                                         "1x",  "",   "--1",
                                         "9223372036854775808",  /* overflow */
                                         "-9223372036854775809", /* underflow */
+                                        "18446744073709551616",  /* uint64 wrap to zero */
+                                        "-18446744073709551617", /* uint64 wrap to one */
+                                        "99999999999999999999",  /* uint64 wrap */
+                                        "-99999999999999999999", /* uint64 wrap */
                                         "00000000000000000001" };
     unsigned char *lp = lp_new();
     size_t i;

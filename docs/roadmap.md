@@ -1049,3 +1049,5 @@
     destroy 拒绝空句柄，销毁后清除 block 元数据（Phase 359）
   - [x] Buffer pool 公共 API NULL fail-closed：初始化、借用、归还和销毁拒绝
     空句柄/空输出，销毁后清除 tier 元数据（Phase 360）
+  - [x] Listpack 十进制解析溢出防护：整数识别在乘 10 前进行边界检查，超出
+    int64 的 20 位输入保持字符串编码（Phase 361）

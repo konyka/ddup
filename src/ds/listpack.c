@@ -193,6 +193,7 @@ static uint64_t lp_decode_backlen(const unsigned char *lp, const unsigned char *
 static int lp_str_to_int64(const unsigned char *s, uint32_t slen, int64_t *out)
 {
     uint64_t v = 0;
+    uint64_t limit;
     uint32_t i;
     int neg = 0;
     if (slen == 0 || slen > 20)
@@ -206,12 +207,15 @@ static int lp_str_to_int64(const unsigned char *s, uint32_t slen, int64_t *out)
     }
     if (s[i] == '0' && i + 1 < slen)
         return 0; /* leading zero ("01", "-0") is not canonical */
+    limit = (uint64_t)INT64_MAX + (neg ? 1u : 0u);
     for (; i < slen; i++) {
+        uint64_t digit;
         if (s[i] < '0' || s[i] > '9')
             return 0;
-        v = v * 10 + (uint64_t)(s[i] - '0');
-        if (v > (uint64_t)INT64_MAX + (neg ? 1u : 0u))
+        digit = (uint64_t)(s[i] - '0');
+        if (v > (limit - digit) / 10u)
             return 0;
+        v = v * 10u + digit;
     }
     if (neg && v == 0)
         return 0; /* "-0" is not canonical */
