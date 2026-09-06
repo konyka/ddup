@@ -2320,6 +2320,12 @@ List, set, and sorted-set memory/length/encoding and common member-score query
 helpers now reject null objects on cold branches. Valid compact/listpack and
 hash/skiplist probes retain their existing costs and allocations.
 
+### Phase 341: quicklist API guards
+
+Quicklist query and pop helpers now reject null list, iterator, and output
+handles on cold branches. Valid list operations retain their existing node-local
+listpack traversal and allocation behavior.
+
 ### Phase 338: stream query API guards
 
 Stream memory, length, indexed access, and lower-bound helpers now reject null

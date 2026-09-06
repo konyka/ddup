@@ -792,3 +792,7 @@ empty results; valid stream length, index, and range semantics are unchanged.
 List, set, and sorted-set management queries now fail closed on null handles with
 deterministic zero or miss results; valid collection command semantics remain
 unchanged.
+
+Quicklist-backed list helpers now fail closed on null handles or output views,
+returning deterministic empty results without affecting valid list command
+semantics.

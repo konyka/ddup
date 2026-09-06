@@ -1009,3 +1009,5 @@
     查询对空 hash 返回确定值，避免控制面空对象解引用（Phase 339）
   - [x] List/Set/ZSet 查询 API NULL fail-closed：基础内存、长度、编码及成员
     查询对空对象返回确定值，避免管理控制面解引用无效状态（Phase 340）
+  - [x] Quicklist 查询 API NULL fail-closed：内存、迭代定位、首尾访问、弹出与
+    当前值查询在空句柄或空输出时返回确定值，避免底层集合辅助路径崩溃（Phase 341）

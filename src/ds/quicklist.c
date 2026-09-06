@@ -184,7 +184,7 @@ void ql_free(quicklist *ql)
 
 uint64_t ql_mem(const quicklist *ql)
 {
-    return ql->mem;
+    return ql == NULL ? 0 : ql->mem;
 }
 
 int ql_push(quicklist *ql, int left, const char *data, size_t len)
@@ -211,12 +211,18 @@ int ql_push(quicklist *ql, int left, const char *data, size_t len)
 
 int ql_pop(quicklist *ql, int left, char **data, size_t *len)
 {
-    ql_node *n = left ? ql->head : ql->tail;
+    ql_node *n;
     unsigned char *entry;
     unsigned char buf[24];
     const unsigned char *v;
     uint32_t vlen = 0;
     uint64_t old_bytes;
+    if (ql == NULL || data == NULL || len == NULL) {
+        if (len != NULL)
+            *len = 0;
+        return 0;
+    }
+    n = left ? ql->head : ql->tail;
     if (n == NULL)
         return 0;
     entry = left ? lp_first(n->lp) : lp_last(n->lp);
@@ -244,7 +250,7 @@ int ql_pop(quicklist *ql, int left, char **data, size_t *len)
 int ql_seek(quicklist *ql, uint64_t idx, ql_iter *it)
 {
     ql_node *n;
-    if (idx >= ql->len)
+    if (ql == NULL || it == NULL || idx >= ql->len)
         return 0;
     it->ql = ql;
     if (idx < ql->len / 2) {
@@ -270,6 +276,8 @@ int ql_seek(quicklist *ql, uint64_t idx, ql_iter *it)
 
 int ql_first(quicklist *ql, ql_iter *it)
 {
+    if (ql == NULL || it == NULL)
+        return 0;
     it->ql = ql;
     it->node = ql->head;
     if (it->node == NULL) {
@@ -282,6 +290,8 @@ int ql_first(quicklist *ql, ql_iter *it)
 
 int ql_last(quicklist *ql, ql_iter *it)
 {
+    if (ql == NULL || it == NULL)
+        return 0;
     it->ql = ql;
     it->node = ql->tail;
     if (it->node == NULL) {
@@ -334,8 +344,9 @@ const char *ql_iter_value(ql_iter *it, size_t *len)
 {
     uint32_t vlen = 0;
     const unsigned char *v;
-    if (it->entry == NULL) {
-        *len = 0;
+    if (it == NULL || len == NULL || it->entry == NULL) {
+        if (len != NULL)
+            *len = 0;
         return NULL;
     }
     v = lp_get_str(it->entry, it->buf, &vlen);

@@ -67,6 +67,23 @@ static void test_new_empty(void)
     ql_free(ql);
 }
 
+static void test_null_query_handles(void)
+{
+    ql_iter it;
+    char *data = (char *)0x1;
+    size_t len = 99;
+    DD_CHECK_EQ_INT(0, (long long)ql_mem(NULL));
+    DD_CHECK_EQ_INT(0, ql_seek(NULL, 0, &it));
+    DD_CHECK_EQ_INT(0, ql_first(NULL, &it));
+    DD_CHECK_EQ_INT(0, ql_last(NULL, &it));
+    DD_CHECK_EQ_INT(0, ql_pop(NULL, 0, &data, &len));
+    DD_CHECK(data == (char *)0x1);
+    DD_CHECK_EQ_INT(0, (long long)len);
+    len = 99;
+    DD_CHECK(ql_iter_value(NULL, &len) == NULL);
+    DD_CHECK_EQ_INT(0, (long long)len);
+}
+
 static void test_push_pop_ends(void)
 {
     quicklist *ql = ql_new();
@@ -652,6 +669,7 @@ static void test_merge_disabled_tiny_fill(void)
 
 int main(void)
 {
+    DD_RUN(test_null_query_handles);
     DD_RUN(test_new_empty);
     DD_RUN(test_push_pop_ends);
     DD_RUN(test_fill_split);
