@@ -781,3 +781,6 @@ are unchanged.
 
 Object encoding limit management now fails closed on null configuration/output
 handles, preserving the active limits and preventing control-plane crashes.
+
+Stream management queries now fail closed on null stream handles with deterministic
+empty results; valid stream length, index, and range semantics are unchanged.

@@ -94,6 +94,14 @@ static void test_xadd_xlen(void)
     db_destroy(&d);
 }
 
+static void test_stream_api_rejects_null_object(void)
+{
+    DD_CHECK_EQ_INT(0, (long long)obj_stream_mem(NULL));
+    DD_CHECK_EQ_INT(0, (long long)obj_stream_len(NULL));
+    DD_CHECK(obj_stream_at(NULL, 0) == NULL);
+    DD_CHECK_EQ_INT(0, (long long)obj_stream_lower_bound(NULL, 0, 0));
+}
+
 static void test_xrange_xrevrange(void)
 {
     db d;
@@ -566,6 +574,7 @@ static void test_xreadgroup_block_wakeup(void)
 
 int main(void)
 {
+    DD_RUN(test_stream_api_rejects_null_object);
     DD_RUN(test_xadd_xlen);
     DD_RUN(test_xrange_xrevrange);
     DD_RUN(test_xdel_xtrim_xsetid);

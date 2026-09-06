@@ -1003,3 +1003,5 @@
     结果并初始化输出，避免管理/测试控制面空对象解引用（Phase 336）
   - [x] 对象编码限制 API NULL fail-closed：`obj_limits_apply/get` 忽略空配置或
     输出指针，保持现有运行时限制不被意外清零或崩溃（Phase 337）
+  - [x] Stream 查询 API NULL fail-closed：内存、长度、索引和 lower-bound 查询
+    对空 stream 返回确定值，避免管理面空对象解引用（Phase 338）

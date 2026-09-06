@@ -2307,3 +2307,9 @@ ARRAY lookups retain the same key encoding and single-table probe cost.
 Runtime object-encoding limit setters/getters now reject null configuration and
 output pointers before copying state. The guard is only on management calls;
 normal startup applies limits with no additional hot-path work or synchronization.
+
+### Phase 338: stream query API guards
+
+Stream memory, length, indexed access, and lower-bound helpers now reject null
+objects on a cold branch. Valid stream reads retain their existing O(1) or
+O(log n) behavior and do not allocate or add synchronization.

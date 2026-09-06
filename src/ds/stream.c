@@ -84,22 +84,25 @@ void obj_stream_free(obj_stream *s)
 
 uint64_t obj_stream_mem(const obj_stream *s)
 {
-    return s->mem + s->group_mem;
+    return s == NULL ? 0 : s->mem + s->group_mem;
 }
 
 size_t obj_stream_len(const obj_stream *s)
 {
-    return s->len;
+    return s == NULL ? 0 : s->len;
 }
 
 const stream_entry *obj_stream_at(const obj_stream *s, size_t idx)
 {
-    return idx < s->len ? &s->entries[idx] : NULL;
+    return s != NULL && idx < s->len ? &s->entries[idx] : NULL;
 }
 
 size_t obj_stream_lower_bound(const obj_stream *s, uint64_t ms, uint64_t seq)
 {
-    size_t lo = 0, hi = s->len;
+    size_t lo = 0, hi;
+    if (s == NULL)
+        return 0;
+    hi = s->len;
     while (lo < hi) {
         size_t mid = lo + (hi - lo) / 2;
         const stream_entry *e = &s->entries[mid];
