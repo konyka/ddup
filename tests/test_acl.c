@@ -1260,16 +1260,21 @@ static void test_acl_public_inputs_fail_closed(void)
 {
     acl_registry r;
     resp_value rule = rv("on");
+    resp_value malformed;
     resp_buf out;
     const acl_user *u;
 
     acl_init(NULL, NULL);
     acl_init(&r, NULL);
+    memset(&malformed, 0, sizeof(malformed));
+    malformed.type = RESP_BULK_STRING;
+    malformed.len = 2;
     resp_buf_init(&out);
     DD_CHECK(acl_find(NULL, "default", 7) == NULL);
     DD_CHECK(acl_find(&r, NULL, 1) == NULL);
     DD_CHECK_EQ_INT(-1, acl_setuser(NULL, "u", 1, &rule, 1));
     DD_CHECK_EQ_INT(-1, acl_setuser(&r, NULL, 1, &rule, 1));
+    DD_CHECK_EQ_INT(-1, acl_setuser(&r, "bad", 3, &malformed, 1));
     DD_CHECK_EQ_INT(-1, acl_deluser(NULL, "u", 1));
     DD_CHECK_EQ_INT(-1, acl_deluser(&r, NULL, 1));
     DD_CHECK(acl_authenticate(NULL, "default", 7, "", 0) == NULL);

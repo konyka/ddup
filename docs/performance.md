@@ -2392,3 +2392,9 @@ retains the same address iteration and socket-option path.
 ACL management, authorization, pattern matching, and rendering helpers now reject
 null handles or malformed non-empty views on cold branches. Valid authentication
 and command checks retain their existing constant-time bitset/pattern behavior.
+
+### Phase 352: ACL rule view validation
+
+`acl_setuser` now rejects non-empty rules whose RESP string pointer is NULL
+before matching. The check is a constant-time cold validation and does not add
+work to valid ACL rule parsing or authorization.

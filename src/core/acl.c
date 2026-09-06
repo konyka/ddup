@@ -179,6 +179,7 @@ int acl_setuser(acl_registry *r, const char *name, size_t nlen,
     for (i = 0; i < nrules; i++) {
         if (rules[i].type != RESP_BULK_STRING) return -1;
         p = rules[i].str; n = rules[i].len;
+        if (p == NULL && n != 0) return -1;
         if (eq_ci(p, n, "on")) temp.enabled = 1;
         else if (eq_ci(p, n, "off")) temp.enabled = 0;
         else if (eq_ci(p, n, "reset")) clear_rules(&temp);

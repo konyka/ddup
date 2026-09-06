@@ -835,3 +835,7 @@ ACL management and authorization helpers now fail closed on null registries,
 users, argument vectors, passwords, patterns, and output buffers. Existing
 valid ACL rule and command semantics remain unchanged while malformed control
 calls no longer dereference invalid state.
+
+ACL rule updates now also reject malformed non-empty RESP views with a NULL
+string pointer, preserving the existing user state instead of entering unsafe
+string matching.

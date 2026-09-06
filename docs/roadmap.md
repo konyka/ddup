@@ -1031,3 +1031,5 @@
     `bound_port`，避免调用方继续使用未初始化/陈旧端口（Phase 350）
   - [x] ACL 公共 API NULL fail-closed：初始化、用户查找/变更、认证、模式匹配、
     授权与规则/日志输出拒绝空句柄，避免控制面空指针解引用（Phase 351）
+  - [x] ACL 规则视图校验：`acl_setuser` 拒绝非零长度的 NULL 规则字符串，避免
+    malformed RESP 控制输入进入字符串匹配路径（Phase 352）
