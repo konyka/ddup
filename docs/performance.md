@@ -2332,6 +2332,12 @@ Iterator advance, mutation, and removal helpers now reject null iterators and
 non-empty null payloads on cold branches. Valid iterator operations retain the
 same node-local listpack mutation and repositioning costs.
 
+### Phase 343: skiplist query guards
+
+Skiplist rank/index and score/lex range queries now reject null list or range
+objects on cold branches. Valid ZSET operations retain their existing span-walk
+O(log n) behavior and range traversal costs.
+
 ### Phase 338: stream query API guards
 
 Stream memory, length, indexed access, and lower-bound helpers now reject null

@@ -1013,3 +1013,5 @@
     当前值查询在空句柄或空输出时返回确定值，避免底层集合辅助路径崩溃（Phase 341）
   - [x] Quicklist 迭代器写操作 NULL fail-closed：next/prev/set/insert/remove
     对空迭代器及非法空 payload 返回确定值，避免底层链表控制面崩溃（Phase 342）
+  - [x] Skiplist 查询 API NULL fail-closed：rank/index、score/lex range 查询
+    对空 skiplist 或范围返回确定的 miss/empty 结果（Phase 343）

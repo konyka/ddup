@@ -800,3 +800,7 @@ semantics.
 Quicklist iterator mutation helpers now fail closed on null iterators or invalid
 payload views, returning deterministic status without changing valid list
 iteration behavior.
+
+Skiplist-backed ZSET range and rank helpers now fail closed on null list/range
+handles with deterministic misses or empty counts; valid sorted-set semantics
+are unchanged.

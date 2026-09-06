@@ -45,6 +45,21 @@ static void test_insert_order(void)
     zsl_free(z);
 }
 
+static void test_null_query_handles(void)
+{
+    zrangespec r;
+    zlexrangespec lr;
+    memset(&r, 0, sizeof(r));
+    memset(&lr, 0, sizeof(lr));
+    DD_CHECK_EQ_INT(-1, zsl_rank(NULL, 0.0, "m", 1));
+    DD_CHECK(zsl_at(NULL, 0) == NULL);
+    DD_CHECK(zsl_first_in_range(NULL, &r) == NULL);
+    DD_CHECK(zsl_last_in_range(NULL, &r) == NULL);
+    DD_CHECK_EQ_INT(0, (long long)zsl_count_in_range(NULL, &r));
+    DD_CHECK(zsl_first_in_lex_range(NULL, &lr) == NULL);
+    DD_CHECK(zsl_last_in_lex_range(NULL, &lr) == NULL);
+}
+
 static void test_reject_unrepresentable_member_length(void)
 {
 #if SIZE_MAX > UINT32_MAX
@@ -345,6 +360,7 @@ static void test_lex_ranges(void)
 
 int main(void)
 {
+    DD_RUN(test_null_query_handles);
     DD_RUN(test_insert_order);
     DD_RUN(test_reject_unrepresentable_member_length);
     DD_RUN(test_duplicate_score_tiebreak);

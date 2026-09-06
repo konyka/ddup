@@ -233,9 +233,12 @@ int zsl_delete(zskiplist *z, double score, const char *member, size_t mlen)
 
 long zsl_rank(zskiplist *z, double score, const char *member, size_t mlen)
 {
-    zsl_node *x = z->header;
+    zsl_node *x;
     uint64_t r = 0;
     int i;
+    if (z == NULL || (member == NULL && mlen != 0))
+        return -1;
+    x = z->header;
     for (i = z->level - 1; i >= 0; i--) {
         while (x->level[i].forward != NULL &&
                zsl_cmp(x->level[i].forward->score,
@@ -253,9 +256,12 @@ long zsl_rank(zskiplist *z, double score, const char *member, size_t mlen)
 
 zsl_node *zsl_at(zskiplist *z, size_t idx)
 {
-    zsl_node *x = z->header;
+    zsl_node *x;
     uint64_t traversed = 0;
     int i;
+    if (z == NULL)
+        return NULL;
+    x = z->header;
     /* zslGetElementByRank semantics are 1-based; idx is 0-based */
     for (i = z->level - 1; i >= 0; i--) {
         while (x->level[i].forward != NULL &&
@@ -281,8 +287,11 @@ static int zsl_lte_max(double score, const zrangespec *r)
 
 zsl_node *zsl_first_in_range(zskiplist *z, const zrangespec *r)
 {
-    zsl_node *x = z->header;
+    zsl_node *x;
     int i;
+    if (z == NULL || r == NULL)
+        return NULL;
+    x = z->header;
     if (zsl_cmp(r->min, "", 0, r->max, "", 0) > 0)
         return NULL; /* min > max: empty */
     for (i = z->level - 1; i >= 0; i--)
@@ -297,8 +306,11 @@ zsl_node *zsl_first_in_range(zskiplist *z, const zrangespec *r)
 
 zsl_node *zsl_last_in_range(zskiplist *z, const zrangespec *r)
 {
-    zsl_node *x = z->header;
+    zsl_node *x;
     int i;
+    if (z == NULL || r == NULL)
+        return NULL;
+    x = z->header;
     if (zsl_cmp(r->min, "", 0, r->max, "", 0) > 0)
         return NULL;
     for (i = z->level - 1; i >= 0; i--)
@@ -311,6 +323,8 @@ zsl_node *zsl_last_in_range(zskiplist *z, const zrangespec *r)
 
 size_t zsl_count_in_range(zskiplist *z, const zrangespec *r)
 {
+    if (z == NULL || r == NULL)
+        return 0;
     zsl_node *n = zsl_first_in_range(z, r);
     size_t count = 0;
     while (n != NULL && zsl_lte_max(n->score, r)) {
@@ -373,8 +387,11 @@ static int zsl_lex_range_empty(const zlexrangespec *r)
 
 zsl_node *zsl_first_in_lex_range(zskiplist *z, const zlexrangespec *r)
 {
-    zsl_node *x = z->header;
+    zsl_node *x;
     int i;
+    if (z == NULL || r == NULL)
+        return NULL;
+    x = z->header;
     if (zsl_lex_range_empty(r))
         return NULL;
     for (i = z->level - 1; i >= 0; i--)
@@ -390,8 +407,11 @@ zsl_node *zsl_first_in_lex_range(zskiplist *z, const zlexrangespec *r)
 
 zsl_node *zsl_last_in_lex_range(zskiplist *z, const zlexrangespec *r)
 {
-    zsl_node *x = z->header;
+    zsl_node *x;
     int i;
+    if (z == NULL || r == NULL)
+        return NULL;
+    x = z->header;
     if (zsl_lex_range_empty(r))
         return NULL;
     for (i = z->level - 1; i >= 0; i--)
