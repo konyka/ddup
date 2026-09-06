@@ -52,7 +52,6 @@ MSBuild version 18.9.1+a81b43525 for .NET Framework
   rhtable.c
   command.c
 D:\a\ddup\ddup\src\core\command.c(5030,21): warning C4244: 'initializing': conversion from 'uint32_t' to 'uint16_t', possible loss of data [D:\a\ddup\ddup\build\ddup_core.vcxproj]
-  buf_pool.c
 D:\a\ddup\ddup\src\core\command.c(13137,25): warning C4457: declaration of 's' hides function parameter [D:\a\ddup\ddup\build\ddup_core.vcxproj]
       D:\a\ddup\ddup\src\core\command.c(12729,39):
       see declaration of 's'
@@ -209,6 +208,7 @@ D:\a\ddup\ddup\src\core\command.c(21933,23): error C2133: 'counts': unknown size
 D:\a\ddup\ddup\src\core\command.c(21934,38): error C2057: expected constant expression [D:\a\ddup\ddup\build\ddup_core.vcxproj]
 D:\a\ddup\ddup\src\core\command.c(21934,33): error C2466: cannot allocate an array of constant size 0 [D:\a\ddup\ddup\build\ddup_core.vcxproj]
 D:\a\ddup\ddup\src\core\command.c(21934,27): error C2133: 'added': unknown size [D:\a\ddup\ddup\build\ddup_core.vcxproj]
+  buf_pool.c
   tier.c
 D:\a\ddup\ddup\src\core\tier.c(210,15): warning C4996: 'strdup': The POSIX name for this item is deprecated. Instead, use the ISO C and C++ conformant name: _strdup. See online help for details. [D:\a\ddup\ddup\build\ddup_core.vcxproj]
   obj.c
@@ -250,12 +250,12 @@ D:\a\ddup\ddup\src\core\script.c(535,42): warning C4244: 'function': conversion 
   hashslot.c
   cluster.c
   acl.c
-D:\a\ddup\ddup\src\core\acl.c(366,16): warning C4456: declaration of 'first' hides previous local declaration [D:\a\ddup\ddup\build\ddup_core.vcxproj]
-      D:\a\ddup\ddup\src\core\acl.c(356,15):
+D:\a\ddup\ddup\src\core\acl.c(382,16): warning C4456: declaration of 'first' hides previous local declaration [D:\a\ddup\ddup\build\ddup_core.vcxproj]
+      D:\a\ddup\ddup\src\core\acl.c(370,15):
       see declaration of 'first'
   
-D:\a\ddup\ddup\src\core\acl.c(366,32): warning C4456: declaration of 'i' hides previous local declaration [D:\a\ddup\ddup\build\ddup_core.vcxproj]
-      D:\a\ddup\ddup\src\core\acl.c(356,12):
+D:\a\ddup\ddup\src\core\acl.c(382,32): warning C4456: declaration of 'i' hides previous local declaration [D:\a\ddup\ddup\build\ddup_core.vcxproj]
+      D:\a\ddup\ddup\src\core\acl.c(370,12):
       see declaration of 'i'
   
   resp_parser.c
@@ -503,12 +503,12 @@ D:\a\ddup\ddup\src\core\script.c(535,42): warning C4244: 'function': conversion 
   hashslot.c
   cluster.c
   acl.c
-D:\a\ddup\ddup\src\core\acl.c(366,16): warning C4456: declaration of 'first' hides previous local declaration [D:\a\ddup\ddup\build\ddup_core_test.vcxproj]
-      D:\a\ddup\ddup\src\core\acl.c(356,15):
+D:\a\ddup\ddup\src\core\acl.c(382,16): warning C4456: declaration of 'first' hides previous local declaration [D:\a\ddup\ddup\build\ddup_core_test.vcxproj]
+      D:\a\ddup\ddup\src\core\acl.c(370,15):
       see declaration of 'first'
   
-D:\a\ddup\ddup\src\core\acl.c(366,32): warning C4456: declaration of 'i' hides previous local declaration [D:\a\ddup\ddup\build\ddup_core_test.vcxproj]
-      D:\a\ddup\ddup\src\core\acl.c(356,12):
+D:\a\ddup\ddup\src\core\acl.c(382,32): warning C4456: declaration of 'i' hides previous local declaration [D:\a\ddup\ddup\build\ddup_core_test.vcxproj]
+      D:\a\ddup\ddup\src\core\acl.c(370,12):
       see declaration of 'i'
   
   resp_parser.c
