@@ -362,6 +362,16 @@ static int bus_publish_frame_status(int protocol, const char *frame,
                                     uint32_t totlen);
 static int bus_try_publish(server *s, const char *frame, uint32_t totlen);
 
+static int cluster_bus_port(uint16_t port, uint16_t *out)
+{
+    uint32_t value = (uint32_t)port + 10000u;
+    if (value > UINT16_MAX)
+        return -1;
+    if (out != NULL)
+        *out = (uint16_t)value;
+    return 0;
+}
+
 /* ------------------------------------------------------------------ */
 /* proactor dispatch (Windows IOCP / Linux io_uring op-mode share one  */
 /* server code path; op kinds carry identical values in both pals)     */
@@ -2051,6 +2061,16 @@ int server_test_bus_protocol_rejects_invalid(void)
     server_set_bus_protocol(&s, SERVER_BUS_PROTOCOL_DDUP);
     return s.bus_protocol == SERVER_BUS_PROTOCOL_DDUP ? 0 : -1;
 }
+
+int server_test_cluster_bus_port_validation(void)
+{
+    uint16_t out = 0;
+    if (cluster_bus_port(55535, &out) != 0 || out != 65535)
+        return -1;
+    if (cluster_bus_port(55536, &out) == 0)
+        return -1;
+    return 0;
+}
 #endif
 
 static conn *conn_create(server *srv, pal_socket_t fd)
@@ -3495,7 +3515,8 @@ void server_enable_cluster(server *s, const char *node_id)
 {
     cluster_node *me;
 
-    if (s == NULL || node_id == NULL || node_id[0] == '\0')
+    if (s == NULL || node_id == NULL || node_id[0] == '\0' ||
+        cluster_bus_port(s->db.cluster_port, NULL) != 0)
         return;
     if (strlen(node_id) >= sizeof(s->db.node_id))
         return;
@@ -3509,7 +3530,7 @@ void server_enable_cluster(server *s, const char *node_id)
     if (me != NULL) {
         snprintf(me->ip, sizeof(me->ip), "%s", s->db.cluster_ip);
         me->port = s->db.cluster_port;
-        me->bus_port = (uint16_t)(s->db.cluster_port + 10000);
+        (void)cluster_bus_port(s->db.cluster_port, &me->bus_port);
         me->flags = CLUSTER_NODE_MYSELF | CLUSTER_NODE_MASTER;
         me->last_seen_ms = pal_wall_ms();
         s->nodes_dirty = 1;
@@ -3519,9 +3540,13 @@ void server_enable_cluster(server *s, const char *node_id)
     if (srv_proactor(s) ||
         s->bus_listen_fd != PAL_SOCKET_INVALID)
         return; /* unsupported backend, or already listening */
-    s->bus_listen_fd = pal_tcp_listen("0.0.0.0",
-                                      (uint16_t)(s->db.cluster_port + 10000),
+    {
+        uint16_t bus_port;
+        if (cluster_bus_port(s->db.cluster_port, &bus_port) != 0)
+            return;
+        s->bus_listen_fd = pal_tcp_listen("0.0.0.0", bus_port,
                                       511, NULL);
+    }
     if (s->bus_listen_fd != PAL_SOCKET_INVALID)
         (void)pal_loop_add(s->loop, s->bus_listen_fd, 1, 0, NULL);
 }
@@ -4558,7 +4583,12 @@ static int bus_try_publish(server *s, const char *frame, uint32_t totlen)
 static int srv_cluster_meet(void *ctx, const char *ip, uint16_t port)
 {
     server *s = (server *)ctx;
-    bus_conn *bc = bus_connect(s, ip, (uint16_t)(port + 10000));
+    uint16_t bus_port;
+    bus_conn *bc;
+    if (s == NULL || ip == NULL || ip[0] == '\0' ||
+        cluster_bus_port(port, &bus_port) != 0)
+        return -1;
+    bc = bus_connect(s, ip, bus_port);
     if (bc == NULL)
         return -1;
     bus_queue_frame(s, bc, CLUSTER_MSG_MEET);

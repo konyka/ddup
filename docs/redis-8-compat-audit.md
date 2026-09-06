@@ -65,6 +65,10 @@ fail-closed 校验；`nkeys == 0` 仍返回 no-op，合法的 `KEYS`/多 key 迁
 迁移超时补充复核：deadline 计算采用 64 位饱和加法，避免极大 timeout 在
 墙钟毫秒值相加时回绕；正常 MIGRATE 超时、目标确认和部分删除语义保持不变。
 
+Cluster bus 地址补充复核：自身监听、节点公告和 `CLUSTER MEET` 的 bus 端口
+均验证 `base_port + 10000` 可表示为 16 位端口；超范围输入被拒绝而不会回绕
+到无关端口，合法 Redis 端口映射保持不变。
+
 集群持久化/总线槽位文本的输入复核：槽位解析按有界 token 扫描，拒绝非数字、
 缺失范围端点和溢出十进制值；错误 token 不会阻断后续合法槽位恢复，且不会导致
 加载或 gossip 处理线程进入死循环。该防御不改变合法 Redis cluster node slot

@@ -978,3 +978,5 @@
     组合，保留零 key no-op，避免迁移路径解引用无效请求（Phase 324）
   - [x] MIGRATE 超时 deadline 饱和：极大 timeout 不再在 wall-clock 相加时回绕
     成过期值，迁移 I/O 等待保持可预期的上界（Phase 325）
+  - [x] Cluster bus 端口转换边界：`cluster_port + 10000` 在监听、MEET 和
+    节点公告前做 16 位可表示性校验，拒绝回绕到错误端口（Phase 326）
