@@ -654,6 +654,41 @@ static void test_save_replacement_failure_preserves_existing_snapshot(void)
     (void)remove(TMP_SNAP);
 }
 
+static void test_load_close_failure_is_rejected(void)
+{
+    db src, dst;
+
+    db_init(&src);
+    (void)remove(TMP_SNAP);
+    DD_CHECK_EQ_INT(0, snapshot_save(&src, TMP_SNAP));
+    db_destroy(&src);
+
+    db_init(&dst);
+    pal_file_test_reset();
+    pal_file_test_fail_next_close();
+    DD_CHECK_EQ_INT(-1, snapshot_load(&dst, TMP_SNAP, T0));
+    pal_file_test_reset();
+    db_destroy(&dst);
+    (void)remove(TMP_SNAP);
+}
+
+static void test_multi_load_close_failure_is_rejected(void)
+{
+    snap_dbset *src, *dst;
+
+    src = snap_dbset_new();
+    dst = snap_dbset_new();
+    (void)remove(TMP_SNAP);
+    DD_CHECK_EQ_INT(0, snapshot_save_multi(src, snap_get, 3, TMP_SNAP));
+    pal_file_test_reset();
+    pal_file_test_fail_next_close();
+    DD_CHECK_EQ_INT(-1, snapshot_load_multi(dst, snap_get, 3, TMP_SNAP, T0));
+    pal_file_test_reset();
+    snap_dbset_free(src);
+    snap_dbset_free(dst);
+    (void)remove(TMP_SNAP);
+}
+
 static void test_multi_save_rename_failure_removes_temporary_file(void)
 {
     snap_dbset *ds = snap_dbset_new();
@@ -784,6 +819,8 @@ int main(void)
     DD_RUN(test_save_rename_failure_removes_temporary_file);
     DD_RUN(test_save_close_failure_preserves_existing_snapshot);
     DD_RUN(test_save_replacement_failure_preserves_existing_snapshot);
+    DD_RUN(test_load_close_failure_is_rejected);
+    DD_RUN(test_multi_load_close_failure_is_rejected);
     DD_RUN(test_multi_save_rename_failure_removes_temporary_file);
     DD_RUN(test_save_uses_dynamic_temporary_path);
     DD_RUN(test_multi_save_uses_dynamic_temporary_path);

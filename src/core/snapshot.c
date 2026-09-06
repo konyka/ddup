@@ -1382,7 +1382,10 @@ int snapshot_load_multi(void *ctx, snapshot_db_get get, int ndbs,
             break;
         len += (size_t)n;
     }
-    pal_file_close(f);
+    if (pal_file_close(f) != 0) {
+        free(buf);
+        return -1;
+    }
 
     rc = snapshot_load_mem_multi(ctx, get, ndbs, buf, len, now_ms);
     free(buf);
@@ -1432,7 +1435,10 @@ int snapshot_load(db *d, const char *path, uint64_t now_ms)
             break;
         len += (size_t)n;
     }
-    pal_file_close(f);
+    if (pal_file_close(f) != 0) {
+        free(buf);
+        return -1;
+    }
 
     rc = snapshot_load_mem(d, buf, len, now_ms);
     free(buf);

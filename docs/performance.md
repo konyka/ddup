@@ -2374,3 +2374,9 @@ O(log n) behavior and do not allocate or add synchronization.
 Tier replay now rejects zero or decreasing PUT record IDs before index mutation.
 This is a constant-time cold-path validation; valid sequential replay keeps the
 same bounded scan and in-memory index cost.
+
+### Phase 349: snapshot load close errors
+
+Single- and multi-database snapshot loaders now propagate file-close failures and
+release the read buffer before returning. This is a cold I/O completion branch;
+successful loads retain the same buffered read and transactional decode path.

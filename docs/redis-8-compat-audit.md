@@ -823,3 +823,7 @@ internal calls from dereferencing storage state.
 Tier log replay now rejects reserved zero PUT IDs and duplicate/decreasing IDs,
 so a corrupted append-only log cannot silently replace a live index entry or
 change record identity after restart. Valid tier writes and reads are unchanged.
+
+Snapshot file loading now treats a close failure as an I/O error for both
+single-database and multi-database APIs. The decoded database is not touched
+until the file is closed successfully, preserving transactional restore behavior.
