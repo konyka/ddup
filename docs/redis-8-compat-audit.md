@@ -797,6 +797,10 @@ Quicklist push now rejects null list handles and malformed non-empty data views
 before allocating or mutating a node. Zero-length values remain valid and retain
 their existing empty-element behavior.
 
+Hash mutation APIs now reject null hash handles and malformed non-empty field or
+value views before consulting expiration state or mutating listpack/hash-table
+storage. Empty field/value views remain valid and preserve existing semantics.
+
 Quicklist-backed list helpers now fail closed on null handles or output views,
 returning deterministic empty results without affecting valid list command
 semantics.

@@ -77,6 +77,25 @@ static void test_hash_api_rejects_null_object(void)
     DD_CHECK_EQ_INT(-1, obj_hash_ttl(NULL, "f", 1, 0, &ttl));
 }
 
+static void test_hash_mutation_rejects_malformed_views(void)
+{
+    obj_hash *h = obj_hash_new();
+
+    DD_CHECK_EQ_INT(-1, obj_hash_set(NULL, "f", 1, "v", 1));
+    DD_CHECK_EQ_INT(-1, obj_hash_set(h, NULL, 1, "v", 1));
+    DD_CHECK_EQ_INT(-1, obj_hash_set(h, "f", 1, NULL, 1));
+    DD_CHECK_EQ_INT(0, obj_hash_del(NULL, "f", 1));
+    DD_CHECK_EQ_INT(0, obj_hash_del(h, NULL, 1));
+    DD_CHECK_EQ_INT(-1, obj_hash_set_at(NULL, "f", 1, "v", 1, 0, 0));
+    DD_CHECK_EQ_INT(-1, obj_hash_set_at(h, NULL, 1, "v", 1, 0, 0));
+    DD_CHECK_EQ_INT(-1, obj_hash_set_at(h, "f", 1, NULL, 1, 0, 0));
+    DD_CHECK_EQ_INT(0, (long long)obj_hash_len(h));
+
+    DD_CHECK_EQ_INT(1, obj_hash_set(h, NULL, 0, NULL, 0));
+    DD_CHECK_EQ_INT(1, (long long)obj_hash_len(h));
+    obj_hash_free(h);
+}
+
 static void test_hset_hget(void)
 {
     db d;
@@ -843,6 +862,7 @@ int main(void)
 {
     DD_RUN(test_hash_rejects_unrepresentable_lengths);
     DD_RUN(test_hash_api_rejects_null_object);
+    DD_RUN(test_hash_mutation_rejects_malformed_views);
     DD_RUN(test_hset_hget);
     DD_RUN(test_hdel_auto_delete);
     DD_RUN(test_hexists_hlen_hsetnx);

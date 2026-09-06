@@ -475,7 +475,9 @@ static void obj_hash_convert(obj_hash *h)
 int obj_hash_set(obj_hash *h, const char *f, size_t flen, const char *v,
                  size_t vlen)
 {
-    if (flen > UINT32_MAX || vlen > UINT32_MAX || flen > SIZE_MAX - vlen)
+    if (h == NULL || (f == NULL && flen != 0) ||
+        (v == NULL && vlen != 0) || flen > UINT32_MAX ||
+        vlen > UINT32_MAX || flen > SIZE_MAX - vlen)
         return -1;
     {
         const char *ev;
@@ -554,6 +556,8 @@ int obj_hash_get(obj_hash *h, const char *f, size_t flen, const char **v,
 
 int obj_hash_del(obj_hash *h, const char *f, size_t flen)
 {
+    if (h == NULL || (f == NULL && flen != 0))
+        return 0;
     {
         const char *ev;
         size_t evl;
@@ -624,6 +628,9 @@ int obj_hash_set_at(obj_hash *h, const char *f, size_t flen, const char *v,
     uint64_t expire = 0;
     int had_ttl = 0;
     int rc;
+    if (h == NULL || (f == NULL && flen != 0) ||
+        (v == NULL && vlen != 0))
+        return -1;
     if (keep_ttl) {
         const char *ev;
         size_t evl;

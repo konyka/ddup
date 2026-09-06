@@ -2472,3 +2472,10 @@ without allocation, traversal, or mutation.
 `ql_push` adds a fixed null/length guard before the existing end-node fast path.
 Valid pushes retain the same node packing and listpack cost; malformed calls exit
 without allocation or mutation, while zero-length values remain supported.
+
+### Phase 365: hash mutation input validation
+
+Hash `set`, `set_at`, and `del` add fixed pointer/length checks before expiry
+lookup and storage mutation. Valid writes retain the same listpack/hash-table
+path; malformed control inputs take a cold branch without allocation or table
+work, and zero-length views remain supported.

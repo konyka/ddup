@@ -1057,3 +1057,5 @@
     路径写入无效结果地址（Phase 363）
   - [x] Quicklist 推入输入校验：`ql_push` 拒绝空句柄及非零长度 NULL 数据视图，
     保持空值元素可安全写入（Phase 364）
+  - [x] Hash 写入输入校验：`obj_hash_set/set_at/del` 拒绝空对象及非零长度
+    NULL 字段/值视图，保持零长度字段和值可用（Phase 365）
