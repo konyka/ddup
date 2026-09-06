@@ -875,3 +875,7 @@ dereferenced while preserving normal RESP buffer reuse.
 Listpack integer detection now checks the int64 limit before each decimal
 multiplication. Values beyond the signed 64-bit range remain string entries,
 including 20-digit inputs that previously could wrap an unsigned accumulator.
+
+Stream append now rejects non-empty field or value lengths with NULL element
+pointers before allocating or copying entry data. Malformed RESP-derived views
+therefore return an explicit append error instead of crashing in `memcpy`.

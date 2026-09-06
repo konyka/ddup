@@ -136,6 +136,9 @@ int obj_stream_append(obj_stream *s, uint64_t ms, uint64_t seq,
     if (nfields > UINT32_MAX)
         return OBJ_STREAM_ADD_ERR;
     for (i = 0; i < nfields; i++) {
+        if ((flens[i] != 0 && fields[i] == NULL) ||
+            (vlens[i] != 0 && values[i] == NULL))
+            return OBJ_STREAM_ADD_ERR;
         if (flens[i] > UINT32_MAX || vlens[i] > UINT32_MAX ||
             flens[i] > SIZE_MAX - total)
             return OBJ_STREAM_ADD_ERR;

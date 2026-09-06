@@ -120,6 +120,23 @@ static void test_stream_mutation_api_rejects_null_object(void)
     DD_CHECK_EQ_INT(0, (long long)obj_stream_group_pending_count(NULL));
 }
 
+static void test_stream_append_rejects_null_field_views(void)
+{
+    obj_stream *s = obj_stream_new();
+    const char *fields[] = {NULL};
+    const size_t field_lens[] = {1};
+    const char *values[] = {"v"};
+    const size_t value_lens[] = {1};
+
+    DD_CHECK(s != NULL);
+    if (s != NULL) {
+        DD_CHECK_EQ_INT(OBJ_STREAM_ADD_ERR,
+                        obj_stream_append(s, 1, 0, fields, field_lens,
+                                          values, value_lens, 1));
+        obj_stream_free(s);
+    }
+}
+
 static void test_stream_consumer_api_rejects_null_object(void)
 {
     DD_CHECK(obj_stream_consumer_get(NULL, "c", 1) == NULL);
@@ -604,6 +621,7 @@ int main(void)
 {
     DD_RUN(test_stream_api_rejects_null_object);
     DD_RUN(test_stream_mutation_api_rejects_null_object);
+    DD_RUN(test_stream_append_rejects_null_field_views);
     DD_RUN(test_stream_consumer_api_rejects_null_object);
     DD_RUN(test_xadd_xlen);
     DD_RUN(test_xrange_xrevrange);

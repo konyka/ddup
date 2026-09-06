@@ -2453,3 +2453,10 @@ Listpack decimal parsing now performs a division-based limit check before each
 multiply/add step. Valid canonical integers keep the same linear digit scan and
 compact encoding; only out-of-range input takes the early rejection branch, with
 no allocation or extra work on the common valid path.
+
+### Phase 362: stream field-view validation
+
+`obj_stream_append` performs one bounded pointer check per field/value pair
+before allocation. Valid appends retain the same packed data layout and copy
+cost; malformed non-empty views take a cold error branch and never reach the
+allocation/copy path.
