@@ -291,6 +291,9 @@ static void test_writer_null_inputs_fail_closed(void)
     malformed.len = 1;
     resp_write_value(&b, &malformed);
     DD_CHECK_EQ_INT(0, (long long)b.len);
+    malformed.type = RESP_VERBATIM_STRING;
+    resp_write_value(&b, &malformed);
+    DD_CHECK_EQ_INT(0, (long long)b.len);
     resp_buf_free(&b);
 }
 

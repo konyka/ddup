@@ -855,3 +855,7 @@ object replacement.
 RESP BLOB_ERROR and other typed-line values now fail closed on malformed
 non-empty NULL payloads instead of dereferencing them. Valid empty and non-empty
 wire values retain their existing serialization.
+
+Composite RESP value serialization now rejects malformed string views before
+emitting headers, so VERBATIM_STRING and related types cannot leave partial wire
+frames in the output buffer.

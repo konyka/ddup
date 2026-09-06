@@ -1041,3 +1041,5 @@
     rehash 元数据，避免销毁句柄继续暴露过期计数（Phase 355）
   - [x] RESP typed-line NULL fail-closed：BLOB_ERROR/简单字符串/错误等统一检查
     非零长度 NULL payload，并允许零长度 payload 安全编码（Phase 356）
+  - [x] RESP value 原子输入校验：VERBATIM_STRING 等字符串类型在写入头部前
+    拒绝非零长度 NULL payload，避免生成残缺帧（Phase 357）

@@ -288,6 +288,11 @@ void resp_write_value(resp_buf *b, const resp_value *v)
 {
     if (b == NULL || v == NULL)
         return;
+    if ((v->type == RESP_SIMPLE_STRING || v->type == RESP_ERROR ||
+         v->type == RESP_BULK_STRING || v->type == RESP_BIG_NUMBER ||
+         v->type == RESP_BLOB_ERROR || v->type == RESP_VERBATIM_STRING) &&
+        v->str == NULL && v->len != 0)
+        return;
     switch (v->type) {
     case RESP_SIMPLE_STRING:
         resp_write_simple_string(b, v->str, v->len);

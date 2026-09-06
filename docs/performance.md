@@ -2422,3 +2422,9 @@ hot paths.
 Typed-line RESP writers now reject non-empty NULL payloads before reserving or
 copying. Valid scalar writes retain the same single reserve/copy path; empty
 payloads avoid a zero-length NULL `memcpy`.
+
+### Phase 357: RESP value atomic input validation
+
+`resp_write_value` now validates all string-bearing types before writing any
+header bytes. Valid values retain the existing type dispatch; malformed views
+take one predictable cold branch and leave the output buffer unchanged.
