@@ -2440,3 +2440,9 @@ and incomplete results no longer expose stale pointers or lengths.
 Arena lifecycle and allocation helpers now fail closed on null handles. Valid
 allocations retain the same bump-pointer alignment and zero-malloc steady-state;
 only teardown/control calls take the new cold branches.
+
+### Phase 360: buffer-pool API null guards
+
+Buffer-pool lifecycle and borrow/return helpers now reject null pool, output, or
+buffer handles. Normal tier lookup and free-list operations retain their existing
+constant-time hot path; teardown also clears tier metadata.

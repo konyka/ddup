@@ -867,3 +867,7 @@ instead of stale data from a prior command.
 Arena lifecycle APIs now reject null handles and clear `block_size` on destroy,
 preventing malformed parser/control calls from dereferencing invalid allocator
 state while preserving normal per-request allocation behavior.
+
+The fixed-size buffer pool now fails closed on malformed lifecycle and borrow/
+return calls, preventing NULL free-list nodes or output pointers from being
+dereferenced while preserving normal RESP buffer reuse.

@@ -1047,3 +1047,5 @@
     调用方误用上一次解析留下的陈旧类型、指针和长度（Phase 358）
   - [x] Arena 公共 API NULL fail-closed：初始化、分配、mark/rewind、reset 和
     destroy 拒绝空句柄，销毁后清除 block 元数据（Phase 359）
+  - [x] Buffer pool 公共 API NULL fail-closed：初始化、借用、归还和销毁拒绝
+    空句柄/空输出，销毁后清除 tier 元数据（Phase 360）

@@ -75,10 +75,26 @@ static void test_oversized_fallback(void)
     buf_pool_destroy(&pool);
 }
 
+static void test_pool_null_inputs_fail_closed(void)
+{
+    buf_pool pool;
+    size_t actual = 0;
+
+    DD_CHECK_EQ_INT(-1, buf_pool_init(NULL));
+    DD_CHECK(buf_pool_get(NULL, 1, &actual) == NULL);
+    DD_CHECK(buf_pool_get(&pool, 1, NULL) == NULL);
+    buf_pool_put(NULL, NULL, 0);
+    buf_pool_init(&pool);
+    buf_pool_put(&pool, NULL, 4096);
+    buf_pool_destroy(NULL);
+    buf_pool_destroy(&pool);
+}
+
 int main(void)
 {
     DD_RUN(test_pool_basic);
     DD_RUN(test_pool_multiple_sizes);
     DD_RUN(test_oversized_fallback);
+    DD_RUN(test_pool_null_inputs_fail_closed);
     return DD_TEST_SUMMARY();
 }
