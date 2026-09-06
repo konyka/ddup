@@ -176,6 +176,8 @@ int migrate_run(db *d, const char *host, uint16_t port,
     if (d == NULL || host == NULL || host[0] == '\0' ||
         (keys == NULL && nkeys != 0) || nkeys > SIZE_MAX / sizeof(size_t))
         return MIGRATE_IOERR;
+    if (nkeys == 0)
+        return MIGRATE_OK;
     idx = (size_t *)malloc(nkeys * sizeof(size_t));
     if (idx == NULL)
         return MIGRATE_IOERR;

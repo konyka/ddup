@@ -988,3 +988,5 @@
     计算 elapsed，回退不会误删报告或伪造 PFAIL（Phase 329）
   - [x] HOTKEYS 采样窗口时钟回拨：duration 仅在 wall-clock 前进时到期，
     回退不会无符号下溢并提前停止采样（Phase 330）
+  - [x] MIGRATE 零 key no-op：在任何分配前直接完成合法的空迁移，避免依赖
+    `malloc(0)` 的平台行为（Phase 331）

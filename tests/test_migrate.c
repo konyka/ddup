@@ -129,6 +129,8 @@ static void test_migrate_api_rejects_null_key_array(void)
     DD_CHECK_EQ_INT(MIGRATE_IOERR,
                     migrate_run(NULL, "127.0.0.1", 1, NULL, 0, 1, 0, 0,
                                 0));
+    DD_CHECK_EQ_INT(MIGRATE_OK,
+                    migrate_run(&d, "127.0.0.1", 1, NULL, 0, 1, 0, 0, 0));
     db_destroy(&d);
 }
 
