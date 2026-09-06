@@ -2410,3 +2410,9 @@ ACL checks retain the same command/key policy work after this cold validation.
 Hash-table entries with empty keys or values now use a one-byte allocation and
 skip zero-length copies. Non-empty hot-path copies remain unchanged; the guard
 removes allocator/UB variance without changing probe complexity.
+
+### Phase 355: hash-table destroy state reset
+
+`rh_destroy` now clears size, capacity, growth, and migration metadata after
+freeing storage. This is teardown-only work and adds no cost to lookup or update
+hot paths.

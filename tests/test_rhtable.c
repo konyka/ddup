@@ -48,6 +48,7 @@ static void test_api_rejects_null_inputs(void)
     DD_CHECK_EQ_INT(0, rh_meta_of(NULL, "k", 1));
     DD_CHECK_EQ_INT(0, rh_size(NULL));
     rh_destroy(&t);
+    DD_CHECK_EQ_INT(0, (long long)rh_size(&t));
 }
 
 static void test_iteration_api_rejects_null_inputs(void)

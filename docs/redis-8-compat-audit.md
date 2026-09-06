@@ -847,3 +847,7 @@ NULL strings while preserving valid command/key policy decisions.
 Robin Hood table writes now handle empty binary key/value views without relying
 on `malloc(0)` or passing NULL pointers to zero-length `memcpy`, preserving
 portable behavior for valid empty RESP payloads.
+
+Destroyed Robin Hood tables now report zero size and no residual rehash state,
+so administrative metrics cannot observe stale cardinality after teardown or
+object replacement.

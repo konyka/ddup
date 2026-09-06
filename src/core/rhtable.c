@@ -130,6 +130,12 @@ void rh_destroy(rh_table *t)
         free(t->old_slots);
     t->slots = NULL;
     t->old_slots = NULL;
+    t->cap = 0;
+    t->old_cap = 0;
+    t->size = 0;
+    t->grow_at = 0;
+    t->old_live = 0;
+    t->migrate_pos = 0;
 }
 
 /* Robin Hood insert of an existing entry (takes ownership of kv). */
