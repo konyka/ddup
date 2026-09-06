@@ -127,6 +127,10 @@ int obj_stream_append(obj_stream *s, uint64_t ms, uint64_t seq,
     uint32_t *lens;
     uint32_t *lp;
 
+    if (s == NULL || (nfields != 0 &&
+                      (fields == NULL || flens == NULL || values == NULL ||
+                       vlens == NULL)))
+        return OBJ_STREAM_ADD_ERR;
     if (ms < s->last_ms || (ms == s->last_ms && seq <= s->last_seq))
         return OBJ_STREAM_ADD_SMALL;
     if (nfields > UINT32_MAX)
@@ -214,6 +218,8 @@ static void stream_update_deleted(obj_stream *s, const stream_entry *e)
 
 int obj_stream_delete(obj_stream *s, uint64_t ms, uint64_t seq)
 {
+    if (s == NULL)
+        return 0;
     size_t idx = obj_stream_lower_bound(s, ms, seq);
     uint64_t bytes;
     stream_entry *e;
@@ -257,6 +263,8 @@ static void stream_remove_front(obj_stream *s, size_t n)
 size_t obj_stream_trim_maxlen(obj_stream *s, uint64_t maxlen, uint64_t limit)
 {
     size_t n;
+    if (s == NULL)
+        return 0;
     if (maxlen >= (uint64_t)s->len)
         return 0;
     n = s->len - (size_t)maxlen;
@@ -269,6 +277,8 @@ size_t obj_stream_trim_maxlen(obj_stream *s, uint64_t maxlen, uint64_t limit)
 size_t obj_stream_trim_minid(obj_stream *s, uint64_t ms, uint64_t seq,
                              uint64_t limit)
 {
+    if (s == NULL)
+        return 0;
     size_t n = obj_stream_lower_bound(s, ms, seq);
     if (limit < n)
         n = (size_t)limit;
@@ -324,6 +334,8 @@ stream_group *obj_stream_group_get(obj_stream *s, const char *name,
                                    size_t name_len)
 {
     size_t i;
+    if (s == NULL || (name == NULL && name_len != 0))
+        return NULL;
     for (i = 0; i < s->ngroups; i++)
         if (stream_name_eq(s->groups[i].name, s->groups[i].name_len, name,
                            name_len))
@@ -335,6 +347,8 @@ stream_group *obj_stream_group_create(obj_stream *s, const char *name,
                                       size_t name_len, uint64_t last_ms,
                                       uint64_t last_seq, int *created)
 {
+    if (s == NULL || (name == NULL && name_len != 0))
+        return NULL;
     stream_group *g = obj_stream_group_get(s, name, name_len);
     uint64_t mem;
     if (g != NULL) {
@@ -382,6 +396,8 @@ int obj_stream_group_destroy(obj_stream *s, const char *name,
                              size_t name_len)
 {
     size_t i;
+    if (s == NULL || (name == NULL && name_len != 0))
+        return 0;
     for (i = 0; i < s->ngroups; i++) {
         stream_group *g = &s->groups[i];
         uint64_t mem = 0;
@@ -576,6 +592,8 @@ uint64_t obj_stream_group_pending_count(const stream_group *g)
 {
     uint64_t n = 0;
     size_t i;
+    if (g == NULL)
+        return 0;
     for (i = 0; i < g->nconsumers; i++)
         n += (uint64_t)g->consumers[i].pel_len;
     return n;

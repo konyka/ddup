@@ -102,6 +102,24 @@ static void test_stream_api_rejects_null_object(void)
     DD_CHECK_EQ_INT(0, (long long)obj_stream_lower_bound(NULL, 0, 0));
 }
 
+static void test_stream_mutation_api_rejects_null_object(void)
+{
+    const char *fields[] = {"f"};
+    const size_t lens[] = {1};
+    const char *values[] = {"v"};
+    int created = 0;
+    DD_CHECK_EQ_INT(OBJ_STREAM_ADD_ERR,
+                    obj_stream_append(NULL, 1, 0, fields, lens, values,
+                                      lens, 1));
+    DD_CHECK_EQ_INT(0, obj_stream_delete(NULL, 1, 0));
+    DD_CHECK_EQ_INT(0, (long long)obj_stream_trim_maxlen(NULL, 1, 1));
+    DD_CHECK_EQ_INT(0, (long long)obj_stream_trim_minid(NULL, 1, 0, 1));
+    DD_CHECK(obj_stream_group_get(NULL, "g", 1) == NULL);
+    DD_CHECK(obj_stream_group_create(NULL, "g", 1, 0, 0, &created) == NULL);
+    DD_CHECK_EQ_INT(0, obj_stream_group_destroy(NULL, "g", 1));
+    DD_CHECK_EQ_INT(0, (long long)obj_stream_group_pending_count(NULL));
+}
+
 static void test_xrange_xrevrange(void)
 {
     db d;
@@ -575,6 +593,7 @@ static void test_xreadgroup_block_wakeup(void)
 int main(void)
 {
     DD_RUN(test_stream_api_rejects_null_object);
+    DD_RUN(test_stream_mutation_api_rejects_null_object);
     DD_RUN(test_xadd_xlen);
     DD_RUN(test_xrange_xrevrange);
     DD_RUN(test_xdel_xtrim_xsetid);

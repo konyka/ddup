@@ -1019,3 +1019,5 @@
     空 member 返回确定状态，避免 ZSET 底层写路径崩溃（Phase 344）
   - [x] List/Set/ZSet 写入 API NULL fail-closed：push/add/rem/set 等变更入口对
     空对象或非法 payload 返回确定状态，避免集合变更路径解引用崩溃（Phase 345）
+  - [x] Stream 写入/管理 API NULL fail-closed：append/delete/trim、消费组查询与
+    pending 计数对空对象或非法 payload 返回确定值（Phase 346）

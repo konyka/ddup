@@ -2351,6 +2351,12 @@ null payloads before entering quicklist/listpack/skiplist code. Valid writes kee
 their existing allocation and probe behavior; only malformed control calls take
 the cold guard branches.
 
+### Phase 346: stream mutation API guards
+
+Stream append/delete/trim and consumer-group management helpers now reject null
+streams, groups, and non-empty null payload arrays on cold branches. Valid stream
+append and trim paths retain their existing allocation and ordered-index costs.
+
 ### Phase 338: stream query API guards
 
 Stream memory, length, indexed access, and lower-bound helpers now reject null

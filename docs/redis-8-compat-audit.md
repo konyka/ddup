@@ -811,3 +811,7 @@ deterministic status without changing valid sorted-set insertion or deletion.
 Collection mutation helpers now fail closed on null object/payload views, keeping
 valid list/set/zset write semantics unchanged while preventing invalid API calls
 from reaching storage internals.
+
+Stream append/delete/trim and consumer-group management APIs now fail closed on
+null handles or malformed payload views, while valid XADD/XTRIM/group semantics
+remain unchanged.
