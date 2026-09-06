@@ -770,3 +770,7 @@ attempt.
 Lua script execution deadlines now saturate at `UINT64_MAX`, preserving the
 configured execution budget when the platform clock is near its numeric limit
 instead of wrapping into an already-expired deadline.
+
+Relative expiration commands now saturate both timestamp addition and
+seconds-to-milliseconds conversion. Extremely large valid TTLs therefore remain
+future expirations rather than wrapping into immediate deletion.

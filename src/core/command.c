@@ -76,6 +76,28 @@ static int stream_id_gt(uint64_t a_ms, uint64_t a_seq, uint64_t b_ms,
 static int cmd_keys_accum(const resp_value *argv, size_t argc, int *have,
                           uint32_t *slot);
 
+static uint64_t time_add_saturating(uint64_t now_ms, uint64_t delta_ms)
+{
+    return delta_ms > UINT64_MAX - now_ms ? UINT64_MAX : now_ms + delta_ms;
+}
+
+static uint64_t time_scale_saturating(uint64_t value, uint64_t factor)
+{
+    return factor != 0 && value > UINT64_MAX / factor
+               ? UINT64_MAX
+               : value * factor;
+}
+
+#ifdef DDUP_TESTING
+int command_test_time_saturation(void)
+{
+    return time_add_saturating(UINT64_MAX - 1, 2) == UINT64_MAX &&
+           time_add_saturating(7, 3) == 10 &&
+           time_scale_saturating(UINT64_MAX, 2) == UINT64_MAX &&
+           time_scale_saturating(7, 1000) == 7000 ? 0 : -1;
+}
+#endif
+
 static uint64_t command_wire_bytes(const resp_value *argv, size_t argc)
 {
     uint64_t total = 0;
@@ -222,7 +244,7 @@ static int xread_block_deadline(const resp_value *argv, size_t argc,
         if (!arg_str(&argv[i + 1], &val, &vl) || !parse_u64(val, vl, &block)) return -1;
         if (block == 0) *deadline = 0;
         else if (block > UINT64_MAX - now_ms) *deadline = UINT64_MAX;
-        else *deadline = now_ms + block;
+        else *deadline = time_add_saturating(now_ms, block);
         return 1;
     }
     return 0;
@@ -12660,11 +12682,16 @@ static int hash_parse_expire(const resp_value *argv, size_t argc, size_t *pos,
                 return -1;
             }
             if (unit_ms)
-                *expire_ms = relative ? now_ms + (uint64_t)val
+                *expire_ms = relative ? time_add_saturating(now_ms, (uint64_t)val)
                                       : (uint64_t)val;
             else
-                *expire_ms = relative ? now_ms + (uint64_t)val * 1000ULL
-                                      : (uint64_t)val * 1000ULL;
+                *expire_ms = relative
+                                 ? time_add_saturating(
+                                       now_ms,
+                                       time_scale_saturating((uint64_t)val,
+                                                             1000ULL))
+                                 : time_scale_saturating((uint64_t)val,
+                                                         1000ULL);
             flag = 1;
             *expire_opt = 3; /* absolute expiry set */
             (*pos)++;
@@ -13614,7 +13641,8 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
                 return;
             }
         }
-        if (has_ttl && db_set_expiry(d, k, kl, now_ms + ttl_ms) != 0) {
+        if (has_ttl && db_set_expiry(d, k, kl,
+                                     time_add_saturating(now_ms, ttl_ms)) != 0) {
             storage_length_error(out);
             return;
         }
@@ -13714,7 +13742,9 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
             return;
         rc = snapshot_restore_key(
             d, k, kl, p, pl,
-            ttl > 0 ? (absttl ? (uint64_t)ttl : now_ms + (uint64_t)ttl) : 0,
+            ttl > 0 ? (absttl ? (uint64_t)ttl
+                              : time_add_saturating(now_ms, (uint64_t)ttl))
+                    : 0,
             replace, now_ms);
         if (rc == 1) {
             static const char E[] = "BUSYKEY Target key name already exists.";
@@ -14949,9 +14979,12 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
             storage_length_error(out);
             return;
         }
-        if (db_set_expiry(d, k, kl,
-                          now_ms + (uint64_t)tv * (secs ? 1000ULL : 1ULL)) !=
-            0) {
+        if (db_set_expiry(
+                d, k, kl,
+                time_add_saturating(
+                    now_ms,
+                    time_scale_saturating((uint64_t)tv,
+                                          secs ? 1000ULL : 1ULL))) != 0) {
             storage_length_error(out);
             return;
         }
@@ -17440,11 +17473,12 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
             return;
         }
         if (cmd_id == CMD_HEXPIRE)
-            expire_ms = now_ms + (uint64_t)val * 1000ULL;
+            expire_ms = time_add_saturating(
+                now_ms, time_scale_saturating((uint64_t)val, 1000ULL));
         else if (cmd_id == CMD_HPEXPIRE)
-            expire_ms = now_ms + (uint64_t)val;
+            expire_ms = time_add_saturating(now_ms, (uint64_t)val);
         else if (cmd_id == CMD_HEXPIREAT)
-            expire_ms = (uint64_t)val * 1000ULL;
+            expire_ms = time_scale_saturating((uint64_t)val, 1000ULL);
         else
             expire_ms = (uint64_t)val;
 

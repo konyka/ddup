@@ -997,3 +997,5 @@
     极端时钟值不会回绕为已过期 deadline 并提前触发提升（Phase 333）
   - [x] Lua 脚本执行 deadline 饱和：脚本时间预算使用饱和加法，避免时钟值
     接近上限时回绕并立即中止合法脚本（Phase 334）
+  - [x] 过期时间算术饱和：SET/SETEX、RESTORE 与 HEXPIRE 的相对时间加法及
+    秒到毫秒转换统一防止 uint64 回绕，极大合法 TTL 保持为远期过期（Phase 335）

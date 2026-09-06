@@ -399,6 +399,13 @@ static void test_info_render_bounds(void)
     db_destroy(&d);
 }
 
+static void test_time_saturation(void)
+{
+#ifdef DDUP_TESTING
+    DD_CHECK_EQ_INT(0, command_test_time_saturation());
+#endif
+}
+
 int main(void)
 {
     db_init(&g_db);
@@ -417,6 +424,7 @@ int main(void)
     DD_RUN(test_server_management_commands);
     DD_RUN(test_management_error_bounds);
     DD_RUN(test_info_render_bounds);
+    DD_RUN(test_time_saturation);
     resp_buf_free(&g_out);
     db_destroy(&g_db);
     return DD_TEST_SUMMARY();

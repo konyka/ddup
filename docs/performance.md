@@ -2289,3 +2289,9 @@ no topology mutation; valid node updates retain the same fixed-field writes.
 Public native cluster-bus build and parse APIs now reject null objects and
 non-empty null payloads before any frame access. These cold boundary checks leave
 valid wire encoding and decoding allocation-free and unchanged.
+
+Expiration parsing now reuses constant-time saturating add/scale helpers across
+SET-family, RESTORE, and HEXPIRE paths. Normal TTLs take the same arithmetic
+cost as before; only overflow boundaries branch to `UINT64_MAX`, preventing
+malformed expiry scheduling without adding work to key lookup or storage hot
+loops.

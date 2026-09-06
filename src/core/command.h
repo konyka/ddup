@@ -493,4 +493,8 @@ const char *cmd_name(uint16_t cmd_id);
  * remains blocked. */
 int command_blocked_try(struct session *s, resp_buf *out, uint64_t now_ms);
 
+#ifdef DDUP_TESTING
+int command_test_time_saturation(void);
+#endif
+
 #endif /* DDUP_COMMAND_H */
