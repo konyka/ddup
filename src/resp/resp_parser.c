@@ -374,6 +374,8 @@ ptrdiff_t resp_parse(const char *buf, size_t len, resp_value *out, arena *a)
     arena_mark mark;
     if (out == NULL || a == NULL || (buf == NULL && len != 0))
         return -1;
+    if (out != NULL)
+        memset(out, 0, sizeof(*out));
     if (buf == NULL)
         return 0;
     arena_mark_get(a, &mark);

@@ -1043,3 +1043,5 @@
     非零长度 NULL payload，并允许零长度 payload 安全编码（Phase 356）
   - [x] RESP value 原子输入校验：VERBATIM_STRING 等字符串类型在写入头部前
     拒绝非零长度 NULL payload，避免生成残缺帧（Phase 357）
+  - [x] RESP parser 输出清零：解析失败或不完整时初始化 `resp_value`，避免
+    调用方误用上一次解析留下的陈旧类型、指针和长度（Phase 358）

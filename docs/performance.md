@@ -2428,3 +2428,9 @@ payloads avoid a zero-length NULL `memcpy`.
 `resp_write_value` now validates all string-bearing types before writing any
 header bytes. Valid values retain the existing type dispatch; malformed views
 take one predictable cold branch and leave the output buffer unchanged.
+
+### Phase 358: parser output reset
+
+`resp_parse` clears the caller's output view before parsing. This is a fixed-size
+copy on the parser entry path; successful decode cost is unchanged, while error
+and incomplete results no longer expose stale pointers or lengths.
