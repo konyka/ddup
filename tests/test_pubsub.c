@@ -219,6 +219,32 @@ static void test_subscribe_publish(void)
     db_destroy(&d);
 }
 
+static void test_empty_channel_noarg_unsubscribe(void)
+{
+    db d;
+    test_registry reg;
+    resp_buf out, cap;
+    session *s;
+
+    db_init(&d);
+    memset(&reg, 0, sizeof(reg));
+    resp_buf_init(&out);
+    resp_buf_init(&cap);
+    s = hooked_session(&d, &reg, &cap);
+
+    /* Empty binary channel names are valid; no-arg collection must copy them
+     * without relying on malloc(0) or memcpy(NULL, ..., 0). */
+    exec_sess(s, T0, &out, 2, "SUBSCRIBE", "");
+    EXPECT(out, "*3\r\n$9\r\nsubscribe\r\n$0\r\n\r\n:1\r\n");
+    exec_sess(s, T0, &out, 1, "UNSUBSCRIBE");
+    EXPECT(out, "*3\r\n$11\r\nunsubscribe\r\n$0\r\n\r\n:0\r\n");
+
+    session_free(s);
+    resp_buf_free(&cap);
+    resp_buf_free(&out);
+    db_destroy(&d);
+}
+
 static void test_subscribed_mode_restriction(void)
 {
     db d;
@@ -342,6 +368,7 @@ static void test_psubscribe_no_hooks(void)
 int main(void)
 {
     DD_RUN(test_subscribe_publish);
+    DD_RUN(test_empty_channel_noarg_unsubscribe);
     DD_RUN(test_subscribed_mode_restriction);
     DD_RUN(test_server_registry_rejection_is_transactional);
     DD_RUN(test_psubscribe_no_hooks);

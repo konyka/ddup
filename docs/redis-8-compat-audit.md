@@ -808,6 +808,10 @@ Session WATCH registration now materializes empty binary keys without invoking
 `memcpy` on NULL, preserving valid `NULL + 0` watch semantics on all supported
 platforms.
 
+No-argument Pub/Sub unsubscribe collection now materializes empty binary names
+without invoking `memcpy` on NULL. Ordinary, pattern, and shard subscriptions
+therefore retain Redis-compatible empty-name semantics across C libraries.
+
 Listpack search now rejects non-empty NULL needles and compares empty needles
 without invoking `memcmp` on NULL, preserving valid binary lookup semantics on
 all supported platforms.

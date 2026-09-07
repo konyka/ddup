@@ -1796,8 +1796,13 @@ static void unsub_collect_cb(const char *ch, size_t len, void *arg)
         u->lens = nl;
         u->cap = ncap;
     }
-    u->names[u->n] = (char *)malloc(len);
-    memcpy(u->names[u->n], ch, len);
+    u->names[u->n] = (char *)malloc(len ? len : 1);
+    if (u->names[u->n] == NULL) {
+        fprintf(stderr, "ddup: out of memory\n");
+        exit(1);
+    }
+    if (len != 0)
+        memcpy(u->names[u->n], ch, len);
     u->lens[u->n] = len;
     u->n++;
 }

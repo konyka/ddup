@@ -2622,3 +2622,10 @@ Session WATCH registration allocates one byte for an empty binary key and skips
 the zero-length copy. Normal keys retain the same single allocation and copy;
 the added branch is cold for ordinary non-empty Redis keys while empty keys stay
 portable across C libraries.
+
+### Phase 389: pub/sub empty-name unsubscribe safety
+
+The shared no-argument unsubscribe collector allocates one byte for an empty
+channel, pattern, or shard-channel and skips its zero-length copy. Normal
+unsubscriptions retain the existing one allocation and copy; the added branch
+is cold for non-empty names and prevents platform-dependent undefined calls.
