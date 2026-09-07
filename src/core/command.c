@@ -5522,7 +5522,8 @@ static int sort_vec_add(sort_vec *vec, const char *s, size_t len)
         vec->oom = 1;
         return -1;
     }
-    memcpy(copy, s, len);
+    if (len != 0)
+        memcpy(copy, s, len);
     copy[len] = '\0';
     e = &vec->v[vec->n++];
     e->val = copy;

@@ -171,6 +171,35 @@ static void test_sort_ro_and_errors(void)
     db_destroy(&d);
 }
 
+static void test_sort_empty_binary_value(void)
+{
+    db d;
+    resp_buf out;
+    resp_value push[3];
+    resp_value sort[2];
+
+    db_init(&d);
+    resp_buf_init(&out);
+    memset(push, 0, sizeof(push));
+    push[0].type = push[1].type = push[2].type = RESP_BULK_STRING;
+    push[0].str = "RPUSH"; push[0].len = 5;
+    push[1].str = "l"; push[1].len = 1;
+    push[2].str = NULL; push[2].len = 0;
+    command_execute_at(&d, push, 3, &out, T0);
+    EXPECT(out, ":1\r\n");
+    memset(sort, 0, sizeof(sort));
+    sort[0].type = sort[1].type = RESP_BULK_STRING;
+    sort[0].str = "SORT"; sort[0].len = 4;
+    sort[1].str = "l"; sort[1].len = 1;
+    sort[2].type = RESP_BULK_STRING;
+    sort[2].str = "ALPHA"; sort[2].len = 5;
+    out.len = 0;
+    command_execute_at(&d, sort, 3, &out, T0);
+    EXPECT(out, "*1\r\n$0\r\n\r\n");
+    resp_buf_free(&out);
+    db_destroy(&d);
+}
+
 int main(void)
 {
     DD_RUN(test_sort_list);
@@ -178,5 +207,6 @@ int main(void)
     DD_RUN(test_sort_store);
     DD_RUN(test_sort_types);
     DD_RUN(test_sort_ro_and_errors);
+    DD_RUN(test_sort_empty_binary_value);
     return DD_TEST_SUMMARY();
 }

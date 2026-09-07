@@ -824,6 +824,9 @@ SPOP and SRANDMEMBER now skip zero-length copies for empty binary members in
 both listpack and hash-backed sets, preserving Redis-compatible pop semantics
 without invoking `memcpy` on NULL.
 
+SORT result collection now materializes empty list/zset values without invoking
+`memcpy` on NULL, preserving empty binary value ordering and serialization.
+
 Listpack search now rejects non-empty NULL needles and compares empty needles
 without invoking `memcmp` on NULL, preserving valid binary lookup semantics on
 all supported platforms.

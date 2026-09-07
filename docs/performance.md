@@ -2648,3 +2648,9 @@ cost; the branch only affects empty binary members.
 Set pop paths now skip zero-length member copies in both listpack and hash
 encodings. Normal members retain their existing copy and allocation costs; the
 branch is only taken for empty binary members.
+
+### Phase 393: SORT empty-value copy safety
+
+SORT result collection now skips zero-length value copies while retaining the
+terminator allocation. Normal list/zset values keep the same copy cost; empty
+binary values avoid a NULL `memcpy` call.

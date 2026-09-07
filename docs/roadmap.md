@@ -1113,3 +1113,5 @@
     二进制成员可检索并避免未定义调用（Phase 391）
   - [x] SPOP/SRANDMEMBER 空成员复制安全：listpack 与哈希集合弹出路径对零长度
     member 跳过 `memcpy`，保持空二进制成员弹出语义（Phase 392）
+  - [x] SORT 空值复制安全：排序结果收集器对零长度 list/zset value 跳过
+    `memcpy`，保持空二进制值排序与输出语义（Phase 393）
