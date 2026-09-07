@@ -1095,3 +1095,5 @@
     listpack 或非法数据视图，避免生命周期入口崩溃（Phase 382）
   - [x] Listpack 搜索视图校验：`lp_find` 及 entry 比较拒绝非零长度 NULL
     搜索键，并安全处理空键，避免搜索路径 `memcmp` 解引用（Phase 383）
+  - [x] 对象编码辅助 NULL 校验：tag/string/pointer/tier 编解码 API 对 NULL
+    输入和输出安全返回并清零结果，避免值封装层崩溃（Phase 384）

@@ -2590,3 +2590,9 @@ reallocation cost; malformed calls return without allocation or mutation.
 Listpack search validates the needle view and skips zero-length `memcmp` calls.
 Valid searches retain their linear scan and integer canonicalization cost;
 malformed non-empty needles return immediately without traversing entries.
+
+### Phase 384: object encoding handle guards
+
+Object tag/string/pointer/tier helpers add fixed cold checks and deterministic
+zero outputs. Valid encoding remains branch-equivalent after the guard; invalid
+views return without dereferencing or allocation.

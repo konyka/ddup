@@ -9,13 +9,19 @@
 
 int obj_tag_of(const char *val, size_t vlen)
 {
-    if (vlen == 0)
+    if (val == NULL || vlen == 0)
         return DDUP_OBJ_STRING;
     return (unsigned char)val[0];
 }
 
 void obj_str(const char *val, size_t vlen, const char **s, size_t *len)
 {
+    if (s == NULL || len == NULL)
+        return;
+    *s = NULL;
+    *len = 0;
+    if (val == NULL)
+        return;
     if (vlen == 0) {
         *s = val;
         *len = 0;
@@ -27,6 +33,8 @@ void obj_str(const char *val, size_t vlen, const char **s, size_t *len)
 
 void obj_pack_ptr(char buf[9], int tag, const void *ptr)
 {
+    if (buf == NULL)
+        return;
     buf[0] = (char)tag;
     memcpy(buf + 1, &ptr, 8);
 }
@@ -34,7 +42,7 @@ void obj_pack_ptr(char buf[9], int tag, const void *ptr)
 void *obj_unpack_ptr(const char *val, size_t vlen)
 {
     void *ptr = NULL;
-    if (vlen >= 9)
+    if (val != NULL && vlen >= 9)
         memcpy(&ptr, val + 1, 8);
     return ptr;
 }
@@ -55,7 +63,7 @@ void obj_tier_unpack(const char *val, size_t vlen, uint64_t *record_id,
     uint64_t rid = 0;
     uint64_t exp = 0;
     int i;
-    if (vlen < 17) {
+    if (val == NULL || vlen < 17) {
         if (record_id != NULL)
             *record_id = 0;
         if (expire_ms != NULL)

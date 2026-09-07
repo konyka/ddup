@@ -808,6 +808,15 @@ static void test_obj_str_zero_length_blob(void)
     obj_str(&byte, 0, &s, &len);
     DD_CHECK(s == &byte);
     DD_CHECK_EQ_INT(0, (long long)len);
+    DD_CHECK_EQ_INT(DDUP_OBJ_STRING, obj_tag_of(NULL, 1));
+    DD_CHECK(obj_unpack_ptr(NULL, 9) == NULL);
+    {
+        uint64_t rid = 1, exp = 2;
+        obj_tier_unpack(NULL, 17, &rid, &exp);
+        DD_CHECK_EQ_INT(0, (long long)rid);
+        DD_CHECK_EQ_INT(0, (long long)exp);
+    }
+    obj_str(NULL, 1, NULL, NULL);
 }
 
 static obj_zset *zset_of(db *d, const char *k, size_t kl)

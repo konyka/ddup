@@ -801,6 +801,10 @@ Listpack search now rejects non-empty NULL needles and compares empty needles
 without invoking `memcmp` on NULL, preserving valid binary lookup semantics on
 all supported platforms.
 
+Object encoding helpers now fail closed for NULL value blobs, destination
+buffers, and decode outputs, preventing malformed value wrappers from
+dereferencing memory while preserving valid type tags and tier references.
+
 Listpack query and decode helpers now fail closed for NULL handles and clear
 optional output lengths/values, preventing malformed internal calls from
 dereferencing invalid storage while preserving valid Redis-compatible entries.
