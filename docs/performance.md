@@ -2553,3 +2553,9 @@ node behavior; malformed calls return without touching list state.
 PEL add/remove now validate the group's stream back-pointer before accounting
 memory. Valid pending-entry operations retain their existing amortized O(1)
 behavior; malformed detached groups return without allocation or mutation.
+
+### Phase 378: zset rank/removal guards
+
+Rank lookup and rank/score/lex range removals add fixed cold argument checks
+before traversal. Valid operations preserve their existing listpack/skiplist
+complexity; invalid ranges return zero without scanning or mutating storage.

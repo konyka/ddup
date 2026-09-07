@@ -1730,6 +1730,8 @@ int obj_zset_last_in_lex_range(obj_zset *z, const zlexrangespec *r,
 
 long obj_zset_rank(obj_zset *z, double score, const char *m, size_t mlen)
 {
+    if (z == NULL || (m == NULL && mlen != 0))
+        return -1;
     if (z->encoding == OBJ_ZSET_LP) {
         unsigned char mbuf[24];
         unsigned char *p = lp_first(z->lp);
@@ -1770,6 +1772,8 @@ static uint64_t zset_rem_node_span(obj_zset *z, zsl_node *first,
 uint64_t obj_zset_rem_range_by_rank(obj_zset *z, size_t start, size_t stop)
 {
     uint64_t removed = 0;
+    if (z == NULL || start > stop)
+        return 0;
     if (z->encoding == OBJ_ZSET_LP) {
         size_t n = stop - start + 1;
         while (n-- > 0) {
@@ -1790,6 +1794,8 @@ uint64_t obj_zset_rem_range_by_rank(obj_zset *z, size_t start, size_t stop)
 uint64_t obj_zset_rem_range_by_score(obj_zset *z, const zrangespec *r)
 {
     uint64_t removed = 0;
+    if (z == NULL || r == NULL)
+        return 0;
     if (z->encoding == OBJ_ZSET_LP) {
         /* the in-range span is contiguous: delete its head repeatedly */
         for (;;) {
@@ -1821,6 +1827,8 @@ uint64_t obj_zset_rem_range_by_score(obj_zset *z, const zrangespec *r)
 uint64_t obj_zset_rem_range_by_lex(obj_zset *z, const zlexrangespec *r)
 {
     uint64_t removed = 0;
+    if (z == NULL || r == NULL)
+        return 0;
     if (z->encoding == OBJ_ZSET_LP) {
         for (;;) {
             unsigned char mbuf[24];

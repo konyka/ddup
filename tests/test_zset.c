@@ -118,6 +118,22 @@ static void test_zset_range_iterators_reject_null_inputs(void)
     }
 }
 
+static void test_zset_range_mutations_reject_null_inputs(void)
+{
+    zrangespec sr;
+    zlexrangespec lr;
+
+    memset(&sr, 0, sizeof(sr));
+    memset(&lr, 0, sizeof(lr));
+    DD_CHECK_EQ_INT(-1, (int)obj_zset_rank(NULL, 1.0, "m", 1));
+    DD_CHECK_EQ_INT(0, (long long)obj_zset_rem_range_by_rank(NULL, 0, 1));
+    DD_CHECK_EQ_INT(0, (long long)obj_zset_rem_range_by_rank(NULL, 1, 0));
+    DD_CHECK_EQ_INT(0, (long long)obj_zset_rem_range_by_score(NULL, &sr));
+    DD_CHECK_EQ_INT(0, (long long)obj_zset_rem_range_by_score(NULL, NULL));
+    DD_CHECK_EQ_INT(0, (long long)obj_zset_rem_range_by_lex(NULL, &lr));
+    DD_CHECK_EQ_INT(0, (long long)obj_zset_rem_range_by_lex(NULL, NULL));
+}
+
 static void test_zset_pop_rejects_null_outputs(void)
 {
     obj_zset *z = obj_zset_new();
@@ -1222,6 +1238,7 @@ int main(void)
     DD_RUN(test_zset_mutation_rejects_null_object);
     DD_RUN(test_zset_iterators_reject_null_inputs);
     DD_RUN(test_zset_range_iterators_reject_null_inputs);
+    DD_RUN(test_zset_range_mutations_reject_null_inputs);
     DD_RUN(test_zset_pop_rejects_null_outputs);
     DD_RUN(test_zset_rejects_unrepresentable_member);
     DD_RUN(test_zadd_zscore_zcard);

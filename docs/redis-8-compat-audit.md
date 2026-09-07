@@ -801,6 +801,10 @@ Stream pending-entry operations now reject detached groups lacking a stream
 owner before touching PEL storage or memory accounting, preserving normal
 consumer-group delivery semantics while failing closed on malformed handles.
 
+ZSET rank lookup and range-removal APIs now reject NULL objects/ranges and
+reversed rank intervals before traversing storage, preserving valid deletion
+semantics and preventing malformed control calls from dereferencing NULL.
+
 ZSET score and lex range iterators now reject NULL objects, ranges, and output
 iterators before evaluating predicates, preserving normal range ordering and
 fail-closed behavior for malformed internal calls.
