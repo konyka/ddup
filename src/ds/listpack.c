@@ -667,7 +667,8 @@ static int lp_entry_equal(const unsigned char *p, const unsigned char *s,
     int64_t iv = 0;
     const unsigned char *e = lp_get(p, &elen, &iv);
     if (e != NULL)
-        return elen == slen && memcmp(e, s, slen) == 0;
+        return elen == slen && (slen == 0 ||
+                                (s != NULL && memcmp(e, s, slen) == 0));
     /* int entry: matches only the canonical decimal form */
     {
         int64_t sv;
@@ -678,6 +679,8 @@ static int lp_entry_equal(const unsigned char *p, const unsigned char *s,
 unsigned char *lp_find(unsigned char *lp, unsigned char *p,
                        const unsigned char *s, uint32_t slen)
 {
+    if (lp == NULL || (s == NULL && slen != 0))
+        return NULL;
     if (p == NULL)
         p = lp_first(lp);
     else

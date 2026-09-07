@@ -82,6 +82,8 @@ static void test_empty_null_payload_is_safe(void)
     DD_CHECK_EQ_INT(1, (long long)lp_length(lp));
     DD_CHECK(lp_get(lp_first(lp), &len, &value) != NULL);
     DD_CHECK_EQ_INT(0, (long long)len);
+    lp = lp_append(lp, (const unsigned char *)"x", 1);
+    DD_CHECK(lp_find(lp, NULL, NULL, 1) == NULL);
     lp_free(lp);
 }
 

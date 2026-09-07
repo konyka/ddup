@@ -797,6 +797,10 @@ Quicklist push now rejects null list handles and malformed non-empty data views
 before allocating or mutating a node. Zero-length values remain valid and retain
 their existing empty-element behavior.
 
+Listpack search now rejects non-empty NULL needles and compares empty needles
+without invoking `memcmp` on NULL, preserving valid binary lookup semantics on
+all supported platforms.
+
 Listpack query and decode helpers now fail closed for NULL handles and clear
 optional output lengths/values, preventing malformed internal calls from
 dereferencing invalid storage while preserving valid Redis-compatible entries.

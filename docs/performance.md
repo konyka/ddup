@@ -2584,3 +2584,9 @@ empty results safely.
 Listpack mutation helpers add fixed cold checks for NULL handles and non-empty
 NULL payloads. Valid insert/delete/replace operations retain their existing
 reallocation cost; malformed calls return without allocation or mutation.
+
+### Phase 383: listpack search view guards
+
+Listpack search validates the needle view and skips zero-length `memcmp` calls.
+Valid searches retain their linear scan and integer canonicalization cost;
+malformed non-empty needles return immediately without traversing entries.

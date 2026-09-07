@@ -1093,3 +1093,5 @@
     并清零可选输出，避免损坏/控制面调用越界解引用（Phase 381）
   - [x] Listpack 写入句柄校验：append/prepend/insert/delete/replace 拒绝 NULL
     listpack 或非法数据视图，避免生命周期入口崩溃（Phase 382）
+  - [x] Listpack 搜索视图校验：`lp_find` 及 entry 比较拒绝非零长度 NULL
+    搜索键，并安全处理空键，避免搜索路径 `memcmp` 解引用（Phase 383）
