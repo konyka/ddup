@@ -195,11 +195,53 @@ static void test_georadius(void)
     db_destroy(&d);
 }
 
+static void test_empty_binary_geo_member(void)
+{
+    db d;
+    resp_buf out;
+    resp_value add[5];
+    resp_value search[9];
+    size_t i;
+
+    db_init(&d);
+    resp_buf_init(&out);
+    memset(add, 0, sizeof(add));
+    add[0].type = add[1].type = add[2].type = add[3].type = add[4].type =
+        RESP_BULK_STRING;
+    add[0].str = "GEOADD"; add[0].len = 6;
+    add[1].str = "geo"; add[1].len = 3;
+    add[2].str = "0"; add[2].len = 1;
+    add[3].str = "0"; add[3].len = 1;
+    add[4].str = NULL; add[4].len = 0;
+    command_execute_at(&d, add, 5, &out, T0);
+    EXPECT(out, ":1\r\n");
+
+    memset(search, 0, sizeof(search));
+    for (i = 0; i < 9; i++)
+        search[i].type = RESP_BULK_STRING;
+    search[0].str = "GEOSEARCH"; search[0].len = 9;
+    search[1].str = "geo"; search[1].len = 3;
+    search[2].str = "FROMLONLAT"; search[2].len = 10;
+    search[3].str = "0"; search[3].len = 1;
+    search[4].str = "0"; search[4].len = 1;
+    search[5].str = "BYRADIUS"; search[5].len = 8;
+    search[6].str = "1"; search[6].len = 1;
+    search[7].str = "km"; search[7].len = 2;
+    search[8].str = "ASC"; search[8].len = 3;
+    out.len = 0;
+    command_execute_at(&d, search, 9, &out, T0);
+    EXPECT(out, "*1\r\n$0\r\n\r\n");
+
+    resp_buf_free(&out);
+    db_destroy(&d);
+}
+
 int main(void)
 {
     DD_RUN(test_geoadd_geopos_geodist);
     DD_RUN(test_geohash);
     DD_RUN(test_geosearch_radius);
     DD_RUN(test_georadius);
+    DD_RUN(test_empty_binary_geo_member);
     return DD_TEST_SUMMARY();
 }

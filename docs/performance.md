@@ -2636,3 +2636,9 @@ HIMPORT fieldset and field names now allocate one byte and skip zero-length
 copies. Equality checks also bypass `memcmp` for empty names. Non-empty import
 work keeps the same allocation/copy and comparison costs; only empty metadata
 uses the additional cold branches.
+
+### Phase 391: GEO empty-member copy safety
+
+Geospatial result collection now skips copying zero-length members while still
+allocating the terminator byte. Non-empty GEO searches retain the same copy
+cost; the branch only affects empty binary members.

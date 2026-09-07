@@ -816,6 +816,10 @@ HIMPORT fieldset and field metadata now materialize `NULL + 0` names with
 minimal storage, skip zero-length copies, and avoid NULL `memcmp` calls while
 preserving valid import/discard semantics.
 
+GEO search result collection now materializes empty binary members without
+calling `memcpy` on NULL, preserving `GEOSEARCH`/`GEORADIUS` empty-member
+semantics across supported C libraries.
+
 Listpack search now rejects non-empty NULL needles and compares empty needles
 without invoking `memcmp` on NULL, preserving valid binary lookup semantics on
 all supported platforms.

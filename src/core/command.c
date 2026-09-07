@@ -5985,7 +5985,8 @@ static int geo_vec_add(geo_vec *vec, const char *member, size_t mlen,
         vec->oom = 1;
         return -1;
     }
-    memcpy(copy, member, mlen);
+    if (mlen != 0)
+        memcpy(copy, member, mlen);
     copy[mlen] = '\0';
     h = &vec->v[vec->n++];
     h->member = copy;

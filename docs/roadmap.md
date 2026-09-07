@@ -1109,3 +1109,5 @@
     `memcpy`，覆盖普通、模式和 shard 退订并保持空二进制频道语义（Phase 389）
   - [x] HIMPORT 空名称复制安全：fieldset 与 field 的零长度名称使用最小存储并跳过
     `memcpy`，空名称比较避免 NULL 指针传给 `memcmp`（Phase 390）
+  - [x] GEO 空成员复制安全：地理搜索结果对零长度 member 跳过 `memcpy`，保持空
+    二进制成员可检索并避免未定义调用（Phase 391）
