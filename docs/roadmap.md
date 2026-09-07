@@ -1103,3 +1103,5 @@
     消除 io_uring/多后端下输出顺序抖动（Phase 386）
   - [x] Skiplist 空成员复制安全：零长度成员跳过 `memcpy`，保持 `NULL + 0`
     成员可安全插入/删除，避免平台相关未定义调用（Phase 387）
+  - [x] Session WATCH 空键复制安全：零长度键分配最小存储并跳过 `memcpy`，保持
+    `NULL + 0` 空二进制键语义且避免跨平台未定义调用（Phase 388）

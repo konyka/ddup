@@ -804,6 +804,10 @@ backends without changing ranking by the selected metric.
 Skiplist nodes now safely materialize `NULL + 0` members by avoiding a zero-byte
 NULL `memcpy`, preserving valid empty-member ordering and deletion semantics.
 
+Session WATCH registration now materializes empty binary keys without invoking
+`memcpy` on NULL, preserving valid `NULL + 0` watch semantics on all supported
+platforms.
+
 Listpack search now rejects non-empty NULL needles and compares empty needles
 without invoking `memcmp` on NULL, preserving valid binary lookup semantics on
 all supported platforms.

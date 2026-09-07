@@ -2615,3 +2615,10 @@ small hotkey set.
 Skiplist node creation skips the member copy for zero-length members. Valid
 non-empty inserts retain the same allocation and copy cost; empty binary
 members remain portable without invoking `memcpy` on NULL.
+
+### Phase 388: session WATCH empty-key copy safety
+
+Session WATCH registration allocates one byte for an empty binary key and skips
+the zero-length copy. Normal keys retain the same single allocation and copy;
+the added branch is cold for ordinary non-empty Redis keys while empty keys stay
+portable across C libraries.

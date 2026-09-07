@@ -67,6 +67,9 @@ static void test_session_api_rejects_null_inputs(void)
     DD_CHECK_EQ_INT(-1, session_queue_push(&s, NULL, 1));
     DD_CHECK_EQ_INT(-1, session_block_start(&s, NULL, 1, 1, 0));
     session_watch_add(&s, NULL, 1, 0, 0, 0);
+    session_watch_add(&s, NULL, 0, 0, 0, 0);
+    DD_CHECK_EQ_INT(1, (long long)s.nwatch);
+    DD_CHECK(s.watches[0].key != NULL);
     {
         resp_value bad[2];
         memset(bad, 0, sizeof(bad));

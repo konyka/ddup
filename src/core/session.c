@@ -269,8 +269,9 @@ void session_watch_add(session *s, const char *key, size_t klen,
         s->watch_cap = ncap;
     }
     w = &s->watches[s->nwatch++];
-    w->key = (char *)xmalloc(klen);
-    memcpy(w->key, key, klen);
+    w->key = (char *)xmalloc(klen ? klen : 1);
+    if (klen != 0)
+        memcpy(w->key, key, klen);
     w->klen = klen;
     w->version = version;
     w->epoch = epoch;
