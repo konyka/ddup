@@ -2578,3 +2578,9 @@ Listpack length, navigation, and decode helpers add fixed cold NULL checks and
 deterministic output initialization. Valid compact encoding remains unchanged;
 normal traversal keeps its allocation-free cost while malformed calls return
 empty results safely.
+
+### Phase 382: listpack mutation handle guards
+
+Listpack mutation helpers add fixed cold checks for NULL handles and non-empty
+NULL payloads. Valid insert/delete/replace operations retain their existing
+reallocation cost; malformed calls return without allocation or mutation.

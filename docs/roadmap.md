@@ -1091,3 +1091,5 @@
     API 与其他数据结构一致并避免初始化入口崩溃（Phase 380）
   - [x] Listpack 查询句柄校验：长度、导航和解码 API 对 NULL 输入安全返回，
     并清零可选输出，避免损坏/控制面调用越界解引用（Phase 381）
+  - [x] Listpack 写入句柄校验：append/prepend/insert/delete/replace 拒绝 NULL
+    listpack 或非法数据视图，避免生命周期入口崩溃（Phase 382）

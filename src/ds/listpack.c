@@ -545,12 +545,16 @@ unsigned char *lp_insert(unsigned char *lp, const unsigned char *s,
                          uint32_t slen, unsigned char *p, int where,
                          unsigned char **newp)
 {
-    uint32_t total = lp_load_total(lp);
+    uint32_t total;
     size_t off;
     uint64_t entry_bytes;
     unsigned char *enc;
     uint64_t newtotal;
     unsigned char *nlp;
+
+    if (lp == NULL || (s == NULL && slen != 0))
+        return NULL;
+    total = lp_load_total(lp);
 
     if (p == NULL) {
         p = lp + total - 1; /* the EOF byte */
@@ -596,6 +600,8 @@ unsigned char *lp_append(unsigned char *lp, const unsigned char *s,
 unsigned char *lp_prepend(unsigned char *lp, const unsigned char *s,
                           uint32_t slen)
 {
+    if (lp == NULL)
+        return NULL;
     /* lp + LP_HDR_SIZE is the first entry, or the EOF when empty. */
     return lp_insert(lp, s, slen, lp + LP_HDR_SIZE, LP_BEFORE, NULL);
 }
@@ -603,12 +609,18 @@ unsigned char *lp_prepend(unsigned char *lp, const unsigned char *s,
 unsigned char *lp_delete(unsigned char *lp, unsigned char *p,
                          unsigned char **newp)
 {
-    uint32_t total = lp_load_total(lp);
-    size_t off = (size_t)(p - lp);
-    uint64_t esz = lp_entry_payload_size(lp, p);
+    uint32_t total;
+    size_t off;
+    uint64_t esz;
     uint64_t entry_bytes;
     uint32_t newtotal;
     unsigned char *nlp;
+
+    if (lp == NULL || p == NULL)
+        return NULL;
+    total = lp_load_total(lp);
+    off = (size_t)(p - lp);
+    esz = lp_entry_payload_size(lp, p);
 
     if (*p == LP_EOF || esz == UINT64_MAX) {
         fprintf(stderr, "ddup: lp_delete at EOF\n");
@@ -637,6 +649,8 @@ unsigned char *lp_replace(unsigned char *lp, unsigned char *p,
                           const unsigned char *s, uint32_t slen)
 {
     unsigned char *np = NULL;
+    if (lp == NULL || p == NULL || (s == NULL && slen != 0))
+        return NULL;
     lp = lp_delete(lp, p, &np);
     /* np sits at the deleted slot; NULL means we removed the tail. */
     return lp_insert(lp, s, slen, np, LP_BEFORE, NULL);

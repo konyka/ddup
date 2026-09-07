@@ -65,6 +65,11 @@ static void test_null_query_handles(void)
     DD_CHECK(lp_get(NULL, NULL, NULL) == NULL);
     DD_CHECK(lp_get_str(NULL, NULL, NULL) == NULL);
     DD_CHECK(lp_find(NULL, NULL, NULL, 0) == NULL);
+    DD_CHECK(lp_append(NULL, NULL, 0) == NULL);
+    DD_CHECK(lp_prepend(NULL, NULL, 0) == NULL);
+    DD_CHECK(lp_insert(NULL, NULL, 0, NULL, LP_BEFORE, NULL) == NULL);
+    DD_CHECK(lp_delete(NULL, NULL, NULL) == NULL);
+    DD_CHECK(lp_replace(NULL, NULL, NULL, 0) == NULL);
 }
 
 static void test_empty_null_payload_is_safe(void)
