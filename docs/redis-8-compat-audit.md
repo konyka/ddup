@@ -801,6 +801,11 @@ Array history append now rejects a NULL array handle before capacity growth,
 keeping malformed internal/control calls fail-closed without changing valid
 history ordering or amortized append performance.
 
+Array insert and ring mutations now reserve all required history slots before
+writing values. This preserves Redis-compatible batch atomicity when history
+capacity cannot be grown, while valid operations keep their existing ordering
+and linear write cost.
+
 Hash expiration wrappers now fail closed for null objects or callbacks before
 scanning the expiration table. `len_at(NULL)` returns zero and purge/each calls
 become safe no-ops without changing valid expiry behavior.

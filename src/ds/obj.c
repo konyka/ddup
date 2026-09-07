@@ -139,6 +139,20 @@ static uint64_t array_entry_mem(size_t len)
     return (uint64_t)sizeof(rh_entry) + 16 + 8 + len;
 }
 
+static int obj_array_validate_views(const char *const *values,
+                                    const size_t *lengths, size_t n)
+{
+    size_t i;
+    if (values == NULL || lengths == NULL || n == 0)
+        return -1;
+    for (i = 0; i < n; i++) {
+        if ((values[i] == NULL && lengths[i] != 0) ||
+            lengths[i] > UINT32_MAX)
+            return -1;
+    }
+    return 0;
+}
+
 obj_array *obj_array_new(void)
 {
     obj_array *a = (obj_array *)calloc(1, sizeof(*a));
@@ -168,14 +182,9 @@ int obj_array_set(obj_array *a, uint64_t index, const char *const *values,
 {
     size_t i;
     size_t empty = 0;
-    if (a == NULL || values == NULL || lengths == NULL || n == 0 ||
+    if (a == NULL || obj_array_validate_views(values, lengths, n) != 0 ||
         index > UINT64_MAX - (uint64_t)n)
         return -1;
-    for (i = 0; i < n; i++) {
-        if ((values[i] == NULL && lengths[i] != 0) ||
-            lengths[i] > UINT32_MAX)
-            return -1;
-    }
     for (i = 0; i < n; i++) {
         char key[8];
         const char *old;
@@ -210,20 +219,40 @@ uint64_t obj_array_next(const obj_array *a)
     return a == NULL ? 0 : a->next_insert;
 }
 
-int obj_array_history_push(obj_array *a, uint64_t index)
+static int obj_array_history_reserve(obj_array *a, size_t additional)
 {
     uint64_t *p;
+    size_t need;
     size_t cap;
     if (a == NULL)
         return -1;
-    if (a->history_len == a->history_cap) {
-        cap = a->history_cap ? a->history_cap * 2 : 16;
-        if (cap < a->history_cap || cap > SIZE_MAX / sizeof(*p)) return -1;
-        p = (uint64_t *)realloc(a->history, cap * sizeof(*p));
-        if (!p) return -1;
-        a->history = p;
-        a->history_cap = cap;
+    if (additional > SIZE_MAX - a->history_len)
+        return -1;
+    need = a->history_len + additional;
+    if (need <= a->history_cap)
+        return 0;
+    cap = a->history_cap ? a->history_cap : 16;
+    while (cap < need) {
+        if (cap > SIZE_MAX / 2)
+            cap = need;
+        else
+            cap *= 2;
     }
+    if (cap > SIZE_MAX / sizeof(*p))
+        return -1;
+    p = (uint64_t *)realloc(a->history, cap * sizeof(*p));
+    if (!p)
+        return -1;
+    a->history = p;
+    a->history_cap = cap;
+    return 0;
+}
+
+int obj_array_history_push(obj_array *a, uint64_t index)
+{
+    if (obj_array_history_reserve(a, 1) != 0)
+        return -1;
+
     a->history[a->history_len++] = index;
     a->mem += sizeof(uint64_t);
     return 0;
@@ -234,9 +263,12 @@ int obj_array_insert(obj_array *a, const char *const *values,
 {
     uint64_t start;
     size_t i;
-    if (!a || !values || !lengths || n == 0 || a->next_insert > UINT64_MAX - n)
+    if (!a || obj_array_validate_views(values, lengths, n) != 0 ||
+        a->next_insert > UINT64_MAX - n)
         return -1;
     start = a->next_insert;
+    if (obj_array_history_reserve(a, n) != 0)
+        return -1;
     if (obj_array_set(a, start, values, lengths, n, NULL) != 0) return -1;
     for (i = 0; i < n; i++) if (obj_array_history_push(a, start + i) != 0) return -1;
     a->next_insert = start + n;
@@ -249,12 +281,10 @@ int obj_array_ring(obj_array *a, uint64_t size, const char *const *values,
 {
     size_t i;
     uint64_t last = 0;
-    if (!a || size == 0 || !values || !lengths) return -1;
-    for (i = 0; i < n; i++) {
-        if ((values[i] == NULL && lengths[i] != 0) ||
-            lengths[i] > UINT32_MAX)
-            return -1;
-    }
+    if (!a || size == 0 || obj_array_validate_views(values, lengths, n) != 0)
+        return -1;
+    if (obj_array_history_reserve(a, n) != 0)
+        return -1;
     a->ring_size = size;
     for (i = 0; i < n; i++) {
         uint64_t index = a->next_insert % size;

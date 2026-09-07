@@ -1073,3 +1073,5 @@
     指针和长度，避免 malformed middle view 造成部分提交（Phase 371）
   - [x] Array 历史记录空句柄校验：`obj_array_history_push` 拒绝 NULL 数组句柄，
     避免历史扩容路径解引用无效地址（Phase 372）
+  - [x] Array 插入/环写历史预留：批量操作在数据写入前预留完整历史容量，
+    防止历史扩容失败导致部分提交（Phase 373）

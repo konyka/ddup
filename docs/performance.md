@@ -2522,3 +2522,10 @@ invalid batches perform no allocation or partial update.
 `obj_array_history_push` adds a cold null-handle guard before history growth.
 Valid history appends keep the same amortized O(1) allocation behavior; invalid
 calls return immediately without touching the array or allocator.
+
+### Phase 373: atomic array history reservation
+
+Array insert and ring writes reserve the complete history span before mutating
+values. Valid batches retain geometric growth and O(n) writes; allocation
+failure is detected on the cold reservation path and cannot leave a partial
+history/value update.

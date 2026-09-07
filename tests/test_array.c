@@ -154,11 +154,33 @@ static void test_array_batch_prevalidates_views(void)
     }
 }
 
+static void test_array_history_failure_does_not_partially_commit(void)
+{
+    obj_array *a = obj_array_new();
+    const char *value = "x";
+    const size_t length = 1;
+    const char *stored = NULL;
+    size_t stored_len = 0;
+
+    DD_CHECK(a != NULL);
+    if (a != NULL) {
+        /* Force the next history growth to fail its overflow guard. */
+        a->history_len = SIZE_MAX;
+        a->history_cap = SIZE_MAX;
+        DD_CHECK_EQ_INT(-1, obj_array_insert(a, &value, &length, 1, NULL));
+        DD_CHECK_EQ_INT(0, (long long)obj_array_count(a));
+        DD_CHECK_EQ_INT(0, obj_array_get(a, 0, &stored, &stored_len));
+        DD_CHECK_EQ_INT(0, (long long)obj_array_next(a));
+        obj_array_free(a);
+    }
+}
+
 int main(void)
 {
     DD_RUN(test_array_core);
     DD_RUN(test_array_api_rejects_null_object);
     DD_RUN(test_object_limits_reject_null_outputs);
     DD_RUN(test_array_batch_prevalidates_views);
+    DD_RUN(test_array_history_failure_does_not_partially_commit);
     return DD_TEST_SUMMARY();
 }
