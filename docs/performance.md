@@ -2642,3 +2642,9 @@ uses the additional cold branches.
 Geospatial result collection now skips copying zero-length members while still
 allocating the terminator byte. Non-empty GEO searches retain the same copy
 cost; the branch only affects empty binary members.
+
+### Phase 392: SPOP/SRANDMEMBER empty-member copy safety
+
+Set pop paths now skip zero-length member copies in both listpack and hash
+encodings. Normal members retain their existing copy and allocation costs; the
+branch is only taken for empty binary members.

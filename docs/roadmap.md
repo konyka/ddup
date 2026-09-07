@@ -1111,3 +1111,5 @@
     `memcpy`，空名称比较避免 NULL 指针传给 `memcmp`（Phase 390）
   - [x] GEO 空成员复制安全：地理搜索结果对零长度 member 跳过 `memcpy`，保持空
     二进制成员可检索并避免未定义调用（Phase 391）
+  - [x] SPOP/SRANDMEMBER 空成员复制安全：listpack 与哈希集合弹出路径对零长度
+    member 跳过 `memcpy`，保持空二进制成员弹出语义（Phase 392）

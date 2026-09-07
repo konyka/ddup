@@ -19297,7 +19297,8 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
                         /* copy before rem: the listpack reallocs */
                         char copy[OBJ_SET_MAX_LISTPACK_VALUE];
                         uint64_t before;
-                        memcpy(copy, mv, ml);
+                        if (ml != 0)
+                            memcpy(copy, mv, ml);
                         before = obj_set_mem(s);
                         obj_set_rem(s, copy, ml);
                         mem_sync(d, k, kl, before, obj_set_mem(s));
@@ -19318,7 +19319,8 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
                 if (pop) {
                     char *copy = (char *)malloc(cc.lens[idx] + 1);
                     uint64_t before;
-                    memcpy(copy, cc.keys[idx], cc.lens[idx]);
+                    if (cc.lens[idx] != 0)
+                        memcpy(copy, cc.keys[idx], cc.lens[idx]);
                     before = obj_set_mem(s);
                     obj_set_rem(s, copy, cc.lens[idx]);
                     mem_sync(d, k, kl, before, obj_set_mem(s));
@@ -19367,7 +19369,8 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
                     uint64_t idx = db_rand(d) % (uint32_t)obj_set_len(s);
                     if (!obj_set_member_at(s, idx, &mv, &ml))
                         continue;
-                    memcpy(copy, mv, ml);
+                    if (ml != 0)
+                        memcpy(copy, mv, ml);
                     obj_set_rem(s, copy, ml);
                     resp_write_bulk(out, copy, ml);
                 }
@@ -19422,7 +19425,8 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
                 for (i = 0; i < k2; i++) {
                     if (pop) {
                         char *copy = (char *)malloc(cc.lens[i] + 1);
-                        memcpy(copy, cc.keys[i], cc.lens[i]);
+                        if (cc.lens[i] != 0)
+                            memcpy(copy, cc.keys[i], cc.lens[i]);
                         obj_set_rem(s, copy, cc.lens[i]);
                         resp_write_bulk(out, copy, cc.lens[i]);
                         free(copy);

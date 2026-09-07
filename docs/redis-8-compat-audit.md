@@ -820,6 +820,10 @@ GEO search result collection now materializes empty binary members without
 calling `memcpy` on NULL, preserving `GEOSEARCH`/`GEORADIUS` empty-member
 semantics across supported C libraries.
 
+SPOP and SRANDMEMBER now skip zero-length copies for empty binary members in
+both listpack and hash-backed sets, preserving Redis-compatible pop semantics
+without invoking `memcpy` on NULL.
+
 Listpack search now rejects non-empty NULL needles and compares empty needles
 without invoking `memcmp` on NULL, preserving valid binary lookup semantics on
 all supported platforms.

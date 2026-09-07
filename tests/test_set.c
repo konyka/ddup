@@ -752,6 +752,35 @@ static void test_set_listpack_encoding(void)
     db_destroy(&d);
 }
 
+static void test_empty_binary_member_pop(void)
+{
+    db d;
+    resp_buf out;
+    resp_value add[3];
+
+    db_init(&d);
+    resp_buf_init(&out);
+    memset(add, 0, sizeof(add));
+    add[0].type = add[1].type = add[2].type = RESP_BULK_STRING;
+    add[0].str = "SADD"; add[0].len = 4;
+    add[1].str = "s"; add[1].len = 1;
+    add[2].str = NULL; add[2].len = 0;
+    command_execute_at(&d, add, 3, &out, T0);
+    EXPECT(out, ":1\r\n");
+    {
+        resp_value pop[2];
+        memset(pop, 0, sizeof(pop));
+        pop[0].type = pop[1].type = RESP_BULK_STRING;
+        pop[0].str = "SPOP"; pop[0].len = 4;
+        pop[1].str = "s"; pop[1].len = 1;
+        out.len = 0;
+        command_execute_at(&d, pop, 2, &out, T0);
+    }
+    EXPECT(out, "$0\r\n\r\n");
+    resp_buf_free(&out);
+    db_destroy(&d);
+}
+
 static void test_set_listpack_limits(void)
 {
     db d;
@@ -893,6 +922,7 @@ int main(void)
     DD_RUN(test_sintercard);
     DD_RUN(test_set_stores);
     DD_RUN(test_set_listpack_encoding);
+    DD_RUN(test_empty_binary_member_pop);
     DD_RUN(test_set_listpack_limits);
     DD_RUN(test_sscan);
     DD_RUN(test_sunioncard_sdiffcard);
