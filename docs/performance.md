@@ -2559,3 +2559,9 @@ behavior; malformed detached groups return without allocation or mutation.
 Rank lookup and rank/score/lex range removals add fixed cold argument checks
 before traversal. Valid operations preserve their existing listpack/skiplist
 complexity; invalid ranges return zero without scanning or mutating storage.
+
+### Phase 379: empty-key comparison safety
+
+Robin Hood lookup now skips `memcmp` for zero-length keys. Empty-key probes
+retain their existing O(1) hash-table path with one predictable branch, while
+`NULL + 0` keys remain portable across C libraries.

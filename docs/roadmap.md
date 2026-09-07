@@ -1085,3 +1085,5 @@
     避免内存计数路径解引用 NULL stream（Phase 377）
   - [x] ZSET rank/范围删除输入校验：rank 和按 rank/score/lex 删除接口拒绝
     NULL 对象、范围及逆序区间，避免批量删除路径无效解引用（Phase 378）
+  - [x] Robin Hood 空键比较安全：零长度键跳过 `memcmp`，保持 `NULL + 0`
+    二进制键可重复查找/删除并消除跨平台未定义调用（Phase 379）

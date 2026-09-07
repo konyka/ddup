@@ -174,7 +174,7 @@ static long rh_find_in(const rh_entry *slots, size_t cap, uint64_t hash,
         if (e->psl < 0 || e->psl < dist)
             return -1;
         if (e->hash == hash && e->klen == klen &&
-            memcmp(e->kv, key, klen) == 0)
+            (klen == 0 || memcmp(e->kv, key, klen) == 0))
             return (long)i;
         i = (i + 1) & mask;
         dist++;

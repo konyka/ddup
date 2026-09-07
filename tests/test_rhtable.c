@@ -43,6 +43,9 @@ static void test_api_rejects_null_inputs(void)
     DD_CHECK_EQ_INT(0, rh_set(&t, NULL, 0, NULL, 0));
     DD_CHECK(rh_get(&t, NULL, 0, &v, &vl) == 1);
     DD_CHECK_EQ_INT(0, (long long)vl);
+    DD_CHECK_EQ_INT(1, rh_set(&t, NULL, 0, NULL, 0));
+    DD_CHECK_EQ_INT(1, rh_del(&t, NULL, 0));
+    DD_CHECK_EQ_INT(0, rh_get(&t, NULL, 0, &v, &vl));
     DD_CHECK_EQ_INT(0, rh_del(NULL, "k", 1));
     DD_CHECK_EQ_INT(0, rh_touch(NULL, "k", 1, 0));
     DD_CHECK_EQ_INT(0, rh_meta_of(NULL, "k", 1));

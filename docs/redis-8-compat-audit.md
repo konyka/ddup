@@ -797,6 +797,10 @@ Quicklist push now rejects null list handles and malformed non-empty data views
 before allocating or mutating a node. Zero-length values remain valid and retain
 their existing empty-element behavior.
 
+Robin Hood lookups now compare zero-length keys without calling `memcmp` on a
+NULL pointer. Empty binary keys can still be inserted, overwritten, and
+removed consistently on every supported platform.
+
 Stream pending-entry operations now reject detached groups lacking a stream
 owner before touching PEL storage or memory accounting, preserving normal
 consumer-group delivery semantics while failing closed on malformed handles.
