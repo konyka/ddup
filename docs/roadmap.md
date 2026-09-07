@@ -1099,3 +1099,5 @@
     输入和输出安全返回并清零结果，避免值封装层崩溃（Phase 384）
   - [x] Tier 编码空目标校验：`obj_tier_pack` 对 NULL 目标缓冲区安全 no-op，
     避免后台值封装错误写入无效地址（Phase 385）
+  - [x] HOTKEYS 指标稳定排序：CPU/NET 指标同分时按 key 字节序 tie-break，
+    消除 io_uring/多后端下输出顺序抖动（Phase 386）

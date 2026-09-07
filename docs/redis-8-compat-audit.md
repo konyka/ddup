@@ -797,6 +797,10 @@ Quicklist push now rejects null list handles and malformed non-empty data views
 before allocating or mutating a node. Zero-length values remain valid and retain
 their existing empty-element behavior.
 
+HOTKEYS metric views now apply a deterministic key-byte tie-break for equal CPU
+or network scores, making responses stable across readiness and io_uring
+backends without changing ranking by the selected metric.
+
 Listpack search now rejects non-empty NULL needles and compares empty needles
 without invoking `memcmp` on NULL, preserving valid binary lookup semantics on
 all supported platforms.

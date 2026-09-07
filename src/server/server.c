@@ -1054,6 +1054,15 @@ static void srv_hotkeys_record_key(server *srv, const resp_value *argv,
     e->net_bytes = net;
 }
 
+static int hotkey_key_before(const hotkey_entry *a, const hotkey_entry *b)
+{
+    size_t n = a->len < b->len ? a->len : b->len;
+    int c = n > 0 ? memcmp(a->key, b->key, n) : 0;
+    if (c != 0)
+        return c < 0;
+    return a->len < b->len;
+}
+
 static void srv_hotkeys_record(server *srv, const session *source,
                                const resp_value *argv, size_t argc)
 {
@@ -1286,16 +1295,24 @@ static int srv_hotkeys_command(void *ctx, const resp_value *argv, size_t argc,
                 size_t ci = cpu_order[i], ni = net_order[i];
                 j = i;
                 while (j > 0 &&
-                       srv->hotkeys_entries[cpu_order[j - 1]].cpu_us <
-                           srv->hotkeys_entries[ci].cpu_us) {
+                       (srv->hotkeys_entries[cpu_order[j - 1]].cpu_us <
+                            srv->hotkeys_entries[ci].cpu_us ||
+                        (srv->hotkeys_entries[cpu_order[j - 1]].cpu_us ==
+                             srv->hotkeys_entries[ci].cpu_us &&
+                         hotkey_key_before(&srv->hotkeys_entries[ci],
+                                           &srv->hotkeys_entries[cpu_order[j - 1]])))) {
                     cpu_order[j] = cpu_order[j - 1];
                     j--;
                 }
                 cpu_order[j] = ci;
                 j = i;
                 while (j > 0 &&
-                       srv->hotkeys_entries[net_order[j - 1]].net_bytes <
-                           srv->hotkeys_entries[ni].net_bytes) {
+                       (srv->hotkeys_entries[net_order[j - 1]].net_bytes <
+                            srv->hotkeys_entries[ni].net_bytes ||
+                        (srv->hotkeys_entries[net_order[j - 1]].net_bytes ==
+                             srv->hotkeys_entries[ni].net_bytes &&
+                         hotkey_key_before(&srv->hotkeys_entries[ni],
+                                           &srv->hotkeys_entries[net_order[j - 1]])))) {
                     net_order[j] = net_order[j - 1];
                     j--;
                 }

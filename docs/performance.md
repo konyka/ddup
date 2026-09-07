@@ -2602,3 +2602,10 @@ views return without dereferencing or allocation.
 Tier reference packing now checks the destination buffer before writing. Valid
 17-byte encoding keeps the same fixed loop cost; malformed calls return on a
 cold branch without memory access.
+
+### Phase 386: deterministic hotkey metric ordering
+
+HOTKEYS CPU/NET insertion sorts now use key-byte ordering when metric values
+tie. The common unequal-score path is unchanged; deterministic ties prevent
+backend-dependent output while retaining O(k^2) sorting for the configured
+small hotkey set.
