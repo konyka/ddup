@@ -172,7 +172,8 @@ int obj_array_set(obj_array *a, uint64_t index, const char *const *values,
         index > UINT64_MAX - (uint64_t)n)
         return -1;
     for (i = 0; i < n; i++) {
-        if (lengths[i] > UINT32_MAX)
+        if ((values[i] == NULL && lengths[i] != 0) ||
+            lengths[i] > UINT32_MAX)
             return -1;
     }
     for (i = 0; i < n; i++) {
@@ -247,6 +248,11 @@ int obj_array_ring(obj_array *a, uint64_t size, const char *const *values,
     size_t i;
     uint64_t last = 0;
     if (!a || size == 0 || !values || !lengths) return -1;
+    for (i = 0; i < n; i++) {
+        if ((values[i] == NULL && lengths[i] != 0) ||
+            lengths[i] > UINT32_MAX)
+            return -1;
+    }
     a->ring_size = size;
     for (i = 0; i < n; i++) {
         uint64_t index = a->next_insert % size;

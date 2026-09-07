@@ -1069,3 +1069,5 @@
     no-op，避免过期表扫描解引用 NULL（Phase 369）
   - [x] 零长度 NULL 视图安全复制：listpack、Quicklist 和 Session 复制路径对
     `len == 0` 跳过 `memcpy`，保留空值语义并消除未定义行为（Phase 370）
+  - [x] Array 批量写入原子预校验：`obj_array_set/ring` 在修改前校验全部元素
+    指针和长度，避免 malformed middle view 造成部分提交（Phase 371）

@@ -806,6 +806,10 @@ Quicklist pop, and Session argument ownership paths. Empty values remain valid,
 while non-empty copies retain their existing byte-for-byte behavior without
 invoking `memcpy` on null pointers.
 
+Array batch and ring writes now prevalidate every element pointer and length
+before changing the table or ring metadata. Malformed middle views return an
+error with no partial slot updates, while empty values remain valid.
+
 List batch pushes now prevalidate every element pointer and length before the
 first quicklist mutation. A malformed middle element returns an error with no
 partial list update, preserving the documented atomic batch behavior.

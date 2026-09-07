@@ -132,10 +132,32 @@ static void test_object_limits_reject_null_outputs(void)
     DD_CHECK_EQ_INT(saved.zset_value, current.zset_value);
 }
 
+static void test_array_batch_prevalidates_views(void)
+{
+    obj_array *a = obj_array_new();
+    const char *values[] = {"ok", NULL};
+    const size_t lengths[] = {2, 1};
+    const char *stored = NULL;
+    size_t stored_len = 0;
+
+    DD_CHECK(a != NULL);
+    if (a != NULL) {
+        DD_CHECK_EQ_INT(-1, obj_array_set(a, 0, values, lengths, 2, NULL));
+        DD_CHECK_EQ_INT(0, (long long)obj_array_count(a));
+        DD_CHECK_EQ_INT(0, (long long)obj_array_len(a));
+        DD_CHECK_EQ_INT(0, obj_array_get(a, 0, &stored, &stored_len));
+        DD_CHECK_EQ_INT(-1, obj_array_ring(a, 4, values, lengths, 2, NULL));
+        DD_CHECK_EQ_INT(0, (long long)obj_array_count(a));
+        DD_CHECK_EQ_INT(0, obj_array_get(a, 0, &stored, &stored_len));
+        obj_array_free(a);
+    }
+}
+
 int main(void)
 {
     DD_RUN(test_array_core);
     DD_RUN(test_array_api_rejects_null_object);
     DD_RUN(test_object_limits_reject_null_outputs);
+    DD_RUN(test_array_batch_prevalidates_views);
     return DD_TEST_SUMMARY();
 }

@@ -2510,3 +2510,9 @@ walk and lazy deletion cost; malformed calls perform no scan or allocation.
 Listpack, Quicklist, and Session ownership paths skip copies when the length is
 zero. Non-empty hot-path copies are unchanged; empty values avoid undefined
 null-pointer `memcpy` behavior with one predictable branch.
+
+### Phase 371: atomic array batch validation
+
+Array set and ring operations add a linear input-validation pass before table
+mutation. Valid batches retain their existing hash writes and history updates;
+invalid batches perform no allocation or partial update.
