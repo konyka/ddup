@@ -801,6 +801,10 @@ ZSET score and lex range iterators now reject NULL objects, ranges, and output
 iterators before evaluating predicates, preserving normal range ordering and
 fail-closed behavior for malformed internal calls.
 
+List iterator remove and insert wrappers now reject NULL iterators before
+delegation, preventing post-call wrapper dereferences while preserving normal
+mutation semantics and iterator positioning.
+
 Array history append now rejects a NULL array handle before capacity growth,
 keeping malformed internal/control calls fail-closed without changing valid
 history ordering or amortized append performance.

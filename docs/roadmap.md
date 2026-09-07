@@ -1079,3 +1079,5 @@
     NULL 句柄并清零输出，避免控制面误用导致崩溃（Phase 374）
   - [x] ZSET 范围迭代器空输入校验：score/lex 范围定位和计数接口拒绝 NULL
     范围及迭代器参数，避免范围谓词解引用无效地址（Phase 375）
+  - [x] List 迭代器修改包装器校验：`obj_list_remove_at/insert` 拒绝 NULL
+    迭代器，避免包装层在底层 no-op 后继续解引用（Phase 376）

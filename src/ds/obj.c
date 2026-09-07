@@ -971,6 +971,8 @@ int obj_list_set_at(obj_list *l, size_t idx, const char *data, size_t len)
 
 int obj_list_remove_at(obj_list_iter *it)
 {
+    if (it == NULL)
+        return 0;
     ql_remove(it);
     return it->entry != NULL;
 }
@@ -978,6 +980,8 @@ int obj_list_remove_at(obj_list_iter *it)
 int obj_list_insert(obj_list_iter *it, int after, const char *data,
                     size_t len)
 {
+    if (it == NULL)
+        return -1;
     return ql_insert(it, after, data, len);
 }
 

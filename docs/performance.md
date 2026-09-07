@@ -2541,3 +2541,9 @@ complexity; malformed calls return an empty result without touching hot storage.
 Score/lex range positioning and counting add fixed cold argument checks before
 the existing listpack/skiplist traversal. Valid range queries keep their
 allocation-free complexity; malformed ranges return an empty result safely.
+
+### Phase 376: list iterator mutation guards
+
+List iterator remove/insert wrappers add a cold NULL-iterator check before
+delegating to Quicklist. Valid mutations retain their existing O(1)-amortized
+node behavior; malformed calls return without touching list state.

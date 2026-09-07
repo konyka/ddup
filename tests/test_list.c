@@ -82,6 +82,8 @@ static void test_list_mutation_rejects_null_object(void)
     DD_CHECK_EQ_INT(-1, obj_list_push(NULL, 0, NULL, 1));
     DD_CHECK_EQ_INT(0, obj_list_pop(NULL, 0, &data, &len));
     DD_CHECK_EQ_INT(-1, obj_list_set_at(NULL, 0, "x", 1));
+    DD_CHECK_EQ_INT(0, obj_list_remove_at(NULL));
+    DD_CHECK_EQ_INT(-1, obj_list_insert(NULL, 0, "x", 1));
 }
 
 static void test_list_push_many_prevalidates_views(void)
