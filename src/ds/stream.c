@@ -528,7 +528,7 @@ stream_pending *obj_stream_consumer_pel_add(stream_group *g,
                                             uint64_t idle,
                                             uint64_t delivery_count)
 {
-    if (g == NULL || c == NULL ||
+    if (g == NULL || c == NULL || g->stream == NULL ||
         (c->pel == NULL && c->pel_len != 0))
         return NULL;
     stream_pending *p = obj_stream_consumer_pel_find(c, ms, seq);
@@ -594,7 +594,7 @@ int obj_stream_consumer_pel_remove(stream_consumer *c, uint64_t ms,
 int obj_stream_group_pel_remove(stream_group *g, uint64_t ms, uint64_t seq)
 {
     size_t i;
-    if (g == NULL)
+    if (g == NULL || g->stream == NULL)
         return 0;
     for (i = 0; i < g->nconsumers; i++) {
         if (obj_stream_consumer_pel_remove(&g->consumers[i], ms, seq)) {

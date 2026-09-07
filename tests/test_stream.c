@@ -145,6 +145,14 @@ static void test_stream_consumer_api_rejects_null_object(void)
     DD_CHECK(obj_stream_consumer_pel_find(NULL, 1, 0) == NULL);
     DD_CHECK_EQ_INT(0, obj_stream_consumer_pel_remove(NULL, 1, 0));
     DD_CHECK(obj_stream_consumer_pel_add(NULL, NULL, 1, 0, 0, 1) == NULL);
+    {
+        stream_group g;
+        stream_consumer c;
+        memset(&g, 0, sizeof(g));
+        memset(&c, 0, sizeof(c));
+        DD_CHECK(obj_stream_consumer_pel_add(&g, &c, 1, 0, 0, 1) == NULL);
+        DD_CHECK_EQ_INT(0, obj_stream_group_pel_remove(&g, 1, 0));
+    }
 }
 
 static void test_xrange_xrevrange(void)

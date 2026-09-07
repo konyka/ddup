@@ -2547,3 +2547,9 @@ allocation-free complexity; malformed ranges return an empty result safely.
 List iterator remove/insert wrappers add a cold NULL-iterator check before
 delegating to Quicklist. Valid mutations retain their existing O(1)-amortized
 node behavior; malformed calls return without touching list state.
+
+### Phase 377: stream PEL ownership guards
+
+PEL add/remove now validate the group's stream back-pointer before accounting
+memory. Valid pending-entry operations retain their existing amortized O(1)
+behavior; malformed detached groups return without allocation or mutation.

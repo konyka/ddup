@@ -1081,3 +1081,5 @@
     范围及迭代器参数，避免范围谓词解引用无效地址（Phase 375）
   - [x] List 迭代器修改包装器校验：`obj_list_remove_at/insert` 拒绝 NULL
     迭代器，避免包装层在底层 no-op 后继续解引用（Phase 376）
+  - [x] Stream PEL 所属关系校验：PEL 添加/删除拒绝无 back-pointer 的 group，
+    避免内存计数路径解引用 NULL stream（Phase 377）

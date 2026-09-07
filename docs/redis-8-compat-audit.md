@@ -797,6 +797,10 @@ Quicklist push now rejects null list handles and malformed non-empty data views
 before allocating or mutating a node. Zero-length values remain valid and retain
 their existing empty-element behavior.
 
+Stream pending-entry operations now reject detached groups lacking a stream
+owner before touching PEL storage or memory accounting, preserving normal
+consumer-group delivery semantics while failing closed on malformed handles.
+
 ZSET score and lex range iterators now reject NULL objects, ranges, and output
 iterators before evaluating predicates, preserving normal range ordering and
 fail-closed behavior for malformed internal calls.
