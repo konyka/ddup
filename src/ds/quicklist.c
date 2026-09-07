@@ -141,6 +141,8 @@ static int ql_maybe_merge(quicklist *ql, ql_node *n)
 
 void ql_init(quicklist *ql)
 {
+    if (ql == NULL)
+        return;
     ql->head = NULL;
     ql->tail = NULL;
     ql->len = 0;

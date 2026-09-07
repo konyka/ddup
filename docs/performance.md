@@ -2565,3 +2565,9 @@ complexity; invalid ranges return zero without scanning or mutating storage.
 Robin Hood lookup now skips `memcmp` for zero-length keys. Empty-key probes
 retain their existing O(1) hash-table path with one predictable branch, while
 `NULL + 0` keys remain portable across C libraries.
+
+### Phase 380: quicklist initialization guard
+
+`ql_init` now returns on a NULL handle before touching fields. Valid initialization
+retains its fixed-size zeroing cost; malformed lifecycle calls take a cold branch
+without allocation or state changes.

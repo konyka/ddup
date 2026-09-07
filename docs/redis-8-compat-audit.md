@@ -801,6 +801,9 @@ Robin Hood lookups now compare zero-length keys without calling `memcmp` on a
 NULL pointer. Empty binary keys can still be inserted, overwritten, and
 removed consistently on every supported platform.
 
+Quicklist initialization now fails closed for a NULL handle, preventing malformed
+lifecycle calls from dereferencing memory while preserving normal list creation.
+
 Stream pending-entry operations now reject detached groups lacking a stream
 owner before touching PEL storage or memory accounting, preserving normal
 consumer-group delivery semantics while failing closed on malformed handles.

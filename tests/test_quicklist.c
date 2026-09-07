@@ -82,6 +82,7 @@ static void test_null_query_handles(void)
     len = 99;
     DD_CHECK(ql_iter_value(NULL, &len) == NULL);
     DD_CHECK_EQ_INT(0, (long long)len);
+    ql_init(NULL);
 }
 
 static void test_null_iterator_handles(void)
