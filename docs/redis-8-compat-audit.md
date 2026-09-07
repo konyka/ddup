@@ -797,6 +797,10 @@ Quicklist push now rejects null list handles and malformed non-empty data views
 before allocating or mutating a node. Zero-length values remain valid and retain
 their existing empty-element behavior.
 
+Array history append now rejects a NULL array handle before capacity growth,
+keeping malformed internal/control calls fail-closed without changing valid
+history ordering or amortized append performance.
+
 Hash expiration wrappers now fail closed for null objects or callbacks before
 scanning the expiration table. `len_at(NULL)` returns zero and purge/each calls
 become safe no-ops without changing valid expiry behavior.

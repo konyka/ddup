@@ -117,6 +117,7 @@ static void test_array_api_rejects_null_object(void)
     DD_CHECK_EQ_INT(0, obj_array_get(NULL, 0, &value, &length));
     DD_CHECK(value == NULL);
     DD_CHECK_EQ_INT(0, (long long)length);
+    DD_CHECK_EQ_INT(-1, obj_array_history_push(NULL, 0));
 }
 
 static void test_object_limits_reject_null_outputs(void)

@@ -214,6 +214,8 @@ int obj_array_history_push(obj_array *a, uint64_t index)
 {
     uint64_t *p;
     size_t cap;
+    if (a == NULL)
+        return -1;
     if (a->history_len == a->history_cap) {
         cap = a->history_cap ? a->history_cap * 2 : 16;
         if (cap < a->history_cap || cap > SIZE_MAX / sizeof(*p)) return -1;

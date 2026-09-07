@@ -2516,3 +2516,9 @@ null-pointer `memcpy` behavior with one predictable branch.
 Array set and ring operations add a linear input-validation pass before table
 mutation. Valid batches retain their existing hash writes and history updates;
 invalid batches perform no allocation or partial update.
+
+### Phase 372: array history handle validation
+
+`obj_array_history_push` adds a cold null-handle guard before history growth.
+Valid history appends keep the same amortized O(1) allocation behavior; invalid
+calls return immediately without touching the array or allocator.
