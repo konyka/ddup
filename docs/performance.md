@@ -2571,3 +2571,10 @@ retain their existing O(1) hash-table path with one predictable branch, while
 `ql_init` now returns on a NULL handle before touching fields. Valid initialization
 retains its fixed-size zeroing cost; malformed lifecycle calls take a cold branch
 without allocation or state changes.
+
+### Phase 381: listpack query handle guards
+
+Listpack length, navigation, and decode helpers add fixed cold NULL checks and
+deterministic output initialization. Valid compact encoding remains unchanged;
+normal traversal keeps its allocation-free cost while malformed calls return
+empty results safely.

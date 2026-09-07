@@ -52,6 +52,21 @@ static void test_new_empty(void)
     lp_free(lp);
 }
 
+static void test_null_query_handles(void)
+{
+    unsigned char *p = (unsigned char *)0x1;
+    DD_CHECK_EQ_INT(0, (long long)lp_bytes(NULL));
+    DD_CHECK_EQ_INT(0, (long long)lp_length(NULL));
+    DD_CHECK(lp_first(NULL) == NULL);
+    DD_CHECK(lp_last(NULL) == NULL);
+    DD_CHECK(lp_next(NULL, p) == NULL);
+    DD_CHECK(lp_prev(NULL, p) == NULL);
+    DD_CHECK(lp_seek(NULL, 0) == NULL);
+    DD_CHECK(lp_get(NULL, NULL, NULL) == NULL);
+    DD_CHECK(lp_get_str(NULL, NULL, NULL) == NULL);
+    DD_CHECK(lp_find(NULL, NULL, NULL, 0) == NULL);
+}
+
 static void test_empty_null_payload_is_safe(void)
 {
     unsigned char *lp = lp_new();
@@ -350,6 +365,7 @@ static void test_reverse_iteration(void)
 
 int main(void)
 {
+    DD_RUN(test_null_query_handles);
     DD_RUN(test_new_empty);
     DD_RUN(test_empty_null_payload_is_safe);
     DD_RUN(test_append_strings);

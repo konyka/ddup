@@ -252,11 +252,15 @@ void lp_free(unsigned char *lp)
 
 size_t lp_bytes(const unsigned char *lp)
 {
+    if (lp == NULL)
+        return 0;
     return lp_load_total(lp);
 }
 
 uint64_t lp_length(const unsigned char *lp)
 {
+    if (lp == NULL)
+        return 0;
     uint16_t n = lp_load_numele(lp);
     uint64_t count = 0;
     unsigned char *p;
@@ -269,6 +273,8 @@ uint64_t lp_length(const unsigned char *lp)
 
 unsigned char *lp_first(unsigned char *lp)
 {
+    if (lp == NULL)
+        return NULL;
     unsigned char *p = lp + LP_HDR_SIZE;
     if (*p == LP_EOF)
         return NULL;
@@ -277,6 +283,8 @@ unsigned char *lp_first(unsigned char *lp)
 
 unsigned char *lp_last(unsigned char *lp)
 {
+    if (lp == NULL)
+        return NULL;
     unsigned char *eof = lp + lp_load_total(lp) - 1;
     if (eof == lp + LP_HDR_SIZE)
         return NULL;
@@ -285,6 +293,8 @@ unsigned char *lp_last(unsigned char *lp)
 
 unsigned char *lp_next(const unsigned char *lp, const unsigned char *p)
 {
+    if (lp == NULL || p == NULL)
+        return NULL;
     uint32_t total = lp_load_total(lp);
     uint64_t esz = lp_entry_payload_size(lp, p);
     uint64_t entry_total;
@@ -305,7 +315,7 @@ unsigned char *lp_prev(const unsigned char *lp, const unsigned char *p)
     uint64_t backlen;
     size_t blen_size;
     const unsigned char *prev;
-    if (p <= lp + LP_HDR_SIZE)
+    if (lp == NULL || p == NULL || p <= lp + LP_HDR_SIZE)
         return NULL; /* nothing before the first entry */
     backlen = lp_decode_backlen(lp, p);
     if (backlen == UINT64_MAX)
@@ -322,6 +332,8 @@ unsigned char *lp_prev(const unsigned char *lp, const unsigned char *p)
 unsigned char *lp_seek(unsigned char *lp, long index)
 {
     long forward = 1;
+    if (lp == NULL)
+        return NULL;
     uint16_t numele = lp_load_numele(lp);
     unsigned char *p;
     long i;
@@ -360,6 +372,12 @@ unsigned char *lp_seek(unsigned char *lp, long index)
 const unsigned char *lp_get(const unsigned char *p, uint32_t *slen,
                             int64_t *ival)
 {
+    if (slen != NULL)
+        *slen = 0;
+    if (ival != NULL)
+        *ival = 0;
+    if (p == NULL || slen == NULL || ival == NULL)
+        return NULL;
     unsigned char b = p[0];
     if ((b & LP_ENC_7BIT_UINT_MASK) == LP_ENC_7BIT_UINT) {
         *ival = b & 0x7Fu;
@@ -420,6 +438,10 @@ const unsigned char *lp_get_str(const unsigned char *p, unsigned char *buf,
                                 uint32_t *slen)
 {
     int64_t iv;
+    if (slen != NULL)
+        *slen = 0;
+    if (p == NULL || buf == NULL || slen == NULL)
+        return NULL;
     const unsigned char *s = lp_get(p, slen, &iv);
     int n;
     if (s != NULL)
