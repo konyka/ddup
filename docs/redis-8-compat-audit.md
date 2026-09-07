@@ -805,6 +805,10 @@ Object encoding helpers now fail closed for NULL value blobs, destination
 buffers, and decode outputs, preventing malformed value wrappers from
 dereferencing memory while preserving valid type tags and tier references.
 
+Tier reference packing now safely no-ops for a NULL destination, preventing
+malformed value-wrapper paths from writing through invalid addresses while
+leaving valid 17-byte tier encoding unchanged.
+
 Listpack query and decode helpers now fail closed for NULL handles and clear
 optional output lengths/values, preventing malformed internal calls from
 dereferencing invalid storage while preserving valid Redis-compatible entries.

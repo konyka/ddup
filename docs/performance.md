@@ -2596,3 +2596,9 @@ malformed non-empty needles return immediately without traversing entries.
 Object tag/string/pointer/tier helpers add fixed cold checks and deterministic
 zero outputs. Valid encoding remains branch-equivalent after the guard; invalid
 views return without dereferencing or allocation.
+
+### Phase 385: tier pack destination guard
+
+Tier reference packing now checks the destination buffer before writing. Valid
+17-byte encoding keeps the same fixed loop cost; malformed calls return on a
+cold branch without memory access.

@@ -50,6 +50,8 @@ void *obj_unpack_ptr(const char *val, size_t vlen)
 void obj_tier_pack(char buf[17], uint64_t record_id, uint64_t expire_ms)
 {
     int i;
+    if (buf == NULL)
+        return;
     buf[0] = (char)DDUP_OBJ_TIER;
     for (i = 0; i < 8; i++)
         buf[1 + i] = (char)((record_id >> (8 * i)) & 0xFFu);

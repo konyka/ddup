@@ -1097,3 +1097,5 @@
     搜索键，并安全处理空键，避免搜索路径 `memcmp` 解引用（Phase 383）
   - [x] 对象编码辅助 NULL 校验：tag/string/pointer/tier 编解码 API 对 NULL
     输入和输出安全返回并清零结果，避免值封装层崩溃（Phase 384）
+  - [x] Tier 编码空目标校验：`obj_tier_pack` 对 NULL 目标缓冲区安全 no-op，
+    避免后台值封装错误写入无效地址（Phase 385）

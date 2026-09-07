@@ -816,6 +816,7 @@ static void test_obj_str_zero_length_blob(void)
         DD_CHECK_EQ_INT(0, (long long)rid);
         DD_CHECK_EQ_INT(0, (long long)exp);
     }
+    obj_tier_pack(NULL, 1, 2);
     obj_str(NULL, 1, NULL, NULL);
 }
 
