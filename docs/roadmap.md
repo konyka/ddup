@@ -1107,3 +1107,5 @@
     `NULL + 0` 空二进制键语义且避免跨平台未定义调用（Phase 388）
   - [x] Pub/Sub 无参退订空频道复制安全：共享收集器为零长度频道分配最小存储并跳过
     `memcpy`，覆盖普通、模式和 shard 退订并保持空二进制频道语义（Phase 389）
+  - [x] HIMPORT 空名称复制安全：fieldset 与 field 的零长度名称使用最小存储并跳过
+    `memcpy`，空名称比较避免 NULL 指针传给 `memcmp`（Phase 390）

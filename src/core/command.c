@@ -1047,7 +1047,8 @@ static himport_fieldset *himport_fieldset_find(session *s, const char *name,
     size_t i;
     for (i = 0; i < s->himport_len; i++)
         if (s->himport_sets[i].name_len == name_len &&
-            memcmp(s->himport_sets[i].name, name, name_len) == 0)
+            (name_len == 0 ||
+             memcmp(s->himport_sets[i].name, name, name_len) == 0))
             return &s->himport_sets[i];
     return NULL;
 }
@@ -1063,13 +1064,14 @@ static int himport_fieldset_store(session *s, const resp_value *argv,
         return -1;
     count = argc - 3;
     memset(&fresh, 0, sizeof(fresh));
-    fresh.name = (char *)malloc(name_len);
+    fresh.name = (char *)malloc(name_len ? name_len : 1);
     fresh.fields = (char **)calloc(count, sizeof(*fresh.fields));
     fresh.field_lens = (size_t *)malloc(count * sizeof(*fresh.field_lens));
     if ((name_len != 0 && fresh.name == NULL) || fresh.fields == NULL ||
         fresh.field_lens == NULL)
         goto oom;
-    memcpy(fresh.name, name, name_len);
+    if (name_len != 0)
+        memcpy(fresh.name, name, name_len);
     fresh.name_len = name_len;
     fresh.count = count;
     for (i = 0; i < count; i++) {
@@ -1079,12 +1081,14 @@ static int himport_fieldset_store(session *s, const resp_value *argv,
             goto invalid;
         for (j = 0; j < i; j++)
             if (fresh.field_lens[j] == field_len &&
-                memcmp(fresh.fields[j], field, field_len) == 0)
+                (field_len == 0 ||
+                 memcmp(fresh.fields[j], field, field_len) == 0))
                 goto invalid;
-        fresh.fields[i] = (char *)malloc(field_len);
+        fresh.fields[i] = (char *)malloc(field_len ? field_len : 1);
         if (field_len != 0 && fresh.fields[i] == NULL)
             goto oom;
-        memcpy(fresh.fields[i], field, field_len);
+        if (field_len != 0)
+            memcpy(fresh.fields[i], field, field_len);
         fresh.field_lens[i] = field_len;
     }
     old = himport_fieldset_find(s, name, name_len);
@@ -1154,7 +1158,8 @@ static void command_himport(session *s, const resp_value *argv, size_t argc,
             goto syntax;
         for (i = 0; i < s->himport_len; i++) {
             if (s->himport_sets[i].name_len == name_len &&
-                memcmp(s->himport_sets[i].name, name, name_len) == 0) {
+                (name_len == 0 ||
+                 memcmp(s->himport_sets[i].name, name, name_len) == 0)) {
                 himport_fieldset_free(&s->himport_sets[i]);
                 s->himport_sets[i] = s->himport_sets[--s->himport_len];
                 removed = 1;

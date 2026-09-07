@@ -326,6 +326,36 @@ static void test_container_help(void)
     DD_CHECK(strstr(g_out.data, "INFO") != NULL);
 }
 
+static void test_himport_empty_binary_names(void)
+{
+    memset(g_argv, 0, sizeof(g_argv));
+    g_argv[0].type = RESP_BULK_STRING;
+    g_argv[0].str = "HIMPORT";
+    g_argv[0].len = 7;
+    g_argv[1].type = RESP_BULK_STRING;
+    g_argv[1].str = "PREPARE";
+    g_argv[1].len = 7;
+    g_argv[2].type = RESP_BULK_STRING;
+    g_argv[2].str = NULL;
+    g_argv[2].len = 0;
+    g_argv[3].type = RESP_BULK_STRING;
+    g_argv[3].str = NULL;
+    g_argv[3].len = 0;
+    g_out.len = 0;
+    session_execute_at(&g_session, g_argv, 4, &g_out, 1000000);
+    resp_buf_reserve(&g_out, 1);
+    g_out.data[g_out.len] = '\0';
+    EXPECT_REPLY("+OK\r\n");
+
+    g_argv[1].str = "DISCARD";
+    g_argv[1].len = 7;
+    g_out.len = 0;
+    session_execute_at(&g_session, g_argv, 3, &g_out, 1000000);
+    resp_buf_reserve(&g_out, 1);
+    g_out.data[g_out.len] = '\0';
+    EXPECT_REPLY(":1\r\n");
+}
+
 static void test_lolwut(void)
 {
     cmd(1, "LOLWUT");
@@ -402,6 +432,7 @@ int main(void)
     DD_RUN(test_slowlog);
     DD_RUN(test_bgsave_bgrewriteaof);
     DD_RUN(test_container_help);
+    DD_RUN(test_himport_empty_binary_names);
     DD_RUN(test_lolwut);
     resp_buf_free(&g_out);
     session_release(&g_session);

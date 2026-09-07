@@ -812,6 +812,10 @@ No-argument Pub/Sub unsubscribe collection now materializes empty binary names
 without invoking `memcpy` on NULL. Ordinary, pattern, and shard subscriptions
 therefore retain Redis-compatible empty-name semantics across C libraries.
 
+HIMPORT fieldset and field metadata now materialize `NULL + 0` names with
+minimal storage, skip zero-length copies, and avoid NULL `memcmp` calls while
+preserving valid import/discard semantics.
+
 Listpack search now rejects non-empty NULL needles and compares empty needles
 without invoking `memcmp` on NULL, preserving valid binary lookup semantics on
 all supported platforms.

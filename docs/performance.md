@@ -2629,3 +2629,10 @@ The shared no-argument unsubscribe collector allocates one byte for an empty
 channel, pattern, or shard-channel and skips its zero-length copy. Normal
 unsubscriptions retain the existing one allocation and copy; the added branch
 is cold for non-empty names and prevents platform-dependent undefined calls.
+
+### Phase 390: HIMPORT empty-name copy safety
+
+HIMPORT fieldset and field names now allocate one byte and skip zero-length
+copies. Equality checks also bypass `memcmp` for empty names. Non-empty import
+work keeps the same allocation/copy and comparison costs; only empty metadata
+uses the additional cold branches.
