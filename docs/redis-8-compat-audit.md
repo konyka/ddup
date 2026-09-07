@@ -806,6 +806,10 @@ writing values. This preserves Redis-compatible batch atomicity when history
 capacity cannot be grown, while valid operations keep their existing ordering
 and linear write cost.
 
+ZSET iterator creation, movement, comparison, and value access now fail closed
+for NULL iterators/objects and initialize optional lengths on failure. Normal
+ZRANGE traversal and borrowed-view lifetimes are unchanged.
+
 Hash expiration wrappers now fail closed for null objects or callbacks before
 scanning the expiration table. `len_at(NULL)` returns zero and purge/each calls
 become safe no-ops without changing valid expiry behavior.

@@ -2529,3 +2529,9 @@ Array insert and ring writes reserve the complete history span before mutating
 values. Valid batches retain geometric growth and O(n) writes; allocation
 failure is detected on the cold reservation path and cannot leave a partial
 history/value update.
+
+### Phase 374: zset iterator input guards
+
+ZSET iterator entry points now take a fixed cold null-check before listpack or
+skiplist traversal. Valid iteration remains allocation-free with unchanged
+complexity; malformed calls return an empty result without touching hot storage.

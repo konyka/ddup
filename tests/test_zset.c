@@ -63,6 +63,32 @@ static void test_zset_mutation_rejects_null_object(void)
     DD_CHECK_EQ_INT(-1, obj_zset_add(NULL, NULL, 0, 1.0));
 }
 
+static void test_zset_iterators_reject_null_inputs(void)
+{
+    obj_zset *z = obj_zset_new();
+    obj_zset_iter it;
+    size_t len = 99;
+
+    DD_CHECK(z != NULL);
+    if (z != NULL) {
+        DD_CHECK_EQ_INT(0, obj_zset_seek(NULL, 0, &it));
+        DD_CHECK_EQ_INT(0, obj_zset_seek(z, 0, NULL));
+        DD_CHECK_EQ_INT(0, obj_zset_first(NULL, &it));
+        DD_CHECK_EQ_INT(0, obj_zset_first(z, NULL));
+        DD_CHECK_EQ_INT(0, obj_zset_last(NULL, &it));
+        DD_CHECK_EQ_INT(0, obj_zset_last(z, NULL));
+        DD_CHECK_EQ_INT(0, obj_zset_iter_next(NULL));
+        DD_CHECK_EQ_INT(0, obj_zset_iter_prev(NULL));
+        DD_CHECK_EQ_INT(0, obj_zset_iter_eq(NULL, &it));
+        DD_CHECK_EQ_INT(0, obj_zset_iter_eq(&it, NULL));
+        DD_CHECK(obj_zset_iter_member(NULL, &len) == NULL);
+        DD_CHECK_EQ_INT(0, (long long)len);
+        DD_CHECK(obj_zset_iter_member(&it, NULL) == NULL);
+        DD_CHECK_EQ_INT(0, obj_zset_iter_score(NULL));
+        obj_zset_free(z);
+    }
+}
+
 static void test_zset_pop_rejects_null_outputs(void)
 {
     obj_zset *z = obj_zset_new();
@@ -1165,6 +1191,7 @@ int main(void)
     DD_RUN(test_obj_str_zero_length_blob);
     DD_RUN(test_zset_api_rejects_null_object);
     DD_RUN(test_zset_mutation_rejects_null_object);
+    DD_RUN(test_zset_iterators_reject_null_inputs);
     DD_RUN(test_zset_pop_rejects_null_outputs);
     DD_RUN(test_zset_rejects_unrepresentable_member);
     DD_RUN(test_zadd_zscore_zcard);

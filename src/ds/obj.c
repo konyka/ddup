@@ -1454,6 +1454,8 @@ int obj_zset_rem(obj_zset *z, const char *m, size_t mlen)
 
 int obj_zset_seek(obj_zset *z, size_t idx, obj_zset_iter *it)
 {
+    if (z == NULL || it == NULL)
+        return 0;
     it->z = z;
     if (z->encoding == OBJ_ZSET_LP) {
         if (idx >= lp_length(z->lp) / 2)
@@ -1467,6 +1469,8 @@ int obj_zset_seek(obj_zset *z, size_t idx, obj_zset_iter *it)
 
 int obj_zset_first(obj_zset *z, obj_zset_iter *it)
 {
+    if (z == NULL || it == NULL)
+        return 0;
     it->z = z;
     if (z->encoding == OBJ_ZSET_LP) {
         it->u.lp.p = lp_first(z->lp);
@@ -1478,6 +1482,8 @@ int obj_zset_first(obj_zset *z, obj_zset_iter *it)
 
 int obj_zset_last(obj_zset *z, obj_zset_iter *it)
 {
+    if (z == NULL || it == NULL)
+        return 0;
     it->z = z;
     if (z->encoding == OBJ_ZSET_LP) {
         unsigned char *sp = lp_last(z->lp); /* score entry of the tail */
@@ -1490,6 +1496,8 @@ int obj_zset_last(obj_zset *z, obj_zset_iter *it)
 
 int obj_zset_iter_next(obj_zset_iter *it)
 {
+    if (it == NULL || it->z == NULL)
+        return 0;
     obj_zset *z = it->z;
     if (z->encoding == OBJ_ZSET_LP) {
         unsigned char *sp = lp_next(z->lp, it->u.lp.p);
@@ -1502,6 +1510,8 @@ int obj_zset_iter_next(obj_zset_iter *it)
 
 int obj_zset_iter_prev(obj_zset_iter *it)
 {
+    if (it == NULL || it->z == NULL)
+        return 0;
     obj_zset *z = it->z;
     if (z->encoding == OBJ_ZSET_LP) {
         unsigned char *sp = lp_prev(z->lp, it->u.lp.p);
@@ -1514,6 +1524,9 @@ int obj_zset_iter_prev(obj_zset_iter *it)
 
 int obj_zset_iter_eq(const obj_zset_iter *a, const obj_zset_iter *b)
 {
+    if (a == NULL || b == NULL || a->z == NULL || b->z == NULL ||
+        a->z != b->z)
+        return 0;
     if (a->z->encoding == OBJ_ZSET_LP)
         return a->u.lp.p == b->u.lp.p;
     return a->u.node == b->u.node;
@@ -1521,6 +1534,10 @@ int obj_zset_iter_eq(const obj_zset_iter *a, const obj_zset_iter *b)
 
 const char *obj_zset_iter_member(obj_zset_iter *it, size_t *mlen)
 {
+    if (mlen != NULL)
+        *mlen = 0;
+    if (it == NULL || it->z == NULL || mlen == NULL)
+        return NULL;
     if (it->z->encoding == OBJ_ZSET_LP) {
         uint32_t ml = 0;
         const unsigned char *mv = lp_get_str(it->u.lp.p, it->u.lp.mbuf, &ml);
@@ -1533,6 +1550,8 @@ const char *obj_zset_iter_member(obj_zset_iter *it, size_t *mlen)
 
 double obj_zset_iter_score(obj_zset_iter *it)
 {
+    if (it == NULL || it->z == NULL)
+        return 0.0;
     if (it->z->encoding == OBJ_ZSET_LP) {
         unsigned char sbuf[24];
         return zlp_entry_score(lp_next(it->z->lp, it->u.lp.p), sbuf);
