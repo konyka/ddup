@@ -68,7 +68,8 @@ static zsl_node *zsl_node_new(int level, double score, const char *member,
     n->backward = NULL;
     n->mlen = (uint32_t)mlen;
     n->member = (char *)zsl_xmalloc(mlen ? mlen : 1);
-    memcpy(n->member, member, mlen);
+    if (mlen > 0)
+        memcpy(n->member, member, mlen);
     return n;
 }
 

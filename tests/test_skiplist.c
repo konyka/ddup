@@ -69,6 +69,8 @@ static void test_null_mutation_handles(void)
     DD_CHECK_EQ_INT(-1, zsl_insert(z, 1.0, NULL, 1));
     DD_CHECK_EQ_INT(0, zsl_delete(z, 1.0, NULL, 1));
     DD_CHECK_EQ_INT(0, zsl_insert(z, 1.0, &byte, 1));
+    DD_CHECK_EQ_INT(0, zsl_insert(z, 2.0, NULL, 0));
+    DD_CHECK_EQ_INT(1, zsl_delete(z, 2.0, NULL, 0));
     zsl_free(z);
 }
 

@@ -2609,3 +2609,9 @@ HOTKEYS CPU/NET insertion sorts now use key-byte ordering when metric values
 tie. The common unequal-score path is unchanged; deterministic ties prevent
 backend-dependent output while retaining O(k^2) sorting for the configured
 small hotkey set.
+
+### Phase 387: skiplist empty-member copy safety
+
+Skiplist node creation skips the member copy for zero-length members. Valid
+non-empty inserts retain the same allocation and copy cost; empty binary
+members remain portable without invoking `memcpy` on NULL.

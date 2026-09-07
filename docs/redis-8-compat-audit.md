@@ -801,6 +801,9 @@ HOTKEYS metric views now apply a deterministic key-byte tie-break for equal CPU
 or network scores, making responses stable across readiness and io_uring
 backends without changing ranking by the selected metric.
 
+Skiplist nodes now safely materialize `NULL + 0` members by avoiding a zero-byte
+NULL `memcpy`, preserving valid empty-member ordering and deletion semantics.
+
 Listpack search now rejects non-empty NULL needles and compares empty needles
 without invoking `memcmp` on NULL, preserving valid binary lookup semantics on
 all supported platforms.

@@ -1101,3 +1101,5 @@
     避免后台值封装错误写入无效地址（Phase 385）
   - [x] HOTKEYS 指标稳定排序：CPU/NET 指标同分时按 key 字节序 tie-break，
     消除 io_uring/多后端下输出顺序抖动（Phase 386）
+  - [x] Skiplist 空成员复制安全：零长度成员跳过 `memcpy`，保持 `NULL + 0`
+    成员可安全插入/删除，避免平台相关未定义调用（Phase 387）
