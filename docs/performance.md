@@ -2535,3 +2535,9 @@ history/value update.
 ZSET iterator entry points now take a fixed cold null-check before listpack or
 skiplist traversal. Valid iteration remains allocation-free with unchanged
 complexity; malformed calls return an empty result without touching hot storage.
+
+### Phase 375: zset range iterator guards
+
+Score/lex range positioning and counting add fixed cold argument checks before
+the existing listpack/skiplist traversal. Valid range queries keep their
+allocation-free complexity; malformed ranges return an empty result safely.

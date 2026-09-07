@@ -89,6 +89,35 @@ static void test_zset_iterators_reject_null_inputs(void)
     }
 }
 
+static void test_zset_range_iterators_reject_null_inputs(void)
+{
+    obj_zset *z = obj_zset_new();
+    obj_zset_iter it;
+    zrangespec sr;
+    zlexrangespec lr;
+
+    memset(&sr, 0, sizeof(sr));
+    memset(&lr, 0, sizeof(lr));
+    DD_CHECK(z != NULL);
+    if (z != NULL) {
+        DD_CHECK_EQ_INT(0, obj_zset_first_in_range(NULL, &sr, &it));
+        DD_CHECK_EQ_INT(0, obj_zset_first_in_range(z, NULL, &it));
+        DD_CHECK_EQ_INT(0, obj_zset_first_in_range(z, &sr, NULL));
+        DD_CHECK_EQ_INT(0, obj_zset_last_in_range(NULL, &sr, &it));
+        DD_CHECK_EQ_INT(0, obj_zset_last_in_range(z, NULL, &it));
+        DD_CHECK_EQ_INT(0, obj_zset_last_in_range(z, &sr, NULL));
+        DD_CHECK_EQ_INT(0, obj_zset_first_in_lex_range(NULL, &lr, &it));
+        DD_CHECK_EQ_INT(0, obj_zset_first_in_lex_range(z, NULL, &it));
+        DD_CHECK_EQ_INT(0, obj_zset_first_in_lex_range(z, &lr, NULL));
+        DD_CHECK_EQ_INT(0, obj_zset_last_in_lex_range(NULL, &lr, &it));
+        DD_CHECK_EQ_INT(0, obj_zset_last_in_lex_range(z, NULL, &it));
+        DD_CHECK_EQ_INT(0, obj_zset_last_in_lex_range(z, &lr, NULL));
+        DD_CHECK_EQ_INT(0, (long long)obj_zset_count_in_range(NULL, &sr));
+        DD_CHECK_EQ_INT(0, (long long)obj_zset_count_in_range(z, NULL));
+        obj_zset_free(z);
+    }
+}
+
 static void test_zset_pop_rejects_null_outputs(void)
 {
     obj_zset *z = obj_zset_new();
@@ -1192,6 +1221,7 @@ int main(void)
     DD_RUN(test_zset_api_rejects_null_object);
     DD_RUN(test_zset_mutation_rejects_null_object);
     DD_RUN(test_zset_iterators_reject_null_inputs);
+    DD_RUN(test_zset_range_iterators_reject_null_inputs);
     DD_RUN(test_zset_pop_rejects_null_outputs);
     DD_RUN(test_zset_rejects_unrepresentable_member);
     DD_RUN(test_zadd_zscore_zcard);

@@ -797,6 +797,10 @@ Quicklist push now rejects null list handles and malformed non-empty data views
 before allocating or mutating a node. Zero-length values remain valid and retain
 their existing empty-element behavior.
 
+ZSET score and lex range iterators now reject NULL objects, ranges, and output
+iterators before evaluating predicates, preserving normal range ordering and
+fail-closed behavior for malformed internal calls.
+
 Array history append now rejects a NULL array handle before capacity growth,
 keeping malformed internal/control calls fail-closed without changing valid
 history ordering or amortized append performance.

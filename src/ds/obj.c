@@ -1603,6 +1603,8 @@ static int zlex_lte_max(const char *m, size_t mlen, const zlexbound *max)
 int obj_zset_first_in_range(obj_zset *z, const zrangespec *r,
                             obj_zset_iter *it)
 {
+    if (z == NULL || r == NULL || it == NULL)
+        return 0;
     it->z = z;
     if (z->encoding == OBJ_ZSET_LP) {
         unsigned char sbuf[24];
@@ -1626,6 +1628,8 @@ int obj_zset_first_in_range(obj_zset *z, const zrangespec *r,
 int obj_zset_last_in_range(obj_zset *z, const zrangespec *r,
                            obj_zset_iter *it)
 {
+    if (z == NULL || r == NULL || it == NULL)
+        return 0;
     it->z = z;
     if (z->encoding == OBJ_ZSET_LP) {
         unsigned char sbuf[24];
@@ -1649,6 +1653,8 @@ int obj_zset_last_in_range(obj_zset *z, const zrangespec *r,
 
 size_t obj_zset_count_in_range(obj_zset *z, const zrangespec *r)
 {
+    if (z == NULL || r == NULL)
+        return 0;
     if (z->encoding == OBJ_ZSET_LP) {
         obj_zset_iter it;
         size_t n = 0;
@@ -1668,6 +1674,8 @@ size_t obj_zset_count_in_range(obj_zset *z, const zrangespec *r)
 int obj_zset_first_in_lex_range(obj_zset *z, const zlexrangespec *r,
                                 obj_zset_iter *it)
 {
+    if (z == NULL || r == NULL || it == NULL)
+        return 0;
     it->z = z;
     if (z->encoding == OBJ_ZSET_LP) {
         unsigned char mbuf[24];
@@ -1692,6 +1700,8 @@ int obj_zset_first_in_lex_range(obj_zset *z, const zlexrangespec *r,
 int obj_zset_last_in_lex_range(obj_zset *z, const zlexrangespec *r,
                                obj_zset_iter *it)
 {
+    if (z == NULL || r == NULL || it == NULL)
+        return 0;
     it->z = z;
     if (z->encoding == OBJ_ZSET_LP) {
         unsigned char mbuf[24];
