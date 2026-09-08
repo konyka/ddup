@@ -2672,3 +2672,9 @@ avoid an undefined NULL `memcpy` without additional allocation.
 RedBus publish-frame construction skips zero-length channel and message copies.
 Normal inter-worker Pub/Sub frames retain the same contiguous-copy cost; empty
 binary payloads use two cold length checks without undefined memory calls.
+
+### Phase 397: Cluster Bus empty publish payload safety
+
+Cluster Bus publish-frame construction now skips zero-length channel/message
+copies. Normal cluster publish frames retain the same contiguous-copy cost;
+empty payloads use cold length checks and remain portable across C libraries.

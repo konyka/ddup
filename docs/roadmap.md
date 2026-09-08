@@ -1121,3 +1121,5 @@
     二进制 key 过期回收语义（Phase 395）
   - [x] RedBus 空发布载荷复制安全：跨 worker Pub/Sub 帧构建对零长度 channel/message
     跳过 `memcpy`，保持空二进制载荷线协议语义（Phase 396）
+  - [x] Cluster Bus 空发布载荷复制安全：集群总线发布帧对零长度 channel/message
+    跳过 `memcpy`，保持空二进制载荷线协议语义（Phase 397）

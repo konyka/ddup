@@ -140,6 +140,21 @@ static void test_build_rejects_null_inputs(void)
     db_destroy(&d);
 }
 
+static void test_publish_empty_binary_payload(void)
+{
+    db d;
+    resp_buf out;
+    db_init(&d);
+    cluster_nodes_init(&d);
+    resp_buf_init(&out);
+    DD_CHECK_EQ_INT(0, cluster_bus_build_publish(&d, NULL, 0, NULL, 0, &out));
+    DD_CHECK_EQ_INT(18, (long long)out.len);
+    DD_CHECK_EQ_INT(0, (unsigned char)out.data[10]);
+    DD_CHECK_EQ_INT(0, (unsigned char)out.data[17]);
+    resp_buf_free(&out);
+    db_destroy(&d);
+}
+
 static void test_handle_rejects_null_inputs(void)
 {
     db d;
@@ -337,6 +352,7 @@ int main(void)
     DD_RUN(test_frame_roundtrip);
     DD_RUN(test_build_failures_leave_output_unchanged);
     DD_RUN(test_build_rejects_null_inputs);
+    DD_RUN(test_publish_empty_binary_payload);
     DD_RUN(test_handle_rejects_null_inputs);
     DD_RUN(test_handle_rejects_truncated_v2_before_node_publish);
     DD_RUN(test_handle_rejects_truncated_gossip_without_topology_mutation);

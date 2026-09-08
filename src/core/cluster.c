@@ -918,9 +918,11 @@ int cluster_bus_build_publish(struct db *d, const char *ch, size_t chlen,
     put32(p + 4, (uint32_t)total);
     put16(p + 8, (uint16_t)CLUSTER_MSG_PUBLISH);
     put32(p + 10, (uint32_t)chlen);
-    memcpy(p + 14, ch, chlen);
+    if (chlen != 0)
+        memcpy(p + 14, ch, chlen);
     put32(p + 14 + chlen, (uint32_t)mlen);
-    memcpy(p + 18 + chlen, msg, mlen);
+    if (mlen != 0)
+        memcpy(p + 18 + chlen, msg, mlen);
     out->len = start + total;
     return 0;
 }

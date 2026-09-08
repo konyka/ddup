@@ -837,6 +837,10 @@ RedBus publish-frame construction now skips zero-length channel/message copies,
 preserving empty binary cross-worker Pub/Sub payloads without invoking `memcpy`
 on NULL.
 
+Cluster Bus publish-frame construction now applies the same zero-length guards,
+preserving empty binary cluster Pub/Sub payloads without invoking `memcpy` on
+NULL.
+
 Listpack search now rejects non-empty NULL needles and compares empty needles
 without invoking `memcmp` on NULL, preserving valid binary lookup semantics on
 all supported platforms.
