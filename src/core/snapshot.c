@@ -577,7 +577,8 @@ static char *load_payload(reader *r, int tag, char blob[9], size_t *out_len)
             exit(1);
         }
         b[0] = (char)DDUP_OBJ_STRING;
-        memcpy(b + 1, s, sl);
+        if (sl != 0)
+            memcpy(b + 1, s, sl);
         *out_len = (size_t)sl + 1;
         return b;
     }

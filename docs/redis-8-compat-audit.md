@@ -853,6 +853,9 @@ data, preserving empty script digest behavior without undefined copies.
 Hash-tag extraction and slot calculation now handle `NULL + 0` keys without
 pointer arithmetic or zero-length copies, preserving empty-key slot semantics.
 
+Snapshot string loading now skips zero-length payload copies while preserving
+empty-string snapshot round trips without invoking `memcpy` on NULL.
+
 Listpack search now rejects non-empty NULL needles and compares empty needles
 without invoking `memcmp` on NULL, preserving valid binary lookup semantics on
 all supported platforms.

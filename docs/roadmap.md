@@ -1131,3 +1131,5 @@
     非零长度 NULL 数据，保持空脚本摘要语义（Phase 400）
   - [x] Hash Slot 空 key 指针安全：`hash_tag/hash_slot` 对零长度 NULL key 避免
     指针算术与零长度复制，保持空 key 槽位语义（Phase 401）
+  - [x] Snapshot 空字符串载荷复制安全：字符串反序列化对零长度 payload 跳过
+    `memcpy`，保持空字符串快照往返语义（Phase 402）

@@ -2702,3 +2702,9 @@ block processing and copy cost.
 Hash-tag extraction and slot calculation now avoid NULL pointer arithmetic and
 zero-length copies for empty keys. Non-empty key hashing retains the same table
 lookup and substring scan costs; only empty keys take the cold guard.
+
+### Phase 402: snapshot empty-string payload safety
+
+Snapshot string loading skips the zero-length payload copy while retaining the
+tagged allocation. Normal strings keep the same allocation/copy cost; empty
+strings avoid a NULL source `memcpy`.

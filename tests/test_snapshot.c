@@ -72,6 +72,46 @@ static void test_snapshot_empty_payload_accepts_null_source(void)
     resp_buf_free(&out);
 }
 
+static void test_snapshot_roundtrip_empty_string(void)
+{
+    db d, restored;
+    resp_buf out;
+    resp_value setv[3];
+    session *s;
+
+    db_init(&d);
+    db_init(&restored);
+    resp_buf_init(&out);
+    s = session_create(&d);
+    memset(setv, 0, sizeof(setv));
+    setv[0].type = setv[1].type = setv[2].type = RESP_BULK_STRING;
+    setv[0].str = "SET"; setv[0].len = 3;
+    setv[1].str = "empty"; setv[1].len = 5;
+    setv[2].str = NULL; setv[2].len = 0;
+    session_execute_at(s, setv, 3, &out, 1000000ULL);
+    DD_CHECK_MEM("+OK\r\n", 5, out.data, out.len);
+    out.len = 0;
+    DD_CHECK_EQ_INT(0, snapshot_serialize(&d, &out));
+    DD_CHECK_EQ_INT(0, snapshot_load_mem(&restored, out.data, out.len,
+                                         1000000ULL));
+    {
+        session *r = session_create(&restored);
+        resp_value getv[2];
+        memset(getv, 0, sizeof(getv));
+        getv[0].type = getv[1].type = RESP_BULK_STRING;
+        getv[0].str = "GET"; getv[0].len = 3;
+        getv[1].str = "empty"; getv[1].len = 5;
+        out.len = 0;
+        session_execute_at(r, getv, 2, &out, 1000000ULL);
+        DD_CHECK_MEM("$0\r\n\r\n", 6, out.data, out.len);
+        session_free(r);
+    }
+    session_free(s);
+    resp_buf_free(&out);
+    db_destroy(&restored);
+    db_destroy(&d);
+}
+
 static void test_snapshot_shards_reject_null_context(void)
 {
     void *ctxs[1] = {NULL};
@@ -806,6 +846,7 @@ int main(void)
     DD_RUN(test_snapshot_api_rejects_null_inputs);
     DD_RUN(test_snapshot_multi_api_rejects_null_inputs);
     DD_RUN(test_snapshot_empty_payload_accepts_null_source);
+    DD_RUN(test_snapshot_roundtrip_empty_string);
     DD_RUN(test_snapshot_shards_reject_null_context);
     DD_RUN(test_roundtrip_all_types);
     DD_RUN(test_expired_keys_skipped_at_load);
