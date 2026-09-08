@@ -1895,7 +1895,8 @@ int obj_zset_pop(obj_zset *z, int min, char **member, size_t *mlen,
             fprintf(stderr, "ddup: out of memory\n");
             exit(1);
         }
-        memcpy(copy, mv, ml);
+        if (ml != 0)
+            memcpy(copy, mv, ml);
         *score = zlp_entry_score(lp_next(z->lp, mp), sbuf);
         *member = copy;
         *mlen = ml;
@@ -1913,7 +1914,8 @@ int obj_zset_pop(obj_zset *z, int min, char **member, size_t *mlen,
             fprintf(stderr, "ddup: out of memory\n");
             exit(1);
         }
-        memcpy(copy, node->member, node->mlen);
+        if (node->mlen != 0)
+            memcpy(copy, node->member, node->mlen);
         *score = node->score;
         *member = copy;
         *mlen = node->mlen;

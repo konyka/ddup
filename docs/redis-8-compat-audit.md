@@ -827,6 +827,9 @@ without invoking `memcpy` on NULL.
 SORT result collection now materializes empty list/zset values without invoking
 `memcpy` on NULL, preserving empty binary value ordering and serialization.
 
+ZSET pop now skips zero-length member copies in listpack and skiplist encodings,
+preserving empty binary `ZPOP*` semantics without invoking `memcpy` on NULL.
+
 Listpack search now rejects non-empty NULL needles and compares empty needles
 without invoking `memcmp` on NULL, preserving valid binary lookup semantics on
 all supported platforms.

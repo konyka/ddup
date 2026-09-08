@@ -1,6 +1,7 @@
 /* test_zset.c - sorted set commands with synthetic injected time. */
 #include <stdarg.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "core/command.h"
@@ -150,6 +151,25 @@ static void test_zset_pop_rejects_null_outputs(void)
         DD_CHECK_EQ_INT(1, (long long)obj_zset_len(z));
         obj_zset_free(z);
     }
+}
+
+static void test_zset_pop_empty_binary_member(void)
+{
+    obj_zset *z = obj_zset_new();
+    char *member = NULL;
+    size_t mlen = 99;
+    double score = 0.0;
+
+    DD_CHECK(z != NULL);
+    if (z == NULL)
+        return;
+    DD_CHECK_EQ_INT(1, obj_zset_add(z, NULL, 0, 1.0));
+    DD_CHECK_EQ_INT(1, obj_zset_pop(z, 1, &member, &mlen, &score));
+    DD_CHECK(member != NULL);
+    DD_CHECK_EQ_INT(0, (long long)mlen);
+    DD_CHECK(score == 1.0);
+    free(member);
+    obj_zset_free(z);
 }
 
 static void fill_abc(db *d, resp_buf *out)
@@ -1250,6 +1270,7 @@ int main(void)
     DD_RUN(test_zset_range_iterators_reject_null_inputs);
     DD_RUN(test_zset_range_mutations_reject_null_inputs);
     DD_RUN(test_zset_pop_rejects_null_outputs);
+    DD_RUN(test_zset_pop_empty_binary_member);
     DD_RUN(test_zset_rejects_unrepresentable_member);
     DD_RUN(test_zadd_zscore_zcard);
     DD_RUN(test_zincrby_zrem);

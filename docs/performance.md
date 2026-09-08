@@ -2654,3 +2654,9 @@ branch is only taken for empty binary members.
 SORT result collection now skips zero-length value copies while retaining the
 terminator allocation. Normal list/zset values keep the same copy cost; empty
 binary values avoid a NULL `memcpy` call.
+
+### Phase 394: ZSET pop empty-member copy safety
+
+Both listpack and skiplist ZSET pop paths now skip zero-length member copies.
+Normal `ZPOP*` members retain their existing allocation/copy cost; the branch is
+only taken for empty binary members.
