@@ -270,8 +270,10 @@ int redbus_build_publish(struct db *d, int type, const char *ch,
     cp = write_header(d, sn, type, p); /* count stays 0: no gossip */
     put32be(cp, (uint32_t)chlen);
     put32be(cp + 4, (uint32_t)mlen);
-    memcpy(cp + 8, ch, chlen);
-    memcpy(cp + 8 + chlen, msg, mlen);
+    if (chlen != 0)
+        memcpy(cp + 8, ch, chlen);
+    if (mlen != 0)
+        memcpy(cp + 8 + chlen, msg, mlen);
     cp += 8 + chlen + mlen;
 
     total = (size_t)(cp - p);

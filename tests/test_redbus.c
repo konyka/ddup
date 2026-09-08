@@ -566,6 +566,28 @@ static void test_publish_payload_is_exact(void)
     db_destroy(&d);
 }
 
+static void test_publish_empty_binary_payload(void)
+{
+    db d;
+    resp_buf frame;
+    cluster_node *me;
+
+    db_init(&d);
+    cluster_nodes_init(&d);
+    me = cluster_node_add(&d, ID1);
+    DD_CHECK(me != NULL);
+    if (me != NULL)
+        me->flags = CLUSTER_NODE_MYSELF | CLUSTER_NODE_MASTER;
+    resp_buf_init(&frame);
+    DD_CHECK_EQ_INT(0, redbus_build_publish(&d, REDBUS_TYPE_PUBLISH,
+                                             NULL, 0, NULL, 0, &frame));
+    DD_CHECK_EQ_INT(REDBUS_HDR_LEN + 8, (long long)frame.len);
+    DD_CHECK_EQ_INT(0, (unsigned char)frame.data[REDBUS_HDR_LEN]);
+    DD_CHECK_EQ_INT(0, (unsigned char)frame.data[REDBUS_HDR_LEN + 7]);
+    resp_buf_free(&frame);
+    db_destroy(&d);
+}
+
 int main(void)
 {
     DD_RUN(test_fixture_decode);
@@ -579,5 +601,6 @@ int main(void)
     DD_RUN(test_build_failures_leave_output_unchanged);
     DD_RUN(test_redbus_api_rejects_invalid_inputs);
     DD_RUN(test_publish_payload_is_exact);
+    DD_RUN(test_publish_empty_binary_payload);
     return DD_TEST_SUMMARY();
 }

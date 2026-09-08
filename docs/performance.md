@@ -2666,3 +2666,9 @@ only taken for empty binary members.
 The active expiration sampler skips copying zero-length keys before deletion.
 Ordinary sampled keys retain their stack-buffer copy path; empty binary keys
 avoid an undefined NULL `memcpy` without additional allocation.
+
+### Phase 396: RedBus empty publish payload safety
+
+RedBus publish-frame construction skips zero-length channel and message copies.
+Normal inter-worker Pub/Sub frames retain the same contiguous-copy cost; empty
+binary payloads use two cold length checks without undefined memory calls.
