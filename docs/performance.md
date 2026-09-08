@@ -2690,3 +2690,9 @@ undefined NULL source-pointer calls through a cold length check.
 The shared RESP buffer appender skips zero-length copies from NULL sources.
 Normal response writes retain their existing reserve and copy cost; empty
 simple/error/bulk payloads take a cold branch and remain portable.
+
+### Phase 400: SHA1 empty-input update safety
+
+SHA1 updates now treat `NULL + 0` as an empty input and reject non-empty NULL
+data. Zero-length updates skip the copy branch; normal hashing retains the same
+block processing and copy cost.

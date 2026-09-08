@@ -58,6 +58,8 @@ static void test_sha1_vectors(void)
     DD_CHECK_STR("84983e441c3bd26ebaae4aa1f95129e5e54670f1", out);
     sha1_hex("The quick brown fox jumps over the lazy dog", 43, out);
     DD_CHECK_STR("2fd4e1c67a2d28fced849ee1bb76e7391b93eb12", out);
+    sha1_hex(NULL, 0, out);
+    DD_CHECK_STR("da39a3ee5e6b4b0d3255bfef95601890afd80709", out);
     {
         /* RFC 3174: one million 'a' */
         char buf[1000];

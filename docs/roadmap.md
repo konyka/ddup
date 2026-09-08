@@ -1127,3 +1127,5 @@
     跳过 `memcpy`，保持空值序列化并避免 NULL 源指针调用（Phase 398）
   - [x] RESP Writer 空载荷追加安全：共享追加器对 `NULL + 0` 源跳过 `memcpy`，
     保持空 simple/error/bulk 响应语义（Phase 399）
+  - [x] SHA1 空输入更新安全：`sha1_update` 对 `NULL + 0` 输入跳过复制并拒绝
+    非零长度 NULL 数据，保持空脚本摘要语义（Phase 400）

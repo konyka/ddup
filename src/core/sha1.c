@@ -64,11 +64,14 @@ void sha1_init(sha1_ctx *c)
 void sha1_update(sha1_ctx *c, const void *data, size_t len)
 {
     const uint8_t *p = (const uint8_t *)data;
+    if (c == NULL || (data == NULL && len != 0))
+        return;
     c->total += len;
     if (c->buflen > 0) {
         size_t need = 64 - c->buflen;
         if (len < need) {
-            memcpy(c->buf + c->buflen, p, len);
+            if (len != 0)
+                memcpy(c->buf + c->buflen, p, len);
             c->buflen += len;
             return;
         }
