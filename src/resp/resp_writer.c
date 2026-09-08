@@ -85,7 +85,8 @@ static int buf_append(resp_buf *b, const char *s, size_t n)
         return -1;
     if (resp_buf_reserve(b, n) != 0)
         return -1;
-    memcpy(b->data + b->len, s, n);
+    if (n != 0)
+        memcpy(b->data + b->len, s, n);
     b->len += n;
     return 0;
 }

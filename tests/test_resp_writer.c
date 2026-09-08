@@ -50,6 +50,19 @@ static void test_scalars(void)
     resp_buf_free(&b);
 }
 
+static void test_empty_append_accepts_null_source(void)
+{
+    resp_buf b;
+    resp_buf_init(&b);
+    resp_write_simple_string(&b, NULL, 0);
+    expect(&b, "+\r\n");
+    resp_write_error(&b, NULL, 0);
+    expect(&b, "-\r\n");
+    resp_write_bulk(&b, "", 0);
+    expect(&b, "$0\r\n\r\n");
+    resp_buf_free(&b);
+}
+
 static void test_integer_formatter_boundaries(void)
 {
     char out[32];
@@ -300,6 +313,7 @@ static void test_writer_null_inputs_fail_closed(void)
 int main(void)
 {
     DD_RUN(test_scalars);
+    DD_RUN(test_empty_append_accepts_null_source);
     DD_RUN(test_integer_formatter_boundaries);
     DD_RUN(test_resp3_scalars);
     DD_RUN(test_roundtrip_random);

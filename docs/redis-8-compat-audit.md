@@ -844,6 +844,9 @@ NULL.
 Snapshot and function serialization appenders now skip zero-length payload
 copies, preserving empty binary values without invoking `memcpy` on NULL.
 
+The shared RESP writer appender now skips zero-length copies from NULL sources,
+preserving empty simple/error/bulk responses without undefined memory calls.
+
 Listpack search now rejects non-empty NULL needles and compares empty needles
 without invoking `memcmp` on NULL, preserving valid binary lookup semantics on
 all supported platforms.

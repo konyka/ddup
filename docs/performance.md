@@ -2684,3 +2684,9 @@ empty payloads use cold length checks and remain portable across C libraries.
 Snapshot and function serialization appenders skip zero-length payload copies.
 Normal binary records retain the same contiguous-copy cost; empty records avoid
 undefined NULL source-pointer calls through a cold length check.
+
+### Phase 399: RESP writer empty-payload append safety
+
+The shared RESP buffer appender skips zero-length copies from NULL sources.
+Normal response writes retain their existing reserve and copy cost; empty
+simple/error/bulk payloads take a cold branch and remain portable.

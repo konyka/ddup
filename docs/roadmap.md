@@ -1125,3 +1125,5 @@
     跳过 `memcpy`，保持空二进制载荷线协议语义（Phase 397）
   - [x] Snapshot/Function 空载荷复制安全：通用二进制追加器对零长度 payload
     跳过 `memcpy`，保持空值序列化并避免 NULL 源指针调用（Phase 398）
+  - [x] RESP Writer 空载荷追加安全：共享追加器对 `NULL + 0` 源跳过 `memcpy`，
+    保持空 simple/error/bulk 响应语义（Phase 399）
