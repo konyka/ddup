@@ -1123,3 +1123,5 @@
     跳过 `memcpy`，保持空二进制载荷线协议语义（Phase 396）
   - [x] Cluster Bus 空发布载荷复制安全：集群总线发布帧对零长度 channel/message
     跳过 `memcpy`，保持空二进制载荷线协议语义（Phase 397）
+  - [x] Snapshot/Function 空载荷复制安全：通用二进制追加器对零长度 payload
+    跳过 `memcpy`，保持空值序列化并避免 NULL 源指针调用（Phase 398）

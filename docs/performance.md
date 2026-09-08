@@ -2678,3 +2678,9 @@ binary payloads use two cold length checks without undefined memory calls.
 Cluster Bus publish-frame construction now skips zero-length channel/message
 copies. Normal cluster publish frames retain the same contiguous-copy cost;
 empty payloads use cold length checks and remain portable across C libraries.
+
+### Phase 398: snapshot/function empty-payload copy safety
+
+Snapshot and function serialization appenders skip zero-length payload copies.
+Normal binary records retain the same contiguous-copy cost; empty records avoid
+undefined NULL source-pointer calls through a cold length check.

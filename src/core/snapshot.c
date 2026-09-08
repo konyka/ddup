@@ -75,7 +75,8 @@ static int buf_bytes(resp_buf *b, const char *p, size_t n)
         return -1;
     if (buf_reserve(b, n) != 0)
         return -1;
-    memcpy(b->data + b->len, p, n);
+    if (n != 0)
+        memcpy(b->data + b->len, p, n);
     b->len += n;
     return 0;
 }

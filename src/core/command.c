@@ -11401,7 +11401,8 @@ static int function_append(char *dst, size_t cap, size_t *pos,
 {
     if (*pos > cap || len > cap - *pos)
         return -1;
-    memcpy(dst + *pos, src, len);
+    if (len != 0)
+        memcpy(dst + *pos, src, len);
     *pos += len;
     return 0;
 }

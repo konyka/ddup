@@ -841,6 +841,9 @@ Cluster Bus publish-frame construction now applies the same zero-length guards,
 preserving empty binary cluster Pub/Sub payloads without invoking `memcpy` on
 NULL.
 
+Snapshot and function serialization appenders now skip zero-length payload
+copies, preserving empty binary values without invoking `memcpy` on NULL.
+
 Listpack search now rejects non-empty NULL needles and compares empty needles
 without invoking `memcmp` on NULL, preserving valid binary lookup semantics on
 all supported platforms.
