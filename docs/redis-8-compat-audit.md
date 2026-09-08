@@ -830,6 +830,9 @@ SORT result collection now materializes empty list/zset values without invoking
 ZSET pop now skips zero-length member copies in listpack and skiplist encodings,
 preserving empty binary `ZPOP*` semantics without invoking `memcpy` on NULL.
 
+Active expiration now skips copying zero-length keys before deletion, preserving
+empty binary key expiry semantics without invoking `memcpy` on NULL.
+
 Listpack search now rejects non-empty NULL needles and compares empty needles
 without invoking `memcmp` on NULL, preserving valid binary lookup semantics on
 all supported platforms.

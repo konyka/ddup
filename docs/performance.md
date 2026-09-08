@@ -2660,3 +2660,9 @@ binary values avoid a NULL `memcpy` call.
 Both listpack and skiplist ZSET pop paths now skip zero-length member copies.
 Normal `ZPOP*` members retain their existing allocation/copy cost; the branch is
 only taken for empty binary members.
+
+### Phase 395: active-expire empty-key copy safety
+
+The active expiration sampler skips copying zero-length keys before deletion.
+Ordinary sampled keys retain their stack-buffer copy path; empty binary keys
+avoid an undefined NULL `memcpy` without additional allocation.

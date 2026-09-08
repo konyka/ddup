@@ -652,7 +652,8 @@ size_t db_active_expire(db *d, uint64_t now_ms, int max_samples)
                 char *kb = stackbuf;
                 if (klen > sizeof(stackbuf))
                     kb = (char *)malloc(klen);
-                memcpy(kb, key, klen);
+                if (klen != 0)
+                    memcpy(kb, key, klen);
                 db_expire_if_needed(d, kb, klen, now_ms);
                 if (kb != stackbuf)
                     free(kb);

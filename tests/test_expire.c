@@ -364,6 +364,38 @@ static void test_active_expire(void)
     db_destroy(&d);
 }
 
+static void test_active_expire_empty_key(void)
+{
+    db d;
+    resp_buf out;
+    resp_value setv[3];
+
+    db_init(&d);
+    resp_buf_init(&out);
+    memset(setv, 0, sizeof(setv));
+    setv[0].type = setv[1].type = setv[2].type = RESP_BULK_STRING;
+    setv[0].str = "SET"; setv[0].len = 3;
+    setv[1].str = NULL; setv[1].len = 0;
+    setv[2].str = "v"; setv[2].len = 1;
+    command_execute_at(&d, setv, 3, &out, T0);
+    EXPECT(out, "+OK\r\n");
+    {
+        resp_value exp[3];
+        memset(exp, 0, sizeof(exp));
+        exp[0].type = exp[1].type = exp[2].type = RESP_BULK_STRING;
+        exp[0].str = "PEXPIREAT"; exp[0].len = 9;
+        exp[1].str = NULL; exp[1].len = 0;
+        exp[2].str = "1000001"; exp[2].len = 7;
+        out.len = 0;
+        command_execute_at(&d, exp, 3, &out, T0);
+    }
+    EXPECT(out, ":1\r\n");
+    DD_CHECK_EQ_INT(1, (long long)db_active_expire(&d, T0 + 1, 4));
+    DD_CHECK_EQ_INT(0, (long long)rh_size(&d.table));
+    resp_buf_free(&out);
+    db_destroy(&d);
+}
+
 static void test_dbsize_flushdb(void)
 {
     db d;
@@ -401,6 +433,7 @@ int main(void)
     DD_RUN(test_overwrite_clears_ttl);
     DD_RUN(test_expire_options);
     DD_RUN(test_active_expire);
+    DD_RUN(test_active_expire_empty_key);
     DD_RUN(test_dbsize_flushdb);
     return DD_TEST_SUMMARY();
 }

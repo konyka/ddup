@@ -1117,3 +1117,5 @@
     `memcpy`，保持空二进制值排序与输出语义（Phase 393）
   - [x] ZSET 弹出空成员复制安全：listpack 与 skiplist `ZPOP*` 路径对零长度
     member 跳过 `memcpy`，保持空二进制成员弹出语义（Phase 394）
+  - [x] 主动过期空键复制安全：采样删除路径对零长度 key 跳过 `memcpy`，保持空
+    二进制 key 过期回收语义（Phase 395）
