@@ -2696,3 +2696,9 @@ simple/error/bulk payloads take a cold branch and remain portable.
 SHA1 updates now treat `NULL + 0` as an empty input and reject non-empty NULL
 data. Zero-length updates skip the copy branch; normal hashing retains the same
 block processing and copy cost.
+
+### Phase 401: hash-slot empty-key pointer safety
+
+Hash-tag extraction and slot calculation now avoid NULL pointer arithmetic and
+zero-length copies for empty keys. Non-empty key hashing retains the same table
+lookup and substring scan costs; only empty keys take the cold guard.

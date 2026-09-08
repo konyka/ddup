@@ -850,6 +850,9 @@ preserving empty simple/error/bulk responses without undefined memory calls.
 SHA1 update now accepts empty NULL input and rejects malformed non-empty NULL
 data, preserving empty script digest behavior without undefined copies.
 
+Hash-tag extraction and slot calculation now handle `NULL + 0` keys without
+pointer arithmetic or zero-length copies, preserving empty-key slot semantics.
+
 Listpack search now rejects non-empty NULL needles and compares empty needles
 without invoking `memcmp` on NULL, preserving valid binary lookup semantics on
 all supported platforms.

@@ -1129,3 +1129,5 @@
     保持空 simple/error/bulk 响应语义（Phase 399）
   - [x] SHA1 空输入更新安全：`sha1_update` 对 `NULL + 0` 输入跳过复制并拒绝
     非零长度 NULL 数据，保持空脚本摘要语义（Phase 400）
+  - [x] Hash Slot 空 key 指针安全：`hash_tag/hash_slot` 对零长度 NULL key 避免
+    指针算术与零长度复制，保持空 key 槽位语义（Phase 401）

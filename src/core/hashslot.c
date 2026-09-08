@@ -83,7 +83,8 @@ size_t hash_tag(const char *key, size_t klen, char *out, size_t cap)
     n = end - start;
     if (cap > 0) {
         size_t c = n < cap - 1 ? n : cap - 1;
-        memcpy(out, key + start, c);
+        if (c != 0)
+            memcpy(out, key + start, c);
         out[c] = '\0';
     }
     return n;
@@ -109,5 +110,7 @@ uint32_t hash_slot(const char *key, size_t klen)
             break;
         }
     }
+    if (end == start)
+        return 0;
     return (uint32_t)(crc16(key + start, end - start) % 16384);
 }
