@@ -79,6 +79,28 @@ static void test_del_exists(void)
     EXPECT_REPLY("-ERR wrong number of arguments for 'del' command\r\n");
 }
 
+static void test_empty_binary_keys_are_safe_for_lmove(void)
+{
+    resp_value argv[5];
+    memset(argv, 0, sizeof(argv));
+    argv[0].type = RESP_BULK_STRING; argv[0].str = "LPUSH"; argv[0].len = 5;
+    argv[1].type = RESP_BULK_STRING; argv[1].str = NULL; argv[1].len = 0;
+    argv[2].type = RESP_BULK_STRING; argv[2].str = "v"; argv[2].len = 1;
+    g_out.len = 0;
+    command_execute(&g_db, argv, 3, &g_out);
+    DD_CHECK(g_out.len > 0 && g_out.data[0] == ':');
+
+    memset(argv, 0, sizeof(argv));
+    argv[0].type = RESP_BULK_STRING; argv[0].str = "LMOVE"; argv[0].len = 5;
+    argv[1].type = RESP_BULK_STRING; argv[1].str = NULL; argv[1].len = 0;
+    argv[2].type = RESP_BULK_STRING; argv[2].str = NULL; argv[2].len = 0;
+    argv[3].type = RESP_BULK_STRING; argv[3].str = "LEFT"; argv[3].len = 4;
+    argv[4].type = RESP_BULK_STRING; argv[4].str = "RIGHT"; argv[4].len = 5;
+    g_out.len = 0;
+    command_execute(&g_db, argv, 5, &g_out);
+    DD_CHECK_MEM("$1\r\nv\r\n", 7, g_out.data, g_out.len);
+}
+
 static void test_incr_decr(void)
 {
     cmd(2, "INCR", "counter"); /* missing key starts at 0 */
@@ -413,6 +435,7 @@ int main(void)
     DD_RUN(test_ping_echo);
     DD_RUN(test_get_set);
     DD_RUN(test_del_exists);
+    DD_RUN(test_empty_binary_keys_are_safe_for_lmove);
     DD_RUN(test_incr_decr);
     DD_RUN(test_append_strlen);
     DD_RUN(test_mget_mset);

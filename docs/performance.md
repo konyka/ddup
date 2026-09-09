@@ -2721,3 +2721,9 @@ empty deletion requests take an earlier cold return and cannot match free slots.
 Channel authorization now accepts a zero-length NULL view and rejects only
 non-empty NULL channels. The all-channels fast path remains unchanged for normal
 traffic; malformed non-empty inputs still take the existing fail-closed branch.
+
+### Phase 405: blocking list move empty-key safety
+
+LMOVE-family source/destination equality checks now skip `memcmp` for empty
+binary keys. Normal key comparisons retain their linear cost; only zero-length
+keys take the cold branch while preserving atomic same-key move behavior.

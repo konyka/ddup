@@ -10511,7 +10511,7 @@ static void blocking_list_move_ready(db *d, resp_buf *out, const char *sk,
 {
     obj_list *src;
     obj_list *dst;
-    int same = skl == dkl && memcmp(sk, dk, skl) == 0;
+    int same = skl == dkl && (skl == 0 || memcmp(sk, dk, skl) == 0);
     int created_dst = 0;
     int rcs = get_list(d, out, sk, skl, 0, now_ms, &src);
     if (rcs < 0)
@@ -10648,7 +10648,7 @@ static void lmovem_move_ready(db *d, resp_buf *out, const char *sk,
 
     if (get_list(d, out, sk, skl, 0, now_ms, &src) < 0)
         return;
-    same = skl == dkl && memcmp(sk, dk, skl) == 0;
+    same = skl == dkl && (skl == 0 || memcmp(sk, dk, skl) == 0);
     if (!same) {
         int rc = get_list(d, out, dk, dkl, 0, now_ms, &dst);
         if (rc < 0)

@@ -207,6 +207,9 @@ ACL 边界补充复核：名称与规则的内部精确/大小写比较对零长
 频道授权边界补充复核：`acl_authorize_channel` 仅拒绝非零长度 NULL 频道，合法
 的 `NULL + 0` 空频道可在默认/通配授权下安全判定；畸形非空频道仍 fail-closed。
 
+列表移动边界补充复核：LMOVE/LMPOP 的源/目标键相等判断对零长度键跳过
+`memcmp`，`NULL + 0` 空二进制键可安全完成同键移动；非空键比较和事务语义不变。
+
 - Hash 字段级 TTL 全族：`HGETDEL/HGETEX/HSETEX` 与
   `HEXPIRE/HPEXPIRE/HEXPIREAT/HPEXPIREAT/HPERSIST/HTTL/HPTTL/
   HEXPIRETIME/HPEXPIRETIME`。`obj_hash` 增加独立 `expires` 表，字段
