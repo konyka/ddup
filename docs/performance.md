@@ -2708,3 +2708,10 @@ lookup and substring scan costs; only empty keys take the cold guard.
 Snapshot string loading skips the zero-length payload copy while retaining the
 tagged allocation. Normal strings keep the same allocation/copy cost; empty
 strings avoid a NULL source `memcpy`.
+
+### Phase 403: ACL empty-name view safety
+
+ACL exact and case-insensitive helpers now bypass byte access for zero-length
+views, and user deletion rejects empty names before scanning the registry.
+Normal user and rule comparisons retain the same linear byte cost; malformed
+empty deletion requests take an earlier cold return and cannot match free slots.

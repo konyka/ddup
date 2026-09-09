@@ -200,6 +200,10 @@ server fail-closed，避免无效管理调用破坏集群状态。
 
 ## 已实现增量
 
+ACL 边界补充复核：名称与规则的内部精确/大小写比较对零长度二进制视图不再调用
+`memcmp`；`ACL DELUSER` 的底层入口拒绝 NULL/空用户名，避免把已删除的空槽位
+误判为目标用户。合法非空用户名、规则匹配和认证语义保持不变。
+
 - Hash 字段级 TTL 全族：`HGETDEL/HGETEX/HSETEX` 与
   `HEXPIRE/HPEXPIRE/HEXPIREAT/HPEXPIREAT/HPERSIST/HTTL/HPTTL/
   HEXPIRETIME/HPEXPIRETIME`。`obj_hash` 增加独立 `expires` 表，字段

@@ -25,13 +25,14 @@ static size_t acl_appendf(char *buf, size_t cap, size_t used,
 static int eq(const char *a, size_t al, const char *b)
 {
     size_t bl = strlen(b);
-    return al == bl && memcmp(a, b, al) == 0;
+    return al == bl && (al == 0 || memcmp(a, b, al) == 0);
 }
 
 static int eq_ci(const char *a, size_t al, const char *b)
 {
     size_t i, bl = strlen(b);
     if (al != bl) return 0;
+    if (al == 0) return 1;
     for (i = 0; i < al; i++) {
         unsigned char ca = (unsigned char)a[i];
         unsigned char cb = (unsigned char)b[i];
@@ -239,7 +240,7 @@ int acl_setuser(acl_registry *r, const char *name, size_t nlen,
 int acl_deluser(acl_registry *r, const char *name, size_t nlen)
 {
     size_t i;
-    if (r == NULL || (name == NULL && nlen != 0)) return -1;
+    if (r == NULL || name == NULL || nlen == 0) return -1;
     if (eq(name, nlen, "default")) return 0;
     for (i = 0; i < r->count; i++) {
         if (eq(name, nlen, r->users[i].name)) {

@@ -1298,6 +1298,24 @@ static void test_acl_public_inputs_fail_closed(void)
     resp_buf_free(&out);
 }
 
+static void test_acl_empty_null_views_are_safe(void)
+{
+    acl_registry r;
+    resp_value empty;
+
+    acl_init(&r, NULL);
+    memset(&empty, 0, sizeof(empty));
+    empty.type = RESP_BULK_STRING;
+    /* A NULL pointer with zero length is a valid empty binary view. */
+    DD_CHECK(acl_find(&r, NULL, 0) == NULL);
+    DD_CHECK(acl_authenticate(&r, NULL, 0, NULL, 0) == NULL);
+    DD_CHECK_EQ_INT(-1, acl_setuser(&r, "u", 1, &empty, 1));
+    DD_CHECK_EQ_INT(0, acl_setuser(&r, "gone", 4, NULL, 0));
+    DD_CHECK_EQ_INT(1, acl_deluser(&r, "gone", 4));
+    /* Deleted slots have an empty stored name, exercising zero-length eq. */
+    DD_CHECK_EQ_INT(-1, acl_deluser(&r, NULL, 0));
+}
+
 int main(void)
 {
     DD_RUN(test_acl_users);
@@ -1372,5 +1390,6 @@ int main(void)
     DD_RUN(test_acl_log_negative_count_returns_empty);
     DD_RUN(test_acl_log_clock_rollback_has_zero_age);
     DD_RUN(test_acl_public_inputs_fail_closed);
+    DD_RUN(test_acl_empty_null_views_are_safe);
     return DD_TEST_SUMMARY();
 }
