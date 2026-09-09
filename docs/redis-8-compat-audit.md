@@ -204,6 +204,9 @@ ACL 边界补充复核：名称与规则的内部精确/大小写比较对零长
 `memcmp`；`ACL DELUSER` 的底层入口拒绝 NULL/空用户名，避免把已删除的空槽位
 误判为目标用户。合法非空用户名、规则匹配和认证语义保持不变。
 
+频道授权边界补充复核：`acl_authorize_channel` 仅拒绝非零长度 NULL 频道，合法
+的 `NULL + 0` 空频道可在默认/通配授权下安全判定；畸形非空频道仍 fail-closed。
+
 - Hash 字段级 TTL 全族：`HGETDEL/HGETEX/HSETEX` 与
   `HEXPIRE/HPEXPIRE/HEXPIREAT/HPEXPIREAT/HPERSIST/HTTL/HPTTL/
   HEXPIRETIME/HPEXPIRETIME`。`obj_hash` 增加独立 `expires` 表，字段

@@ -1309,6 +1309,8 @@ static void test_acl_empty_null_views_are_safe(void)
     /* A NULL pointer with zero length is a valid empty binary view. */
     DD_CHECK(acl_find(&r, NULL, 0) == NULL);
     DD_CHECK(acl_authenticate(&r, NULL, 0, NULL, 0) == NULL);
+    DD_CHECK_EQ_INT(1, acl_authorize_channel(
+                              acl_find_const(&r, "default", 7), NULL, 0, 0));
     DD_CHECK_EQ_INT(-1, acl_setuser(&r, "u", 1, &empty, 1));
     DD_CHECK_EQ_INT(0, acl_setuser(&r, "gone", 4, NULL, 0));
     DD_CHECK_EQ_INT(1, acl_deluser(&r, "gone", 4));

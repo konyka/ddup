@@ -293,7 +293,7 @@ int acl_authorize_channel(const acl_user *u, const char *channel,
                           size_t clen, int is_pattern)
 {
     size_t i;
-    if (u == NULL || !u->enabled || channel == NULL) return 0;
+    if (u == NULL || !u->enabled || (channel == NULL && clen != 0)) return 0;
     if (u->all_channels) return 1;
     for (i = 0; i < u->channel_count; i++) {
         size_t plen = strlen(u->channels[i]);

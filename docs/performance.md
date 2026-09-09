@@ -2715,3 +2715,9 @@ ACL exact and case-insensitive helpers now bypass byte access for zero-length
 views, and user deletion rejects empty names before scanning the registry.
 Normal user and rule comparisons retain the same linear byte cost; malformed
 empty deletion requests take an earlier cold return and cannot match free slots.
+
+### Phase 404: ACL empty-channel view safety
+
+Channel authorization now accepts a zero-length NULL view and rejects only
+non-empty NULL channels. The all-channels fast path remains unchanged for normal
+traffic; malformed non-empty inputs still take the existing fail-closed branch.
