@@ -218,6 +218,10 @@ ARRAY 匹配边界补充复核：AROP MATCH 与 ARGREP EXACT/MATCH 在比较前�
 NULL needle，并允许 `NULL + 0` 空 needle 安全匹配；正常数组扫描和 RESP 结果
 语义保持不变。
 
+条件删除边界补充复核：DELEX 的 IFEQ/IFNE 在比较前拒绝非零长度 NULL match，
+并允许 `NULL + 0` 空 match 安全比较；条件删除仍保持单次原子判定与非字符串
+WRONGTYPE 语义。
+
 - Hash 字段级 TTL 全族：`HGETDEL/HGETEX/HSETEX` 与
   `HEXPIRE/HPEXPIRE/HEXPIREAT/HPEXPIREAT/HPERSIST/HTTL/HPTTL/
   HEXPIRETIME/HPEXPIRETIME`。`obj_hash` 增加独立 `expires` 表，字段

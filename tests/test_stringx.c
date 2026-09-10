@@ -972,6 +972,35 @@ static void test_msetex(void)
     db_destroy(&d);
 }
 
+static void test_delex_empty_binary_match_is_safe(void)
+{
+    db d;
+    resp_buf out;
+    resp_value argv[4];
+
+    db_init(&d);
+    resp_buf_init(&out);
+    exec_cmd(&d, T0, &out, 3, "SET", "s", "");
+    memset(argv, 0, sizeof(argv));
+    argv[0].type = RESP_BULK_STRING; argv[0].str = "DELEX"; argv[0].len = 5;
+    argv[1].type = RESP_BULK_STRING; argv[1].str = "s"; argv[1].len = 1;
+    argv[2].type = RESP_BULK_STRING; argv[2].str = "IFEQ"; argv[2].len = 4;
+    argv[3].type = RESP_BULK_STRING; argv[3].str = NULL; argv[3].len = 0;
+    out.len = 0;
+    command_execute_at(&d, argv, 4, &out, T0);
+    EXPECT(out, ":1\r\n");
+
+    exec_cmd(&d, T0, &out, 3, "SET", "s", "value");
+    argv[3].str = NULL;
+    argv[3].len = 1;
+    out.len = 0;
+    command_execute_at(&d, argv, 4, &out, T0);
+    EXPECT(out, SYNTAX_REPLY);
+
+    resp_buf_free(&out);
+    db_destroy(&d);
+}
+
 static void test_increx(void)
 {
     db d;
@@ -1100,6 +1129,7 @@ int main(void)
     DD_RUN(test_lcs);
     DD_RUN(test_digest);
     DD_RUN(test_delex);
+    DD_RUN(test_delex_empty_binary_match_is_safe);
     DD_RUN(test_msetex);
     DD_RUN(test_increx);
     return DD_TEST_SUMMARY();

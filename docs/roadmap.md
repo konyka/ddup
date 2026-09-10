@@ -1145,3 +1145,5 @@
   - [x] ARRAY 匹配视图安全：AROP MATCH 与 ARGREP EXACT/MATCH 校验非零长度
     NULL needle，并对零长度 needle 跳过 `memcmp`，避免 malformed 视图崩溃
     （Phase 407）
+  - [x] DELEX 条件视图安全：IFEQ/IFNE 校验非零长度 NULL match，并对空 match
+    跳过 `memcmp`，保持条件删除的原子语义（Phase 408）

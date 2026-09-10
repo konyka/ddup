@@ -15755,6 +15755,10 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
         if (!arg_str(&argv[1], &k, &kl) || !arg_str(&argv[2], &cond, &condl) ||
             !arg_str(&argv[3], &match, &matchl))
             goto bad_type;
+        if (match == NULL && matchl != 0) {
+            resp_write_error(out, ERR_SYNTAX, sizeof(ERR_SYNTAX) - 1);
+            return;
+        }
         const char *v;
         size_t vl;
         if (!db_get(d, k, kl, &v, &vl, now_ms)) {
@@ -15772,9 +15776,11 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
         }
         int should_delete = 0;
         if (ci_equal(cond, condl, "IFEQ")) {
-            should_delete = (sl == matchl && memcmp(s, match, sl) == 0);
+            should_delete = (sl == matchl &&
+                             (sl == 0 || memcmp(s, match, sl) == 0));
         } else if (ci_equal(cond, condl, "IFNE")) {
-            should_delete = (sl != matchl || memcmp(s, match, sl) != 0);
+            should_delete = (sl != matchl ||
+                             (sl != 0 && memcmp(s, match, sl) != 0));
         } else if (ci_equal(cond, condl, "IFDEQ") ||
                    ci_equal(cond, condl, "IFDNE")) {
             int want_equal = ci_equal(cond, condl, "IFDEQ");

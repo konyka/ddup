@@ -2739,3 +2739,9 @@ empty binary keys take only a cold zero-length branch.
 AROP MATCH and ARGREP EXACT/MATCH now reject non-empty NULL needles and skip
 `memcmp` for empty needles. Normal array scans retain their existing comparison
 cost; only malformed or zero-length views take the additional guard.
+
+### Phase 408: DELEX conditional view safety
+
+DELEX IFEQ/IFNE now reject non-empty NULL match views and skip `memcmp` for
+empty matches. Normal string comparisons retain their existing linear cost;
+malformed inputs fail before mutation.
