@@ -214,6 +214,10 @@ ACL 边界补充复核：名称与规则的内部精确/大小写比较对零长
 判断统一跳过零长度 `memcmp`，空二进制键不会触发未定义读取；非空键及 TTL、
 版本和事务语义保持兼容。
 
+ARRAY 匹配边界补充复核：AROP MATCH 与 ARGREP EXACT/MATCH 在比较前拒绝非零长度
+NULL needle，并允许 `NULL + 0` 空 needle 安全匹配；正常数组扫描和 RESP 结果
+语义保持不变。
+
 - Hash 字段级 TTL 全族：`HGETDEL/HGETEX/HSETEX` 与
   `HEXPIRE/HPEXPIRE/HEXPIREAT/HPEXPIREAT/HPERSIST/HTTL/HPTTL/
   HEXPIRETIME/HPEXPIRETIME`。`obj_hash` 增加独立 `expires` 表，字段

@@ -154,6 +154,37 @@ static void test_array_batch_prevalidates_views(void)
     }
 }
 
+static void test_array_match_rejects_malformed_views(void)
+{
+    db d;
+    resp_buf out;
+    resp_value argv[6];
+
+    db_init(&d);
+    resp_buf_init(&out);
+    memset(argv, 0, sizeof(argv));
+    argv[0].type = RESP_BULK_STRING; argv[0].str = "ARSET"; argv[0].len = 5;
+    argv[1].type = RESP_BULK_STRING; argv[1].str = "a"; argv[1].len = 1;
+    argv[2].type = RESP_BULK_STRING; argv[2].str = "0"; argv[2].len = 1;
+    argv[3].type = RESP_BULK_STRING; argv[3].str = NULL; argv[3].len = 0;
+    command_execute_at(&d, argv, 4, &out, 1000000);
+    DD_CHECK(out.len > 0 && out.data[0] == ':');
+
+    memset(argv, 0, sizeof(argv));
+    argv[0].type = RESP_BULK_STRING; argv[0].str = "AROP"; argv[0].len = 4;
+    argv[1].type = RESP_BULK_STRING; argv[1].str = "a"; argv[1].len = 1;
+    argv[2].type = RESP_BULK_STRING; argv[2].str = "0"; argv[2].len = 1;
+    argv[3].type = RESP_BULK_STRING; argv[3].str = "0"; argv[3].len = 1;
+    argv[4].type = RESP_BULK_STRING; argv[4].str = "MATCH"; argv[4].len = 5;
+    argv[5].type = RESP_BULK_STRING; argv[5].str = NULL; argv[5].len = 1;
+    out.len = 0;
+    command_execute_at(&d, argv, 6, &out, 1000000);
+    DD_CHECK(out.len > 0 && out.data[0] == '-');
+
+    resp_buf_free(&out);
+    db_destroy(&d);
+}
+
 static void test_array_history_failure_does_not_partially_commit(void)
 {
     obj_array *a = obj_array_new();
@@ -181,6 +212,7 @@ int main(void)
     DD_RUN(test_array_api_rejects_null_object);
     DD_RUN(test_object_limits_reject_null_outputs);
     DD_RUN(test_array_batch_prevalidates_views);
+    DD_RUN(test_array_match_rejects_malformed_views);
     DD_RUN(test_array_history_failure_does_not_partially_commit);
     return DD_TEST_SUMMARY();
 }

@@ -1142,3 +1142,6 @@
     跳过 `memcmp`，保持空二进制 key 的原子移动语义（Phase 405）
   - [x] 通用键移动空 key 安全：RENAME/RENAMENX、RPOPLPUSH、LMOVE 和 SMOVE
     的同键判断对零长度 key 跳过 `memcmp`，保持空二进制 key 语义（Phase 406）
+  - [x] ARRAY 匹配视图安全：AROP MATCH 与 ARGREP EXACT/MATCH 校验非零长度
+    NULL needle，并对零长度 needle 跳过 `memcmp`，避免 malformed 视图崩溃
+    （Phase 407）

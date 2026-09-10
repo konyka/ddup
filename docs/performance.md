@@ -2733,3 +2733,9 @@ keys take the cold branch while preserving atomic same-key move behavior.
 RENAME/RENAMENX, RPOPLPUSH, LMOVE, and SMOVE now guard same-key comparisons
 before calling `memcmp`. Normal key moves keep their existing comparison cost;
 empty binary keys take only a cold zero-length branch.
+
+### Phase 407: ARRAY match view safety
+
+AROP MATCH and ARGREP EXACT/MATCH now reject non-empty NULL needles and skip
+`memcmp` for empty needles. Normal array scans retain their existing comparison
+cost; only malformed or zero-length views take the additional guard.

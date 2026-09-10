@@ -13015,9 +13015,11 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
             if (ci_equal(op, ol, "MATCH") && argc >= 6) {
                 const char *m; size_t ml; uint64_t c = 0;
                 if (!arg_str(&argv[5], &m, &ml)) { resp_write_error(out, ERR_SYNTAX, sizeof(ERR_SYNTAX)-1); return; }
+                if (m == NULL && ml != 0) { resp_write_error(out, ERR_SYNTAX, sizeof(ERR_SYNTAX)-1); return; }
                 for (i = start; rc == 1 && i <= end; i++) {
                     const char *v; size_t vl;
-                    if (obj_array_get(a, i, &v, &vl) && vl == ml && memcmp(v, m, ml) == 0) c++;
+                    if (obj_array_get(a, i, &v, &vl) && vl == ml &&
+                        (ml == 0 || memcmp(v, m, ml) == 0)) c++;
                     if (i == UINT64_MAX) break;
                 }
                 resp_write_integer(out, (long long)c);
@@ -13029,6 +13031,7 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
         if (cmd_id == CMD_ARGREP) {
             const char *ss, *es, *pred, *needle; size_t sl, el, pl, nl; uint64_t start, end, i, found = 0, limit = UINT64_MAX; int with = 0, nocase = 0;
             if (!arg_str(&argv[2], &ss, &sl) || !arg_str(&argv[3], &es, &el) || !parse_u64(ss, sl, &start) || !parse_u64(es, el, &end) || !arg_str(&argv[4], &pred, &pl) || !arg_str(&argv[5], &needle, &nl)) { resp_write_error(out, ERR_SYNTAX, sizeof(ERR_SYNTAX)-1); return; }
+            if (needle == NULL && nl != 0) { resp_write_error(out, ERR_SYNTAX, sizeof(ERR_SYNTAX)-1); return; }
             for (i = 6; i < argc; i++) {
                 if (ci_equal(argv[i].str, argv[i].len, "WITHVALUES")) with = 1;
                 else if (ci_equal(argv[i].str, argv[i].len, "NOCASE")) nocase = 1;
@@ -13039,8 +13042,8 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
                     /* Predicate chaining is accepted; the first predicate remains authoritative. */
                 } else { resp_write_error(out, ERR_SYNTAX, sizeof(ERR_SYNTAX)-1); return; }
             }
-            for (i = start; rc == 1 && i <= end; i++) { const char *v; size_t vl; int ok = 0; if (obj_array_get(a, i, &v, &vl)) { if (ci_equal(pred, pl, "EXACT")) ok = vl == nl && ((nocase && array_mem_eq_ci(v, needle, vl)) || (!nocase && memcmp(v, needle, vl) == 0)); else if (ci_equal(pred, pl, "GLOB")) ok = ddup_glob_match(needle, nl, v, vl); else if (ci_equal(pred, pl, "MATCH")) ok = vl == nl && ((nocase && array_mem_eq_ci(v, needle, vl)) || (!nocase && memcmp(v, needle, vl) == 0)); else if (ci_equal(pred, pl, "RE")) ok = array_re_match(needle, nl, v, vl, nocase); if (ok) { found++; if (found == limit) break; } } if (i == UINT64_MAX) break; }
-            resp_write_array_header(out, (size_t)found); for (i = start; rc == 1 && i <= end && found > 0; i++) { const char *v; size_t vl; int ok = 0; if (obj_array_get(a, i, &v, &vl)) { if (ci_equal(pred, pl, "EXACT")) ok = vl == nl && ((nocase && array_mem_eq_ci(v, needle, vl)) || (!nocase && memcmp(v, needle, vl) == 0)); else if (ci_equal(pred, pl, "GLOB")) ok = ddup_glob_match(needle, nl, v, vl); else if (ci_equal(pred, pl, "MATCH")) ok = vl == nl && ((nocase && array_mem_eq_ci(v, needle, vl)) || (!nocase && memcmp(v, needle, vl) == 0)); else if (ci_equal(pred, pl, "RE")) ok = array_re_match(needle, nl, v, vl, nocase); if (ok) { if (with) { resp_write_array_header(out, 2); resp_write_integer(out, (long long)i); resp_write_bulk(out, v, vl); } else resp_write_integer(out, (long long)i); found--; } } if (i == UINT64_MAX) break; } return;
+            for (i = start; rc == 1 && i <= end; i++) { const char *v; size_t vl; int ok = 0; if (obj_array_get(a, i, &v, &vl)) { if (ci_equal(pred, pl, "EXACT")) ok = vl == nl && ((nocase && array_mem_eq_ci(v, needle, vl)) || (!nocase && (nl == 0 || memcmp(v, needle, nl) == 0))); else if (ci_equal(pred, pl, "GLOB")) ok = ddup_glob_match(needle, nl, v, vl); else if (ci_equal(pred, pl, "MATCH")) ok = vl == nl && ((nocase && array_mem_eq_ci(v, needle, vl)) || (!nocase && (nl == 0 || memcmp(v, needle, nl) == 0))); else if (ci_equal(pred, pl, "RE")) ok = array_re_match(needle, nl, v, vl, nocase); if (ok) { found++; if (found == limit) break; } } if (i == UINT64_MAX) break; }
+            resp_write_array_header(out, (size_t)found); for (i = start; rc == 1 && i <= end && found > 0; i++) { const char *v; size_t vl; int ok = 0; if (obj_array_get(a, i, &v, &vl)) { if (ci_equal(pred, pl, "EXACT")) ok = vl == nl && ((nocase && array_mem_eq_ci(v, needle, vl)) || (!nocase && (nl == 0 || memcmp(v, needle, nl) == 0))); else if (ci_equal(pred, pl, "GLOB")) ok = ddup_glob_match(needle, nl, v, vl); else if (ci_equal(pred, pl, "MATCH")) ok = vl == nl && ((nocase && array_mem_eq_ci(v, needle, vl)) || (!nocase && (nl == 0 || memcmp(v, needle, nl) == 0))); else if (ci_equal(pred, pl, "RE")) ok = array_re_match(needle, nl, v, vl, nocase); if (ok) { if (with) { resp_write_array_header(out, 2); resp_write_integer(out, (long long)i); resp_write_bulk(out, v, vl); } else resp_write_integer(out, (long long)i); found--; } } if (i == UINT64_MAX) break; } return;
         }
         if (cmd_id == CMD_ARGETRANGE) {
             const char *ss, *es;
