@@ -1140,3 +1140,5 @@
     `NULL + 0` 空频道在默认/通配授权下安全判定（Phase 404）
   - [x] 阻塞列表移动空 key 安全：LMOVE/LMPOP 共享源/目标比较对零长度 key
     跳过 `memcmp`，保持空二进制 key 的原子移动语义（Phase 405）
+  - [x] 通用键移动空 key 安全：RENAME/RENAMENX、RPOPLPUSH、LMOVE 和 SMOVE
+    的同键判断对零长度 key 跳过 `memcmp`，保持空二进制 key 语义（Phase 406）

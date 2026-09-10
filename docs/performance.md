@@ -2727,3 +2727,9 @@ traffic; malformed non-empty inputs still take the existing fail-closed branch.
 LMOVE-family source/destination equality checks now skip `memcmp` for empty
 binary keys. Normal key comparisons retain their linear cost; only zero-length
 keys take the cold branch while preserving atomic same-key move behavior.
+
+### Phase 406: generic key-move empty-key safety
+
+RENAME/RENAMENX, RPOPLPUSH, LMOVE, and SMOVE now guard same-key comparisons
+before calling `memcmp`. Normal key moves keep their existing comparison cost;
+empty binary keys take only a cold zero-length branch.

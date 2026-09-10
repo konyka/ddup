@@ -493,6 +493,35 @@ static void test_rename(void)
     db_destroy(&d);
 }
 
+static void test_rename_empty_binary_keys_are_safe(void)
+{
+    db d;
+    resp_buf out;
+    resp_value argv[3];
+
+    db_init(&d);
+    resp_buf_init(&out);
+    memset(argv, 0, sizeof(argv));
+    argv[0].type = RESP_BULK_STRING; argv[0].str = "SET"; argv[0].len = 3;
+    argv[1].type = RESP_BULK_STRING; argv[1].str = NULL; argv[1].len = 0;
+    argv[2].type = RESP_BULK_STRING; argv[2].str = "v"; argv[2].len = 1;
+    command_execute_at(&d, argv, 3, &out, T0);
+    DD_CHECK_MEM("+OK\r\n", 5, out.data, out.len);
+
+    memset(argv, 0, sizeof(argv));
+    argv[0].type = RESP_BULK_STRING; argv[0].str = "RENAME"; argv[0].len = 6;
+    argv[1].type = RESP_BULK_STRING; argv[1].str = NULL; argv[1].len = 0;
+    argv[2].type = RESP_BULK_STRING; argv[2].str = NULL; argv[2].len = 0;
+    out.len = 0;
+    command_execute_at(&d, argv, 3, &out, T0);
+    DD_CHECK_MEM("-ERR source and destination objects are the same\r\n",
+                 strlen("-ERR source and destination objects are the same\r\n"),
+                 out.data, out.len);
+
+    resp_buf_free(&out);
+    db_destroy(&d);
+}
+
 static void test_renamenx(void)
 {
     db d;
@@ -780,6 +809,7 @@ int main(void)
     DD_RUN(test_scan_errors);
     DD_RUN(test_scan_skips_expired);
     DD_RUN(test_rename);
+    DD_RUN(test_rename_empty_binary_keys_are_safe);
     DD_RUN(test_renamenx);
     DD_RUN(test_touch);
     DD_RUN(test_randomkey);

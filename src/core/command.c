@@ -16605,14 +16605,14 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
             return;
         }
         db_expire_if_needed(d, sk, skl, now_ms);
-        if (skl != dkl || memcmp(sk, dk, skl) != 0)
+        if (skl != dkl || (skl != 0 && memcmp(sk, dk, skl) != 0))
             db_expire_if_needed(d, dk, dkl, now_ms);
         /* src existence is checked before the same-key check (Redis order) */
         if (!rh_get(&d->table, sk, skl, &v, &vl)) {
             resp_write_error(out, "ERR no such key", 15);
             return;
         }
-        if (skl == dkl && memcmp(sk, dk, skl) == 0) {
+        if (skl == dkl && (skl == 0 || memcmp(sk, dk, skl) == 0)) {
             static const char E[] =
                 "ERR source and destination objects are the same";
             resp_write_error(out, E, sizeof(E) - 1);
@@ -18760,7 +18760,7 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
             return;
         }
         {
-            int same = skl == dkl && memcmp(sk, dk, skl) == 0;
+            int same = skl == dkl && (skl == 0 || memcmp(sk, dk, skl) == 0);
             int created_dst = 0;
             /* type-check dst before mutating src */
             if (!same) {
@@ -18930,7 +18930,7 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
             return;
         }
         {
-            int same = skl == dkl && memcmp(sk, dk, skl) == 0;
+            int same = skl == dkl && (skl == 0 || memcmp(sk, dk, skl) == 0);
             int created_dst = 0;
             if (!same) {
                 int rcd = get_list(d, out, dk, dkl, 0, now_ms, &dst);
@@ -19472,7 +19472,7 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
             resp_write_integer(out, 0);
             return;
         }
-        if (skl == dkl && memcmp(sk, dk, skl) == 0) {
+        if (skl == dkl && (skl == 0 || memcmp(sk, dk, skl) == 0)) {
             resp_write_integer(out, 1); /* same key: no-op */
             return;
         }
