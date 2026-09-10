@@ -18505,6 +18505,8 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
         size_t i;
         if (!arg_str(&argv[1], &k, &kl) || !arg_str(&argv[2], &ele, &elel))
             goto bad_type;
+        if (ele == NULL && elel != 0)
+            goto bad_type;
         if (((argc - 3) % 2) != 0) {
             resp_write_error(out, ERR_SYNTAX, sizeof(ERR_SYNTAX) - 1);
             return;
@@ -18584,7 +18586,8 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
                     break;
                 compared++;
                 v = obj_list_iter_value(&it, &vl);
-                if (vl == elel && memcmp(v, ele, elel) == 0) {
+                if (vl == elel &&
+                    (elel == 0 || memcmp(v, ele, elel) == 0)) {
                     seen++;
                     if (seen >= want) {
                         if (matches == 0)
@@ -18620,7 +18623,8 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
                         break;
                     compared++;
                     v = obj_list_iter_value(&it, &vl);
-                    if (vl == elel && memcmp(v, ele, elel) == 0) {
+                    if (vl == elel &&
+                        (elel == 0 || memcmp(v, ele, elel) == 0)) {
                         seen++;
                         if (seen >= want) {
                             resp_write_integer(out, idx);
@@ -18644,6 +18648,8 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
         long long count;
         if (!arg_str(&argv[1], &k, &kl) || !arg_str(&argv[2], &cv, &cvl) ||
             !arg_str(&argv[3], &ele, &elel))
+            goto bad_type;
+        if (ele == NULL && elel != 0)
             goto bad_type;
         if (!parse_i64(cv, cvl, &count)) {
             resp_write_error(out, ERR_NOT_INT, sizeof(ERR_NOT_INT) - 1);
@@ -18672,7 +18678,8 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
                    (limit == 0 || (unsigned long long)removed < limit)) {
                 size_t vl = 0;
                 const char *v = obj_list_iter_value(&it, &vl);
-                if (vl == elel && memcmp(v, ele, elel) == 0) {
+                if (vl == elel &&
+                    (elel == 0 || memcmp(v, ele, elel) == 0)) {
                     removed++;
                     valid = obj_list_remove_at(&it); /* lands on successor */
                     if (!from_head) {
@@ -18844,6 +18851,8 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
             !arg_str(&argv[3], &piv, &pl) ||
             !arg_str(&argv[4], &val, &vl))
             goto bad_type;
+        if ((piv == NULL && pl != 0) || (val == NULL && vl != 0))
+            goto bad_type;
         if (ci_equal(where, wl, "BEFORE")) {
             after = 0;
         } else if (ci_equal(where, wl, "AFTER")) {
@@ -18867,7 +18876,7 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
         while (valid) {
             size_t el = 0;
             const char *ev = obj_list_iter_value(&it, &el);
-            if (el == pl && memcmp(ev, piv, pl) == 0) {
+            if (el == pl && (pl == 0 || memcmp(ev, piv, pl) == 0)) {
                 found = 1;
                 break;
             }

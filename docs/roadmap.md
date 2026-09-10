@@ -1147,3 +1147,5 @@
     （Phase 407）
   - [x] DELEX 条件视图安全：IFEQ/IFNE 校验非零长度 NULL match，并对空 match
     跳过 `memcmp`，保持条件删除的原子语义（Phase 408）
+  - [x] 列表搜索与修改视图安全：LPOS、LREM 与 LINSERT 拒绝非零长度 NULL
+    元素，并对零长度元素跳过 `memcmp`，保持空二进制元素语义（Phase 409）

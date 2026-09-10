@@ -2745,3 +2745,9 @@ cost; only malformed or zero-length views take the additional guard.
 DELEX IFEQ/IFNE now reject non-empty NULL match views and skip `memcmp` for
 empty matches. Normal string comparisons retain their existing linear cost;
 malformed inputs fail before mutation.
+
+### Phase 409: list search and mutation view safety
+
+LPOS, LREM, and LINSERT now reject non-empty NULL elements early and skip
+`memcmp` when comparing zero-length values. Normal list traversal retains the
+same linear element comparison cost; malformed views fail before scanning.

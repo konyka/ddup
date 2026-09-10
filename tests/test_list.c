@@ -508,6 +508,39 @@ static void test_lpos(void)
     db_destroy(&d);
 }
 
+static void test_list_empty_binary_match_is_safe(void)
+{
+    db d;
+    resp_buf out;
+    resp_value argv[4];
+
+    db_init(&d);
+    resp_buf_init(&out);
+    memset(argv, 0, sizeof(argv));
+    argv[0].type = RESP_BULK_STRING; argv[0].str = "RPUSH"; argv[0].len = 5;
+    argv[1].type = RESP_BULK_STRING; argv[1].str = "l"; argv[1].len = 1;
+    argv[2].type = RESP_BULK_STRING; argv[2].str = NULL; argv[2].len = 0;
+    command_execute_at(&d, argv, 3, &out, T0);
+    EXPECT(out, ":1\r\n");
+
+    memset(argv, 0, sizeof(argv));
+    argv[0].type = RESP_BULK_STRING; argv[0].str = "LPOS"; argv[0].len = 4;
+    argv[1].type = RESP_BULK_STRING; argv[1].str = "l"; argv[1].len = 1;
+    argv[2].type = RESP_BULK_STRING; argv[2].str = NULL; argv[2].len = 0;
+    out.len = 0;
+    command_execute_at(&d, argv, 3, &out, T0);
+    EXPECT(out, ":0\r\n");
+
+    argv[2].str = NULL;
+    argv[2].len = 1;
+    out.len = 0;
+    command_execute_at(&d, argv, 3, &out, T0);
+    DD_CHECK(out.len > 0 && out.data[0] == '-');
+
+    resp_buf_free(&out);
+    db_destroy(&d);
+}
+
 static void test_lrem(void)
 {
     db d;
@@ -1135,6 +1168,7 @@ int main(void)
     DD_RUN(test_list_wrongtype);
     DD_RUN(test_list_ttl_and_memory);
     DD_RUN(test_lpos);
+    DD_RUN(test_list_empty_binary_match_is_safe);
     DD_RUN(test_lrem);
     DD_RUN(test_ltrim);
     DD_RUN(test_rpoplpush);

@@ -222,6 +222,10 @@ NULL needle，并允许 `NULL + 0` 空 needle 安全匹配；正常数组扫描�
 并允许 `NULL + 0` 空 match 安全比较；条件删除仍保持单次原子判定与非字符串
 WRONGTYPE 语义。
 
+列表元素边界补充复核：LPOS、LREM 与 LINSERT 在比较前校验非零长度 NULL 元素及
+pivot/value，并允许 `NULL + 0` 空元素跳过 `memcmp` 安全匹配；正常列表遍历、
+RANK/COUNT 与修改语义保持兼容。
+
 - Hash 字段级 TTL 全族：`HGETDEL/HGETEX/HSETEX` 与
   `HEXPIRE/HPEXPIRE/HEXPIREAT/HPEXPIREAT/HPERSIST/HTTL/HPTTL/
   HEXPIRETIME/HPEXPIRETIME`。`obj_hash` 增加独立 `expires` 表，字段
