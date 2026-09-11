@@ -60,6 +60,21 @@ static void test_null_query_handles(void)
     DD_CHECK(zsl_last_in_lex_range(NULL, &lr) == NULL);
 }
 
+static void test_lex_ranges_reject_malformed_bounds(void)
+{
+    zskiplist *z = zsl_create();
+    zlexrangespec r;
+    memset(&r, 0, sizeof(r));
+    r.min.len = 1;
+    r.max.inf = 1;
+    DD_CHECK(z != NULL);
+    if (z != NULL) {
+        DD_CHECK(zsl_first_in_lex_range(z, &r) == NULL);
+        DD_CHECK(zsl_last_in_lex_range(z, &r) == NULL);
+        zsl_free(z);
+    }
+}
+
 static void test_null_mutation_handles(void)
 {
     const char byte = 'x';
@@ -375,6 +390,7 @@ static void test_lex_ranges(void)
 int main(void)
 {
     DD_RUN(test_null_query_handles);
+    DD_RUN(test_lex_ranges_reject_malformed_bounds);
     DD_RUN(test_null_mutation_handles);
     DD_RUN(test_insert_order);
     DD_RUN(test_reject_unrepresentable_member_length);

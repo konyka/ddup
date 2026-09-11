@@ -382,6 +382,11 @@ static int zsl_lex_bound_cmp(const zlexbound *a, const zlexbound *b)
     return zsl_lex_cmp(a->s, a->len, b->s, b->len);
 }
 
+static int zsl_lex_bound_valid(const zlexbound *b)
+{
+    return b != NULL && (b->s != NULL || b->len == 0);
+}
+
 static int zsl_lex_range_empty(const zlexrangespec *r)
 {
     int c = zsl_lex_bound_cmp(&r->min, &r->max);
@@ -392,7 +397,8 @@ zsl_node *zsl_first_in_lex_range(zskiplist *z, const zlexrangespec *r)
 {
     zsl_node *x;
     int i;
-    if (z == NULL || r == NULL)
+    if (z == NULL || r == NULL || !zsl_lex_bound_valid(&r->min) ||
+        !zsl_lex_bound_valid(&r->max))
         return NULL;
     x = z->header;
     if (zsl_lex_range_empty(r))
@@ -412,7 +418,8 @@ zsl_node *zsl_last_in_lex_range(zskiplist *z, const zlexrangespec *r)
 {
     zsl_node *x;
     int i;
-    if (z == NULL || r == NULL)
+    if (z == NULL || r == NULL || !zsl_lex_bound_valid(&r->min) ||
+        !zsl_lex_bound_valid(&r->max))
         return NULL;
     x = z->header;
     if (zsl_lex_range_empty(r))

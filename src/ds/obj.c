@@ -1590,6 +1590,8 @@ static int zscore_lte_max(double score, const zrangespec *r)
 
 static int zlex_gte_min(const char *m, size_t mlen, const zlexbound *min)
 {
+    if (min == NULL || (min->s == NULL && min->len != 0))
+        return 0;
     if (min->inf != 0)
         return min->inf < 0;
     {
@@ -1603,6 +1605,8 @@ static int zlex_gte_min(const char *m, size_t mlen, const zlexbound *min)
 
 static int zlex_lte_max(const char *m, size_t mlen, const zlexbound *max)
 {
+    if (max == NULL || (max->s == NULL && max->len != 0))
+        return 0;
     if (max->inf != 0)
         return max->inf > 0;
     {
@@ -1688,7 +1692,9 @@ size_t obj_zset_count_in_range(obj_zset *z, const zrangespec *r)
 int obj_zset_first_in_lex_range(obj_zset *z, const zlexrangespec *r,
                                 obj_zset_iter *it)
 {
-    if (z == NULL || r == NULL || it == NULL)
+    if (z == NULL || r == NULL || it == NULL ||
+        (r->min.s == NULL && r->min.len != 0) ||
+        (r->max.s == NULL && r->max.len != 0))
         return 0;
     it->z = z;
     if (z->encoding == OBJ_ZSET_LP) {
@@ -1714,7 +1720,9 @@ int obj_zset_first_in_lex_range(obj_zset *z, const zlexrangespec *r,
 int obj_zset_last_in_lex_range(obj_zset *z, const zlexrangespec *r,
                                obj_zset_iter *it)
 {
-    if (z == NULL || r == NULL || it == NULL)
+    if (z == NULL || r == NULL || it == NULL ||
+        (r->min.s == NULL && r->min.len != 0) ||
+        (r->max.s == NULL && r->max.len != 0))
         return 0;
     it->z = z;
     if (z->encoding == OBJ_ZSET_LP) {

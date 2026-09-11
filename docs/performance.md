@@ -2757,3 +2757,9 @@ same linear element comparison cost; malformed views fail before scanning.
 HIMPORT fieldset names and fields now enforce non-empty NULL rejection inside
 the helper layer, protecting callers that bypass session validation. Valid empty
 names keep their existing allocation and comparison behavior.
+
+### Phase 411: ZSET lex-range view safety
+
+ZSET lex-range APIs now reject non-empty NULL finite bounds before traversing
+skiplist or listpack encodings. Valid finite and infinite bounds keep the same
+comparison cost; malformed ranges fail closed without mutation.

@@ -1151,3 +1151,5 @@
     元素，并对零长度元素跳过 `memcmp`，保持空二进制元素语义（Phase 409）
   - [x] HIMPORT 视图安全：字段集名称与字段值在 helper 层拒绝非零长度 NULL
     视图，避免绕过 session 校验时进入比较/复制路径（Phase 410）
+  - [x] ZSET 词典范围视图安全：score/lex 范围 API 拒绝非零长度 NULL bound，
+    防止 malformed 范围进入 skiplist/listpack 比较路径（Phase 411）

@@ -230,6 +230,10 @@ HIMPORT 边界补充复核：fieldset 名称与字段视图在 helper 层再次�
 NULL 输入，避免绕过 session 入口时进入 `memcmp`/复制；合法空名称仍保持既有
 PREPARE/DISCARD 语义。
 
+ZSET 词典范围边界补充复核：skiplist 与 listpack 的 lex-range 查询入口校验 finite
+ bound 的指针/长度组合，拒绝非零长度 NULL bound，避免 malformed 范围触发比较
+ 解引用；合法有限/无穷范围语义保持不变。
+
 - Hash 字段级 TTL 全族：`HGETDEL/HGETEX/HSETEX` 与
   `HEXPIRE/HPEXPIRE/HEXPIREAT/HPEXPIREAT/HPERSIST/HTTL/HPTTL/
   HEXPIRETIME/HPEXPIRETIME`。`obj_hash` 增加独立 `expires` 表，字段
