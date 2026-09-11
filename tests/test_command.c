@@ -196,6 +196,31 @@ static void test_set_rejection_is_transactional(void)
     g_db.watch_refs = 0;
 }
 
+static void test_set_rejects_null_numeric_option_view(void)
+{
+    resp_value argv[5];
+    memset(argv, 0, sizeof(argv));
+    argv[0].type = RESP_BULK_STRING;
+    argv[0].str = "SET";
+    argv[0].len = 3;
+    argv[1].type = RESP_BULK_STRING;
+    argv[1].str = "null-expire";
+    argv[1].len = 11;
+    argv[2].type = RESP_BULK_STRING;
+    argv[2].str = "value";
+    argv[2].len = 5;
+    argv[3].type = RESP_BULK_STRING;
+    argv[3].str = "EX";
+    argv[3].len = 2;
+    /* A non-empty NULL view is malformed input and must fail closed. */
+    argv[4].type = RESP_BULK_STRING;
+    argv[4].str = NULL;
+    argv[4].len = 1;
+    g_out.len = 0;
+    command_execute(&g_db, argv, 5, &g_out);
+    DD_CHECK(g_out.len > 0 && g_out.data[0] == '-');
+}
+
 static void test_object_encoding(void)
 {
     int i;
@@ -442,6 +467,7 @@ int main(void)
     DD_RUN(test_unknown_command);
     DD_RUN(test_empty_argv);
     DD_RUN(test_set_rejection_is_transactional);
+    DD_RUN(test_set_rejects_null_numeric_option_view);
     DD_RUN(test_object_encoding);
     DD_RUN(test_object_metadata_and_getkeysflags);
     DD_RUN(test_server_management_commands);

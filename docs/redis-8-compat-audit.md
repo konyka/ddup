@@ -29,6 +29,10 @@ python3 tools/audit_redis_compat.py \
 错误文本长度漂移造成截断或越界读取；`HIMPORT SET` 字段数错误已由命令测试
 锁定完整 wire 响应。
 
+安全性增量（Phase 412）：命令层统一拒绝非零长度 NULL 字符串视图，覆盖
+`SET`、`EXPIRE` 及其他依赖数值解析的选项路径；合法空二进制视图仍保持 Redis
+兼容语义，malformed 请求 fail-closed。
+
 复制协议补充复核：PSYNC 服务端在计算 backlog 可恢复范围和生成 `+CONTINUE`
 前验证环形缓冲元数据（容量、起点、长度及绝对偏移关系）。检测到内部损坏时
 直接拒绝握手，不写入响应缓冲，也不增加 replica 计数；合法 FULLRESYNC 与

@@ -1873,7 +1873,13 @@ static int cmd_parse_ll(const resp_value *v, long long *out)
 
 static int arg_str(const resp_value *v, const char **s, size_t *len)
 {
+    if (v == NULL)
+        return 0;
     if (v->type != RESP_BULK_STRING && v->type != RESP_SIMPLE_STRING)
+        return 0;
+    /* A non-empty view must have storage; keep malformed wire values out of
+     * command handlers before they reach parsers or libc string routines. */
+    if (v->str == NULL && v->len != 0)
         return 0;
     *s = v->str;
     *len = v->len;
@@ -1891,7 +1897,7 @@ static void wrong_args(resp_buf *out, const char *name)
 /* Strict signed 64-bit parse (leading '-', digits only, no overflow). */
 static int parse_i64(const char *s, size_t len, long long *out)
 {
-    if (len == 0)
+    if (s == NULL || out == NULL || len == 0)
         return 0;
     size_t i = 0;
     int neg = 0;
@@ -1926,7 +1932,7 @@ static int parse_u64(const char *s, size_t len, uint64_t *out)
 {
     uint64_t v = 0;
     size_t i;
-    if (len == 0)
+    if (s == NULL || out == NULL || len == 0)
         return 0;
     for (i = 0; i < len; i++) {
         unsigned digit;

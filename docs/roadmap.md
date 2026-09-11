@@ -1153,3 +1153,6 @@
     视图，避免绕过 session 校验时进入比较/复制路径（Phase 410）
   - [x] ZSET 词典范围视图安全：score/lex 范围 API 拒绝非零长度 NULL bound，
     防止 malformed 范围进入 skiplist/listpack 比较路径（Phase 411）
+  - [x] 通用 RESP 字符串视图校验：命令参数提取器拒绝非零长度 NULL 视图，数值
+    解析器同步防御 NULL 输入/输出，避免 SET/EXPIRE 等选项路径解引用 malformed
+    指针（Phase 412）

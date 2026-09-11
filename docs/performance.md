@@ -2763,3 +2763,10 @@ names keep their existing allocation and comparison behavior.
 ZSET lex-range APIs now reject non-empty NULL finite bounds before traversing
 skiplist or listpack encodings. Valid finite and infinite bounds keep the same
 comparison cost; malformed ranges fail closed without mutation.
+
+### Phase 412: command string-view validation
+
+The shared command argument extractor now rejects non-empty NULL views, and the
+integer parsers guard NULL input/output pointers. Valid arguments retain the
+same O(1) extraction and linear numeric-parse cost; malformed requests exit on
+the cold validation branch before command mutation.
