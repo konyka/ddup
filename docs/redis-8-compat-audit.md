@@ -13,6 +13,10 @@
 | 整体缺失容器 | 0 |
 | 已实现容器内缺失子命令 | 0 |
 
+Phase 427 additionally preserves Redis empty-key semantics across the
+multi-threaded RANDOMKEY aggregate path; a worker's `$0\r\n\r\n` reply is no
+longer collapsed into the null-bulk `$-1\r\n` response.
+
 最近一次本地复核（2026-09-01）：
 
 ```sh

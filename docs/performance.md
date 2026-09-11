@@ -2863,3 +2863,9 @@ empty channels take the cold zero-length branch.
 Queued and blocked session arguments now allocate one byte for non-NULL
 zero-length bulks, preserving empty-vs-null RESP semantics. Normal non-empty
 arguments keep the same copy cost; null bulks remain allocation-free.
+
+### Phase 427: multi-thread RANDOMKEY empty-key aggregation
+
+RANDOMKEY aggregation now tracks presence separately from payload length and
+allocates one byte for an empty key. Non-empty keys keep the same single copy;
+only empty results take the additional presence-tracking branch.

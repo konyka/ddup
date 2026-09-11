@@ -1184,3 +1184,5 @@
     `memcmp`，保持合法空频道规则语义（Phase 425）
   - [x] Session 空 bulk 生命周期保持：队列/阻塞参数复制区分合法空 bulk 与
     null bulk，避免事务或阻塞回放改变 RESP 语义（Phase 426）
+  - [x] 多线程 RANDOMKEY 空 key 聚合安全：聚合器区分空 bulk 与 null bulk，避免
+    worker 返回合法空 key 时被静默转换为 `$-1`（Phase 427）

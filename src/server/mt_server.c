@@ -332,6 +332,7 @@ struct mt_agg {
     size_t rawlen;
     char *random_key; /* first non-null RANDOMKEY result */
     size_t random_key_len;
+    int random_key_present; /* distinguishes empty bulk from null bulk */
     resp_buf keys_body; /* concatenated RESP bulk elements for KEYS */
     size_t keys_count;
     resp_buf client_body; /* concatenated CLIENT LIST payloads */
@@ -1623,12 +1624,14 @@ static void mt_agg_accumulate(mt_agg *agg, const resp_buf *part)
                 if (n >= 0 && (unsigned long long)n <=
                                   (unsigned long long)(part->data + part->len - payload)) {
                     plen = (size_t)n;
-                    if (agg->random_key == NULL && plen > 0 &&
+                    if (!agg->random_key_present &&
                         payload + plen <= part->data + part->len) {
-                        agg->random_key = (char *)malloc(plen);
+                        agg->random_key = (char *)malloc(plen != 0 ? plen : 1);
                         if (agg->random_key != NULL) {
-                            memcpy(agg->random_key, payload, plen);
+                            if (plen != 0)
+                                memcpy(agg->random_key, payload, plen);
                             agg->random_key_len = plen;
+                            agg->random_key_present = 1;
                         } else
                             agg->err = 1;
                     }
@@ -1803,9 +1806,13 @@ static void mt_agg_finish(server *srv, void *conn, mt_conn_state *st,
                 fin->reply = merged;
             }
         }
-        else if (agg->cmd == CMD_RANDOMKEY)
-            resp_write_bulk(&fin->reply, agg->random_key,
-                            agg->random_key_len);
+        else if (agg->cmd == CMD_RANDOMKEY) {
+            if (agg->random_key_present)
+                resp_write_bulk(&fin->reply, agg->random_key,
+                                agg->random_key_len);
+            else
+                resp_write_bulk(&fin->reply, NULL, 0);
+        }
         else if (agg->cmd == CMD_KEYS) {
             resp_write_array_header(&fin->reply, agg->keys_count);
             if (agg->keys_body.len > 0 &&

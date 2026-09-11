@@ -739,6 +739,31 @@ static void test_randomkey_aggregates_workers(void)
     pal_socket_cleanup();
 }
 
+static void test_randomkey_aggregate_preserves_empty_key(void)
+{
+    mt_server *ms;
+    pal_socket_t a;
+    char reply[64];
+    size_t n;
+
+    DD_CHECK_EQ_INT(0, pal_socket_init());
+    ms = mt_server_create("127.0.0.1", 0, 2);
+    DD_CHECK(ms != NULL);
+    DD_CHECK_EQ_INT(0, mt_server_start(ms));
+    a = connect_client(mt_server_port(ms));
+
+    /* An empty key is a valid bulk value and must not become a null bulk. */
+    roundtrip(a, "*3\r\n$3\r\nSET\r\n$0\r\n\r\n$1\r\nv\r\n", "+OK\r\n");
+    n = request_full(a, "*1\r\n$9\r\nRANDOMKEY\r\n", reply, sizeof(reply));
+    DD_CHECK_EQ_INT((size_t)6, n);
+    DD_CHECK(memcmp(reply, "$0\r\n\r\n", 6) == 0);
+
+    pal_close(a);
+    mt_server_stop(ms);
+    mt_server_destroy(ms);
+    pal_socket_cleanup();
+}
+
 static void test_keys_aggregates_workers(void)
 {
     mt_server *ms;
@@ -3803,6 +3828,7 @@ int main(void)
     DD_RUN(test_migrate_supported_on_single_mt_worker);
     DD_RUN(test_migrate_cross_worker_external_target);
     DD_RUN(test_randomkey_aggregates_workers);
+    DD_RUN(test_randomkey_aggregate_preserves_empty_key);
     DD_RUN(test_keys_aggregates_workers);
     DD_RUN(test_scan_composite_cursor_across_workers);
     DD_RUN(test_cluster_control_plane_mt);
