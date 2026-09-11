@@ -226,6 +226,10 @@ WRONGTYPE 语义。
 pivot/value，并允许 `NULL + 0` 空元素跳过 `memcmp` 安全匹配；正常列表遍历、
 RANK/COUNT 与修改语义保持兼容。
 
+HIMPORT 边界补充复核：fieldset 名称与字段视图在 helper 层再次拒绝非零长度
+NULL 输入，避免绕过 session 入口时进入 `memcmp`/复制；合法空名称仍保持既有
+PREPARE/DISCARD 语义。
+
 - Hash 字段级 TTL 全族：`HGETDEL/HGETEX/HSETEX` 与
   `HEXPIRE/HPEXPIRE/HEXPIREAT/HPEXPIREAT/HPERSIST/HTTL/HPTTL/
   HEXPIRETIME/HPEXPIRETIME`。`obj_hash` 增加独立 `expires` 表，字段

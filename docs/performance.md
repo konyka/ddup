@@ -2751,3 +2751,9 @@ malformed inputs fail before mutation.
 LPOS, LREM, and LINSERT now reject non-empty NULL elements early and skip
 `memcmp` when comparing zero-length values. Normal list traversal retains the
 same linear element comparison cost; malformed views fail before scanning.
+
+### Phase 410: HIMPORT view safety
+
+HIMPORT fieldset names and fields now enforce non-empty NULL rejection inside
+the helper layer, protecting callers that bypass session validation. Valid empty
+names keep their existing allocation and comparison behavior.

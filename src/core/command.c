@@ -1063,6 +1063,8 @@ static int himport_fieldset_store(session *s, const resp_value *argv,
     himport_fieldset *old;
     if (argc < 4 || !arg_str(&argv[2], &name, &name_len))
         return -1;
+    if (name == NULL && name_len != 0)
+        return -1;
     count = argc - 3;
     memset(&fresh, 0, sizeof(fresh));
     fresh.name = (char *)malloc(name_len ? name_len : 1);
@@ -1079,6 +1081,8 @@ static int himport_fieldset_store(session *s, const resp_value *argv,
         const char *field;
         size_t field_len, j;
         if (!arg_str(&argv[i + 3], &field, &field_len))
+            goto invalid;
+        if (field == NULL && field_len != 0)
             goto invalid;
         for (j = 0; j < i; j++)
             if (fresh.field_lens[j] == field_len &&
@@ -1156,6 +1160,8 @@ static void command_himport(session *s, const resp_value *argv, size_t argc,
         size_t name_len, i;
         int removed = 0;
         if (argc != 3 || !arg_str(&argv[2], &name, &name_len))
+            goto syntax;
+        if (name == NULL && name_len != 0)
             goto syntax;
         for (i = 0; i < s->himport_len; i++) {
             if (s->himport_sets[i].name_len == name_len &&

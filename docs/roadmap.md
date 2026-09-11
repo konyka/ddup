@@ -1149,3 +1149,5 @@
     跳过 `memcmp`，保持条件删除的原子语义（Phase 408）
   - [x] 列表搜索与修改视图安全：LPOS、LREM 与 LINSERT 拒绝非零长度 NULL
     元素，并对零长度元素跳过 `memcmp`，保持空二进制元素语义（Phase 409）
+  - [x] HIMPORT 视图安全：字段集名称与字段值在 helper 层拒绝非零长度 NULL
+    视图，避免绕过 session 校验时进入比较/复制路径（Phase 410）
