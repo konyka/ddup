@@ -1172,3 +1172,5 @@
     存储并跳过 `memcpy/memcmp`，保持空频道订阅/退订语义（Phase 419）
   - [x] 多线程 PUBSUB 空频道聚合：CHANNELS/NUMSUB 聚合器保留零长度频道并安全
     复制、比较及输出，修复合法空频道被静默丢弃（Phase 420）
+  - [x] 多线程 WATCH 空 key 路由安全：跨 worker WATCH/UNWATCH 及注册任务对零长度
+    key 使用最小存储并跳过零长度复制/比较，保持空二进制 key 事务语义（Phase 421）

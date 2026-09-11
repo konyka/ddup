@@ -2654,6 +2654,34 @@ static void test_watch_routed_and_unwatch(void)
     pal_socket_cleanup();
 }
 
+static void test_watch_empty_key_routed(void)
+{
+    mt_server *ms;
+    pal_socket_t owner, home;
+
+    DD_CHECK_EQ_INT(0, pal_socket_init());
+    ms = mt_server_create("127.0.0.1", 0, 2);
+    DD_CHECK(ms != NULL);
+    DD_CHECK_EQ_INT(0, mt_server_start(ms));
+
+    /* The second accepted connection is homed on worker 1.  The empty
+     * key hashes to worker 0, so WATCH must cross the worker boundary. */
+    owner = connect_client(mt_server_port(ms));
+    home = connect_client(mt_server_port(ms));
+    roundtrip(home, "*2\r\n$5\r\nWATCH\r\n$0\r\n\r\n", "+OK\r\n");
+    roundtrip(owner, "*3\r\n$3\r\nSET\r\n$0\r\n\r\n$1\r\nx\r\n",
+              "+OK\r\n");
+    roundtrip(home, "*1\r\n$5\r\nMULTI\r\n", "+OK\r\n");
+    roundtrip(home, "*2\r\n$3\r\nGET\r\n$0\r\n\r\n", "+QUEUED\r\n");
+    roundtrip(home, "*1\r\n$4\r\nEXEC\r\n", "*-1\r\n");
+
+    pal_close(owner);
+    pal_close(home);
+    mt_server_stop(ms);
+    mt_server_destroy(ms);
+    pal_socket_cleanup();
+}
+
 static void test_watch_pipeline_controls_are_ordered(void)
 {
     mt_server *ms;
@@ -3820,6 +3848,7 @@ int main(void)
     DD_RUN(test_discard);
     DD_RUN(test_watch_aborts_exec_on_change);
     DD_RUN(test_watch_routed_and_unwatch);
+    DD_RUN(test_watch_empty_key_routed);
     DD_RUN(test_watch_pipeline_controls_are_ordered);
     DD_RUN(test_watch_pipeline_remote_get_is_not_queued);
     DD_RUN(test_acl_remote_route_denied);

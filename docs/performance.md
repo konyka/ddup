@@ -2826,3 +2826,10 @@ Cross-worker `PUBSUB CHANNELS` and `NUMSUB` aggregation now retains zero-length
 channel views, using one-byte storage and guarded comparisons/copies. Normal
 non-empty channel aggregation keeps the same deduplication cost; only empty
 channels take the zero-length branch.
+
+### Phase 421: multi-thread WATCH empty-key routing
+
+Routed WATCH/UNWATCH tasks and worker registration now use one-byte storage for
+zero-length keys, with guarded copies and comparisons. Normal key routing keeps
+the same hash and transaction bookkeeping cost; only empty binary keys take the
+cold zero-length branch.

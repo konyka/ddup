@@ -51,6 +51,9 @@ malformed 非零长度 NULL 参数 fail-closed；合法数组扫描行为保持�
 兼容性修正（Phase 420）：多线程 `PUBSUB CHANNELS/NUMSUB` 聚合保留合法零长度
 频道，不再因聚合器跳过空视图而丢失频道或计数。
 
+安全性增量（Phase 421）：多线程 WATCH/UNWATCH 路由任务及 worker 注册映射对零长度
+key 分配最小存储并跳过 `memcpy/memcmp`，保持空二进制 key 的事务监视语义。
+
 安全性增量（Phase 417）：session 执行入口校验 NULL session/输出缓冲区、未绑定
 DB 和非空 NULL argv，malformed 控制调用安全返回，不影响合法 Redis 命令语义。
 

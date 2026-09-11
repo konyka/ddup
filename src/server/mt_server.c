@@ -654,6 +654,8 @@ static int mt_watch_add(mt_conn_state *st, const char *key, size_t klen,
                         uint64_t version, uint64_t epoch, int db_index)
 {
     mt_watch_entry *e;
+    if (st == NULL || (key == NULL && klen != 0))
+        return -1;
     if (st->nwatch == st->watch_cap) {
         size_t ncap = st->watch_cap == 0 ? 4 : st->watch_cap * 2;
         mt_watch_entry *nw = (mt_watch_entry *)realloc(
@@ -664,10 +666,11 @@ static int mt_watch_add(mt_conn_state *st, const char *key, size_t klen,
         st->watch_cap = ncap;
     }
     e = &st->watches[st->nwatch];
-    e->key = (char *)malloc(klen);
+    e->key = (char *)malloc(klen != 0 ? klen : 1);
     if (e->key == NULL)
         return -1;
-    memcpy(e->key, key, klen);
+    if (klen != 0)
+        memcpy(e->key, key, klen);
     e->klen = klen;
     e->version = version;
     e->epoch = epoch;
@@ -870,14 +873,17 @@ static mt_task *mt_unwatch_task(const char *key, size_t klen, int db_index)
 {
     mt_cmd_blob *b = (mt_cmd_blob *)malloc(sizeof(*b));
     mt_task *t;
+    if (key == NULL && klen != 0)
+        return NULL;
     if (b == NULL)
         return NULL;
-    b->raw = (char *)malloc(klen);
+    b->raw = (char *)malloc(klen != 0 ? klen : 1);
     if (b->raw == NULL) {
         free(b);
         return NULL;
     }
-    memcpy(b->raw, key, klen);
+    if (klen != 0)
+        memcpy(b->raw, key, klen);
     b->len = klen;
     t = mt_task_new(NULL, NULL, 0, 1, 1, b);
     if (t == NULL) {
@@ -2554,14 +2560,17 @@ static int mt_classify(int nworkers, uint16_t cmd, const resp_value *argv,
 static mt_cmd_blob *mt_blob_one(const char *raw, size_t len)
 {
     mt_cmd_blob *b = (mt_cmd_blob *)malloc(sizeof(*b));
+    if (raw == NULL && len != 0)
+        return NULL;
     if (b == NULL)
         return NULL;
-    b->raw = (char *)malloc(len);
+    b->raw = (char *)malloc(len != 0 ? len : 1);
     if (b->raw == NULL) {
         free(b);
         return NULL;
     }
-    memcpy(b->raw, raw, len);
+    if (len != 0)
+        memcpy(b->raw, raw, len);
     b->len = len;
     return b;
 }
@@ -4991,7 +5000,8 @@ static void mt_exec_task(worker *w, mt_task *t)
             mt_sub_entry *e = *pp;
             if (e->conn == t->conn && e->pattern == t->pubsub_pattern &&
                 e->chlen == t->cmds[0].len &&
-                memcmp(e->ch, t->cmds[0].raw, e->chlen) == 0) {
+                (e->chlen == 0 ||
+                 memcmp(e->ch, t->cmds[0].raw, e->chlen) == 0)) {
                 *pp = e->next;
                 free(e->ch);
                 free(e);
@@ -5015,9 +5025,11 @@ static void mt_exec_task(worker *w, mt_task *t)
             return;
         }
         if (e != NULL) {
-            e->ch = (char *)malloc(t->cmds[0].len);
+            e->ch = (char *)malloc(t->cmds[0].len != 0 ?
+                                   t->cmds[0].len : 1);
             if (e->ch != NULL) {
-                memcpy(e->ch, t->cmds[0].raw, t->cmds[0].len);
+                if (t->cmds[0].len != 0)
+                    memcpy(e->ch, t->cmds[0].raw, t->cmds[0].len);
                 e->chlen = t->cmds[0].len;
                 e->home_id = t->home->id;
                 e->conn = t->conn;
