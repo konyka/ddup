@@ -135,6 +135,31 @@ static void test_allkeys_lru_eviction(void)
     db_destroy(&d);
 }
 
+static void test_allkeys_lru_empty_key(void)
+{
+    db d;
+    resp_buf out;
+    char maxmem[32];
+
+    db_init(&d);
+    resp_buf_init(&out);
+    exec_cmd(&d, T0, &out, 3, "SET", "", "old");
+    EXPECT(out, "+OK\r\n");
+    exec_cmd(&d, LATER, &out, 3, "SET", "newer", "v");
+    EXPECT(out, "+OK\r\n");
+    snprintf(maxmem, sizeof(maxmem), "%llu",
+             (unsigned long long)ebs(5, 1));
+    exec_cmd(&d, LATER, &out, 4, "CONFIG", "SET", "maxmemory", maxmem);
+    EXPECT(out, "+OK\r\n");
+    DD_CHECK(d.evicted_keys >= 1);
+    exec_cmd(&d, LATER, &out, 2, "GET", "");
+    EXPECT(out, "$-1\r\n");
+    exec_cmd(&d, LATER, &out, 2, "GET", "newer");
+    EXPECT(out, "$1\r\nv\r\n");
+    resp_buf_free(&out);
+    db_destroy(&d);
+}
+
 static void test_noeviction_oom(void)
 {
     db d;
@@ -255,6 +280,7 @@ int main(void)
 {
     DD_RUN(test_memory_accounting);
     DD_RUN(test_allkeys_lru_eviction);
+    DD_RUN(test_allkeys_lru_empty_key);
     DD_RUN(test_noeviction_oom);
     DD_RUN(test_config_and_info);
     return DD_TEST_SUMMARY();

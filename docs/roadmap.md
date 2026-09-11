@@ -1178,3 +1178,5 @@
     零长度复制，确保合法空 key 在 replica 上可靠恢复（Phase 422）
   - [x] SLOWLOG 空参数复制安全：日志参数保存对零长度 bulk 使用最小存储并跳过
     零长度复制，保持空二进制参数可记录及回放（Phase 423）
+  - [x] LRU 淘汰空 key 复制安全：采样淘汰器复制零长度 victim key 时跳过
+    `memcpy`，保持空二进制 key 的淘汰语义（Phase 424）

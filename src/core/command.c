@@ -762,7 +762,8 @@ static int db_evict_one(db *d, uint64_t now_ms)
         size_t kl = cand_klen[oldest];
         if (kl > sizeof(stackbuf))
             kb = (char *)malloc(kl);
-        memcpy(kb, cand_key[oldest], kl);
+        if (kl != 0)
+            memcpy(kb, cand_key[oldest], kl);
         if (d->tier != NULL) {
             const char *v;
             size_t vl;

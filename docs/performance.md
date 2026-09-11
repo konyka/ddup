@@ -2845,3 +2845,9 @@ hash routing, and task enqueue cost; only empty keys take the cold branch.
 Slowlog argument snapshots now allocate one byte for zero-length bulk values
 and skip their byte copy. Normal argument capture keeps the same allocation and
 copy cost; only empty values take the cold branch.
+
+### Phase 424: LRU eviction empty-key copy safety
+
+The sampled LRU victim path now skips copying zero-length keys into its stack
+scratch buffer. Normal eviction keeps the same sampling and mutation cost;
+empty keys take only the zero-length branch.

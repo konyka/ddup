@@ -60,6 +60,9 @@ key 分配最小存储并跳过 `memcpy/memcmp`，保持空二进制 key 的事�
 可靠性增量（Phase 423）：SLOWLOG 参数快照对零长度 bulk 分配最小存储并跳过复制，
 避免空二进制参数导致整条慢日志记录被错误丢弃。
 
+安全性增量（Phase 424）：LRU 采样淘汰路径对零长度 victim key 跳过 `memcpy`，避免
+空 key 在淘汰时触发未定义内存访问并保持淘汰计数语义。
+
 安全性增量（Phase 417）：session 执行入口校验 NULL session/输出缓冲区、未绑定
 DB 和非空 NULL argv，malformed 控制调用安全返回，不影响合法 Redis 命令语义。
 
