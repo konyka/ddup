@@ -1156,3 +1156,5 @@
   - [x] 通用 RESP 字符串视图校验：命令参数提取器拒绝非零长度 NULL 视图，数值
     解析器同步防御 NULL 输入/输出，避免 SET/EXPIRE 等选项路径解引用 malformed
     指针（Phase 412）
+  - [x] ACL CAT 类别视图安全：ACL CAT 使用统一字符串提取器校验类别参数，拒绝
+    非零长度 NULL 视图，避免管理命令分类路径解引用 malformed 指针（Phase 413）

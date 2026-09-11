@@ -221,6 +221,24 @@ static void test_set_rejects_null_numeric_option_view(void)
     DD_CHECK(g_out.len > 0 && g_out.data[0] == '-');
 }
 
+static void test_acl_cat_rejects_null_category_view(void)
+{
+    resp_value argv[3];
+    memset(argv, 0, sizeof(argv));
+    argv[0].type = RESP_BULK_STRING;
+    argv[0].str = "ACL";
+    argv[0].len = 3;
+    argv[1].type = RESP_BULK_STRING;
+    argv[1].str = "CAT";
+    argv[1].len = 3;
+    argv[2].type = RESP_BULK_STRING;
+    argv[2].str = NULL;
+    argv[2].len = 4;
+    g_out.len = 0;
+    command_execute(&g_db, argv, 3, &g_out);
+    DD_CHECK(g_out.len > 0 && g_out.data[0] == '-');
+}
+
 static void test_object_encoding(void)
 {
     int i;
@@ -468,6 +486,7 @@ int main(void)
     DD_RUN(test_empty_argv);
     DD_RUN(test_set_rejection_is_transactional);
     DD_RUN(test_set_rejects_null_numeric_option_view);
+    DD_RUN(test_acl_cat_rejects_null_category_view);
     DD_RUN(test_object_encoding);
     DD_RUN(test_object_metadata_and_getkeysflags);
     DD_RUN(test_server_management_commands);

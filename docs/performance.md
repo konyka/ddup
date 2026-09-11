@@ -2770,3 +2770,10 @@ The shared command argument extractor now rejects non-empty NULL views, and the
 integer parsers guard NULL input/output pointers. Valid arguments retain the
 same O(1) extraction and linear numeric-parse cost; malformed requests exit on
 the cold validation branch before command mutation.
+
+### Phase 413: ACL CAT category validation
+
+`ACL CAT <category>` now extracts the category through the shared string-view
+validator before case-insensitive comparisons. Valid category dispatch keeps
+the same bounded command-table scan; malformed views fail on the cold branch
+without partial output or registry mutation.

@@ -12145,24 +12145,27 @@ static void command_acl(session *s, const resp_value *argv, size_t argc,
     if (ci_equal(sub, sl, "CAT") && (argc == 2 || argc == 3)) {
         static const char *cats[] = {"keyspace", "read", "write", "connection"};
         size_t i, count = 0;
+        const char *category = NULL;
+        size_t category_len = 0;
         if (argc == 2) {
             resp_write_array_header(out, sizeof(cats) / sizeof(cats[0]));
             for (i = 0; i < sizeof(cats) / sizeof(cats[0]); i++)
                 resp_write_bulk(out, cats[i], strlen(cats[i]));
             return;
         }
-        if (!ci_equal(argv[2].str, argv[2].len, "read") &&
-            !ci_equal(argv[2].str, argv[2].len, "write") &&
-            !ci_equal(argv[2].str, argv[2].len, "connection") &&
-            !ci_equal(argv[2].str, argv[2].len, "keyspace")) {
+        if (!arg_str(&argv[2], &category, &category_len) ||
+            (!ci_equal(category, category_len, "read") &&
+             !ci_equal(category, category_len, "write") &&
+             !ci_equal(category, category_len, "connection") &&
+             !ci_equal(category, category_len, "keyspace"))) {
             resp_write_error(out, "ERR unknown category", 20);
             return;
         }
         for (i = 1; i <= CMD_MAX; i++) {
             int match = 0;
-            if (ci_equal(argv[2].str, argv[2].len, "write")) match = cmd_is_write((uint16_t)i);
-            else if (ci_equal(argv[2].str, argv[2].len, "read")) match = !cmd_is_write((uint16_t)i);
-            else if (ci_equal(argv[2].str, argv[2].len, "connection"))
+            if (ci_equal(category, category_len, "write")) match = cmd_is_write((uint16_t)i);
+            else if (ci_equal(category, category_len, "read")) match = !cmd_is_write((uint16_t)i);
+            else if (ci_equal(category, category_len, "connection"))
                 match = i == CMD_PING || i == CMD_ECHO || i == CMD_AUTH || i == CMD_QUIT || i == CMD_SELECT;
             else match = i == CMD_GET || i == CMD_SET || i == CMD_DEL || i == CMD_EXISTS;
             if (match && cmd_name((uint16_t)i) != NULL) count++;
@@ -12170,9 +12173,9 @@ static void command_acl(session *s, const resp_value *argv, size_t argc,
         resp_write_array_header(out, count);
         for (i = 1; i <= CMD_MAX; i++) {
             int match = 0;
-            if (ci_equal(argv[2].str, argv[2].len, "write")) match = cmd_is_write((uint16_t)i);
-            else if (ci_equal(argv[2].str, argv[2].len, "read")) match = !cmd_is_write((uint16_t)i);
-            else if (ci_equal(argv[2].str, argv[2].len, "connection"))
+            if (ci_equal(category, category_len, "write")) match = cmd_is_write((uint16_t)i);
+            else if (ci_equal(category, category_len, "read")) match = !cmd_is_write((uint16_t)i);
+            else if (ci_equal(category, category_len, "connection"))
                 match = i == CMD_PING || i == CMD_ECHO || i == CMD_AUTH || i == CMD_QUIT || i == CMD_SELECT;
             else match = i == CMD_GET || i == CMD_SET || i == CMD_DEL || i == CMD_EXISTS;
             if (match && cmd_name((uint16_t)i) != NULL)
