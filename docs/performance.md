@@ -2839,3 +2839,9 @@ cold zero-length branch.
 Full-sync partition restore now uses one-byte storage for zero-length keys and
 skips their byte copy. Normal restore entries retain the same snapshot dump,
 hash routing, and task enqueue cost; only empty keys take the cold branch.
+
+### Phase 423: SLOWLOG empty-argument storage
+
+Slowlog argument snapshots now allocate one byte for zero-length bulk values
+and skip their byte copy. Normal argument capture keeps the same allocation and
+copy cost; only empty values take the cold branch.

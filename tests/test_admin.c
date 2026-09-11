@@ -207,6 +207,8 @@ static void test_slowlog(void)
     static const char path[] = "test_admin_slowlog.aof";
     server *s;
     pal_socket_t c;
+    resp_value empty_argv[3];
+    resp_buf log;
     remove(path);
     s = server_create("127.0.0.1", 0);
     DD_CHECK(s != NULL);
@@ -220,9 +222,25 @@ static void test_slowlog(void)
     roundtrip(s, c, "*1\r\n$4\r\nPING\r\n", "+PONG\r\n");
     roundtrip(s, c, "*2\r\n$7\r\nSLOWLOG\r\n$5\r\nRESET\r\n", "+OK\r\n");
     roundtrip(s, c, "*2\r\n$7\r\nSLOWLOG\r\n$3\r\nLEN\r\n", ":1\r\n");
+    memset(empty_argv, 0, sizeof(empty_argv));
+    empty_argv[0].type = RESP_BULK_STRING;
+    empty_argv[0].str = "SET";
+    empty_argv[0].len = 3;
+    empty_argv[1].type = RESP_BULK_STRING;
+    empty_argv[1].str = "";
+    empty_argv[1].len = 0;
+    empty_argv[2].type = RESP_BULK_STRING;
+    empty_argv[2].str = "v";
+    empty_argv[2].len = 1;
+    server_slowlog_reset(s);
+    server_slowlog_record(s, empty_argv, 3, 1, 1000);
+    resp_buf_init(&log);
+    server_slowlog_get(s, -1, &log);
+    DD_CHECK(strstr(log.data, "$0\r\n\r\n") != NULL);
+    resp_buf_free(&log);
     roundtrip_contains(s, c,
                        "*3\r\n$7\r\nSLOWLOG\r\n$3\r\nGET\r\n$1\r\n5\r\n",
-                       "RESET");
+                       "SET");
     /* Redis treats any negative count as "return all entries". */
     roundtrip_contains(s, c,
                        "*3\r\n$7\r\nSLOWLOG\r\n$3\r\nGET\r\n$2\r\n-1\r\n",

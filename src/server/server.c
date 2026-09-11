@@ -2993,7 +2993,7 @@ static void srv_slowlog_add(void *ctx, const resp_value *argv, size_t argc,
         copy[i] = argv[i];
         copy[i].items = NULL;
         if (argv[i].str != NULL) {
-            char *cp = (char *)malloc(argv[i].len);
+            char *cp = (char *)malloc(argv[i].len != 0 ? argv[i].len : 1);
             if (cp == NULL) {
                 while (i > 0) {
                     i--;
@@ -3002,7 +3002,8 @@ static void srv_slowlog_add(void *ctx, const resp_value *argv, size_t argc,
                 free(copy);
                 return;
             }
-            memcpy(cp, argv[i].str, argv[i].len);
+            if (argv[i].len != 0)
+                memcpy(cp, argv[i].str, argv[i].len);
             copy[i].str = cp;
         }
     }
