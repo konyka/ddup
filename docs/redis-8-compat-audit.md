@@ -1086,3 +1086,5 @@ unchanged.
 Quicklist push now rejects null list handles and malformed non-empty data views
 before allocating or mutating a node. Zero-length values remain valid and retain
 their existing empty-element behavior.
+兼容性修正（Phase 416）：`DELEX` malformed 条件值继续返回既有 `ERR syntax error`，
+在统一视图校验前完成固定时间检查，安全性增强不改变错误协议。
