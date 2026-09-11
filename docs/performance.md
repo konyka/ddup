@@ -2833,3 +2833,9 @@ Routed WATCH/UNWATCH tasks and worker registration now use one-byte storage for
 zero-length keys, with guarded copies and comparisons. Normal key routing keeps
 the same hash and transaction bookkeeping cost; only empty binary keys take the
 cold zero-length branch.
+
+### Phase 422: multi-thread replication empty-key restore
+
+Full-sync partition restore now uses one-byte storage for zero-length keys and
+skips their byte copy. Normal restore entries retain the same snapshot dump,
+hash routing, and task enqueue cost; only empty keys take the cold branch.

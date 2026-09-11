@@ -4759,7 +4759,7 @@ static void mt_repl_restore_cb(const char *key, size_t klen,
                                const char *val, size_t vlen, void *ctx)
 {
     mt_repl_restore_ctx *rc = (mt_repl_restore_ctx *)ctx;
-    mt_server *ms = rc->leader->ms;
+    mt_server *ms;
     resp_buf payload;
     mt_cmd_blob *cmds;
     mt_task *t;
@@ -4771,8 +4771,10 @@ static void mt_repl_restore_cb(const char *key, size_t klen,
 
     (void)val;
     (void)vlen;
-    if (rc->failed)
+    if (rc == NULL || rc->leader == NULL || rc->src == NULL || rc->failed ||
+        (key == NULL && klen != 0))
         return;
+    ms = rc->leader->ms;
     resp_buf_init(&payload);
     if (snapshot_dump_key(rc->src, key, klen, &payload) != 0) {
         resp_buf_free(&payload);
@@ -4788,7 +4790,7 @@ static void mt_repl_restore_cb(const char *key, size_t klen,
         rc->failed = 1;
         return;
     }
-    cmds[0].raw = (char *)malloc(klen);
+    cmds[0].raw = (char *)malloc(klen != 0 ? klen : 1);
     cmds[1].raw = (char *)malloc(payload.len);
     if (cmds[0].raw == NULL || cmds[1].raw == NULL) {
         free(cmds[0].raw);
@@ -4798,7 +4800,8 @@ static void mt_repl_restore_cb(const char *key, size_t klen,
         rc->failed = 1;
         return;
     }
-    memcpy(cmds[0].raw, key, klen);
+    if (klen != 0)
+        memcpy(cmds[0].raw, key, klen);
     cmds[0].len = klen;
     memcpy(cmds[1].raw, payload.data, payload.len);
     cmds[1].len = payload.len;

@@ -1497,6 +1497,8 @@ static void test_mt_replica_partitions_full_sync(void)
     snprintf(req, sizeof(req), "*3\r\n$3\r\nSET\r\n$%zu\r\n%s\r\n$2\r\nv0\r\n",
              strlen(k0), k0);
     roundtrip(mc, req, "+OK\r\n");
+    roundtrip(mc, "*3\r\n$3\r\nSET\r\n$0\r\n\r\n$2\r\nev\r\n",
+              "+OK\r\n");
     snprintf(req, sizeof(req), "*3\r\n$3\r\nSET\r\n$%zu\r\n%s\r\n$2\r\nv1\r\n",
              strlen(k1), k1);
     roundtrip(mc, req, "+OK\r\n");
@@ -1513,6 +1515,7 @@ static void test_mt_replica_partitions_full_sync(void)
     c = connect_client(mt_server_port(ms));
     wait_for_bulk(c, k0, "$2\r\nv0\r\n");
     wait_for_bulk(c, k1, "$2\r\nv1\r\n");
+    wait_for_bulk(c, "", "$2\r\nev\r\n");
 
     /* Post-sync stream is routed to the owning worker exactly like client
      * traffic. */
