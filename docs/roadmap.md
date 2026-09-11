@@ -1168,3 +1168,5 @@
     缓冲区、未绑定 DB 及非空 NULL argv，避免控制层直接解引用无效句柄（Phase 417）
   - [x] Server CONFIG 回调视图安全：服务级配置处理器拒绝 NULL server 及非空
     NULL 参数/值视图，避免 appendfsync 配置路径解引用 malformed 数据（Phase 418）
+  - [x] 多线程 Pub/Sub 空频道存储安全：worker 订阅映射对零长度频道分配最小
+    存储并跳过 `memcpy/memcmp`，保持空频道订阅/退订语义（Phase 419）

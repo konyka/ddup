@@ -1122,9 +1122,11 @@ static mt_conn_sub *mt_conn_sub_find_kind(mt_conn_state *st, const char *ch,
                                           size_t chlen, int kind)
 {
     mt_conn_sub *s;
+    if (ch == NULL && chlen != 0)
+        return NULL;
     for (s = st->subs; s != NULL; s = s->next)
         if (s->pattern == kind && s->chlen == chlen &&
-            memcmp(s->ch, ch, chlen) == 0)
+            (chlen == 0 || memcmp(s->ch, ch, chlen) == 0))
             return s;
     return NULL;
 }
@@ -1132,15 +1134,18 @@ static mt_conn_sub *mt_conn_sub_find_kind(mt_conn_state *st, const char *ch,
 static int mt_conn_sub_add(mt_conn_state *st, const char *ch, size_t chlen,
                            int owner, int pattern)
 {
+    if (ch == NULL && chlen != 0)
+        return -1;
     mt_conn_sub *s = (mt_conn_sub *)calloc(1, sizeof(*s));
     if (s == NULL)
         return -1;
-    s->ch = (char *)malloc(chlen);
+    s->ch = (char *)malloc(chlen != 0 ? chlen : 1);
     if (s->ch == NULL) {
         free(s);
         return -1;
     }
-    memcpy(s->ch, ch, chlen);
+    if (chlen != 0)
+        memcpy(s->ch, ch, chlen);
     s->chlen = chlen;
     s->owner = owner;
     s->pattern = pattern;
@@ -1154,10 +1159,12 @@ static int mt_conn_sub_remove(mt_conn_state *st, const char *ch,
                               size_t chlen, int pattern)
 {
     mt_conn_sub **pp = &st->subs;
+    if (ch == NULL && chlen != 0)
+        return 0;
     while (*pp != NULL) {
         mt_conn_sub *s = *pp;
         if (s->pattern == pattern && s->chlen == chlen &&
-            memcmp(s->ch, ch, chlen) == 0) {
+            (chlen == 0 || memcmp(s->ch, ch, chlen) == 0)) {
             *pp = s->next;
             free(s->ch);
             free(s);
@@ -1195,10 +1202,12 @@ static void mt_worker_sub_remove(worker *w, void *conn, const char *ch,
                                  size_t chlen, int pattern)
 {
     mt_sub_entry **pp = &w->subs;
+    if (ch == NULL && chlen != 0)
+        return;
     while (*pp != NULL) {
         mt_sub_entry *e = *pp;
         if (e->conn == conn && e->pattern == pattern && e->chlen == chlen &&
-            memcmp(e->ch, ch, chlen) == 0) {
+            (chlen == 0 || memcmp(e->ch, ch, chlen) == 0)) {
             *pp = e->next;
             free(e->ch);
             free(e);

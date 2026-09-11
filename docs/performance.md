@@ -2812,3 +2812,10 @@ The server-level CONFIG callback now validates the server handle and parameter/
 value views before case-insensitive matching. Normal `appendfsync` lookups and
 updates retain the same constant-size comparisons and AOF behavior; malformed
 direct callback calls fail closed without allocation or mutation.
+
+### Phase 419: multi-thread Pub/Sub empty-channel storage
+
+Worker subscription maps now allocate one byte for zero-length channels and
+skip zero-length copies/comparisons. Normal channel operations retain the same
+hash/list traversal and allocation cost; only empty channels use the cold
+zero-length branch.

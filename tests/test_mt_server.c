@@ -2914,6 +2914,11 @@ static void test_pubsub_cross_worker(void)
                     (long long)recv_deadline(a, buf, strlen(push), 3000));
     DD_CHECK_MEM(push, strlen(push), buf, strlen(push));
 
+    /* Empty binary channels are valid RESP views and must not depend on
+     * malloc(0) returning a usable pointer in the worker subscription map. */
+    roundtrip(a, "*2\r\n$9\r\nSUBSCRIBE\r\n$0\r\n\r\n",
+              "*3\r\n$9\r\nsubscribe\r\n$0\r\n\r\n:2\r\n");
+
     pal_close(a);
     pal_close(b);
     mt_server_stop(ms);

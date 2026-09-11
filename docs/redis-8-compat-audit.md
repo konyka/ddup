@@ -45,6 +45,9 @@ malformed 非零长度 NULL 参数 fail-closed；合法数组扫描行为保持�
 兼容性修正（Phase 416）：`DELEX` malformed 条件值继续返回既有 `ERR syntax error`，
 在统一视图校验前完成固定时间检查，安全性增强不改变错误协议。
 
+安全性增量（Phase 419）：多线程 Pub/Sub worker 订阅映射安全处理零长度频道，
+分配最小存储并跳过零长度内存操作，兼容合法空频道订阅与退订。
+
 安全性增量（Phase 417）：session 执行入口校验 NULL session/输出缓冲区、未绑定
 DB 和非空 NULL argv，malformed 控制调用安全返回，不影响合法 Redis 命令语义。
 

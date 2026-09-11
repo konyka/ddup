@@ -475,7 +475,7 @@ static ptrdiff_t chan_subscribe(rh_table *tab, conn_sub **listp, session *sess,
     chan_node *head;
     chan_node *n;
     conn_sub *cs;
-    if (len > UINT32_MAX)
+    if ((ch == NULL && len != 0) || len > UINT32_MAX)
         return -1;
     head = chan_get(tab, ch, len);
     for (n = head; n != NULL; n = n->next)
@@ -503,7 +503,8 @@ static ptrdiff_t chan_subscribe(rh_table *tab, conn_sub **listp, session *sess,
         free(n);
         return -1;
     }
-    memcpy(cs->ch, ch, len);
+    if (len != 0)
+        memcpy(cs->ch, ch, len);
     cs->chlen = len;
     cs->next = *listp;
     *listp = cs;
@@ -532,7 +533,8 @@ static size_t chan_unsubscribe(rh_table *tab, conn_sub **listp, session *sess,
         free(dead);
     }
     for (csp = listp; *csp != NULL; csp = &(*csp)->next) {
-        if ((*csp)->chlen == len && memcmp((*csp)->ch, ch, len) == 0) {
+        if ((*csp)->chlen == len &&
+            (len == 0 || memcmp((*csp)->ch, ch, len) == 0)) {
             conn_sub *dead = *csp;
             *csp = dead->next;
             free(dead->ch);
