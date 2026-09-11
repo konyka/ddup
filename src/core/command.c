@@ -1826,6 +1826,8 @@ static void unsub_collect_cb(const char *ch, size_t len, void *arg)
 static int ci_equal(const char *a, size_t alen, const char *b)
 {
     size_t blen = strlen(b);
+    if (a == NULL && alen != 0)
+        return 0;
     if (alen != blen)
         return 0;
     for (size_t i = 0; i < alen; i++) {
@@ -15778,6 +15780,11 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
         size_t kl;
         size_t condl;
         size_t matchl;
+        if (argv[3].type == RESP_BULK_STRING && argv[3].str == NULL &&
+            argv[3].len != 0) {
+            resp_write_error(out, ERR_SYNTAX, sizeof(ERR_SYNTAX) - 1);
+            return;
+        }
         if (!arg_str(&argv[1], &k, &kl) || !arg_str(&argv[2], &cond, &condl) ||
             !arg_str(&argv[3], &match, &matchl))
             goto bad_type;

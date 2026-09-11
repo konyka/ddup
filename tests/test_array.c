@@ -206,6 +206,24 @@ static void test_array_scan_rejects_null_option_view(void)
     db_destroy(&d);
 }
 
+static void test_array_info_rejects_null_option_view(void)
+{
+    db d;
+    resp_buf out;
+    resp_value argv[3];
+
+    db_init(&d);
+    resp_buf_init(&out);
+    memset(argv, 0, sizeof(argv));
+    argv[0].type = RESP_BULK_STRING; argv[0].str = "ARINFO"; argv[0].len = 6;
+    argv[1].type = RESP_BULK_STRING; argv[1].str = "a"; argv[1].len = 1;
+    argv[2].type = RESP_BULK_STRING; argv[2].str = NULL; argv[2].len = 4;
+    command_execute_at(&d, argv, 3, &out, 1000000);
+    DD_CHECK(out.len > 0 && out.data[0] == '-');
+    resp_buf_free(&out);
+    db_destroy(&d);
+}
+
 static void test_array_history_failure_does_not_partially_commit(void)
 {
     obj_array *a = obj_array_new();
@@ -235,6 +253,7 @@ int main(void)
     DD_RUN(test_array_batch_prevalidates_views);
     DD_RUN(test_array_match_rejects_malformed_views);
     DD_RUN(test_array_scan_rejects_null_option_view);
+    DD_RUN(test_array_info_rejects_null_option_view);
     DD_RUN(test_array_history_failure_does_not_partially_commit);
     return DD_TEST_SUMMARY();
 }

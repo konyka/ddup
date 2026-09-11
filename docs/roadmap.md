@@ -1160,3 +1160,7 @@
     非零长度 NULL 视图，避免管理命令分类路径解引用 malformed 指针（Phase 413）
   - [x] ARSCAN 选项视图安全：数组扫描 LIMIT 令牌使用统一字符串提取器校验，
     拒绝非零长度 NULL 视图，避免扩展命令选项解析崩溃（Phase 414）
+  - [x] 命令 token 比较器视图安全：共享大小写 token 比较器拒绝非零长度 NULL
+    输入，覆盖 ARINFO/ARGREP/CLUSTER 等直接比较路径（Phase 415）
+  - [x] DELEX 错误码兼容：malformed 条件值在通用视图校验前保留既有
+    `ERR syntax error` 响应，避免安全修复改变错误语义（Phase 416）

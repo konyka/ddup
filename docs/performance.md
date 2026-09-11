@@ -2784,3 +2784,17 @@ without partial output or registry mutation.
 extractor before comparison. Valid scans retain the same bounded range walk and
 single option parse; malformed tokens fail on the cold branch without array
 access or mutation.
+
+### Phase 415: shared command token comparison
+
+The command token comparator now rejects non-empty NULL views before entering
+its existing byte loop. Valid tokens add one predictable cold-invalid guard and
+retain identical case-folding and linear comparison work; all direct option
+comparisons fail closed for malformed RESP values.
+
+### Phase 416: DELEX malformed error compatibility
+
+`DELEX` checks its conditional match view before shared extraction so malformed
+non-empty NULL matches retain the established syntax-error reply. The check is
+constant-time and only affects invalid input; valid conditional deletion keeps
+the same comparison and mutation path.
