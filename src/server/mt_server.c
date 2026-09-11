@@ -1542,11 +1542,11 @@ static int mt_pubsub_channel_add(mt_agg *agg, const char *ch, size_t len)
 {
     size_t i;
     char *copy;
-    if (len == 0)
-        return 0;
+    if (agg == NULL || (ch == NULL && len != 0))
+        return -1;
     for (i = 0; i < agg->pubsub_channel_count; i++)
         if (agg->pubsub_channel_lens[i] == len &&
-            memcmp(agg->pubsub_channels[i], ch, len) == 0)
+            (len == 0 || memcmp(agg->pubsub_channels[i], ch, len) == 0))
             return 0;
     if (agg->pubsub_channel_count == agg->pubsub_channel_cap) {
         size_t cap = agg->pubsub_channel_cap == 0 ? 8 :
@@ -1570,10 +1570,11 @@ static int mt_pubsub_channel_add(mt_agg *agg, const char *ch, size_t len)
         agg->pubsub_channel_lens = nl;
         agg->pubsub_channel_cap = cap;
     }
-    copy = (char *)malloc(len);
+    copy = (char *)malloc(len != 0 ? len : 1);
     if (copy == NULL)
         return -1;
-    memcpy(copy, ch, len);
+    if (len != 0)
+        memcpy(copy, ch, len);
     agg->pubsub_channels[agg->pubsub_channel_count] = copy;
     agg->pubsub_channel_lens[agg->pubsub_channel_count++] = len;
     return 0;
@@ -1699,7 +1700,7 @@ static void mt_agg_accumulate(mt_agg *agg, const resp_buf *part)
             else if (agg->pubsub_mode == 2 && v.type == RESP_ARRAY) {
                 size_t i;
                 for (i = 0; i < v.count; i++)
-                    if (v.items[i].str != NULL &&
+                    if ((v.items[i].str != NULL || v.items[i].len == 0) &&
                         mt_pubsub_channel_add(agg, v.items[i].str,
                                               v.items[i].len) != 0)
                         agg->err = 1;
@@ -1707,13 +1708,14 @@ static void mt_agg_accumulate(mt_agg *agg, const resp_buf *part)
                 size_t i;
                 for (i = 0; i + 1 < v.count; i += 2) {
                     size_t j;
-                    if (v.items[i].str == NULL ||
+                    if ((v.items[i].str == NULL && v.items[i].len != 0) ||
                         v.items[i + 1].type != RESP_INTEGER)
                         continue;
                     for (j = 0; j < agg->pubsub_name_count; j++)
                         if (agg->pubsub_name_lens[j] == v.items[i].len &&
-                            memcmp(agg->pubsub_names[j], v.items[i].str,
-                                   v.items[i].len) == 0) {
+                            (v.items[i].len == 0 ||
+                             memcmp(agg->pubsub_names[j], v.items[i].str,
+                                    v.items[i].len) == 0)) {
                             agg->pubsub_counts[j] += v.items[i + 1].integer;
                             break;
                         }
@@ -3091,13 +3093,19 @@ static int mt_route_aggregate(worker *home, void *conn,
                 return 0;
             }
             for (i = 0; i < agg->pubsub_name_count; i++) {
-                agg->pubsub_names[i] = (char *)malloc(argv[i + 2].len);
+                if (argv[i + 2].str == NULL && argv[i + 2].len != 0) {
+                    mt_agg_free(agg);
+                    return 0;
+                }
+                agg->pubsub_names[i] = (char *)malloc(
+                    argv[i + 2].len != 0 ? argv[i + 2].len : 1);
                 if (agg->pubsub_names[i] == NULL) {
                     mt_agg_free(agg);
                     return 0;
                 }
-                memcpy(agg->pubsub_names[i], argv[i + 2].str,
-                       argv[i + 2].len);
+                if (argv[i + 2].len != 0)
+                    memcpy(agg->pubsub_names[i], argv[i + 2].str,
+                           argv[i + 2].len);
                 agg->pubsub_name_lens[i] = argv[i + 2].len;
             }
         }

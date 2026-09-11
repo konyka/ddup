@@ -2918,6 +2918,10 @@ static void test_pubsub_cross_worker(void)
      * malloc(0) returning a usable pointer in the worker subscription map. */
     roundtrip(a, "*2\r\n$9\r\nSUBSCRIBE\r\n$0\r\n\r\n",
               "*3\r\n$9\r\nsubscribe\r\n$0\r\n\r\n:2\r\n");
+    roundtrip(b, "*2\r\n$6\r\nPUBSUB\r\n$8\r\nCHANNELS\r\n",
+              "*2\r\n$2\r\nch\r\n$0\r\n\r\n");
+    roundtrip(b, "*3\r\n$6\r\nPUBSUB\r\n$6\r\nNUMSUB\r\n$0\r\n\r\n",
+              "*2\r\n$0\r\n\r\n:1\r\n");
 
     pal_close(a);
     pal_close(b);

@@ -2819,3 +2819,10 @@ Worker subscription maps now allocate one byte for zero-length channels and
 skip zero-length copies/comparisons. Normal channel operations retain the same
 hash/list traversal and allocation cost; only empty channels use the cold
 zero-length branch.
+
+### Phase 420: multi-thread PUBSUB empty-channel aggregation
+
+Cross-worker `PUBSUB CHANNELS` and `NUMSUB` aggregation now retains zero-length
+channel views, using one-byte storage and guarded comparisons/copies. Normal
+non-empty channel aggregation keeps the same deduplication cost; only empty
+channels take the zero-length branch.

@@ -1170,3 +1170,5 @@
     NULL 参数/值视图，避免 appendfsync 配置路径解引用 malformed 数据（Phase 418）
   - [x] 多线程 Pub/Sub 空频道存储安全：worker 订阅映射对零长度频道分配最小
     存储并跳过 `memcpy/memcmp`，保持空频道订阅/退订语义（Phase 419）
+  - [x] 多线程 PUBSUB 空频道聚合：CHANNELS/NUMSUB 聚合器保留零长度频道并安全
+    复制、比较及输出，修复合法空频道被静默丢弃（Phase 420）
