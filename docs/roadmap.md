@@ -1166,3 +1166,5 @@
     `ERR syntax error` 响应，避免安全修复改变错误语义（Phase 416）
   - [x] Session 执行入口句柄安全：`session_execute_at` 拒绝 NULL session、输出
     缓冲区、未绑定 DB 及非空 NULL argv，避免控制层直接解引用无效句柄（Phase 417）
+  - [x] Server CONFIG 回调视图安全：服务级配置处理器拒绝 NULL server 及非空
+    NULL 参数/值视图，避免 appendfsync 配置路径解引用 malformed 数据（Phase 418）

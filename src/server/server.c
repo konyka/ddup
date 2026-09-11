@@ -1986,6 +1986,8 @@ static int srv_psync(void *ctx, session *sess, const char *replid,
 static int srv_ci_equal(const char *a, size_t alen, const char *b)
 {
     size_t i, blen = strlen(b);
+    if (a == NULL && alen != 0)
+        return 0;
     if (alen != blen)
         return 0;
     for (i = 0; i < alen; i++) {
@@ -2006,6 +2008,12 @@ static int srv_config_command(void *ctx, const char *sub, size_t sub_len,
     server *srv = (server *)ctx;
     (void)sub;
     (void)sub_len;
+    if (param == NULL && param_len != 0)
+        return 0;
+    if (value == NULL && value_len != 0)
+        return 0;
+    if (srv == NULL)
+        return 0;
     if (!srv_ci_equal(param, param_len, "appendfsync"))
         return 0;
     if (value == NULL) {

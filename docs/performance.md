@@ -2805,3 +2805,10 @@ the same comparison and mutation path.
 non-empty argv view once at the API boundary. Normal command execution keeps
 the same dispatch and allocation behavior; invalid control calls take a cold
 constant-time return before touching session state.
+
+### Phase 418: server CONFIG callback validation
+
+The server-level CONFIG callback now validates the server handle and parameter/
+value views before case-insensitive matching. Normal `appendfsync` lookups and
+updates retain the same constant-size comparisons and AOF behavior; malformed
+direct callback calls fail closed without allocation or mutation.

@@ -823,6 +823,20 @@ static void test_config_appendfsync_hook(void)
     resp_buf_free(&out);
 }
 
+static void test_config_hook_rejects_malformed_views(void)
+{
+    resp_buf out;
+
+    resp_buf_init(&out);
+    DD_CHECK_EQ_INT(0, server_config_command(NULL, "SET", 3, NULL, 1,
+                                              "always", 6, &out));
+    DD_CHECK_EQ_INT(0, (long long)out.len);
+    DD_CHECK_EQ_INT(0, server_config_command(NULL, "SET", 3, "appendfsync",
+                                              11, NULL, 1, &out));
+    DD_CHECK_EQ_INT(0, (long long)out.len);
+    resp_buf_free(&out);
+}
+
 static void test_eventless_loop_flushes_aof(void)
 {
     static const char path[] = "test_server_aof_eventless.aof";
@@ -1712,6 +1726,7 @@ static void run_all_tests(void)
     DD_RUN(test_aof_failure_rejects_writes);
     DD_RUN(test_aof_sync_failure_rejects_writes);
     DD_RUN(test_config_appendfsync_hook);
+    DD_RUN(test_config_hook_rejects_malformed_views);
     DD_RUN(test_eventless_loop_flushes_aof);
     DD_RUN(test_mget_missing_key);
     DD_RUN(test_unknown_command);
