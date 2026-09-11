@@ -36,6 +36,9 @@ python3 tools/audit_redis_compat.py \
 安全性增量（Phase 413）：`ACL CAT` 的类别参数改由统一字符串视图校验器提取，
 非零长度 NULL 视图返回错误且不产生部分响应；合法类别及空类别行为保持兼容。
 
+安全性增量（Phase 414）：`ARSCAN` 的 `LIMIT` 选项令牌经过统一视图校验，
+malformed 非零长度 NULL 参数 fail-closed；合法数组扫描行为保持兼容。
+
 复制协议补充复核：PSYNC 服务端在计算 backlog 可恢复范围和生成 `+CONTINUE`
 前验证环形缓冲元数据（容量、起点、长度及绝对偏移关系）。检测到内部损坏时
 直接拒绝握手，不写入响应缓冲，也不增加 replica 计数；合法 FULLRESYNC 与

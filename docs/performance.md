@@ -2777,3 +2777,10 @@ the cold validation branch before command mutation.
 validator before case-insensitive comparisons. Valid category dispatch keeps
 the same bounded command-table scan; malformed views fail on the cold branch
 without partial output or registry mutation.
+
+### Phase 414: ARSCAN option validation
+
+`ARSCAN ... LIMIT` now validates the option token through the shared string-view
+extractor before comparison. Valid scans retain the same bounded range walk and
+single option parse; malformed tokens fail on the cold branch without array
+access or mutation.

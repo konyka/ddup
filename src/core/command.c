@@ -12992,7 +12992,18 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
         if (cmd_id == CMD_ARSCAN) {
             const char *ss, *es; size_t sl, el; uint64_t start, end, limit = 0;
             if (!arg_str(&argv[2], &ss, &sl) || !arg_str(&argv[3], &es, &el) || !parse_u64(ss, sl, &start) || !parse_u64(es, el, &end) || end < start) { resp_write_array_header(out, 0); return; }
-            if (argc > 4) { const char *ls; size_t ll; if (argc != 6 || !ci_equal(argv[4].str, argv[4].len, "LIMIT") || !arg_str(&argv[5], &ls, &ll) || !parse_u64(ls, ll, &limit)) { resp_write_error(out, ERR_SYNTAX, sizeof(ERR_SYNTAX)-1); return; } }
+            if (argc > 4) {
+                const char *tok;
+                size_t tl;
+                const char *ls;
+                size_t ll;
+                if (argc != 6 || !arg_str(&argv[4], &tok, &tl) ||
+                    !ci_equal(tok, tl, "LIMIT") ||
+                    !arg_str(&argv[5], &ls, &ll) || !parse_u64(ls, ll, &limit)) {
+                    resp_write_error(out, ERR_SYNTAX, sizeof(ERR_SYNTAX)-1);
+                    return;
+                }
+            }
             if (limit == 0 || limit > end - start + 1) limit = end - start + 1;
             { uint64_t found = 0, pos; for (pos = start; pos <= end && found < limit; pos++) { const char *v; size_t vl; if (rc == 1 && obj_array_get(a, pos, &v, &vl)) found++; if (pos == UINT64_MAX) break; } resp_write_array_header(out, (size_t)found); for (pos = start; pos <= end && found > 0; pos++) { const char *v; size_t vl; if (rc == 1 && obj_array_get(a, pos, &v, &vl)) { resp_write_array_header(out, 2); resp_write_integer(out, (long long)pos); resp_write_bulk(out, v, vl); found--; } if (pos == UINT64_MAX) break; } }
             return;
