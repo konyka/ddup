@@ -1302,6 +1302,7 @@ static void test_acl_empty_null_views_are_safe(void)
 {
     acl_registry r;
     resp_value empty;
+    acl_user *channel_user;
 
     acl_init(&r, NULL);
     memset(&empty, 0, sizeof(empty));
@@ -1311,6 +1312,13 @@ static void test_acl_empty_null_views_are_safe(void)
     DD_CHECK(acl_authenticate(&r, NULL, 0, NULL, 0) == NULL);
     DD_CHECK_EQ_INT(1, acl_authorize_channel(
                               acl_find_const(&r, "default", 7), NULL, 0, 0));
+    /* Force an exact empty channel rule to exercise the pattern comparison
+     * branch; the public rule grammar intentionally rejects a bare '&'. */
+    channel_user = acl_find(&r, "default", 7);
+    channel_user->all_channels = 0;
+    channel_user->channel_count = 1;
+    channel_user->channels[0][0] = '\0';
+    DD_CHECK_EQ_INT(1, acl_authorize_channel(channel_user, NULL, 0, 1));
     DD_CHECK_EQ_INT(-1, acl_setuser(&r, "u", 1, &empty, 1));
     DD_CHECK_EQ_INT(0, acl_setuser(&r, "gone", 4, NULL, 0));
     DD_CHECK_EQ_INT(1, acl_deluser(&r, "gone", 4));

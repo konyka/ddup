@@ -1180,3 +1180,5 @@
     零长度复制，保持空二进制参数可记录及回放（Phase 423）
   - [x] LRU 淘汰空 key 复制安全：采样淘汰器复制零长度 victim key 时跳过
     `memcpy`，保持空二进制 key 的淘汰语义（Phase 424）
+  - [x] ACL 空频道精确匹配安全：空频道授权的 exact/pattern 比较跳过
+    `memcmp`，保持合法空频道规则语义（Phase 425）

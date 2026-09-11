@@ -2851,3 +2851,9 @@ copy cost; only empty values take the cold branch.
 The sampled LRU victim path now skips copying zero-length keys into its stack
 scratch buffer. Normal eviction keeps the same sampling and mutation cost;
 empty keys take only the zero-length branch.
+
+### Phase 425: ACL empty-channel exact matching
+
+ACL channel authorization now guards the exact-match branch for zero-length
+channels before `memcmp`. Normal channel rules keep the same linear comparison;
+empty channels take the cold zero-length branch.

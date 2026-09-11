@@ -297,7 +297,8 @@ int acl_authorize_channel(const acl_user *u, const char *channel,
     if (u->all_channels) return 1;
     for (i = 0; i < u->channel_count; i++) {
         size_t plen = strlen(u->channels[i]);
-        if ((is_pattern && plen == clen && memcmp(u->channels[i], channel, clen) == 0) ||
+        if ((is_pattern && plen == clen &&
+             (clen == 0 || memcmp(u->channels[i], channel, clen) == 0)) ||
             (!is_pattern && acl_match_pattern(u->channels[i], plen, channel, clen)))
             return 1;
     }
