@@ -2857,3 +2857,9 @@ empty keys take only the zero-length branch.
 ACL channel authorization now guards the exact-match branch for zero-length
 channels before `memcmp`. Normal channel rules keep the same linear comparison;
 empty channels take the cold zero-length branch.
+
+### Phase 426: session empty-bulk lifetime preservation
+
+Queued and blocked session arguments now allocate one byte for non-NULL
+zero-length bulks, preserving empty-vs-null RESP semantics. Normal non-empty
+arguments keep the same copy cost; null bulks remain allocation-free.

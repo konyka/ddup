@@ -1182,3 +1182,5 @@
     `memcpy`，保持空二进制 key 的淘汰语义（Phase 424）
   - [x] ACL 空频道精确匹配安全：空频道授权的 exact/pattern 比较跳过
     `memcmp`，保持合法空频道规则语义（Phase 425）
+  - [x] Session 空 bulk 生命周期保持：队列/阻塞参数复制区分合法空 bulk 与
+    null bulk，避免事务或阻塞回放改变 RESP 语义（Phase 426）

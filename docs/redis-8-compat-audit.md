@@ -66,6 +66,9 @@ key 分配最小存储并跳过 `memcpy/memcmp`，保持空二进制 key 的事�
 安全性增量（Phase 425）：ACL 空频道精确匹配对零长度视图跳过 `memcmp`，避免合法
 空频道规则比较依赖 NULL 指针行为并保持授权语义。
 
+兼容性修正（Phase 426）：session 队列与阻塞参数复制保留合法空 bulk 与 null bulk
+的区别，避免 MULTI/阻塞命令回放将空字符串错误转换为 null bulk。
+
 安全性增量（Phase 417）：session 执行入口校验 NULL session/输出缓冲区、未绑定
 DB 和非空 NULL argv，malformed 控制调用安全返回，不影响合法 Redis 命令语义。
 

@@ -100,6 +100,19 @@ static void test_session_api_rejects_null_inputs(void)
         DD_CHECK(s.blocked_argv[0].str == NULL);
         session_block_clear(&s);
     }
+    {
+        resp_value empty;
+        memset(&empty, 0, sizeof(empty));
+        empty.type = RESP_BULK_STRING;
+        empty.str = "";
+        empty.len = 0;
+        DD_CHECK_EQ_INT(0, session_queue_push(&s, &empty, 1));
+        DD_CHECK(s.queue[0].argv[0].str != NULL);
+        session_queue_clear(&s);
+        DD_CHECK_EQ_INT(0, session_block_start(&s, &empty, 1, 1, 0));
+        DD_CHECK(s.blocked_argv[0].str != NULL);
+        session_block_clear(&s);
+    }
     DD_CHECK_EQ_INT(0, session_queue_push(&s, NULL, 0));
     DD_CHECK_EQ_INT(1, (long long)s.queue_len);
     DD_CHECK_EQ_INT(0, s.queue[s.queue_len - 1].argc);

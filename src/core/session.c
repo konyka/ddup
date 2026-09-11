@@ -68,10 +68,10 @@ int session_block_start(session *s, const resp_value *argv, size_t argc,
             return -1;
         }
         char *copy = NULL;
-        if (argv[i].len != 0) {
-            copy = (char *)malloc(argv[i].len);
-        }
-        if (argv[i].len != 0 && copy == NULL) {
+        /* Preserve the RESP distinction between empty bulk and null bulk. */
+        if (argv[i].str != NULL)
+            copy = (char *)malloc(argv[i].len != 0 ? argv[i].len : 1);
+        if (argv[i].str != NULL && copy == NULL) {
             while (i > 0)
                 free((void *)copy_argv[--i].str);
             free(copy_argv);
@@ -226,9 +226,11 @@ int session_queue_push(session *s, const resp_value *argv, size_t argc)
             return -1;
         }
         char *copy = NULL;
-        if (argv[i].len != 0) {
-            copy = (char *)xmalloc(argv[i].len);
-            memcpy(copy, argv[i].str, argv[i].len);
+        /* Preserve the RESP distinction between empty bulk and null bulk. */
+        if (argv[i].str != NULL) {
+            copy = (char *)xmalloc(argv[i].len != 0 ? argv[i].len : 1);
+            if (argv[i].len != 0)
+                memcpy(copy, argv[i].str, argv[i].len);
         }
         copy_argv[i] = argv[i];
         copy_argv[i].str = copy;
