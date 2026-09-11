@@ -2869,3 +2869,9 @@ arguments keep the same copy cost; null bulks remain allocation-free.
 RANDOMKEY aggregation now tracks presence separately from payload length and
 allocates one byte for an empty key. Non-empty keys keep the same single copy;
 only empty results take the additional presence-tracking branch.
+
+### Phase 428: HOTKEYS empty-key sampling
+
+Hotkey entries now carry an explicit occupancy bit, separating an empty key
+from an unused slot. Lookup still performs one linear probe pass; empty keys
+take the zero-length compare branch and unused slots avoid payload inspection.

@@ -576,6 +576,37 @@ static void test_hotkeys_sampled_key_metrics(void)
     server_destroy(s);
 }
 
+static void test_hotkeys_records_empty_key(void)
+{
+    server *s = make_server();
+    pal_socket_t c;
+    char buf[1024];
+    size_t got = 0;
+    int i;
+    DD_CHECK(s != NULL);
+    if (s == NULL)
+        return;
+    c = connect_client(s);
+    roundtrip(s, c,
+              "*9\r\n$7\r\nHOTKEYS\r\n$5\r\nSTART\r\n$7\r\nMETRICS\r\n"
+              "$1\r\n1\r\n$3\r\nCPU\r\n$5\r\nCOUNT\r\n$1\r\n1\r\n$6\r\nSAMPLE\r\n$1\r\n1\r\n",
+              "+OK\r\n");
+    roundtrip(s, c, "*3\r\n$3\r\nSET\r\n$0\r\n\r\n$1\r\nv\r\n",
+              "+OK\r\n");
+    roundtrip(s, c, "*2\r\n$7\r\nHOTKEYS\r\n$3\r\nGET\r\n", "");
+    for (i = 0; i < 200 && got < sizeof(buf) - 1; i++) {
+        ptrdiff_t n;
+        server_run_once(s, 5);
+        n = pal_recv(c, buf + got, sizeof(buf) - got - 1);
+        if (n > 0)
+            got += (size_t)n;
+        buf[got] = '\0';
+    }
+    DD_CHECK(strstr(buf, "$0\r\n\r\n") != NULL);
+    pal_close(c);
+    server_destroy(s);
+}
+
 static void test_hotkeys_multi_key_commands(void)
 {
     server *s = make_server();
@@ -1719,6 +1750,7 @@ static void run_all_tests(void)
     DD_RUN(test_client_setinfo_metadata);
     DD_RUN(test_monitor_stream);
     DD_RUN(test_hotkeys_sampled_key_metrics);
+    DD_RUN(test_hotkeys_records_empty_key);
     DD_RUN(test_hotkeys_multi_key_commands);
     DD_RUN(test_hotkeys_slots_filter);
     DD_RUN(test_hotkeys_independent_metric_order);

@@ -1186,3 +1186,5 @@
     null bulk，避免事务或阻塞回放改变 RESP 语义（Phase 426）
   - [x] 多线程 RANDOMKEY 空 key 聚合安全：聚合器区分空 bulk 与 null bulk，避免
     worker 返回合法空 key 时被静默转换为 `$-1`（Phase 427）
+  - [x] HOTKEYS 空 key 采样安全：热键槽位使用显式占用标记，允许合法空 key
+    进入采样、排序和输出，同时保留空槽位的 null bulk 表示（Phase 428）

@@ -17,6 +17,9 @@ Phase 427 additionally preserves Redis empty-key semantics across the
 multi-threaded RANDOMKEY aggregate path; a worker's `$0\r\n\r\n` reply is no
 longer collapsed into the null-bulk `$-1\r\n` response.
 
+Phase 428 preserves empty-key entries in HOTKEYS sampling and reporting by
+tracking slot occupancy independently from key length.
+
 最近一次本地复核（2026-09-01）：
 
 ```sh

@@ -317,6 +317,7 @@ struct server {
 typedef struct hotkey_entry {
     char key[256];
     size_t len;
+    int used;
     uint64_t cpu_us;
     uint64_t net_bytes;
 } hotkey_entry;
@@ -1006,7 +1007,7 @@ static void srv_hotkeys_record_key(server *srv, const resp_value *argv,
     hotkey_entry *e;
     uint16_t cmd;
     (void)argc;
-    if (key == NULL || klen == 0 ||
+    if (key == NULL ||
         klen >= sizeof(srv->hotkeys_entries[0].key))
         return;
     if (srv->hotkeys_slot_filter &&
@@ -1023,14 +1024,15 @@ static void srv_hotkeys_record_key(server *srv, const resp_value *argv,
         return;
     for (i = 0; i < srv->hotkeys_capacity; i++) {
         e = &srv->hotkeys_entries[i];
-        if (e->len == klen && memcmp(e->key, key, klen) == 0) {
+        if (e->used && e->len == klen &&
+            (klen == 0 || memcmp(e->key, key, klen) == 0)) {
             e->cpu_us += source != NULL && source->last_cmd_usecs != 0
                              ? source->last_cmd_usecs
                              : 1;
             e->net_bytes += net;
             return;
         }
-        if (slot == SIZE_MAX && e->len == 0)
+        if (slot == SIZE_MAX && !e->used)
             slot = i;
     }
     if (slot == SIZE_MAX && srv->hotkeys_capacity != 0) {
@@ -1048,8 +1050,10 @@ static void srv_hotkeys_record_key(server *srv, const resp_value *argv,
     if (slot == SIZE_MAX)
         return;
     e = &srv->hotkeys_entries[slot];
-    memcpy(e->key, key, klen);
+    if (klen != 0)
+        memcpy(e->key, key, klen);
     e->len = klen;
+    e->used = 1;
     e->cpu_us = source != NULL && source->last_cmd_usecs != 0
                     ? source->last_cmd_usecs
                     : 1;
@@ -1335,7 +1339,7 @@ static int srv_hotkeys_command(void *ctx, const resp_value *argv, size_t argc,
                 resp_write_array_header(out, srv->hotkeys_capacity * 2u);
                 for (i = 0; i < srv->hotkeys_capacity; i++) {
                     hotkey_entry *e = &srv->hotkeys_entries[cpu_order[i]];
-                    if (e->len == 0) {
+                    if (!e->used) {
                         resp_write_bulk(out, NULL, 0);
                         resp_write_integer(out, 0);
                     } else {
@@ -1349,7 +1353,7 @@ static int srv_hotkeys_command(void *ctx, const resp_value *argv, size_t argc,
                 resp_write_array_header(out, srv->hotkeys_capacity * 2u);
                 for (i = 0; i < srv->hotkeys_capacity; i++) {
                     hotkey_entry *e = &srv->hotkeys_entries[net_order[i]];
-                    if (e->len == 0) {
+                    if (!e->used) {
                         resp_write_bulk(out, NULL, 0);
                         resp_write_integer(out, 0);
                     } else {
