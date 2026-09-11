@@ -2798,3 +2798,10 @@ comparisons fail closed for malformed RESP values.
 non-empty NULL matches retain the established syntax-error reply. The check is
 constant-time and only affects invalid input; valid conditional deletion keeps
 the same comparison and mutation path.
+
+### Phase 417: session execution handle validation
+
+`session_execute_at` validates its session, output buffer, bound database, and
+non-empty argv view once at the API boundary. Normal command execution keeps
+the same dispatch and allocation behavior; invalid control calls take a cold
+constant-time return before touching session state.

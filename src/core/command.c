@@ -24348,10 +24348,16 @@ bad_type:
 void session_execute_at(session *s, const resp_value *argv, size_t argc,
                         resp_buf *out, uint64_t now_ms)
 {
-    int mode_before = s->reply_mode;
-    int caching_before = s->tracking_caching;
+    int mode_before;
+    int caching_before;
     int is_caching_cmd = 0;
-    size_t out_before = out->len;
+    size_t out_before;
+    if (s == NULL || out == NULL || s->d == NULL ||
+        (argv == NULL && argc != 0))
+        return;
+    mode_before = s->reply_mode;
+    caching_before = s->tracking_caching;
+    out_before = out->len;
     if (argc == 3 && argv[0].type == RESP_BULK_STRING &&
         ci_equal(argv[0].str, argv[0].len, "CLIENT") &&
         argv[1].type == RESP_BULK_STRING &&

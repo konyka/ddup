@@ -45,6 +45,9 @@ malformed 非零长度 NULL 参数 fail-closed；合法数组扫描行为保持�
 兼容性修正（Phase 416）：`DELEX` malformed 条件值继续返回既有 `ERR syntax error`，
 在统一视图校验前完成固定时间检查，安全性增强不改变错误协议。
 
+安全性增量（Phase 417）：session 执行入口校验 NULL session/输出缓冲区、未绑定
+DB 和非空 NULL argv，malformed 控制调用安全返回，不影响合法 Redis 命令语义。
+
 复制协议补充复核：PSYNC 服务端在计算 backlog 可恢复范围和生成 `+CONTINUE`
 前验证环形缓冲元数据（容量、起点、长度及绝对偏移关系）。检测到内部损坏时
 直接拒绝握手，不写入响应缓冲，也不增加 replica 计数；合法 FULLRESYNC 与

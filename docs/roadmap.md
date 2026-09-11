@@ -1164,3 +1164,5 @@
     输入，覆盖 ARINFO/ARGREP/CLUSTER 等直接比较路径（Phase 415）
   - [x] DELEX 错误码兼容：malformed 条件值在通用视图校验前保留既有
     `ERR syntax error` 响应，避免安全修复改变错误语义（Phase 416）
+  - [x] Session 执行入口句柄安全：`session_execute_at` 拒绝 NULL session、输出
+    缓冲区、未绑定 DB 及非空 NULL argv，避免控制层直接解引用无效句柄（Phase 417）

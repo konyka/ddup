@@ -46,14 +46,17 @@ static void test_session_api_rejects_null_inputs(void)
     db d;
     session s;
     resp_value arg;
+    resp_buf out;
 
     db_init(&d);
+    resp_buf_init(&out);
     memset(&arg, 0, sizeof(arg));
     arg.type = RESP_BULK_STRING;
     arg.str = "x";
     arg.len = 1;
 
     session_init(NULL, &d);
+    session_execute_at(NULL, &arg, 1, &out, 0);
     session_queue_clear(NULL);
     session_block_clear(NULL);
     session_watch_clear(NULL);
@@ -68,6 +71,7 @@ static void test_session_api_rejects_null_inputs(void)
     DD_CHECK_EQ_INT(-1, session_block_start(&s, NULL, 1, 1, 0));
     session_watch_add(&s, NULL, 1, 0, 0, 0);
     session_watch_add(&s, NULL, 0, 0, 0, 0);
+    session_execute_at(&s, &arg, 1, NULL, 0);
     DD_CHECK_EQ_INT(1, (long long)s.nwatch);
     DD_CHECK(s.watches[0].key != NULL);
     {
@@ -104,6 +108,9 @@ static void test_session_api_rejects_null_inputs(void)
     DD_CHECK_EQ_INT(0, (long long)s.blocked_argc);
     session_block_clear(&s);
     session_release(&s);
+    session_init(&s, NULL);
+    session_execute_at(&s, &arg, 1, &out, 0);
+    resp_buf_free(&out);
     db_destroy(&d);
 }
 
