@@ -3240,3 +3240,10 @@ Every GitHub Actions checkout disables credential persistence. CI failure-log
 publication is additionally restricted to `push` events, preventing untrusted
 pull-request builds from inheriting a writable repository credential. This is a
 control-plane security change and does not affect server or benchmark paths.
+
+### Phase 471: immutable CI action references
+
+GitHub Actions dependencies are pinned to audited commit SHAs (`actions/checkout`
+v4.2.2 and `vmactions/freebsd-vm` v1). A configuration regression rejects
+mutable tag/branch references, preventing silent action drift while leaving the
+runtime benchmark and server binaries unchanged.

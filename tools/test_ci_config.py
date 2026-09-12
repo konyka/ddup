@@ -80,6 +80,18 @@ def assert_checkout_isolated(path):
                 f"{path}: failure log publishing must be push-only"
 
 
+def assert_actions_pinned(path):
+    action_re = re.compile(
+        r"^\s*(?:-\s*)?uses:\s*([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)@([^\s#]+)"
+    )
+    for line in path.read_text(encoding="utf-8").splitlines():
+        match = action_re.match(line)
+        if match:
+            ref = match.group(2)
+            assert re.fullmatch(r"[0-9a-f]{40}", ref), \
+                f"{path}: action {match.group(1)} must use an immutable commit SHA"
+
+
 def main():
     workflow_dir = ROOT / ".github/workflows"
     workflows = sorted(set(workflow_dir.glob("*.yml")) |
@@ -102,6 +114,7 @@ def main():
         assert_token_not_traced(path)
         assert_permissions_scoped(path, write_jobs.get(path, set()))
         assert_checkout_isolated(path)
+        assert_actions_pinned(path)
     print("CI timeout configuration: ok")
 
 

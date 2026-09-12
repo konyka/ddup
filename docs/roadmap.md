@@ -1295,3 +1295,5 @@
     的 job 显式授予 `contents: write`，降低构建与审计任务凭据权限（Phase 469）
   - [x] PR checkout 凭据隔离：所有 Actions checkout 禁止持久化 token，CI 失败日志
     发布限制为 `push` 事件，避免不可信 PR 代码继承可写仓库凭据（Phase 470）
+  - [x] CI action 不可变引用：`actions/checkout` 与 `vmactions/freebsd-vm` 固定到
+    官方 commit SHA，并由配置回归拒绝可变 tag/branch，防止依赖漂移（Phase 471）
