@@ -1355,3 +1355,5 @@
     测试（Phase 495）
   - [x] ACL CAT OBJECT keyspace 映射：覆盖对象诊断命令的 Redis 8 keyspace 分类
     并增加回归测试（Phase 496）
+  - [x] ACL CAT Redis 8 扩展类别：新增 array 与合法空 ratelimit 类别，覆盖 AR*
+    命令和空结果回归（Phase 497）

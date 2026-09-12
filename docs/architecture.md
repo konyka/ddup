@@ -1683,3 +1683,9 @@ Redis `FAST` 元数据时保持保守的 slow 归类。
 `OBJECT` 顶层诊断命令纳入 `keyspace` 类别，匹配 Redis 8 对对象编码、频率、
 引用计数和空闲时间查询的 ACL 分类。该项只扩展静态类别谓词，不改变命令执行
 或授权热路径。
+
+## Phase 497：ACL CAT Redis 8 扩展类别
+
+同步 Redis 8.10.1 的默认类别集合，新增 `array` 与 `ratelimit`。ddup 的 `AR*`
+命令按 `array` 返回；`ratelimit` 在当前实现中是合法的空类别，而不是未知类别，
+为后续限流模块保留协议兼容性。

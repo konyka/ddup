@@ -12235,6 +12235,8 @@ static int acl_cat_match(const char *category, size_t category_len,
         return acl_name_in(name, lists, sizeof(lists) / sizeof(lists[0]));
     if (ci_equal(category, category_len, "hash"))
         return acl_name_in(name, hashes, sizeof(hashes) / sizeof(hashes[0]));
+    if (ci_equal(category, category_len, "array"))
+        return strncmp(name, "ar", 2) == 0;
     if (ci_equal(category, category_len, "bitmap"))
         return strncmp(name, "bit", 3) == 0 || strcmp(name, "getbit") == 0 ||
                strcmp(name, "setbit") == 0;
@@ -12263,6 +12265,8 @@ static int acl_cat_match(const char *category, size_t category_len,
         return acl_name_in(name, fast, sizeof(fast) / sizeof(fast[0]));
     if (ci_equal(category, category_len, "slow"))
         return !acl_cat_match("fast", 4, id);
+    if (ci_equal(category, category_len, "ratelimit"))
+        return 0;
     return -1;
 }
 
@@ -12332,9 +12336,9 @@ static void command_acl(session *s, const resp_value *argv, size_t argc,
     if (ci_equal(sub, sl, "CAT") && (argc == 2 || argc == 3)) {
         static const char *cats[] = {
             "keyspace", "read", "write", "set", "sortedset", "list",
-            "hash", "string", "bitmap", "hyperloglog", "geo", "stream",
+            "hash", "string", "array", "bitmap", "hyperloglog", "geo", "stream",
             "pubsub", "admin", "fast", "slow", "blocking", "dangerous",
-            "connection", "transaction", "scripting"
+            "connection", "transaction", "scripting", "ratelimit"
         };
         size_t i, count = 0;
         const char *category = NULL;

@@ -270,6 +270,8 @@ static void test_acl_cat_filters_commands(void)
     DD_CHECK(contains_bytes(out.data, out.len, "sortedset", 9));
     DD_CHECK(contains_bytes(out.data, out.len, "pubsub", 6));
     DD_CHECK(contains_bytes(out.data, out.len, "scripting", 9));
+    DD_CHECK(contains_bytes(out.data, out.len, "array", 5));
+    DD_CHECK(contains_bytes(out.data, out.len, "ratelimit", 9));
 
     out.len = 0;
     session_execute_at(&s, (resp_value[]){rv("ACL"), rv("CAT"), rv("set")},
@@ -313,6 +315,16 @@ static void test_acl_cat_filters_commands(void)
     session_execute_at(&s, (resp_value[]){rv("ACL"), rv("CAT"), rv("connection")},
                        3, &out, 0);
     DD_CHECK(contains_bytes(out.data, out.len, "command", 7));
+
+    out.len = 0;
+    session_execute_at(&s, (resp_value[]){rv("ACL"), rv("CAT"), rv("array")},
+                       3, &out, 0);
+    DD_CHECK(contains_bytes(out.data, out.len, "arset", 5));
+
+    out.len = 0;
+    session_execute_at(&s, (resp_value[]){rv("ACL"), rv("CAT"), rv("ratelimit")},
+                       3, &out, 0);
+    DD_CHECK(strncmp(out.data, "*0\r\n", 4) == 0);
     resp_buf_free(&out);
     session_release(&s);
     db_destroy(&d);

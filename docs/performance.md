@@ -3412,3 +3412,9 @@ existing bounded scan and allocation-free authorization path are unchanged.
 
 `OBJECT` membership is a single additional command-ID comparison during the cold
 category scan. No allocation, lock, or data-plane branch is added.
+
+### Phase 497: Redis 8 extended categories
+
+The category-name array grows from 21 to 23 static entries. `array` uses an `ar` prefix
+check and `ratelimit` returns an empty result without scanning command state; neither
+path allocates or affects command dispatch.
