@@ -18,6 +18,7 @@
 #include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdint.h>
 #include <string.h>
 
 #include "core/arena.h"
@@ -5623,7 +5624,8 @@ mt_server *mt_server_create_ex(const char *host, uint16_t port, int nworkers,
     mt_server *ms;
     int i;
 
-    if (nworkers < 1)
+    if (nworkers < 1 || (size_t)nworkers > SIZE_MAX / sizeof(worker) ||
+        (size_t)nworkers > SIZE_MAX / sizeof(mt_spsc))
         return NULL;
     ms = (mt_server *)calloc(1, sizeof(*ms));
     if (ms == NULL)
@@ -5644,7 +5646,8 @@ mt_server *mt_server_create_ex(const char *host, uint16_t port, int nworkers,
         return NULL;
     }
     ddup_atomic_init(&ms->repl_synced, 0);
-    ms->workers = (worker *)calloc((size_t)nworkers, sizeof(worker));
+    ms->workers = (worker *)pal_aligned_calloc(64,
+                                                (size_t)nworkers * sizeof(worker));
     if (ms->workers == NULL) {
         pal_close(ms->listen_fd);
         free(ms);
@@ -5659,10 +5662,12 @@ mt_server *mt_server_create_ex(const char *host, uint16_t port, int nworkers,
         atomic_init(&w->kick_pending, 0);
 #endif
         w->srv = server_create_ex("127.0.0.1", 0, worker_backend);
-        w->inbox = (mt_spsc *)calloc((size_t)nworkers, sizeof(mt_spsc));
+        w->inbox = (mt_spsc *)pal_aligned_calloc(
+            64, (size_t)nworkers * sizeof(mt_spsc));
         w->completions =
-            (mt_spsc *)calloc((size_t)nworkers, sizeof(mt_spsc));
-        w->migrate = (mt_spsc *)calloc((size_t)nworkers, sizeof(mt_spsc));
+            (mt_spsc *)pal_aligned_calloc(64, (size_t)nworkers * sizeof(mt_spsc));
+        w->migrate = (mt_spsc *)pal_aligned_calloc(
+            64, (size_t)nworkers * sizeof(mt_spsc));
         if (w->srv == NULL || w->inbox == NULL || w->completions == NULL ||
             w->migrate == NULL || mt_spsc_init(&w->accepts, 256) != 0 ||
             mt_spsc_init(&w->accepts_tls, 256) != 0 ||
@@ -6144,9 +6149,9 @@ void mt_server_destroy(mt_server *ms)
                 }
                 mt_spsc_destroy(&w->migrate[j]);
             }
-            free(w->inbox);
-            free(w->completions);
-            free(w->migrate);
+            pal_aligned_free(w->inbox);
+            pal_aligned_free(w->completions);
+            pal_aligned_free(w->migrate);
         }
         {
             void *p;
@@ -6196,6 +6201,6 @@ void mt_server_destroy(mt_server *ms)
         mt_agg_free(ms->abandoned_aggs[ms->nabandoned_aggs - 1]);
     free(ms->abandoned_aggs);
     pal_mutex_destroy(&ms->abandoned_agg_mu);
-    free(ms->workers);
+    pal_aligned_free(ms->workers);
     free(ms);
 }

@@ -1223,3 +1223,6 @@
     回归验证（Phase 441）
   - [x] Stream/列表严格告警收敛：初始化 `XREAD` ID 与阻塞移动源指针，消除
     LTO `-Wmaybe-uninitialized` 并保持空源/合法移动语义（Phase 442）
+  - [x] thread-per-core 对齐安全：worker 与 SPSC 原子元数据通过 PAL 64 字节
+    对齐分配，消除普通 `calloc` 造成的 UBSan misaligned 访问，同时保持零初始化
+    与热路径无额外分配（Phase 443）

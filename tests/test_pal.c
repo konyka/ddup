@@ -1,6 +1,7 @@
 /* test_pal.c - sanity tests for the platform abstraction layer. */
 #include "test.h"
 
+#include <stdint.h>
 #include <string.h>
 
 #include "pal/pal_platform.h"
@@ -105,6 +106,22 @@ static void test_secure_random_input_bounds(void)
     DD_CHECK_EQ_INT(-1, pal_secure_random(NULL, 1));
     DD_CHECK_EQ_INT(0, pal_secure_random(NULL, 0));
     DD_CHECK_EQ_INT(0, pal_secure_random(bytes, sizeof(bytes)));
+}
+
+static void test_aligned_allocation(void)
+{
+    void *p;
+    size_t i;
+    p = pal_aligned_calloc(64, 128);
+    DD_CHECK(p != NULL);
+    if (p == NULL)
+        return;
+    DD_CHECK(((uintptr_t)p & 63U) == 0U);
+    for (i = 0; i < 128; i++)
+        DD_CHECK(((unsigned char *)p)[i] == 0U);
+    pal_aligned_free(p);
+    DD_CHECK(pal_aligned_calloc(3, 16) == NULL);
+    DD_CHECK(pal_aligned_calloc(64, 0) == NULL);
 }
 
 static void test_file_io_input_bounds(void)
@@ -278,6 +295,7 @@ int main(void)
     DD_RUN(test_time_concurrent_first_use);
     DD_RUN(test_wall_clock_sane);
     DD_RUN(test_secure_random_input_bounds);
+    DD_RUN(test_aligned_allocation);
     DD_RUN(test_file_io_input_bounds);
     DD_RUN(test_socket_input_bounds);
 #if DDUP_OS_LINUX

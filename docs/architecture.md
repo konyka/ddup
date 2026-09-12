@@ -123,9 +123,12 @@
   CRITICAL_SECTION + CONDITION_VARIABLE / POSIX pthread）、`pal_wakeup`
   （POSIX socketpair / Windows loopback TCP 对的 self-pipe）。worker 的
    wakeup fd 注册进自己的事件循环（`server_set_wakeup`），回调里统一
-   drain accept/inbox/completion 三个队列。队列为互斥保护的单链表；
-   生产者在成功入队后都尝试 kick，由 pending 原子标志合并重复唤醒，避免
-   丢失并发入队的通知。
+  drain accept/inbox/completion 三个队列。队列为互斥保护的单链表；
+  生产者在成功入队后都尝试 kick，由 pending 原子标志合并重复唤醒，避免
+  丢失并发入队的通知。
+- **缓存行对齐**：`worker` 与其 C11 原子 SPSC 环使用 64 字节对齐，避免
+  伪共享；统一通过 PAL 的 `pal_aligned_calloc/free` 分配和释放，兼容 C99
+  及 Windows/POSIX，避免普通 `calloc` 无法满足扩展对齐要求而产生未定义行为。
 - **key 路由**：命令经 `server_set_route` 安装的钩子拦截
   （conn_process_input 内）。worker = `hash_slot(key) % nworkers`（复用
   集群 crc16/hashtag）。单 key 命令（字符串/过期/hash/list/set/zset 全部

@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
+#include <string.h>
 
 #include "pal/pal_platform.h"
 
@@ -49,6 +50,41 @@ int pal_secure_random(void *buf, size_t len)
     (void)buf; (void)len;
     return -1;
 #endif
+}
+
+void *pal_aligned_calloc(size_t alignment, size_t size)
+{
+    unsigned char *raw;
+    uintptr_t addr;
+    uintptr_t aligned_addr;
+    size_t overhead;
+    size_t total;
+
+    if (size == 0 || alignment < sizeof(void *) ||
+        (alignment & (alignment - 1)) != 0)
+        return NULL;
+    overhead = alignment - 1 + sizeof(void *);
+    if (size > SIZE_MAX - overhead)
+        return NULL;
+    total = size + overhead;
+    raw = (unsigned char *)malloc(total);
+    if (raw == NULL)
+        return NULL;
+    addr = (uintptr_t)(raw + sizeof(void *));
+    if (addr > UINTPTR_MAX - (alignment - 1)) {
+        free(raw);
+        return NULL;
+    }
+    aligned_addr = (addr + alignment - 1) & ~(uintptr_t)(alignment - 1);
+    ((void **)aligned_addr)[-1] = raw;
+    memset((void *)aligned_addr, 0, size);
+    return (void *)aligned_addr;
+}
+
+void pal_aligned_free(void *ptr)
+{
+    if (ptr != NULL)
+        free(((void **)ptr)[-1]);
 }
 
 struct pal_file {

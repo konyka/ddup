@@ -3021,3 +3021,13 @@ blocking list move helpers initialize and validate their source object before
 use. This removes optimizer-detected `-Wmaybe-uninitialized` diagnostics under
 LTO/`-Werror` without changing successful command behavior; `test_stream` and
 the full suite remain green.
+
+### Phase 443: aligned thread-per-core storage
+
+The thread-per-core worker array and each worker's cache-line-separated SPSC
+ring metadata now use PAL-managed 64-byte aligned zeroed storage. Plain
+`calloc` only guarantees the platform's fundamental alignment and could leave
+these C11 atomic fields misaligned; the resulting UBSan diagnostics also made
+the hot routing path undefined. The allocator keeps the existing zero-init
+semantics and adds no per-command allocation or free, while `pal_aligned_free`
+provides a portable C99-compatible release path.

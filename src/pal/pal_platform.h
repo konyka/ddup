@@ -75,4 +75,10 @@
  * exposes a native source. Returns 0 on success, -1 otherwise. */
 int pal_secure_random(void *buf, size_t len);
 
+/* Allocate zeroed storage with an explicit power-of-two alignment. Returns
+ * NULL for invalid alignment, zero size, or allocation failure. */
+void *pal_aligned_calloc(size_t alignment, size_t size);
+/* Release storage returned by pal_aligned_calloc. NULL is accepted. */
+void pal_aligned_free(void *ptr);
+
 #endif /* DDUP_PAL_PLATFORM_H */
