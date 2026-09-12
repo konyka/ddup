@@ -344,8 +344,9 @@ ZSET 词典范围边界补充复核：skiplist 与 listpack 的 lex-range 查询
   fail closed for key-bearing commands.
   User-management and metadata-bearing ACL subcommands are restricted to the
   default user to avoid credential and policy disclosure.
-  Category grants `@all`, `@read`, `@write`, and `@connection` are expanded into
-  command bitsets at update time; unknown commands fail closed.
+  All Redis 8 category grants (`@all`, data-type categories, access/control
+  categories, and `@array`/`@ratelimit`) are expanded into command bitsets at
+  update time; unknown categories and commands fail closed.
   `ACL LIST` returns complete bounded rule lines suitable for policy auditing.
   `ACL GETUSER` exposes the effective allow/deny command set and key rules.
   Each fixed user slot carries a monotonic generation. Sessions validate the
@@ -353,9 +354,8 @@ ZSET 词典范围边界补充复核：skiplist 与 listpack 的 lex-range 查询
   recreating a username therefore invalidates stale connections fail-closed.
   Generation counters are registry-local, avoiding cross-worker shared mutable
   state and keeping invalidation deterministic for independent server instances.
-  Category rule names are parsed case-insensitively (`@READ`, `@WRITE`, `@ALL`,
-  and `@CONNECTION`) using bounded ASCII comparison, matching Redis command
-  casing semantics without adding allocations.
+  Category rule names are parsed case-insensitively using bounded ASCII
+  comparison, matching Redis command casing semantics without adding allocations.
   `ACL CAT` lists available categories and filters commands for a requested
   category; unknown categories fail closed before command metadata traversal.
   `ACL DRYRUN` resolves the target user and command/key arguments through the

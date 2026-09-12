@@ -296,8 +296,8 @@
   带 key 的数据命令 fail-closed。
   ACL 用户管理、用户列表、用户详情、ACL 日志和 ACL 文件操作仅允许
   default 用户；普通用户仅可使用非敏感诊断子命令。
-  支持 `+@all`、`+@read`、`+@write` 和 `+@connection` 类别规则；未知
-  命令和未声明 key 的命令默认不扩展权限。
+  支持 Redis 8 的全部 `+@category`/`-@category` 规则（包括数据类型、访问属性、
+  控制类别以及 `array`/`ratelimit`）；未知命令和未声明 key 的命令默认不扩展权限。
   `ACL LIST` 输出完整规则行（状态、命令、密码和 key pattern），并过滤
   固定表中的已删除槽位。
   `ACL GETUSER` 的 `commands` 字段同步输出 allow/deny 命令规则，便于
