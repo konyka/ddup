@@ -1301,3 +1301,5 @@
     server-owned hook 在 rehome 时刷新目标 worker 上下文，新增
     MONITOR→HOTKEYS/CONFIG 跨 worker 集成回归
     （Phase 472）
+  - [x] strict warning CI 门禁：新增 Ubuntu Release `-Wall -Wextra -Wpedantic -Werror`
+    构建与完整 CTest job，持续阻止新增编译警告（Phase 473）

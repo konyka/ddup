@@ -177,3 +177,23 @@ jobs:
         run: cmake --build build-tsan -j2
       - name: Test TSan
         run: TSAN_OPTIONS=halt_on_error=1:second_deadlock_stack=1 ctest --test-dir build-tsan --output-on-failure
+
+  strict:
+    name: Ubuntu / strict warnings
+    timeout-minutes: 45
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - name: Install OpenSSL
+        run: sudo apt-get update && sudo apt-get install -y libssl-dev
+      - name: Configure strict warnings
+        env:
+          CC: gcc
+          CFLAGS: -Wall -Wextra -Wpedantic -Werror
+        run: cmake -S . -B build-strict -DCMAKE_BUILD_TYPE=Release
+      - name: Build strict warnings
+        run: cmake --build build-strict -j2
+      - name: Test strict warnings
+        run: ctest --test-dir build-strict --output-on-failure

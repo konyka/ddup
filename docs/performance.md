@@ -3255,3 +3255,10 @@ HOTKEYS, and BACKUP callback contexts along with the database and other hooks.
 The MT integration suite covers a monitor connection that migrates and then
 uses HOTKEYS and CONFIG; 5,861 assertions pass across the integration run. The
 fix adds no allocation or lock to the command hot path.
+
+### Phase 473: strict-warning CI coverage
+
+CI now runs an Ubuntu Release build with `-Wall -Wextra -Wpedantic -Werror`
+and the complete CTest suite. The local strict build completed successfully;
+this adds a bounded quality gate without changing runtime binaries or hot-path
+behavior in the normal Release job.

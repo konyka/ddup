@@ -92,6 +92,15 @@ def assert_actions_pinned(path):
                 f"{path}: action {match.group(1)} must use an immutable commit SHA"
 
 
+def assert_strict_job(path):
+    if path.name != "ci.yml":
+        return
+    body = workflow_jobs(path).get("strict", "")
+    assert body, f"{path}: strict warning job is required"
+    assert "-Werror" in body and "-Wpedantic" in body, \
+        f"{path}: strict job must enable -Wpedantic and -Werror"
+
+
 def main():
     workflow_dir = ROOT / ".github/workflows"
     workflows = sorted(set(workflow_dir.glob("*.yml")) |
@@ -115,6 +124,7 @@ def main():
         assert_permissions_scoped(path, write_jobs.get(path, set()))
         assert_checkout_isolated(path)
         assert_actions_pinned(path)
+        assert_strict_job(path)
     print("CI timeout configuration: ok")
 
 
