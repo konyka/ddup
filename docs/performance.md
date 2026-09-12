@@ -2997,3 +2997,11 @@ closing it. The shared cleanup helper therefore skips completed connections
 and cannot issue a second close on the same descriptor, including when another
 connection fails during setup. Existing success and occupied-port failure
 regressions cover both cleanup paths.
+
+### Phase 440: partial-initialization fd safety
+
+Connection descriptors are now initialized to `PAL_SOCKET_INVALID` immediately
+after the connection array is allocated, before event-loop creation is checked.
+If loop creation fails, cleanup can safely walk the partially initialized array
+without treating `calloc`'s zero bytes as a live descriptor. This closes a
+rare setup-failure hazard without changing the steady-state benchmark path.

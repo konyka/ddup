@@ -414,12 +414,14 @@ int main(int argc, char **argv)
     sockets_ready = 1;
     loop = pal_loop_create();
     conns = (bconn *)calloc((size_t)g_clients, sizeof(bconn));
+    if (conns != NULL) {
+        for (ci = 0; ci < g_clients; ci++)
+            conns[ci].fd = PAL_SOCKET_INVALID;
+    }
     if (loop == NULL || conns == NULL) {
         fprintf(stderr, "out of memory\n");
         goto fail;
     }
-    for (ci = 0; ci < g_clients; ci++)
-        conns[ci].fd = PAL_SOCKET_INVALID;
     arena_init(&a, 4096);
     arena_ready = 1;
 
