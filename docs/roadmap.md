@@ -1359,3 +1359,5 @@
     命令和空结果回归（Phase 497）
   - [x] ACL SETUSER 全类别规则：支持 Redis 8 全部 ACL 类别的 `+@`/`-@` 规则，
     复用静态映射并覆盖 set 授权回归（Phase 498）
+  - [x] 生成 2026-09-13 ddup/Valkey 对比 benchmark JSON/HTML 报告，固定请求矩阵
+    并保留原始延迟、吞吐数据（Phase 499）

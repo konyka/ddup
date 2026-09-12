@@ -3424,3 +3424,11 @@ path allocates or affects command dispatch.
 `ACL SETUSER` expands a category by one bounded command-table scan and stores the result
 in the existing fixed bitset. Authorization remains an O(1) bitset/key-pattern check;
 no per-request allocation or lock is introduced.
+
+### Phase 499: reproducible benchmark report (2026-09-13)
+
+`reports/benchmark-2026-09-13.html` compares ddup (1/2 workers) with the installed
+Valkey 9.0.4 reference using the same `ddup-bench` client, 10,000 requests, 20 clients,
+pipelines 1/16, and 16-byte values. The JSON companion preserves raw throughput and
+latency samples; the report explicitly labels this as a local smoke benchmark rather
+than a production claim. Report identity and large-payload checks pass.
