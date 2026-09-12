@@ -3117,3 +3117,15 @@ script element; it adds no server or benchmark hot-path work.
 regression locks the option spelling, and Ubuntu CI builds and runs the full
 CTest suite with TSan. This affects diagnostics only; normal builds keep the
 existing warning and LTO settings.
+
+### Phase 455: thread-safe migration and replication barriers
+
+Connection migration now compacts consumed receive-buffer bytes before the
+route hook publishes the handoff. This keeps zero-copy RESP views valid while
+ensuring the source worker performs no post-publication writes to `rlen` or
+the connection arena. Replica full sync replaces cross-thread database flushes
+with ordered per-worker flush tasks, so each hash table is cleared by its
+owner event loop before restore tasks arrive. The changes add no locks or
+allocations to steady-state command execution; TSan migration, snapshot, and
+shutdown regressions pass, while normal routing retains the existing SPSC
+backpressure and batching behavior.

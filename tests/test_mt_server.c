@@ -12,6 +12,7 @@
 #include "core/cluster.h"
 #include "core/arena.h"
 #include "core/hashslot.h"
+#include "pal/pal_cstd.h"
 #include "pal/pal_file.h"
 #include "pal/pal_socket.h"
 #include "pal/pal_thread.h"
@@ -30,13 +31,13 @@ static ptrdiff_t fail_aof_write(pal_file *f, const void *buf, size_t n)
 
 typedef struct server_thread_ctx {
     server *srv;
-    volatile int running;
+    ddup_atomic_int running;
 } server_thread_ctx;
 
 static void *server_thread_main(void *arg)
 {
     server_thread_ctx *ctx = (server_thread_ctx *)arg;
-    while (ctx->running)
+    while (ddup_atomic_load(&ctx->running, ddup_memory_order_acquire))
         (void)server_run_once(ctx->srv, 20);
     return NULL;
 }
@@ -718,14 +719,14 @@ static void test_migrate_supported_on_single_mt_worker(void)
 
 typedef struct mt_target_runner {
     server *srv;
-    volatile int running;
+    ddup_atomic_int running;
     pal_thread thread;
 } mt_target_runner;
 
 static void *mt_target_runner_main(void *arg)
 {
     mt_target_runner *r = (mt_target_runner *)arg;
-    while (r->running)
+    while (ddup_atomic_load(&r->running, ddup_memory_order_acquire))
         (void)server_run_once(r->srv, 5);
     return NULL;
 }
@@ -768,7 +769,7 @@ static void test_migrate_cross_worker_external_target(void)
     target = server_create_ex("127.0.0.1", 0, SERVER_BACKEND_SELECT);
     DD_CHECK(target != NULL);
     runner.srv = target;
-    runner.running = 1;
+    ddup_atomic_store(&runner.running, 1, ddup_memory_order_release);
     DD_CHECK_EQ_INT(0, pal_thread_create(&runner.thread,
                                          mt_target_runner_main, &runner));
     ms = mt_server_create("127.0.0.1", 0, 2);
@@ -796,7 +797,7 @@ static void test_migrate_cross_worker_external_target(void)
     pal_close(dst);
     mt_server_stop(ms);
     mt_server_destroy(ms);
-    runner.running = 0;
+    ddup_atomic_store(&runner.running, 0, ddup_memory_order_release);
     (void)pal_thread_join(&runner.thread, NULL);
     server_destroy(target);
     pal_socket_cleanup();
@@ -1609,7 +1610,7 @@ static void test_mt_replica_partitions_full_sync(void)
     master = server_create("127.0.0.1", 0);
     DD_CHECK(master != NULL);
     mt_ctx.srv = master;
-    mt_ctx.running = 1;
+    ddup_atomic_store(&mt_ctx.running, 1, ddup_memory_order_release);
     DD_CHECK_EQ_INT(0,
                     pal_thread_create(&master_thread, server_thread_main,
                                       &mt_ctx));
@@ -1652,7 +1653,7 @@ static void test_mt_replica_partitions_full_sync(void)
 
     mt_server_stop(ms);
     mt_server_destroy(ms);
-    mt_ctx.running = 0;
+    ddup_atomic_store(&mt_ctx.running, 0, ddup_memory_order_release);
     pal_thread_join(&master_thread, NULL);
     server_destroy(master);
     pal_socket_cleanup();
@@ -1688,13 +1689,13 @@ static void test_mt_master_serves_replica_full_sync(void)
     replica = server_create("127.0.0.1", 0);
     DD_CHECK(replica != NULL);
     rt.srv = replica;
-    rt.running = 1;
-    DD_CHECK_EQ_INT(0,
-                    pal_thread_create(&replica_thread, server_thread_main,
-                                      &rt));
+    ddup_atomic_store(&rt.running, 1, ddup_memory_order_release);
     DD_CHECK_EQ_INT(0,
                     server_replicaof(replica, "127.0.0.1",
                                      mt_server_port(ms)));
+    DD_CHECK_EQ_INT(0,
+                    pal_thread_create(&replica_thread, server_thread_main,
+                                      &rt));
 
     pal_sleep_ms(200);
     c = connect_client(server_port(replica));
@@ -1711,7 +1712,7 @@ static void test_mt_master_serves_replica_full_sync(void)
 
     mt_server_stop(ms);
     mt_server_destroy(ms);
-    rt.running = 0;
+    ddup_atomic_store(&rt.running, 0, ddup_memory_order_release);
     pal_thread_join(&replica_thread, NULL);
     server_destroy(replica);
     pal_socket_cleanup();
@@ -1738,13 +1739,13 @@ static void test_mt_replication_forwards_mutations(void)
     replica = server_create("127.0.0.1", 0);
     DD_CHECK(replica != NULL);
     rt.srv = replica;
-    rt.running = 1;
-    DD_CHECK_EQ_INT(0,
-                    pal_thread_create(&replica_thread, server_thread_main,
-                                      &rt));
+    ddup_atomic_store(&rt.running, 1, ddup_memory_order_release);
     DD_CHECK_EQ_INT(0,
                     server_replicaof(replica, "127.0.0.1",
                                      mt_server_port(ms)));
+    DD_CHECK_EQ_INT(0,
+                    pal_thread_create(&replica_thread, server_thread_main,
+                                      &rt));
     pal_sleep_ms(200);
 
     mc = connect_client(mt_server_port(ms));
@@ -1814,7 +1815,7 @@ static void test_mt_replication_forwards_mutations(void)
     pal_close(c);
     mt_server_stop(ms);
     mt_server_destroy(ms);
-    rt.running = 0;
+    ddup_atomic_store(&rt.running, 0, ddup_memory_order_release);
     pal_thread_join(&replica_thread, NULL);
     server_destroy(replica);
     pal_socket_cleanup();
@@ -1838,13 +1839,13 @@ static void test_mt_info_replication(void)
     replica = server_create("127.0.0.1", 0);
     DD_CHECK(replica != NULL);
     rt.srv = replica;
-    rt.running = 1;
-    DD_CHECK_EQ_INT(0,
-                    pal_thread_create(&replica_thread, server_thread_main,
-                                      &rt));
+    ddup_atomic_store(&rt.running, 1, ddup_memory_order_release);
     DD_CHECK_EQ_INT(0,
                     server_replicaof(replica, "127.0.0.1",
                                      mt_server_port(ms)));
+    DD_CHECK_EQ_INT(0,
+                    pal_thread_create(&replica_thread, server_thread_main,
+                                      &rt));
     pal_sleep_ms(200);
 
     c = connect_client(mt_server_port(ms));
@@ -1857,7 +1858,7 @@ static void test_mt_info_replication(void)
 
     mt_server_stop(ms);
     mt_server_destroy(ms);
-    rt.running = 0;
+    ddup_atomic_store(&rt.running, 0, ddup_memory_order_release);
     pal_thread_join(&replica_thread, NULL);
     server_destroy(replica);
     pal_socket_cleanup();
@@ -1884,13 +1885,13 @@ static void test_mt_swapdb_replicates_once_three_workers(void)
     replica = server_create("127.0.0.1", 0);
     DD_CHECK(replica != NULL);
     rt.srv = replica;
-    rt.running = 1;
-    DD_CHECK_EQ_INT(0,
-                    pal_thread_create(&replica_thread, server_thread_main,
-                                      &rt));
+    ddup_atomic_store(&rt.running, 1, ddup_memory_order_release);
     DD_CHECK_EQ_INT(0,
                     server_replicaof(replica, "127.0.0.1",
                                      mt_server_port(ms)));
+    DD_CHECK_EQ_INT(0,
+                    pal_thread_create(&replica_thread, server_thread_main,
+                                      &rt));
     pal_sleep_ms(200);
 
     mc = connect_client(mt_server_port(ms));
@@ -1915,7 +1916,7 @@ static void test_mt_swapdb_replicates_once_three_workers(void)
     pal_close(c);
     mt_server_stop(ms);
     mt_server_destroy(ms);
-    rt.running = 0;
+    ddup_atomic_store(&rt.running, 0, ddup_memory_order_release);
     pal_thread_join(&replica_thread, NULL);
     server_destroy(replica);
     pal_socket_cleanup();
@@ -3469,6 +3470,8 @@ static void test_aof_failure_stops_mt_workers_without_spin(void)
     while (mt_server_test_running(ms) && pal_now_ms() < deadline)
         pal_sleep_ms(1);
     DD_CHECK(!mt_server_test_running(ms));
+    /* Stop joins workers before sampling their non-atomic counters. */
+    mt_server_stop(ms);
     loops0 = mt_server_test_worker_loops(ms, 0);
     loops1 = mt_server_test_worker_loops(ms, 1);
     pal_sleep_ms(100);
@@ -3478,7 +3481,6 @@ static void test_aof_failure_stops_mt_workers_without_spin(void)
                     (long long)mt_server_test_worker_loops(ms, 1));
 
     pal_close(c);
-    mt_server_stop(ms);
     mt_server_destroy(ms);
     (void)pal_file_unlink("./worker-0-mtfail.aof");
     (void)pal_file_unlink("./worker-1-mtfail.aof");

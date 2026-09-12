@@ -183,6 +183,7 @@ typedef struct mt_sub_entry {
 #define MT_TASK_SCAN 14       /* SCAN routed with a composite cursor */
 #define MT_TASK_PUBSUB_STATS 15 /* PUBSUB introspection aggregate part */
 #define MT_TASK_COPY 16       /* COPY with full logical-DB selection hooks */
+#define MT_TASK_REPL_FLUSH 17 /* full-sync dataset replacement barrier */
 #define MT_MAX_LOGICAL_DBS 16
 
 #define MT_SCAN_TAG UINT64_C(0x8000000000000000)
@@ -276,7 +277,7 @@ struct worker {
      * so these must outlive the worker) */
     char aof_path[1088];
     char snap_path[1088];
-    volatile int running;
+    ddup_atomic_int running;
     /* Batched reply flush: conns that received reply bytes during one
      * mt_drain_completions pass are flushed once at the end of the pass
      * (replies are seq-ordered into conn->out, so coalescing is free). */
@@ -297,7 +298,7 @@ struct mt_server {
     pal_thread acceptor;
     int started_workers;
     int acceptor_started;
-    volatile int running;
+    ddup_atomic_int running;
     int destroying;
     mt_agg **abandoned_aggs;
     size_t nabandoned_aggs;
@@ -463,7 +464,8 @@ static int mt_repl_snapshot_serialize(void *ctx, resp_buf *out)
         }
     }
 
-    while (ms->snapshot_ser_pending > 0 && leader->running) {
+    while (ms->snapshot_ser_pending > 0 &&
+           ddup_atomic_load(&leader->running, ddup_memory_order_acquire)) {
         mt_drain_completions(leader);
         pal_sleep_ms(1);
     }
@@ -4501,9 +4503,11 @@ static int mt_route(void *ctx, void *conn, session *sess,
         }
         if (cmd == CMD_SHUTDOWN && server_shutdown_requested(home->srv)) {
             int wi;
-            home->ms->running = 0;
+            ddup_atomic_store(&home->ms->running, 0,
+                              ddup_memory_order_release);
             for (wi = 0; wi < home->ms->nworkers; wi++) {
-                home->ms->workers[wi].running = 0;
+                ddup_atomic_store(&home->ms->workers[wi].running, 0,
+                                  ddup_memory_order_release);
                 if (wi != home->id)
                     mt_kick(&home->ms->workers[wi]);
             }
@@ -4704,7 +4708,8 @@ static int mt_push_task(worker *self, mt_spsc *q, mt_task *t,
     int pr = mt_spsc_push(q, t);
     while (pr < 0) {
         if (self != NULL) {
-            if (!self->running) {
+            if (!ddup_atomic_load(&self->running,
+                                  ddup_memory_order_acquire)) {
                 mt_task_drop_after_push_failure(self, t);
                 return -1;
             }
@@ -4883,14 +4888,33 @@ static int mt_repl_snapshot_load(void *ctx, const char *buf, size_t len)
         return -1;
     }
 
-    /* Full resync replaces the old shared-nothing dataset. */
-    for (i = 0; i < ms->nworkers; i++) {
-        worker *w = &ms->workers[i];
-        for (j = 0; j < ndbs; j++)
-            db_flush(server_db_at(w->srv, j));
-    }
-
+    /* Full resync replaces the old shared-nothing dataset. Worker 0 owns
+     * this callback, while followers flush on their own event loops through
+     * ordered tasks; this avoids cross-thread hash-table mutation. */
+    for (j = 0; j < ndbs; j++)
+        db_flush(server_db_at(leader->srv, j));
     ms->snapshot_pending = 0;
+    for (i = 1; i < ms->nworkers; i++) {
+        mt_task *flush = mt_task_new(NULL, leader, 0, 1, 0, NULL);
+        if (flush == NULL) {
+            failed = 1;
+            break;
+        }
+        flush->kind = MT_TASK_REPL_FLUSH;
+        ms->snapshot_pending++;
+        if (mt_push_task(leader, &ms->workers[i].inbox[leader->id], flush,
+                         &ms->workers[i]) != 0) {
+            ms->snapshot_pending--;
+            failed = 1;
+            break;
+        }
+    }
+    if (failed) {
+        for (i = 0; i < ndbs; i++)
+            db_destroy(&tmp[i]);
+        free(tmp);
+        return -1;
+    }
     for (i = 0; i < ndbs; i++) {
         mt_repl_restore_ctx rc;
         rc.leader = leader;
@@ -4908,7 +4932,8 @@ static int mt_repl_snapshot_load(void *ctx, const char *buf, size_t len)
         db_destroy(&tmp[i]);
     free(tmp);
 
-    while (ms->snapshot_pending > 0 && leader->running) {
+    while (ms->snapshot_pending > 0 &&
+           ddup_atomic_load(&leader->running, ddup_memory_order_acquire)) {
         mt_drain_inbox(leader);
         mt_drain_completions(leader);
         pal_sleep_ms(1);
@@ -4975,6 +5000,13 @@ static void mt_exec_task(worker *w, mt_task *t)
         (void)snapshot_serialize_multi(w->srv, server_select_db,
                                        server_ndbs(w->srv), &t->reply);
         t->repl_worker_id = w->id;
+        (void)mt_push_task(w, &t->home->completions[w->id], t, t->home);
+        return;
+    }
+    if (t->kind == MT_TASK_REPL_FLUSH) {
+        int fi;
+        for (fi = 0; fi < server_ndbs(w->srv); fi++)
+            db_flush(server_db_at(w->srv, fi));
         (void)mt_push_task(w, &t->home->completions[w->id], t, t->home);
         return;
     }
@@ -5369,7 +5401,7 @@ static void mt_drain_completions(worker *w)
                 }
                 continue;
             }
-            if (t->kind == MT_TASK_RESTORE) {
+            if (t->kind == MT_TASK_RESTORE || t->kind == MT_TASK_REPL_FLUSH) {
                 if (t->home == w && w->ms->snapshot_pending > 0)
                     w->ms->snapshot_pending--;
                 mt_task_free(t);
@@ -5519,17 +5551,19 @@ static void worker_on_wakeup(void *ctx)
 static void *worker_main(void *arg)
 {
     worker *w = (worker *)arg;
-    while (w->running) {
+    while (ddup_atomic_load(&w->running, ddup_memory_order_acquire)) {
         if (server_run_once(w->srv, 50) < 0) {
             int i;
             /* A worker-local AOF failure is process-wide: stop every worker
              * and wake them so no loop can spin or remain blocked in poll. */
             for (i = 0; i < w->ms->nworkers; i++) {
-                w->ms->workers[i].running = 0;
+                ddup_atomic_store(&w->ms->workers[i].running, 0,
+                                  ddup_memory_order_release);
                 if (i != w->id)
                     mt_kick(&w->ms->workers[i]);
             }
-            w->ms->running = 0;
+            ddup_atomic_store(&w->ms->running, 0,
+                              ddup_memory_order_release);
             break;
         }
     }
@@ -5554,7 +5588,7 @@ static void *acceptor_main(void *arg)
         pal_loop_free(l);
         return NULL;
     }
-    while (ms->running) {
+    while (ddup_atomic_load(&ms->running, ddup_memory_order_acquire)) {
         pal_event evs[8];
         int n;
         int i;
@@ -5643,6 +5677,7 @@ mt_server *mt_server_create_ex(const char *host, uint16_t port, int nworkers,
     ms->tls_port = 0;
     ms->nworkers = nworkers;
     ms->worker_backend = worker_backend;
+    ddup_atomic_init(&ms->running, 0);
     if (pal_mutex_init(&ms->abandoned_agg_mu) != 0) {
         pal_close(ms->listen_fd);
         free(ms);
@@ -5661,6 +5696,7 @@ mt_server *mt_server_create_ex(const char *host, uint16_t port, int nworkers,
         int j;
         w->id = i;
         w->ms = ms;
+        ddup_atomic_init(&w->running, 0);
 #if DDUP_HAS_C_ATOMICS
         atomic_init(&w->kick_pending, 0);
 #endif
@@ -5841,7 +5877,8 @@ void mt_server_test_set_aof_write_fn(
 
 int mt_server_test_running(const mt_server *ms)
 {
-    return ms != NULL ? ms->running : 0;
+    return ms != NULL ? ddup_atomic_load(&ms->running,
+                                         ddup_memory_order_acquire) : 0;
 }
 
 uint64_t mt_server_test_worker_loops(const mt_server *ms, int worker_id)
@@ -6017,7 +6054,9 @@ int mt_server_enable_tls(mt_server *ms, const char *host, uint16_t port,
                          const char *cert_file, const char *key_file)
 {
     int i;
-    if (ms->running || ms->tls_listen_fd != PAL_SOCKET_INVALID)
+    if (ms == NULL || ms->workers == NULL || ms->nworkers <= 0 ||
+        ddup_atomic_load(&ms->running, ddup_memory_order_acquire) ||
+        ms->tls_listen_fd != PAL_SOCKET_INVALID)
         return -1;
     /* one context per worker (shared-nothing; no cross-thread SSL_CTX use) */
     for (i = 0; i < ms->nworkers; i++) {
@@ -6042,12 +6081,15 @@ int mt_server_start(mt_server *ms)
     int i;
     int started_workers = 0;
 
-    ms->running = 1;
+    if (ms == NULL || ms->workers == NULL || ms->nworkers <= 0)
+        return -1;
+
+    ddup_atomic_store(&ms->running, 1, ddup_memory_order_release);
     for (i = 0; i < ms->nworkers; i++) {
         worker *w = &ms->workers[i];
-        w->running = 1;
+        ddup_atomic_store(&w->running, 1, ddup_memory_order_release);
         if (pal_thread_create(&w->thread, worker_main, w) != 0) {
-            w->running = 0;
+            ddup_atomic_store(&w->running, 0, ddup_memory_order_release);
             goto fail;
         }
         started_workers++;
@@ -6060,9 +6102,10 @@ int mt_server_start(mt_server *ms)
     return 0;
 
 fail:
-    ms->running = 0;
+    ddup_atomic_store(&ms->running, 0, ddup_memory_order_release);
     for (i = 0; i < started_workers; i++) {
-        ms->workers[i].running = 0;
+        ddup_atomic_store(&ms->workers[i].running, 0,
+                          ddup_memory_order_release);
         mt_kick(&ms->workers[i]);
     }
     for (i = 0; i < started_workers; i++)
@@ -6073,9 +6116,10 @@ fail:
 void mt_server_stop(mt_server *ms)
 {
     int i;
-    ms->running = 0;
+    ddup_atomic_store(&ms->running, 0, ddup_memory_order_release);
     for (i = 0; i < ms->started_workers; i++) {
-        ms->workers[i].running = 0;
+        ddup_atomic_store(&ms->workers[i].running, 0,
+                          ddup_memory_order_release);
         mt_kick(&ms->workers[i]);
     }
     if (ms->acceptor_started) {

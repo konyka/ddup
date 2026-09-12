@@ -1253,3 +1253,6 @@
     防止恶意产品/错误字段打断报告脚本上下文（Phase 453）
   - [x] TSan 配置与 CI 门禁：`DDUP_SANITIZE=thread` 通过 CMake 配置回归，并在
     Ubuntu CI 对全量 CTest 执行线程竞态检测（Phase 454）
+  - [x] 多线程连接迁移与复制屏障竞态收敛：迁移前在源 worker 完成接收缓冲压缩，
+    连接 arena/缓冲区以单线程所有权交接；复制全同步通过目标 worker 自执行 flush
+    任务替代跨线程数据库清空，并以 TSan 覆盖迁移、快照和停止路径（Phase 455）

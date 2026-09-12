@@ -1517,3 +1517,15 @@ worker 的环长度；每个 worker 只读本地计数，home worker 按流水�
 保存条目 payload，按 ID 降序合并并截断到请求数量。非法 count 使用严格 64 位
 解析并保持 Redis 错误语义；任一 worker 错误或最终缓冲区分配失败均返回统一错误，
 禁止部分数组。RESET 不重置 ID，因此条目 ID 在生命周期内持续单调递增。
+
+## Phase 455：MT 连接迁移与复制全同步所有权屏障
+
+连接按单线程所有权在 worker 间迁移。源 worker 在路由钩子发布迁移任务前，先压缩
+接收缓冲区中已消费的 RESP 前缀；发布后源 worker 不再访问连接的 `rbuf/rlen/arena`
+等可变状态，目标 worker 通过 `rehome`/`adopt` 接管并继续处理未消费命令。由于
+RESP 字符串是接收缓冲区的零拷贝视图，压缩必须在下一次解析前完成。
+
+副本全同步由 worker 0 解析临时快照并按槽位投递恢复任务。旧数据清理改为每个
+follower 在自己的 inbox 执行有序 `REPL_FLUSH`，再按同一 SPSC 顺序执行 `RESTORE`；
+worker 0 汇总完成计数形成屏障，确保哈希表只由所属事件循环读写，稳定命令热路径
+不引入锁或额外分配。

@@ -5075,6 +5075,14 @@ static int conn_process_input(server *s, conn *c)
     }
     while (off < c->rlen) {
         resp_value v;
+        if (s->route_fn != NULL && off > 0) {
+            /* Routed commands may publish migration synchronously. Compact
+             * before parsing the next value so zero-copy RESP strings remain
+             * valid when the route hook receives them. */
+            memmove(c->rbuf, c->rbuf + off, c->rlen - off);
+            c->rlen -= off;
+            off = 0;
+        }
         ptrdiff_t used =
             resp_parse(c->rbuf + off, c->rlen - off, &v, &c->arena);
         if (used == 0)
@@ -5090,13 +5098,9 @@ static int conn_process_input(server *s, conn *c)
             int rr = s->route_fn(s->route_ctx, c, c->sess, v.items, v.count,
                                  c->rbuf + off, (size_t)used, &c->out);
             if (rr == 2) {
-                /* Preserve the current command for the new home worker, but
-                 * discard commands already handled before migration. */
-                if (off > 0) {
-                    memmove(c->rbuf, c->rbuf + off, c->rlen - off);
-                    c->rlen -= off;
-                }
-                arena_reset(&c->arena);
+                /* The current command remains at the receive-buffer head.
+                 * The connection arena moves with it; the source worker must
+                 * not touch migrated state after publication. */
                 return 2;
             }
             if (rr != 0) {
