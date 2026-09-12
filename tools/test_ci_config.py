@@ -63,6 +63,23 @@ def assert_permissions_scoped(path, write_jobs):
             f"{path}: publishing job {name} must have contents: write"
 
 
+def assert_checkout_isolated(path):
+    lines = path.read_text(encoding="utf-8").splitlines()
+    for i, line in enumerate(lines):
+        if line.strip() != "- uses: actions/checkout@v4":
+            continue
+        following = lines[i + 1:i + 4]
+        assert any("persist-credentials: false" in item for item in following), \
+            f"{path}: checkout must not persist credentials"
+    if path.name == "ci.yml":
+        for i, line in enumerate(lines):
+            if "name: Publish failure logs" not in line:
+                continue
+            block = "\n".join(lines[i:i + 5])
+            assert "github.event_name == 'push'" in block, \
+                f"{path}: failure log publishing must be push-only"
+
+
 def main():
     workflow_dir = ROOT / ".github/workflows"
     workflows = sorted(set(workflow_dir.glob("*.yml")) |
@@ -84,6 +101,7 @@ def main():
                 f"{path}: job {name} timeout-minutes must be <= 1440"
         assert_token_not_traced(path)
         assert_permissions_scoped(path, write_jobs.get(path, set()))
+        assert_checkout_isolated(path)
     print("CI timeout configuration: ok")
 
 

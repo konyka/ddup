@@ -3233,3 +3233,10 @@ Workflow-level repository access is now read-only. Only jobs that publish
 benchmark artifacts or failure logs receive job-scoped `contents: write`; build,
 compatibility, and sanitizer jobs retain read-only credentials. This is a CI
 control-plane hardening change with no benchmark or server runtime impact.
+
+### Phase 470: pull-request checkout isolation
+
+Every GitHub Actions checkout disables credential persistence. CI failure-log
+publication is additionally restricted to `push` events, preventing untrusted
+pull-request builds from inheriting a writable repository credential. This is a
+control-plane security change and does not affect server or benchmark paths.

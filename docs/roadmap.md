@@ -1293,3 +1293,5 @@
     alternate-suffix 工作流绕过超时和 token trace 安全门禁（Phase 468）
   - [x] CI 写权限最小化：工作流默认 `contents: read`，仅发布 benchmark/失败日志
     的 job 显式授予 `contents: write`，降低构建与审计任务凭据权限（Phase 469）
+  - [x] PR checkout 凭据隔离：所有 Actions checkout 禁止持久化 token，CI 失败日志
+    发布限制为 `push` 事件，避免不可信 PR 代码继承可写仓库凭据（Phase 470）

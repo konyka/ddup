@@ -30,6 +30,8 @@ jobs:
             logbranch: ci-logs-macos
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - name: Install OpenSSL (ubuntu)
         if: matrix.os == 'ubuntu-latest'
@@ -59,7 +61,7 @@ jobs:
       # Self-service diagnostics: on failure push the logs to a per-OS branch
       # so they are readable without API auth (raw.githubusercontent.com).
       - name: Publish failure logs
-        if: failure()
+        if: failure() && github.event_name == 'push'
         shell: bash
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -92,6 +94,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - name: Build & test in FreeBSD VM
         uses: vmactions/freebsd-vm@v1
         with:
@@ -103,7 +107,7 @@ jobs:
               ctest --test-dir build --output-on-failure
             } 2>&1 | tee freebsd-full.log
       - name: Publish failure logs
-        if: failure()
+        if: failure() && github.event_name == 'push'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -133,6 +137,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - name: Fetch Redis command JSON baselines (sparse clones)
         run: |
@@ -161,6 +167,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - name: Install OpenSSL
         run: sudo apt-get update && sudo apt-get install -y libssl-dev
       - name: Configure TSan

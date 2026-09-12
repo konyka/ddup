@@ -17,6 +17,8 @@ jobs:
       contents: write # publish failure logs to ci-logs-interop
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - name: Install Redis
         run: |
