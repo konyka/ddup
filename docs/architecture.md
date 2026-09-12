@@ -1539,3 +1539,10 @@ worker 0 汇总完成计数形成屏障，确保哈希表只由所属事件循�
 命令权限位图以及 key/channel pattern 均随连接迁移保持一致；目标 worker 不会回退
 到默认用户或重新解析认证状态。ACL 授权仍在命令执行入口进行，迁移本身不复制
 用户表，也不增加共享锁，避免跨 worker 路由引入热路径开销。
+
+## Phase 475：MT ACL 管理授权边界
+
+`ACL SETUSER` 与 `ACL DELUSER` 在多 worker 模式下仍需要广播到各 worker，
+但广播前由 home worker 的已认证会话执行 default 用户边界检查。非 default 用户
+在创建聚合状态或投递远端任务前即收到 `NOPERM`，不会借助 worker 的 sessionless
+管理上下文绕过授权；default 用户继续沿用原有有序 fan-out 和错误汇总语义。

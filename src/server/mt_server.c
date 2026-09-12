@@ -3198,14 +3198,9 @@ static int mt_route_aggregate(worker *home, void *conn,
             resp_write_error(&local, "ERR Protocol error", 18);
         arena_destroy(&ar);
     } else if (cmd == CMD_ACL) {
-        resp_value v;
-        arena ar;
-        arena_init(&ar, 512);
-        if (resp_parse(raw, rawlen, &v, &ar) == (ptrdiff_t)rawlen)
-            mt_acl_exec(home, v.items, v.count, &local);
-        else
-            resp_write_error(&local, "ERR Protocol error", 18);
-        arena_destroy(&ar);
+        /* The home worker already owns the parsed argv. Reusing it avoids a
+         * second parse of a receive-buffer view after connection rehome. */
+        mt_acl_exec(home, argv, argc, &local);
     } else if (cmd == CMD_SAVE) {
         mt_save_exec(home, &local);
     } else if (cmd == CMD_BGSAVE) {
@@ -4448,6 +4443,17 @@ static int mt_route(void *ctx, void *conn, session *sess,
     if (cmd == CMD_ACL && argc >= 2 && argv[1].str != NULL &&
         (mt_ci_equal(argv[1].str, argv[1].len, "SETUSER") ||
          mt_ci_equal(argv[1].str, argv[1].len, "DELUSER"))) {
+        /* ACL administration is restricted to the default user.  Aggregate
+         * execution uses sessionless worker contexts, so enforce this gate
+         * on the authenticated home session before broadcasting. */
+        if (strcmp(sess->acl_username, "default") != 0) {
+            static const char noperm[] =
+                "-NOPERM ACL administration requires the default user\r\n";
+            mt_batch_flush(home, conn, st);
+            mt_reply_local(home, conn, st, st->seq_next++, noperm,
+                           sizeof(noperm) - 1, out);
+            return 1;
+        }
         mt_batch_flush(home, conn, st);
         return mt_route_aggregate(home, conn, argv, argc, raw, rawlen, cmd,
                                   sess->db_index);

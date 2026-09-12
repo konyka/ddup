@@ -1306,3 +1306,6 @@
   - [x] MT ACL 会话迁移保持：连接 rehome/adopt 时保留认证用户、命令权限位图及
     key/channel pattern；跨 worker GET/SET 回归测试验证授权语义不变，且不增加
     热路径分配或锁（Phase 474）
+  - [x] MT ACL 管理授权边界：`ACL SETUSER/DELUSER` 广播前在 home session 校验
+    default 用户权限，非 default 用户在聚合分配和 fan-out 前 fail-closed，新增
+    多线程越权回归测试（Phase 475）

@@ -3270,3 +3270,11 @@ permission state, including key patterns. A cross-worker GET/SET regression test
 confirms that an allowed read remains allowed and a denied write remains denied
 after migration. The handoff rebinds existing server-owned context in place, so
 it adds no allocation, lock, or extra command dispatch to the steady-state hot path.
+
+### Phase 475: MT ACL administration authorization gate
+
+`ACL SETUSER` and `ACL DELUSER` now enforce the default-user boundary on the home
+session before aggregate allocation or worker fan-out. Unauthorized requests take
+the bounded local error path; authorized broadcasts retain the existing worker
+parallelism and ordering, with no additional allocation or lock in the normal data
+command path.
