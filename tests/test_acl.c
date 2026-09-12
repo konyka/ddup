@@ -300,6 +300,13 @@ static void test_acl_cat_filters_commands(void)
                        3, &out, 0);
     DD_CHECK(contains_bytes(out.data, out.len, "sort", 4));
     DD_CHECK(!contains_bytes(out.data, out.len, "\r\n$4\r\nping\r\n", 13));
+
+    out.len = 0;
+    session_execute_at(&s, (resp_value[]){rv("ACL"), rv("CAT"), rv("keyspace")},
+                       3, &out, 0);
+    DD_CHECK(contains_bytes(out.data, out.len, "flushdb", 7));
+    DD_CHECK(contains_bytes(out.data, out.len, "migrate", 7));
+    DD_CHECK(!contains_bytes(out.data, out.len, "\r\n$4\r\nping\r\n", 13));
     resp_buf_free(&out);
     session_release(&s);
     db_destroy(&d);

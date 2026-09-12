@@ -1349,3 +1349,5 @@
     事务、脚本与发布订阅类别，未知类别 fail-closed（Phase 492）
   - [x] ACL CAT fast/slow 精确映射：按 Redis 8 `FAST` 元数据静态分类，慢命令不再
     因 write 标志被误归入 fast（Phase 493）
+  - [x] ACL CAT keyspace 完整映射：补齐 FLUSHDB、FLUSHALL、MIGRATE 等 keyspace
+    命令并覆盖回归测试（Phase 494）

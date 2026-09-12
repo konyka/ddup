@@ -1666,3 +1666,9 @@ ACL 授权现在按各命令真实语法解析 `LMPOP/ZMPOP` 的 `numkeys`（参
 补集。这样 `ECHO`、`GET` 等低延迟命令出现在 `fast`，`SORT`、`KEYS` 等高成本
 命令出现在 `slow`，避免按 write 标志推断造成错误分类。自定义 ddup 命令在没有
 Redis `FAST` 元数据时保持保守的 slow 归类。
+
+## Phase 494：ACL CAT keyspace 完整映射
+
+`keyspace` 类别补齐 `FLUSHDB`、`FLUSHALL` 与 `MIGRATE`，并保留过期、重命名、
+扫描、持久化和类型查询等 keyspace 操作。分类结果继续由命令 ID 静态判断，
+未知命令不会被错误暴露到该类别。

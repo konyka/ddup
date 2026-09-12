@@ -12221,7 +12221,8 @@ static int acl_cat_match(const char *category, size_t category_len,
                id == CMD_KEYS || id == CMD_SCAN || id == CMD_RANDOMKEY ||
                id == CMD_RENAME || id == CMD_RENAMENX || id == CMD_COPY ||
                id == CMD_DUMP || id == CMD_RESTORE || id == CMD_RESTORE_ASKING ||
-               id == CMD_MOVE || id == CMD_DBSIZE;
+               id == CMD_MOVE || id == CMD_DBSIZE || id == CMD_FLUSHDB ||
+               id == CMD_FLUSHALL || id == CMD_MIGRATE;
     if (ci_equal(category, category_len, "string"))
         return acl_name_in(name, strings, sizeof(strings) / sizeof(strings[0]));
     if (ci_equal(category, category_len, "set"))

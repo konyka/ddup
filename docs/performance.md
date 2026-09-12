@@ -3396,3 +3396,9 @@ The `fast` category uses a static 129-name set derived from Redis 8 `FAST` comma
 metadata, and `slow` is its complement over the registered command table. Lookup is a
 bounded linear scan on the cold introspection path with no allocation; command dispatch
 and ACL authorization hot paths are unchanged.
+
+### Phase 494: complete keyspace classification
+
+Keyspace membership remains a fixed command-ID predicate. Adding flush and migration
+commands changes only the cold `ACL CAT` scan and introduces no allocations, locks, or
+additional work in normal key authorization.
