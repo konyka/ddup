@@ -29,6 +29,24 @@ def workflow_jobs(path):
     return jobs
 
 
+def assert_token_not_traced(path):
+    lines = path.read_text(encoding="utf-8").splitlines()
+    for i, line in enumerate(lines):
+        if "REPO_URL=" not in line or "GITHUB_TOKEN" not in line:
+            continue
+        step_start = i
+        while step_start > 0 and lines[step_start].strip() != "run: |":
+            step_start -= 1
+        assert lines[step_start].strip() == "run: |", \
+            f"{path}: tokenized shell block must use a literal run: | step"
+        clone = i
+        while clone < len(lines) and "git clone" not in lines[clone]:
+            clone += 1
+        assert clone < len(lines), f"{path}: tokenized block must clone logs"
+        assert any("set +x" in lines[j] for j in range(step_start, i)), \
+            f"{path}: disable shell tracing before constructing REPO_URL"
+
+
 def main():
     workflows = sorted((ROOT / ".github/workflows").glob("*.yml"))
     assert workflows, "no GitHub Actions workflows found"
@@ -41,6 +59,7 @@ def main():
             timeout = int(match.group(1))
             assert timeout <= 1440, \
                 f"{path}: job {name} timeout-minutes must be <= 1440"
+        assert_token_not_traced(path)
     print("CI timeout configuration: ok")
 
 

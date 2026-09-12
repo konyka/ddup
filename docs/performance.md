@@ -3213,3 +3213,10 @@ full command deadline when a valid intermediate `CLUSTER NODES/INFO` response
 does not yet contain the expected state. On the same Linux Release host, the
 test dropped from 102.75 s to 20.93 s while all 289 assertions remained green;
 this is test/CI latency only and does not alter server runtime behavior.
+
+### Phase 467: CI token-trace hardening
+
+Failure-log publishing steps disable shell tracing before constructing the
+tokenized repository URL. The CI configuration test enforces this ordering so
+future diagnostics cannot accidentally print credentials; benchmark and server
+runtime performance are unchanged.

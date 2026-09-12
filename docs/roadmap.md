@@ -1286,3 +1286,6 @@
   - [x] 集群 PFAIL/FAIL 端到端测试收敛探针：中间状态查询使用短超时，保留命令
     失败的长超时，避免每轮 gossip 在无效状态上阻塞 15 秒；断言与故障语义不变
     （Phase 466）
+  - [x] CI token trace 安全门禁：失败日志发布在构造 `GITHUB_TOKEN` 仓库 URL
+    前关闭 shell tracing，并由配置回归锁定该顺序，降低诊断日志泄露凭据风险
+    （Phase 467）
