@@ -8,12 +8,14 @@ on:
     branches: [main]
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   bench:
     name: ddup vs garnet vs redis
     timeout-minutes: 120
+    permissions:
+      contents: write # publish benchmark results and failure logs
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

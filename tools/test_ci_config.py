@@ -47,11 +47,32 @@ def assert_token_not_traced(path):
             f"{path}: disable shell tracing before constructing REPO_URL"
 
 
+def assert_permissions_scoped(path, write_jobs):
+    lines = path.read_text(encoding="utf-8").splitlines()
+    jobs_at = next((i for i, line in enumerate(lines) if line == "jobs:"),
+                   len(lines))
+    top = "\n".join(lines[:jobs_at])
+    assert not re.search(r"(?m)^  contents:\s*write\s*$", top), \
+        f"{path}: top-level contents permission must remain read-only"
+    jobs = workflow_jobs(path)
+    for name in write_jobs:
+        body = jobs.get(name, "")
+        assert re.search(r"(?m)^    permissions:\s*$", body), \
+            f"{path}: publishing job {name} must declare job permissions"
+        assert re.search(r"(?m)^      contents:\s*write(?:\s+#.*)?$", body), \
+            f"{path}: publishing job {name} must have contents: write"
+
+
 def main():
     workflow_dir = ROOT / ".github/workflows"
     workflows = sorted(set(workflow_dir.glob("*.yml")) |
                        set(workflow_dir.glob("*.yaml")))
     assert workflows, "no GitHub Actions workflows found"
+    write_jobs = {
+        ROOT / ".github/workflows/ci.yml": {"build", "freebsd"},
+        ROOT / ".github/workflows/bench.yml": {"bench"},
+        ROOT / ".github/workflows/cluster-interop.yml": {"interop"},
+    }
     for path in workflows:
         jobs = workflow_jobs(path)
         assert jobs, f"{path}: jobs section must define at least one job"
@@ -62,6 +83,7 @@ def main():
             assert timeout <= 1440, \
                 f"{path}: job {name} timeout-minutes must be <= 1440"
         assert_token_not_traced(path)
+        assert_permissions_scoped(path, write_jobs.get(path, set()))
     print("CI timeout configuration: ok")
 
 

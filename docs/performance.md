@@ -3226,3 +3226,10 @@ runtime performance are unchanged.
 The CI configuration regression scans both `.yml` and `.yaml` workflow files,
 so adding a workflow with the alternate YAML suffix cannot bypass timeout and
 token-trace safety checks.
+
+### Phase 469: CI write-permission scoping
+
+Workflow-level repository access is now read-only. Only jobs that publish
+benchmark artifacts or failure logs receive job-scoped `contents: write`; build,
+compatibility, and sanitizer jobs retain read-only credentials. This is a CI
+control-plane hardening change with no benchmark or server runtime impact.

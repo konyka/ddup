@@ -1291,3 +1291,5 @@
     （Phase 467）
   - [x] CI 工作流后缀覆盖：配置回归同时扫描 `.yml` 与 `.yaml`，避免新增
     alternate-suffix 工作流绕过超时和 token trace 安全门禁（Phase 468）
+  - [x] CI 写权限最小化：工作流默认 `contents: read`，仅发布 benchmark/失败日志
+    的 job 显式授予 `contents: write`，降低构建与审计任务凭据权限（Phase 469）
