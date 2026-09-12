@@ -2969,3 +2969,7 @@ All numeric benchmark options now use one checked parser with `endptr` and
 fail closed with `invalid numeric argument`; the port option retains its
 special `invalid port` diagnostic and 1–65535 range check. Valid numeric
 inputs follow the unchanged fast path.
+
+The strict-warning build (`build-strict`, `-Wall -Wextra -Wpedantic -Werror`)
+also compiles `ddup-bench` cleanly and passes the benchmark regression,
+including malformed and `ERANGE` numeric inputs.

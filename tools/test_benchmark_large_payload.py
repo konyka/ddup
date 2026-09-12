@@ -64,6 +64,15 @@ def main():
     if malformed.returncode == 0 or "invalid numeric argument" not in malformed.stderr:
         raise AssertionError("malformed benchmark number was accepted:\n" +
                              malformed.stdout + malformed.stderr)
+    overflow = subprocess.run(
+        [str(bench), "-n", "999999999999999999999999", "-c", "1", "-P", "1",
+         "-t", "ping"],
+        check=False, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        text=True,
+    )
+    if overflow.returncode == 0 or "invalid numeric argument" not in overflow.stderr:
+        raise AssertionError("overflowing benchmark number was accepted:\n" +
+                             overflow.stdout + overflow.stderr)
     port = free_port()
     proc = subprocess.Popen(
         [str(server), "--port", str(port)],
