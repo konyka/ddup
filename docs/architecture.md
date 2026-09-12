@@ -1568,6 +1568,13 @@ owner 路由保持不变。
 回放时先清除整个字段，再写入当前 session 身份。这样池化对象不会携带上一次
 事务的尾部字节，也不会让默认身份回退路径依赖残留字符串终止符。
 
+## Phase 480：ACL 命令权限一致性
+
+`ACL` 不再从通用命令授权中豁免；用户必须拥有 `+acl` 或相应类别权限才能调用
+`WHOAMI`、`CAT`、`GENPASS`、`DRYRUN` 等子命令。`ACL SETUSER/DELUSER` 的
+default 用户管理边界仍在命令层和 MT fan-out 前额外执行，形成命令权限与管理权限
+两层约束。
+
 ## Phase 477：MT deferred replay ACL 身份保持
 
 WATCH 远端 owner 尚未返回时，连接上的后续命令会进入 deferred 队列。队列条目

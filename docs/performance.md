@@ -3306,3 +3306,10 @@ sessions retain the same lean database operations and response construction.
 Task-pool reuse now clears the fixed-size ACL username field in place. The operation
 is a bounded `memset` on task reuse and adds no heap allocation, lock, or syscall;
 normal routed command throughput and pool ownership remain unchanged.
+
+### Phase 480: ACL command permission gate
+
+ACL commands now use the same single authorization check as every other command;
+the existing fixed-bitset lookup runs before dispatch and has no allocation or
+syscall cost. The dedicated default-user checks for ACL administration remain cold
+control-plane validation.

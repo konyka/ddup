@@ -1445,6 +1445,8 @@ static void test_acl_fast_path_enforces_permissions(void)
     roundtrip(s, reader, "*2\r\n$3\r\nGET\r\n$1\r\nk\r\n", "$1\r\nv\r\n");
     roundtrip(s, reader, "*3\r\n$3\r\nSET\r\n$1\r\nk\r\n$1\r\nx\r\n",
               "-NOPERM this user has no permissions to run the command or access the key\r\n");
+    roundtrip(s, reader, "*2\r\n$3\r\nACL\r\n$6\r\nWHOAMI\r\n",
+              "-NOPERM this user has no permissions to run the command or access the key\r\n");
     pal_close(reader);
     pal_close(admin);
     server_destroy(s);

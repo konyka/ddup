@@ -24060,7 +24060,7 @@ static void session_execute_at_raw(session *s, const resp_value *argv,
         return;
     }
     if (s->acl_check != NULL && s->acl_user != NULL && name != NULL &&
-        cmd_id != CMD_AUTH && cmd_id != CMD_ACL &&
+        cmd_id != CMD_AUTH &&
         !s->acl_check(s->acl_ctx, s->acl_user, cmd_id, argv, argc)) {
         acl_log_event((acl_registry *)s->acl_ctx, "command",
                       s->acl_username, strlen(s->acl_username), name, nlen,
