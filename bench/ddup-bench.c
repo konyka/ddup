@@ -157,6 +157,7 @@ static void conn_finish(pal_loop *l, bconn *c)
 {
     pal_loop_del(l, c->fd);
     pal_close(c->fd);
+    c->fd = PAL_SOCKET_INVALID;
     c->active = 0;
 }
 

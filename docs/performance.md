@@ -2989,3 +2989,11 @@ The connection-failure regression now reserves a loopback port before invoking
 the client, making the failure deterministic instead of relying on a randomly
 free port remaining unused. The same test explicitly covers port `65536` as an
 out-of-range input; both cases fail before any benchmark connection is used.
+
+### Phase 439: benchmark fd invalidation
+
+`conn_finish` now marks a socket as `PAL_SOCKET_INVALID` immediately after
+closing it. The shared cleanup helper therefore skips completed connections
+and cannot issue a second close on the same descriptor, including when another
+connection fails during setup. Existing success and occupied-port failure
+regressions cover both cleanup paths.
