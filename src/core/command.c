@@ -24049,6 +24049,26 @@ static void session_execute_at_raw(session *s, const resp_value *argv,
 
     (void)session_acl_refresh(s);
 
+    /* Authentication and ACL checks must precede the lean GET/SET branches.
+     * Those branches intentionally skip the generic dispatcher, so placing
+     * authorization below them would let an authenticated restricted user
+     * bypass command and key-pattern checks. */
+    if (!s->authed && name != NULL && cmd_id != CMD_AUTH &&
+        cmd_id != CMD_QUIT && cmd_id != CMD_RESET && cmd_id != CMD_HELLO) {
+        static const char E[] = "NOAUTH Authentication required.";
+        resp_write_error(out, E, sizeof(E) - 1);
+        return;
+    }
+    if (s->acl_check != NULL && s->acl_user != NULL && name != NULL &&
+        cmd_id != CMD_AUTH && cmd_id != CMD_ACL &&
+        !s->acl_check(s->acl_ctx, s->acl_user, cmd_id, argv, argc)) {
+        acl_log_event((acl_registry *)s->acl_ctx, "command",
+                      s->acl_username, strlen(s->acl_username), name, nlen,
+                      pal_wall_ms());
+        resp_write_error(out, "NOPERM this user has no permissions to run the command or access the key", sizeof("NOPERM this user has no permissions to run the command or access the key") - 1);
+        return;
+    }
+
     /* Lean GET/SET (Phase 36): a plain session (authed, not in MULTI, not
      * subscribed, cluster off) running GET, or SET with no options, skips
      * the second cmd_resolve, the READONLY/ownership wrappers and the
@@ -24143,24 +24163,6 @@ static void session_execute_at_raw(session *s, const resp_value *argv,
                             (uint64_t)(out->len - out_before));
         if (s->monitor_emit != NULL)
             s->monitor_emit(s->monitor_ctx, s, argv, argc);
-        return;
-    }
-
-    /* AUTH gate: unauthenticated sessions may only run AUTH and QUIT */
-    if (!s->authed && name != NULL && cmd_id != CMD_AUTH &&
-        cmd_id != CMD_QUIT && cmd_id != CMD_RESET && cmd_id != CMD_HELLO) {
-        static const char E[] = "NOAUTH Authentication required.";
-        resp_write_error(out, E, sizeof(E) - 1);
-        return;
-    }
-
-    if (s->acl_check != NULL && s->acl_user != NULL && name != NULL &&
-        cmd_id != CMD_AUTH && cmd_id != CMD_ACL &&
-        !s->acl_check(s->acl_ctx, s->acl_user, cmd_id, argv, argc)) {
-        acl_log_event((acl_registry *)s->acl_ctx, "command",
-                      s->acl_username, strlen(s->acl_username), name, nlen,
-                      pal_wall_ms());
-        resp_write_error(out, "NOPERM this user has no permissions to run the command or access the key", sizeof("NOPERM this user has no permissions to run the command or access the key") - 1);
         return;
     }
 

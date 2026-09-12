@@ -1422,6 +1422,34 @@ static void test_auth_over_socket(void)
     server_destroy(s);
 }
 
+static void test_acl_fast_path_enforces_permissions(void)
+{
+    server *s = make_server();
+    pal_socket_t admin, reader;
+    DD_CHECK(s != NULL);
+    if (s == NULL)
+        return;
+    server_set_requirepass(s, "rootpw");
+    admin = connect_client(s);
+    reader = connect_client(s);
+    roundtrip(s, admin, "*2\r\n$4\r\nAUTH\r\n$6\r\nrootpw\r\n", "+OK\r\n");
+    roundtrip(s, admin,
+              "*7\r\n$3\r\nACL\r\n$7\r\nSETUSER\r\n$6\r\nreader\r\n"
+              "$2\r\non\r\n$7\r\n>secret\r\n$4\r\n+get\r\n$2\r\n~*\r\n",
+              "+OK\r\n");
+    roundtrip(s, admin, "*3\r\n$3\r\nSET\r\n$1\r\nk\r\n$1\r\nv\r\n",
+              "+OK\r\n");
+    roundtrip(s, reader,
+              "*3\r\n$4\r\nAUTH\r\n$6\r\nreader\r\n$6\r\nsecret\r\n",
+              "+OK\r\n");
+    roundtrip(s, reader, "*2\r\n$3\r\nGET\r\n$1\r\nk\r\n", "$1\r\nv\r\n");
+    roundtrip(s, reader, "*3\r\n$3\r\nSET\r\n$1\r\nk\r\n$1\r\nx\r\n",
+              "-NOPERM this user has no permissions to run the command or access the key\r\n");
+    pal_close(reader);
+    pal_close(admin);
+    server_destroy(s);
+}
+
 static void test_shutdown_command(void)
 {
     server *s = make_server();
@@ -1787,6 +1815,7 @@ static void run_all_tests(void)
     DD_RUN(test_pubsub_over_socket);
     DD_RUN(test_psubscribe_over_socket);
     DD_RUN(test_auth_over_socket);
+    DD_RUN(test_acl_fast_path_enforces_permissions);
     DD_RUN(test_shutdown_command);
     DD_RUN(test_blocking_pop_over_socket);
     DD_RUN(test_connection_buf_pool);

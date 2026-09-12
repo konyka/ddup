@@ -1555,6 +1555,13 @@ sessionless worker 执行前再次检查权限。这样管理员在 `MULTI` 与 
 session ACL 检查而执行。用户被删除时回放进入 `NOAUTH`，WATCH/事务顺序和 key
 owner 路由保持不变。
 
+## Phase 478：单线程 lean GET/SET ACL 边界
+
+普通 server 的 lean GET/SET 优化分支现在位于认证与 ACL 检查之后。受限用户的
+命令权限和 key pattern 在进入零拷贝/低分支执行前已经验证；拒绝请求不会触发
+数据库读写、AOF 或监控副作用。无 ACL 配置时仍保持原有快速路径，其他命令继续
+使用通用 dispatcher 的授权语义。
+
 ## Phase 477：MT deferred replay ACL 身份保持
 
 WATCH 远端 owner 尚未返回时，连接上的后续命令会进入 deferred 队列。队列条目

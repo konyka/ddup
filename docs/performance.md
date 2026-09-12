@@ -3293,3 +3293,10 @@ Deferred WATCH commands store only a fixed-size username and auth bit. Replay pe
 one current-user lookup before routing; the normal non-deferred command path is
 unchanged, with no extra allocation or lock. ACL changes during the wait therefore
 fail closed without affecting worker locality or queue ordering.
+
+### Phase 478: ACL before lean GET/SET
+
+The optimized GET/SET path now runs after the existing authentication and ACL checks,
+preventing restricted users from bypassing command or key-pattern permissions. The
+check is a branch-only guard with no allocation or extra syscall; unrestricted
+sessions retain the same lean database operations and response construction.

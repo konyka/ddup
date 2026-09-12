@@ -1315,3 +1315,6 @@
   - [x] MT deferred replay ACL 身份保持：WATCH 等待队列保存认证用户上下文，
     回放前重新解析当前 ACL 用户，避免等待期间撤权/删用户导致 sessionless
     命令绕过授权（Phase 477）
+  - [x] 单线程 lean GET/SET ACL 边界：将认证和 ACL 检查前移到优化分支之前，
+    新增受限用户 socket 回归，防止 fast path 绕过命令权限和 key pattern
+    校验（Phase 478）
