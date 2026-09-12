@@ -2982,3 +2982,10 @@ the shared payload buffer. The helper is idempotent across initialized and
 uninitialized fields, while the normal completion path keeps the same cleanup
 cost. The CTest regression exercises an unavailable-port connection failure in
 addition to malformed dimensions and large replies.
+
+### Phase 438: deterministic port failure coverage
+
+The connection-failure regression now reserves a loopback port before invoking
+the client, making the failure deterministic instead of relying on a randomly
+free port remaining unused. The same test explicitly covers port `65536` as an
+out-of-range input; both cases fail before any benchmark connection is used.

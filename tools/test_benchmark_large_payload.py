@@ -73,15 +73,26 @@ def main():
     if overflow.returncode == 0 or "invalid numeric argument" not in overflow.stderr:
         raise AssertionError("overflowing benchmark number was accepted:\n" +
                              overflow.stdout + overflow.stderr)
-    unavailable = subprocess.run(
-        [str(bench), "-p", str(free_port()), "-n", "1", "-c", "1", "-P", "1",
+    out_of_range = subprocess.run(
+        [str(bench), "-p", "65536", "-n", "1", "-c", "1", "-P", "1",
          "-t", "ping"],
         check=False, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
         text=True,
     )
+    if out_of_range.returncode == 0 or "invalid port" not in out_of_range.stderr:
+        raise AssertionError("out-of-range benchmark port was accepted:\n" +
+                             out_of_range.stdout + out_of_range.stderr)
+    reserved = socket.socket()
+    reserved.bind(("127.0.0.1", 0))
+    unavailable = subprocess.run(
+        [str(bench), "-p", str(reserved.getsockname()[1]), "-n", "1", "-c", "1",
+         "-P", "1", "-t", "ping"], check=False,
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
     if unavailable.returncode == 0 or "connect failed" not in unavailable.stderr:
+        reserved.close()
         raise AssertionError("connection failure path was not handled:\n" +
                              unavailable.stdout + unavailable.stderr)
+    reserved.close()
     port = free_port()
     proc = subprocess.Popen(
         [str(server), "--port", str(port)],
