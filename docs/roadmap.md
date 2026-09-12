@@ -1333,3 +1333,5 @@
     与 Redis 8 基本 introspection 语义一致（Phase 484）
   - [x] 稳定命令元数据索引：按 command ID 排序 `CMD_TABLE`，修复 COMMAND INFO、
     ACL flags、只读脚本与 MULTI arity 的错位映射（Phase 485）
+  - [x] 事务 arity 边界：HDEL/PFDEBUG 非法参数在 MULTI 入队阶段触发错误并让
+    EXEC 返回 EXECABORT（Phase 486）

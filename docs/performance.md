@@ -3346,3 +3346,9 @@ The command metadata table is physically ordered by stable ID, preserving the ex
 O(1) lookup in `cmd_table_entry` without adding a search, allocation, or branch to the
 hot dispatch path. Correct metadata also makes queue-time arity and ACL flag checks
 deterministic for blocking and administrative commands.
+
+### Phase 486: transaction arity boundaries
+
+Correcting the static minimum/maximum arity keeps validation on the existing O(1)
+command-table lookup. Invalid `HDEL`/`PFDEBUG` requests fail before queue allocation
+or replay, reducing wasted transaction work without affecting valid command paths.
