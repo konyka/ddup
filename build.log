@@ -30,8 +30,8 @@
 -- Performing Test CMAKE_HAVE_LIBC_PTHREAD - Success
 -- Found Threads: TRUE
 -- ddup: TLS enabled (OpenSSL 3.0.13)
--- Configuring done (12.2s)
--- Generating done (0.1s)
+-- Configuring done (13.2s)
+-- Generating done (0.2s)
 -- Build files have been written to: /home/runner/work/ddup/ddup/build
 [  1%] Building C object CMakeFiles/ddup_lua.dir/deps/lua/lapi.c.o
 [  1%] Building C object CMakeFiles/ddup_lua.dir/deps/lua/lauxlib.c.o
@@ -324,8 +324,25 @@ In function ‘snprintf’,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
     inlined from ‘obj_zset_iter_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1557:35,
     inlined from ‘obj_zset_iter_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1549:13,
-    inlined from ‘geo_collect_radius’ at /home/runner/work/ddup/ddup/src/core/command.c:6102:30,
-    inlined from ‘geo_execute_radius.isra’ at /home/runner/work/ddup/ddup/src/core/command.c:6377:14:
+    inlined from ‘zset_emit_member’ at /home/runner/work/ddup/ddup/src/core/command.c:1496:22:
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
+   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^
+In function ‘snprintf’,
+    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:449:9,
+    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
+    inlined from ‘obj_set_each’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1154:39,
+    inlined from ‘obj_set_each’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1145:6,
+    inlined from ‘setop_eval’ at /home/runner/work/ddup/ddup/src/core/command.c:1660:17:
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
+   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^
+In function ‘snprintf’,
+    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:449:9,
+    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
+    inlined from ‘obj_set_each’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1154:39,
+    inlined from ‘obj_set_each’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1145:6,
+    inlined from ‘setop_eval’ at /home/runner/work/ddup/ddup/src/core/command.c:1667:9:
 /usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
    54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
       |          ^
@@ -346,7 +363,8 @@ In function ‘snprintf’,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
     inlined from ‘obj_zset_iter_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1557:35,
     inlined from ‘obj_zset_iter_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1549:13,
-    inlined from ‘zset_emit_member’ at /home/runner/work/ddup/ddup/src/core/command.c:1496:22:
+    inlined from ‘geo_collect_radius’ at /home/runner/work/ddup/ddup/src/core/command.c:6102:30,
+    inlined from ‘geo_execute_radius.isra’ at /home/runner/work/ddup/ddup/src/core/command.c:6377:14:
 /usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
    54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
       |          ^
@@ -384,24 +402,6 @@ In function ‘snprintf’,
     inlined from ‘obj_zset_iter_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1557:35,
     inlined from ‘obj_zset_iter_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1549:13,
     inlined from ‘zset_intercard’ at /home/runner/work/ddup/ddup/src/core/command.c:2488:30:
-/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
-   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
-      |          ^
-In function ‘snprintf’,
-    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:449:9,
-    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
-    inlined from ‘obj_set_each’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1154:39,
-    inlined from ‘obj_set_each’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1145:6,
-    inlined from ‘setop_eval’ at /home/runner/work/ddup/ddup/src/core/command.c:1660:17:
-/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
-   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
-      |          ^
-In function ‘snprintf’,
-    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:449:9,
-    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
-    inlined from ‘obj_set_each’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1154:39,
-    inlined from ‘obj_set_each’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1145:6,
-    inlined from ‘setop_eval’ at /home/runner/work/ddup/ddup/src/core/command.c:1667:9:
 /usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
    54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
       |          ^
@@ -639,6 +639,16 @@ In function ‘snprintf’,
    54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
       |          ^
 In function ‘snprintf’,
+    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:449:9,
+    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
+    inlined from ‘obj_zset_iter_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1557:35,
+    inlined from ‘obj_zset_iter_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1549:13,
+    inlined from ‘geo_collect_radius’ at /home/runner/work/ddup/ddup/src/core/command.c:6102:30,
+    inlined from ‘geo_execute_radius.isra’ at /home/runner/work/ddup/ddup/src/core/command.c:6377:14:
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
+   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^
+In function ‘snprintf’,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:449:0,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
     inlined from ‘ql_iter_value’ at /home/runner/work/ddup/ddup/src/ds/quicklist.c:355:0,
@@ -678,16 +688,6 @@ In function ‘snprintf’,
 /usr/include/x86_64-linux-gnu/bits/stdio2.h:54: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
    54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
       | 
-In function ‘snprintf’,
-    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:449:9,
-    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
-    inlined from ‘obj_zset_iter_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1557:35,
-    inlined from ‘obj_zset_iter_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1549:13,
-    inlined from ‘geo_collect_radius’ at /home/runner/work/ddup/ddup/src/core/command.c:6102:30,
-    inlined from ‘geo_execute_radius.isra’ at /home/runner/work/ddup/ddup/src/core/command.c:6377:14:
-/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
-   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
-      |          ^
 In function ‘snprintf’,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:449:0,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
@@ -1598,6 +1598,15 @@ In function ‘snprintf’,
    54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
       |          ^
 In function ‘snprintf’,
+    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:449:9,
+    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
+    inlined from ‘zlp_entry_score’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1209:31,
+    inlined from ‘obj_zset_first_in_range’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1631:25,
+    inlined from ‘obj_zset_first_in_range’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1621:5:
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
+   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^
+In function ‘snprintf’,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:449:0,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
     inlined from ‘ql_iter_value’ at /home/runner/work/ddup/ddup/src/ds/quicklist.c:355:0,
@@ -1617,6 +1626,14 @@ In function ‘snprintf’,
 /usr/include/x86_64-linux-gnu/bits/stdio2.h:54: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
    54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
       | 
+In function ‘snprintf’,
+    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:449:9,
+    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
+    inlined from ‘obj_set_convert’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1061:35,
+    inlined from ‘obj_set_add.part.0’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1082:13:
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
+   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^
 In function ‘snprintf’,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:449:0,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
@@ -1638,15 +1655,6 @@ In function ‘snprintf’,
    54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
       | 
 In function ‘snprintf’,
-    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:449:9,
-    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
-    inlined from ‘zlp_entry_score’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1209:31,
-    inlined from ‘obj_zset_first_in_range’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1631:25,
-    inlined from ‘obj_zset_first_in_range’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1621:5:
-/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
-   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
-      |          ^
-In function ‘snprintf’,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:449:0,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
     inlined from ‘zlp_cmp_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1222:0,
@@ -1666,14 +1674,6 @@ In function ‘snprintf’,
 /usr/include/x86_64-linux-gnu/bits/stdio2.h:54: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
    54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
       | 
-In function ‘snprintf’,
-    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:449:9,
-    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
-    inlined from ‘obj_set_convert’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1061:35,
-    inlined from ‘obj_set_add.part.0’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1082:13:
-/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
-   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
-      |          ^
 In function ‘snprintf’,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:449:9,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
@@ -1902,7 +1902,7 @@ In function ‘snprintf’,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
     inlined from ‘obj_zset_iter_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1557:35,
     inlined from ‘obj_zset_iter_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1549:13,
-    inlined from ‘zset_intercard’ at /home/runner/work/ddup/ddup/src/core/command.c:2488:30:
+    inlined from ‘zset_emit_member’ at /home/runner/work/ddup/ddup/src/core/command.c:1496:22:
 /usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
    54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
       |          ^
@@ -1911,7 +1911,7 @@ In function ‘snprintf’,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
     inlined from ‘obj_zset_iter_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1557:35,
     inlined from ‘obj_zset_iter_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1549:13,
-    inlined from ‘zset_emit_member’ at /home/runner/work/ddup/ddup/src/core/command.c:1496:22:
+    inlined from ‘zset_intercard’ at /home/runner/work/ddup/ddup/src/core/command.c:2488:30:
 /usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
    54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
       |          ^
@@ -2013,18 +2013,18 @@ In function ‘snprintf’,
 In function ‘snprintf’,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:449:9,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
-    inlined from ‘obj_zset_iter_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1557:35,
-    inlined from ‘obj_zset_iter_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1549:13,
-    inlined from ‘zset_emit_member’ at /home/runner/work/ddup/ddup/src/core/command.c:1496:22:
+    inlined from ‘obj_set_each’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1154:39,
+    inlined from ‘obj_set_each’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1145:6,
+    inlined from ‘write_value_payload’ at /home/runner/work/ddup/ddup/src/core/snapshot.c:215:9:
 /usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
    54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
       |          ^
 In function ‘snprintf’,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:449:9,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
-    inlined from ‘obj_set_each’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1154:39,
-    inlined from ‘obj_set_each’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1145:6,
-    inlined from ‘write_value_payload’ at /home/runner/work/ddup/ddup/src/core/snapshot.c:215:9:
+    inlined from ‘obj_zset_iter_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1557:35,
+    inlined from ‘obj_zset_iter_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1549:13,
+    inlined from ‘zset_emit_member’ at /home/runner/work/ddup/ddup/src/core/command.c:1496:22:
 /usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
    54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
       |          ^
@@ -2105,18 +2105,6 @@ In function ‘snprintf’,
 In function ‘snprintf’,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:449:9,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
-    inlined from ‘obj_zset_iter_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1557:35,
-    inlined from ‘obj_zset_iter_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1549:13,
-    inlined from ‘zset_emit_member’ at /home/runner/work/ddup/ddup/src/core/command.c:1496:22,
-    inlined from ‘zset_emit_all’ at /home/runner/work/ddup/ddup/src/core/command.c:2343:13:
-/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
-   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
-      |          ^
-/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
-/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
-In function ‘snprintf’,
-    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:449:9,
-    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
     inlined from ‘zlp_entry_score’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1209:31,
     inlined from ‘zlp_insert_pos’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1258:21,
     inlined from ‘zlp_insert_pair’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1274:26:
@@ -2137,10 +2125,12 @@ In function ‘snprintf’,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
     inlined from ‘obj_zset_iter_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1557:35,
     inlined from ‘obj_zset_iter_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1549:13,
-    inlined from ‘zset_union_build’ at /home/runner/work/ddup/ddup/src/core/command.c:2382:30:
+    inlined from ‘zset_emit_member’ at /home/runner/work/ddup/ddup/src/core/command.c:1496:22,
+    inlined from ‘zset_emit_all’ at /home/runner/work/ddup/ddup/src/core/command.c:2343:13:
 /usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
    54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
       |          ^
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
 /usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
 In function ‘snprintf’,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:449:9,
@@ -2164,10 +2154,22 @@ In function ‘snprintf’,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
     inlined from ‘obj_zset_iter_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1557:35,
     inlined from ‘obj_zset_iter_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1549:13,
-    inlined from ‘zset_inter_build’ at /home/runner/work/ddup/ddup/src/core/command.c:2417:30:
+    inlined from ‘geo_collect_box’ at /home/runner/work/ddup/ddup/src/core/command.c:6127:30,
+    inlined from ‘geo_execute_box’ at /home/runner/work/ddup/ddup/src/core/command.c:6673:10,
+    inlined from ‘geo_search_command’ at /home/runner/work/ddup/ddup/src/core/command.c:7014:15:
 /usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
    54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
       |          ^
+In function ‘snprintf’,
+    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:449:9,
+    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
+    inlined from ‘obj_zset_iter_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1557:35,
+    inlined from ‘obj_zset_iter_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1549:13,
+    inlined from ‘zset_union_build’ at /home/runner/work/ddup/ddup/src/core/command.c:2382:30:
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
+   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
 In function ‘snprintf’,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:449:9,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
@@ -2189,7 +2191,7 @@ In function ‘snprintf’,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
     inlined from ‘obj_zset_iter_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1557:35,
     inlined from ‘obj_zset_iter_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1549:13,
-    inlined from ‘zset_diff_build’ at /home/runner/work/ddup/ddup/src/core/command.c:2447:26:
+    inlined from ‘zset_inter_build’ at /home/runner/work/ddup/ddup/src/core/command.c:2417:30:
 /usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
    54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
       |          ^
@@ -2206,7 +2208,7 @@ In function ‘snprintf’,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
     inlined from ‘obj_zset_iter_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1557:35,
     inlined from ‘obj_zset_iter_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1549:13,
-    inlined from ‘zset_intercard’ at /home/runner/work/ddup/ddup/src/core/command.c:2488:30:
+    inlined from ‘zset_diff_build’ at /home/runner/work/ddup/ddup/src/core/command.c:2447:26:
 /usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
    54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
       |          ^
@@ -2222,9 +2224,7 @@ In function ‘snprintf’,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
     inlined from ‘obj_zset_iter_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1557:35,
     inlined from ‘obj_zset_iter_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1549:13,
-    inlined from ‘geo_collect_box’ at /home/runner/work/ddup/ddup/src/core/command.c:6127:30,
-    inlined from ‘geo_execute_box’ at /home/runner/work/ddup/ddup/src/core/command.c:6673:10,
-    inlined from ‘geo_search_command’ at /home/runner/work/ddup/ddup/src/core/command.c:7014:15:
+    inlined from ‘zset_intercard’ at /home/runner/work/ddup/ddup/src/core/command.c:2488:30:
 /usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
    54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
       |          ^
@@ -2488,6 +2488,18 @@ In function ‘snprintf’,
    54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
       |          ^
 In function ‘snprintf’,
+    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:449:9,
+    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
+    inlined from ‘obj_zset_iter_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1557:35,
+    inlined from ‘obj_zset_iter_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1549:13,
+    inlined from ‘zset_emit_member’ at /home/runner/work/ddup/ddup/src/core/command.c:1496:22,
+    inlined from ‘zset_emit_all’ at /home/runner/work/ddup/ddup/src/core/command.c:2343:13:
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
+   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
+In function ‘snprintf’,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:449:0,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
     inlined from ‘ql_iter_value’ at /home/runner/work/ddup/ddup/src/ds/quicklist.c:355:0,
@@ -2512,12 +2524,10 @@ In function ‘snprintf’,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
     inlined from ‘obj_zset_iter_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1557:35,
     inlined from ‘obj_zset_iter_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1549:13,
-    inlined from ‘zset_emit_member’ at /home/runner/work/ddup/ddup/src/core/command.c:1496:22,
-    inlined from ‘zset_emit_all’ at /home/runner/work/ddup/ddup/src/core/command.c:2343:13:
+    inlined from ‘zset_union_build’ at /home/runner/work/ddup/ddup/src/core/command.c:2382:30:
 /usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
    54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
       |          ^
-/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
 /usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
 In function ‘snprintf’,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:449:0,
@@ -2559,16 +2569,6 @@ In function ‘snprintf’,
 /usr/include/x86_64-linux-gnu/bits/stdio2.h:54: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
    54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
       | 
-In function ‘snprintf’,
-    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:449:9,
-    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
-    inlined from ‘obj_zset_iter_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1557:35,
-    inlined from ‘obj_zset_iter_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1549:13,
-    inlined from ‘zset_union_build’ at /home/runner/work/ddup/ddup/src/core/command.c:2382:30:
-/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
-   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
-      |          ^
-/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
 In function ‘snprintf’,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:449:9,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
@@ -2830,6 +2830,15 @@ In function ‘snprintf’,
    54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
       | 
 In function ‘snprintf’,
+    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:449:9,
+    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
+    inlined from ‘zlp_entry_score’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1209:31,
+    inlined from ‘obj_zset_first_in_range’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1631:25,
+    inlined from ‘obj_zset_first_in_range’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1621:5:
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
+   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^
+In function ‘snprintf’,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:449:0,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
     inlined from ‘zlp_cmp_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1222:0,
@@ -2849,15 +2858,6 @@ In function ‘snprintf’,
 /usr/include/x86_64-linux-gnu/bits/stdio2.h:54: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
    54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
       | 
-In function ‘snprintf’,
-    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:449:9,
-    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
-    inlined from ‘zlp_entry_score’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1209:31,
-    inlined from ‘obj_zset_first_in_range’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1631:25,
-    inlined from ‘obj_zset_first_in_range’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1621:5:
-/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
-   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
-      |          ^
 In function ‘snprintf’,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:449:9,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
@@ -3316,14 +3316,6 @@ In function ‘snprintf’,
 In function ‘snprintf’,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:449:9,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
-    inlined from ‘obj_zset_rem_range_by_lex’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1857:22,
-    inlined from ‘obj_zset_rem_range_by_lex’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1845:10:
-/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
-   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
-      |          ^
-In function ‘snprintf’,
-    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:449:9,
-    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
     inlined from ‘obj_set_each’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1154:39,
     inlined from ‘obj_set_each’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1145:6,
     inlined from ‘setop_eval’ at /home/runner/work/ddup/ddup/src/core/command.c:1660:17:
@@ -3336,6 +3328,14 @@ In function ‘snprintf’,
     inlined from ‘obj_set_each’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1154:39,
     inlined from ‘obj_set_each’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1145:6,
     inlined from ‘setop_eval’ at /home/runner/work/ddup/ddup/src/core/command.c:1667:9:
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
+   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^
+In function ‘snprintf’,
+    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:449:9,
+    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
+    inlined from ‘obj_zset_rem_range_by_lex’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1857:22,
+    inlined from ‘obj_zset_rem_range_by_lex’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1845:10:
 /usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
    54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
       |          ^
@@ -3393,21 +3393,6 @@ In function ‘snprintf’,
 In function ‘snprintf’,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:449:9,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
-    inlined from ‘obj_set_convert’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1061:35,
-    inlined from ‘obj_set_add.part.0’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1082:13:
-/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
-   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
-      |          ^
-In function ‘snprintf’,
-    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:449:9,
-    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
-    inlined from ‘ql_node_merge_into’ at /home/runner/work/ddup/ddup/src/ds/quicklist.c:109:34:
-/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
-   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
-      |          ^
-In function ‘snprintf’,
-    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:449:9,
-    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
     inlined from ‘obj_zset_iter_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1557:35,
     inlined from ‘obj_zset_iter_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1549:13,
     inlined from ‘zset_emit_member’ at /home/runner/work/ddup/ddup/src/core/command.c:1496:22,
@@ -3417,6 +3402,31 @@ In function ‘snprintf’,
       |          ^
 /usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
 /usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
+In function ‘snprintf’,
+    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:449:9,
+    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
+    inlined from ‘obj_set_convert’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1061:35,
+    inlined from ‘obj_set_add.part.0’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1082:13:
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
+   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^
+In function ‘snprintf’,
+    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:449:9,
+    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
+    inlined from ‘obj_zset_iter_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1557:35,
+    inlined from ‘obj_zset_iter_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1549:13,
+    inlined from ‘zset_union_build’ at /home/runner/work/ddup/ddup/src/core/command.c:2382:30:
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
+   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
+In function ‘snprintf’,
+    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:449:9,
+    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
+    inlined from ‘ql_node_merge_into’ at /home/runner/work/ddup/ddup/src/ds/quicklist.c:109:34:
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
+   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^
 In function ‘snprintf’,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:449:0,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
@@ -3477,16 +3487,6 @@ In function ‘snprintf’,
 /usr/include/x86_64-linux-gnu/bits/stdio2.h:54: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
    54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
       | 
-In function ‘snprintf’,
-    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:449:9,
-    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
-    inlined from ‘obj_zset_iter_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1557:35,
-    inlined from ‘obj_zset_iter_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1549:13,
-    inlined from ‘zset_union_build’ at /home/runner/work/ddup/ddup/src/core/command.c:2382:30:
-/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
-   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
-      |          ^
-/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
 In function ‘snprintf’,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:449:9,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
@@ -3764,17 +3764,6 @@ In function ‘snprintf’,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
     inlined from ‘obj_zset_iter_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1557:35,
     inlined from ‘obj_zset_iter_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1549:13,
-    inlined from ‘geo_collect_box’ at /home/runner/work/ddup/ddup/src/core/command.c:6127:30,
-    inlined from ‘geo_execute_box’ at /home/runner/work/ddup/ddup/src/core/command.c:6673:10,
-    inlined from ‘geo_search_command’ at /home/runner/work/ddup/ddup/src/core/command.c:7014:15:
-/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
-   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
-      |          ^
-In function ‘snprintf’,
-    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:449:9,
-    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
-    inlined from ‘obj_zset_iter_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1557:35,
-    inlined from ‘obj_zset_iter_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1549:13,
     inlined from ‘zset_union_build’ at /home/runner/work/ddup/ddup/src/core/command.c:2382:30:
 /usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
    54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
@@ -3804,6 +3793,17 @@ In function ‘snprintf’,
     inlined from ‘obj_zset_iter_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1557:35,
     inlined from ‘obj_zset_iter_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1549:13,
     inlined from ‘zset_intercard’ at /home/runner/work/ddup/ddup/src/core/command.c:2488:30:
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
+   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^
+In function ‘snprintf’,
+    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:449:9,
+    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
+    inlined from ‘obj_zset_iter_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1557:35,
+    inlined from ‘obj_zset_iter_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1549:13,
+    inlined from ‘geo_collect_box’ at /home/runner/work/ddup/ddup/src/core/command.c:6127:30,
+    inlined from ‘geo_execute_box’ at /home/runner/work/ddup/ddup/src/core/command.c:6673:10,
+    inlined from ‘geo_search_command’ at /home/runner/work/ddup/ddup/src/core/command.c:7014:15:
 /usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
    54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
       |          ^
@@ -3901,6 +3901,16 @@ In function ‘snprintf’,
 In function ‘snprintf’,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:449:9,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
+    inlined from ‘obj_zset_iter_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1557:35,
+    inlined from ‘obj_zset_iter_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1549:13,
+    inlined from ‘zset_union_build’ at /home/runner/work/ddup/ddup/src/core/command.c:2382:30:
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
+   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
+In function ‘snprintf’,
+    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:449:9,
+    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
     inlined from ‘zlp_entry_score’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1209:31,
     inlined from ‘zlp_insert_pos’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1258:21,
     inlined from ‘zlp_insert_pair’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1274:26:
@@ -3916,16 +3926,6 @@ In function ‘snprintf’,
 /usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
    54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
       |          ^
-In function ‘snprintf’,
-    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:449:9,
-    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
-    inlined from ‘obj_zset_iter_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1557:35,
-    inlined from ‘obj_zset_iter_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1549:13,
-    inlined from ‘zset_union_build’ at /home/runner/work/ddup/ddup/src/core/command.c:2382:30:
-/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
-   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
-      |          ^
-/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
 In function ‘snprintf’,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:449:9,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
@@ -3980,17 +3980,17 @@ In function ‘snprintf’,
 In function ‘snprintf’,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:449:9,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
-    inlined from ‘obj_set_convert’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1061:35,
-    inlined from ‘obj_set_add.part.0’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1082:13:
+    inlined from ‘obj_zset_iter_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1557:35,
+    inlined from ‘obj_zset_iter_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1549:13,
+    inlined from ‘zset_intercard’ at /home/runner/work/ddup/ddup/src/core/command.c:2488:30:
 /usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
    54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
       |          ^
 In function ‘snprintf’,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:449:9,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
-    inlined from ‘obj_zset_iter_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1557:35,
-    inlined from ‘obj_zset_iter_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1549:13,
-    inlined from ‘zset_intercard’ at /home/runner/work/ddup/ddup/src/core/command.c:2488:30:
+    inlined from ‘obj_set_convert’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1061:35,
+    inlined from ‘obj_set_add.part.0’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1082:13:
 /usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
    54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
       |          ^
@@ -4034,6 +4034,16 @@ In function ‘snprintf’,
     inlined from ‘obj_set_each’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1154:39,
     inlined from ‘obj_set_each’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1145:6,
     inlined from ‘setop_eval’ at /home/runner/work/ddup/ddup/src/core/command.c:1667:9:
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
+   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^
+In function ‘snprintf’,
+    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:449:9,
+    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
+    inlined from ‘obj_zset_iter_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1557:35,
+    inlined from ‘obj_zset_iter_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1549:13,
+    inlined from ‘geo_collect_radius’ at /home/runner/work/ddup/ddup/src/core/command.c:6102:30,
+    inlined from ‘geo_execute_radius.isra’ at /home/runner/work/ddup/ddup/src/core/command.c:6377:14:
 /usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
    54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
       |          ^
@@ -4097,16 +4107,6 @@ In function ‘snprintf’,
 /usr/include/x86_64-linux-gnu/bits/stdio2.h:54: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
    54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
       | 
-In function ‘snprintf’,
-    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:449:9,
-    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
-    inlined from ‘obj_zset_iter_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1557:35,
-    inlined from ‘obj_zset_iter_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1549:13,
-    inlined from ‘geo_collect_radius’ at /home/runner/work/ddup/ddup/src/core/command.c:6102:30,
-    inlined from ‘geo_execute_radius.isra’ at /home/runner/work/ddup/ddup/src/core/command.c:6377:14:
-/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
-   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
-      |          ^
 [ 67%] Built target test_bitmap
 [ 67%] Building C object CMakeFiles/test_expire.dir/tests/test_expire.c.o
 [ 67%] Linking C executable test_expire
@@ -5568,6 +5568,17 @@ In function ‘snprintf’,
    54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
       |          ^
 In function ‘snprintf’,
+    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:449:9,
+    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
+    inlined from ‘obj_zset_iter_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1557:35,
+    inlined from ‘obj_zset_iter_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1549:13,
+    inlined from ‘geo_collect_box’ at /home/runner/work/ddup/ddup/src/core/command.c:6127:30,
+    inlined from ‘geo_execute_box’ at /home/runner/work/ddup/ddup/src/core/command.c:6673:10,
+    inlined from ‘geo_search_command’ at /home/runner/work/ddup/ddup/src/core/command.c:7014:15:
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
+   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^
+In function ‘snprintf’,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:449:0,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
     inlined from ‘ql_iter_value’ at /home/runner/work/ddup/ddup/src/ds/quicklist.c:355:0,
@@ -5587,17 +5598,6 @@ In function ‘snprintf’,
 /usr/include/x86_64-linux-gnu/bits/stdio2.h:54: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
    54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
       | 
-In function ‘snprintf’,
-    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:449:9,
-    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
-    inlined from ‘obj_zset_iter_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1557:35,
-    inlined from ‘obj_zset_iter_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1549:13,
-    inlined from ‘geo_collect_box’ at /home/runner/work/ddup/ddup/src/core/command.c:6127:30,
-    inlined from ‘geo_execute_box’ at /home/runner/work/ddup/ddup/src/core/command.c:6673:10,
-    inlined from ‘geo_search_command’ at /home/runner/work/ddup/ddup/src/core/command.c:7014:15:
-/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
-   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
-      |          ^
 In function ‘snprintf’,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:449:0,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
@@ -5720,17 +5720,17 @@ In function ‘snprintf’,
 In function ‘snprintf’,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:449:9,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
-    inlined from ‘obj_set_each’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1154:39,
-    inlined from ‘obj_set_each’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1145:6,
-    inlined from ‘write_value_payload’ at /home/runner/work/ddup/ddup/src/core/snapshot.c:215:9:
+    inlined from ‘obj_zset_rem_range_by_lex’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1857:22,
+    inlined from ‘obj_zset_rem_range_by_lex’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1845:10:
 /usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
    54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
       |          ^
 In function ‘snprintf’,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:449:9,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
-    inlined from ‘obj_zset_rem_range_by_lex’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1857:22,
-    inlined from ‘obj_zset_rem_range_by_lex’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1845:10:
+    inlined from ‘obj_set_each’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1154:39,
+    inlined from ‘obj_set_each’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1145:6,
+    inlined from ‘write_value_payload’ at /home/runner/work/ddup/ddup/src/core/snapshot.c:215:9:
 /usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
    54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
       |          ^
@@ -5852,6 +5852,15 @@ In function ‘snprintf’,
    54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
       | 
 In function ‘snprintf’,
+    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:449:9,
+    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
+    inlined from ‘obj_zset_iter_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1557:35,
+    inlined from ‘obj_zset_iter_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1549:13,
+    inlined from ‘zset_emit_member’ at /home/runner/work/ddup/ddup/src/core/command.c:1496:22:
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
+   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^
+In function ‘snprintf’,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:449:0,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
     inlined from ‘zlp_cmp_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1222:0,
@@ -5861,15 +5870,6 @@ In function ‘snprintf’,
 /usr/include/x86_64-linux-gnu/bits/stdio2.h:54: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
    54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
       | 
-In function ‘snprintf’,
-    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:449:9,
-    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
-    inlined from ‘obj_zset_iter_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1557:35,
-    inlined from ‘obj_zset_iter_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1549:13,
-    inlined from ‘zset_emit_member’ at /home/runner/work/ddup/ddup/src/core/command.c:1496:22:
-/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
-   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
-      |          ^
 In function ‘snprintf’,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:449:9,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
@@ -5924,7 +5924,8 @@ In function ‘snprintf’,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
     inlined from ‘obj_zset_iter_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1557:35,
     inlined from ‘obj_zset_iter_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1549:13,
-    inlined from ‘zset_diff_build’ at /home/runner/work/ddup/ddup/src/core/command.c:2447:26:
+    inlined from ‘geo_collect_radius’ at /home/runner/work/ddup/ddup/src/core/command.c:6102:30,
+    inlined from ‘geo_execute_radius.isra’ at /home/runner/work/ddup/ddup/src/core/command.c:6377:14:
 /usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
    54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
       |          ^
@@ -5933,8 +5934,7 @@ In function ‘snprintf’,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
     inlined from ‘obj_zset_iter_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1557:35,
     inlined from ‘obj_zset_iter_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1549:13,
-    inlined from ‘geo_collect_radius’ at /home/runner/work/ddup/ddup/src/core/command.c:6102:30,
-    inlined from ‘geo_execute_radius.isra’ at /home/runner/work/ddup/ddup/src/core/command.c:6377:14:
+    inlined from ‘zset_diff_build’ at /home/runner/work/ddup/ddup/src/core/command.c:2447:26:
 /usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
    54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
       |          ^
@@ -6095,6 +6095,15 @@ In function ‘snprintf’,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
     inlined from ‘obj_zset_iter_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1557:35,
     inlined from ‘obj_zset_iter_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1549:13,
+    inlined from ‘zset_emit_member’ at /home/runner/work/ddup/ddup/src/core/command.c:1496:22:
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
+   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^
+In function ‘snprintf’,
+    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:449:9,
+    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
+    inlined from ‘obj_zset_iter_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1557:35,
+    inlined from ‘obj_zset_iter_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1549:13,
     inlined from ‘zset_emit_member’ at /home/runner/work/ddup/ddup/src/core/command.c:1496:22,
     inlined from ‘zset_emit_all’ at /home/runner/work/ddup/ddup/src/core/command.c:2343:13:
 /usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
@@ -6107,7 +6116,26 @@ In function ‘snprintf’,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
     inlined from ‘obj_zset_iter_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1557:35,
     inlined from ‘obj_zset_iter_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1549:13,
-    inlined from ‘zset_emit_member’ at /home/runner/work/ddup/ddup/src/core/command.c:1496:22:
+    inlined from ‘zset_union_build’ at /home/runner/work/ddup/ddup/src/core/command.c:2382:30:
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
+   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
+In function ‘snprintf’,
+    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:449:9,
+    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
+    inlined from ‘obj_set_each’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1154:39,
+    inlined from ‘obj_set_each’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1145:6,
+    inlined from ‘setop_eval’ at /home/runner/work/ddup/ddup/src/core/command.c:1660:17:
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
+   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^
+In function ‘snprintf’,
+    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:449:9,
+    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
+    inlined from ‘obj_set_each’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1154:39,
+    inlined from ‘obj_set_each’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1145:6,
+    inlined from ‘setop_eval’ at /home/runner/work/ddup/ddup/src/core/command.c:1667:9:
 /usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
    54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
       |          ^
@@ -6127,35 +6155,7 @@ In function ‘snprintf’,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
     inlined from ‘obj_zset_iter_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1557:35,
     inlined from ‘obj_zset_iter_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1549:13,
-    inlined from ‘zset_union_build’ at /home/runner/work/ddup/ddup/src/core/command.c:2382:30:
-/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
-   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
-      |          ^
-/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
-In function ‘snprintf’,
-    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:449:9,
-    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
-    inlined from ‘obj_zset_iter_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1557:35,
-    inlined from ‘obj_zset_iter_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1549:13,
     inlined from ‘zset_inter_build’ at /home/runner/work/ddup/ddup/src/core/command.c:2417:30:
-/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
-   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
-      |          ^
-In function ‘snprintf’,
-    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:449:9,
-    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
-    inlined from ‘obj_set_each’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1154:39,
-    inlined from ‘obj_set_each’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1145:6,
-    inlined from ‘setop_eval’ at /home/runner/work/ddup/ddup/src/core/command.c:1660:17:
-/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
-   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
-      |          ^
-In function ‘snprintf’,
-    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:449:9,
-    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
-    inlined from ‘obj_set_each’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1154:39,
-    inlined from ‘obj_set_each’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1145:6,
-    inlined from ‘setop_eval’ at /home/runner/work/ddup/ddup/src/core/command.c:1667:9:
 /usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
    54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
       |          ^
@@ -6272,6 +6272,14 @@ In function ‘snprintf’,
 In function ‘snprintf’,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:449:9,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
+    inlined from ‘obj_set_each’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1154:39,
+    inlined from ‘obj_set_each’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1145:6:
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
+   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^
+In function ‘snprintf’,
+    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:449:9,
+    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
     inlined from ‘obj_zset_iter_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1557:35,
     inlined from ‘obj_zset_iter_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1549:13,
     inlined from ‘zset_emit_member’ at /home/runner/work/ddup/ddup/src/core/command.c:1496:22,
@@ -6294,6 +6302,14 @@ In function ‘snprintf’,
 In function ‘snprintf’,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:449:9,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
+    inlined from ‘zlp_cmp_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1222:31,
+    inlined from ‘zlp_find_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1240:13:
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
+   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^
+In function ‘snprintf’,
+    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:449:9,
+    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
     inlined from ‘obj_zset_iter_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1557:35,
     inlined from ‘obj_zset_iter_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1549:13,
     inlined from ‘zset_inter_build’ at /home/runner/work/ddup/ddup/src/core/command.c:2417:30:
@@ -6303,8 +6319,8 @@ In function ‘snprintf’,
 In function ‘snprintf’,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:449:9,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
-    inlined from ‘obj_set_each’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1154:39,
-    inlined from ‘obj_set_each’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1145:6:
+    inlined from ‘obj_zset_first_in_lex_range’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1705:39,
+    inlined from ‘obj_zset_first_in_lex_range’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1692:5:
 /usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
    54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
       |          ^
@@ -6320,31 +6336,6 @@ In function ‘snprintf’,
 In function ‘snprintf’,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:449:9,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
-    inlined from ‘obj_zset_iter_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1557:35,
-    inlined from ‘obj_zset_iter_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1549:13,
-    inlined from ‘zset_intercard’ at /home/runner/work/ddup/ddup/src/core/command.c:2488:30:
-/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
-   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
-      |          ^
-In function ‘snprintf’,
-    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:449:9,
-    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
-    inlined from ‘zlp_cmp_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1222:31,
-    inlined from ‘zlp_find_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1240:13:
-/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
-   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
-      |          ^
-In function ‘snprintf’,
-    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:449:9,
-    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
-    inlined from ‘obj_zset_first_in_lex_range’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1705:39,
-    inlined from ‘obj_zset_first_in_lex_range’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1692:5:
-/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
-   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
-      |          ^
-In function ‘snprintf’,
-    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:449:9,
-    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
     inlined from ‘obj_zset_iter_member.part.0’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1557:35:
 /usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
    54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
@@ -6354,9 +6345,7 @@ In function ‘snprintf’,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
     inlined from ‘obj_zset_iter_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1557:35,
     inlined from ‘obj_zset_iter_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1549:13,
-    inlined from ‘geo_collect_box’ at /home/runner/work/ddup/ddup/src/core/command.c:6127:30,
-    inlined from ‘geo_execute_box’ at /home/runner/work/ddup/ddup/src/core/command.c:6673:10,
-    inlined from ‘geo_search_command’ at /home/runner/work/ddup/ddup/src/core/command.c:7014:15:
+    inlined from ‘zset_intercard’ at /home/runner/work/ddup/ddup/src/core/command.c:2488:30:
 /usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
    54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
       |          ^
@@ -6374,6 +6363,17 @@ In function ‘snprintf’,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
     inlined from ‘obj_zset_last_in_lex_range’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1734:39,
     inlined from ‘obj_zset_last_in_lex_range’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1720:5:
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
+   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^
+In function ‘snprintf’,
+    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:449:9,
+    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
+    inlined from ‘obj_zset_iter_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1557:35,
+    inlined from ‘obj_zset_iter_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1549:13,
+    inlined from ‘geo_collect_box’ at /home/runner/work/ddup/ddup/src/core/command.c:6127:30,
+    inlined from ‘geo_execute_box’ at /home/runner/work/ddup/ddup/src/core/command.c:6673:10,
+    inlined from ‘geo_search_command’ at /home/runner/work/ddup/ddup/src/core/command.c:7014:15:
 /usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
    54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
       |          ^
@@ -6445,6 +6445,22 @@ In function ‘snprintf’,
    54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
       |          ^
 In function ‘snprintf’,
+    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:449:9,
+    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
+    inlined from ‘ql_node_merge_into’ at /home/runner/work/ddup/ddup/src/ds/quicklist.c:109:34:
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
+   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^
+In function ‘snprintf’,
+    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:449:9,
+    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
+    inlined from ‘zlp_entry_score’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1209:31,
+    inlined from ‘obj_zset_first_in_range’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1631:25,
+    inlined from ‘obj_zset_first_in_range’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1621:5:
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
+   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^
+In function ‘snprintf’,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:449:0,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
     inlined from ‘ql_iter_value’ at /home/runner/work/ddup/ddup/src/ds/quicklist.c:355:0,
@@ -6485,13 +6501,6 @@ In function ‘snprintf’,
    54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
       | 
 In function ‘snprintf’,
-    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:449:9,
-    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
-    inlined from ‘ql_node_merge_into’ at /home/runner/work/ddup/ddup/src/ds/quicklist.c:109:34:
-/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
-   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
-      |          ^
-In function ‘snprintf’,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:449:0,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
     inlined from ‘zlp_cmp_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1222:0,
@@ -6511,15 +6520,6 @@ In function ‘snprintf’,
 /usr/include/x86_64-linux-gnu/bits/stdio2.h:54: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
    54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
       | 
-In function ‘snprintf’,
-    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:449:9,
-    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
-    inlined from ‘zlp_entry_score’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1209:31,
-    inlined from ‘obj_zset_first_in_range’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1631:25,
-    inlined from ‘obj_zset_first_in_range’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1621:5:
-/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
-   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
-      |          ^
 In function ‘snprintf’,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:449:9,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
@@ -6704,7 +6704,6 @@ In function ‘snprintf’,
 /usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
    54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
       |          ^
-/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
 In function ‘snprintf’,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:449:9,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
@@ -6716,6 +6715,7 @@ In function ‘snprintf’,
 /usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
    54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
       |          ^
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
 In function ‘snprintf’,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:449:9,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
@@ -6746,17 +6746,17 @@ In function ‘snprintf’,
 In function ‘snprintf’,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:449:9,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
-    inlined from ‘obj_set_convert’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1061:35,
-    inlined from ‘obj_set_add.part.0’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1082:13:
+    inlined from ‘obj_zset_iter_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1557:35,
+    inlined from ‘obj_zset_iter_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1549:13,
+    inlined from ‘zset_intercard’ at /home/runner/work/ddup/ddup/src/core/command.c:2488:30:
 /usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
    54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
       |          ^
 In function ‘snprintf’,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:449:9,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
-    inlined from ‘obj_zset_iter_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1557:35,
-    inlined from ‘obj_zset_iter_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1549:13,
-    inlined from ‘zset_intercard’ at /home/runner/work/ddup/ddup/src/core/command.c:2488:30:
+    inlined from ‘obj_set_convert’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1061:35,
+    inlined from ‘obj_set_add.part.0’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1082:13:
 /usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
    54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
       |          ^
@@ -7065,7 +7065,9 @@ In function ‘snprintf’,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
     inlined from ‘obj_zset_iter_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1557:35,
     inlined from ‘obj_zset_iter_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1549:13,
-    inlined from ‘zset_emit_member’ at /home/runner/work/ddup/ddup/src/core/command.c:1496:22:
+    inlined from ‘geo_collect_box’ at /home/runner/work/ddup/ddup/src/core/command.c:6127:30,
+    inlined from ‘geo_execute_box’ at /home/runner/work/ddup/ddup/src/core/command.c:6673:10,
+    inlined from ‘geo_search_command’ at /home/runner/work/ddup/ddup/src/core/command.c:7014:15:
 /usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
    54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
       |          ^
@@ -7074,9 +7076,7 @@ In function ‘snprintf’,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
     inlined from ‘obj_zset_iter_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1557:35,
     inlined from ‘obj_zset_iter_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1549:13,
-    inlined from ‘geo_collect_box’ at /home/runner/work/ddup/ddup/src/core/command.c:6127:30,
-    inlined from ‘geo_execute_box’ at /home/runner/work/ddup/ddup/src/core/command.c:6673:10,
-    inlined from ‘geo_search_command’ at /home/runner/work/ddup/ddup/src/core/command.c:7014:15:
+    inlined from ‘zset_emit_member’ at /home/runner/work/ddup/ddup/src/core/command.c:1496:22:
 /usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
    54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
       |          ^
@@ -7245,6 +7245,18 @@ In function ‘snprintf’,
 In function ‘snprintf’,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:449:9,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
+    inlined from ‘obj_zset_iter_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1557:35,
+    inlined from ‘obj_zset_iter_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1549:13,
+    inlined from ‘zset_emit_member’ at /home/runner/work/ddup/ddup/src/core/command.c:1496:22,
+    inlined from ‘zset_emit_all’ at /home/runner/work/ddup/ddup/src/core/command.c:2343:13:
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
+   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
+In function ‘snprintf’,
+    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:449:9,
+    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
     inlined from ‘zlp_entry_score’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1209:31,
     inlined from ‘zlp_insert_pos’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1258:21,
     inlined from ‘zlp_insert_pair’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1274:26:
@@ -7260,6 +7272,16 @@ In function ‘snprintf’,
 /usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
    54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
       |          ^
+In function ‘snprintf’,
+    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:449:9,
+    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
+    inlined from ‘obj_zset_iter_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1557:35,
+    inlined from ‘obj_zset_iter_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1549:13,
+    inlined from ‘zset_union_build’ at /home/runner/work/ddup/ddup/src/core/command.c:2382:30:
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
+   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
 In function ‘snprintf’,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:449:9,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
@@ -7282,13 +7304,10 @@ In function ‘snprintf’,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
     inlined from ‘obj_zset_iter_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1557:35,
     inlined from ‘obj_zset_iter_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1549:13,
-    inlined from ‘zset_emit_member’ at /home/runner/work/ddup/ddup/src/core/command.c:1496:22,
-    inlined from ‘zset_emit_all’ at /home/runner/work/ddup/ddup/src/core/command.c:2343:13:
+    inlined from ‘zset_inter_build’ at /home/runner/work/ddup/ddup/src/core/command.c:2417:30:
 /usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
    54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
       |          ^
-/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
-/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
 In function ‘snprintf’,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:449:9,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
@@ -7310,50 +7329,7 @@ In function ‘snprintf’,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
     inlined from ‘obj_zset_iter_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1557:35,
     inlined from ‘obj_zset_iter_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1549:13,
-    inlined from ‘zset_union_build’ at /home/runner/work/ddup/ddup/src/core/command.c:2382:30:
-/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
-   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
-      |          ^
-/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
-In function ‘snprintf’,
-    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:449:9,
-    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
-    inlined from ‘obj_set_convert’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1061:35,
-    inlined from ‘obj_set_add.part.0’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1082:13:
-/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
-   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
-      |          ^
-In function ‘snprintf’,
-    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:449:9,
-    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
-    inlined from ‘obj_zset_iter_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1557:35,
-    inlined from ‘obj_zset_iter_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1549:13,
-    inlined from ‘zset_inter_build’ at /home/runner/work/ddup/ddup/src/core/command.c:2417:30:
-/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
-   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
-      |          ^
-In function ‘snprintf’,
-    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:449:9,
-    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
-    inlined from ‘ql_node_merge_into’ at /home/runner/work/ddup/ddup/src/ds/quicklist.c:109:34:
-/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
-   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
-      |          ^
-In function ‘snprintf’,
-    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:449:9,
-    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
-    inlined from ‘obj_zset_iter_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1557:35,
-    inlined from ‘obj_zset_iter_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1549:13,
     inlined from ‘zset_diff_build’ at /home/runner/work/ddup/ddup/src/core/command.c:2447:26:
-/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
-   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
-      |          ^
-In function ‘snprintf’,
-    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:449:9,
-    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
-    inlined from ‘obj_zset_iter_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1557:35,
-    inlined from ‘obj_zset_iter_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1549:13,
-    inlined from ‘zset_intercard’ at /home/runner/work/ddup/ddup/src/core/command.c:2488:30:
 /usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
    54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
       |          ^
@@ -7365,6 +7341,30 @@ In function ‘snprintf’,
     inlined from ‘geo_collect_box’ at /home/runner/work/ddup/ddup/src/core/command.c:6127:30,
     inlined from ‘geo_execute_box’ at /home/runner/work/ddup/ddup/src/core/command.c:6673:10,
     inlined from ‘geo_search_command’ at /home/runner/work/ddup/ddup/src/core/command.c:7014:15:
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
+   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^
+In function ‘snprintf’,
+    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:449:9,
+    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
+    inlined from ‘obj_zset_iter_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1557:35,
+    inlined from ‘obj_zset_iter_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1549:13,
+    inlined from ‘zset_intercard’ at /home/runner/work/ddup/ddup/src/core/command.c:2488:30:
+In function ‘snprintf’,
+    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:449:9,
+    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
+    inlined from ‘obj_set_convert’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1061:35,
+    inlined from ‘obj_set_add.part.0’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1082:13:
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
+   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
+   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^
+In function ‘snprintf’,
+    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:449:9,
+    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
+    inlined from ‘ql_node_merge_into’ at /home/runner/work/ddup/ddup/src/ds/quicklist.c:109:34:
 /usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
    54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
       |          ^
@@ -7509,15 +7509,6 @@ In function ‘snprintf’,
 In function ‘snprintf’,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:449:9,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
-    inlined from ‘obj_set_each’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1154:39,
-    inlined from ‘obj_set_each’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1145:6,
-    inlined from ‘write_value_payload’ at /home/runner/work/ddup/ddup/src/core/snapshot.c:215:9:
-/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
-   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
-      |          ^
-In function ‘snprintf’,
-    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:449:9,
-    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
     inlined from ‘zlp_entry_score’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1209:31,
     inlined from ‘zlp_insert_pos’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1258:21,
     inlined from ‘zlp_insert_pair’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1274:26:
@@ -7530,6 +7521,15 @@ In function ‘snprintf’,
     inlined from ‘zlp_cmp_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1222:31,
     inlined from ‘zlp_insert_pos’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1261:28,
     inlined from ‘zlp_insert_pair’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1274:26:
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
+   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^
+In function ‘snprintf’,
+    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:449:9,
+    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
+    inlined from ‘obj_set_each’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1154:39,
+    inlined from ‘obj_set_each’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1145:6,
+    inlined from ‘write_value_payload’ at /home/runner/work/ddup/ddup/src/core/snapshot.c:215:9:
 /usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
    54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
       |          ^
@@ -7866,6 +7866,14 @@ In function ‘snprintf’,
 In function ‘snprintf’,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:449:9,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
+    inlined from ‘obj_zset_rem_range_by_lex’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1857:22,
+    inlined from ‘obj_zset_rem_range_by_lex’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1845:10:
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
+   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^
+In function ‘snprintf’,
+    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:449:9,
+    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
     inlined from ‘obj_set_each’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1154:39,
     inlined from ‘obj_set_each’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1145:6,
     inlined from ‘setop_eval’ at /home/runner/work/ddup/ddup/src/core/command.c:1660:17:
@@ -7878,14 +7886,6 @@ In function ‘snprintf’,
     inlined from ‘obj_set_each’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1154:39,
     inlined from ‘obj_set_each’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1145:6,
     inlined from ‘setop_eval’ at /home/runner/work/ddup/ddup/src/core/command.c:1667:9:
-/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
-   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
-      |          ^
-In function ‘snprintf’,
-    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:449:9,
-    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
-    inlined from ‘obj_zset_rem_range_by_lex’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1857:22,
-    inlined from ‘obj_zset_rem_range_by_lex’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1845:10:
 /usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
    54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
       |          ^
@@ -7907,6 +7907,66 @@ In function ‘snprintf’,
 /usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
    54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
       |          ^
+In function ‘snprintf’,
+    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:449:9,
+    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
+    inlined from ‘obj_zset_convert’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1353:35,
+    inlined from ‘obj_zset_add.part.0’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1386:13:
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
+   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^
+In function ‘snprintf’,
+    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:449:9,
+    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
+    inlined from ‘zlp_entry_score’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1209:31,
+    inlined from ‘obj_zset_convert’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1354:24,
+    inlined from ‘obj_zset_add.part.0’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1386:13:
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
+   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^
+In function ‘snprintf’,
+    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:449:9,
+    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
+    inlined from ‘obj_hash_convert’ at /home/runner/work/ddup/ddup/src/ds/obj.c:510:34,
+    inlined from ‘obj_hash_set.part.0’ at /home/runner/work/ddup/ddup/src/ds/obj.c:552:13:
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
+   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^
+In function ‘snprintf’,
+    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:449:9,
+    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
+    inlined from ‘obj_hash_convert’ at /home/runner/work/ddup/ddup/src/ds/obj.c:513:13,
+    inlined from ‘obj_hash_set.part.0’ at /home/runner/work/ddup/ddup/src/ds/obj.c:552:13:
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
+   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^
+In function ‘snprintf’,
+    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:449:9,
+    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
+    inlined from ‘obj_set_convert’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1061:35,
+    inlined from ‘obj_set_add.part.0’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1082:13:
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
+   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^
+In function ‘snprintf’,
+    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:449:9,
+    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
+    inlined from ‘ql_node_merge_into’ at /home/runner/work/ddup/ddup/src/ds/quicklist.c:109:34:
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
+   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^
+In function ‘snprintf’,
+    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:449:9,
+    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
+    inlined from ‘obj_zset_iter_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1557:35,
+    inlined from ‘obj_zset_iter_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1549:13,
+    inlined from ‘zset_emit_member’ at /home/runner/work/ddup/ddup/src/core/command.c:1496:22,
+    inlined from ‘zset_emit_all’ at /home/runner/work/ddup/ddup/src/core/command.c:2343:13:
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
+   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
 In function ‘snprintf’,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:449:0,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
@@ -7948,23 +8008,6 @@ In function ‘snprintf’,
    54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
       | 
 In function ‘snprintf’,
-    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:449:9,
-    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
-    inlined from ‘obj_zset_convert’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1353:35,
-    inlined from ‘obj_zset_add.part.0’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1386:13:
-/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
-   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
-      |          ^
-In function ‘snprintf’,
-    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:449:9,
-    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
-    inlined from ‘zlp_entry_score’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1209:31,
-    inlined from ‘obj_zset_convert’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1354:24,
-    inlined from ‘obj_zset_add.part.0’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1386:13:
-/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
-   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
-      |          ^
-In function ‘snprintf’,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:449:0,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
     inlined from ‘zlp_cmp_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1222:0,
@@ -7984,49 +8027,6 @@ In function ‘snprintf’,
 /usr/include/x86_64-linux-gnu/bits/stdio2.h:54: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
    54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
       | 
-In function ‘snprintf’,
-    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:449:9,
-    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
-    inlined from ‘obj_hash_convert’ at /home/runner/work/ddup/ddup/src/ds/obj.c:510:34,
-    inlined from ‘obj_hash_set.part.0’ at /home/runner/work/ddup/ddup/src/ds/obj.c:552:13:
-/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
-   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
-      |          ^
-In function ‘snprintf’,
-    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:449:9,
-    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
-    inlined from ‘obj_hash_convert’ at /home/runner/work/ddup/ddup/src/ds/obj.c:513:13,
-    inlined from ‘obj_hash_set.part.0’ at /home/runner/work/ddup/ddup/src/ds/obj.c:552:13:
-/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
-   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
-      |          ^
-In function ‘snprintf’,
-    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:449:9,
-    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
-    inlined from ‘obj_set_convert’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1061:35,
-    inlined from ‘obj_set_add.part.0’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1082:13:
-/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
-   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
-      |          ^
-In function ‘snprintf’,
-    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:449:9,
-    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
-    inlined from ‘obj_zset_iter_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1557:35,
-    inlined from ‘obj_zset_iter_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1549:13,
-    inlined from ‘zset_emit_member’ at /home/runner/work/ddup/ddup/src/core/command.c:1496:22,
-    inlined from ‘zset_emit_all’ at /home/runner/work/ddup/ddup/src/core/command.c:2343:13:
-/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
-   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
-      |          ^
-/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
-/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
-In function ‘snprintf’,
-    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:449:9,
-    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
-    inlined from ‘ql_node_merge_into’ at /home/runner/work/ddup/ddup/src/ds/quicklist.c:109:34:
-/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
-   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
-      |          ^
 In function ‘snprintf’,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:449:9,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
@@ -8799,6 +8799,15 @@ In function ‘snprintf’,
 In function ‘snprintf’,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:449:9,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
+    inlined from ‘zlp_entry_score’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1209:31,
+    inlined from ‘obj_zset_first_in_range’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1631:25,
+    inlined from ‘obj_zset_first_in_range’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1621:5:
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
+   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^
+In function ‘snprintf’,
+    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:449:9,
+    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
     inlined from ‘obj_zset_iter_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1557:35,
     inlined from ‘obj_zset_iter_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1549:13,
     inlined from ‘zset_emit_member’ at /home/runner/work/ddup/ddup/src/core/command.c:1496:22,
@@ -8811,9 +8820,8 @@ In function ‘snprintf’,
 In function ‘snprintf’,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:449:9,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
-    inlined from ‘zlp_entry_score’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1209:31,
-    inlined from ‘obj_zset_first_in_range’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1631:25,
-    inlined from ‘obj_zset_first_in_range’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1621:5:
+    inlined from ‘obj_set_convert’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1061:35,
+    inlined from ‘obj_set_add.part.0’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1082:13:
 /usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
    54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
       |          ^
@@ -8830,23 +8838,6 @@ In function ‘snprintf’,
 In function ‘snprintf’,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:449:9,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
-    inlined from ‘obj_set_convert’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1061:35,
-    inlined from ‘obj_set_add.part.0’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1082:13:
-/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
-   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
-      |          ^
-In function ‘snprintf’,
-    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:449:9,
-    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
-    inlined from ‘obj_zset_iter_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1557:35,
-    inlined from ‘obj_zset_iter_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1549:13,
-    inlined from ‘zset_inter_build’ at /home/runner/work/ddup/ddup/src/core/command.c:2417:30:
-/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
-   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
-      |          ^
-In function ‘snprintf’,
-    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:449:9,
-    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
     inlined from ‘obj_zset_convert’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1353:35,
     inlined from ‘obj_zset_add.part.0’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1386:13:
 /usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
@@ -8858,6 +8849,15 @@ In function ‘snprintf’,
     inlined from ‘zlp_entry_score’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1209:31,
     inlined from ‘obj_zset_convert’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1354:24,
     inlined from ‘obj_zset_add.part.0’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1386:13:
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
+   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^
+In function ‘snprintf’,
+    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:449:9,
+    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
+    inlined from ‘obj_zset_iter_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1557:35,
+    inlined from ‘obj_zset_iter_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1549:13,
+    inlined from ‘zset_inter_build’ at /home/runner/work/ddup/ddup/src/core/command.c:2417:30:
 /usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
    54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
       |          ^
@@ -9234,8 +9234,9 @@ In function ‘snprintf’,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
     inlined from ‘obj_zset_iter_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1557:35,
     inlined from ‘obj_zset_iter_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1549:13,
-    inlined from ‘geo_collect_radius’ at /home/runner/work/ddup/ddup/src/core/command.c:6102:30,
-    inlined from ‘geo_execute_radius.isra’ at /home/runner/work/ddup/ddup/src/core/command.c:6377:14:
+    inlined from ‘geo_collect_box’ at /home/runner/work/ddup/ddup/src/core/command.c:6127:30,
+    inlined from ‘geo_execute_box’ at /home/runner/work/ddup/ddup/src/core/command.c:6673:10,
+    inlined from ‘geo_search_command’ at /home/runner/work/ddup/ddup/src/core/command.c:7014:15:
 /usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
    54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
       |          ^
@@ -9244,9 +9245,8 @@ In function ‘snprintf’,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
     inlined from ‘obj_zset_iter_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1557:35,
     inlined from ‘obj_zset_iter_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1549:13,
-    inlined from ‘geo_collect_box’ at /home/runner/work/ddup/ddup/src/core/command.c:6127:30,
-    inlined from ‘geo_execute_box’ at /home/runner/work/ddup/ddup/src/core/command.c:6673:10,
-    inlined from ‘geo_search_command’ at /home/runner/work/ddup/ddup/src/core/command.c:7014:15:
+    inlined from ‘geo_collect_radius’ at /home/runner/work/ddup/ddup/src/core/command.c:6102:30,
+    inlined from ‘geo_execute_radius.isra’ at /home/runner/work/ddup/ddup/src/core/command.c:6377:14:
 /usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
    54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
       |          ^
@@ -9305,6 +9305,13 @@ In function ‘snprintf’,
 In function ‘snprintf’,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:449:9,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
+    inlined from ‘obj_zset_iter_member.part.0’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1557:35:
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
+   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^
+In function ‘snprintf’,
+    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:449:9,
+    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
     inlined from ‘obj_zset_iter_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1557:35,
     inlined from ‘obj_zset_iter_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1549:13,
     inlined from ‘zset_emit_member’ at /home/runner/work/ddup/ddup/src/core/command.c:1496:22,
@@ -9317,7 +9324,9 @@ In function ‘snprintf’,
 In function ‘snprintf’,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:449:9,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
-    inlined from ‘obj_zset_iter_member.part.0’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1557:35:
+    inlined from ‘zlp_entry_score’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1209:31,
+    inlined from ‘obj_zset_last_in_range’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1657:25,
+    inlined from ‘obj_zset_last_in_range’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1646:5:
 /usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
    54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
       |          ^
@@ -9334,6 +9343,14 @@ In function ‘snprintf’,
 In function ‘snprintf’,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:449:9,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
+    inlined from ‘obj_zset_last_in_lex_range’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1734:39,
+    inlined from ‘obj_zset_last_in_lex_range’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1720:5:
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
+   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^
+In function ‘snprintf’,
+    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:449:9,
+    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
     inlined from ‘obj_zset_iter_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1557:35,
     inlined from ‘obj_zset_iter_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1549:13,
     inlined from ‘zset_inter_build’ at /home/runner/work/ddup/ddup/src/core/command.c:2417:30:
@@ -9343,26 +9360,9 @@ In function ‘snprintf’,
 In function ‘snprintf’,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:449:9,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
-    inlined from ‘zlp_entry_score’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1209:31,
-    inlined from ‘obj_zset_last_in_range’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1657:25,
-    inlined from ‘obj_zset_last_in_range’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1646:5:
-/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
-   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
-      |          ^
-In function ‘snprintf’,
-    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:449:9,
-    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
     inlined from ‘obj_zset_iter_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1557:35,
     inlined from ‘obj_zset_iter_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1549:13,
     inlined from ‘zset_diff_build’ at /home/runner/work/ddup/ddup/src/core/command.c:2447:26:
-/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
-   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
-      |          ^
-In function ‘snprintf’,
-    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:449:9,
-    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
-    inlined from ‘obj_zset_last_in_lex_range’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1734:39,
-    inlined from ‘obj_zset_last_in_lex_range’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1720:5:
 /usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
    54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
       |          ^
@@ -9387,6 +9387,14 @@ In function ‘snprintf’,
 In function ‘snprintf’,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:449:9,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
+    inlined from ‘obj_zset_rem_range_by_lex’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1857:22,
+    inlined from ‘obj_zset_rem_range_by_lex’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1845:10:
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
+   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^
+In function ‘snprintf’,
+    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:449:9,
+    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
     inlined from ‘obj_set_each’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1154:39,
     inlined from ‘obj_set_each’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1145:6,
     inlined from ‘setop_eval’ at /home/runner/work/ddup/ddup/src/core/command.c:1660:17:
@@ -9399,14 +9407,6 @@ In function ‘snprintf’,
     inlined from ‘obj_set_each’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1154:39,
     inlined from ‘obj_set_each’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1145:6,
     inlined from ‘setop_eval’ at /home/runner/work/ddup/ddup/src/core/command.c:1667:9:
-/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
-   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
-      |          ^
-In function ‘snprintf’,
-    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:449:9,
-    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
-    inlined from ‘obj_zset_rem_range_by_lex’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1857:22,
-    inlined from ‘obj_zset_rem_range_by_lex’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1845:10:
 /usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
    54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
       |          ^
@@ -9462,6 +9462,21 @@ In function ‘snprintf’,
    54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
       |          ^
 In function ‘snprintf’,
+    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:449:9,
+    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
+    inlined from ‘obj_set_convert’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1061:35,
+    inlined from ‘obj_set_add.part.0’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1082:13:
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
+   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^
+In function ‘snprintf’,
+    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:449:9,
+    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
+    inlined from ‘ql_node_merge_into’ at /home/runner/work/ddup/ddup/src/ds/quicklist.c:109:34:
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
+   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^
+In function ‘snprintf’,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:449:0,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
     inlined from ‘ql_iter_value’ at /home/runner/work/ddup/ddup/src/ds/quicklist.c:355:0,
@@ -9502,14 +9517,6 @@ In function ‘snprintf’,
    54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
       | 
 In function ‘snprintf’,
-    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:449:9,
-    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
-    inlined from ‘obj_set_convert’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1061:35,
-    inlined from ‘obj_set_add.part.0’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1082:13:
-/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
-   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
-      |          ^
-In function ‘snprintf’,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:449:0,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
     inlined from ‘zlp_cmp_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1222:0,
@@ -9529,13 +9536,6 @@ In function ‘snprintf’,
 /usr/include/x86_64-linux-gnu/bits/stdio2.h:54: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
    54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
       | 
-In function ‘snprintf’,
-    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:449:9,
-    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
-    inlined from ‘ql_node_merge_into’ at /home/runner/work/ddup/ddup/src/ds/quicklist.c:109:34:
-/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
-   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
-      |          ^
 In function ‘snprintf’,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:449:9,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
@@ -9686,15 +9686,6 @@ In function ‘snprintf’,
 In function ‘snprintf’,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:449:9,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
-    inlined from ‘obj_zset_iter_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1557:35,
-    inlined from ‘obj_zset_iter_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1549:13,
-    inlined from ‘zset_emit_member’ at /home/runner/work/ddup/ddup/src/core/command.c:1496:22:
-/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
-   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
-      |          ^
-In function ‘snprintf’,
-    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:449:9,
-    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
     inlined from ‘zlp_entry_score’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1209:31,
     inlined from ‘zlp_insert_pos’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1258:21,
     inlined from ‘zlp_insert_pair’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1274:26:
@@ -9730,6 +9721,31 @@ In function ‘snprintf’,
 In function ‘snprintf’,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:449:9,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
+    inlined from ‘obj_zset_iter_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1557:35,
+    inlined from ‘obj_zset_iter_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1549:13,
+    inlined from ‘zset_emit_member’ at /home/runner/work/ddup/ddup/src/core/command.c:1496:22:
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
+   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^
+In function ‘snprintf’,
+    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:449:9,
+    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
+    inlined from ‘obj_hash_convert’ at /home/runner/work/ddup/ddup/src/ds/obj.c:510:34,
+    inlined from ‘obj_hash_set.part.0’ at /home/runner/work/ddup/ddup/src/ds/obj.c:552:13:
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
+   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^
+In function ‘snprintf’,
+    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:449:9,
+    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
+    inlined from ‘obj_hash_convert’ at /home/runner/work/ddup/ddup/src/ds/obj.c:513:13,
+    inlined from ‘obj_hash_set.part.0’ at /home/runner/work/ddup/ddup/src/ds/obj.c:552:13:
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
+   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^
+In function ‘snprintf’,
+    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:449:9,
+    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
     inlined from ‘obj_set_each’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1154:39,
     inlined from ‘obj_set_each’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1145:6,
     inlined from ‘setop_eval’ at /home/runner/work/ddup/ddup/src/core/command.c:1660:17:
@@ -9742,6 +9758,30 @@ In function ‘snprintf’,
     inlined from ‘obj_set_each’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1154:39,
     inlined from ‘obj_set_each’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1145:6,
     inlined from ‘setop_eval’ at /home/runner/work/ddup/ddup/src/core/command.c:1667:9:
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
+   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^
+In function ‘snprintf’,
+    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:449:9,
+    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
+    inlined from ‘obj_set_convert’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1061:35,
+    inlined from ‘obj_set_add.part.0’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1082:13:
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
+   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^
+In function ‘snprintf’,
+    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:449:9,
+    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
+    inlined from ‘ql_node_merge_into’ at /home/runner/work/ddup/ddup/src/ds/quicklist.c:109:34:
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
+   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^
+In function ‘snprintf’,
+    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:449:9,
+    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
+    inlined from ‘zlp_entry_score’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1209:31,
+    inlined from ‘obj_zset_first_in_range’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1631:25,
+    inlined from ‘obj_zset_first_in_range’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1621:5:
 /usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
    54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
       |          ^
@@ -9786,22 +9826,6 @@ In function ‘snprintf’,
    54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
       | 
 In function ‘snprintf’,
-    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:449:9,
-    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
-    inlined from ‘obj_hash_convert’ at /home/runner/work/ddup/ddup/src/ds/obj.c:510:34,
-    inlined from ‘obj_hash_set.part.0’ at /home/runner/work/ddup/ddup/src/ds/obj.c:552:13:
-/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
-   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
-      |          ^
-In function ‘snprintf’,
-    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:449:9,
-    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
-    inlined from ‘obj_hash_convert’ at /home/runner/work/ddup/ddup/src/ds/obj.c:513:13,
-    inlined from ‘obj_hash_set.part.0’ at /home/runner/work/ddup/ddup/src/ds/obj.c:552:13:
-/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
-   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
-      |          ^
-In function ‘snprintf’,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:449:0,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
     inlined from ‘zlp_cmp_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1222:0,
@@ -9821,30 +9845,6 @@ In function ‘snprintf’,
 /usr/include/x86_64-linux-gnu/bits/stdio2.h:54: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
    54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
       | 
-In function ‘snprintf’,
-    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:449:9,
-    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
-    inlined from ‘obj_set_convert’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1061:35,
-    inlined from ‘obj_set_add.part.0’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1082:13:
-/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
-   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
-      |          ^
-In function ‘snprintf’,
-    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:449:9,
-    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
-    inlined from ‘ql_node_merge_into’ at /home/runner/work/ddup/ddup/src/ds/quicklist.c:109:34:
-/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
-   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
-      |          ^
-In function ‘snprintf’,
-    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:449:9,
-    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
-    inlined from ‘zlp_entry_score’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1209:31,
-    inlined from ‘obj_zset_first_in_range’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1631:25,
-    inlined from ‘obj_zset_first_in_range’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1621:5:
-/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
-   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
-      |          ^
 In function ‘snprintf’,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:449:9,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
@@ -10339,6 +10339,15 @@ In function ‘snprintf’,
    54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
       |          ^
 In function ‘snprintf’,
+    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:449:9,
+    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
+    inlined from ‘zlp_entry_score’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1209:31,
+    inlined from ‘obj_zset_first_in_range’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1631:25,
+    inlined from ‘obj_zset_first_in_range’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1621:5:
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
+   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^
+In function ‘snprintf’,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:449:0,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
     inlined from ‘ql_iter_value’ at /home/runner/work/ddup/ddup/src/ds/quicklist.c:355:0,
@@ -10388,15 +10397,6 @@ In function ‘snprintf’,
 /usr/include/x86_64-linux-gnu/bits/stdio2.h:54: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
    54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
       | 
-In function ‘snprintf’,
-    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:449:9,
-    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
-    inlined from ‘zlp_entry_score’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1209:31,
-    inlined from ‘obj_zset_first_in_range’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1631:25,
-    inlined from ‘obj_zset_first_in_range’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1621:5:
-/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
-   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
-      |          ^
 In function ‘snprintf’,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:449:0,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
@@ -13873,17 +13873,17 @@ In function ‘snprintf’,
 In function ‘snprintf’,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:449:9,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
-    inlined from ‘obj_set_convert’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1061:35,
-    inlined from ‘obj_set_add.part.0’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1082:13:
+    inlined from ‘obj_zset_iter_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1557:35,
+    inlined from ‘obj_zset_iter_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1549:13,
+    inlined from ‘zset_emit_member’ at /home/runner/work/ddup/ddup/src/core/command.c:1496:22:
 /usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
    54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
       |          ^
 In function ‘snprintf’,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:449:9,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
-    inlined from ‘obj_zset_iter_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1557:35,
-    inlined from ‘obj_zset_iter_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1549:13,
-    inlined from ‘zset_emit_member’ at /home/runner/work/ddup/ddup/src/core/command.c:1496:22:
+    inlined from ‘obj_set_convert’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1061:35,
+    inlined from ‘obj_set_add.part.0’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1082:13:
 /usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
    54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
       |          ^
@@ -14094,17 +14094,17 @@ In function ‘snprintf’,
 In function ‘snprintf’,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:449:9,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
-    inlined from ‘obj_zset_iter_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1557:35,
-    inlined from ‘obj_zset_iter_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1549:13,
-    inlined from ‘zset_diff_build’ at /home/runner/work/ddup/ddup/src/core/command.c:2447:26:
+    inlined from ‘zlp_cmp_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1222:31,
+    inlined from ‘zlp_find_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1240:13:
 /usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
    54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
       |          ^
 In function ‘snprintf’,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:449:9,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
-    inlined from ‘zlp_cmp_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1222:31,
-    inlined from ‘zlp_find_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1240:13:
+    inlined from ‘obj_zset_iter_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1557:35,
+    inlined from ‘obj_zset_iter_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1549:13,
+    inlined from ‘zset_diff_build’ at /home/runner/work/ddup/ddup/src/core/command.c:2447:26:
 /usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
    54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
       |          ^
@@ -14160,6 +14160,15 @@ In function ‘snprintf’,
 In function ‘snprintf’,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:449:9,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
+    inlined from ‘obj_zset_iter_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1557:35,
+    inlined from ‘obj_zset_iter_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1549:13,
+    inlined from ‘zset_emit_member’ at /home/runner/work/ddup/ddup/src/core/command.c:1496:22:
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
+   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^
+In function ‘snprintf’,
+    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:449:9,
+    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
     inlined from ‘zlp_entry_score’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1209:31,
     inlined from ‘zlp_insert_pos’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1258:21,
     inlined from ‘zlp_insert_pair’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1274:26:
@@ -14172,15 +14181,6 @@ In function ‘snprintf’,
     inlined from ‘zlp_cmp_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1222:31,
     inlined from ‘zlp_insert_pos’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1261:28,
     inlined from ‘zlp_insert_pair’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1274:26:
-/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
-   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
-      |          ^
-In function ‘snprintf’,
-    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:449:9,
-    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
-    inlined from ‘obj_zset_iter_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1557:35,
-    inlined from ‘obj_zset_iter_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1549:13,
-    inlined from ‘zset_emit_member’ at /home/runner/work/ddup/ddup/src/core/command.c:1496:22:
 /usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
    54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
       |          ^
@@ -14204,22 +14204,6 @@ In function ‘snprintf’,
 In function ‘snprintf’,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:449:9,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
-    inlined from ‘obj_hash_convert’ at /home/runner/work/ddup/ddup/src/ds/obj.c:510:34,
-    inlined from ‘obj_hash_set.part.0’ at /home/runner/work/ddup/ddup/src/ds/obj.c:552:13:
-/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
-   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
-      |          ^
-In function ‘snprintf’,
-    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:449:9,
-    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
-    inlined from ‘obj_hash_convert’ at /home/runner/work/ddup/ddup/src/ds/obj.c:513:13,
-    inlined from ‘obj_hash_set.part.0’ at /home/runner/work/ddup/ddup/src/ds/obj.c:552:13:
-/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
-   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
-      |          ^
-In function ‘snprintf’,
-    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:449:9,
-    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
     inlined from ‘obj_set_each’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1154:39,
     inlined from ‘obj_set_each’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1145:6,
     inlined from ‘setop_eval’ at /home/runner/work/ddup/ddup/src/core/command.c:1660:17:
@@ -14232,6 +14216,22 @@ In function ‘snprintf’,
     inlined from ‘obj_set_each’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1154:39,
     inlined from ‘obj_set_each’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1145:6,
     inlined from ‘setop_eval’ at /home/runner/work/ddup/ddup/src/core/command.c:1667:9:
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
+   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^
+In function ‘snprintf’,
+    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:449:9,
+    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
+    inlined from ‘obj_hash_convert’ at /home/runner/work/ddup/ddup/src/ds/obj.c:510:34,
+    inlined from ‘obj_hash_set.part.0’ at /home/runner/work/ddup/ddup/src/ds/obj.c:552:13:
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
+   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^
+In function ‘snprintf’,
+    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:449:9,
+    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
+    inlined from ‘obj_hash_convert’ at /home/runner/work/ddup/ddup/src/ds/obj.c:513:13,
+    inlined from ‘obj_hash_set.part.0’ at /home/runner/work/ddup/ddup/src/ds/obj.c:552:13:
 /usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
    54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
       |          ^
@@ -14259,6 +14259,18 @@ In function ‘snprintf’,
 /usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
    54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
       |          ^
+In function ‘snprintf’,
+    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:449:9,
+    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
+    inlined from ‘obj_zset_iter_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1557:35,
+    inlined from ‘obj_zset_iter_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1549:13,
+    inlined from ‘zset_emit_member’ at /home/runner/work/ddup/ddup/src/core/command.c:1496:22,
+    inlined from ‘zset_emit_all’ at /home/runner/work/ddup/ddup/src/core/command.c:2343:13:
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
+   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
 In function ‘snprintf’,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:449:0,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
@@ -14304,12 +14316,10 @@ In function ‘snprintf’,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
     inlined from ‘obj_zset_iter_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1557:35,
     inlined from ‘obj_zset_iter_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1549:13,
-    inlined from ‘zset_emit_member’ at /home/runner/work/ddup/ddup/src/core/command.c:1496:22,
-    inlined from ‘zset_emit_all’ at /home/runner/work/ddup/ddup/src/core/command.c:2343:13:
+    inlined from ‘zset_union_build’ at /home/runner/work/ddup/ddup/src/core/command.c:2382:30:
 /usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
    54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
       |          ^
-/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
 /usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
 In function ‘snprintf’,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:449:0,
@@ -14331,16 +14341,6 @@ In function ‘snprintf’,
 /usr/include/x86_64-linux-gnu/bits/stdio2.h:54: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
    54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
       | 
-In function ‘snprintf’,
-    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:449:9,
-    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
-    inlined from ‘obj_zset_iter_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1557:35,
-    inlined from ‘obj_zset_iter_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1549:13,
-    inlined from ‘zset_union_build’ at /home/runner/work/ddup/ddup/src/core/command.c:2382:30:
-/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
-   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
-      |          ^
-/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
 In function ‘snprintf’,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:449:9,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
@@ -14687,6 +14687,17 @@ In function ‘snprintf’,
 In function ‘snprintf’,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:449:9,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
+    inlined from ‘obj_zset_iter_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1557:35,
+    inlined from ‘obj_zset_iter_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1549:13,
+    inlined from ‘geo_collect_box’ at /home/runner/work/ddup/ddup/src/core/command.c:6127:30,
+    inlined from ‘geo_execute_box’ at /home/runner/work/ddup/ddup/src/core/command.c:6673:10,
+    inlined from ‘geo_search_command’ at /home/runner/work/ddup/ddup/src/core/command.c:7014:15:
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
+   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^
+In function ‘snprintf’,
+    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:449:9,
+    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
     inlined from ‘zlp_cmp_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1222:31,
     inlined from ‘zlp_find_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1240:13:
 /usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
@@ -14697,17 +14708,6 @@ In function ‘snprintf’,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
     inlined from ‘obj_zset_first_in_lex_range’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1705:39,
     inlined from ‘obj_zset_first_in_lex_range’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1692:5:
-/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
-   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
-      |          ^
-In function ‘snprintf’,
-    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:449:9,
-    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
-    inlined from ‘obj_zset_iter_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1557:35,
-    inlined from ‘obj_zset_iter_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1549:13,
-    inlined from ‘geo_collect_box’ at /home/runner/work/ddup/ddup/src/core/command.c:6127:30,
-    inlined from ‘geo_execute_box’ at /home/runner/work/ddup/ddup/src/core/command.c:6673:10,
-    inlined from ‘geo_search_command’ at /home/runner/work/ddup/ddup/src/core/command.c:7014:15:
 /usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
    54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
       |          ^
@@ -14744,6 +14744,47 @@ In function ‘snprintf’,
    54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
       |          ^
 In function ‘snprintf’,
+    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:449:9,
+    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
+    inlined from ‘zlp_entry_score’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1209:31,
+    inlined from ‘zlp_insert_pos’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1258:21,
+    inlined from ‘zlp_insert_pair’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1274:26:
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
+   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^
+In function ‘snprintf’,
+    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:449:9,
+    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
+    inlined from ‘zlp_cmp_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1222:31,
+    inlined from ‘zlp_insert_pos’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1261:28,
+    inlined from ‘zlp_insert_pair’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1274:26:
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
+   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^
+In function ‘snprintf’,
+    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:449:9,
+    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
+    inlined from ‘obj_hash_convert’ at /home/runner/work/ddup/ddup/src/ds/obj.c:510:34,
+    inlined from ‘obj_hash_set.part.0’ at /home/runner/work/ddup/ddup/src/ds/obj.c:552:13:
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
+   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^
+In function ‘snprintf’,
+    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:449:9,
+    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
+    inlined from ‘obj_hash_convert’ at /home/runner/work/ddup/ddup/src/ds/obj.c:513:13,
+    inlined from ‘obj_hash_set.part.0’ at /home/runner/work/ddup/ddup/src/ds/obj.c:552:13:
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
+   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^
+In function ‘snprintf’,
+    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:449:9,
+    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
+    inlined from ‘ql_node_merge_into’ at /home/runner/work/ddup/ddup/src/ds/quicklist.c:109:34:
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
+   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
+      |          ^
+In function ‘snprintf’,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:449:0,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
     inlined from ‘ql_iter_value’ at /home/runner/work/ddup/ddup/src/ds/quicklist.c:355:0,
@@ -14763,24 +14804,6 @@ In function ‘snprintf’,
 /usr/include/x86_64-linux-gnu/bits/stdio2.h:54: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
    54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
       | 
-In function ‘snprintf’,
-    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:449:9,
-    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
-    inlined from ‘zlp_entry_score’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1209:31,
-    inlined from ‘zlp_insert_pos’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1258:21,
-    inlined from ‘zlp_insert_pair’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1274:26:
-/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
-   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
-      |          ^
-In function ‘snprintf’,
-    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:449:9,
-    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
-    inlined from ‘zlp_cmp_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1222:31,
-    inlined from ‘zlp_insert_pos’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1261:28,
-    inlined from ‘zlp_insert_pair’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1274:26:
-/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
-   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
-      |          ^
 In function ‘snprintf’,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:449:0,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
@@ -14802,22 +14825,6 @@ In function ‘snprintf’,
    54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
       | 
 In function ‘snprintf’,
-    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:449:9,
-    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
-    inlined from ‘obj_hash_convert’ at /home/runner/work/ddup/ddup/src/ds/obj.c:510:34,
-    inlined from ‘obj_hash_set.part.0’ at /home/runner/work/ddup/ddup/src/ds/obj.c:552:13:
-/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
-   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
-      |          ^
-In function ‘snprintf’,
-    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:449:9,
-    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
-    inlined from ‘obj_hash_convert’ at /home/runner/work/ddup/ddup/src/ds/obj.c:513:13,
-    inlined from ‘obj_hash_set.part.0’ at /home/runner/work/ddup/ddup/src/ds/obj.c:552:13:
-/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
-   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
-      |          ^
-In function ‘snprintf’,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:449:0,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
     inlined from ‘zlp_cmp_member’ at /home/runner/work/ddup/ddup/src/ds/obj.c:1222:0,
@@ -14837,13 +14844,6 @@ In function ‘snprintf’,
 /usr/include/x86_64-linux-gnu/bits/stdio2.h:54: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
    54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
       | 
-In function ‘snprintf’,
-    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:449:9,
-    inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
-    inlined from ‘ql_node_merge_into’ at /home/runner/work/ddup/ddup/src/ds/quicklist.c:109:34:
-/usr/include/x86_64-linux-gnu/bits/stdio2.h:54:10: warning: ‘__builtin___snprintf_chk’ specified bound 64 exceeds destination size 24 [-Wstringop-overflow=]
-   54 |   return __builtin___snprintf_chk (__s, __n, __USE_FORTIFY_LEVEL - 1,
-      |          ^
 In function ‘snprintf’,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:449:9,
     inlined from ‘lp_get_str’ at /home/runner/work/ddup/ddup/src/ds/listpack.c:437:22,
@@ -15006,7 +15006,7 @@ Get:17 http://azure.archive.ubuntu.com/ubuntu noble/main amd64 libsource-highlig
 Get:18 http://azure.archive.ubuntu.com/ubuntu noble-updates/main amd64 gdb amd64 15.1-1ubuntu1~24.04.1 [4083 kB]
 Get:19 http://azure.archive.ubuntu.com/ubuntu noble-updates/main amd64 libc6-dbg amd64 2.39-0ubuntu8.9 [7474 kB]
 Preconfiguring packages ...
-Fetched 26.7 MB in 2s (13.6 MB/s)
+Fetched 26.7 MB in 1s (36.0 MB/s)
 (Reading database ... (Reading database ... 5%(Reading database ... 10%(Reading database ... 15%(Reading database ... 20%(Reading database ... 25%(Reading database ... 30%(Reading database ... 35%(Reading database ... 40%(Reading database ... 45%(Reading database ... 50%(Reading database ... 55%(Reading database ... 60%(Reading database ... 65%(Reading database ... 70%(Reading database ... 75%(Reading database ... 80%(Reading database ... 85%(Reading database ... 90%(Reading database ... 95%(Reading database ... 100%(Reading database ... 201818 files and directories currently installed.)
 Preparing to unpack .../libc6-dev_2.39-0ubuntu8.9_amd64.deb ...
 Unpacking libc6-dev:amd64 (2.39-0ubuntu8.9) over (2.39-0ubuntu8.8) ...
@@ -15104,6 +15104,6 @@ Service restarts being deferred:
 No containers need to be restarted.
 
 User sessions running outdated binaries:
- runner @ user manager service: systemd[1176]
+ runner @ user manager service: systemd[1220]
 
 No VM guests are running outdated hypervisor (qemu) binaries on this host.
