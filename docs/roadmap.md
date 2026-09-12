@@ -1381,3 +1381,6 @@
     防止 Redis 8 手工校验误用 Redis 7 基线，并新增 TDD 覆盖（Phase 508）
   - [x] ACL admin 元数据对齐：补齐 Redis 8 `LASTSAVE`/`ROLE` 的 `@admin` 分类，
     并覆盖 `ACL CAT admin` 回归测试（Phase 509）
+  - [x] ACL CAT 容器元数据完整性：补齐 Redis 8 connection/scripting/keyspace/hash
+    类别的 `CLIENT`、`COMMAND`、`FUNCTION`、`SCRIPT`、`OBJECT`、`HIMPORT` 子命令，
+    并覆盖裸容器名负向回归（Phase 510）

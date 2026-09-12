@@ -12304,6 +12304,55 @@ typedef struct acl_cat_extra {
 } acl_cat_extra;
 
 static const acl_cat_extra acl_cat_extras[] = {
+    {"keyspace", "object|encoding"},
+    {"keyspace", "object|freq"},
+    {"keyspace", "object|help"},
+    {"keyspace", "object|idletime"},
+    {"keyspace", "object|refcount"},
+    {"hash", "himport|discard"},
+    {"hash", "himport|discardall"},
+    {"hash", "himport|prepare"},
+    {"hash", "himport|set"},
+    {"connection", "client|caching"},
+    {"connection", "client|getname"},
+    {"connection", "client|getredir"},
+    {"connection", "client|help"},
+    {"connection", "client|id"},
+    {"connection", "client|info"},
+    {"connection", "client|kill"},
+    {"connection", "client|list"},
+    {"connection", "client|no-evict"},
+    {"connection", "client|no-touch"},
+    {"connection", "client|pause"},
+    {"connection", "client|reply"},
+    {"connection", "client|setinfo"},
+    {"connection", "client|setname"},
+    {"connection", "client|tracking"},
+    {"connection", "client|trackinginfo"},
+    {"connection", "client|unblock"},
+    {"connection", "client|unpause"},
+    {"connection", "command|count"},
+    {"connection", "command|docs"},
+    {"connection", "command|getkeys"},
+    {"connection", "command|getkeysandflags"},
+    {"connection", "command|help"},
+    {"connection", "command|info"},
+    {"connection", "command|list"},
+    {"scripting", "function|delete"},
+    {"scripting", "function|dump"},
+    {"scripting", "function|flush"},
+    {"scripting", "function|help"},
+    {"scripting", "function|kill"},
+    {"scripting", "function|list"},
+    {"scripting", "function|load"},
+    {"scripting", "function|restore"},
+    {"scripting", "function|stats"},
+    {"scripting", "script|debug"},
+    {"scripting", "script|exists"},
+    {"scripting", "script|flush"},
+    {"scripting", "script|help"},
+    {"scripting", "script|kill"},
+    {"scripting", "script|load"},
     {"stream", "xgroup|create"},
     {"stream", "xgroup|createconsumer"},
     {"stream", "xgroup|delconsumer"},
@@ -12345,6 +12394,15 @@ static int acl_cat_command_match(const char *category, size_t category_len,
         return 0;
     if (ci_equal(category, category_len, "pubsub") &&
         strcmp(name, "pubsub") == 0)
+        return 0;
+    if (ci_equal(category, category_len, "connection") &&
+        strcmp(name, "client") == 0)
+        return 0;
+    if (ci_equal(category, category_len, "scripting") &&
+        (strcmp(name, "function") == 0 || strcmp(name, "script") == 0))
+        return 0;
+    if (ci_equal(category, category_len, "keyspace") &&
+        strcmp(name, "object") == 0)
         return 0;
     return 1;
 }

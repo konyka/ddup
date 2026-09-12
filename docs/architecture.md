@@ -1749,3 +1749,10 @@ entries.
 Redis 8 将 `LASTSAVE` 与 `ROLE` 归入 `@admin`；ACL 类别谓词现纳入这两个
 顶层命令。该修正只影响冷路径 `ACL CAT admin` 和配置时类别展开，不改变命令
 执行、复制控制或运行时授权的其他语义。
+
+## Phase 510：ACL CAT 容器元数据完整性
+
+`ACL CAT` 现覆盖 Redis 8 中带 ACL 类别的容器子命令：`CLIENT`/`COMMAND` 的
+connection 条目、`FUNCTION`/`SCRIPT` 的 scripting 条目、`OBJECT` 的 keyspace
+条目、`HIMPORT` 的 hash 条目，以及既有 stream/pubsub 条目。裸容器名仅在 Redis
+元数据将顶层命令归类时保留；展示条目不创建新的命令 ID，授权仍使用现有位图。

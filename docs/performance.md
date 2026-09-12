@@ -3496,3 +3496,10 @@ ACL bitsets, or key/channel checks.
 Adding `lastsave` and `role` to the static admin-name set costs two bounded string
 comparisons during cold ACL category scans and category-rule updates. The request-time
 authorization bitset remains unchanged in shape and has no new allocation or lock.
+
+### Phase 510: complete ACL CAT container metadata
+
+The static presentation table now contains 65 Redis 8 category-tagged container
+subcommands. Counting and emission remain linear in the fixed table size; the added
+work is confined to the cold ACL introspection path, with no data-plane allocation,
+locking, dispatch, or authorization overhead.

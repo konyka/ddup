@@ -379,6 +379,9 @@ static void test_acl_cat_filters_commands(void)
     session_execute_at(&s, (resp_value[]){rv("ACL"), rv("CAT"), rv("connection")},
                        3, &out, 0);
     DD_CHECK(contains_bytes(out.data, out.len, "command", 7));
+    DD_CHECK(contains_bytes(out.data, out.len, "client|id", 9));
+    DD_CHECK(contains_bytes(out.data, out.len, "command|docs", 12));
+    DD_CHECK(!contains_bytes(out.data, out.len, "\r\n$6\r\nclient\r\n", 14));
 
     out.len = 0;
     session_execute_at(&s, (resp_value[]){rv("ACL"), rv("CAT"), rv("admin")},
@@ -390,6 +393,26 @@ static void test_acl_cat_filters_commands(void)
     session_execute_at(&s, (resp_value[]){rv("ACL"), rv("CAT"), rv("array")},
                        3, &out, 0);
     DD_CHECK(contains_bytes(out.data, out.len, "arset", 5));
+
+    out.len = 0;
+    session_execute_at(&s, (resp_value[]){rv("ACL"), rv("CAT"), rv("scripting")},
+                       3, &out, 0);
+    DD_CHECK(contains_bytes(out.data, out.len, "function|load", 13));
+    DD_CHECK(contains_bytes(out.data, out.len, "script|flush", 12));
+    DD_CHECK(!contains_bytes(out.data, out.len, "\r\n$8\r\nfunction\r\n", 16));
+    DD_CHECK(!contains_bytes(out.data, out.len, "\r\n$6\r\nscript\r\n", 14));
+
+    out.len = 0;
+    session_execute_at(&s, (resp_value[]){rv("ACL"), rv("CAT"), rv("keyspace")},
+                       3, &out, 0);
+    DD_CHECK(contains_bytes(out.data, out.len, "object|encoding", 15));
+    DD_CHECK(!contains_bytes(out.data, out.len, "\r\n$6\r\nobject\r\n", 14));
+
+    out.len = 0;
+    session_execute_at(&s, (resp_value[]){rv("ACL"), rv("CAT"), rv("hash")},
+                       3, &out, 0);
+    DD_CHECK(contains_bytes(out.data, out.len, "himport|set", 11));
+    DD_CHECK(contains_bytes(out.data, out.len, "\r\n$7\r\nhimport\r\n", 15));
 
     out.len = 0;
     session_execute_at(&s, (resp_value[]){rv("ACL"), rv("CAT"), rv("ratelimit")},
