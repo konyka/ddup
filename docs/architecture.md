@@ -1606,3 +1606,10 @@ Redis 8 的返回形状。无该选项时继续返回整数 rank，未知选项�
 `COMMAND` 无参数时复用 `COMMAND INFO` 的六字段元数据生成完整命令数组；命令
 顺序遵循稳定的 command ID 表，数量与 `CMD_MAX` 一致。原有 `COUNT/LIST/INFO`
 等子命令路径保持不变。
+
+## Phase 485：稳定命令元数据索引
+
+`CMD_TABLE` 现按稳定 command ID 排序，`cmd_table_entry(id)` 的 O(1) 索引与
+枚举值一致。这样 `COMMAND INFO/LIST`、ACL 命令类别、只读脚本判定及 MULTI
+队列 arity 校验都读取同一条正确元数据；阻塞命令的表项不再因物理顺序错位而
+映射到其他命令。

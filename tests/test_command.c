@@ -338,6 +338,12 @@ static void test_command_without_arguments(void)
     DD_CHECK_MEM(prefix, sizeof(prefix) - 1, g_out.data, sizeof(prefix) - 1);
 }
 
+static void test_command_metadata_ids_are_stable(void)
+{
+    cmd(3, "COMMAND", "INFO", "PFDEBUG");
+    DD_CHECK(strstr(g_out.data, "$7\r\npfdebug\r\n") != NULL);
+}
+
 static void test_server_management_commands(void)
 {
     cmd(3, "WAIT", "1", "0");
@@ -507,6 +513,7 @@ int main(void)
     DD_RUN(test_object_encoding);
     DD_RUN(test_object_metadata_and_getkeysflags);
     DD_RUN(test_command_without_arguments);
+    DD_RUN(test_command_metadata_ids_are_stable);
     DD_RUN(test_server_management_commands);
     DD_RUN(test_management_error_bounds);
     DD_RUN(test_info_render_bounds);

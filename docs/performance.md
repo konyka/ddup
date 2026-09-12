@@ -3339,3 +3339,10 @@ is introduced for source-bearing merges.
 The no-argument `COMMAND` response walks the fixed command-ID table once and reuses
 `command_info_one`; it performs no per-command heap allocation. This is a cold
 introspection path and does not affect data-command dispatch.
+
+### Phase 485: stable command metadata indexing
+
+The command metadata table is physically ordered by stable ID, preserving the existing
+O(1) lookup in `cmd_table_entry` without adding a search, allocation, or branch to the
+hot dispatch path. Correct metadata also makes queue-time arity and ACL flag checks
+deterministic for blocking and administrative commands.

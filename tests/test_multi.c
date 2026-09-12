@@ -133,6 +133,24 @@ static void test_multi_execabort(void)
     exec_sess(a, T0, &out, 1, "PING");
     EXPECT(out, "+PONG\r\n");
 
+    /* HDEL requires at least one field; invalid arity aborts the transaction
+     * at queue time just like Redis. */
+    exec_sess(a, T0, &out, 1, "MULTI");
+    EXPECT(out, "+OK\r\n");
+    exec_sess(a, T0, &out, 2, "HDEL", "h");
+    EXPECT(out, "-ERR wrong number of arguments for 'hdel' command\r\n");
+    exec_sess(a, T0, &out, 1, "EXEC");
+    EXPECT(out,
+           "-EXECABORT Transaction discarded because of previous errors.\r\n");
+
+    exec_sess(a, T0, &out, 1, "MULTI");
+    EXPECT(out, "+OK\r\n");
+    exec_sess(a, T0, &out, 4, "PFDEBUG", "ENCODING", "h", "extra");
+    EXPECT(out, "-ERR wrong number of arguments for 'pfdebug' command\r\n");
+    exec_sess(a, T0, &out, 1, "EXEC");
+    EXPECT(out,
+           "-EXECABORT Transaction discarded because of previous errors.\r\n");
+
     session_free(a);
     resp_buf_free(&out);
     db_destroy(&d);
