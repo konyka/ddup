@@ -3477,6 +3477,13 @@ and one pass to emit them, adding at most 16 string comparisons on this cold man
 path. No request-time dispatch, authorization, allocation, or synchronization cost is
 introduced.
 
+### Phase 508: version-aware compatibility audit
+
+When `--check` is used without an explicit report, the audit tool derives
+`docs/redis-<major>-compat-audit.md` from the requested Redis tag when that file
+exists, otherwise retaining the Redis 7 historical default. This is a bounded
+control-plane filesystem check and does not affect server or benchmark hot paths.
+
 ### Phase 507: ACL CAT container presentation
 
 The filtered view applies three constant-time name checks to suppress bare

@@ -33,7 +33,7 @@ exactly one response per command.
 ```sh
 python3 tools/audit_redis_compat.py \
   --redis-json /home/timeshift/opensource/redis-8.10.1/src/commands \
-  --tag 8.10.1 --repo .
+  --tag 8.10.1 --repo . --check
 ```
 
 输出确认 Redis 命令条目 459、JSON 文件 459，ddup 顶层命令 290，

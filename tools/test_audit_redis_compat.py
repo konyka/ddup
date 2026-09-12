@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Self-tests for tools/audit_redis_compat.py (TDD).
 
-The audit tool reads a Redis 7.x src/commands JSON tree and the ddup command
+The audit tool reads a Redis src/commands JSON tree and the ddup command
 table, then --check asserts that the *current* gap set matches the documented
 baseline. These tests pin the two failure modes that matter:
 
@@ -251,6 +251,18 @@ def test_alternate_report_baseline_is_selected(tmp):
     assert "docs/redis-8-compat-audit.md" in proc.stdout
 
 
+def test_redis8_tag_selects_redis8_report_by_default(tmp):
+    # A Redis 8 tag must not silently validate the Redis 7 baseline when the
+    # caller omits --report.
+    default_report = os.path.join(tmp, "docs", "redis-compat-audit.md")
+    with open(default_report, encoding="utf-8") as fh:
+        text = fh.read()
+    _write(os.path.join(tmp, "docs", "redis-8-compat-audit.md"), text)
+    proc = run_audit(tmp, "--tag", "8.10.1", "--check")
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    assert "docs/redis-8-compat-audit.md" in proc.stdout
+
+
 def test_fetch_timeout_fails_closed(tmp):
     spec = importlib.util.spec_from_file_location("audit_module", AUDIT)
     module = importlib.util.module_from_spec(spec)
@@ -303,6 +315,7 @@ def main():
             test_fails_on_stale_container_entry,
             test_fails_on_stale_subcommand_entry,
             test_alternate_report_baseline_is_selected,
+            test_redis8_tag_selects_redis8_report_by_default,
             test_fetch_timeout_fails_closed,
             test_malformed_metadata_fails_closed,
         ):
@@ -315,7 +328,7 @@ def main():
                 print(f"{fn.__name__}: FAILED: {exc}")
             finally:
                 shutil.rmtree(fixture, ignore_errors=True)
-        print(f"---\n{11 - failures}/11 audit tool tests passed")
+        print(f"---\n{12 - failures}/12 audit tool tests passed")
     finally:
         if failures and not args.keep:
             shutil.rmtree(tmp, ignore_errors=True)

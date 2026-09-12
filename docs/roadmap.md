@@ -1377,3 +1377,5 @@
     `xgroup|*`、`xinfo|*`、`pubsub|*` 静态条目，并覆盖回归测试（Phase 506）
   - [x] ACL CAT 容器展示对齐：过滤 `xgroup`、`xinfo`、`pubsub` 裸容器名，保留
     顶层命令授权语义并覆盖负向回归测试（Phase 507）
+  - [x] 版本感知兼容审计：按 `--tag` 自动选择 `redis-<major>-compat-audit.md`，
+    防止 Redis 8 手工校验误用 Redis 7 基线，并新增 TDD 覆盖（Phase 508）

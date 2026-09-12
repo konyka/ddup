@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Redis 7 command-compat audit for ddup.
+"""Redis command-compat audit for ddup.
 
 Computes the command gap between a Redis 7.x `src/commands/*.json` tree and
 the ddup command table in src/core/command.c.  Command names are normalized
@@ -33,6 +33,22 @@ from collections import defaultdict
 DEFAULT_TAG = "7.2.15"
 DEFAULT_REPORT = os.path.join("docs", "redis-compat-audit.md")
 SUBPROCESS_TIMEOUT_SECONDS = 120
+
+
+def default_report_for_tag(tag, repo_root):
+    """Select the version-specific report when one is present.
+
+    Redis 7 remains the historical default.  Redis 8 (and later baselines
+    maintained by the repository) must not accidentally validate that older
+    report when callers omit ``--report``.
+    """
+    match = re.match(r"^(\d+)", str(tag))
+    if match:
+        candidate = os.path.join(repo_root, "docs",
+                                 f"redis-{match.group(1)}-compat-audit.md")
+        if os.path.isfile(candidate):
+            return os.path.relpath(candidate, repo_root)
+    return DEFAULT_REPORT
 
 
 def norm(s):
@@ -263,12 +279,14 @@ def main():
     ap.add_argument("--repo", metavar="DIR", default=os.getcwd(),
                     help="ddup repo root (default: current directory)")
     ap.add_argument("--check", action="store_true",
-                    help="assert gap matches docs/redis-compat-audit.md")
+                    help="assert gap matches the version-specific report")
     ap.add_argument("--json", action="store_true", dest="emit_json",
                     help="emit machine-readable JSON (default: human text)")
-    ap.add_argument("--report", default=DEFAULT_REPORT,
+    ap.add_argument("--report", default=None,
                     help="markdown report with AUDIT-BASELINE block")
     args = ap.parse_args()
+
+    report_path = args.report or default_report_for_tag(args.tag, args.repo)
 
     if args.fetch:
         json_dir = fetch_redis_commands(args.tag, args.fetch)
@@ -298,7 +316,7 @@ def main():
     }
 
     if args.check:
-        baseline = parse_report_baseline(os.path.join(args.repo, args.report))
+        baseline = parse_report_baseline(os.path.join(args.repo, report_path))
         if baseline is None:
             raise SystemExit(
                 "error: no AUDIT-BASELINE block in report; run without --check "
@@ -333,7 +351,7 @@ def main():
         if args.emit_json:
             print(json.dumps(report, indent=2, sort_keys=True))
         else:
-            print(f"audit OK: gap matches {args.report}")
+            print(f"audit OK: gap matches {report_path}")
             print(f"  redis entries={len(entries)} ddup top-level={len(top_levels)}")
             print(f"  missing top={len(missing_top)} containers={len(missing_containers)} subs={len(missing_subs)}")
         return
