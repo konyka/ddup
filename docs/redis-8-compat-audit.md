@@ -40,6 +40,10 @@ python3 tools/audit_redis_compat.py \
 缺失顶层命令/容器/子命令均为 0。该命令为只读检查，可在源目录位置变化时
 替换 `--redis-json` 路径后重复执行。
 
+持续验证：GitHub Actions 会针对 Redis 8.10.1 进行独立 sparse checkout，并使用
+本文件的 `AUDIT-BASELINE` 零缺口基线运行 `--check`。这与 Redis 7.2.15 基线
+并行执行；任一版本的命令表或报告发生漂移都会使 CI 失败。
+
 协议边界补充复核：静态 RESP 错误消息统一使用字面量的编译期长度，避免
 错误文本长度漂移造成截断或越界读取；`HIMPORT SET` 字段数错误已由命令测试
 锁定完整 wire 响应。

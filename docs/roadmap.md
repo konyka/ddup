@@ -1239,3 +1239,8 @@
     二进制 RESP 测试采用长度感知匹配；LeakSanitizer 全量 73 项通过（Phase 447）
   - [x] HOTKEYS UBSan 测试确定性：移除依赖微秒级运行时抖动的 CPU 排序断言，
     保留双指标条目完整性与 NET 排序验证，避免 sanitizer 下的偶发失败（Phase 448）
+  - [x] Redis 8.10.1 兼容性 CI 门禁：独立 sparse checkout 官方命令元数据，并以
+    `docs/redis-8-compat-audit.md` 的零缺口基线执行机器校验，防止 Redis 8
+    命令兼容性报告与实现脱节（Phase 449）
+  - [x] 兼容性审计诊断一致性：`--report` 自定义基线时成功输出显示实际报告
+    路径，并由 TDD 覆盖 Redis 8 报告选择，避免 CI 日志误导（Phase 450）

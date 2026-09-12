@@ -3073,3 +3073,19 @@ command timing. NET ordering remains checked because its wire-byte workload is
 deterministic. This removes sanitizer-induced test flakiness without changing
 the production collector or adding work to its hot path; default and UBSan
 CTest runs pass all 73 tests.
+
+### Phase 449: Redis 8 compatibility CI gate
+
+The compatibility audit now runs two independent sparse checkouts in CI:
+Redis 7.2.15 continues to validate the historical baseline, while Redis 8.10.1
+checks `docs/redis-8-compat-audit.md` explicitly. Selecting the report with the
+existing `--report` option is covered by the audit tool's TDD suite. This runs
+only in the low-frequency CI control plane and adds no server or benchmark
+hot-path work.
+
+### Phase 450: compatibility-audit diagnostic consistency
+
+The audit tool's successful `--check` message now names the selected report
+path instead of always referring to the Redis 7 document. A regression test
+covers selecting the Redis 8 baseline. This is a control-plane diagnostic only
+and has no runtime or benchmark impact.

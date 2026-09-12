@@ -318,7 +318,7 @@ def main():
         if args.emit_json:
             print(json.dumps(report, indent=2, sort_keys=True))
         else:
-            print("audit OK: gap matches docs/redis-compat-audit.md")
+            print(f"audit OK: gap matches {args.report}")
             print(f"  redis entries={len(entries)} ddup top-level={len(top_levels)}")
             print(f"  missing top={len(missing_top)} containers={len(missing_containers)} subs={len(missing_subs)}")
         return

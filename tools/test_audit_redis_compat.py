@@ -226,6 +226,30 @@ def test_fails_on_stale_subcommand_entry(tmp):
     assert "cluster links" in proc.stdout + proc.stderr
 
 
+def test_alternate_report_baseline_is_selected(tmp):
+    # Redis 8 is maintained in its own audit document.  A caller must be
+    # able to select that baseline instead of silently checking the Redis 7
+    # report in the same repository.
+    redis8_report = os.path.join(tmp, "docs", "redis-8-compat-audit.md")
+    _write(
+        redis8_report,
+        "<!-- AUDIT-BASELINE-START\n"
+        "missing_top: bitfield_ro xadd\n"
+        "missing_containers: \n"
+        "missing_sub: cluster links\n"
+        "AUDIT-BASELINE-END -->\n",
+    )
+    default_report = os.path.join(tmp, "docs", "redis-compat-audit.md")
+    with open(default_report, encoding="utf-8") as fh:
+        text = fh.read()
+    _write(default_report, text.replace("missing_top: bitfield_ro xadd",
+                                        "missing_top: get"))
+    proc = run_audit(tmp, "--check", "--report",
+                     "docs/redis-8-compat-audit.md")
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    assert "docs/redis-8-compat-audit.md" in proc.stdout
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--keep", action="store_true", help="keep tmp dirs on failure")
@@ -242,6 +266,7 @@ def main():
             test_missing_container_reported,
             test_fails_on_stale_container_entry,
             test_fails_on_stale_subcommand_entry,
+            test_alternate_report_baseline_is_selected,
         ):
             fixture = tempfile.mkdtemp(prefix="audit-test-")
             try:
@@ -252,7 +277,7 @@ def main():
                 print(f"{fn.__name__}: FAILED: {exc}")
             finally:
                 shutil.rmtree(fixture, ignore_errors=True)
-        print(f"---\n{8 - failures}/8 audit tool tests passed")
+        print(f"---\n{9 - failures}/9 audit tool tests passed")
     finally:
         if failures and not args.keep:
             shutil.rmtree(tmp, ignore_errors=True)
