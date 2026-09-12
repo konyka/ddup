@@ -185,8 +185,9 @@
   UNSUBSCRIBE 的竞态）。
 - **连接-键亲和**：干净的连接（无未决任务/批次/事务/watch/订阅）在
   首个带 key 命令时**一次性迁移**到 key 属主 worker（fd/session/db
-  指针/钩子上下文整体 rehome；包括 MONITOR 的事件流和 HOTKEYS/BACKUP
-  的 server-owned 控制回调），之后该连接的命令全部就地执行。具有
+  指针/钩子上下文整体 rehome；包括 MONITOR 的事件流、ACL/CONFIG/INFO
+  上下文和 HOTKEYS/BACKUP 的 server-owned 控制回调），之后该连接的命令
+  全部就地执行。具有
   客户端 key 局部性的负载（hashtag、按用户前缀）零跨线程流量。
 - **持久化**：每 worker 独立 `<dir>/worker-<id>-<file>`；路由任务的
   mutation 经 dirty 计数记录到执行 worker 的 AOF；SAVE/LASTSAVE 广播

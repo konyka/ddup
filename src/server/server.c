@@ -4119,7 +4119,17 @@ void server_conn_rehome(server *s, void *conn_ptr)
      * selected database (SELECT state travels with the connection) */
     c->sess->d = srv_select_db(s, c->sess->db_index);
     c->sess->sel_ctx = s;
+    c->sess->sel_ndbs = s->ndbs;
     c->sess->ps_ctx = s;
+    c->sess->requirepass = s->requirepass;
+    c->sess->acl_ctx = &s->acl;
+    c->sess->acl_user = acl_find_const(&s->acl, c->sess->acl_username,
+                                       strlen(c->sess->acl_username));
+    c->sess->acl_generation = c->sess->acl_user == NULL
+                                  ? 0
+                                  : c->sess->acl_user->generation;
+    if (c->sess->acl_user == NULL)
+        c->sess->authed = 0;
     c->sess->shutdown_ctx = s;
     c->sess->sync_ctx = s;
     c->sess->psync_ctx = s;
@@ -4130,6 +4140,8 @@ void server_conn_rehome(server *s, void *conn_ptr)
     c->sess->client_exists = srv_client_exists;
     c->sess->slowlog_ctx = s;
     c->sess->bgrewriteaof_ctx = s;
+    c->sess->config_ctx = s;
+    c->sess->io = &s->io;
     c->sess->monitor_ctx = s;
     c->sess->monitor_start = srv_monitor_start;
     c->sess->monitor_emit = srv_monitor_emit_session;

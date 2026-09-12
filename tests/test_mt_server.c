@@ -3660,6 +3660,10 @@ static void test_monitor_survives_connection_migration(void)
     snprintf(req, sizeof(req), "*3\r\n$3\r\nSET\r\n$%zu\r\n%s\r\n$1\r\ny\r\n",
              strlen(key2), key2);
     roundtrip(monitor, req, "+OK\r\n");
+    /* Control-plane hooks must follow the migrated connection as well. */
+    roundtrip(monitor,
+              "*3\r\n$6\r\nCONFIG\r\n$3\r\nGET\r\n$9\r\nmaxmemory\r\n",
+              "*2\r\n$9\r\nmaxmemory\r\n$1\r\n0\r\n");
     n = request_full(monitor, "*2\r\n$7\r\nHOTKEYS\r\n$3\r\nGET\r\n",
                      buf, sizeof(buf));
     DD_CHECK(n > 0);

@@ -3250,8 +3250,8 @@ runtime benchmark and server binaries unchanged.
 
 ### Phase 472: migrated MONITOR callback context
 
-Connection rehome now refreshes the server-owned MONITOR callback context along
-with the database and other hooks. The MT integration suite covers a monitor
-connection that migrates and then uses HOTKEYS; 5,844 assertions pass across
-the existing test run. The fix adds no allocation or lock to the command hot
-path.
+Connection rehome now refreshes server-owned MONITOR, ACL, CONFIG, INFO,
+HOTKEYS, and BACKUP callback contexts along with the database and other hooks.
+The MT integration suite covers a monitor connection that migrates and then
+uses HOTKEYS and CONFIG; 5,861 assertions pass across the integration run. The
+fix adds no allocation or lock to the command hot path.

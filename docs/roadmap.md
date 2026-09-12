@@ -1297,6 +1297,7 @@
     发布限制为 `push` 事件，避免不可信 PR 代码继承可写仓库凭据（Phase 470）
   - [x] CI action 不可变引用：`actions/checkout` 与 `vmactions/freebsd-vm` 固定到
     官方 commit SHA，并由配置回归拒绝可变 tag/branch，防止依赖漂移（Phase 471）
-  - [x] MT 连接迁移回调上下文：`MONITOR` 以及相关 server-owned hook 在 rehome
-    时刷新目标 worker 上下文，新增 MONITOR→HOTKEYS 跨 worker 集成回归
+  - [x] MT 连接迁移回调上下文：`MONITOR`、ACL/CONFIG/INFO 以及相关
+    server-owned hook 在 rehome 时刷新目标 worker 上下文，新增
+    MONITOR→HOTKEYS/CONFIG 跨 worker 集成回归
     （Phase 472）
