@@ -20,6 +20,7 @@ RESULT_RE = re.compile(
     r"p99=(?P<p99>\d+) max=(?P<max>\d+).*?"
     r"(?P<rps>[0-9.]+) requests per second", re.S)
 BENCH_TIMEOUT_SECONDS = 120
+IDENTITY_TIMEOUT_SECONDS = 10
 
 
 def classify_server_identity(binary_name, version_output):
@@ -40,10 +41,13 @@ def server_identity(path):
     """Probe a comparison server once, keeping failures explicit in reports."""
     try:
         proc = subprocess.run([str(path), "--version"], text=True,
-                              capture_output=True, check=False)
+                              capture_output=True, check=False,
+                              timeout=IDENTITY_TIMEOUT_SECONDS)
         banner = proc.stdout + proc.stderr
     except OSError as exc:
         banner = str(exc)
+    except subprocess.TimeoutExpired as exc:
+        banner = "version probe timed out: %s" % exc
     return classify_server_identity(Path(path).name, banner)
 
 

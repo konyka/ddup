@@ -1264,3 +1264,5 @@
     （Phase 457）
   - [x] Redis 兼容性审计 fetch 超时保护：git sparse-checkout 子进程设置 120 秒
     上限，网络/远端异常 fail-closed，并由 TDD 覆盖超时诊断（Phase 458）
+  - [x] benchmark 参考版本探测超时保护：`--version` 查询设置 10 秒上限，
+    异常程序不会阻塞报告生成，并由 TDD 覆盖超时降级标签（Phase 459）

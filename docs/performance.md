@@ -3151,3 +3151,10 @@ Redis command metadata fetches now bound each git subprocess to 120 seconds and
 turn a network stall into an explicit error. This affects only the audit/CI
 control plane; normal server and benchmark paths are unchanged. The audit
 tool's TDD suite now includes the timeout diagnostic and passes 10/10 cases.
+
+### Phase 459: bounded reference identity probes
+
+The benchmark report limits a reference server's `--version` probe to 10
+seconds. A stalled or malformed replacement binary is labeled generically and
+the matrix can continue; no benchmark server hot path is affected. The report
+TDD suite covers the timeout fallback.

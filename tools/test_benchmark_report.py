@@ -35,6 +35,15 @@ def main():
     finally:
         MODULE.subprocess.run = original_run
 
+    def version_timeout(*args, **kwargs):
+        raise MODULE.subprocess.TimeoutExpired(args[0], 1)
+
+    MODULE.subprocess.run = version_timeout
+    try:
+        assert MODULE.server_identity("redis-server") == "Redis"
+    finally:
+        MODULE.subprocess.run = original_run
+
     payload = {
         "generated_at": "2026-09-12T00:00:00+00:00",
         "environment": "test",
