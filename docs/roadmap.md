@@ -1226,3 +1226,6 @@
   - [x] thread-per-core 对齐安全：worker 与 SPSC 原子元数据通过 PAL 64 字节
     对齐分配，消除普通 `calloc` 造成的 UBSan misaligned 访问，同时保持零初始化
     与热路径无额外分配（Phase 443）
+  - [x] PAL 连接等待边界安全：`pal_connect_wait` 在进入平台 `FD_SET/select`
+    前拒绝无效 socket 与负超时，修复 UBSan 负移位并保持正常连接路径不变
+    （Phase 444）

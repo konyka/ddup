@@ -3031,3 +3031,10 @@ these C11 atomic fields misaligned; the resulting UBSan diagnostics also made
 the hot routing path undefined. The allocator keeps the existing zero-init
 semantics and adds no per-command allocation or free, while `pal_aligned_free`
 provides a portable C99-compatible release path.
+
+### Phase 444: bounded connect wait validation
+
+`pal_connect_wait` now rejects an invalid socket and negative timeout before
+touching the platform descriptor sets. This preserves the fail-closed API
+contract and prevents an invalid descriptor from becoming a negative bit shift
+inside POSIX `FD_SET`; the check is outside the successful connect hot path.

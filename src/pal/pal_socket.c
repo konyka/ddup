@@ -277,6 +277,8 @@ int pal_connect_wait(pal_socket_t fd, int timeout_ms)
     struct timeval tv;
     int rc, err = 0;
     pal_socklen_t el = (pal_socklen_t)sizeof(err);
+    if (fd == PAL_SOCKET_INVALID || timeout_ms < 0)
+        return -1;
     FD_ZERO(&wfds);
     FD_ZERO(&efds);
 #if DDUP_OS_WINDOWS
