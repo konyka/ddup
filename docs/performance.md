@@ -2917,3 +2917,7 @@ work to the normal non-full receive path.
 The corresponding 1 KiB comparative report is
 `reports/benchmark-2026-09-12-1k.html` with raw data in
 `reports/benchmark-2026-09-12-1k.json`.
+
+The large-payload regression also passes in the forced C99 (`build-c99`) and
+hardening (`build-hardening`) configurations, confirming that the benchmark
+client fix is independent of optional C11/C23 and sanitizer-style build paths.
