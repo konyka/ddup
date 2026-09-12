@@ -3451,3 +3451,9 @@ pattern matcher.
 The count assertion exercises only the fixed ACL CAT response header and adds no
 runtime data-plane cost; it guards the cold introspection contract against accidental
 category-list truncation.
+
+### Phase 503: SWAPDB keyspace classification
+
+Adding the existing `SWAPDB` command to the fixed keyspace predicate costs one
+comparison per command during cold `ACL CAT` scans and does not affect dispatch or
+authorization hot paths.

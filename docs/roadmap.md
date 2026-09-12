@@ -1367,3 +1367,5 @@
     （Phase 501）
   - [x] ACL 类别枚举数量回归：锁定 Redis 8.10.1 的 23 类 `ACL CAT` 无参数响应
     （Phase 502）
+  - [x] ACL CAT SWAPDB keyspace 映射：补齐数据库交换命令的 keyspace 分类并覆盖
+    回归测试（Phase 503）
