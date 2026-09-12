@@ -1625,3 +1625,10 @@ Redis 8 的返回形状。无该选项时继续返回整数 rank，未知选项�
 `PFDEBUG` 的 command metadata 现在标记为 write，与 Redis 的 `WRITE` 标志一致。
 因此仅拥有 `@read` 的 ACL 用户不能执行该管理/调试命令；默认用户和显式写权限
 路径保持原有 dispatch 行为。
+
+## Phase 488：弹出命令最小 arity
+
+`ZMPOP` 需要 `numkeys`、至少一个 key 和 `MIN/MAX`，`BLMPOP/BZMPOP` 还需要
+timeout，因此最小参数数目分别为 4、5、5（含命令名）。命令表和处理器现在在
+统一入口拒绝缺失方向参数，返回标准 wrong-number-of-arguments，而不是内部
+解析错误。

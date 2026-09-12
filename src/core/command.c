@@ -11054,7 +11054,7 @@ static int blocking_pop_try(session *s, const resp_value *argv, size_t argc,
         size_t kl;
         obj_list *l;
         int rc;
-        if (argc < 4) {
+        if (argc < 5) {
             wrong_args(out, "blmpop");
             return 1;
         }
@@ -11197,7 +11197,7 @@ static int blocking_pop_try(session *s, const resp_value *argv, size_t argc,
         size_t kl;
         obj_zset *z;
         int rc;
-        if (argc < 4) {
+        if (argc < 5) {
             wrong_args(out, "bzmpop");
             return 1;
         }
@@ -21711,7 +21711,7 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
         size_t nkeys, i;
         int min_side;
         long long count = 1;
-        if (argc < 3) {
+        if (argc < 4) {
             wrong_args(out, "zmpop");
             return;
         }
@@ -23674,7 +23674,7 @@ static const cmd_entry CMD_TABLE[] = {
     {"zlexcount", CMD_ZLEXCOUNT, 4, 4, 0, 0},
     {"zrevrangebyscore", CMD_ZREVRANGEBYSCORE, 4, -1, 0, 0},
     {"zrangestore", CMD_ZRANGESTORE, 5, -1, 0, CMD_WRITE},
-    {"zmpop", CMD_ZMPOP, 3, -1, 0, CMD_WRITE},
+    {"zmpop", CMD_ZMPOP, 4, -1, 0, CMD_WRITE},
     {"hscan", CMD_HSCAN, 3, -1, 0, 0},
     {"sscan", CMD_SSCAN, 3, -1, 0, 0},
     {"zscan", CMD_ZSCAN, 3, -1, 0, 0},
@@ -23745,10 +23745,10 @@ static const cmd_entry CMD_TABLE[] = {
     {"brpoplpush", CMD_BRPOPLPUSH, 4, 4, 0, CMD_WRITE},
     {"blmove", CMD_BLMOVE, 6, 6, 0, CMD_WRITE},
     {"blmovem", CMD_BLMOVEM, 6, -1, 0, CMD_WRITE},
-    {"blmpop", CMD_BLMPOP, 4, -1, 0, CMD_WRITE},
+    {"blmpop", CMD_BLMPOP, 5, -1, 0, CMD_WRITE},
     {"bzpopmin", CMD_BZPOPMIN, 3, -1, 0, CMD_WRITE},
     {"bzpopmax", CMD_BZPOPMAX, 3, -1, 0, CMD_WRITE},
-    {"bzmpop", CMD_BZMPOP, 4, -1, 0, CMD_WRITE},
+    {"bzmpop", CMD_BZMPOP, 5, -1, 0, CMD_WRITE},
     {"wait", CMD_WAIT, 3, 3, 0, 0},
     {"waitaof", CMD_WAITAOF, 4, 4, 0, 0},
     {"replconf", CMD_REPLCONF, 3, -1, 0, 0},

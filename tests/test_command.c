@@ -344,6 +344,16 @@ static void test_command_metadata_ids_are_stable(void)
     DD_CHECK(strstr(g_out.data, "$7\r\npfdebug\r\n") != NULL);
 }
 
+static void test_pop_command_minimum_arity(void)
+{
+    cmd(3, "ZMPOP", "1", "z");
+    EXPECT_REPLY("-ERR wrong number of arguments for 'zmpop' command\r\n");
+    cmd(4, "BLMPOP", "0", "1", "l");
+    EXPECT_REPLY("-ERR wrong number of arguments for 'blmpop' command\r\n");
+    cmd(4, "BZMPOP", "0", "1", "z");
+    EXPECT_REPLY("-ERR wrong number of arguments for 'bzmpop' command\r\n");
+}
+
 static void test_server_management_commands(void)
 {
     cmd(3, "WAIT", "1", "0");
@@ -514,6 +524,7 @@ int main(void)
     DD_RUN(test_object_metadata_and_getkeysflags);
     DD_RUN(test_command_without_arguments);
     DD_RUN(test_command_metadata_ids_are_stable);
+    DD_RUN(test_pop_command_minimum_arity);
     DD_RUN(test_server_management_commands);
     DD_RUN(test_management_error_bounds);
     DD_RUN(test_info_render_bounds);

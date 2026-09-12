@@ -1337,3 +1337,5 @@
     EXEC 返回 EXECABORT（Phase 486）
   - [x] PFDEBUG ACL 写分类：同步 Redis WRITE 元数据，阻止仅 `@read` 用户执行
     调试命令（Phase 487）
+  - [x] ZMPOP/BLMPOP/BZMPOP 最小 arity：缺失方向参数时统一返回标准参数错误，
+    避免落入内部解析错误路径（Phase 488）

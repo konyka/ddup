@@ -3358,3 +3358,9 @@ or replay, reducing wasted transaction work without affecting valid command path
 The PFDEBUG flag correction reuses the existing fixed-bitset ACL lookup. It adds no
 runtime work beyond the already-required permission check and prevents read-only
 users from entering the debug handler.
+
+### Phase 488: pop-command minimum arity
+
+Minimum-arity checks use the existing command-table branch before any blocking state
+or key lookup. Malformed `ZMPOP`/`BLMPOP`/`BZMPOP` requests therefore avoid queue or
+timeout setup; valid pop operations retain their existing O(1) routing checks.
