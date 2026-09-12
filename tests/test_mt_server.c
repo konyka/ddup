@@ -2998,7 +2998,7 @@ static void test_pubsub_invalid_subcommand_stays_local(void)
     c = connect_client(mt_server_port(ms));
 
     roundtrip(c, "*1\r\n$6\r\nPUBSUB\r\n",
-              "-ERR wrong number of arguments for 'pubsub' command\r\n");
+              "-ERR invalid argument type\r\n");
     roundtrip(c, "*2\r\n$6\r\nPUBSUB\r\n$7\r\nUNKNOWN\r\n",
               "-ERR Unknown PUBSUB subcommand\r\n");
     roundtrip(c, "*1\r\n$4\r\nPING\r\n", "+PONG\r\n");
