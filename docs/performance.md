@@ -3247,3 +3247,11 @@ GitHub Actions dependencies are pinned to audited commit SHAs (`actions/checkout
 v4.2.2 and `vmactions/freebsd-vm` v1). A configuration regression rejects
 mutable tag/branch references, preventing silent action drift while leaving the
 runtime benchmark and server binaries unchanged.
+
+### Phase 472: migrated MONITOR callback context
+
+Connection rehome now refreshes the server-owned MONITOR callback context along
+with the database and other hooks. The MT integration suite covers a monitor
+connection that migrates and then uses HOTKEYS; 5,844 assertions pass across
+the existing test run. The fix adds no allocation or lock to the command hot
+path.

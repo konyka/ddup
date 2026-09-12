@@ -4130,6 +4130,9 @@ void server_conn_rehome(server *s, void *conn_ptr)
     c->sess->client_exists = srv_client_exists;
     c->sess->slowlog_ctx = s;
     c->sess->bgrewriteaof_ctx = s;
+    c->sess->monitor_ctx = s;
+    c->sess->monitor_start = srv_monitor_start;
+    c->sess->monitor_emit = srv_monitor_emit_session;
     c->sess->hotkeys_ctx = s;
     c->sess->hotkeys_command = srv_hotkeys_command;
     c->sess->backup_ctx = s;

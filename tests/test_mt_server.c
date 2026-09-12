@@ -3630,6 +3630,60 @@ static void test_connection_migration_to_key_owner(void)
     pal_socket_cleanup();
 }
 
+static void test_monitor_survives_connection_migration(void)
+{
+    mt_server *ms;
+    pal_socket_t monitor, producer;
+    char key[32], key2[32], req[192], buf[512];
+    size_t n;
+
+    DD_CHECK_EQ_INT(0, pal_socket_init());
+    pick_two_keys_for_worker(1, 2, key, sizeof(key), key2, sizeof(key2));
+    ms = mt_server_create("127.0.0.1", 0, 2);
+    DD_CHECK(ms != NULL);
+    DD_CHECK_EQ_INT(0, mt_server_start(ms));
+
+    /* The monitor starts on worker 0, then its first keyed command moves the
+     * connection to worker 1. Its callback context must follow that move. */
+    monitor = connect_client(mt_server_port(ms));
+    roundtrip(monitor, "*1\r\n$7\r\nMONITOR\r\n", "+OK\r\n");
+    snprintf(req, sizeof(req), "*3\r\n$3\r\nSET\r\n$%zu\r\n%s\r\n$1\r\nx\r\n",
+             strlen(key), key);
+    roundtrip(monitor, req, "+OK\r\n");
+
+    /* HOTKEYS is server-owned too. Starting it after migration and writing a
+     * second same-worker key proves the moved session uses the new context. */
+    roundtrip(monitor,
+              "*7\r\n$7\r\nHOTKEYS\r\n$5\r\nSTART\r\n$7\r\nMETRICS\r\n"
+              "$1\r\n1\r\n$3\r\nCPU\r\n$5\r\nCOUNT\r\n$1\r\n4\r\n",
+              "+OK\r\n");
+    snprintf(req, sizeof(req), "*3\r\n$3\r\nSET\r\n$%zu\r\n%s\r\n$1\r\ny\r\n",
+             strlen(key2), key2);
+    roundtrip(monitor, req, "+OK\r\n");
+    n = request_full(monitor, "*2\r\n$7\r\nHOTKEYS\r\n$3\r\nGET\r\n",
+                     buf, sizeof(buf));
+    DD_CHECK(n > 0);
+    if (n > 0)
+        DD_CHECK(strstr(buf, key2) != NULL);
+
+    /* The next accepted connection is worker 1, where the migrated monitor
+     * now lives; its command must be visible on the monitor stream. */
+    producer = connect_client(mt_server_port(ms));
+    roundtrip(producer, "*1\r\n$4\r\nPING\r\n", "+PONG\r\n");
+    n = recv_deadline(monitor, buf, sizeof(buf) - 1, 3000);
+    DD_CHECK(n > 0);
+    if (n > 0) {
+        buf[n] = '\0';
+        DD_CHECK(strstr(buf, "\"PING\"") != NULL);
+    }
+
+    pal_close(producer);
+    pal_close(monitor);
+    mt_server_stop(ms);
+    mt_server_destroy(ms);
+    pal_socket_cleanup();
+}
+
 static void test_same_target_pipeline_merges_into_one_task(void)
 {
     mt_server *ms;
@@ -4020,6 +4074,7 @@ int main(void)
     DD_RUN(test_aof_failure_stops_mt_workers_without_spin);
     DD_RUN(test_snapshot_mt);
     DD_RUN(test_connection_migration_to_key_owner);
+    DD_RUN(test_monitor_survives_connection_migration);
     DD_RUN(test_mt_multidb_select_and_swapdb);
     DD_RUN(test_same_target_pipeline_merges_into_one_task);
     DD_RUN(test_many_connections_across_workers);
