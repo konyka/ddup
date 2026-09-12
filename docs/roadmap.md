@@ -1256,3 +1256,6 @@
   - [x] 多线程连接迁移与复制屏障竞态收敛：迁移前在源 worker 完成接收缓冲压缩，
     连接 arena/缓冲区以单线程所有权交接；复制全同步通过目标 worker 自执行 flush
     任务替代跨线程数据库清空，并以 TSan 覆盖迁移、快照和停止路径（Phase 455）
+  - [x] Reshard 测试线程停止同步：端到端 reshard runner 的停止标志改为 PAL
+    原子变量，完整 Clang TSan CTest 75/75 通过，确保门禁本身不含数据竞态
+    （Phase 456）

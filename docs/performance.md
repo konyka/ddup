@@ -3129,3 +3129,10 @@ owner event loop before restore tasks arrive. The changes add no locks or
 allocations to steady-state command execution; TSan migration, snapshot, and
 shutdown regressions pass, while normal routing retains the existing SPSC
 backpressure and batching behavior.
+
+### Phase 456: race-free reshard test runner
+
+The end-to-end reshard test now uses the PAL atomic abstraction for its
+background server runner stop flag. This removes a test-harness data race that
+would otherwise invalidate a full TSan run; it has no production-path cost.
+The complete Clang ThreadSanitizer CTest suite passes all 75 registered tests.

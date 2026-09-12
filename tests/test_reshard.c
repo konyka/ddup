@@ -6,6 +6,7 @@
 #include <string.h>
 
 #include "core/hashslot.h"
+#include "pal/pal_cstd.h"
 #include "pal/pal_socket.h"
 #include "pal/pal_thread.h"
 #include "pal/pal_time.h"
@@ -32,14 +33,14 @@ static int contains(const char *h, size_t hlen, const char *needle)
 
 typedef struct runner {
     server *s;
-    volatile int stop;
+    ddup_atomic_int stop;
     pal_thread th;
 } runner;
 
 static void *run_srv(void *arg)
 {
     runner *r = (runner *)arg;
-    while (!r->stop)
+    while (!ddup_atomic_load(&r->stop, ddup_memory_order_acquire))
         (void)server_run_once(r->s, 5);
     return NULL;
 }
@@ -47,13 +48,13 @@ static void *run_srv(void *arg)
 static void runner_start(runner *r, server *s)
 {
     r->s = s;
-    r->stop = 0;
+    ddup_atomic_init(&r->stop, 0);
     DD_CHECK_EQ_INT(0, pal_thread_create(&r->th, run_srv, r));
 }
 
 static void runner_stop(runner *r)
 {
-    r->stop = 1;
+    ddup_atomic_store(&r->stop, 1, ddup_memory_order_release);
     (void)pal_thread_join(&r->th, NULL);
 }
 
