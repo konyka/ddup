@@ -278,6 +278,20 @@ static void test_acl_extended_category_rules(void)
         DD_CHECK(u != NULL);
         DD_CHECK(acl_authorize(u, CMD_PING, NULL, 1) == 0);
     }
+
+    {
+        resp_value stream_rules[3] = {rv("on"), rv("+@stream"), rv("~*")};
+        resp_value xadd[5] = {rv("XADD"), rv("stream"), rv("*"), rv("f"), rv("v")};
+        DD_CHECK(acl_setuser(&r, "streamcat", 9, stream_rules, 3) == 0);
+        u = acl_find_const(&r, "streamcat", 9);
+        DD_CHECK(u != NULL);
+        DD_CHECK(acl_authorize(u, CMD_XADD, xadd, 5) == 1);
+    }
+
+    {
+        resp_value bad_rules[2] = {rv("on"), rv("+@unknown")};
+        DD_CHECK(acl_setuser(&r, "badcat", 6, bad_rules, 2) == -1);
+    }
 }
 
 static void test_acl_cat_filters_commands(void)

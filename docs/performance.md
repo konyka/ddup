@@ -3438,3 +3438,9 @@ Valkey 9.0.4 reference using the same `ddup-bench` client, 10,000 requests, 20 c
 pipelines 1/16, and 16-byte values. The JSON companion preserves raw throughput and
 latency samples; the report explicitly labels this as a local smoke benchmark rather
 than a production claim. Report identity and large-payload checks pass.
+
+### Phase 501: positive and negative category rules
+
+Stream authorization and unknown-category rejection remain configuration-time checks;
+runtime authorization still uses the existing constant-time bitset and bounded key
+pattern matcher.

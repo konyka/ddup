@@ -1363,3 +1363,5 @@
     并保留原始延迟、吞吐数据（Phase 499）
   - [x] ACL 扩展类别回归：覆盖 `+@array` 授权与合法空 `+@ratelimit` 的
     fail-closed 行为（Phase 500）
+  - [x] ACL 类别规则负向回归：覆盖 `+@stream`/XADD 授权及未知类别拒绝
+    （Phase 501）
