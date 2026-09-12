@@ -3286,3 +3286,10 @@ worker resolves the current fixed-size user entry and performs one authorization
 check before optimized command branches; revoked commands take the existing error
 path. This adds no allocation or lock to ordinary non-transaction commands, while
 preserving the single-worker EXEC data locality and pipeline ordering.
+
+### Phase 477: ACL identity on deferred MT replay
+
+Deferred WATCH commands store only a fixed-size username and auth bit. Replay performs
+one current-user lookup before routing; the normal non-deferred command path is
+unchanged, with no extra allocation or lock. ACL changes during the wait therefore
+fail closed without affecting worker locality or queue ordering.

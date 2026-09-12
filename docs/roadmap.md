@@ -1312,3 +1312,6 @@
   - [x] MT EXEC ACL 时序一致性：事务回放携带有界 ACL 用户名并在目标 worker
     执行前重新检查当前权限，覆盖撤权后 queued SET 的 `NOPERM` 回归，避免优化
     分支绕过通用 ACL 检查（Phase 476）
+  - [x] MT deferred replay ACL 身份保持：WATCH 等待队列保存认证用户上下文，
+    回放前重新解析当前 ACL 用户，避免等待期间撤权/删用户导致 sessionless
+    命令绕过授权（Phase 477）

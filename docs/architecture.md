@@ -1554,3 +1554,10 @@ sessionless worker 执行前再次检查权限。这样管理员在 `MULTI` 与 
 权限时，已入队的写命令也会返回单条 `NOPERM`，不会因 SET 等优化分支早于通用
 session ACL 检查而执行。用户被删除时回放进入 `NOAUTH`，WATCH/事务顺序和 key
 owner 路由保持不变。
+
+## Phase 477：MT deferred replay ACL 身份保持
+
+WATCH 远端 owner 尚未返回时，连接上的后续命令会进入 deferred 队列。队列条目
+现在保存有界 ACL 用户名与认证状态；回放前在 home worker 重新解析当前用户，
+再进入路由和授权检查。等待期间删除或撤销用户权限会安全地产生 `NOAUTH`/
+`NOPERM`，不会因为临时 session 缺少 ACL 上下文而放行命令。

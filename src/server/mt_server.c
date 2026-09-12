@@ -143,6 +143,7 @@ typedef struct mt_deferred_cmd {
     uint16_t cmd;
     uint64_t seq;
     int authed;
+    char acl_username[ACL_MAX_NAME];
 } mt_deferred_cmd;
 
 /* One subscribed channel on a connection (home-side bookkeeping). */
@@ -3835,7 +3836,12 @@ static int mt_route_txn(worker *home, void *conn, mt_conn_state *st,
         d->db_index = db_index;
         d->cmd = cmd;
         d->seq = seq;
-        d->authed = 1;
+        d->authed = sess != NULL ? sess->authed : 0;
+        if (sess != NULL && sess->acl_username[0] != '\0')
+            memcpy(d->acl_username, sess->acl_username,
+                   sizeof(d->acl_username));
+        else
+            memcpy(d->acl_username, "default", 8);
         if (st->deferred_tail != NULL)
             st->deferred_tail->next = d;
         else
@@ -3914,6 +3920,17 @@ static void mt_replay_deferred(worker *home, void *conn, mt_conn_state *st)
             memset(&sess, 0, sizeof(sess));
             sess.authed = d->authed;
             sess.db_index = d->db_index;
+            sess.acl_ctx = server_acl_registry(home->srv);
+            sess.acl_user = acl_find_const(
+                (const acl_registry *)sess.acl_ctx, d->acl_username,
+                strlen(d->acl_username));
+            sess.acl_generation = sess.acl_user == NULL
+                                      ? 0 : sess.acl_user->generation;
+            sess.acl_check = mt_acl_check;
+            memcpy(sess.acl_username, d->acl_username,
+                   sizeof(sess.acl_username));
+            if (sess.acl_user == NULL)
+                sess.authed = 0;
             st->seq_next = d->seq;
             (void)mt_route(home, conn, &sess, v.items, v.count, d->raw,
                            d->rawlen, &out);
