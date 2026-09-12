@@ -3509,3 +3509,10 @@ locking, dispatch, or authorization overhead.
 The optional `SCHEDULE` form adds one bounded token comparison at the cold snapshot
 management entry point. Snapshot serialization, persistence locks, and data-plane
 dispatch costs are unchanged; invalid options are rejected before any I/O.
+
+### Phase 512: FLUSHDB/FLUSHALL mode options
+
+Each flush command adds at most one bounded token validation before the existing
+database-clear path. `ASYNC`/`SYNC` are compatibility selectors; no extra worker,
+queue, allocation, or lock is introduced, and invalid input is rejected before
+mutation.

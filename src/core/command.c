@@ -17203,7 +17203,12 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
     }
 
     if (cmd_id == CMD_FLUSHDB) {
-        if (argc != 1) {
+        const char *mode;
+        size_t mode_len;
+        if (argc > 2 || (argc == 2 &&
+                         (!arg_str(&argv[1], &mode, &mode_len) ||
+                          (!ci_equal(mode, mode_len, "ASYNC") &&
+                           !ci_equal(mode, mode_len, "SYNC"))))) {
             wrong_args(out, "flushdb");
             return;
         }
@@ -17354,7 +17359,12 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
 
     if (cmd_id == CMD_FLUSHALL) {
         int i;
-        if (argc != 1) {
+        const char *mode;
+        size_t mode_len;
+        if (argc > 2 || (argc == 2 &&
+                         (!arg_str(&argv[1], &mode, &mode_len) ||
+                          (!ci_equal(mode, mode_len, "ASYNC") &&
+                           !ci_equal(mode, mode_len, "SYNC"))))) {
             wrong_args(out, "flushall");
             return;
         }
@@ -23834,7 +23844,7 @@ static const cmd_entry CMD_TABLE[] = {
     {"pttl", CMD_PTTL, 2, 2, 0, 0},
     {"persist", CMD_PERSIST, 2, 2, 0, CMD_WRITE},
     {"dbsize", CMD_DBSIZE, 1, 1, 0, 0},
-    {"flushdb", CMD_FLUSHDB, 1, 1, 0, CMD_WRITE},
+    {"flushdb", CMD_FLUSHDB, 1, 2, 0, CMD_WRITE},
     {"config", CMD_CONFIG, 2, -1, 0, 0},
     {"info", CMD_INFO, 1, 1, 0, 0},
     {"hset", CMD_HSET, 4, -1, 2, CMD_WRITE},
@@ -23977,7 +23987,7 @@ static const cmd_entry CMD_TABLE[] = {
     {"hscan", CMD_HSCAN, 3, -1, 0, 0},
     {"sscan", CMD_SSCAN, 3, -1, 0, 0},
     {"zscan", CMD_ZSCAN, 3, -1, 0, 0},
-    {"flushall", CMD_FLUSHALL, 1, 1, 0, CMD_WRITE},
+    {"flushall", CMD_FLUSHALL, 1, 2, 0, CMD_WRITE},
     {"time", CMD_TIME, 1, 1, 0, 0},
     {"hincrbyfloat", CMD_HINCRBYFLOAT, 4, 4, 0, CMD_WRITE},
     {"readonly", CMD_READONLY, 1, 1, 0, 0},

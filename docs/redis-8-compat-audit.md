@@ -368,6 +368,9 @@ Category views also expose the Redis 8 ACL-tagged container entries for
 their unclassified bare container names.
 `BGSAVE SCHEDULE` is accepted with the same safe snapshot response as `BGSAVE`;
 unknown extra tokens retain the standard wrong-arity error.
+`FLUSHDB` and `FLUSHALL` accept `ASYNC`/`SYNC` selectors and reject unknown
+selectors before mutation; the ddup backend intentionally keeps synchronous
+atomic clearing for deterministic lifecycle behavior.
   `ACL DRYRUN` resolves the target user and command/key arguments through the
   existing authorization path, returning `OK` or `NOPERM` without side effects;
   unknown users and commands fail closed.

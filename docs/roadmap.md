@@ -1386,3 +1386,5 @@
     并覆盖裸容器名负向回归（Phase 510）
   - [x] BGSAVE SCHEDULE 兼容：接受 Redis 8 可选 `SCHEDULE`，未知附加 token
     fail-closed，并覆盖管理命令回归（Phase 511）
+  - [x] FLUSHDB/FLUSHALL 模式选项：接受 Redis 8 `ASYNC`/`SYNC`，未知模式在
+    清空前拒绝，并覆盖多数据库回归测试（Phase 512）

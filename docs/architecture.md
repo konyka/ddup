@@ -1762,3 +1762,9 @@ connection 条目、`FUNCTION`/`SCRIPT` 的 scripting 条目、`OBJECT` 的 keys
 `BGSAVE` 现在接受 Redis 8 的可选 `SCHEDULE` token，并对其他附加参数
 fail-closed。ddup 当前快照后端仍在同一安全生命周期内执行保存，因此该选项
 保持 Redis wire response 兼容而不伪造额外后台队列状态。
+
+## Phase 512：FLUSHDB/FLUSHALL 模式选项
+
+`FLUSHDB` 与 `FLUSHALL` 接受 Redis 8 的可选 `ASYNC`/`SYNC` token；ddup 仍使用
+原子同步清空实现，保证现有 watch、统计和多数据库生命周期不变。未知模式和
+额外参数在执行前返回标准参数错误，不会触发清空或产生部分状态。

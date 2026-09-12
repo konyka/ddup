@@ -98,6 +98,10 @@ static void test_select_isolation(void)
     /* FLUSHDB only affects the selected db */
     exec_sess(s, T0, &out, 1, "FLUSHDB");
     EXPECT(out, "+OK\r\n");
+    exec_sess(s, T0, &out, 2, "FLUSHDB", "ASYNC");
+    EXPECT(out, "+OK\r\n");
+    exec_sess(s, T0, &out, 2, "FLUSHDB", "INVALID");
+    EXPECT(out, "-ERR wrong number of arguments for 'flushdb' command\r\n");
     exec_sess(s, T0, &out, 1, "DBSIZE");
     EXPECT(out, ":0\r\n");
     exec_sess(s, T0, &out, 2, "SELECT", "0");
@@ -128,6 +132,8 @@ static void test_flushall_all_dbs(void)
     EXPECT(out, "+OK\r\n");
 
     exec_sess(s, T0, &out, 1, "FLUSHALL");
+    EXPECT(out, "+OK\r\n");
+    exec_sess(s, T0, &out, 2, "FLUSHALL", "SYNC");
     EXPECT(out, "+OK\r\n");
     exec_sess(s, T0, &out, 1, "DBSIZE");
     EXPECT(out, ":0\r\n");
