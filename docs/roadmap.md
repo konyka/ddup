@@ -1237,3 +1237,5 @@
   - [x] ASan 生命周期与边界收敛：修复 listpack hash 辅助表、数据库/快照临时
     registry 及 MT inline 批次元数据泄漏，限制 HLL 末尾寄存器读取范围，并让
     二进制 RESP 测试采用长度感知匹配；LeakSanitizer 全量 73 项通过（Phase 447）
+  - [x] HOTKEYS UBSan 测试确定性：移除依赖微秒级运行时抖动的 CPU 排序断言，
+    保留双指标条目完整性与 NET 排序验证，避免 sanitizer 下的偶发失败（Phase 448）

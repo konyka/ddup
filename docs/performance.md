@@ -3064,3 +3064,12 @@ to a pooled task. HLL register decoding no longer reads past the packed final
 byte. The regression suite also uses length-aware checks for binary RESP
 buffers, avoiding test-only overreads. Full ASan CTest passes with leak
 detection enabled.
+
+### Phase 448: deterministic HOTKEYS sanitizer coverage
+
+The HOTKEYS regression now validates that both keys are present in the CPU
+metric view instead of asserting an incidental order based on microsecond
+command timing. NET ordering remains checked because its wire-byte workload is
+deterministic. This removes sanitizer-induced test flakiness without changing
+the production collector or adding work to its hot path; default and UBSan
+CTest runs pass all 73 tests.
