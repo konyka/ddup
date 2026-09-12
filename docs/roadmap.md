@@ -1343,3 +1343,5 @@
     key pattern，修复合法 LMPOP 被默认拒绝及潜在策略绕过（Phase 489）
   - [x] ACL CAT 完整类别枚举：无参数返回 Redis 8 固定 21 类名称，覆盖数据类型、
     访问模式、事务和脚本类别（Phase 490）
+  - [x] REPLCONF 空参数形式：返回 OK 并与 Redis 8 最小 arity 对齐，保留现有
+    ACK/GETACK 复制握手行为（Phase 491）

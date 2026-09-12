@@ -364,6 +364,8 @@ static void test_server_management_commands(void)
     EXPECT_REPLY("+OK\r\n");
     cmd(3, "REPLCONF", "GETACK", "*");
     EXPECT_REPLY("*3\r\n$8\r\nREPLCONF\r\n$3\r\nACK\r\n:0\r\n");
+    cmd(1, "REPLCONF");
+    EXPECT_REPLY("+OK\r\n");
     cmd(2, "FAILOVER", "ABORT");
     EXPECT_REPLY("+OK\r\n");
     cmd(1, "FAILOVER");

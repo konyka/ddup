@@ -1645,3 +1645,9 @@ ACL 授权现在按各命令真实语法解析 `LMPOP/ZMPOP` 的 `numkeys`（参
 `ACL CAT` 无参数现在返回 Redis 8 的完整固定类别集合（包括 keyspace、数据类型、
 访问模式及 transaction/scripting 等类别），而不是仅返回 read/write/connection
 的简化子集。类别数组为静态常量，不依赖用户状态或堆分配。
+
+## Phase 491：REPLCONF 最小命令
+
+`REPLCONF` 无子命令时返回 `OK`，与 Redis 8 的控制面兼容；带有 `ACK/GETACK`
+等已实现子命令时继续执行原有复制握手语义。命令表最小 arity 与处理器保持一致，
+避免复制探测请求在 queue-time 被错误拒绝。

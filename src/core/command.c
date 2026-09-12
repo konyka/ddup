@@ -12023,7 +12023,11 @@ static void command_replconf(session *s, const resp_value *argv, size_t argc,
     const char *sub;
     size_t sl;
     (void)s;
-    if (argc < 2 || !arg_str(&argv[1], &sub, &sl)) {
+    if (argc == 1) {
+        resp_write_simple_string(out, "OK", 2);
+        return;
+    }
+    if (!arg_str(&argv[1], &sub, &sl)) {
         resp_write_error(out, ERR_SYNTAX, sizeof(ERR_SYNTAX) - 1);
         return;
     }
@@ -23756,7 +23760,7 @@ static const cmd_entry CMD_TABLE[] = {
     {"bzmpop", CMD_BZMPOP, 5, -1, 0, CMD_WRITE},
     {"wait", CMD_WAIT, 3, 3, 0, 0},
     {"waitaof", CMD_WAITAOF, 4, 4, 0, 0},
-    {"replconf", CMD_REPLCONF, 3, -1, 0, 0},
+    {"replconf", CMD_REPLCONF, 1, -1, 0, 0},
     {"failover", CMD_FAILOVER, 1, -1, 0, CMD_WRITE},
     {"monitor", CMD_MONITOR, 1, 1, 0, 0},
     {"acl", CMD_ACL, 2, -1, 0, 0},

@@ -3376,3 +3376,8 @@ cross-policy key lists before any blocking state is installed.
 The expanded category response iterates a fixed 21-entry constant array and performs
 no allocation or command-table scan. This cold introspection change leaves ACL command
 authorization and data-plane throughput unchanged.
+
+### Phase 491: REPLCONF minimum form
+
+The empty `REPLCONF` form takes a constant-time reply branch before subcommand parsing;
+it performs no allocation, socket operation, or replication-state mutation.
