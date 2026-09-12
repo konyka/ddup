@@ -3103,3 +3103,10 @@ probe runs once before measurements and does not affect the server hot path.
 The historical C-standard and hot-path implementation plans now reflect their
 completed steps, matching the shipped code, tests, and commits. This is a
 documentation-only change with no runtime or benchmark impact.
+
+### Phase 453: benchmark report script-boundary hardening
+
+The benchmark report regression now feeds an HTML script terminator through a
+result field and verifies it is escaped before JSON is embedded. This preserves
+standalone report rendering without allowing result text to terminate the
+script element; it adds no server or benchmark hot-path work.

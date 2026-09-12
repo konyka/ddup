@@ -19,6 +19,20 @@ def main():
     assert MODULE.classify_server_identity(
         "cache-server", "cache-server build 3.1") == "cache-server 3.1"
     assert MODULE.classify_server_identity("redis-server", "") == "Redis"
+    payload = {
+        "generated_at": "2026-09-12T00:00:00+00:00",
+        "environment": "test",
+        "cpu_count": 1,
+        "baseline": {"requests": 1, "clients": 1, "pipelines": [1],
+                      "value_size": 1},
+        "results": [{"product": "</script><img src=x onerror=alert(1)>",
+                     "mode": "ping", "clients": 1, "pipeline": 1,
+                     "value_size": 1, "status": "ok", "rps": 1,
+                     "p50": 1, "p99": 1, "min": 1, "max": 1}],
+    }
+    report = MODULE.render(payload)
+    assert "</script><img" not in report
+    assert "<\\/script><img" in report
     print("benchmark report identity tests: ok")
 
 
