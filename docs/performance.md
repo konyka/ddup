@@ -3333,3 +3333,9 @@ The no-element `PFADD` path reuses the existing fixed-size HLL buffer and perfor
 one normal write only when the destination is new. `PFMERGE` with no sources uses its
 existing merge buffer and single destination write; no additional traversal or lock
 is introduced for source-bearing merges.
+
+### Phase 484: COMMAND metadata enumeration
+
+The no-argument `COMMAND` response walks the fixed command-ID table once and reuses
+`command_info_one`; it performs no per-command heap allocation. This is a cold
+introspection path and does not affect data-command dispatch.

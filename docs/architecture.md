@@ -1600,3 +1600,9 @@ Redis 8 的返回形状。无该选项时继续返回整数 rank，未知选项�
 `PFADD key` 在 key 不存在时创建空 HLL 并返回 1，已存在的 HLL 返回 0；类型
 校验和正常元素路径保持一致。`PFMERGE dest` 允许没有 source，创建空 HLL
 并返回 OK，避免把 Redis 8 的合法最小 arity 误报为参数错误。
+
+## Phase 484：COMMAND 无参数枚举
+
+`COMMAND` 无参数时复用 `COMMAND INFO` 的六字段元数据生成完整命令数组；命令
+顺序遵循稳定的 command ID 表，数量与 `CMD_MAX` 一致。原有 `COUNT/LIST/INFO`
+等子命令路径保持不变。

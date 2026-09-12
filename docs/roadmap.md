@@ -1329,3 +1329,5 @@
     与 Redis 8 最小 arity 兼容（Phase 482）
   - [x] PFADD/PFMERGE 空参数形式：支持 `PFADD key` 创建空 HLL、重复调用返回 0，
     以及 `PFMERGE dest` 创建空合并结果（Phase 483）
+  - [x] COMMAND 无参数枚举：返回完整稳定命令元数据数组，复用 INFO 六字段格式，
+    与 Redis 8 基本 introspection 语义一致（Phase 484）

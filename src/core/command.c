@@ -7104,6 +7104,14 @@ static int command_count_reply(resp_buf *out)
     return 0;
 }
 
+static void command_all_reply(resp_buf *out)
+{
+    uint16_t id;
+    resp_write_array_header(out, CMD_MAX);
+    for (id = 1; id <= CMD_MAX; id++)
+        command_info_one(out, id);
+}
+
 /* Small key-position table used by COMMAND GETKEYS/GETKEYSANDFLAGS. It
  * intentionally mirrors the cluster/mt key extraction logic for the common
  * commands. When with_flags is nonzero each key is emitted as
@@ -7372,6 +7380,10 @@ static void command_command(session *s, const resp_value *argv, size_t argc,
     const char *sub;
     size_t sl;
     (void)s;
+    if (argc == 1) {
+        command_all_reply(out);
+        return;
+    }
     if (argc < 2) {
         wrong_args(out, "command");
         return;
@@ -23704,7 +23716,7 @@ static const cmd_entry CMD_TABLE[] = {
     {"georadiusbymember_ro", CMD_GEORADIUSBYMEMBER_RO, 5, -1, 0, 0},
     {"geosearch", CMD_GEOSEARCH, 7, -1, 0, 0},
     {"geosearchstore", CMD_GEOSEARCHSTORE, 8, -1, 0, CMD_WRITE},
-    {"command", CMD_COMMAND, 2, -1, 0, 0},
+    {"command", CMD_COMMAND, 1, -1, 0, 0},
     {"client", CMD_CLIENT, 2, -1, 0, 0},
     {"memory", CMD_MEMORY, 2, -1, 0, 0},
     {"slowlog", CMD_SLOWLOG, 2, -1, 0, 0},
