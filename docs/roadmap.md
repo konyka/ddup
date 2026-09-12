@@ -1289,3 +1289,5 @@
   - [x] CI token trace 安全门禁：失败日志发布在构造 `GITHUB_TOKEN` 仓库 URL
     前关闭 shell tracing，并由配置回归锁定该顺序，降低诊断日志泄露凭据风险
     （Phase 467）
+  - [x] CI 工作流后缀覆盖：配置回归同时扫描 `.yml` 与 `.yaml`，避免新增
+    alternate-suffix 工作流绕过超时和 token trace 安全门禁（Phase 468）

@@ -3220,3 +3220,9 @@ Failure-log publishing steps disable shell tracing before constructing the
 tokenized repository URL. The CI configuration test enforces this ordering so
 future diagnostics cannot accidentally print credentials; benchmark and server
 runtime performance are unchanged.
+
+### Phase 468: workflow extension coverage
+
+The CI configuration regression scans both `.yml` and `.yaml` workflow files,
+so adding a workflow with the alternate YAML suffix cannot bypass timeout and
+token-trace safety checks.

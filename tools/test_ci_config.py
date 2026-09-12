@@ -48,7 +48,9 @@ def assert_token_not_traced(path):
 
 
 def main():
-    workflows = sorted((ROOT / ".github/workflows").glob("*.yml"))
+    workflow_dir = ROOT / ".github/workflows"
+    workflows = sorted(set(workflow_dir.glob("*.yml")) |
+                       set(workflow_dir.glob("*.yaml")))
     assert workflows, "no GitHub Actions workflows found"
     for path in workflows:
         jobs = workflow_jobs(path)
