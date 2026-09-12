@@ -38,6 +38,15 @@ def main():
     if invalid.returncode == 0 or "dimensions too large" not in invalid.stderr:
         raise AssertionError("oversized benchmark dimensions were not rejected:\n" +
                              invalid.stdout + invalid.stderr)
+    bounded = subprocess.run(
+        [str(bench), "-n", "1", "-c", "1", "-P", "1048577", "-d", "16",
+         "-t", "ping"],
+        check=False, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        text=True,
+    )
+    if bounded.returncode == 0 or "dimensions too large" not in bounded.stderr:
+        raise AssertionError("unbounded benchmark dimensions were accepted:\n" +
+                             bounded.stdout + bounded.stderr)
     port = free_port()
     proc = subprocess.Popen(
         [str(server), "--port", str(port)],

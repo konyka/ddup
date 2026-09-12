@@ -30,6 +30,8 @@
 #define CONN_RCAP (64 * 1024)
 #define MAX_EVENTS 64
 #define STALL_MS 30000 /* abort when no reply arrives for this long */
+#define MAX_PIPELINE 1048576L
+#define MAX_CLIENTS 100000L
 
 static const char *g_host = "127.0.0.1";
 static uint16_t g_port = 6379;
@@ -312,6 +314,10 @@ int main(int argc, char **argv)
             usage(argv[0]);
             return 1;
         }
+    }
+    if (g_clients > MAX_CLIENTS || g_pipe > MAX_PIPELINE) {
+        fprintf(stderr, "benchmark dimensions too large\n");
+        return 1;
     }
     if (g_requests <= 0 || g_clients <= 0 || g_pipe <= 0 || g_port == 0 ||
         g_rand_range < 0 || g_value_size <= 0 || g_value_size > 1048576) {

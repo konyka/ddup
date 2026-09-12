@@ -2939,3 +2939,12 @@ to the configured 1 MiB value-size bound, allowing large GET replies without
 weakening malformed/oversized reply handling. Growth occurs only on the
 exceptional no-progress path and uses `realloc`; allocation failure still
 fails closed. The regression covers a 128 KiB SET/GET round trip at P1.
+
+### Phase 434: benchmark dimension policy limits
+
+In addition to overflow checks, `ddup-bench` now applies explicit resource
+policy limits: pipeline depth is capped at 1,048,576 and clients at 100,000.
+Values above those limits fail before any allocation with
+`benchmark dimensions too large`, preventing otherwise-valid integer input
+from requesting impractically large buffers or connection arrays. Normal
+benchmark dimensions remain unchanged.
