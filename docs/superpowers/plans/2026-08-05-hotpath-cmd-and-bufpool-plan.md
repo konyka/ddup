@@ -1,6 +1,6 @@
 # 热路径命令 ID 表与缓冲池实现计划
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** 用稳定命令 ID 表替换命令分发的 `if/else` 字符串比较，并用分级缓冲池减少连接接收/输出缓冲的 malloc，提升热路径性能。
 
@@ -51,7 +51,7 @@
   - `int cmd_is_write(uint16_t cmd_id)`
   - `int cmd_min_argc`, `cmd_max_argc`, `cmd_parity`
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 创建 `tests/test_cmdid.c`：
 
@@ -95,7 +95,7 @@ cmake --build build --target test_cmdid
 ```
 Expected: 编译失败，`cmd_resolve` 未定义。
 
-- [ ] **Step 2: 实现 cmd_entry 表与 cmd_resolve**
+- [x] **Step 2: 实现 cmd_entry 表与 cmd_resolve**
 
 在 `src/core/command.c` 中：
 
@@ -189,7 +189,7 @@ uint16_t cmd_resolve(const char *name, size_t len)
 
 8. O(1) 辅助函数通过 ID 直接索引 `CMD_TABLE`（因为 IDs 是连续的 1..N，可用 `cmd_table_by_id[cmd_id]` 或 `CMD_TABLE[id-1]`）。
 
-- [ ] **Step 3: 运行测试并确认通过**
+- [x] **Step 3: 运行测试并确认通过**
 
 ```bash
 cmake --build build --target test_cmdid
@@ -197,7 +197,7 @@ ctest --test-dir build -R test_cmdid --output-on-failure
 ```
 Expected: PASS。
 
-- [ ] **Step 4: Commit + push**
+- [x] **Step 4: Commit + push**
 
 ```bash
 git add src/core/command.c src/core/command.h tests/test_cmdid.c CMakeLists.txt
@@ -216,7 +216,7 @@ git push origin main
 - Consumes: `cmd_resolve`, `cmd_is_write` from Task 1
 - Produces: `command_dispatch()` 改为 `switch (cmd_id)`，移除 `is_write_command` 等旧线性扫描
 
-- [ ] **Step 1: 写失败/回归测试**
+- [x] **Step 1: 写失败/回归测试**
 
 扩展 `tests/test_cmdid.c`：
 
@@ -231,7 +231,7 @@ static void test_dispatch_still_works(void)
 
 Run `ctest --test-dir build -R test_command` 等现有测试确认 baseline 绿。
 
-- [ ] **Step 2: 改写 command_dispatch**
+- [x] **Step 2: 改写 command_dispatch**
 
 在 `command_dispatch()` 顶部调用 `cmd_resolve` 得到 `cmd_id`；把后续所有 `if (ci_equal(name, nlen, "FOO"))` 改为 `case CMD_FOO:`。
 
@@ -255,14 +255,14 @@ default:
 - `queue_validate()` 改为通过 `cmd_id` 查 `CMD_TABLE` 做 arity 校验。
 - 保留 `ci_equal` 仅作为哈希槽比较和兼容用途。
 
-- [ ] **Step 3: 全量回归测试**
+- [x] **Step 3: 全量回归测试**
 
 ```bash
 cmake --build build --target check
 ```
 Expected: 38/38 通过，无新增警告。
 
-- [ ] **Step 4: Commit + push**
+- [x] **Step 4: Commit + push**
 
 ```bash
 git add src/core/command.c tests/test_cmdid.c
@@ -287,7 +287,7 @@ git push origin main
   - `buf_pool_get(pool, size, actual_size)`
   - `buf_pool_put(pool, ptr, size)`
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 创建 `tests/test_buf_pool.c`：
 
@@ -334,7 +334,7 @@ int main(void)
 Run `cmake --build build --target test_buf_pool`。
 Expected: 编译失败，头文件不存在。
 
-- [ ] **Step 2: 实现 buf_pool**
+- [x] **Step 2: 实现 buf_pool**
 
 `src/core/buf_pool.h`：
 
@@ -446,7 +446,7 @@ void buf_pool_destroy(buf_pool *pool)
 }
 ```
 
-- [ ] **Step 3: 运行测试**
+- [x] **Step 3: 运行测试**
 
 ```bash
 cmake --build build --target test_buf_pool
@@ -454,7 +454,7 @@ ctest --test-dir build -R test_buf_pool --output-on-failure
 ```
 Expected: PASS。
 
-- [ ] **Step 4: Commit + push**
+- [x] **Step 4: Commit + push**
 
 ```bash
 git add src/core/buf_pool.h src/core/buf_pool.c tests/test_buf_pool.c CMakeLists.txt
@@ -475,7 +475,7 @@ git push origin main
 - Consumes: `buf_pool` from Task 3
 - Produces: `resp_buf_pool_reserve()`、`server` 全局 `buf_pool`
 
-- [ ] **Step 1: 写失败/回归测试**
+- [x] **Step 1: 写失败/回归测试**
 
 扩展 `tests/test_buf_pool.c` 或新增 `tests/test_server_buf_pool.c`：
 
@@ -485,7 +485,7 @@ git push origin main
 
 Run 现有 `test_server` 确认 baseline 绿。
 
-- [ ] **Step 2: 在 server.c 中创建全局 buf_pool**
+- [x] **Step 2: 在 server.c 中创建全局 buf_pool**
 
 在 `server` 结构体中加入：
 ```c
@@ -494,7 +494,7 @@ buf_pool pool;
 
 在 `server_start()` 中调用 `buf_pool_init(&srv->pool)`，在 `server_stop()` 中 `buf_pool_destroy(&srv->pool)`。
 
-- [ ] **Step 3: conn->rbuf 池化**
+- [x] **Step 3: conn->rbuf 池化**
 
 修改 `conn_create()`：
 ```c
@@ -521,7 +521,7 @@ if (new_rbuf) {
 
 IOCP 路径（`server_run_once_iocp`）同样处理。
 
-- [ ] **Step 4: conn->out 池化**
+- [x] **Step 4: conn->out 池化**
 
 在 `resp_writer.h/c` 新增：
 ```c
@@ -553,14 +553,14 @@ void resp_buf_pool_reserve(resp_buf *b, size_t n, buf_pool *pool)
 - `conn_free()` 中 `resp_buf_free(&c->out)` 改为：若 `c->out.data` 非空，`buf_pool_put(&srv->pool, c->out.data, c->out.cap)`，然后 `c->out.data = NULL`。
 - 非连接使用的 `resp_buf`（如 bench、AOF 临时缓冲）继续使用 `resp_buf_reserve()` / `resp_buf_free()`，不走池。
 
-- [ ] **Step 5: 全量回归测试**
+- [x] **Step 5: 全量回归测试**
 
 ```bash
 cmake --build build --target check
 ```
 Expected: 38/38 通过，无新增警告。
 
-- [ ] **Step 6: Commit + push**
+- [x] **Step 6: Commit + push**
 
 ```bash
 git add src/server/server.c src/resp/resp_writer.h src/resp/resp_writer.c src/core/buf_pool.h src/core/buf_pool.c
@@ -582,7 +582,7 @@ git push origin main
 - Consumes: `cmd_resolve`, `buf_pool`
 - Produces: benchmark 数字、文档更新
 
-- [ ] **Step 1: 新增 micro-benchmark**
+- [x] **Step 1: 新增 micro-benchmark**
 
 在 `bench/bench_core.c` 中新增两个 micro-benchmark（独立可开关，不破坏现有主流程）：
 
@@ -610,7 +610,7 @@ static void bench_cmd_resolve(void)
 }
 ```
 
-- [ ] **Step 2: 编译并运行 bench_core**
+- [x] **Step 2: 编译并运行 bench_core**
 
 ```bash
 cmake --build build --target bench_core
@@ -618,13 +618,13 @@ cmake --build build --target bench_core
 ```
 Expected: 运行成功，数字合理。
 
-- [ ] **Step 3: 更新文档**
+- [x] **Step 3: 更新文档**
 
 - `docs/architecture.md`：在“命令层”与“内存管理”小节后补充命令 ID 表与缓冲池说明。
 - `docs/performance.md`：新增“Phase 9 Hot-path micro-benchmarks”一节，记录 `cmd_resolve` 与 `buf_pool` 数字。
 - `docs/roadmap.md`：新增 Phase 9 并勾选。
 
-- [ ] **Step 4: 最终全量验证**
+- [x] **Step 4: 最终全量验证**
 
 默认构建 + 强制 C99：
 ```bash
@@ -634,7 +634,7 @@ cmake --build build-c99 --target check
 ```
 Expected: 各 38/38 通过，无新增警告。
 
-- [ ] **Step 5: Commit + push**
+- [x] **Step 5: Commit + push**
 
 ```bash
 git add bench/bench_core.c docs/architecture.md docs/performance.md docs/roadmap.md

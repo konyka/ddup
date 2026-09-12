@@ -1,6 +1,6 @@
 # C 标准自适应能力层实现计划
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** 为 ddup 增加编译期 C 标准能力探测与统一封装层，让上层代码按“最优实现 + C99 降级”写出跨标准、零开销、可测试的代码。
 
@@ -38,11 +38,11 @@
 - Consumes: `CMAKE_C_COMPILE_FEATURES`, `CMAKE_C_COMPILER_ID`
 - Produces: cache `DDUP_C_STD`, compile definitions `DDUP_C_STD=<n>` and `DDUP_HAS_C_*=0|1`, option `DDUP_C_STD_FORCE`
 
-- [ ] **Step 1: 写失败测试预期**
+- [x] **Step 1: 写失败测试预期**
 
 在 `tests/test_cstd.c` 里（先创建空文件占位即可，真正测试在 Task 5），预期能读取 `DDUP_HAS_C_STATIC_ASSERT` 等宏。当前这些宏不存在，测试会编译失败。
 
-- [ ] **Step 2: 修改 `cmake/DetectCStandard.cmake`**
+- [x] **Step 2: 修改 `cmake/DetectCStandard.cmake`**
 
 顶部增加强制选项：
 
@@ -85,7 +85,7 @@ ddup_detect_feature(BITINT     DDUP_C_STD>=23)
 
 对 `STDCKDINT` 和 `BITINT` 增加 `check_c_source_compiles` 片段验证，避免编译器虚标支持。
 
-- [ ] **Step 3: 配置并验证 CMake 能生成定义**
+- [x] **Step 3: 配置并验证 CMake 能生成定义**
 
 Run:
 ```bash
@@ -93,7 +93,7 @@ cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -G Ninja
 ```
 Expected: 配置成功，输出包含 `DDUP_C_STD=...` 和各项 `DDUP_HAS_C_*`。
 
-- [ ] **Step 4: Commit + push**
+- [x] **Step 4: Commit + push**
 
 ```bash
 git add cmake/DetectCStandard.cmake tests/test_cstd.c
@@ -117,7 +117,7 @@ git push origin main
   - `DDUP_NORETURN` (attribute-like macro for function declaration)
   - `ddup_thread_local`
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 ```c
 /* tests/test_cstd.c */
@@ -158,7 +158,7 @@ cmake --build build --target test_cstd
 ```
 Expected: 编译失败，`pal/pal_cstd.h` 不存在。
 
-- [ ] **Step 2: 实现 `src/pal/pal_cstd.h`（第一部分）**
+- [x] **Step 2: 实现 `src/pal/pal_cstd.h`（第一部分）**
 
 ```c
 #ifndef DDUP_PAL_CSTD_H
@@ -216,7 +216,7 @@ Expected: 编译失败，`pal/pal_cstd.h` 不存在。
 #endif /* DDUP_PAL_CSTD_H */
 ```
 
-- [ ] **Step 3: 运行测试并确认通过**
+- [x] **Step 3: 运行测试并确认通过**
 
 ```bash
 cmake --build build --target test_cstd
@@ -224,7 +224,7 @@ ctest --test-dir build -R test_cstd --output-on-failure
 ```
 Expected: `test_cstd` 通过。
 
-- [ ] **Step 4: Commit + push**
+- [x] **Step 4: Commit + push**
 
 ```bash
 git add src/pal/pal_cstd.h tests/test_cstd.c CMakeLists.txt
@@ -246,7 +246,7 @@ git push origin main
   - `ddup_constexpr` — C23 `constexpr`，否则退化为 `const`。
   - `ddup_add_overflow(a, b, res)`, `ddup_sub_overflow`, `ddup_mul_overflow` — 返回 `bool`。
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 ```c
 static void test_typeof(void)
@@ -281,7 +281,7 @@ cmake --build build --target test_cstd
 ```
 Expected: 编译失败，宏未定义。
 
-- [ ] **Step 2: 实现封装**
+- [x] **Step 2: 实现封装**
 
 在 `pal_cstd.h` 中追加：
 
@@ -339,7 +339,7 @@ static inline bool ddup_add_overflow_int(int a, int b, int *r)
 
 补齐 `ddup_sub_overflow_int` / `ddup_mul_overflow_int` 的 C99 fallback 实现。
 
-- [ ] **Step 3: 运行测试并确认通过**
+- [x] **Step 3: 运行测试并确认通过**
 
 ```bash
 cmake --build build --target test_cstd
@@ -347,7 +347,7 @@ ctest --test-dir build -R test_cstd --output-on-failure
 ```
 Expected: 通过。
 
-- [ ] **Step 4: Commit + push**
+- [x] **Step 4: Commit + push**
 
 ```bash
 git add src/pal/pal_cstd.h tests/test_cstd.c
@@ -369,7 +369,7 @@ git push origin main
   - `ddup_atomic_init(p, v)`, `ddup_atomic_load(p, mo)`, `ddup_atomic_store(p, v, mo)`, `ddup_atomic_fetch_add(p, v, mo)`, `ddup_atomic_fetch_sub(p, v, mo)`
   - `ddup_memory_order_*` 常量
 
-- [ ] **Step 1: 写失败测试**
+- [x] **Step 1: 写失败测试**
 
 ```c
 static ddup_atomic_int atomic_counter;
@@ -401,7 +401,7 @@ cmake --build build --target test_cstd
 ```
 Expected: 编译失败，原子宏未定义。
 
-- [ ] **Step 2: 实现原子封装**
+- [x] **Step 2: 实现原子封装**
 
 ```c
 #if DDUP_HAS_C_ATOMICS
@@ -440,7 +440,7 @@ typedef int ddup_atomic_int;
 备注：GCC/Clang 和 MSVC 的 C99 构建分别使用 `__atomic`/Interlocked，保证
 多线程 mt 状态安全；无原子内建的平台仍需显式限制为单线程。
 
-- [ ] **Step 3: 运行测试并确认通过**
+- [x] **Step 3: 运行测试并确认通过**
 
 ```bash
 cmake --build build --target test_cstd
@@ -448,7 +448,7 @@ ctest --test-dir build -R test_cstd --output-on-failure
 ```
 Expected: 通过。
 
-- [ ] **Step 4: Commit + push**
+- [x] **Step 4: Commit + push**
 
 ```bash
 git add src/pal/pal_cstd.h tests/test_cstd.c
@@ -466,7 +466,7 @@ git push origin main
 **Interfaces:**
 - Consumes: `DDUP_C_STD_FORCE` option from Task 1
 
-- [ ] **Step 1: 使用 C99 重新配置构建**
+- [x] **Step 1: 使用 C99 重新配置构建**
 
 ```bash
 cmake -S . -B build-c99 -DCMAKE_BUILD_TYPE=Release -G Ninja -DDDUP_C_STD_FORCE=99
@@ -475,14 +475,14 @@ ctest --test-dir build-c99 -R test_cstd --output-on-failure
 ```
 Expected: `test_cstd` 在 C99 路径下仍能通过。
 
-- [ ] **Step 2: 检查无新增警告**
+- [x] **Step 2: 检查无新增警告**
 
 ```bash
 cmake --build build-c99 --target test_cstd 2>&1 | grep -i warning || true
 ```
 Expected: 无相关警告。
 
-- [ ] **Step 3: Commit + push**
+- [x] **Step 3: Commit + push**
 
 无需代码变更；若 CI 通过即可。如有问题回到 Task 2-4 修复。
 
@@ -497,7 +497,7 @@ Expected: 无相关警告。
 **Interfaces:**
 - Produces: 更新的 C 标准自适应说明和 Phase 8 完成标记。
 
-- [ ] **Step 1: 更新 `docs/architecture.md`**
+- [x] **Step 1: 更新 `docs/architecture.md`**
 
 在“C 标准自适应”小节后追加：
 
@@ -521,7 +521,7 @@ Expected: 无相关警告。
 上层代码统一包含 `src/pal/pal_cstd.h`，使用 `ddup_*` 前缀宏，不再直接依赖具体 C 标准。
 ```
 
-- [ ] **Step 2: 更新 `docs/roadmap.md`**
+- [x] **Step 2: 更新 `docs/roadmap.md`**
 
 在 Phase 7+ 长期项之前插入：
 
@@ -532,14 +532,14 @@ Expected: 无相关警告。
   支持 `DDUP_C_STD_FORCE` 本地验证。
 ```
 
-- [ ] **Step 3: 全量测试**
+- [x] **Step 3: 全量测试**
 
 ```bash
 cmake --build build --target check
 ```
 Expected: 全部测试通过。
 
-- [ ] **Step 4: Commit + push**
+- [x] **Step 4: Commit + push**
 
 ```bash
 git add docs/architecture.md docs/roadmap.md

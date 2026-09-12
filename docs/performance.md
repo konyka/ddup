@@ -3097,3 +3097,9 @@ binary with `--version` and labels the comparison using the reported product and
 version. A fallback to `redis-server` therefore cannot be misreported as
 Valkey 9.0.4. Identity parsing is covered by a Python CTest regression; the
 probe runs once before measurements and does not affect the server hot path.
+
+### Phase 452: implementation-plan status convergence
+
+The historical C-standard and hot-path implementation plans now reflect their
+completed steps, matching the shipped code, tests, and commits. This is a
+documentation-only change with no runtime or benchmark impact.
