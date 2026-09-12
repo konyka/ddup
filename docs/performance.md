@@ -2895,8 +2895,11 @@ mixed-target pipelines without adding work to the steady-state path.
 ### Benchmark report 2026-09-12
 
 The reproducible matrix uses ddup-bench for ddup and Valkey 9.0.4 on the same
-loopback host: 10,000 requests, 10 concurrent connections, 16-byte values, and
-pipeline depths 1 and 16 for SET/GET/PING. ddup one-worker and Valkey complete
-all measured cases after Phase 430 fixed first-migration replay. The report
-contains 18 successful samples; Garnet was not installed and is explicitly
-excluded from measured comparisons.
+loopback host: 200,000 requests, 50 concurrent connections, 16-byte values, and
+pipeline depths 1, 16, and 64 for SET/GET/PING. ddup one-worker, ddup
+two-worker, and Valkey complete all measured cases after Phase 430 fixed
+first-migration replay. The report contains 27 successful samples; Garnet was
+not installed and is explicitly excluded from measured comparisons. The
+highest observed sample is ddup two-worker PING at P64 (6.45M requests/s,
+p50 128 us, p99 256 us); this is a loopback development measurement, not a
+production capacity guarantee.
