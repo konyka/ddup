@@ -3192,3 +3192,15 @@ Failure diagnostics now apply a 60-second timeout to log-branch and benchmark
 results fallback clones as well as the primary fetches. This keeps error
 handling bounded when the remote repository is unavailable, with no impact on
 server, benchmark, or test execution paths.
+
+### Phase 464: Linux Release microbenchmark refresh
+
+The top-level performance notes now include a fresh Linux Release `bench_core`
+sample with host and CPU context, keeping historical Windows and CI numbers
+distinct from current local trend data.
+
+### Phase 465: bounded GitHub Actions jobs
+
+All build, test, benchmark, compatibility, and interoperability jobs now set a
+job-level `timeout-minutes` limit. A CTest configuration regression checks the
+workflow declarations; this changes CI control-plane behavior only.

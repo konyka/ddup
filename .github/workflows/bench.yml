@@ -13,6 +13,7 @@ permissions:
 jobs:
   bench:
     name: ddup vs garnet vs redis
+    timeout-minutes: 120
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

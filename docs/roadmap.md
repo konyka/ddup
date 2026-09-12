@@ -1280,3 +1280,6 @@
   - [x] Linux Release micro-benchmark 刷新：重新运行 `bench_core` 并将带主机/构建
     条件的吞吐数字写入 `docs/performance.md`，避免性能文档引用过期样本
     （Phase 464）
+  - [x] GitHub Actions job 级超时门禁：所有 build/test、benchmark、兼容性和
+    互操作工作流声明 `timeout-minutes`，新增 CTest 配置回归防止无界 runner
+    任务（Phase 465）
