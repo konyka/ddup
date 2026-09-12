@@ -287,7 +287,12 @@ int main(int argc, char **argv)
         if (strcmp(argv[i], "-h") == 0 && i + 1 < argc) {
             g_host = argv[++i];
         } else if (strcmp(argv[i], "-p") == 0 && i + 1 < argc) {
-            g_port = (uint16_t)strtol(argv[++i], NULL, 10);
+            long parsed_port = strtol(argv[++i], NULL, 10);
+            if (parsed_port < 1 || parsed_port > 65535) {
+                fprintf(stderr, "invalid port\n");
+                return 1;
+            }
+            g_port = (uint16_t)parsed_port;
         } else if (strcmp(argv[i], "-n") == 0 && i + 1 < argc) {
             g_requests = strtol(argv[++i], NULL, 10);
         } else if (strcmp(argv[i], "-c") == 0 && i + 1 < argc) {

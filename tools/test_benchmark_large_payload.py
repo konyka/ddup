@@ -47,6 +47,15 @@ def main():
     if bounded.returncode == 0 or "dimensions too large" not in bounded.stderr:
         raise AssertionError("unbounded benchmark dimensions were accepted:\n" +
                              bounded.stdout + bounded.stderr)
+    invalid_port = subprocess.run(
+        [str(bench), "-p", "-1", "-n", "1", "-c", "1", "-P", "1",
+         "-t", "ping"],
+        check=False, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        text=True,
+    )
+    if invalid_port.returncode == 0 or "invalid port" not in invalid_port.stderr:
+        raise AssertionError("invalid benchmark port was accepted:\n" +
+                             invalid_port.stdout + invalid_port.stderr)
     port = free_port()
     proc = subprocess.Popen(
         [str(server), "--port", str(port)],

@@ -2948,3 +2948,11 @@ Values above those limits fail before any allocation with
 `benchmark dimensions too large`, preventing otherwise-valid integer input
 from requesting impractically large buffers or connection arrays. Normal
 benchmark dimensions remain unchanged.
+
+### Phase 435: benchmark port validation
+
+The `-p` option is now parsed as a signed temporary and range-checked before
+conversion to `uint16_t`. Negative and out-of-range values fail immediately
+with `invalid port` instead of wrapping to an unrelated service port. This is
+an input-safety guard only; valid benchmark connections use the unchanged
+socket path.
