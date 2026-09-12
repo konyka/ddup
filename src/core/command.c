@@ -4173,7 +4173,7 @@ static void cmd_pfadd(db *d, const resp_value *argv, size_t argc,
     int changed = 0;
     size_t i;
 
-    if (argc < 3) {
+    if (argc < 2) {
         wrong_args(out, "pfadd");
         return;
     }
@@ -4207,6 +4207,9 @@ static void cmd_pfadd(db *d, const resp_value *argv, size_t argc,
         memcpy(h, s, HLL_DENSE_SIZE);
     } else {
         hll_dense_init(h);
+        /* Redis creates an empty HLL when PFADD has no elements. */
+        if (argc == 2)
+            changed = 1;
     }
     regs = hll_regs_mut(h);
 
@@ -4338,7 +4341,7 @@ static void cmd_pfmerge(db *d, const resp_value *argv, size_t argc,
     unsigned char *dst_regs;
     size_t i;
 
-    if (argc < 3) {
+    if (argc < 2) {
         wrong_args(out, "pfmerge");
         return;
     }
@@ -23686,10 +23689,10 @@ static const cmd_entry CMD_TABLE[] = {
     {"lcs", CMD_LCS, 3, -1, 0, 0},
     {"sort", CMD_SORT, 2, -1, 0, CMD_WRITE},
     {"sort_ro", CMD_SORT_RO, 2, -1, 0, 0},
-    {"pfadd", CMD_PFADD, 3, -1, 0, CMD_WRITE},
+    {"pfadd", CMD_PFADD, 2, -1, 0, CMD_WRITE},
     {"pfcount", CMD_PFCOUNT, 2, -1, 0, 0},
     {"pfdebug", CMD_PFDEBUG, 3, -1, 0, 0},
-    {"pfmerge", CMD_PFMERGE, 3, -1, 0, CMD_WRITE},
+    {"pfmerge", CMD_PFMERGE, 2, -1, 0, CMD_WRITE},
     {"pfselftest", CMD_PFSELFTEST, 1, 1, 0, 0},
     {"geoadd", CMD_GEOADD, 5, -1, 0, CMD_WRITE},
     {"geodist", CMD_GEODIST, 4, 5, 0, 0},

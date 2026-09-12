@@ -1594,3 +1594,9 @@ Redis 8 的返回形状。无该选项时继续返回整数 rank，未知选项�
 `BITFIELD key` 与 `BITFIELD_RO key` 在没有 operation 子命令时返回空数组，
 不再错误地报告 arity/syntax。该路径在解析 key 后立即结束，不读取或创建值，
 因此不会产生数据副作用。
+
+## Phase 483：HLL 空参数兼容
+
+`PFADD key` 在 key 不存在时创建空 HLL 并返回 1，已存在的 HLL 返回 0；类型
+校验和正常元素路径保持一致。`PFMERGE dest` 允许没有 source，创建空 HLL
+并返回 OK，避免把 Redis 8 的合法最小 arity 误报为参数错误。

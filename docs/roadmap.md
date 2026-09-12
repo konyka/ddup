@@ -1327,3 +1327,5 @@
     返回及缺失成员 null array，未知选项 fail-closed（Phase 481）
   - [x] BITFIELD/BITFIELD_RO 空 operation：仅提供 key 时返回空数组并保持无副作用，
     与 Redis 8 最小 arity 兼容（Phase 482）
+  - [x] PFADD/PFMERGE 空参数形式：支持 `PFADD key` 创建空 HLL、重复调用返回 0，
+    以及 `PFMERGE dest` 创建空合并结果（Phase 483）

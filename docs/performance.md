@@ -3326,3 +3326,10 @@ database traversal.
 `BITFIELD key` and `BITFIELD_RO key` return an empty array after key validation. The
 no-op path frees the empty operation vector and skips value lookup, mutation, and
 temporary buffers; it adds no allocation to normal operation-bearing requests.
+
+### Phase 483: HLL empty argument forms
+
+The no-element `PFADD` path reuses the existing fixed-size HLL buffer and performs
+one normal write only when the destination is new. `PFMERGE` with no sources uses its
+existing merge buffer and single destination write; no additional traversal or lock
+is introduced for source-bearing merges.

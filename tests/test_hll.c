@@ -44,11 +44,13 @@ static void test_pfadd_pfcount(void)
     exec_cmd(&d, &out, 2, "PFCOUNT", "hll");
     EXPECT(out, ":4\r\n");
 
-    exec_cmd(&d, &out, 2, "PFCOUNT", "missing");
+    exec_cmd(&d, &out, 2, "PFADD", "empty");
+    EXPECT(out, ":1\r\n");
+    exec_cmd(&d, &out, 2, "PFADD", "empty");
     EXPECT(out, ":0\r\n");
 
-    exec_cmd(&d, &out, 2, "PFADD", "hll");
-    EXPECT(out, "-ERR wrong number of arguments for 'pfadd' command\r\n");
+    exec_cmd(&d, &out, 2, "PFCOUNT", "missing");
+    EXPECT(out, ":0\r\n");
 
     exec_cmd(&d, &out, 4, "HSET", "hash", "f", "v");
     exec_cmd(&d, &out, 3, "PFADD", "hash", "x");
@@ -82,6 +84,11 @@ static void test_pfcount_multi_pfmerge(void)
     EXPECT(out, "+OK\r\n");
     exec_cmd(&d, &out, 2, "PFCOUNT", "merged2");
     EXPECT(out, ":3\r\n");
+
+    exec_cmd(&d, &out, 2, "PFMERGE", "empty-merge");
+    EXPECT(out, "+OK\r\n");
+    exec_cmd(&d, &out, 2, "PFCOUNT", "empty-merge");
+    EXPECT(out, ":0\r\n");
 
     resp_buf_free(&out);
     db_destroy(&d);
