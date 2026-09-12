@@ -3278,3 +3278,11 @@ session before aggregate allocation or worker fan-out. Unauthorized requests tak
 the bounded local error path; authorized broadcasts retain the existing worker
 parallelism and ordering, with no additional allocation or lock in the normal data
 command path.
+
+### Phase 476: ACL recheck at MT EXEC replay
+
+Queued transaction commands carry only a bounded ACL username. At replay, the target
+worker resolves the current fixed-size user entry and performs one authorization
+check before optimized command branches; revoked commands take the existing error
+path. This adds no allocation or lock to ordinary non-transaction commands, while
+preserving the single-worker EXEC data locality and pipeline ordering.

@@ -1546,3 +1546,11 @@ worker 0 汇总完成计数形成屏障，确保哈希表只由所属事件循�
 但广播前由 home worker 的已认证会话执行 default 用户边界检查。非 default 用户
 在创建聚合状态或投递远端任务前即收到 `NOPERM`，不会借助 worker 的 sessionless
 管理上下文绕过授权；default 用户继续沿用原有有序 fan-out 和错误汇总语义。
+
+## Phase 476：MT EXEC 回放 ACL 时序一致性
+
+跨 worker 事务的 queued command 在 `EXEC` 回放前重新绑定当前 ACL 用户，并在
+sessionless worker 执行前再次检查权限。这样管理员在 `MULTI` 与 `EXEC` 之间撤销
+权限时，已入队的写命令也会返回单条 `NOPERM`，不会因 SET 等优化分支早于通用
+session ACL 检查而执行。用户被删除时回放进入 `NOAUTH`，WATCH/事务顺序和 key
+owner 路由保持不变。

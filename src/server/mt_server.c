@@ -203,6 +203,7 @@ typedef struct mt_task {
     int kind;             /* MT_TASK_* */
     int pending_owned;    /* home pending count held by this task */
     int db_index;         /* logical db the task executes against (SELECT) */
+    char acl_username[ACL_MAX_NAME]; /* ACL identity for EXEC replay */
     int repl_worker_id;   /* MT_TASK_REPL_SNAPSHOT source worker id */
     int scan_worker;      /* worker selected by a composite SCAN cursor */
     int scan_nworkers;
@@ -228,6 +229,13 @@ typedef struct mt_task {
     char inline_buf[256];
     int pooled;
 } mt_task;
+
+static int mt_acl_check(void *ctx, const struct acl_user *user,
+                        uint16_t cmd_id, const resp_value *argv, size_t argc)
+{
+    (void)ctx;
+    return acl_authorize(user, cmd_id, argv, argc);
+}
 
 #define MT_TASK_INLINE_MAX 256 /* inline_buf size */
 #define MT_TASK_POOL_MAX 256   /* freelist cap per worker (overflow: free) */
@@ -554,8 +562,8 @@ typedef struct mt_conn_state {
 } mt_conn_state;
 
 static int mt_route_txn(worker *, void *, mt_conn_state *,
-                        const resp_value *, size_t, const char *, size_t,
-                        uint16_t, int, uint64_t, resp_buf *);
+                        session *, const resp_value *, size_t, const char *,
+                        size_t, uint16_t, int, uint64_t, resp_buf *);
 static void mt_replay_deferred(worker *, void *, mt_conn_state *);
 static void mt_exec_task(worker *, mt_task *);
 static void mt_drain_completions(worker *w);
@@ -3294,6 +3302,7 @@ static mt_task *mt_pool_task_new(worker *home)
     t->kind = MT_TASK_CMD;
     t->pending_owned = 0;
     t->db_index = 0;
+    t->acl_username[0] = '\0';
     t->watch_out = NULL;
     t->nwatch_out = 0;
     t->exec_watches = NULL;
@@ -3495,8 +3504,20 @@ static void mt_mq_clear(mt_conn_state *st)
 static void mt_exec_on_db(server *srv, mt_task *t, arena *ar)
 {
     db *d = server_db_at(srv, t->db_index);
+    session sess;
     size_t i;
     int aborted = 0;
+    session_init(&sess, d);
+    sess.acl_ctx = server_acl_registry(srv);
+    sess.acl_user = acl_find_const((const acl_registry *)sess.acl_ctx,
+                                   t->acl_username,
+                                   strlen(t->acl_username));
+    sess.acl_generation = sess.acl_user == NULL
+                              ? 0 : sess.acl_user->generation;
+    sess.acl_check = mt_acl_check;
+    memcpy(sess.acl_username, t->acl_username, sizeof(sess.acl_username));
+    if (sess.acl_user == NULL)
+        sess.authed = 0;
     for (i = 0; i < t->nexec_watches; i++) {
         mt_watch_entry *e = &t->exec_watches[i];
         db *wd = server_db_at(srv, e->db_index);
@@ -3513,6 +3534,7 @@ static void mt_exec_on_db(server *srv, mt_task *t, arena *ar)
             return;
         memcpy(t->reply.data + t->reply.len, nullarr, sizeof(nullarr) - 1);
         t->reply.len += sizeof(nullarr) - 1;
+        session_release(&sess);
         return;
     }
     resp_write_array_header(&t->reply, t->ncmds);
@@ -3526,6 +3548,28 @@ static void mt_exec_on_db(server *srv, mt_task *t, arena *ar)
             resp_write_error(&t->reply, "ERR Protocol error", 18);
             continue;
         }
+        /* SET and a few other commands have optimized dispatch branches that
+         * precede the generic session ACL check. Re-apply the current ACL
+         * identity at the EXEC replay boundary so permissions revoked after
+         * queueing cannot be bypassed by the sessionless worker. */
+        if (!sess.authed) {
+            resp_write_error(&t->reply, "NOAUTH Authentication required.",
+                             sizeof("NOAUTH Authentication required.") - 1);
+            continue;
+        }
+        if (v.count > 0 && v.items[0].str != NULL) {
+            uint16_t replay_cmd = cmd_resolve(v.items[0].str,
+                                              v.items[0].len);
+            if (sess.acl_user != NULL && replay_cmd != CMD_AUTH &&
+                replay_cmd != CMD_ACL &&
+                !mt_acl_check(sess.acl_ctx, sess.acl_user, replay_cmd,
+                              v.items, v.count)) {
+                resp_write_error(&t->reply,
+                                 "NOPERM this user has no permissions to run the command or access the key",
+                                 sizeof("NOPERM this user has no permissions to run the command or access the key") - 1);
+                continue;
+            }
+        }
         dirty_before = d->dirty;
         if (v.count >= 3 && v.items[0].str != NULL &&
             v.items[0].len == 4 &&
@@ -3536,7 +3580,7 @@ static void mt_exec_on_db(server *srv, mt_task *t, arena *ar)
                                            t->cmds[i].len);
             continue;
         }
-        command_execute_at(d, v.items, v.count, &t->reply, pal_wall_ms());
+        session_execute_at(&sess, v.items, v.count, &t->reply, pal_wall_ms());
         /* EXEC logs the applied commands individually (no MULTI wrapper) */
         if (d->dirty != dirty_before) {
             server_aof_log_cmd(srv, t->db_index, v.items, v.count);
@@ -3544,6 +3588,7 @@ static void mt_exec_on_db(server *srv, mt_task *t, arena *ar)
                                        t->cmds[i].raw, t->cmds[i].len);
         }
     }
+    session_release(&sess);
 }
 
 static int mt_txn_watch(worker *home, void *conn, mt_conn_state *st,
@@ -3623,7 +3668,8 @@ static int mt_txn_watch(worker *home, void *conn, mt_conn_state *st,
 }
 
 static int mt_txn_exec(worker *home, void *conn, mt_conn_state *st,
-                       uint64_t seq, int db_index, resp_buf *out)
+                       const session *source, uint64_t seq, int db_index,
+                       resp_buf *out)
 {
     static const char empty[] = "*0\r\n";
     static const char err_execabort[] =
@@ -3730,6 +3776,10 @@ static int mt_txn_exec(worker *home, void *conn, mt_conn_state *st,
     }
     t->kind = MT_TASK_EXEC;
     t->db_index = db_index;
+    if (source != NULL && source->acl_username[0] != '\0')
+        memcpy(t->acl_username, source->acl_username, sizeof(t->acl_username));
+    else
+        memcpy(t->acl_username, "default", 8);
     t->exec_watches = st->watches;
     t->nexec_watches = st->nwatch;
     st->mq = NULL;
@@ -3754,7 +3804,8 @@ static int mt_txn_exec(worker *home, void *conn, mt_conn_state *st,
 }
 
 static int mt_route_txn(worker *home, void *conn, mt_conn_state *st,
-                        const resp_value *argv, size_t argc, const char *raw,
+                        session *sess, const resp_value *argv, size_t argc,
+                        const char *raw,
                         size_t rawlen, uint16_t cmd, int db_index,
                         uint64_t seq, resp_buf *out)
 {
@@ -3826,7 +3877,7 @@ static int mt_route_txn(worker *home, void *conn, mt_conn_state *st,
                            sizeof(err_no_exec) - 1, out);
             return 1;
         }
-        return mt_txn_exec(home, conn, st, seq, db_index, out);
+        return mt_txn_exec(home, conn, st, sess, seq, db_index, out);
     default:
         break;
     }
@@ -4336,7 +4387,7 @@ static int mt_route(void *ctx, void *conn, session *sess,
         st->watch_pending != 0 || (st->deferred_head != NULL &&
                                    !st->replaying_deferred)) {
         mt_batch_flush(home, conn, st);
-        return mt_route_txn(home, conn, st, argv, argc, raw, rawlen, cmd,
+        return mt_route_txn(home, conn, st, sess, argv, argc, raw, rawlen, cmd,
                             sess->db_index, st->seq_next++, out);
     }
 

@@ -1309,3 +1309,6 @@
   - [x] MT ACL 管理授权边界：`ACL SETUSER/DELUSER` 广播前在 home session 校验
     default 用户权限，非 default 用户在聚合分配和 fan-out 前 fail-closed，新增
     多线程越权回归测试（Phase 475）
+  - [x] MT EXEC ACL 时序一致性：事务回放携带有界 ACL 用户名并在目标 worker
+    执行前重新检查当前权限，覆盖撤权后 queued SET 的 `NOPERM` 回归，避免优化
+    分支绕过通用 ACL 检查（Phase 476）
