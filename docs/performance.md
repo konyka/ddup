@@ -2949,6 +2949,11 @@ Values above those limits fail before any allocation with
 from requesting impractically large buffers or connection arrays. Normal
 benchmark dimensions remain unchanged.
 
+The sanitizer build (`build-san`) also passes the large-payload regression when
+run with loopback socket access. An additional two-client, P4, 128 KiB SET/GET
+smoke test completed all 16 replies for both operations; this validates that
+dynamic receive growth remains correct with concurrent large responses.
+
 ### Phase 435: benchmark port validation
 
 The `-p` option is now parsed as a signed temporary and range-checked before
