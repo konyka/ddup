@@ -3089,3 +3089,11 @@ The audit tool's successful `--check` message now names the selected report
 path instead of always referring to the Redis 7 document. A regression test
 covers selecting the Redis 8 baseline. This is a control-plane diagnostic only
 and has no runtime or benchmark impact.
+
+### Phase 451: truthful benchmark reference identity
+
+The benchmark report now probes the selected `valkey-server` or `redis-server`
+binary with `--version` and labels the comparison using the reported product and
+version. A fallback to `redis-server` therefore cannot be misreported as
+Valkey 9.0.4. Identity parsing is covered by a Python CTest regression; the
+probe runs once before measurements and does not affect the server hot path.

@@ -350,6 +350,7 @@ add_custom_target(check
 if(Python3_Interpreter_FOUND)
     ddup_add_test(test_redis_compat_tool tools/test_audit_redis_compat.py)
     ddup_add_test(test_benchmark_large_payload tools/test_benchmark_large_payload.py)
+    ddup_add_test(test_benchmark_report tools/test_benchmark_report.py)
 endif()
 if(Python3_Interpreter_FOUND AND DEFINED REDIS_COMMANDS_DIR)
     ddup_add_test(test_redis_compat tools/audit_redis_compat.py

@@ -1244,3 +1244,6 @@
     命令兼容性报告与实现脱节（Phase 449）
   - [x] 兼容性审计诊断一致性：`--report` 自定义基线时成功输出显示实际报告
     路径，并由 TDD 覆盖 Redis 8 报告选择，避免 CI 日志误导（Phase 450）
+  - [x] 基准对比身份真实性：报告生成器探测实际 `redis-server`/`valkey-server`
+    版本并使用真实产品标签，新增 Python CTest 回归，避免回退二进制被错误标记
+    为 Valkey 9.0.4（Phase 451）
