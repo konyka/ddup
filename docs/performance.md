@@ -3364,3 +3364,9 @@ users from entering the debug handler.
 Minimum-arity checks use the existing command-table branch before any blocking state
 or key lookup. Malformed `ZMPOP`/`BLMPOP`/`BZMPOP` requests therefore avoid queue or
 timeout setup; valid pop operations retain their existing O(1) routing checks.
+
+### Phase 489: ACL key positions for multi-pop
+
+The four multi-pop variants share one bounded index calculation and scan only the
+declared key slice. Authorization remains allocation-free and prevents malformed or
+cross-policy key lists before any blocking state is installed.

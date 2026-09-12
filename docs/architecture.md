@@ -1632,3 +1632,10 @@ Redis 8 的返回形状。无该选项时继续返回整数 rank，未知选项�
 timeout，因此最小参数数目分别为 4、5、5（含命令名）。命令表和处理器现在在
 统一入口拒绝缺失方向参数，返回标准 wrong-number-of-arguments，而不是内部
 解析错误。
+
+## Phase 489：多键弹出 ACL key 位置
+
+ACL 授权现在按各命令真实语法解析 `LMPOP/ZMPOP` 的 `numkeys`（参数 1）以及
+`BLMPOP/BZMPOP` 的 timeout 后 `numkeys`（参数 2），并逐一校验所有 key pattern。
+这避免把计数参数当成 key 导致默认拒绝，也防止受限用户通过阻塞弹出命令绕过
+源 key 策略。

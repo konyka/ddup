@@ -556,14 +556,18 @@ int acl_authorize(const acl_user *u, uint16_t cmd_id, const resp_value *argv,
         }
         return 1;
     }
-    if (cmd_id == CMD_LMPOP) {
+    if (cmd_id == CMD_LMPOP || cmd_id == CMD_BLMPOP ||
+        cmd_id == CMD_ZMPOP || cmd_id == CMD_BZMPOP) {
         long long nk;
         size_t j, p, end;
-        if (argc < 4 || argv[2].type != RESP_BULK_STRING ||
-            !acl_parse_ll(argv[2].str, argv[2].len, &nk) || nk <= 0 ||
-            (uint64_t)nk > (uint64_t)(argc - 3) || u->pattern_count == 0) return 0;
-        end = 3 + (size_t)nk;
-        for (j = 3; j < end; j++) {
+        size_t num_idx = (cmd_id == CMD_LMPOP || cmd_id == CMD_ZMPOP) ? 1u : 2u;
+        size_t key_start = num_idx + 1u;
+        if (argc <= num_idx || argv[num_idx].type != RESP_BULK_STRING ||
+            !acl_parse_ll(argv[num_idx].str, argv[num_idx].len, &nk) ||
+            nk <= 0 || (uint64_t)nk > (uint64_t)(argc - key_start) ||
+            u->pattern_count == 0) return 0;
+        end = key_start + (size_t)nk;
+        for (j = key_start; j < end; j++) {
             if (argv[j].type != RESP_BULK_STRING) return 0;
             for (p = 0; p < u->pattern_count; p++)
                 if (acl_match_pattern(u->patterns[p], strlen(u->patterns[p]), argv[j].str, argv[j].len)) break;

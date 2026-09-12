@@ -1339,3 +1339,5 @@
     调试命令（Phase 487）
   - [x] ZMPOP/BLMPOP/BZMPOP 最小 arity：缺失方向参数时统一返回标准参数错误，
     避免落入内部解析错误路径（Phase 488）
+  - [x] LMPOP/ZMPOP 与阻塞变体 ACL key 位置：按真实 numkeys 偏移逐一检查所有
+    key pattern，修复合法 LMPOP 被默认拒绝及潜在策略绕过（Phase 489）

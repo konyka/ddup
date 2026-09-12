@@ -917,7 +917,7 @@ static void test_acl_blocking_and_option_key_positions(void)
     acl_registry r;
     resp_value rules[3] = {rv("on"), rv("~allowed:*") , rv("+@all")};
     resp_value blpop[4] = {rv("BLPOP"), rv("allowed:list"), rv("secret:list"), rv("0")};
-    resp_value blmop[7] = {rv("BLMPOP"), rv("0"), rv("2"), rv("allowed:a"), rv("secret:b"), rv("LEFT"), rv("COUNT")};
+    resp_value blmop[6] = {rv("BLMPOP"), rv("0"), rv("2"), rv("allowed:a"), rv("secret:b"), rv("LEFT")};
     resp_value bitop[5] = {rv("BITOP"), rv("OR"), rv("allowed:dest"), rv("allowed:a"), rv("secret:b")};
     resp_value georadius[8] = {rv("GEORADIUS"), rv("allowed:geo"), rv("0"), rv("0"), rv("1"), rv("STORE"), rv("secret:dest"), rv("WITHCOORD")};
     acl_user *u;
@@ -926,7 +926,7 @@ static void test_acl_blocking_and_option_key_positions(void)
     u = acl_find(&r, "u", 1);
     DD_CHECK(u != NULL);
     DD_CHECK(acl_authorize(u, CMD_BLPOP, blpop, 4) == 0);
-    DD_CHECK(acl_authorize(u, CMD_BLMPOP, blmop, 7) == 0);
+    DD_CHECK(acl_authorize(u, CMD_BLMPOP, blmop, 6) == 0);
     DD_CHECK(acl_authorize(u, CMD_BITOP, bitop, 5) == 0);
     DD_CHECK(acl_authorize(u, CMD_GEORADIUS, georadius, 8) == 0);
 }
@@ -938,11 +938,15 @@ static void test_acl_stream_and_numkeys_positions(void)
     resp_value xread[8] = {rv("XREAD"), rv("COUNT"), rv("1"), rv("STREAMS"), rv("allowed:s"), rv("secret:s"), rv("0-0"), rv("0-0")};
     resp_value xreadgroup[9] = {rv("XREADGROUP"), rv("GROUP"), rv("g"), rv("c"), rv("STREAMS"), rv("allowed:s"), rv("secret:s"), rv("0"), rv("0")};
     resp_value xgroup[4] = {rv("XGROUP"), rv("CREATE"), rv("secret:s"), rv("g")};
-    resp_value lmpop[6] = {rv("LMPOP"), rv("0"), rv("2"), rv("allowed:a"), rv("secret:b"), rv("LEFT")};
-    resp_value zmpop[6] = {rv("ZMPOP"), rv("2"), rv("2"), rv("allowed:a"), rv("secret:b"), rv("MIN")};
+    resp_value lmpop[5] = {rv("LMPOP"), rv("2"), rv("allowed:a"), rv("secret:b"), rv("LEFT")};
+    resp_value zmpop[5] = {rv("ZMPOP"), rv("2"), rv("allowed:a"), rv("secret:b"), rv("MIN")};
+    resp_value blmpop[6] = {rv("BLMPOP"), rv("0"), rv("2"), rv("allowed:a"), rv("secret:b"), rv("LEFT")};
+    resp_value bzmpop[6] = {rv("BZMPOP"), rv("0"), rv("2"), rv("allowed:a"), rv("secret:b"), rv("MIN")};
     resp_value xread_ok[8] = {rv("XREAD"), rv("COUNT"), rv("1"), rv("STREAMS"), rv("allowed:s"), rv("allowed:t"), rv("0-0"), rv("0-0")};
     resp_value xgroup_ok[4] = {rv("XGROUP"), rv("CREATE"), rv("allowed:s"), rv("g")};
-    resp_value lmpop_ok[6] = {rv("LMPOP"), rv("0"), rv("2"), rv("allowed:a"), rv("allowed:b"), rv("LEFT")};
+    resp_value lmpop_ok[5] = {rv("LMPOP"), rv("2"), rv("allowed:a"), rv("allowed:b"), rv("LEFT")};
+    resp_value blmpop_ok[6] = {rv("BLMPOP"), rv("0"), rv("2"), rv("allowed:a"), rv("allowed:b"), rv("LEFT")};
+    resp_value bzmpop_ok[6] = {rv("BZMPOP"), rv("0"), rv("2"), rv("allowed:a"), rv("allowed:b"), rv("MIN")};
     acl_user *u;
     acl_init(&r, NULL);
     DD_CHECK(acl_setuser(&r, "u", 1, rules, 3) == 0);
@@ -953,9 +957,13 @@ static void test_acl_stream_and_numkeys_positions(void)
     DD_CHECK(acl_authorize(u, CMD_XREADGROUP, xreadgroup, 9) == 0);
     DD_CHECK(acl_authorize(u, CMD_XGROUP, xgroup, 4) == 0);
     DD_CHECK(acl_authorize(u, CMD_XGROUP, xgroup_ok, 4) == 1);
-    DD_CHECK(acl_authorize(u, CMD_LMPOP, lmpop, 6) == 0);
-    DD_CHECK(acl_authorize(u, CMD_LMPOP, lmpop_ok, 6) == 1);
-    DD_CHECK(acl_authorize(u, CMD_ZMPOP, zmpop, 6) == 0);
+    DD_CHECK(acl_authorize(u, CMD_LMPOP, lmpop, 5) == 0);
+    DD_CHECK(acl_authorize(u, CMD_LMPOP, lmpop_ok, 5) == 1);
+    DD_CHECK(acl_authorize(u, CMD_ZMPOP, zmpop, 5) == 0);
+    DD_CHECK(acl_authorize(u, CMD_BLMPOP, blmpop, 6) == 0);
+    DD_CHECK(acl_authorize(u, CMD_BLMPOP, blmpop_ok, 6) == 1);
+    DD_CHECK(acl_authorize(u, CMD_BZMPOP, bzmpop, 6) == 0);
+    DD_CHECK(acl_authorize(u, CMD_BZMPOP, bzmpop_ok, 6) == 1);
 }
 
 static void test_acl_migrate_uses_key_tail_not_host_parameters(void)
