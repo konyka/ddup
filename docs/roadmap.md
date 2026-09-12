@@ -1229,3 +1229,5 @@
   - [x] PAL 连接等待边界安全：`pal_connect_wait` 在进入平台 `FD_SET/select`
     前拒绝无效 socket 与负超时，修复 UBSan 负移位并保持正常连接路径不变
     （Phase 444）
+  - [x] io_uring completion 错误转换安全：处理 `INT_MIN` 负结果时避免取负溢出，
+    保持普通 errno 映射并通过 SEND_ZC fixed-buffer UBSan 回归（Phase 445）

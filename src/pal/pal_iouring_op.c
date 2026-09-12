@@ -1006,7 +1006,11 @@ int pal_iouring_wait(pal_iouring *r, pal_iouring_event *evs, int max,
             ev->op = (pal_iouring_ev)op;
             ev->fd = PAL_SOCKET_INVALID;
             ev->bytes = cqe->res >= 0 ? (ptrdiff_t)cqe->res : -1;
-            ev->err = cqe->res < 0 ? -cqe->res : 0;
+            /* io_uring normally reports a negated errno, but keep the
+             * conversion defined even if a provider returns INT_MIN. */
+            ev->err = cqe->res < 0
+                          ? (cqe->res == INT_MIN ? INT_MAX : -cqe->res)
+                          : 0;
             /* F_MORE: the underlying multishot request is still armed */
             ev->op_done = (cqe->flags & IORING_CQE_F_MORE) ? 0 : 1;
             ev->notif = (cqe->flags & IORING_CQE_F_NOTIF) != 0;

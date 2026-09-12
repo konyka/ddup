@@ -3038,3 +3038,10 @@ provides a portable C99-compatible release path.
 touching the platform descriptor sets. This preserves the fail-closed API
 contract and prevents an invalid descriptor from becoming a negative bit shift
 inside POSIX `FD_SET`; the check is outside the successful connect hot path.
+
+### Phase 445: io_uring error conversion safety
+
+Completion errors from io_uring are converted from the kernel's negative
+result convention without negating `INT_MIN`. A defensive saturation keeps
+unexpected provider values defined while preserving all ordinary errno values;
+the SEND_ZC fixed-buffer completion regression now passes with UBSan enabled.
