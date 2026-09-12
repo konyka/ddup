@@ -3136,3 +3136,11 @@ The end-to-end reshard test now uses the PAL atomic abstraction for its
 background server runner stop flag. This removes a test-harness data race that
 would otherwise invalidate a full TSan run; it has no production-path cost.
 The complete Clang ThreadSanitizer CTest suite passes all 75 registered tests.
+
+### Phase 457: bounded benchmark subprocesses
+
+Benchmark report subprocesses now use a 120-second timeout. A wedged server or
+client fails the sample explicitly and the report continues collecting other
+matrix cells, instead of blocking indefinitely. The timeout is outside the
+server and benchmark hot paths; the regression is covered by
+`test_benchmark_report` in Release and ASan configurations.

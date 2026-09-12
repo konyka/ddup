@@ -1259,3 +1259,6 @@
   - [x] Reshard 测试线程停止同步：端到端 reshard runner 的停止标志改为 PAL
     原子变量，完整 Clang TSan CTest 75/75 通过，确保门禁本身不含数据竞态
     （Phase 456）
+  - [x] benchmark 报告子进程超时保护：压测命令设置 120 秒上限，超时转换为
+    明确的 fail-closed 错误并由 TDD 覆盖，避免异常 server 令报告生成永久阻塞
+    （Phase 457）

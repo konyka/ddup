@@ -19,6 +19,7 @@ RESULT_RE = re.compile(
     r"latency \(us\): min=(?P<min>\d+) p50=(?P<p50>\d+) "
     r"p99=(?P<p99>\d+) max=(?P<max>\d+).*?"
     r"(?P<rps>[0-9.]+) requests per second", re.S)
+BENCH_TIMEOUT_SECONDS = 120
 
 
 def classify_server_identity(binary_name, version_output):
@@ -64,7 +65,12 @@ def wait_port(port):
 
 
 def run_bench(command):
-    proc = subprocess.run(command, text=True, capture_output=True, check=False)
+    try:
+        proc = subprocess.run(command, text=True, capture_output=True,
+                              check=False, timeout=BENCH_TIMEOUT_SECONDS)
+    except subprocess.TimeoutExpired as exc:
+        raise RuntimeError("benchmark timed out after %ss: %s" %
+                           (BENCH_TIMEOUT_SECONDS, " ".join(command))) from exc
     output = proc.stdout + proc.stderr
     if proc.returncode:
         raise RuntimeError("command failed: " + " ".join(command) + "\n" + output)

@@ -19,6 +19,22 @@ def main():
     assert MODULE.classify_server_identity(
         "cache-server", "cache-server build 3.1") == "cache-server 3.1"
     assert MODULE.classify_server_identity("redis-server", "") == "Redis"
+    original_run = MODULE.subprocess.run
+
+    def timeout_run(*args, **kwargs):
+        raise MODULE.subprocess.TimeoutExpired(kwargs.get("args", args[0]), 1)
+
+    MODULE.subprocess.run = timeout_run
+    try:
+        try:
+            MODULE.run_bench(["ddup-bench", "-t", "ping"])
+        except RuntimeError as exc:
+            assert "timed out" in str(exc)
+        else:
+            raise AssertionError("benchmark timeout must fail explicitly")
+    finally:
+        MODULE.subprocess.run = original_run
+
     payload = {
         "generated_at": "2026-09-12T00:00:00+00:00",
         "environment": "test",
