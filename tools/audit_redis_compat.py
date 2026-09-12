@@ -61,8 +61,16 @@ def load_redis_commands(json_dir, tag):
                 data = json.load(fh)
         except (OSError, ValueError) as exc:
             raise SystemExit(f"error: cannot parse {path}: {exc}")
+        if not isinstance(data, dict):
+            raise SystemExit(f"error: {path} must contain a JSON object")
         for cmd_name, meta in data.items():
+            if not isinstance(cmd_name, str) or not isinstance(meta, dict):
+                raise SystemExit(
+                    f"error: {path} command metadata must be an object")
             container = meta.get("container")
+            if container is not None and not isinstance(container, str):
+                raise SystemExit(
+                    f"error: {path} container name must be a string")
             key = norm(container + " " + cmd_name) if container else norm(cmd_name)
             if key in entries:
                 raise SystemExit(f"error: duplicate command entry {key!r} in {path}")

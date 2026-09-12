@@ -272,6 +272,20 @@ def test_fetch_timeout_fails_closed(tmp):
         module.subprocess.run = original_run
 
 
+def test_malformed_metadata_fails_closed(tmp):
+    spec = importlib.util.spec_from_file_location("audit_module", AUDIT)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    _write(os.path.join(tmp, "commands", "malformed.json"),
+           '{"BROKEN": ["not", "metadata"]}\n')
+    try:
+        module.load_redis_commands(os.path.join(tmp, "commands"), "test")
+    except SystemExit as exc:
+        assert "metadata" in str(exc)
+    else:
+        raise AssertionError("malformed command metadata must fail explicitly")
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--keep", action="store_true", help="keep tmp dirs on failure")
@@ -290,6 +304,7 @@ def main():
             test_fails_on_stale_subcommand_entry,
             test_alternate_report_baseline_is_selected,
             test_fetch_timeout_fails_closed,
+            test_malformed_metadata_fails_closed,
         ):
             fixture = tempfile.mkdtemp(prefix="audit-test-")
             try:
@@ -300,7 +315,7 @@ def main():
                 print(f"{fn.__name__}: FAILED: {exc}")
             finally:
                 shutil.rmtree(fixture, ignore_errors=True)
-        print(f"---\n{10 - failures}/10 audit tool tests passed")
+        print(f"---\n{11 - failures}/11 audit tool tests passed")
     finally:
         if failures and not args.keep:
             shutil.rmtree(tmp, ignore_errors=True)

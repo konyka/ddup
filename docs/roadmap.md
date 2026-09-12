@@ -1268,3 +1268,6 @@
     异常程序不会阻塞报告生成，并由 TDD 覆盖超时降级标签（Phase 459）
   - [x] SPSC 压力测试状态清理：移除未读取的 `volatile done` 共享字段，避免
     测试夹具引入伪共享状态并保持 TSan 纯净（Phase 460）
+  - [x] Redis 命令元数据结构校验：审计工具拒绝非对象命令条目及非字符串
+    container 字段，统一输出可诊断的 fail-closed 错误，并由 TDD 覆盖损坏 JSON
+    （Phase 461）

@@ -3165,3 +3165,11 @@ The SPSC stress test no longer carries an unused volatile cross-thread flag;
 producer/consumer completion is already synchronized by thread joins. This is
 test-only cleanup with no production-path cost and keeps sanitizer diagnostics
 focused on live synchronization state.
+
+### Phase 461: validated Redis metadata inputs
+
+The compatibility audit validates command JSON structure before traversing
+metadata. Corrupt or unexpected schemas now fail with an explicit diagnostic
+instead of an uncaught exception; this is control-plane validation and adds no
+runtime cost to the server or benchmark paths. The audit TDD suite covers the
+malformed metadata case.
