@@ -3144,3 +3144,10 @@ client fails the sample explicitly and the report continues collecting other
 matrix cells, instead of blocking indefinitely. The timeout is outside the
 server and benchmark hot paths; the regression is covered by
 `test_benchmark_report` in Release and ASan configurations.
+
+### Phase 458: bounded compatibility-audit fetches
+
+Redis command metadata fetches now bound each git subprocess to 120 seconds and
+turn a network stall into an explicit error. This affects only the audit/CI
+control plane; normal server and benchmark paths are unchanged. The audit
+tool's TDD suite now includes the timeout diagnostic and passes 10/10 cases.

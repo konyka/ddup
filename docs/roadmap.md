@@ -1262,3 +1262,5 @@
   - [x] benchmark 报告子进程超时保护：压测命令设置 120 秒上限，超时转换为
     明确的 fail-closed 错误并由 TDD 覆盖，避免异常 server 令报告生成永久阻塞
     （Phase 457）
+  - [x] Redis 兼容性审计 fetch 超时保护：git sparse-checkout 子进程设置 120 秒
+    上限，网络/远端异常 fail-closed，并由 TDD 覆盖超时诊断（Phase 458）

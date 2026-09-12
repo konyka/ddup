@@ -15,6 +15,7 @@ network access and without depending on the real Redis checkout.
 """
 
 import argparse
+import importlib.util
 import os
 import shutil
 import subprocess
@@ -250,6 +251,27 @@ def test_alternate_report_baseline_is_selected(tmp):
     assert "docs/redis-8-compat-audit.md" in proc.stdout
 
 
+def test_fetch_timeout_fails_closed(tmp):
+    spec = importlib.util.spec_from_file_location("audit_module", AUDIT)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    original_run = module.subprocess.run
+
+    def timeout_run(*args, **kwargs):
+        raise module.subprocess.TimeoutExpired(args[0], 1)
+
+    module.subprocess.run = timeout_run
+    try:
+        try:
+            module.subprocess_check(["git", "clone", "example"])
+        except SystemExit as exc:
+            assert "timed out" in str(exc)
+        else:
+            raise AssertionError("audit subprocess timeout must fail explicitly")
+    finally:
+        module.subprocess.run = original_run
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--keep", action="store_true", help="keep tmp dirs on failure")
@@ -267,6 +289,7 @@ def main():
             test_fails_on_stale_container_entry,
             test_fails_on_stale_subcommand_entry,
             test_alternate_report_baseline_is_selected,
+            test_fetch_timeout_fails_closed,
         ):
             fixture = tempfile.mkdtemp(prefix="audit-test-")
             try:
@@ -277,7 +300,7 @@ def main():
                 print(f"{fn.__name__}: FAILED: {exc}")
             finally:
                 shutil.rmtree(fixture, ignore_errors=True)
-        print(f"---\n{9 - failures}/9 audit tool tests passed")
+        print(f"---\n{10 - failures}/10 audit tool tests passed")
     finally:
         if failures and not args.keep:
             shutil.rmtree(tmp, ignore_errors=True)

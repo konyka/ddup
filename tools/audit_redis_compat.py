@@ -32,6 +32,7 @@ from collections import defaultdict
 
 DEFAULT_TAG = "7.2.15"
 DEFAULT_REPORT = os.path.join("docs", "redis-compat-audit.md")
+SUBPROCESS_TIMEOUT_SECONDS = 120
 
 
 def norm(s):
@@ -231,7 +232,13 @@ def fetch_redis_commands(tag, dest):
 
 
 def subprocess_check(argv):
-    proc = subprocess.run(argv, capture_output=True, text=True)
+    try:
+        proc = subprocess.run(argv, capture_output=True, text=True,
+                              timeout=SUBPROCESS_TIMEOUT_SECONDS)
+    except subprocess.TimeoutExpired as exc:
+        raise SystemExit(
+            f"error: {' '.join(argv)} timed out after "
+            f"{SUBPROCESS_TIMEOUT_SECONDS}s") from exc
     if proc.returncode != 0:
         raise SystemExit(
             f"error: {' '.join(argv)} failed:\n{proc.stdout}\n{proc.stderr}")
