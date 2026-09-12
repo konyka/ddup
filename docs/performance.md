@@ -7,8 +7,9 @@
 - 架构层面对比（分片路由 vs 共享存储的定性分析）：
   见 [architecture.md](architecture.md)「架构对比：分片存储 + 消息路由
   （ddup mt）vs 共享存储（Garnet/Tsavorite）」一节。
-- 最新可视化实测报告：reports/benchmark-2026-09-12.html，原始数据见同目录
-  JSON，生成器为 tools/generate_benchmark_report.py。
+- 最新可视化实测报告：reports/benchmark-2026-09-13.html，原始数据见同目录
+  JSON，生成器为 tools/generate_benchmark_report.py；固定矩阵为 10,000 请求、
+  20 客户端、pipeline 1/16、16-byte value。
 - 当前主机 micro-benchmark 刷新（2026-09-12，Linux，Release，16 核）：
   `bench_core` SET 冷启动 `5.27M`、GET 热启动 `8.59M/8.80M`（第二次运行）、
   parse-only SET/GET `38.33M/44.51M`，`cmd_resolve` `98.57M`，`buf_pool`
