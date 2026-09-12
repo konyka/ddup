@@ -23,7 +23,7 @@ static void test_pool_basic(void)
 
     /* Borrowing again should return the same buffer (single-threaded). */
     {
-        size_t sz2;
+        size_t sz2 = 0;
         char *p2 = (char *)buf_pool_get(&pool, 64 * 1024, &sz2);
         DD_CHECK(p2 == p);
         DD_CHECK(sz2 == sz);

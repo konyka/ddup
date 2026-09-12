@@ -760,7 +760,7 @@ static void test_migrate_cross_worker_external_target(void)
 {
     mt_server *ms;
     server *target;
-    mt_target_runner runner;
+    mt_target_runner runner = {0};
     pal_socket_t src, dst;
     char key[32], port[16], req[512], buf[256];
     DD_CHECK_EQ_INT(0, pal_socket_init());
@@ -1599,7 +1599,7 @@ static void test_mt_replica_partitions_full_sync(void)
 {
     server *master;
     server_thread_ctx mt_ctx;
-    pal_thread master_thread;
+    pal_thread master_thread = {0};
     mt_server *ms;
     pal_socket_t mc, c;
     char k0[32], k1[32];
@@ -1663,7 +1663,7 @@ static void test_mt_master_serves_replica_full_sync(void)
     mt_server *ms;
     server *replica;
     server_thread_ctx rt;
-    pal_thread replica_thread;
+    pal_thread replica_thread = {0};
     pal_socket_t mc, c;
     char k0[32], k1[32];
     char req[256];
@@ -1722,7 +1722,7 @@ static void test_mt_replication_forwards_mutations(void)
     mt_server *ms;
     server *replica;
     server_thread_ctx rt;
-    pal_thread replica_thread;
+    pal_thread replica_thread = {0};
     pal_socket_t mc, c;
     char k0[32], k1[32];
     char req[256];
@@ -1825,7 +1825,7 @@ static void test_mt_info_replication(void)
     mt_server *ms;
     server *replica;
     server_thread_ctx rt;
-    pal_thread replica_thread;
+    pal_thread replica_thread = {0};
     pal_socket_t c;
     char info[65536];
     size_t got;
@@ -1868,7 +1868,7 @@ static void test_mt_swapdb_replicates_once_three_workers(void)
     mt_server *ms;
     server *replica;
     server_thread_ctx rt;
-    pal_thread replica_thread;
+    pal_thread replica_thread = {0};
     pal_socket_t mc, c;
     char k0[32], k1[32];
     char req[256];

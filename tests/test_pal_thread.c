@@ -62,7 +62,7 @@ static void *cond_waiter(void *arg)
 static void test_cond_signal_and_return(void)
 {
     cond_ctx ctx;
-    pal_thread th;
+    pal_thread th = {0};
     void *ret = NULL;
 
     ctx.ready = 0;

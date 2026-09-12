@@ -302,7 +302,7 @@ static void test_restore_asking_cluster(void)
     resp_buf out;
     cluster_node *o;
     char payload[256], dst[16];
-    const char *p;
+    const char *p = NULL;
     long long plen;
     resp_value argv[4];
 
@@ -325,7 +325,8 @@ static void test_restore_asking_cluster(void)
     exec_sess(s, T0, &out, 2, "DUMP", "foo");
     plen = bulk_payload(&out, &p);
     DD_CHECK(plen > 0 && plen < (long long)sizeof(payload));
-    memcpy(payload, p, (size_t)plen);
+    if (p != NULL && plen > 0 && plen < (long long)sizeof(payload))
+        memcpy(payload, p, (size_t)plen);
 
     key_in_slot(FOO_SLOT, dst);
     DD_CHECK(dst[0] != '\0');
