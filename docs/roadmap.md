@@ -1209,3 +1209,6 @@
   - [x] benchmark 数值参数严格解析：`-n/-c/-P/-r/-d` 使用 `strtol` 的
     `endptr/errno` 检查，拒绝尾随字符、空值和范围溢出，避免静默截断
     （Phase 436）
+  - [x] benchmark 异常路径清理：统一释放部分初始化连接、事件循环、arena
+    和 payload；连接失败路径新增 CTest 回归，避免 socket/缓冲区泄漏
+    （Phase 437）

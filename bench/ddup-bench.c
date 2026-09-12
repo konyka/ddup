@@ -160,6 +160,33 @@ static void conn_finish(pal_loop *l, bconn *c)
     c->active = 0;
 }
 
+static void bench_cleanup(pal_loop *loop, bconn *conns, long count,
+                           arena *a, int arena_ready, int sockets_ready)
+{
+    long i;
+    if (conns != NULL) {
+        for (i = 0; i < count; i++) {
+            bconn *c = &conns[i];
+            if (c->active && loop != NULL)
+                conn_finish(loop, c);
+            else if (c->fd != PAL_SOCKET_INVALID)
+                pal_close(c->fd);
+            free(c->sbuf);
+            free(c->rbuf);
+            free(c->ts);
+        }
+    }
+    free(conns);
+    if (arena_ready)
+        arena_destroy(a);
+    if (loop != NULL)
+        pal_loop_free(loop);
+    if (sockets_ready)
+        pal_socket_cleanup();
+    free(g_value);
+    g_value = NULL;
+}
+
 /* write interest: pending bytes, or budget for more in-flight requests */
 static int conn_want_write(const bconn *c)
 {
@@ -296,7 +323,7 @@ int main(int argc, char **argv)
     pal_event evs[MAX_EVENTS];
     uint64_t t0, t1, last_progress;
     long total = 0, live;
-    int failed = 0;
+    int failed = 0, sockets_ready = 0, arena_ready = 0;
 
     for (i = 1; i < argc; i++) {
         if (strcmp(argv[i], "-h") == 0 && i + 1 < argc) {
@@ -379,15 +406,21 @@ int main(int argc, char **argv)
 
     if (pal_socket_init() != 0) {
         fprintf(stderr, "socket init failed\n");
+        free(g_value);
+        g_value = NULL;
         return 1;
     }
+    sockets_ready = 1;
     loop = pal_loop_create();
     conns = (bconn *)calloc((size_t)g_clients, sizeof(bconn));
     if (loop == NULL || conns == NULL) {
         fprintf(stderr, "out of memory\n");
-        return 1;
+        goto fail;
     }
+    for (ci = 0; ci < g_clients; ci++)
+        conns[ci].fd = PAL_SOCKET_INVALID;
     arena_init(&a, 4096);
+    arena_ready = 1;
 
     /* connect everybody up front (fast on loopback), all non-blocking */
     {
@@ -406,7 +439,7 @@ int main(int argc, char **argv)
             c->ts = (uint64_t *)malloc((size_t)g_pipe * sizeof(uint64_t));
             if (c->sbuf == NULL || c->rbuf == NULL || c->ts == NULL) {
                 fprintf(stderr, "out of memory\n");
-                return 1;
+                goto fail;
             }
             if (c->share == 0)
                 continue; /* more clients than requests */
@@ -416,7 +449,7 @@ int main(int argc, char **argv)
                 pal_loop_add(loop, c->fd, 1, 1, c) != 0) {
                 fprintf(stderr, "connect failed to %s:%u\n", g_host,
                         (unsigned)g_port);
-                return 1;
+                goto fail;
             }
             c->active = 1;
             c->want_write = 1;
@@ -515,14 +548,10 @@ int main(int argc, char **argv)
         printf("  %.2f requests per second\n", qps); /* keep LAST (CI grep) */
     }
 
-    for (ci = 0; ci < g_clients; ci++) {
-        free(conns[ci].sbuf);
-        free(conns[ci].rbuf);
-        free(conns[ci].ts);
-    }
-    free(conns);
-    arena_destroy(&a);
-    pal_loop_free(loop);
-    pal_socket_cleanup();
+    bench_cleanup(loop, conns, g_clients, &a, arena_ready, sockets_ready);
     return failed ? 1 : 0;
+
+fail:
+    bench_cleanup(loop, conns, g_clients, &a, arena_ready, sockets_ready);
+    return 1;
 }

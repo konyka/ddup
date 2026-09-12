@@ -2973,3 +2973,12 @@ inputs follow the unchanged fast path.
 The strict-warning build (`build-strict`, `-Wall -Wextra -Wpedantic -Werror`)
 also compiles `ddup-bench` cleanly and passes the benchmark regression,
 including malformed and `ERANGE` numeric inputs.
+
+### Phase 437: benchmark failure-path cleanup
+
+Benchmark setup failures now use one cleanup helper that safely handles partial
+connection initialization, active sockets, event-loop state, arena state, and
+the shared payload buffer. The helper is idempotent across initialized and
+uninitialized fields, while the normal completion path keeps the same cleanup
+cost. The CTest regression exercises an unavailable-port connection failure in
+addition to malformed dimensions and large replies.
