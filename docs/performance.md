@@ -3173,3 +3173,10 @@ metadata. Corrupt or unexpected schemas now fail with an explicit diagnostic
 instead of an uncaught exception; this is control-plane validation and adds no
 runtime cost to the server or benchmark paths. The audit TDD suite covers the
 malformed metadata case.
+
+### Phase 462: bounded CI repository operations
+
+CI now bounds external Redis and Garnet clone/sparse-checkout operations with
+shell timeouts. A network stall fails the control-plane job promptly instead
+of consuming a runner indefinitely; the server and benchmark hot paths are
+unchanged.

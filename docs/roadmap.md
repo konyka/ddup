@@ -1271,3 +1271,6 @@
   - [x] Redis 命令元数据结构校验：审计工具拒绝非对象命令条目及非字符串
     container 字段，统一输出可诊断的 fail-closed 错误，并由 TDD 覆盖损坏 JSON
     （Phase 461）
+  - [x] CI 外部仓库操作超时保护：Redis 7/8 基线 sparse clone、Garnet clone
+    与 sparse-checkout 均设置有界 shell 超时，避免外部网络异常长期占用 runner
+    （Phase 462）

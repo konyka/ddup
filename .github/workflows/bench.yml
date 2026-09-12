@@ -29,7 +29,7 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y redis-server redis-tools gdb 2>&1 | tee -a build.log
 
       - name: Clone Garnet (shallow)
-        run: git clone --depth 1 https://github.com/microsoft/garnet.git "$RUNNER_TEMP/garnet"
+        run: timeout 180 git clone --depth 1 https://github.com/microsoft/garnet.git "$RUNNER_TEMP/garnet"
 
       - name: Build Garnet (tolerate failure)
         id: garnet

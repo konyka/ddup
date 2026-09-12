@@ -127,12 +127,12 @@ jobs:
 
       - name: Fetch Redis command JSON baselines (sparse clones)
         run: |
-          git clone --depth 1 --branch 7.2.15 --filter=blob:none --sparse \
+          timeout 180 git clone --depth 1 --branch 7.2.15 --filter=blob:none --sparse \
             https://github.com/redis/redis.git /tmp/redis-7.2.15
-          git -C /tmp/redis-7.2.15 sparse-checkout set src/commands
-          git clone --depth 1 --branch 8.10.1 --filter=blob:none --sparse \
+          timeout 60 git -C /tmp/redis-7.2.15 sparse-checkout set src/commands
+          timeout 180 git clone --depth 1 --branch 8.10.1 --filter=blob:none --sparse \
             https://github.com/redis/redis.git /tmp/redis-8.10.1
-          git -C /tmp/redis-8.10.1 sparse-checkout set src/commands
+          timeout 60 git -C /tmp/redis-8.10.1 sparse-checkout set src/commands
 
       - name: Audit tool self-tests (TDD)
         run: python3 tools/test_audit_redis_compat.py
