@@ -1373,3 +1373,5 @@
     覆盖回归测试（Phase 504）
   - [x] ACL CAT read 元数据过滤：展示使用 Redis READONLY 静态集合，同时保持
     `+@read` 既有非写授权语义（Phase 505）
+  - [x] ACL CAT 容器子命令展示：补齐 Redis 8 `stream`/`pubsub` 类别的
+    `xgroup|*`、`xinfo|*`、`pubsub|*` 静态条目，并覆盖回归测试（Phase 506）

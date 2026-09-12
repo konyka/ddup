@@ -332,6 +332,8 @@ static void test_acl_cat_filters_commands(void)
     session_execute_at(&s, (resp_value[]){rv("ACL"), rv("CAT"), rv("stream")},
                        3, &out, 0);
     DD_CHECK(contains_bytes(out.data, out.len, "xadd", 4));
+    DD_CHECK(contains_bytes(out.data, out.len, "xgroup|create", 13));
+    DD_CHECK(contains_bytes(out.data, out.len, "xinfo|stream", 12));
     DD_CHECK(!contains_bytes(out.data, out.len, "\r\n$3\r\nget\r\n", 12));
 
     out.len = 0;
@@ -339,6 +341,13 @@ static void test_acl_cat_filters_commands(void)
                        3, &out, 0);
     DD_CHECK(contains_bytes(out.data, out.len, "eval", 4));
     DD_CHECK(!contains_bytes(out.data, out.len, "\r\n$4\r\nxadd\r\n", 13));
+
+    out.len = 0;
+    session_execute_at(&s, (resp_value[]){rv("ACL"), rv("CAT"), rv("pubsub")},
+                       3, &out, 0);
+    DD_CHECK(contains_bytes(out.data, out.len, "pubsub|channels", 15));
+    DD_CHECK(contains_bytes(out.data, out.len, "pubsub|numsub", 13));
+    DD_CHECK(contains_bytes(out.data, out.len, "pubsub|help", 11));
 
     out.len = 0;
     session_execute_at(&s, (resp_value[]){rv("ACL"), rv("CAT"), rv("fast")},

@@ -12295,6 +12295,40 @@ static int acl_cat_readonly_match(uint16_t id)
            acl_name_in(name, readonly, sizeof(readonly) / sizeof(readonly[0]));
 }
 
+/* Redis exposes container subcommands as synthetic ACL CAT names.  ddup keeps
+ * dispatch and authorization keyed by the top-level command ID, so these
+ * entries are presentation-only and remain in a bounded static table. */
+typedef struct acl_cat_extra {
+    const char *category;
+    const char *name;
+} acl_cat_extra;
+
+static const acl_cat_extra acl_cat_extras[] = {
+    {"stream", "xgroup|create"},
+    {"stream", "xgroup|createconsumer"},
+    {"stream", "xgroup|delconsumer"},
+    {"stream", "xgroup|destroy"},
+    {"stream", "xgroup|help"},
+    {"stream", "xgroup|setid"},
+    {"stream", "xinfo|consumers"},
+    {"stream", "xinfo|groups"},
+    {"stream", "xinfo|help"},
+    {"stream", "xinfo|stream"},
+    {"pubsub", "pubsub|channels"},
+    {"pubsub", "pubsub|help"},
+    {"pubsub", "pubsub|numpat"},
+    {"pubsub", "pubsub|numsub"},
+    {"pubsub", "pubsub|shardchannels"},
+    {"pubsub", "pubsub|shardnumsub"}
+};
+
+static int acl_cat_extra_match(const char *category, size_t category_len,
+                               size_t index)
+{
+    return index < sizeof(acl_cat_extras) / sizeof(acl_cat_extras[0]) &&
+           ci_equal(category, category_len, acl_cat_extras[index].category);
+}
+
 static void command_acl(session *s, const resp_value *argv, size_t argc,
                         resp_buf *out)
 {
@@ -12387,6 +12421,8 @@ static void command_acl(session *s, const resp_value *argv, size_t argc,
                                                   (uint16_t)i);
             if (match && cmd_name((uint16_t)i) != NULL) count++;
         }
+        for (i = 0; i < sizeof(acl_cat_extras) / sizeof(acl_cat_extras[0]); i++)
+            if (acl_cat_extra_match(category, category_len, i)) count++;
         resp_write_array_header(out, count);
         for (i = 1; i <= CMD_MAX; i++) {
             int match = 0;
@@ -12397,6 +12433,10 @@ static void command_acl(session *s, const resp_value *argv, size_t argc,
             if (match && cmd_name((uint16_t)i) != NULL)
                 resp_write_bulk(out, cmd_name((uint16_t)i), strlen(cmd_name((uint16_t)i)));
         }
+        for (i = 0; i < sizeof(acl_cat_extras) / sizeof(acl_cat_extras[0]); i++)
+            if (acl_cat_extra_match(category, category_len, i))
+                resp_write_bulk(out, acl_cat_extras[i].name,
+                                strlen(acl_cat_extras[i].name));
         return;
     }
     if (ci_equal(sub, sl, "GENPASS") && (argc == 2 || argc == 3)) {

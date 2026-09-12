@@ -3468,3 +3468,11 @@ scan. The ACL bitset expansion and normal command authorization costs are unchan
 `ACL CAT read` performs bounded static-name membership on its cold introspection path,
 while `ACL SETUSER +@read` retains the existing non-write expansion semantics. Neither
 change adds work to request-time bitset/key authorization.
+
+### Phase 506: ACL CAT container entries
+
+Redis-compatible container names (`xgroup|*`, `xinfo|*`, and `pubsub|*`) are stored in
+a 16-entry static table. `ACL CAT` performs one bounded pass to count matching extras
+and one pass to emit them, adding at most 16 string comparisons on this cold management
+path. No request-time dispatch, authorization, allocation, or synchronization cost is
+introduced.

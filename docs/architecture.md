@@ -1727,3 +1727,11 @@ ACL 规则解析现在复用统一命令类别映射，支持 `+@`/`-@` 后的�
 `ACL SETUSER +@read` 保持项目既有的非写命令授权语义（例如允许 `PING`），而
 `ACL CAT read` 使用 Redis `READONLY` 元数据的静态集合展示，排除 `ACL`、管理和
 其他非只读控制命令。配置授权与展示过滤分离，避免兼容性修正破坏既有权限策略。
+
+## Phase 506：ACL CAT 容器子命令展示
+
+`ACL CAT stream` 与 `ACL CAT pubsub` 现在补充 Redis 8 风格的容器子命令名称，
+例如 `xgroup|create`、`xinfo|stream` 和 `pubsub|numsub`。这些名称仅用于协议展示，
+不引入新的命令 ID；实际分发和 `ACL SETUSER` 授权仍绑定顶层 `XGROUP`、`XINFO`、
+`PUBSUB` 命令。实现采用编译期静态表，计数和写出各扫描一次，避免堆分配和锁，
+并保持未知类别 fail-closed 行为。
