@@ -2949,6 +2949,51 @@ static void test_acl_remote_denial_is_logged_on_home_worker(void)
     pal_close(a); pal_close(b); mt_server_stop(ms); mt_server_destroy(ms); pal_socket_cleanup();
 }
 
+static void test_acl_user_permissions_survive_rehome(void)
+{
+    mt_server *ms;
+    pal_socket_t admin, reader;
+    char key[32], req[256];
+
+    DD_CHECK_EQ_INT(0, pal_socket_init());
+    pick_key_for_worker(0, 2, key, sizeof(key));
+    ms = mt_server_create("127.0.0.1", 0, 2);
+    DD_CHECK(ms != NULL);
+    if (ms == NULL) { pal_socket_cleanup(); return; }
+    mt_server_set_requirepass(ms, "rootpw");
+    DD_CHECK_EQ_INT(0, mt_server_start(ms));
+    admin = connect_client(mt_server_port(ms));
+    reader = connect_client(mt_server_port(ms));
+
+    roundtrip(admin, "*2\r\n$4\r\nAUTH\r\n$6\r\nrootpw\r\n", "+OK\r\n");
+    roundtrip(admin,
+              "*7\r\n$3\r\nACL\r\n$7\r\nSETUSER\r\n$6\r\nreader\r\n"
+              "$2\r\non\r\n$7\r\n>secret\r\n$4\r\n+get\r\n$2\r\n~*\r\n",
+              "+OK\r\n");
+    snprintf(req, sizeof(req), "*3\r\n$3\r\nSET\r\n$%zu\r\n%s\r\n$1\r\nv\r\n",
+             strlen(key), key);
+    roundtrip(admin, req, "+OK\r\n");
+    roundtrip(reader,
+              "*3\r\n$4\r\nAUTH\r\n$6\r\nreader\r\n$6\r\nsecret\r\n",
+              "+OK\r\n");
+
+    /* Reader's first key command migrates it to worker 0. */
+    snprintf(req, sizeof(req), "*2\r\n$3\r\nGET\r\n$%zu\r\n%s\r\n",
+             strlen(key), key);
+    roundtrip(reader, req, "$1\r\nv\r\n");
+    roundtrip(reader, req, "$1\r\nv\r\n");
+    snprintf(req, sizeof(req), "*3\r\n$3\r\nSET\r\n$%zu\r\n%s\r\n$1\r\nx\r\n",
+             strlen(key), key);
+    roundtrip(reader, req,
+              "-NOPERM this user has no permissions to run the command or access the key\r\n");
+
+    pal_close(reader);
+    pal_close(admin);
+    mt_server_stop(ms);
+    mt_server_destroy(ms);
+    pal_socket_cleanup();
+}
+
 static void test_watch_pipeline_two_remote_gets_are_not_queued(void)
 {
     mt_server *ms;
@@ -4069,6 +4114,7 @@ int main(void)
     DD_RUN(test_acl_setuser_broadcasts_to_all_workers);
     DD_RUN(test_acl_deleted_recreated_session_is_denied_on_remote_route);
     DD_RUN(test_acl_remote_denial_is_logged_on_home_worker);
+    DD_RUN(test_acl_user_permissions_survive_rehome);
     DD_RUN(test_watch_pipeline_two_remote_gets_are_not_queued);
     DD_RUN(test_watch_pipeline_unwatch_is_ordered_and_disconnect_safe);
     DD_RUN(test_watch_shutdown_releases_remote_owner);

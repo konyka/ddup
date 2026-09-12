@@ -1303,3 +1303,6 @@
     （Phase 472）
   - [x] strict warning CI 门禁：新增 Ubuntu Release `-Wall -Wextra -Wpedantic -Werror`
     构建与完整 CTest job，持续阻止新增编译警告（Phase 473）
+  - [x] MT ACL 会话迁移保持：连接 rehome/adopt 时保留认证用户、命令权限位图及
+    key/channel pattern；跨 worker GET/SET 回归测试验证授权语义不变，且不增加
+    热路径分配或锁（Phase 474）

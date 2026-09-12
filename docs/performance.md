@@ -3262,3 +3262,11 @@ CI now runs an Ubuntu Release build with `-Wall -Wextra -Wpedantic -Werror`
 and the complete CTest suite. The local strict build completed successfully;
 this adds a bounded quality gate without changing runtime binaries or hot-path
 behavior in the normal Release job.
+
+### Phase 474: ACL authorization survives MT rehome
+
+The MT rehome path now preserves the authenticated ACL session and its bounded
+permission state, including key patterns. A cross-worker GET/SET regression test
+confirms that an allowed read remains allowed and a denied write remains denied
+after migration. The handoff rebinds existing server-owned context in place, so
+it adds no allocation, lock, or extra command dispatch to the steady-state hot path.
