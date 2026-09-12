@@ -3320,3 +3320,9 @@ control-plane validation.
 score lookup/rank walk. `WITHSCORE` adds only bounded response formatting (a 40-byte
 stack buffer and two RESP elements); it introduces no heap allocation, lock, or extra
 database traversal.
+
+### Phase 482: BITFIELD empty operation list
+
+`BITFIELD key` and `BITFIELD_RO key` return an empty array after key validation. The
+no-op path frees the empty operation vector and skips value lookup, mutation, and
+temporary buffers; it adds no allocation to normal operation-bearing requests.

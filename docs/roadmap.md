@@ -1325,3 +1325,5 @@
     保护（Phase 480）
   - [x] ZRANK/ZREVRANK `WITHSCORE`：兼容 Redis 8 可选参数、双元素 rank/score
     返回及缺失成员 null array，未知选项 fail-closed（Phase 481）
+  - [x] BITFIELD/BITFIELD_RO 空 operation：仅提供 key 时返回空数组并保持无副作用，
+    与 Redis 8 最小 arity 兼容（Phase 482）

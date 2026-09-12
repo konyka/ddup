@@ -1588,3 +1588,9 @@ WATCH 远端 owner 尚未返回时，连接上的后续命令会进入 deferred 
 和格式化 score 的双元素数组；成员或 key 不存在时返回 RESP2 null array，保持
 Redis 8 的返回形状。无该选项时继续返回整数 rank，未知选项仍 fail-closed 为
 语法错误。
+
+## Phase 482：BITFIELD 空操作兼容
+
+`BITFIELD key` 与 `BITFIELD_RO key` 在没有 operation 子命令时返回空数组，
+不再错误地报告 arity/syntax。该路径在解析 key 后立即结束，不读取或创建值，
+因此不会产生数据副作用。

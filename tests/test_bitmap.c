@@ -166,6 +166,11 @@ static void test_bitfield(void)
     db_init(&d);
     resp_buf_init(&out);
 
+    exec_cmd(&d, &out, 2, "BITFIELD", "k");
+    EXPECT(out, "*0\r\n");
+    exec_cmd(&d, &out, 2, "BITFIELD_RO", "k");
+    EXPECT(out, "*0\r\n");
+
     exec_cmd(&d, &out, 6, "BITFIELD", "bits", "SET", "u8", "0", "255");
     EXPECT(out, "*1\r\n:0\r\n");
     exec_cmd(&d, &out, 5, "BITFIELD", "bits", "GET", "u8", "0");
@@ -211,7 +216,7 @@ static void test_bitfield(void)
     exec_cmd(&d, &out, 7, "BITFIELD_RO", "bits", "SET", "u8", "0", "1");
     EXPECT(out, "-ERR BITFIELD_RO only supports the GET subcommand\r\n");
     exec_cmd(&d, &out, 2, "BITFIELD", "bits");
-    EXPECT(out, "-ERR wrong number of arguments for 'bitfield' command\r\n");
+    EXPECT(out, "*0\r\n");
 
     exec_cmd(&d, &out, 4, "HSET", "hash", "f", "v");
     exec_cmd(&d, &out, 5, "BITFIELD", "hash", "GET", "u8", "0");

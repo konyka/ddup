@@ -2898,7 +2898,7 @@ static void cmd_bitfield(db *d, const resp_value *argv, size_t argc,
     int mode = BF_OVERFLOW_WRAP;
     resp_buf tmp, reply;
 
-    if (argc < 3) {
+    if (argc < 2) {
         wrong_args(out, ro ? "bitfield_ro" : "bitfield");
         return;
     }
@@ -3010,8 +3010,9 @@ static void cmd_bitfield(db *d, const resp_value *argv, size_t argc,
     }
 
     if (nops == 0) {
-        resp_write_error(out, ERR_SYNTAX, sizeof(ERR_SYNTAX) - 1);
-        goto bitfield_fail;
+        resp_write_array_header(out, 0);
+        free(ops);
+        return;
     }
 
     resp_buf_init(&tmp);
@@ -23655,8 +23656,8 @@ static const cmd_entry CMD_TABLE[] = {
     {"bitcount", CMD_BITCOUNT, 2, 4, 0, 0},
     {"bitpos", CMD_BITPOS, 3, 5, 0, 0},
     {"bitop", CMD_BITOP, 4, -1, 0, CMD_WRITE},
-    {"bitfield", CMD_BITFIELD, 3, -1, 0, CMD_WRITE},
-    {"bitfield_ro", CMD_BITFIELD_RO, 3, -1, 0, 0},
+    {"bitfield", CMD_BITFIELD, 2, -1, 0, CMD_WRITE},
+    {"bitfield_ro", CMD_BITFIELD_RO, 2, -1, 0, 0},
     {"zunionstore", CMD_ZUNIONSTORE, 4, -1, 0, CMD_WRITE},
     {"zinterstore", CMD_ZINTERSTORE, 4, -1, 0, CMD_WRITE},
     {"zdiffstore", CMD_ZDIFFSTORE, 4, -1, 0, CMD_WRITE},
