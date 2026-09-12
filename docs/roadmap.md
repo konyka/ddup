@@ -1353,3 +1353,5 @@
     命令并覆盖回归测试（Phase 494）
   - [x] ACL CAT connection 元数据对齐：补齐顶层 COMMAND 连接类别映射并覆盖回归
     测试（Phase 495）
+  - [x] ACL CAT OBJECT keyspace 映射：覆盖对象诊断命令的 Redis 8 keyspace 分类
+    并增加回归测试（Phase 496）

@@ -3407,3 +3407,8 @@ additional work in normal key authorization.
 
 Adding `COMMAND` to the static connection set affects only `ACL CAT` introspection. The
 existing bounded scan and allocation-free authorization path are unchanged.
+
+### Phase 496: OBJECT keyspace mapping
+
+`OBJECT` membership is a single additional command-ID comparison during the cold
+category scan. No allocation, lock, or data-plane branch is added.

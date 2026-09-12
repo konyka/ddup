@@ -306,6 +306,7 @@ static void test_acl_cat_filters_commands(void)
                        3, &out, 0);
     DD_CHECK(contains_bytes(out.data, out.len, "flushdb", 7));
     DD_CHECK(contains_bytes(out.data, out.len, "migrate", 7));
+    DD_CHECK(contains_bytes(out.data, out.len, "object", 6));
     DD_CHECK(!contains_bytes(out.data, out.len, "\r\n$4\r\nping\r\n", 13));
 
     out.len = 0;

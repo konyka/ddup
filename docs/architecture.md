@@ -1677,3 +1677,9 @@ Redis `FAST` 元数据时保持保守的 slow 归类。
 
 `connection` 类别补齐顶层 `COMMAND`，与 Redis 8 的 ACL 元数据保持一致；该命令
 与 `PING`、`AUTH`、`CLIENT`、`HELLO` 等连接控制命令一起通过静态集合输出。
+
+## Phase 496：ACL CAT OBJECT keyspace 映射
+
+`OBJECT` 顶层诊断命令纳入 `keyspace` 类别，匹配 Redis 8 对对象编码、频率、
+引用计数和空闲时间查询的 ACL 分类。该项只扩展静态类别谓词，不改变命令执行
+或授权热路径。
