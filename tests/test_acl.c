@@ -381,6 +381,12 @@ static void test_acl_cat_filters_commands(void)
     DD_CHECK(contains_bytes(out.data, out.len, "command", 7));
 
     out.len = 0;
+    session_execute_at(&s, (resp_value[]){rv("ACL"), rv("CAT"), rv("admin")},
+                       3, &out, 0);
+    DD_CHECK(contains_bytes(out.data, out.len, "lastsave", 8));
+    DD_CHECK(contains_bytes(out.data, out.len, "role", 4));
+
+    out.len = 0;
     session_execute_at(&s, (resp_value[]){rv("ACL"), rv("CAT"), rv("array")},
                        3, &out, 0);
     DD_CHECK(contains_bytes(out.data, out.len, "arset", 5));

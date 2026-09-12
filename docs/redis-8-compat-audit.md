@@ -362,6 +362,7 @@ Container categories match Redis presentation semantics: `ACL CAT stream` and
 `ACL CAT pubsub` expose synthetic `container|subcommand` names while omitting
 the bare `XGROUP`, `XINFO`, and `PUBSUB` container entries. Authorization still
 uses the top-level command IDs.
+The `admin` category also includes Redis 8's `LASTSAVE` and `ROLE` commands.
   `ACL DRYRUN` resolves the target user and command/key arguments through the
   existing authorization path, returning `OK` or `NOPERM` without side effects;
   unknown users and commands fail closed.

@@ -1736,8 +1736,16 @@ ACL 规则解析现在复用统一命令类别映射，支持 `+@`/`-@` 后的�
 `PUBSUB` 命令。实现采用编译期静态表，计数和写出各扫描一次，避免堆分配和锁，
 并保持未知类别 fail-closed 行为。
 
+## Phase 507：ACL CAT 容器展示对齐
+
 Phase 507 further aligns the presentation with Redis by suppressing bare
 `xgroup`, `xinfo`, and `pubsub` container names from filtered output. Their
 top-level command IDs remain available to ACL rule expansion; only the
 human/protocol-facing `ACL CAT` view uses the synthetic `container|subcommand`
 entries.
+
+## Phase 509：ACL admin 元数据对齐
+
+Redis 8 将 `LASTSAVE` 与 `ROLE` 归入 `@admin`；ACL 类别谓词现纳入这两个
+顶层命令。该修正只影响冷路径 `ACL CAT admin` 和配置时类别展开，不改变命令
+执行、复制控制或运行时授权的其他语义。

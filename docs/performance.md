@@ -3490,3 +3490,9 @@ The filtered view applies three constant-time name checks to suppress bare
 container commands while retaining their top-level IDs for authorization. This
 is limited to the cold `ACL CAT` scan and does not change request-time dispatch,
 ACL bitsets, or key/channel checks.
+
+### Phase 509: ACL admin metadata
+
+Adding `lastsave` and `role` to the static admin-name set costs two bounded string
+comparisons during cold ACL category scans and category-rule updates. The request-time
+authorization bitset remains unchanged in shape and has no new allocation or lock.

@@ -12177,7 +12177,7 @@ int cmd_acl_category_match(const char *category, size_t category_len,
         "acl", "bgrewriteaof", "bgsave", "client", "cluster", "config",
         "debug", "failover", "function", "info", "latency", "memory",
         "module", "monitor", "psync", "replconf", "replicaof", "save",
-        "sentinel", "shutdown", "slaveof", "slowlog"
+        "sentinel", "shutdown", "slaveof", "slowlog", "lastsave", "role"
     };
     static const char *const fast[] = {
         "append", "arcount", "ardel", "arget", "arinsert", "arlen",

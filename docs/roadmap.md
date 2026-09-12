@@ -1379,3 +1379,5 @@
     顶层命令授权语义并覆盖负向回归测试（Phase 507）
   - [x] 版本感知兼容审计：按 `--tag` 自动选择 `redis-<major>-compat-audit.md`，
     防止 Redis 8 手工校验误用 Redis 7 基线，并新增 TDD 覆盖（Phase 508）
+  - [x] ACL admin 元数据对齐：补齐 Redis 8 `LASTSAVE`/`ROLE` 的 `@admin` 分类，
+    并覆盖 `ACL CAT admin` 回归测试（Phase 509）
