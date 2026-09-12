@@ -3425,6 +3425,12 @@ path allocates or affects command dispatch.
 in the existing fixed bitset. Authorization remains an O(1) bitset/key-pattern check;
 no per-request allocation or lock is introduced.
 
+### Phase 500: extended-category regression coverage
+
+The array and empty ratelimit rule tests exercise the same fixed-bitset path used in
+production. They add no runtime work; their purpose is to preserve fail-closed behavior
+for future category additions.
+
 ### Phase 499: reproducible benchmark report (2026-09-13)
 
 `reports/benchmark-2026-09-13.html` compares ddup (1/2 workers) with the installed

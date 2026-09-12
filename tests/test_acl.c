@@ -261,6 +261,23 @@ static void test_acl_extended_category_rules(void)
     DD_CHECK(u != NULL);
     DD_CHECK(acl_authorize(u, CMD_SADD, sadd, 3) == 1);
     DD_CHECK(acl_authorize(u, CMD_GET, getv, 2) == 0);
+
+    {
+        resp_value array_rules[3] = {rv("on"), rv("+@array"), rv("~*")};
+        resp_value arget[3] = {rv("ARGET"), rv("k"), rv("0")};
+        DD_CHECK(acl_setuser(&r, "arraycat", 8, array_rules, 3) == 0);
+        u = acl_find_const(&r, "arraycat", 8);
+        DD_CHECK(u != NULL);
+        DD_CHECK(acl_authorize(u, CMD_ARGET, arget, 3) == 1);
+    }
+
+    {
+        resp_value rate_rules[2] = {rv("on"), rv("+@ratelimit")};
+        DD_CHECK(acl_setuser(&r, "ratecat", 7, rate_rules, 2) == 0);
+        u = acl_find_const(&r, "ratecat", 7);
+        DD_CHECK(u != NULL);
+        DD_CHECK(acl_authorize(u, CMD_PING, NULL, 1) == 0);
+    }
 }
 
 static void test_acl_cat_filters_commands(void)

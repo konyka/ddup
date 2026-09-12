@@ -1361,3 +1361,5 @@
     复用静态映射并覆盖 set 授权回归（Phase 498）
   - [x] 生成 2026-09-13 ddup/Valkey 对比 benchmark JSON/HTML 报告，固定请求矩阵
     并保留原始延迟、吞吐数据（Phase 499）
+  - [x] ACL 扩展类别回归：覆盖 `+@array` 授权与合法空 `+@ratelimit` 的
+    fail-closed 行为（Phase 500）
