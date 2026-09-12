@@ -60,6 +60,17 @@ def main():
         if "128 requests completed" not in result.stdout:
             raise AssertionError("benchmark did not complete all replies:\n" +
                                  result.stdout + result.stderr)
+        large = [str(bench), "-p", str(port), "-n", "1", "-c", "1",
+                 "-P", "1", "-d", "131072"]
+        subprocess.run(large + ["-t", "set"], check=True,
+                       stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                       text=True)
+        result = subprocess.run(large + ["-t", "get"], check=False,
+                                stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                text=True)
+        if result.returncode != 0 or "1 requests completed" not in result.stdout:
+            raise AssertionError("large single-reply GET benchmark failed:\n" +
+                                 result.stdout + result.stderr)
     finally:
         proc.terminate()
         try:

@@ -113,7 +113,7 @@ typedef struct bconn {
     char *sbuf; /* commands not yet fully sent */
     size_t sblen, ssent, sbcap;
     char *rbuf; /* reply bytes not yet fully parsed */
-    size_t rlen;
+    size_t rlen, rcap;
     long share; /* requests this connection must complete */
     long sent;  /* requests written */
     long done;  /* replies parsed */
@@ -219,10 +219,10 @@ static int conn_pump_read(bconn *c, arena *a)
         /* A full receive buffer must be parsed before trying recv again.
          * recv(..., 0) is reported as EOF on some platforms, which would
          * otherwise turn a large pipelined reply into a false failure. */
-        if (c->rlen == CONN_RCAP)
+        if (c->rlen == c->rcap)
             break;
         ptrdiff_t n = pal_recv(c->fd, c->rbuf + c->rlen,
-                               CONN_RCAP - c->rlen);
+                               c->rcap - c->rlen);
         if (n > 0) {
             c->rlen += (size_t)n;
             continue;
@@ -250,8 +250,22 @@ static int conn_pump_read(bconn *c, arena *a)
         memmove(c->rbuf, c->rbuf + off, c->rlen - off);
         c->rlen -= off;
     }
-    if (c->rlen == CONN_RCAP)
-        return -1; /* no parse progress on a full buffer */
+    if (c->rlen == c->rcap) {
+        size_t need = (size_t)g_value_size + 64;
+        if (c->rcap < need) {
+            size_t next = c->rcap * 2;
+            char *grown;
+            if (next < c->rcap || next > need)
+                next = need;
+            grown = (char *)realloc(c->rbuf, next);
+            if (grown == NULL)
+                return -1;
+            c->rbuf = grown;
+            c->rcap = next;
+        } else {
+            return -1; /* malformed or oversized reply */
+        }
+    }
     return c->done == c->share ? 1 : 0;
 }
 
@@ -343,6 +357,7 @@ int main(int argc, char **argv)
             c->sbcap = (size_t)g_pipe * g_cmd_cap + g_cmd_cap;
             c->sbuf = (char *)malloc(c->sbcap);
             c->rbuf = (char *)malloc(CONN_RCAP);
+            c->rcap = CONN_RCAP;
             c->ts = (uint64_t *)malloc((size_t)g_pipe * sizeof(uint64_t));
             if (c->sbuf == NULL || c->rbuf == NULL || c->ts == NULL) {
                 fprintf(stderr, "out of memory\n");

@@ -2930,3 +2930,12 @@ pipeline exits with `benchmark dimensions too large` instead of allowing a
 wrapped allocation size; normal benchmark dimensions take the same fast path
 as before. The regression is included in `test_benchmark_large_payload` and
 also runs in the C99 and hardening build configurations.
+
+### Phase 433: large single-reply receive capacity
+
+The benchmark receive buffer remains 64 KiB on the normal path. If a full
+buffer contains no complete RESP value, the client now grows it on demand up
+to the configured 1 MiB value-size bound, allowing large GET replies without
+weakening malformed/oversized reply handling. Growth occurs only on the
+exceptional no-progress path and uses `realloc`; allocation failure still
+fails closed. The regression covers a 128 KiB SET/GET round trip at P1.

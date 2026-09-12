@@ -1198,3 +1198,6 @@
     GET 回归并纳入 CTest（Phase 431）
   - [x] benchmark 参数溢出防护：对 pipeline/client 维度执行 checked size
     arithmetic，超大乘法在分配和连接前 fail-closed（Phase 432）
+  - [x] benchmark 大响应缓冲：GET 单回复超过 64 KiB 且未产生解析进展时，
+    在 1 MiB value 上限内按需扩容接收缓冲；扩容失败或超限安全失败，并以
+    128 KiB 单回复 TDD 回归覆盖（Phase 433）
