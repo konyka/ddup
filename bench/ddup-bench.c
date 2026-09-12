@@ -18,6 +18,7 @@
  */
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdint.h>
 #include <string.h>
 
 #include "core/arena.h"
@@ -304,6 +305,12 @@ int main(int argc, char **argv)
         return 1;
     }
     g_cmd_cap = (size_t)g_value_size + 64;
+    if ((size_t)g_pipe > (SIZE_MAX - g_cmd_cap) / g_cmd_cap ||
+        (size_t)g_clients > SIZE_MAX / sizeof(bconn) ||
+        (size_t)g_pipe > SIZE_MAX / sizeof(uint64_t)) {
+        fprintf(stderr, "benchmark dimensions too large\n");
+        return 1;
+    }
     g_value = (char *)malloc((size_t)g_value_size);
     if (g_value == NULL) {
         fprintf(stderr, "out of memory\n");

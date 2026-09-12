@@ -29,6 +29,15 @@ def main():
     bench = root / "build/ddup-bench"
     if not server.exists() or not bench.exists():
         raise SystemExit("ddup-server and ddup-bench must be built")
+    invalid = subprocess.run(
+        [str(bench), "-n", "1", "-c", "1", "-P", "9223372036854775807",
+         "-d", "16", "-t", "ping"],
+        check=False, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        text=True,
+    )
+    if invalid.returncode == 0 or "dimensions too large" not in invalid.stderr:
+        raise AssertionError("oversized benchmark dimensions were not rejected:\n" +
+                             invalid.stdout + invalid.stderr)
     port = free_port()
     proc = subprocess.Popen(
         [str(server), "--port", str(port)],

@@ -2921,3 +2921,12 @@ The corresponding 1 KiB comparative report is
 The large-payload regression also passes in the forced C99 (`build-c99`) and
 hardening (`build-hardening`) configurations, confirming that the benchmark
 client fix is independent of optional C11/C23 and sanitizer-style build paths.
+
+### Phase 432: benchmark dimension overflow guards
+
+`ddup-bench` now validates pipeline, client, and timestamp-array dimensions
+with checked `size_t` arithmetic before allocating buffers. An oversized
+pipeline exits with `benchmark dimensions too large` instead of allowing a
+wrapped allocation size; normal benchmark dimensions take the same fast path
+as before. The regression is included in `test_benchmark_large_payload` and
+also runs in the C99 and hardening build configurations.

@@ -1196,3 +1196,5 @@
   - [x] benchmark 大 payload 接收安全：ddup-bench 在 64 KiB 接收缓冲区填满时
     先解析已有 RESP 数据，避免 `recv(..., 0)` 被误判为 EOF；新增 1 KiB/P64
     GET 回归并纳入 CTest（Phase 431）
+  - [x] benchmark 参数溢出防护：对 pipeline/client 维度执行 checked size
+    arithmetic，超大乘法在分配和连接前 fail-closed（Phase 432）
