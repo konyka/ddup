@@ -3444,3 +3444,9 @@ than a production claim. Report identity and large-payload checks pass.
 Stream authorization and unknown-category rejection remain configuration-time checks;
 runtime authorization still uses the existing constant-time bitset and bounded key
 pattern matcher.
+
+### Phase 502: category enumeration count regression
+
+The count assertion exercises only the fixed ACL CAT response header and adds no
+runtime data-plane cost; it guards the cold introspection contract against accidental
+category-list truncation.

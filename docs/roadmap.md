@@ -1365,3 +1365,5 @@
     fail-closed 行为（Phase 500）
   - [x] ACL 类别规则负向回归：覆盖 `+@stream`/XADD 授权及未知类别拒绝
     （Phase 501）
+  - [x] ACL 类别枚举数量回归：锁定 Redis 8.10.1 的 23 类 `ACL CAT` 无参数响应
+    （Phase 502）

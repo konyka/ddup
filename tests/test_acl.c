@@ -314,6 +314,7 @@ static void test_acl_cat_filters_commands(void)
 
     out.len = 0;
     session_execute_at(&s, (resp_value[]){rv("ACL"), rv("CAT")}, 2, &out, 0);
+    DD_CHECK(strncmp(out.data, "*23\r\n", 4) == 0);
     DD_CHECK(contains_bytes(out.data, out.len, "sortedset", 9));
     DD_CHECK(contains_bytes(out.data, out.len, "pubsub", 6));
     DD_CHECK(contains_bytes(out.data, out.len, "scripting", 9));
