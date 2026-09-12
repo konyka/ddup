@@ -5,8 +5,8 @@
 include(CheckIPOSupported)
 
 set(DDUP_SANITIZE "" CACHE STRING
-    "Comma-separated sanitizers for first-party targets (address,undefined)")
-set_property(CACHE DDUP_SANITIZE PROPERTY STRINGS "" address undefined address,undefined)
+    "Sanitizer for first-party targets (address,undefined,thread)")
+set_property(CACHE DDUP_SANITIZE PROPERTY STRINGS "" address undefined thread address,undefined)
 
 function(ddup_apply_sanitizers target)
     if(NOT DDUP_SANITIZE)
@@ -15,8 +15,8 @@ function(ddup_apply_sanitizers target)
     if(MSVC)
         message(FATAL_ERROR "DDUP_SANITIZE is not supported by this MSVC configuration")
     endif()
-    if(NOT DDUP_SANITIZE MATCHES "^(address|undefined|address,undefined)$")
-        message(FATAL_ERROR "DDUP_SANITIZE must be address, undefined, or address,undefined")
+    if(NOT DDUP_SANITIZE MATCHES "^(address|undefined|thread|address,undefined)$")
+        message(FATAL_ERROR "DDUP_SANITIZE must be address, undefined, thread, or address,undefined")
     endif()
     target_compile_options(${target} PRIVATE "-fsanitize=${DDUP_SANITIZE}")
     target_link_options(${target} PRIVATE "-fsanitize=${DDUP_SANITIZE}")

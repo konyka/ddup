@@ -1251,3 +1251,5 @@
     与命令/缓冲池热路径计划的已执行步骤，消除文档残留待办（Phase 452）
   - [x] 基准 HTML 数据嵌入防注入：锁定结果 JSON 中 `</script>` 终止符的转义回归，
     防止恶意产品/错误字段打断报告脚本上下文（Phase 453）
+  - [x] TSan 配置与 CI 门禁：`DDUP_SANITIZE=thread` 通过 CMake 配置回归，并在
+    Ubuntu CI 对全量 CTest 执行线程竞态检测（Phase 454）

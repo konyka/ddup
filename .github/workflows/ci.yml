@@ -145,3 +145,17 @@ jobs:
           python3 tools/audit_redis_compat.py
           --redis-json /tmp/redis-8.10.1/src/commands --tag 8.10.1
           --report docs/redis-8-compat-audit.md --check
+
+  tsan:
+    name: Ubuntu / ThreadSanitizer
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install OpenSSL
+        run: sudo apt-get update && sudo apt-get install -y libssl-dev
+      - name: Configure TSan
+        run: cmake -S . -B build-tsan -DCMAKE_BUILD_TYPE=Debug -DDDUP_SANITIZE=thread
+      - name: Build TSan
+        run: cmake --build build-tsan -j2
+      - name: Test TSan
+        run: TSAN_OPTIONS=halt_on_error=1:second_deadlock_stack=1 ctest --test-dir build-tsan --output-on-failure

@@ -3110,3 +3110,10 @@ The benchmark report regression now feeds an HTML script terminator through a
 result field and verifies it is escaped before JSON is embedded. This preserves
 standalone report rendering without allowing result text to terminate the
 script element; it adds no server or benchmark hot-path work.
+
+### Phase 454: thread sanitizer gate
+
+`DDUP_SANITIZE=thread` is now a first-class CMake mode. A configuration
+regression locks the option spelling, and Ubuntu CI builds and runs the full
+CTest suite with TSan. This affects diagnostics only; normal builds keep the
+existing warning and LTO settings.
