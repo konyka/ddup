@@ -1266,3 +1266,5 @@
     上限，网络/远端异常 fail-closed，并由 TDD 覆盖超时诊断（Phase 458）
   - [x] benchmark 参考版本探测超时保护：`--version` 查询设置 10 秒上限，
     异常程序不会阻塞报告生成，并由 TDD 覆盖超时降级标签（Phase 459）
+  - [x] SPSC 压力测试状态清理：移除未读取的 `volatile done` 共享字段，避免
+    测试夹具引入伪共享状态并保持 TSan 纯净（Phase 460）

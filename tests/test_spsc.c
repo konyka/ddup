@@ -54,7 +54,6 @@ typedef struct spsc_stress {
     mt_spsc q;
     long produced;
     long consumed;
-    volatile int done;
 } spsc_stress;
 
 #define STRESS_N 200000
@@ -84,7 +83,6 @@ static void *spsc_consumer(void *arg)
         expect++;
         s->consumed++;
     }
-    s->done = 1;
     return NULL;
 }
 
@@ -95,7 +93,6 @@ static void test_two_thread_stress(void)
 
     s.produced = 0;
     s.consumed = 0;
-    s.done = 0;
     DD_CHECK_EQ_INT(0, mt_spsc_init(&s.q, 1024));
     DD_CHECK_EQ_INT(0, pal_thread_create(&pt, spsc_producer, &s));
     DD_CHECK_EQ_INT(0, pal_thread_create(&ct, spsc_consumer, &s));

@@ -3158,3 +3158,10 @@ The benchmark report limits a reference server's `--version` probe to 10
 seconds. A stalled or malformed replacement binary is labeled generically and
 the matrix can continue; no benchmark server hot path is affected. The report
 TDD suite covers the timeout fallback.
+
+### Phase 460: clean SPSC stress fixture
+
+The SPSC stress test no longer carries an unused volatile cross-thread flag;
+producer/consumer completion is already synchronized by thread joins. This is
+test-only cleanup with no production-path cost and keeps sanitizer diagnostics
+focused on live synchronization state.
