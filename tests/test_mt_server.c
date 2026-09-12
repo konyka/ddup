@@ -464,6 +464,104 @@ static void test_pipeline_mixed_targets_keeps_order(void)
     pal_socket_cleanup();
 }
 
+static void test_pipeline_first_migration_does_not_duplicate_reply(void)
+{
+    mt_server *ms;
+    pal_socket_t c;
+    char key[32];
+    char req[2048];
+    char expected[128];
+    size_t pos = 0, epos = 0;
+    int i;
+
+    DD_CHECK_EQ_INT(0, pal_socket_init());
+    pick_key_for_worker(1, 2, key, sizeof(key));
+    ms = mt_server_create("127.0.0.1", 0, 2);
+    DD_CHECK(ms != NULL);
+    DD_CHECK_EQ_INT(0, mt_server_start(ms));
+    c = connect_client(mt_server_port(ms));
+
+    for (i = 0; i < 16; i++) {
+        pos += (size_t)snprintf(req + pos, sizeof(req) - pos,
+                                "*3\r\n$3\r\nSET\r\n$%zu\r\n%s\r\n$1\r\nx\r\n",
+                                strlen(key), key);
+        memcpy(expected + epos, "+OK\r\n", 5);
+        epos += 5;
+    }
+    expected[epos] = '\0';
+    pipeline_roundtrip(c, req, expected);
+
+    pal_close(c);
+    mt_server_stop(ms);
+    mt_server_destroy(ms);
+    pal_socket_cleanup();
+}
+
+static void test_pipeline_first_migration_mixed_targets_exact_reply_count(void)
+{
+    mt_server *ms;
+    pal_socket_t c;
+    char key[32];
+    char req[4096];
+    char expected[128];
+    size_t pos = 0, epos = 0;
+    int i;
+
+    DD_CHECK_EQ_INT(0, pal_socket_init());
+    pick_key_for_worker(1, 2, key, sizeof(key));
+    ms = mt_server_create("127.0.0.1", 0, 2);
+    DD_CHECK(ms != NULL);
+    DD_CHECK_EQ_INT(0, mt_server_start(ms));
+    c = connect_client(mt_server_port(ms));
+
+    for (i = 0; i < 16; i++) {
+        char k[32];
+        if (i == 0)
+            snprintf(k, sizeof(k), "%s", key);
+        else
+            snprintf(k, sizeof(k), "bench:%d", i);
+        pos += (size_t)snprintf(req + pos, sizeof(req) - pos,
+                                "*3\r\n$3\r\nSET\r\n$%zu\r\n%s\r\n$1\r\nx\r\n",
+                                strlen(k), k);
+        memcpy(expected + epos, "+OK\r\n", 5);
+        epos += 5;
+    }
+    expected[epos] = '\0';
+    pipeline_roundtrip(c, req, expected);
+
+    pal_close(c);
+    mt_server_stop(ms);
+    mt_server_destroy(ms);
+    pal_socket_cleanup();
+}
+
+static void test_pipeline_migration_compacts_consumed_prefix(void)
+{
+    mt_server *ms;
+    pal_socket_t c;
+    char local_key[32], remote_key[32];
+    char req[512];
+
+    DD_CHECK_EQ_INT(0, pal_socket_init());
+    pick_key_for_worker(0, 2, local_key, sizeof(local_key));
+    pick_key_for_worker(1, 2, remote_key, sizeof(remote_key));
+    ms = mt_server_create("127.0.0.1", 0, 2);
+    DD_CHECK(ms != NULL);
+    DD_CHECK_EQ_INT(0, mt_server_start(ms));
+    c = connect_client(mt_server_port(ms));
+
+    snprintf(req, sizeof(req),
+             "*3\r\n$3\r\nSET\r\n$%zu\r\n%s\r\n$1\r\nx\r\n"
+             "*3\r\n$3\r\nSET\r\n$%zu\r\n%s\r\n$1\r\ny\r\n",
+             strlen(local_key), local_key, strlen(remote_key), remote_key);
+    pipeline_roundtrip(c, req, "+OK\r\n+OK\r\n");
+
+    pal_close(c);
+    mt_server_stop(ms);
+    mt_server_destroy(ms);
+    pal_socket_cleanup();
+}
+
 static void test_blocked_commands_in_mt_mode(void)
 {
     mt_server *ms;
@@ -3845,6 +3943,9 @@ int main(void)
     DD_RUN(test_redis8_single_key_commands_route_to_owner);
     DD_RUN(test_redis8_multikey_commands_route_to_owner);
     DD_RUN(test_pipeline_mixed_targets_keeps_order);
+    DD_RUN(test_pipeline_first_migration_does_not_duplicate_reply);
+    DD_RUN(test_pipeline_first_migration_mixed_targets_exact_reply_count);
+    DD_RUN(test_pipeline_migration_compacts_consumed_prefix);
     DD_RUN(test_blocked_commands_in_mt_mode);
     DD_RUN(test_blocking_pop_cross_worker);
     DD_RUN(test_blocking_pop_timeout_and_crossslot);

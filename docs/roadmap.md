@@ -1191,3 +1191,5 @@
   - [x] 多线程 PUBSUB 无效子命令路由安全：仅对已支持的 NUMPAT/CHANNELS/
     NUMSUB 变体执行聚合，malformed/unknown 请求留在本地路径，避免无效聚合状态
     分配与序列扰动（Phase 429）
+  - [x] 多线程首次迁移 pipeline 前缀压缩：连接迁移前丢弃当前 worker 已消费的
+    RESP 前缀，避免目标 worker 重放本地命令并产生额外响应（Phase 430）

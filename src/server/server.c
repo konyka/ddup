@@ -5089,8 +5089,16 @@ static int conn_process_input(server *s, conn *c)
         if (s->route_fn != NULL) {
             int rr = s->route_fn(s->route_ctx, c, c->sess, v.items, v.count,
                                  c->rbuf + off, (size_t)used, &c->out);
-            if (rr == 2)
-                return 2; /* migrated: the current command is unconsumed */
+            if (rr == 2) {
+                /* Preserve the current command for the new home worker, but
+                 * discard commands already handled before migration. */
+                if (off > 0) {
+                    memmove(c->rbuf, c->rbuf + off, c->rlen - off);
+                    c->rlen -= off;
+                }
+                arena_reset(&c->arena);
+                return 2;
+            }
             if (rr != 0) {
                 arena_reset(&c->arena);
                 off += (size_t)used;

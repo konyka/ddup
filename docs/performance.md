@@ -2884,6 +2884,14 @@ The multi-thread router now classifies only the five supported PUBSUB aggregate
 subcommands. Invalid requests take the existing local command path without
 allocating aggregate state or fanning out worker tasks.
 
+### Phase 430: first-migration pipeline prefix compaction
+
+When a pipelined connection migrates after completing local commands, the
+receive buffer now compacts the consumed prefix before the target worker adopts
+it. Migration keeps one memmove proportional to the already-consumed prefix;
+normal non-migrating requests are unchanged. This removes duplicate replies in
+mixed-target pipelines without adding work to the steady-state path.
+
 ### Benchmark report 2026-09-12
 
 The reproducible matrix uses ddup-bench for ddup and Valkey 9.0.4 on the same

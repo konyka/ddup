@@ -24,6 +24,10 @@ Phase 429 limits multi-thread PUBSUB aggregation to supported subcommands;
 invalid and unknown forms retain local Redis-compatible errors without creating
 an aggregate state object.
 
+Phase 430 fixes first-migration pipeline replay: consumed RESP bytes are
+compacted before connection handoff, so mixed local/remote pipelines produce
+exactly one response per command.
+
 最近一次本地复核（2026-09-01）：
 
 ```sh
