@@ -310,6 +310,7 @@ static void test_acl_cat_filters_commands(void)
     resp_buf_reserve(&out, 1);
     out.data[out.len] = '\0';
     DD_CHECK(contains_bytes(out.data, out.len, "get", 3));
+    DD_CHECK(!contains_bytes(out.data, out.len, "\r\n$3\r\nacl\r\n", 11));
     DD_CHECK(!contains_bytes(out.data, out.len, "\r\n$3\r\nset\r\n", 11));
 
     out.len = 0;

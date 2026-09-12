@@ -3462,3 +3462,9 @@ authorization hot paths.
 
 `SFLUSH` and `TRIMSLOTS` add two fixed command-ID comparisons on the cold `ACL CAT`
 scan. The ACL bitset expansion and normal command authorization costs are unchanged.
+
+### Phase 505: read metadata filtering
+
+`ACL CAT read` performs bounded static-name membership on its cold introspection path,
+while `ACL SETUSER +@read` retains the existing non-write expansion semantics. Neither
+change adds work to request-time bitset/key authorization.

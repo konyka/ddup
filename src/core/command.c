@@ -12271,6 +12271,30 @@ int cmd_acl_category_match(const char *category, size_t category_len,
     return -1;
 }
 
+static int acl_cat_readonly_match(uint16_t id)
+{
+    const char *name = cmd_name(id);
+    static const char *const readonly[] = {
+        "arcount", "arget", "argetrange", "argrep", "arinfo", "arlastitems",
+        "arlen", "armget", "arnext", "arop", "arscan", "bitcount", "bitfield_ro",
+        "bitpos", "dbsize", "digest", "dump", "eval_ro", "evalsha_ro", "exists",
+        "expiretime", "fcall_ro", "geodist", "geohash", "geopos", "georadius_ro",
+        "georadiusbymember_ro", "geosearch", "get", "getbit", "getrange", "hexists",
+        "hexpiretime", "hget", "hgetall", "hkeys", "hlen", "hmget", "hpexpiretime",
+        "hpttl", "hrandfield", "hscan", "hstrlen", "httl", "hvals", "keys", "lcs",
+        "lindex", "llen", "lolwut", "lpos", "lrange", "mget", "pexpiretime",
+        "pfcount", "pttl", "randomkey", "scan", "scard", "sdiff", "sdiffcard",
+        "sinter", "sintercard", "sismember", "smembers", "smismember", "sort_ro",
+        "srandmember", "sscan", "strlen", "substr", "sunion", "sunioncard", "touch",
+        "ttl", "type", "xlen", "xpending", "xrange", "xread", "xrevrange", "zcard",
+        "zcount", "zdiff", "zinter", "zintercard", "zlexcount", "zmscore",
+        "zrandmember", "zrange", "zrangebylex", "zrangebyscore", "zrank", "zrevrange",
+        "zrevrangebylex", "zrevrangebyscore", "zrevrank", "zscan", "zscore", "zunion"
+    };
+    return name != NULL &&
+           acl_name_in(name, readonly, sizeof(readonly) / sizeof(readonly[0]));
+}
+
 static void command_acl(session *s, const resp_value *argv, size_t argc,
                         resp_buf *out)
 {
@@ -12357,13 +12381,19 @@ static void command_acl(session *s, const resp_value *argv, size_t argc,
         }
         for (i = 1; i <= CMD_MAX; i++) {
             int match = 0;
-            match = cmd_acl_category_match(category, category_len, (uint16_t)i);
+            match = ci_equal(category, category_len, "read")
+                        ? acl_cat_readonly_match((uint16_t)i)
+                        : cmd_acl_category_match(category, category_len,
+                                                  (uint16_t)i);
             if (match && cmd_name((uint16_t)i) != NULL) count++;
         }
         resp_write_array_header(out, count);
         for (i = 1; i <= CMD_MAX; i++) {
             int match = 0;
-            match = cmd_acl_category_match(category, category_len, (uint16_t)i);
+            match = ci_equal(category, category_len, "read")
+                        ? acl_cat_readonly_match((uint16_t)i)
+                        : cmd_acl_category_match(category, category_len,
+                                                  (uint16_t)i);
             if (match && cmd_name((uint16_t)i) != NULL)
                 resp_write_bulk(out, cmd_name((uint16_t)i), strlen(cmd_name((uint16_t)i)));
         }

@@ -1721,3 +1721,9 @@ ACL 规则解析现在复用统一命令类别映射，支持 `+@`/`-@` 后的�
 `SFLUSH` 与 `TRIMSLOTS` 补入 `keyspace` 类别。两者是 ddup 在 Redis 基线上的
 扩展命令，但其源码元数据声明了 keyspace 属性；静态 ACL 谓词与 `ACL SETUSER`
 类别展开现保持一致。
+
+## Phase 505：ACL CAT read 元数据过滤
+
+`ACL SETUSER +@read` 保持项目既有的非写命令授权语义（例如允许 `PING`），而
+`ACL CAT read` 使用 Redis `READONLY` 元数据的静态集合展示，排除 `ACL`、管理和
+其他非只读控制命令。配置授权与展示过滤分离，避免兼容性修正破坏既有权限策略。

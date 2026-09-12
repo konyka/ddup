@@ -1371,3 +1371,5 @@
     回归测试（Phase 503）
   - [x] ACL CAT ddup keyspace 扩展映射：补齐 SFLUSH/TRIMSLOTS 源码元数据分类并
     覆盖回归测试（Phase 504）
+  - [x] ACL CAT read 元数据过滤：展示使用 Redis READONLY 静态集合，同时保持
+    `+@read` 既有非写授权语义（Phase 505）
