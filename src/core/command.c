@@ -10048,7 +10048,7 @@ static void command_xread(session *s, const resp_value *argv, size_t argc,
         const char *key, *idv;
         size_t kl, idl;
         obj_stream *st;
-        uint64_t ms, seq, emitted = 0;
+        uint64_t ms = 0, seq = 0, emitted = 0;
         size_t first, i;
         int rc;
         if (!arg_str(&argv[pos + k], &key, &kl) ||
@@ -10524,13 +10524,17 @@ static void blocking_list_move_ready(db *d, resp_buf *out, const char *sk,
                                      int src_left, int dst_left,
                                      uint64_t now_ms)
 {
-    obj_list *src;
+    obj_list *src = NULL;
     obj_list *dst;
     int same = skl == dkl && (skl == 0 || memcmp(sk, dk, skl) == 0);
     int created_dst = 0;
     int rcs = get_list(d, out, sk, skl, 0, now_ms, &src);
     if (rcs < 0)
         return;
+    if (rcs == 0) {
+        resp_write_bulk(out, NULL, 0);
+        return;
+    }
     if (!same) {
         int rcd = get_list(d, out, dk, dkl, 0, now_ms, &dst);
         if (rcd < 0)
@@ -10650,7 +10654,7 @@ static void lmovem_move_ready(db *d, resp_buf *out, const char *sk,
                               int src_left, int dst_left, long long tomove,
                               int ordering, uint64_t now_ms)
 {
-    obj_list *src;
+    obj_list *src = NULL;
     obj_list *dst = NULL;
     char **vals = NULL;
     size_t *lens = NULL;
@@ -10661,7 +10665,7 @@ static void lmovem_move_ready(db *d, resp_buf *out, const char *sk,
     uint64_t dbefore = 0;
     int rev;
 
-    if (get_list(d, out, sk, skl, 0, now_ms, &src) < 0)
+    if (get_list(d, out, sk, skl, 0, now_ms, &src) != 1)
         return;
     same = skl == dkl && (skl == 0 || memcmp(sk, dk, skl) == 0);
     if (!same) {

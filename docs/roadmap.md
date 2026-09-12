@@ -1218,3 +1218,8 @@
     关闭已完成连接；成功与失败路径回归均通过（Phase 439）
   - [x] benchmark 部分初始化 fd 安全：连接数组分配后立即将所有句柄设为
     `PAL_SOCKET_INVALID`，即使事件循环创建失败也不会误关闭默认 fd（Phase 440）
+  - [x] sanitizer 构建开关：`DDUP_SANITIZE=address|undefined|address,undefined`
+    对第一方目标启用编译/链接插桩并自动关闭 LTO；新增 ASan/UBSan benchmark
+    回归验证（Phase 441）
+  - [x] Stream/列表严格告警收敛：初始化 `XREAD` ID 与阻塞移动源指针，消除
+    LTO `-Wmaybe-uninitialized` 并保持空源/合法移动语义（Phase 442）

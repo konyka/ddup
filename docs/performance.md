@@ -3005,3 +3005,19 @@ after the connection array is allocated, before event-loop creation is checked.
 If loop creation fails, cleanup can safely walk the partially initialized array
 without treating `calloc`'s zero bytes as a live descriptor. This closes a
 rare setup-failure hazard without changing the steady-state benchmark path.
+
+### Phase 441: reproducible sanitizer builds
+
+`DDUP_SANITIZE` is now a first-class CMake cache option accepting `address`,
+`undefined`, or `address,undefined`. It applies compile and link instrumentation
+to first-party targets and disables LTO while sanitizers are active, so the
+resulting diagnostics are reliable. Fresh ASan and UBSan builds both contain
+the expected `-fsanitize` flags and pass the large-payload benchmark regression.
+
+### Phase 442: strict-warning stream/list paths
+
+`XREAD` initializes parsed stream ID locals before the per-stream branch, and
+blocking list move helpers initialize and validate their source object before
+use. This removes optimizer-detected `-Wmaybe-uninitialized` diagnostics under
+LTO/`-Werror` without changing successful command behavior; `test_stream` and
+the full suite remain green.
