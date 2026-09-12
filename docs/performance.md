@@ -3476,3 +3476,10 @@ a 16-entry static table. `ACL CAT` performs one bounded pass to count matching e
 and one pass to emit them, adding at most 16 string comparisons on this cold management
 path. No request-time dispatch, authorization, allocation, or synchronization cost is
 introduced.
+
+### Phase 507: ACL CAT container presentation
+
+The filtered view applies three constant-time name checks to suppress bare
+container commands while retaining their top-level IDs for authorization. This
+is limited to the cold `ACL CAT` scan and does not change request-time dispatch,
+ACL bitsets, or key/channel checks.

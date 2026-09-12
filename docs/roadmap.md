@@ -1375,3 +1375,5 @@
     `+@read` 既有非写授权语义（Phase 505）
   - [x] ACL CAT 容器子命令展示：补齐 Redis 8 `stream`/`pubsub` 类别的
     `xgroup|*`、`xinfo|*`、`pubsub|*` 静态条目，并覆盖回归测试（Phase 506）
+  - [x] ACL CAT 容器展示对齐：过滤 `xgroup`、`xinfo`、`pubsub` 裸容器名，保留
+    顶层命令授权语义并覆盖负向回归测试（Phase 507）

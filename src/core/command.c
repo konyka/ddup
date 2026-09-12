@@ -12329,6 +12329,26 @@ static int acl_cat_extra_match(const char *category, size_t category_len,
            ci_equal(category, category_len, acl_cat_extras[index].category);
 }
 
+static int acl_cat_command_match(const char *category, size_t category_len,
+                                 uint16_t id)
+{
+    const char *name = cmd_name(id);
+    int match = ci_equal(category, category_len, "read")
+                    ? acl_cat_readonly_match(id)
+                    : cmd_acl_category_match(category, category_len, id);
+    if (!match || name == NULL)
+        return 0;
+    /* Container commands are represented by their synthetic subcommand names
+     * in ACL CAT; keep the top-level IDs available for ACL SETUSER rules. */
+    if (ci_equal(category, category_len, "stream") &&
+        (strcmp(name, "xgroup") == 0 || strcmp(name, "xinfo") == 0))
+        return 0;
+    if (ci_equal(category, category_len, "pubsub") &&
+        strcmp(name, "pubsub") == 0)
+        return 0;
+    return 1;
+}
+
 static void command_acl(session *s, const resp_value *argv, size_t argc,
                         resp_buf *out)
 {
@@ -12414,23 +12434,14 @@ static void command_acl(session *s, const resp_value *argv, size_t argc,
             return;
         }
         for (i = 1; i <= CMD_MAX; i++) {
-            int match = 0;
-            match = ci_equal(category, category_len, "read")
-                        ? acl_cat_readonly_match((uint16_t)i)
-                        : cmd_acl_category_match(category, category_len,
-                                                  (uint16_t)i);
-            if (match && cmd_name((uint16_t)i) != NULL) count++;
+            if (acl_cat_command_match(category, category_len, (uint16_t)i))
+                count++;
         }
         for (i = 0; i < sizeof(acl_cat_extras) / sizeof(acl_cat_extras[0]); i++)
             if (acl_cat_extra_match(category, category_len, i)) count++;
         resp_write_array_header(out, count);
         for (i = 1; i <= CMD_MAX; i++) {
-            int match = 0;
-            match = ci_equal(category, category_len, "read")
-                        ? acl_cat_readonly_match((uint16_t)i)
-                        : cmd_acl_category_match(category, category_len,
-                                                  (uint16_t)i);
-            if (match && cmd_name((uint16_t)i) != NULL)
+            if (acl_cat_command_match(category, category_len, (uint16_t)i))
                 resp_write_bulk(out, cmd_name((uint16_t)i), strlen(cmd_name((uint16_t)i)));
         }
         for (i = 0; i < sizeof(acl_cat_extras) / sizeof(acl_cat_extras[0]); i++)

@@ -356,8 +356,12 @@ ZSET 词典范围边界补充复核：skiplist 与 listpack 的 lex-range 查询
   state and keeping invalidation deterministic for independent server instances.
   Category rule names are parsed case-insensitively using bounded ASCII
   comparison, matching Redis command casing semantics without adding allocations.
-  `ACL CAT` lists available categories and filters commands for a requested
-  category; unknown categories fail closed before command metadata traversal.
+`ACL CAT` lists available categories and filters commands for a requested
+category; unknown categories fail closed before command metadata traversal.
+Container categories match Redis presentation semantics: `ACL CAT stream` and
+`ACL CAT pubsub` expose synthetic `container|subcommand` names while omitting
+the bare `XGROUP`, `XINFO`, and `PUBSUB` container entries. Authorization still
+uses the top-level command IDs.
   `ACL DRYRUN` resolves the target user and command/key arguments through the
   existing authorization path, returning `OK` or `NOPERM` without side effects;
   unknown users and commands fail closed.

@@ -1735,3 +1735,9 @@ ACL 规则解析现在复用统一命令类别映射，支持 `+@`/`-@` 后的�
 不引入新的命令 ID；实际分发和 `ACL SETUSER` 授权仍绑定顶层 `XGROUP`、`XINFO`、
 `PUBSUB` 命令。实现采用编译期静态表，计数和写出各扫描一次，避免堆分配和锁，
 并保持未知类别 fail-closed 行为。
+
+Phase 507 further aligns the presentation with Redis by suppressing bare
+`xgroup`, `xinfo`, and `pubsub` container names from filtered output. Their
+top-level command IDs remain available to ACL rule expansion; only the
+human/protocol-facing `ACL CAT` view uses the synthetic `container|subcommand`
+entries.
