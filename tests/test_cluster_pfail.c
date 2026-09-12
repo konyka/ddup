@@ -449,11 +449,12 @@ static void pump3(server *x, server *y, server *z)
 }
 
 /* send req, pump the trio, read until want appears (bounded) */
-static int ask3(server *x, server *y, server *z, pal_socket_t c,
-                const char *req, const char *want, char *buf, size_t cap)
+static int ask3_for(server *x, server *y, server *z, pal_socket_t c,
+                    const char *req, const char *want, char *buf,
+                    size_t cap, uint64_t timeout_ms)
 {
     size_t got = 0;
-    uint64_t dl = pal_now_ms() + 15000;
+    uint64_t dl = pal_now_ms() + timeout_ms;
     DD_CHECK_EQ_INT((long long)strlen(req),
                     (long long)pal_send(c, req, strlen(req)));
     while (pal_now_ms() < dl) {
@@ -468,8 +469,16 @@ static int ask3(server *x, server *y, server *z, pal_socket_t c,
         }
     }
     buf[got] = '\0';
-    fprintf(stderr, "ask3 timeout: want [%s] got [%.600s]\n", want, buf);
+    if (timeout_ms >= 1000)
+        fprintf(stderr, "ask3 timeout: want [%s] got [%.600s]\n", want,
+                buf);
     return 0;
+}
+
+static int ask3(server *x, server *y, server *z, pal_socket_t c,
+                const char *req, const char *want, char *buf, size_t cap)
+{
+    return ask3_for(x, y, z, c, req, want, buf, cap, 15000);
 }
 
 static int wait_nodes3(server *x, server *y, server *z, pal_socket_t c,
@@ -479,8 +488,12 @@ static int wait_nodes3(server *x, server *y, server *z, pal_socket_t c,
     for (i = 0; i < 800; i++) {
         pump3(x, y, z);
         if (i % 40 == 0) {
-            if (ask3(x, y, z, c, "*2\r\n$7\r\nCLUSTER\r\n$5\r\nNODES\r\n",
-                     needle, buf, cap))
+            /* A failed state probe is expected while the cluster converges.
+             * Keep it short so each poll cannot consume the normal command
+             * timeout before the next gossip round. */
+            if (ask3_for(x, y, z, c,
+                         "*2\r\n$7\r\nCLUSTER\r\n$5\r\nNODES\r\n",
+                         needle, buf, cap, 250))
                 return 1;
         }
     }
@@ -494,8 +507,9 @@ static int wait_state3(server *x, server *y, server *z, pal_socket_t c,
     for (i = 0; i < 800; i++) {
         pump3(x, y, z);
         if (i % 40 == 0) {
-            if (ask3(x, y, z, c, "*2\r\n$7\r\nCLUSTER\r\n$4\r\nINFO\r\n",
-                     want, buf, cap))
+            if (ask3_for(x, y, z, c,
+                         "*2\r\n$7\r\nCLUSTER\r\n$4\r\nINFO\r\n",
+                         want, buf, cap, 250))
                 return 1;
         }
     }

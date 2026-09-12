@@ -1283,3 +1283,6 @@
   - [x] GitHub Actions job 级超时门禁：所有 build/test、benchmark、兼容性和
     互操作工作流声明 `timeout-minutes`，新增 CTest 配置回归防止无界 runner
     任务（Phase 465）
+  - [x] 集群 PFAIL/FAIL 端到端测试收敛探针：中间状态查询使用短超时，保留命令
+    失败的长超时，避免每轮 gossip 在无效状态上阻塞 15 秒；断言与故障语义不变
+    （Phase 466）

@@ -3204,3 +3204,12 @@ distinct from current local trend data.
 All build, test, benchmark, compatibility, and interoperability jobs now set a
 job-level `timeout-minutes` limit. A CTest configuration regression checks the
 workflow declarations; this changes CI control-plane behavior only.
+
+### Phase 466: cluster failure-test convergence probes
+
+The cluster PFAIL/FAIL end-to-end test now uses 250 ms convergence probes while
+retaining the 15 s timeout for command failures. This avoids waiting for the
+full command deadline when a valid intermediate `CLUSTER NODES/INFO` response
+does not yet contain the expected state. On the same Linux Release host, the
+test dropped from 102.75 s to 20.93 s while all 289 assertions remained green;
+this is test/CI latency only and does not alter server runtime behavior.
