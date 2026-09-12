@@ -3045,3 +3045,11 @@ Completion errors from io_uring are converted from the kernel's negative
 result convention without negating `INT_MIN`. A defensive saturation keeps
 unexpected provider values defined while preserving all ordinary errno values;
 the SEND_ZC fixed-buffer completion regression now passes with UBSan enabled.
+
+### Phase 446: snapshot reader sequencing safety
+
+Snapshot restore now decodes the little-endian format version one byte at a
+time. This avoids modifying the reader offset twice in one expression, whose
+operand evaluation order is unspecified in C and caused UBSan builds to read
+the bytes in reverse. DUMP/RESTORE and replication snapshot regressions pass
+with the defined decode order; the hot path remains allocation-free.

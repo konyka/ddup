@@ -1231,3 +1231,6 @@
     （Phase 444）
   - [x] io_uring completion 错误转换安全：处理 `INT_MIN` 负结果时避免取负溢出，
     保持普通 errno 映射并通过 SEND_ZC fixed-buffer UBSan 回归（Phase 445）
+  - [x] Snapshot reader 字节顺序安全：按显式顺序读取 little-endian 版本字段，
+    避免同一表达式多次修改 reader 状态导致未定义求值顺序；DUMP/RESTORE 与
+    复制快照 UBSan 回归通过（Phase 446）

@@ -1511,7 +1511,8 @@ int snapshot_restore_key(db *d, const char *key, size_t klen,
     r.len = plen - 8;
     r.off = 0;
     r.ok = 1;
-    version = (uint16_t)(rd_u8(&r) | ((uint16_t)rd_u8(&r) << 8));
+    version = rd_u8(&r);
+    version |= (uint16_t)rd_u8(&r) << 8;
     if (version != SNAPSHOT_DUMP_VERSION)
         return -1;
     tag = rd_u8(&r);
