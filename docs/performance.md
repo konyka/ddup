@@ -2897,7 +2897,6 @@ mixed-target pipelines without adding work to the steady-state path.
 The reproducible matrix uses ddup-bench for ddup and Valkey 9.0.4 on the same
 loopback host: 10,000 requests, 10 concurrent connections, 16-byte values, and
 pipeline depths 1 and 16 for SET/GET/PING. ddup one-worker and Valkey complete
-all measured cases. ddup two-worker pipeline 16 SET (and the GET setup SET)
-expose a client reply-count mismatch and are recorded as failed samples in the
-HTML report rather than converted into throughput numbers. Garnet was not
-installed and is explicitly excluded from measured comparisons.
+all measured cases after Phase 430 fixed first-migration replay. The report
+contains 18 successful samples; Garnet was not installed and is explicitly
+excluded from measured comparisons.
