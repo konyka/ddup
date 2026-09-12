@@ -296,8 +296,12 @@ static void test_zrange_rank(void)
     /* ranks; update and delete keep them correct */
     exec_cmd(&d, T0, &out, 3, "ZRANK", "z", "a");
     EXPECT(out, ":0\r\n");
+    exec_cmd(&d, T0, &out, 4, "ZRANK", "z", "b", "WITHSCORE");
+    EXPECT(out, "*2\r\n:1\r\n$3\r\n2.5\r\n");
     exec_cmd(&d, T0, &out, 3, "ZREVRANK", "z", "a");
     EXPECT(out, ":2\r\n");
+    exec_cmd(&d, T0, &out, 4, "ZREVRANK", "z", "b", "WITHSCORE");
+    EXPECT(out, "*2\r\n:1\r\n$3\r\n2.5\r\n");
     exec_cmd(&d, T0, &out, 4, "ZADD", "z", "10", "a");
     EXPECT(out, ":0\r\n");
     exec_cmd(&d, T0, &out, 3, "ZRANK", "z", "a");
@@ -312,6 +316,8 @@ static void test_zrange_rank(void)
     EXPECT(out, "$-1\r\n");
     exec_cmd(&d, T0, &out, 3, "ZRANK", "nokey", "a");
     EXPECT(out, "$-1\r\n");
+    exec_cmd(&d, T0, &out, 4, "ZRANK", "z", "missing", "WITHSCORE");
+    EXPECT(out, "*-1\r\n");
 
     resp_buf_free(&out);
     db_destroy(&d);

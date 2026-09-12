@@ -3313,3 +3313,10 @@ ACL commands now use the same single authorization check as every other command;
 the existing fixed-bitset lookup runs before dispatch and has no allocation or
 syscall cost. The dedicated default-user checks for ACL administration remain cold
 control-plane validation.
+
+### Phase 481: ZRANK WITHSCORE
+
+`ZRANK`/`ZREVRANK` parse the optional token in place and reuse the existing O(log N)
+score lookup/rank walk. `WITHSCORE` adds only bounded response formatting (a 40-byte
+stack buffer and two RESP elements); it introduces no heap allocation, lock, or extra
+database traversal.

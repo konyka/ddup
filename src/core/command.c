@@ -20541,9 +20541,20 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
 
     if (cmd_id == CMD_ZRANK || cmd_id == CMD_ZREVRANK) {
         int rev = cmd_id == CMD_ZREVRANK;
-        if (argc != 3) {
+        int withscore = 0;
+        if (argc < 3 || argc > 4) {
             wrong_args(out, rev ? "zrevrank" : "zrank");
             return;
+        }
+        if (argc == 4) {
+            const char *option;
+            size_t option_len;
+            if (!arg_str(&argv[3], &option, &option_len) ||
+                !ci_equal(option, option_len, "WITHSCORE")) {
+                resp_write_error(out, ERR_SYNTAX, sizeof(ERR_SYNTAX) - 1);
+                return;
+            }
+            withscore = 1;
         }
         const char *k, *m;
         size_t kl, ml;
@@ -20555,17 +20566,31 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
             return;
         double sc;
         if (rc == 0 || !obj_zset_score(z, m, ml, &sc)) {
-            resp_write_bulk(out, NULL, 0);
+            if (withscore)
+                write_null_array(out);
+            else
+                resp_write_bulk(out, NULL, 0);
             return;
         }
         {
             long rank = obj_zset_rank(z, sc, m, ml);
             if (rank < 0) {
-                resp_write_bulk(out, NULL, 0);
+                if (withscore)
+                    write_null_array(out);
+                else
+                    resp_write_bulk(out, NULL, 0);
                 return;
             }
-            resp_write_integer(out, rev ? (long long)obj_zset_len(z) - 1 - rank
-                                        : rank);
+            rank = rev ? (long)obj_zset_len(z) - 1 - rank : rank;
+            if (!withscore) {
+                resp_write_integer(out, (long long)rank);
+            } else {
+                char num[40];
+                int nl = fmt_score(num, sizeof(num), sc);
+                resp_write_array_header(out, 2);
+                resp_write_integer(out, (long long)rank);
+                resp_write_bulk(out, num, (size_t)nl);
+            }
         }
         return;
     }
@@ -23538,8 +23563,8 @@ static const cmd_entry CMD_TABLE[] = {
     {"zrem", CMD_ZREM, 3, -1, 0, CMD_WRITE},
     {"zrange", CMD_ZRANGE, 4, -1, 0, 0},
     {"zrevrange", CMD_ZREVRANGE, 4, 5, 0, 0},
-    {"zrank", CMD_ZRANK, 3, 3, 0, 0},
-    {"zrevrank", CMD_ZREVRANK, 3, 3, 0, 0},
+    {"zrank", CMD_ZRANK, 3, 4, 0, 0},
+    {"zrevrank", CMD_ZREVRANK, 3, 4, 0, 0},
     {"zcount", CMD_ZCOUNT, 4, 4, 0, 0},
     {"zrangebyscore", CMD_ZRANGEBYSCORE, 4, -1, 0, 0},
     {"zremrangebyscore", CMD_ZREMRANGEBYSCORE, 4, 4, 0, CMD_WRITE},

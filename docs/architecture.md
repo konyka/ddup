@@ -1581,3 +1581,10 @@ WATCH 远端 owner 尚未返回时，连接上的后续命令会进入 deferred 
 现在保存有界 ACL 用户名与认证状态；回放前在 home worker 重新解析当前用户，
 再进入路由和授权检查。等待期间删除或撤销用户权限会安全地产生 `NOAUTH`/
 `NOPERM`，不会因为临时 session 缺少 ACL 上下文而放行命令。
+
+## Phase 481：ZRANK WITHSCORE 兼容
+
+`ZRANK` 与 `ZREVRANK` 接受可选的 `WITHSCORE` 参数。成员存在时返回包含 rank
+和格式化 score 的双元素数组；成员或 key 不存在时返回 RESP2 null array，保持
+Redis 8 的返回形状。无该选项时继续返回整数 rank，未知选项仍 fail-closed 为
+语法错误。

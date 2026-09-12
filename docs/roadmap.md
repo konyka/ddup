@@ -1323,3 +1323,5 @@
   - [x] ACL 命令权限一致性：移除 `ACL` 对通用授权的整体豁免，受限用户必须
     拥有 `+acl` 才能调用 `WHOAMI` 等子命令，管理子命令继续受 default 用户边界
     保护（Phase 480）
+  - [x] ZRANK/ZREVRANK `WITHSCORE`：兼容 Redis 8 可选参数、双元素 rank/score
+    返回及缺失成员 null array，未知选项 fail-closed（Phase 481）
