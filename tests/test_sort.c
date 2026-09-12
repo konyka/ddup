@@ -176,7 +176,7 @@ static void test_sort_empty_binary_value(void)
     db d;
     resp_buf out;
     resp_value push[3];
-    resp_value sort[2];
+    resp_value sort[3];
 
     db_init(&d);
     resp_buf_init(&out);
