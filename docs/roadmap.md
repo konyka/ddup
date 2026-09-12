@@ -1369,3 +1369,5 @@
     （Phase 502）
   - [x] ACL CAT SWAPDB keyspace 映射：补齐数据库交换命令的 keyspace 分类并覆盖
     回归测试（Phase 503）
+  - [x] ACL CAT ddup keyspace 扩展映射：补齐 SFLUSH/TRIMSLOTS 源码元数据分类并
+    覆盖回归测试（Phase 504）

@@ -1715,3 +1715,9 @@ ACL 规则解析现在复用统一命令类别映射，支持 `+@`/`-@` 后的�
 
 `SWAPDB` 纳入 `keyspace` 类别，和 Redis 的数据库级 keyspace 操作分类保持一致；
 此前仅在 `write` 类别中可见，现由 TDD 回归锁定双重分类行为。
+
+## Phase 504：ACL CAT ddup keyspace 扩展映射
+
+`SFLUSH` 与 `TRIMSLOTS` 补入 `keyspace` 类别。两者是 ddup 在 Redis 基线上的
+扩展命令，但其源码元数据声明了 keyspace 属性；静态 ACL 谓词与 `ACL SETUSER`
+类别展开现保持一致。

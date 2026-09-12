@@ -3457,3 +3457,8 @@ category-list truncation.
 Adding the existing `SWAPDB` command to the fixed keyspace predicate costs one
 comparison per command during cold `ACL CAT` scans and does not affect dispatch or
 authorization hot paths.
+
+### Phase 504: ddup keyspace extension mapping
+
+`SFLUSH` and `TRIMSLOTS` add two fixed command-ID comparisons on the cold `ACL CAT`
+scan. The ACL bitset expansion and normal command authorization costs are unchanged.

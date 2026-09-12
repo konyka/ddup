@@ -358,6 +358,8 @@ static void test_acl_cat_filters_commands(void)
     DD_CHECK(contains_bytes(out.data, out.len, "migrate", 7));
     DD_CHECK(contains_bytes(out.data, out.len, "object", 6));
     DD_CHECK(contains_bytes(out.data, out.len, "swapdb", 6));
+    DD_CHECK(contains_bytes(out.data, out.len, "sflush", 6));
+    DD_CHECK(contains_bytes(out.data, out.len, "trimslots", 9));
     DD_CHECK(!contains_bytes(out.data, out.len, "\r\n$4\r\nping\r\n", 13));
 
     out.len = 0;
