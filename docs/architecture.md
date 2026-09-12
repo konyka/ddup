@@ -1756,3 +1756,9 @@ Redis 8 将 `LASTSAVE` 与 `ROLE` 归入 `@admin`；ACL 类别谓词现纳入这
 connection 条目、`FUNCTION`/`SCRIPT` 的 scripting 条目、`OBJECT` 的 keyspace
 条目、`HIMPORT` 的 hash 条目，以及既有 stream/pubsub 条目。裸容器名仅在 Redis
 元数据将顶层命令归类时保留；展示条目不创建新的命令 ID，授权仍使用现有位图。
+
+## Phase 511：BGSAVE SCHEDULE 兼容
+
+`BGSAVE` 现在接受 Redis 8 的可选 `SCHEDULE` token，并对其他附加参数
+fail-closed。ddup 当前快照后端仍在同一安全生命周期内执行保存，因此该选项
+保持 Redis wire response 兼容而不伪造额外后台队列状态。

@@ -366,6 +366,8 @@ The `admin` category also includes Redis 8's `LASTSAVE` and `ROLE` commands.
 Category views also expose the Redis 8 ACL-tagged container entries for
 `CLIENT`/`COMMAND`, `FUNCTION`/`SCRIPT`, `OBJECT`, and `HIMPORT`, while omitting
 their unclassified bare container names.
+`BGSAVE SCHEDULE` is accepted with the same safe snapshot response as `BGSAVE`;
+unknown extra tokens retain the standard wrong-arity error.
   `ACL DRYRUN` resolves the target user and command/key arguments through the
   existing authorization path, returning `OK` or `NOPERM` without side effects;
   unknown users and commands fail closed.

@@ -269,6 +269,10 @@ static void test_bgsave_bgrewriteaof(void)
 
     roundtrip(s, c, "*1\r\n$6\r\nBGSAVE\r\n", "+Background saving started\r\n");
     DD_CHECK(pal_file_exists(snap));
+    roundtrip(s, c, "*2\r\n$6\r\nBGSAVE\r\n$8\r\nSCHEDULE\r\n",
+              "+Background saving started\r\n");
+    roundtrip(s, c, "*2\r\n$6\r\nBGSAVE\r\n$3\r\nBAD\r\n",
+              "-ERR wrong number of arguments for 'bgsave' command\r\n");
 
     roundtrip(s, c, "*1\r\n$12\r\nBGREWRITEAOF\r\n", "+Background append only file rewriting started\r\n");
 

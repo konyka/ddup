@@ -3503,3 +3503,9 @@ The static presentation table now contains 65 Redis 8 category-tagged container
 subcommands. Counting and emission remain linear in the fixed table size; the added
 work is confined to the cold ACL introspection path, with no data-plane allocation,
 locking, dispatch, or authorization overhead.
+
+### Phase 511: BGSAVE SCHEDULE
+
+The optional `SCHEDULE` form adds one bounded token comparison at the cold snapshot
+management entry point. Snapshot serialization, persistence locks, and data-plane
+dispatch costs are unchanged; invalid options are rejected before any I/O.

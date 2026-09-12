@@ -1384,3 +1384,5 @@
   - [x] ACL CAT 容器元数据完整性：补齐 Redis 8 connection/scripting/keyspace/hash
     类别的 `CLIENT`、`COMMAND`、`FUNCTION`、`SCRIPT`、`OBJECT`、`HIMPORT` 子命令，
     并覆盖裸容器名负向回归（Phase 510）
+  - [x] BGSAVE SCHEDULE 兼容：接受 Redis 8 可选 `SCHEDULE`，未知附加 token
+    fail-closed，并覆盖管理命令回归（Phase 511）

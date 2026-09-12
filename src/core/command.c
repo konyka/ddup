@@ -8088,8 +8088,11 @@ static void command_bgsave(session *s, const resp_value *argv, size_t argc,
                            resp_buf *out, uint64_t now_ms)
 {
     db *d = s->d;
-    (void)argv;
-    if (argc != 1) {
+    const char *schedule;
+    size_t schedule_len;
+    if (argc > 2 || (argc == 2 &&
+                     (!arg_str(&argv[1], &schedule, &schedule_len) ||
+                      !ci_equal(schedule, schedule_len, "SCHEDULE")))) {
         wrong_args(out, "bgsave");
         return;
     }
@@ -24007,7 +24010,7 @@ static const cmd_entry CMD_TABLE[] = {
     {"client", CMD_CLIENT, 2, -1, 0, 0},
     {"memory", CMD_MEMORY, 2, -1, 0, 0},
     {"slowlog", CMD_SLOWLOG, 2, -1, 0, 0},
-    {"bgsave", CMD_BGSAVE, 1, 1, 0, 0},
+    {"bgsave", CMD_BGSAVE, 1, 2, 0, 0},
     {"bgrewriteaof", CMD_BGREWRITEAOF, 1, 1, 0, 0},
     {"xadd", CMD_XADD, 5, -1, 0, CMD_WRITE},
     {"xlen", CMD_XLEN, 2, 2, 0, 0},
