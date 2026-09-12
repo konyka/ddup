@@ -3076,6 +3076,24 @@ static void test_acl_revoke_is_enforced_at_mt_exec(void)
              strlen(key), key);
     roundtrip(user, req, "$-1\r\n");
 
+    /* Deleting the user while another transaction is queued must fail closed
+     * as NOAUTH rather than replaying through a default worker context. */
+    roundtrip(admin,
+              "*7\r\n$3\r\nACL\r\n$7\r\nSETUSER\r\n$6\r\nreader\r\n"
+              "$2\r\non\r\n$7\r\n>secret\r\n$5\r\n+@all\r\n$2\r\n~*\r\n",
+              "+OK\r\n");
+    roundtrip(user,
+              "*3\r\n$4\r\nAUTH\r\n$6\r\nreader\r\n$6\r\nsecret\r\n",
+              "+OK\r\n");
+    roundtrip(user, "*1\r\n$5\r\nMULTI\r\n", "+OK\r\n");
+    snprintf(req, sizeof(req), "*3\r\n$3\r\nSET\r\n$%zu\r\n%s\r\n$1\r\nb\r\n",
+             strlen(key), key);
+    roundtrip(user, req, "+QUEUED\r\n");
+    roundtrip(admin, "*3\r\n$3\r\nACL\r\n$7\r\nDELUSER\r\n$6\r\nreader\r\n",
+              ":1\r\n");
+    roundtrip(user, "*1\r\n$4\r\nEXEC\r\n",
+              "-NOAUTH Authentication required.\r\n");
+
     pal_close(user);
     pal_close(admin);
     mt_server_stop(ms);

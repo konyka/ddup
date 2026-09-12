@@ -3531,8 +3531,10 @@ static void mt_exec_on_db(server *srv, mt_task *t, arena *ar)
     }
     if (aborted) {
         static const char nullarr[] = "*-1\r\n";
-        if (resp_buf_reserve(&t->reply, sizeof(nullarr) - 1) != 0)
+        if (resp_buf_reserve(&t->reply, sizeof(nullarr) - 1) != 0) {
+            session_release(&sess);
             return;
+        }
         memcpy(t->reply.data + t->reply.len, nullarr, sizeof(nullarr) - 1);
         t->reply.len += sizeof(nullarr) - 1;
         session_release(&sess);
