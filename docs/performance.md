@@ -3300,3 +3300,9 @@ The optimized GET/SET path now runs after the existing authentication and ACL ch
 preventing restricted users from bypassing command or key-pattern permissions. The
 check is a branch-only guard with no allocation or extra syscall; unrestricted
 sessions retain the same lean database operations and response construction.
+
+### Phase 479: pooled task ACL field hygiene
+
+Task-pool reuse now clears the fixed-size ACL username field in place. The operation
+is a bounded `memset` on task reuse and adds no heap allocation, lock, or syscall;
+normal routed command throughput and pool ownership remain unchanged.

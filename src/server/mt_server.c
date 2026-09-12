@@ -3303,7 +3303,7 @@ static mt_task *mt_pool_task_new(worker *home)
     t->kind = MT_TASK_CMD;
     t->pending_owned = 0;
     t->db_index = 0;
-    t->acl_username[0] = '\0';
+    memset(t->acl_username, 0, sizeof(t->acl_username));
     t->watch_out = NULL;
     t->nwatch_out = 0;
     t->exec_watches = NULL;
@@ -3779,6 +3779,7 @@ static int mt_txn_exec(worker *home, void *conn, mt_conn_state *st,
     }
     t->kind = MT_TASK_EXEC;
     t->db_index = db_index;
+    memset(t->acl_username, 0, sizeof(t->acl_username));
     if (source != NULL && source->acl_username[0] != '\0')
         memcpy(t->acl_username, source->acl_username, sizeof(t->acl_username));
     else

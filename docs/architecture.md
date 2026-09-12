@@ -1562,6 +1562,12 @@ owner 路由保持不变。
 数据库读写、AOF 或监控副作用。无 ACL 配置时仍保持原有快速路径，其他命令继续
 使用通用 dispatcher 的授权语义。
 
+## Phase 479：MT task 池 ACL 字段清理
+
+回收至 task pool 的任务会完整清零固定大小的 ACL 用户名字段；重新用于事务
+回放时先清除整个字段，再写入当前 session 身份。这样池化对象不会携带上一次
+事务的尾部字节，也不会让默认身份回退路径依赖残留字符串终止符。
+
 ## Phase 477：MT deferred replay ACL 身份保持
 
 WATCH 远端 owner 尚未返回时，连接上的后续命令会进入 deferred 队列。队列条目
