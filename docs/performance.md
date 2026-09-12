@@ -2875,3 +2875,9 @@ only empty results take the additional presence-tracking branch.
 Hotkey entries now carry an explicit occupancy bit, separating an empty key
 from an unused slot. Lookup still performs one linear probe pass; empty keys
 take the zero-length compare branch and unused slots avoid payload inspection.
+
+### Phase 429: PUBSUB aggregate route classification
+
+The multi-thread router now classifies only the five supported PUBSUB aggregate
+subcommands. Invalid requests take the existing local command path without
+allocating aggregate state or fanning out worker tasks.

@@ -2986,6 +2986,29 @@ static void test_pubsub_cross_worker(void)
     pal_socket_cleanup();
 }
 
+static void test_pubsub_invalid_subcommand_stays_local(void)
+{
+    mt_server *ms;
+    pal_socket_t c;
+
+    DD_CHECK_EQ_INT(0, pal_socket_init());
+    ms = mt_server_create("127.0.0.1", 0, 2);
+    DD_CHECK(ms != NULL);
+    DD_CHECK_EQ_INT(0, mt_server_start(ms));
+    c = connect_client(mt_server_port(ms));
+
+    roundtrip(c, "*1\r\n$6\r\nPUBSUB\r\n",
+              "-ERR wrong number of arguments for 'pubsub' command\r\n");
+    roundtrip(c, "*2\r\n$6\r\nPUBSUB\r\n$7\r\nUNKNOWN\r\n",
+              "-ERR Unknown PUBSUB subcommand\r\n");
+    roundtrip(c, "*1\r\n$4\r\nPING\r\n", "+PONG\r\n");
+
+    pal_close(c);
+    mt_server_stop(ms);
+    mt_server_destroy(ms);
+    pal_socket_cleanup();
+}
+
 static void test_sharded_pubsub_cross_worker(void)
 {
     mt_server *ms;
@@ -3852,6 +3875,7 @@ int main(void)
     DD_RUN(test_mt_info_replication);
     DD_RUN(test_mt_swapdb_replicates_once_three_workers);
     DD_RUN(test_pubsub_cross_worker);
+    DD_RUN(test_pubsub_invalid_subcommand_stays_local);
     DD_RUN(test_sharded_pubsub_cross_worker);
     DD_RUN(test_unsubscribe_stops_delivery);
     DD_RUN(test_pubsub_conn_close_unsubscribes);

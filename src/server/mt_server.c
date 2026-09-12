@@ -2279,6 +2279,17 @@ static int mt_hotkeys_broadcast(const resp_value *argv, size_t argc)
            mt_ci_equal(argv[1].str, argv[1].len, "RESET");
 }
 
+static int mt_pubsub_aggregate(const resp_value *argv, size_t argc)
+{
+    if (argc < 2 || argv[1].str == NULL)
+        return 0;
+    return (mt_ci_equal(argv[1].str, argv[1].len, "NUMPAT") ||
+            mt_ci_equal(argv[1].str, argv[1].len, "CHANNELS") ||
+            mt_ci_equal(argv[1].str, argv[1].len, "SHARDCHANNELS") ||
+            mt_ci_equal(argv[1].str, argv[1].len, "NUMSUB") ||
+            mt_ci_equal(argv[1].str, argv[1].len, "SHARDNUMSUB"));
+}
+
 /* Multi-key commands: every key must map to the same worker (same rule as
  * cluster CROSSSLOT). Key positions by command:
  *   MGET/DEL/UNLINK/EXISTS/TOUCH -> argv[1..]
@@ -4371,7 +4382,7 @@ static int mt_route(void *ctx, void *conn, session *sess,
         cmd == CMD_LASTSAVE || cmd == CMD_SWAPDB ||
         cmd == CMD_INFO ||
         cmd == CMD_FLUSHALL || cmd == CMD_RANDOMKEY || cmd == CMD_KEYS ||
-        cmd == CMD_PUBSUB ||
+        (cmd == CMD_PUBSUB && mt_pubsub_aggregate(argv, argc)) ||
         (cmd == CMD_CLIENT && argc >= 2 && argv[1].str != NULL &&
          (mt_ci_equal(argv[1].str, argv[1].len, "LIST") ||
           mt_ci_equal(argv[1].str, argv[1].len, "KILL"))) ||
