@@ -3370,3 +3370,9 @@ timeout setup; valid pop operations retain their existing O(1) routing checks.
 The four multi-pop variants share one bounded index calculation and scan only the
 declared key slice. Authorization remains allocation-free and prevents malformed or
 cross-policy key lists before any blocking state is installed.
+
+### Phase 490: ACL CAT category enumeration
+
+The expanded category response iterates a fixed 21-entry constant array and performs
+no allocation or command-table scan. This cold introspection change leaves ACL command
+authorization and data-plane throughput unchanged.

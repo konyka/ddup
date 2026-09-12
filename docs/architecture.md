@@ -1639,3 +1639,9 @@ ACL 授权现在按各命令真实语法解析 `LMPOP/ZMPOP` 的 `numkeys`（参
 `BLMPOP/BZMPOP` 的 timeout 后 `numkeys`（参数 2），并逐一校验所有 key pattern。
 这避免把计数参数当成 key 导致默认拒绝，也防止受限用户通过阻塞弹出命令绕过
 源 key 策略。
+
+## Phase 490：ACL CAT 类别枚举
+
+`ACL CAT` 无参数现在返回 Redis 8 的完整固定类别集合（包括 keyspace、数据类型、
+访问模式及 transaction/scripting 等类别），而不是仅返回 read/write/connection
+的简化子集。类别数组为静态常量，不依赖用户状态或堆分配。

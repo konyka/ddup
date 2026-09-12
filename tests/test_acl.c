@@ -264,6 +264,12 @@ static void test_acl_cat_filters_commands(void)
     out.data[out.len] = '\0';
     DD_CHECK(contains_bytes(out.data, out.len, "get", 3));
     DD_CHECK(!contains_bytes(out.data, out.len, "\r\n$3\r\nset\r\n", 11));
+
+    out.len = 0;
+    session_execute_at(&s, (resp_value[]){rv("ACL"), rv("CAT")}, 2, &out, 0);
+    DD_CHECK(contains_bytes(out.data, out.len, "sortedset", 9));
+    DD_CHECK(contains_bytes(out.data, out.len, "pubsub", 6));
+    DD_CHECK(contains_bytes(out.data, out.len, "scripting", 9));
     resp_buf_free(&out);
     session_release(&s);
     db_destroy(&d);

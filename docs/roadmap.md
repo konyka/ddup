@@ -1341,3 +1341,5 @@
     避免落入内部解析错误路径（Phase 488）
   - [x] LMPOP/ZMPOP 与阻塞变体 ACL key 位置：按真实 numkeys 偏移逐一检查所有
     key pattern，修复合法 LMPOP 被默认拒绝及潜在策略绕过（Phase 489）
+  - [x] ACL CAT 完整类别枚举：无参数返回 Redis 8 固定 21 类名称，覆盖数据类型、
+    访问模式、事务和脚本类别（Phase 490）
