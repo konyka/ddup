@@ -125,27 +125,24 @@ static int set_cmd(acl_user *u, const char *p, size_t n, int allow)
     if (n > 2 && (p[0] == '+' || p[0] == '-') && p[1] == '@') {
         const char *cat = p + 2;
         size_t clen = n - 2;
+        int category_known;
         if (clen == 3 && eq_ci(cat, clen, "all")) {
             u->all_commands = allow;
             if (allow) memset(u->deny, 0, sizeof(u->deny));
             else memset(u->allow, 0, sizeof(u->allow));
             return 0;
         }
-        if ((clen == 4 && eq_ci(cat, clen, "read")) ||
-            (clen == 5 && eq_ci(cat, clen, "write")) ||
-            (clen == 10 && eq_ci(cat, clen, "connection"))) {
-            for (i = 1; i < CMD_STATS_SLOTS; i++) {
-                int match = 0;
-                if (clen == 5 && cmd_is_write((uint16_t)i)) match = 1;
-                if (clen == 4 && !cmd_is_write((uint16_t)i)) match = 1;
-                if (clen == 10 && (i == CMD_PING || i == CMD_ECHO || i == CMD_AUTH || i == CMD_QUIT || i == CMD_SELECT)) match = 1;
-                if (match) {
-                    if (allow) u->allow[i / 64] |= UINT64_C(1) << (i % 64);
-                    else u->deny[i / 64] |= UINT64_C(1) << (i % 64);
-                }
+        category_known = cmd_acl_category_match(cat, clen, CMD_PING);
+        if (category_known < 0)
+            return -1;
+        for (i = 1; i < CMD_STATS_SLOTS; i++) {
+            int match = cmd_acl_category_match(cat, clen, (uint16_t)i);
+            if (match > 0) {
+                if (allow) u->allow[i / 64] |= UINT64_C(1) << (i % 64);
+                else u->deny[i / 64] |= UINT64_C(1) << (i % 64);
             }
-            return 0;
         }
+        return 0;
     }
     if (n == 0 || n > 255) return -1;
     id = cmd_resolve(p[0] == '+' || p[0] == '-' ? p + 1 : p,

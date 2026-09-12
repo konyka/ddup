@@ -247,6 +247,22 @@ static void test_acl_categories_are_case_insensitive(void)
     DD_CHECK(acl_authorize(u, CMD_GET, getv, 2) == 1);
 }
 
+static void test_acl_extended_category_rules(void)
+{
+    acl_registry r;
+    resp_value rules[3] = {rv("on"), rv("+@set"), rv("~*")};
+    resp_value sadd[3] = {rv("SADD"), rv("k"), rv("v")};
+    resp_value getv[2] = {rv("GET"), rv("k")};
+    const acl_user *u;
+
+    acl_init(&r, NULL);
+    DD_CHECK(acl_setuser(&r, "setcat", 6, rules, 3) == 0);
+    u = acl_find_const(&r, "setcat", 6);
+    DD_CHECK(u != NULL);
+    DD_CHECK(acl_authorize(u, CMD_SADD, sadd, 3) == 1);
+    DD_CHECK(acl_authorize(u, CMD_GET, getv, 2) == 0);
+}
+
 static void test_acl_cat_filters_commands(void)
 {
     db d;
@@ -1429,6 +1445,7 @@ int main(void)
     DD_RUN(test_acl_generation_changes_on_reuse);
     DD_RUN(test_acl_generation_is_registry_local);
     DD_RUN(test_acl_categories_are_case_insensitive);
+    DD_RUN(test_acl_extended_category_rules);
     DD_RUN(test_acl_cat_filters_commands);
     DD_RUN(test_acl_cat_rejects_unknown_category);
     DD_RUN(test_acl_dryrun_reports_effective_authorization);

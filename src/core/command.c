@@ -12124,8 +12124,8 @@ static int acl_name_in(const char *name, const char *const *items,
 
 /* ACL CAT metadata is queried infrequently, so a compact name-based mapping
  * keeps the command hot path unchanged while covering Redis categories. */
-static int acl_cat_match(const char *category, size_t category_len,
-                         uint16_t id)
+int cmd_acl_category_match(const char *category, size_t category_len,
+                           uint16_t id)
 {
     static const char *const strings[] = {
         "append", "decr", "decrby", "delex", "digest", "get", "getdel",
@@ -12264,7 +12264,7 @@ static int acl_cat_match(const char *category, size_t category_len,
     if (ci_equal(category, category_len, "fast"))
         return acl_name_in(name, fast, sizeof(fast) / sizeof(fast[0]));
     if (ci_equal(category, category_len, "slow"))
-        return !acl_cat_match("fast", 4, id);
+        return !cmd_acl_category_match("fast", 4, id);
     if (ci_equal(category, category_len, "ratelimit"))
         return 0;
     return -1;
@@ -12350,19 +12350,19 @@ static void command_acl(session *s, const resp_value *argv, size_t argc,
             return;
         }
         if (!arg_str(&argv[2], &category, &category_len) ||
-            acl_cat_match(category, category_len, CMD_PING) < 0) {
+            cmd_acl_category_match(category, category_len, CMD_PING) < 0) {
             resp_write_error(out, "ERR unknown category", 20);
             return;
         }
         for (i = 1; i <= CMD_MAX; i++) {
             int match = 0;
-            match = acl_cat_match(category, category_len, (uint16_t)i);
+            match = cmd_acl_category_match(category, category_len, (uint16_t)i);
             if (match && cmd_name((uint16_t)i) != NULL) count++;
         }
         resp_write_array_header(out, count);
         for (i = 1; i <= CMD_MAX; i++) {
             int match = 0;
-            match = acl_cat_match(category, category_len, (uint16_t)i);
+            match = cmd_acl_category_match(category, category_len, (uint16_t)i);
             if (match && cmd_name((uint16_t)i) != NULL)
                 resp_write_bulk(out, cmd_name((uint16_t)i), strlen(cmd_name((uint16_t)i)));
         }

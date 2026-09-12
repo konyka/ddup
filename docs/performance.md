@@ -3418,3 +3418,9 @@ category scan. No allocation, lock, or data-plane branch is added.
 The category-name array grows from 21 to 23 static entries. `array` uses an `ar` prefix
 check and `ratelimit` returns an empty result without scanning command state; neither
 path allocates or affects command dispatch.
+
+### Phase 498: ACL SETUSER category rules
+
+`ACL SETUSER` expands a category by one bounded command-table scan and stores the result
+in the existing fixed bitset. Authorization remains an O(1) bitset/key-pattern check;
+no per-request allocation or lock is introduced.

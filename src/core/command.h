@@ -486,6 +486,11 @@ int cmd_max_argc(uint16_t cmd_id);
 int cmd_parity(uint16_t cmd_id);
 const char *cmd_name(uint16_t cmd_id);
 
+/* Return 1 when a command belongs to an ACL category, 0 when it does not,
+ * and -1 when the category name is unknown. */
+int cmd_acl_category_match(const char *category, size_t category_len,
+                           uint16_t cmd_id);
+
 /* Retry a session suspended by a blocking command (server event-loop
  * integration). Writes the reply into `out` and clears the blocked state
  * when the command is ready or its deadline has expired; otherwise leaves

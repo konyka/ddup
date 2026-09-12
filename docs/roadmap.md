@@ -1357,3 +1357,5 @@
     并增加回归测试（Phase 496）
   - [x] ACL CAT Redis 8 扩展类别：新增 array 与合法空 ratelimit 类别，覆盖 AR*
     命令和空结果回归（Phase 497）
+  - [x] ACL SETUSER 全类别规则：支持 Redis 8 全部 ACL 类别的 `+@`/`-@` 规则，
+    复用静态映射并覆盖 set 授权回归（Phase 498）
