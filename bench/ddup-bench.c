@@ -17,6 +17,7 @@
  * This is a benchmarking tool, not a ctest test.
  */
 #include <stdio.h>
+#include <errno.h>
 #include <stdlib.h>
 #include <stdint.h>
 #include <string.h>
@@ -43,6 +44,20 @@ static long g_value_size = 16; /* -d: SET payload bytes */
 static char *g_value;          /* -d payload bytes (filled in main) */
 static size_t g_cmd_cap = 96;  /* per-request send budget (from -d) */
 static int g_mode = 1;         /* 0=get 1=set 2=ping */
+
+static int parse_long_arg(const char *text, long *value)
+{
+    char *end;
+    long parsed;
+    if (text == NULL || *text == '\0')
+        return -1;
+    errno = 0;
+    parsed = strtol(text, &end, 10);
+    if (errno == ERANGE || end == text || *end != '\0')
+        return -1;
+    *value = parsed;
+    return 0;
+}
 
 /* latency histogram: log2 microsecond buckets + exact min/max */
 static uint64_t g_hist[64];
@@ -287,22 +302,41 @@ int main(int argc, char **argv)
         if (strcmp(argv[i], "-h") == 0 && i + 1 < argc) {
             g_host = argv[++i];
         } else if (strcmp(argv[i], "-p") == 0 && i + 1 < argc) {
-            long parsed_port = strtol(argv[++i], NULL, 10);
+            long parsed_port;
+            if (parse_long_arg(argv[++i], &parsed_port) != 0) {
+                fprintf(stderr, "invalid port\n");
+                return 1;
+            }
             if (parsed_port < 1 || parsed_port > 65535) {
                 fprintf(stderr, "invalid port\n");
                 return 1;
             }
             g_port = (uint16_t)parsed_port;
         } else if (strcmp(argv[i], "-n") == 0 && i + 1 < argc) {
-            g_requests = strtol(argv[++i], NULL, 10);
+            if (parse_long_arg(argv[++i], &g_requests) != 0) {
+                fprintf(stderr, "invalid numeric argument\n");
+                return 1;
+            }
         } else if (strcmp(argv[i], "-c") == 0 && i + 1 < argc) {
-            g_clients = strtol(argv[++i], NULL, 10);
+            if (parse_long_arg(argv[++i], &g_clients) != 0) {
+                fprintf(stderr, "invalid numeric argument\n");
+                return 1;
+            }
         } else if (strcmp(argv[i], "-P") == 0 && i + 1 < argc) {
-            g_pipe = strtol(argv[++i], NULL, 10);
+            if (parse_long_arg(argv[++i], &g_pipe) != 0) {
+                fprintf(stderr, "invalid numeric argument\n");
+                return 1;
+            }
         } else if (strcmp(argv[i], "-r") == 0 && i + 1 < argc) {
-            g_rand_range = strtol(argv[++i], NULL, 10);
+            if (parse_long_arg(argv[++i], &g_rand_range) != 0) {
+                fprintf(stderr, "invalid numeric argument\n");
+                return 1;
+            }
         } else if (strcmp(argv[i], "-d") == 0 && i + 1 < argc) {
-            g_value_size = strtol(argv[++i], NULL, 10);
+            if (parse_long_arg(argv[++i], &g_value_size) != 0) {
+                fprintf(stderr, "invalid numeric argument\n");
+                return 1;
+            }
         } else if (strcmp(argv[i], "-t") == 0 && i + 1 < argc) {
             const char *t = argv[++i];
             if (strcmp(t, "set") == 0)

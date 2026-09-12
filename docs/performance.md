@@ -2956,3 +2956,11 @@ conversion to `uint16_t`. Negative and out-of-range values fail immediately
 with `invalid port` instead of wrapping to an unrelated service port. This is
 an input-safety guard only; valid benchmark connections use the unchanged
 socket path.
+
+### Phase 436: strict benchmark numeric parsing
+
+All numeric benchmark options now use one checked parser with `endptr` and
+`errno` validation. Empty strings, trailing characters, and `ERANGE` overflow
+fail closed with `invalid numeric argument`; the port option retains its
+special `invalid port` diagnostic and 1–65535 range check. Valid numeric
+inputs follow the unchanged fast path.

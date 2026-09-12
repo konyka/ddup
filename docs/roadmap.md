@@ -1206,3 +1206,6 @@
     极端资源申请（Phase 434）
   - [x] benchmark 端口输入校验：`-p` 在转换为 `uint16_t` 前严格限制为
     1–65535，负数和超范围值 fail-closed 并返回明确错误（Phase 435）
+  - [x] benchmark 数值参数严格解析：`-n/-c/-P/-r/-d` 使用 `strtol` 的
+    `endptr/errno` 检查，拒绝尾随字符、空值和范围溢出，避免静默截断
+    （Phase 436）

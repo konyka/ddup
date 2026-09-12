@@ -56,6 +56,14 @@ def main():
     if invalid_port.returncode == 0 or "invalid port" not in invalid_port.stderr:
         raise AssertionError("invalid benchmark port was accepted:\n" +
                              invalid_port.stdout + invalid_port.stderr)
+    malformed = subprocess.run(
+        [str(bench), "-n", "12x", "-c", "1", "-P", "1", "-t", "ping"],
+        check=False, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        text=True,
+    )
+    if malformed.returncode == 0 or "invalid numeric argument" not in malformed.stderr:
+        raise AssertionError("malformed benchmark number was accepted:\n" +
+                             malformed.stdout + malformed.stderr)
     port = free_port()
     proc = subprocess.Popen(
         [str(server), "--port", str(port)],
