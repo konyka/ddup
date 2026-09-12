@@ -290,8 +290,8 @@ jobs:
           REPO_URL="https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
           cd "$RUNNER_TEMP"
           rm -rf cilog
-          if ! git clone --quiet --branch ci-logs-interop --single-branch "$REPO_URL" cilog; then
-            git clone --quiet --no-checkout --depth 1 "$REPO_URL" cilog
+          if ! timeout 60 git clone --quiet --branch ci-logs-interop --single-branch "$REPO_URL" cilog; then
+            timeout 60 git clone --quiet --no-checkout --depth 1 "$REPO_URL" cilog
             git -C cilog checkout --orphan ci-logs-interop
             git -C cilog rm -rf . 2>/dev/null || true
           fi

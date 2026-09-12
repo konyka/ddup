@@ -3180,3 +3180,10 @@ CI now bounds external Redis and Garnet clone/sparse-checkout operations with
 shell timeouts. A network stall fails the control-plane job promptly instead
 of consuming a runner indefinitely; the server and benchmark hot paths are
 unchanged.
+
+### Phase 463: bounded CI failure-log publishing
+
+Failure diagnostics now apply a 60-second timeout to log-branch and benchmark
+results fallback clones as well as the primary fetches. This keeps error
+handling bounded when the remote repository is unavailable, with no impact on
+server, benchmark, or test execution paths.

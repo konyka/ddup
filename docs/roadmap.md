@@ -1274,3 +1274,6 @@
   - [x] CI 外部仓库操作超时保护：Redis 7/8 基线 sparse clone、Garnet clone
     与 sparse-checkout 均设置有界 shell 超时，避免外部网络异常长期占用 runner
     （Phase 462）
+  - [x] CI 失败日志发布超时保护：各平台日志分支及 benchmark-results 的
+    fallback clone 同样设置 60 秒上限，避免异常处理路径二次阻塞流水线
+    （Phase 463）
