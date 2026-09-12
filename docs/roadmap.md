@@ -1277,3 +1277,6 @@
   - [x] CI 失败日志发布超时保护：各平台日志分支及 benchmark-results 的
     fallback clone 同样设置 60 秒上限，避免异常处理路径二次阻塞流水线
     （Phase 463）
+  - [x] Linux Release micro-benchmark 刷新：重新运行 `bench_core` 并将带主机/构建
+    条件的吞吐数字写入 `docs/performance.md`，避免性能文档引用过期样本
+    （Phase 464）

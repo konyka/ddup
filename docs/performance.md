@@ -9,6 +9,11 @@
   （ddup mt）vs 共享存储（Garnet/Tsavorite）」一节。
 - 最新可视化实测报告：reports/benchmark-2026-09-12.html，原始数据见同目录
   JSON，生成器为 tools/generate_benchmark_report.py。
+- 当前主机 micro-benchmark 刷新（2026-09-12，Linux，Release，16 核）：
+  `bench_core` SET 冷启动 `5.27M`、GET 热启动 `8.59M/8.80M`（第二次运行）、
+  parse-only SET/GET `38.33M/44.51M`，`cmd_resolve` `98.57M`，`buf_pool`
+  `613.50M`，整数 RESP writer/parser `112.61M/73.26M` ops/s；这些数字仅用于
+  同机趋势比较，不替代 loopback 多产品报告。
 - 资源边界检查只发生在接收缓冲扩容和复制快照分配之前，不增加每字节或
   每条命令的热路径开销；默认 `proto-max-request-bytes` 与
   `repl-max-snapshot-bytes` 均为 1 GiB。
