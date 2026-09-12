@@ -260,6 +260,10 @@ void db_set_tier(db *d, tier_store *tier, int db_index)
 void db_destroy(db *d)
 {
     script_cleanup(d);
+    /* script_cleanup leaves the function-library table initialized for
+     * reuse; final database teardown must release that empty table too. */
+    rh_destroy(&d->scripts);
+    rh_destroy(&d->function_libs);
     rh_each(&d->table, free_obj_cb, NULL);
     rh_destroy(&d->table);
     rh_destroy(&d->expires);
@@ -4077,8 +4081,10 @@ static uint8_t hll_dense_get(const unsigned char *regs, size_t idx)
 {
     size_t byte = (idx * HLL_BITS) / 8u;
     unsigned fb = (unsigned)((idx * HLL_BITS) % 8u);
-    uint8_t lo = regs[byte];
-    uint8_t hi = regs[byte + 1];
+    uint8_t lo = byte < HLL_DENSE_REG_BYTES ? regs[byte] : 0;
+    /* The final 6-bit register ends at the payload boundary.  Do not read
+     * the next byte merely to simplify the cross-byte extraction. */
+    uint8_t hi = byte + 1u < HLL_DENSE_REG_BYTES ? regs[byte + 1u] : 0;
 
     return (uint8_t)(((uint16_t)lo >> fb) |
                      ((uint16_t)hi << (8u - fb))) &
@@ -4095,7 +4101,7 @@ static void hll_dense_set(unsigned char *regs, size_t idx, uint8_t val)
 
     regs[byte] = (uint8_t)((regs[byte] & (uint8_t)~low_mask) |
                            ((uint8_t)(val << fb) & low_mask));
-    if (fb != 0) {
+    if (fb != 0 && byte + 1u < HLL_DENSE_REG_BYTES) {
         regs[byte + 1] =
             (uint8_t)((regs[byte + 1] & (uint8_t)~high_mask) |
                       ((uint8_t)(val >> (8u - fb)) & high_mask));

@@ -3053,3 +3053,14 @@ time. This avoids modifying the reader offset twice in one expression, whose
 operand evaluation order is unspecified in C and caused UBSan builds to read
 the bytes in reverse. DUMP/RESTORE and replication snapshot regressions pass
 with the defined decode order; the hot path remains allocation-free.
+
+### Phase 447: sanitizer lifecycle and boundary cleanup
+
+ASan/LeakSanitizer validation found and closed several lifecycle and boundary
+issues: listpack hashes now release their eagerly initialized auxiliary tables,
+database and snapshot temporary teardown releases script registries, and the
+MT inline-batch fast path frees staging metadata after transferring its command
+to a pooled task. HLL register decoding no longer reads past the packed final
+byte. The regression suite also uses length-aware checks for binary RESP
+buffers, avoiding test-only overreads. Full ASan CTest passes with leak
+detection enabled.

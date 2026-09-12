@@ -1234,3 +1234,6 @@
   - [x] Snapshot reader 字节顺序安全：按显式顺序读取 little-endian 版本字段，
     避免同一表达式多次修改 reader 状态导致未定义求值顺序；DUMP/RESTORE 与
     复制快照 UBSan 回归通过（Phase 446）
+  - [x] ASan 生命周期与边界收敛：修复 listpack hash 辅助表、数据库/快照临时
+    registry 及 MT inline 批次元数据泄漏，限制 HLL 末尾寄存器读取范围，并让
+    二进制 RESP 测试采用长度感知匹配；LeakSanitizer 全量 73 项通过（Phase 447）

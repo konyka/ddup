@@ -155,6 +155,7 @@ static void test_vote_grant_matrix(void)
 
     /* stale request epoch -> no ACK */
     db_init(&d);
+    resp_buf_free(&reply);
     resp_buf_init(&reply);
     mk_cluster(&d);
     flen = mk_auth_request(frame, 9, 5); /* below current 10 */
@@ -165,6 +166,7 @@ static void test_vote_grant_matrix(void)
 
     /* claim epoch below the current owner's -> no ACK */
     db_init(&d);
+    resp_buf_free(&reply);
     resp_buf_init(&reply);
     mk_cluster(&d);
     flen = mk_auth_request(frame, 11, 4); /* DEAD owns 100-199 @ epoch 5 */
@@ -175,6 +177,7 @@ static void test_vote_grant_matrix(void)
 
     /* master not marked FAIL (mere suspicion is not enough) -> no ACK */
     db_init(&d);
+    resp_buf_free(&reply);
     resp_buf_init(&reply);
     mk_cluster(&d);
     cluster_node_find(&d, DEAD)->flags &= ~(uint32_t)CLUSTER_NODE_FAIL;

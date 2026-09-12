@@ -3,6 +3,20 @@
 #include "core/session.h"
 #include "test.h"
 
+static int contains_bytes(const char *hay, size_t hay_len,
+                          const char *needle, size_t needle_len)
+{
+    size_t i;
+    if (needle_len == 0)
+        return 1;
+    if (hay == NULL || needle == NULL || needle_len > hay_len)
+        return 0;
+    for (i = 0; i + needle_len <= hay_len; i++)
+        if (memcmp(hay + i, needle, needle_len) == 0)
+            return 1;
+    return 0;
+}
+
 static resp_value rv(const char *s)
 {
     resp_value v;
@@ -244,8 +258,10 @@ static void test_acl_cat_filters_commands(void)
     s.acl_username[6] = 't'; s.acl_username[7] = '\0';
     resp_buf_init(&out);
     session_execute_at(&s, argv, 3, &out, 0);
-    DD_CHECK(strstr(out.data, "get") != NULL);
-    DD_CHECK(strstr(out.data, "\r\n$3\r\nset\r\n") == NULL);
+    resp_buf_reserve(&out, 1);
+    out.data[out.len] = '\0';
+    DD_CHECK(contains_bytes(out.data, out.len, "get", 3));
+    DD_CHECK(!contains_bytes(out.data, out.len, "\r\n$3\r\nset\r\n", 11));
     resp_buf_free(&out);
     session_release(&s);
     db_destroy(&d);
@@ -287,11 +303,11 @@ static void test_acl_dryrun_reports_effective_authorization(void)
     memcpy(s.acl_username, "default", 8);
     resp_buf_init(&out);
     session_execute_at(&s, allowv, 5, &out, 0);
-    DD_CHECK(strcmp(out.data, "+OK\r\n") == 0);
+    DD_CHECK(out.len == 5 && memcmp(out.data, "+OK\r\n", 5) == 0);
     out.len = 0;
     if (out.data != NULL) out.data[0] = '\0';
     session_execute_at(&s, denyv, 5, &out, 0);
-    DD_CHECK(strstr(out.data, "NOPERM") != NULL);
+    DD_CHECK(contains_bytes(out.data, out.len, "NOPERM", 6));
     resp_buf_free(&out);
     session_release(&s);
     db_destroy(&d);
@@ -738,9 +754,9 @@ static void test_acl_rule_metadata_preserves_command_and_nopass_state(void)
     u = acl_find_const(&r, "u", 1);
     resp_buf_init(&out);
     acl_write_rule_line(u, &out);
-    DD_CHECK(strstr(out.data, "nocommands") != NULL);
-    DD_CHECK(strstr(out.data, "resetkeys") == NULL);
-    DD_CHECK(strstr(out.data, "nopass") != NULL);
+    DD_CHECK(contains_bytes(out.data, out.len, "nocommands", 10));
+    DD_CHECK(!contains_bytes(out.data, out.len, "resetkeys", 9));
+    DD_CHECK(contains_bytes(out.data, out.len, "nopass", 6));
     resp_buf_free(&out);
 }
 
@@ -825,7 +841,7 @@ static void test_acl_store_commands_check_destination_and_sources(void)
     DD_CHECK(acl_setuser(&r, "u", 1, rules, 3) == 0);
     u = acl_find(&r, "u", 1);
     DD_CHECK(u != NULL);
-    DD_CHECK(acl_authorize(u, CMD_SORT, sortv, 5) == 0);
+    DD_CHECK(acl_authorize(u, CMD_SORT, sortv, 4) == 0);
     DD_CHECK(acl_authorize(u, CMD_SINTERSTORE, sinterv, 5) == 0);
     DD_CHECK(acl_authorize(u, CMD_ZUNIONSTORE, zunionv, 5) == 0);
     DD_CHECK(acl_authorize(u, CMD_GEOSEARCHSTORE, geov, 4) == 0);
@@ -1196,8 +1212,8 @@ static void test_acl_getuser_flags_do_not_mislabel_commands(void)
     u = acl_find_const(&r, "reader", 6);
     resp_buf_init(&out);
     acl_write_user(u, &out);
-    DD_CHECK(strstr(out.data, "nocommands") != NULL);
-    DD_CHECK(strstr(out.data, "resetchannels") == NULL);
+    DD_CHECK(contains_bytes(out.data, out.len, "nocommands", 10));
+    DD_CHECK(!contains_bytes(out.data, out.len, "resetchannels", 13));
     resp_buf_free(&out);
 }
 

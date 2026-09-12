@@ -472,8 +472,9 @@ void obj_hash_free(obj_hash *h)
         return;
     if (h->encoding == OBJ_HASH_LP)
         lp_free(h->lp);
-    else
-        rh_destroy(&h->fields);
+    /* fields is initialized eagerly so LP -> HT conversion stays cheap; it
+     * therefore must be destroyed for both encodings. */
+    rh_destroy(&h->fields);
     rh_destroy(&h->expires);
     free(h);
 }

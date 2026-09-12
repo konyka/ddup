@@ -62,6 +62,17 @@ static void test_hash_rejects_unrepresentable_lengths(void)
     obj_hash_free(h);
 }
 
+static void test_hash_free_listpack_releases_auxiliary_tables(void)
+{
+    obj_hash *h = obj_hash_new();
+    DD_CHECK(h != NULL);
+    if (h == NULL)
+        return;
+    DD_CHECK_EQ_INT(1, obj_hash_is_listpack(h));
+    DD_CHECK_EQ_INT(1, obj_hash_set(h, "field", 5, "value", 5));
+    obj_hash_free(h);
+}
+
 static void test_hash_api_rejects_null_object(void)
 {
     const char *value = NULL;
@@ -891,6 +902,7 @@ static void test_hscan(void)
 int main(void)
 {
     DD_RUN(test_hash_rejects_unrepresentable_lengths);
+    DD_RUN(test_hash_free_listpack_releases_auxiliary_tables);
     DD_RUN(test_hash_api_rejects_null_object);
     DD_RUN(test_hash_mutation_rejects_malformed_views);
     DD_RUN(test_hash_iteration_outputs_fail_closed);

@@ -21,9 +21,25 @@ static void exec_sess(session *s, uint64_t now, resp_buf *out, int argc, ...)
     va_end(ap);
     out->len = 0;
     session_execute_at(s, argv, (size_t)argc, out, now);
+    resp_buf_reserve(out, 1);
+    out->data[out->len] = '\0';
 }
 
 #define EXPECT(out, s) DD_CHECK_MEM((s), strlen(s), (out).data, (out).len)
+
+static int contains_bytes(const char *hay, size_t hay_len,
+                          const char *needle, size_t needle_len)
+{
+    size_t i;
+    if (needle_len == 0)
+        return 1;
+    if (hay == NULL || needle == NULL || needle_len > hay_len)
+        return 0;
+    for (i = 0; i + needle_len <= hay_len; i++)
+        if (memcmp(hay + i, needle, needle_len) == 0)
+            return 1;
+    return 0;
+}
 
 #define T0 1000000ULL
 
@@ -212,8 +228,8 @@ static void test_client_tracking_state_machine(void)
     EXPECT(out, "+OK\r\n");
     exec_sess(s, T0, &out, 2, "CLIENT", "TRACKINGINFO");
     DD_CHECK(strstr(out.data, "$2\r\non\r\n") != NULL);
-    DD_CHECK(strstr(out.data, "optin") == NULL);
-    DD_CHECK(strstr(out.data, "optout") == NULL);
+    DD_CHECK(!contains_bytes(out.data, out.len, "optin", 5));
+    DD_CHECK(!contains_bytes(out.data, out.len, "optout", 6));
     exec_sess(s, T0, &out, 3, "CLIENT", "CACHING", "YES");
     DD_CHECK(strstr(out.data, "CLIENT CACHING can be called only") != NULL);
     exec_sess(s, T0, &out, 3, "CLIENT", "TRACKING", "OFF");

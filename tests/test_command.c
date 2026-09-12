@@ -471,6 +471,15 @@ static void test_time_saturation(void)
 #endif
 }
 
+static void test_db_destroy_releases_script_tables(void)
+{
+    db d;
+    db_init(&d);
+    db_destroy(&d);
+    DD_CHECK(d.scripts.slots == NULL);
+    DD_CHECK(d.function_libs.slots == NULL);
+}
+
 int main(void)
 {
     db_init(&g_db);
@@ -493,6 +502,7 @@ int main(void)
     DD_RUN(test_management_error_bounds);
     DD_RUN(test_info_render_bounds);
     DD_RUN(test_time_saturation);
+    DD_RUN(test_db_destroy_releases_script_tables);
     resp_buf_free(&g_out);
     db_destroy(&g_db);
     return DD_TEST_SUMMARY();

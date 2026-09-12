@@ -3334,6 +3334,9 @@ static void mt_batch_flush(worker *home, void *conn, mt_conn_state *st)
             t->pending_owned = 1;
             mt_push_task(home, &home->ms->workers[target].inbox[home->id],
                          t, &home->ms->workers[target]);
+            /* The pooled task copied the only command into its inline
+             * storage; the staging metadata array is no longer needed. */
+            free(st->batch);
             goto flushed;
         }
         /* pool empty: move the inline bytes to the heap and take the

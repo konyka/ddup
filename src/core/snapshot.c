@@ -896,6 +896,7 @@ static void swap_db_data(db *d, db *tmp)
 static void destroy_temp_db(db *d)
 {
     script_cleanup(d);
+    rh_destroy(&d->function_libs);
     rh_destroy(&d->table);
     rh_destroy(&d->expires);
     rh_destroy(&d->keyvers);
@@ -924,6 +925,9 @@ int snapshot_load_mem(db *d, const char *buf, size_t len, uint64_t now_ms)
         return -1;
     }
     swap_db_data(d, &tmp);
+    /* swap_db_data transfers only the data tables; release the temporary
+     * script/function registries that db_init created for the parser. */
+    destroy_temp_db(&tmp);
     return 0;
 }
 
