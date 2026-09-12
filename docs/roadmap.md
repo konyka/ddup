@@ -1193,3 +1193,6 @@
     分配与序列扰动（Phase 429）
   - [x] 多线程首次迁移 pipeline 前缀压缩：连接迁移前丢弃当前 worker 已消费的
     RESP 前缀，避免目标 worker 重放本地命令并产生额外响应（Phase 430）
+  - [x] benchmark 大 payload 接收安全：ddup-bench 在 64 KiB 接收缓冲区填满时
+    先解析已有 RESP 数据，避免 `recv(..., 0)` 被误判为 EOF；新增 1 KiB/P64
+    GET 回归并纳入 CTest（Phase 431）

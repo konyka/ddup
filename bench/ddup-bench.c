@@ -215,6 +215,11 @@ static int conn_pump_read(bconn *c, arena *a)
 {
     size_t off = 0;
     for (;;) {
+        /* A full receive buffer must be parsed before trying recv again.
+         * recv(..., 0) is reported as EOF on some platforms, which would
+         * otherwise turn a large pipelined reply into a false failure. */
+        if (c->rlen == CONN_RCAP)
+            break;
         ptrdiff_t n = pal_recv(c->fd, c->rbuf + c->rlen,
                                CONN_RCAP - c->rlen);
         if (n > 0) {

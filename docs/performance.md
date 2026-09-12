@@ -2903,3 +2903,17 @@ not installed and is explicitly excluded from measured comparisons. The
 highest observed sample is ddup two-worker PING at P64 (6.45M requests/s,
 p50 128 us, p99 256 us); this is a loopback development measurement, not a
 production capacity guarantee.
+
+### Phase 431: large-payload benchmark receive safety
+
+The benchmark client now parses a full 64 KiB receive buffer before attempting
+another `recv`. POSIX may report `recv(..., 0)` as an orderly EOF, so the old
+loop falsely failed when a P64 pipeline of 1 KiB GET replies exceeded the
+buffer. A CTest regression (`test_benchmark_large_payload`) covers 128 requests
+with one client at P64 and 1 KiB values; it failed before the fix and passes
+afterwards. This changes only benchmark-client error handling and does not add
+work to the normal non-full receive path.
+
+The corresponding 1 KiB comparative report is
+`reports/benchmark-2026-09-12-1k.html` with raw data in
+`reports/benchmark-2026-09-12-1k.json`.
