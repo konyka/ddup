@@ -7,6 +7,8 @@
 - 架构层面对比（分片路由 vs 共享存储的定性分析）：
   见 [architecture.md](architecture.md)「架构对比：分片存储 + 消息路由
   （ddup mt）vs 共享存储（Garnet/Tsavorite）」一节。
+- 最新可视化实测报告：reports/benchmark-2026-09-12.html，原始数据见同目录
+  JSON，生成器为 tools/generate_benchmark_report.py。
 - 资源边界检查只发生在接收缓冲扩容和复制快照分配之前，不增加每字节或
   每条命令的热路径开销；默认 `proto-max-request-bytes` 与
   `repl-max-snapshot-bytes` 均为 1 GiB。
@@ -2881,3 +2883,13 @@ take the zero-length compare branch and unused slots avoid payload inspection.
 The multi-thread router now classifies only the five supported PUBSUB aggregate
 subcommands. Invalid requests take the existing local command path without
 allocating aggregate state or fanning out worker tasks.
+
+### Benchmark report 2026-09-12
+
+The reproducible matrix uses ddup-bench for ddup and Valkey 9.0.4 on the same
+loopback host: 10,000 requests, 10 concurrent connections, 16-byte values, and
+pipeline depths 1 and 16 for SET/GET/PING. ddup one-worker and Valkey complete
+all measured cases. ddup two-worker pipeline 16 SET (and the GET setup SET)
+expose a client reply-count mismatch and are recorded as failed samples in the
+HTML report rather than converted into throughput numbers. Garnet was not
+installed and is explicitly excluded from measured comparisons.
