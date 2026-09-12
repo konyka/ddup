@@ -1351,3 +1351,5 @@
     因 write 标志被误归入 fast（Phase 493）
   - [x] ACL CAT keyspace 完整映射：补齐 FLUSHDB、FLUSHALL、MIGRATE 等 keyspace
     命令并覆盖回归测试（Phase 494）
+  - [x] ACL CAT connection 元数据对齐：补齐顶层 COMMAND 连接类别映射并覆盖回归
+    测试（Phase 495）

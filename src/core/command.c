@@ -12160,7 +12160,7 @@ static int acl_cat_match(const char *category, size_t category_len,
         "discard", "exec", "multi", "unwatch", "watch"
     };
     static const char *const connection[] = {
-        "asking", "auth", "client", "echo", "hello", "ping", "quit",
+        "asking", "auth", "client", "command", "echo", "hello", "ping", "quit",
         "readonly", "readwrite", "reset", "select", "wait", "waitaof"
     };
     static const char *const blocking[] = {

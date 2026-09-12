@@ -1672,3 +1672,8 @@ Redis `FAST` 元数据时保持保守的 slow 归类。
 `keyspace` 类别补齐 `FLUSHDB`、`FLUSHALL` 与 `MIGRATE`，并保留过期、重命名、
 扫描、持久化和类型查询等 keyspace 操作。分类结果继续由命令 ID 静态判断，
 未知命令不会被错误暴露到该类别。
+
+## Phase 495：ACL CAT connection 元数据对齐
+
+`connection` 类别补齐顶层 `COMMAND`，与 Redis 8 的 ACL 元数据保持一致；该命令
+与 `PING`、`AUTH`、`CLIENT`、`HELLO` 等连接控制命令一起通过静态集合输出。

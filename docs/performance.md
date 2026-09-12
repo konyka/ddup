@@ -3402,3 +3402,8 @@ and ACL authorization hot paths are unchanged.
 Keyspace membership remains a fixed command-ID predicate. Adding flush and migration
 commands changes only the cold `ACL CAT` scan and introduces no allocations, locks, or
 additional work in normal key authorization.
+
+### Phase 495: connection metadata alignment
+
+Adding `COMMAND` to the static connection set affects only `ACL CAT` introspection. The
+existing bounded scan and allocation-free authorization path are unchanged.
