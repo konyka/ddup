@@ -1659,3 +1659,10 @@ ACL 授权现在按各命令真实语法解析 `LMPOP/ZMPOP` 的 `numkeys`（参
 `stream`、`hash`、`bitmap`），访问/控制类别覆盖 `pubsub`、`transaction`、
 `scripting`、`blocking`、`dangerous`、`admin`、`fast` 与 `slow`。映射使用静态
 常量和命令 ID 元数据，不分配堆内存；未知类别仍 fail-closed 返回标准错误。
+
+## Phase 493：ACL CAT fast/slow 精确映射
+
+`fast` 类别改为采用 Redis 8 命令 `FAST` 标志对应的静态集合，`slow` 则为其
+补集。这样 `ECHO`、`GET` 等低延迟命令出现在 `fast`，`SORT`、`KEYS` 等高成本
+命令出现在 `slow`，避免按 write 标志推断造成错误分类。自定义 ddup 命令在没有
+Redis `FAST` 元数据时保持保守的 slow 归类。

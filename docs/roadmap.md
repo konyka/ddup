@@ -1347,3 +1347,5 @@
     ACK/GETACK 复制握手行为（Phase 491）
   - [x] ACL CAT 全类别过滤：支持 Redis 8 数据类型、访问模式、阻塞、危险、管理、
     事务、脚本与发布订阅类别，未知类别 fail-closed（Phase 492）
+  - [x] ACL CAT fast/slow 精确映射：按 Redis 8 `FAST` 元数据静态分类，慢命令不再
+    因 write 标志被误归入 fast（Phase 493）

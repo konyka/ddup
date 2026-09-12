@@ -12179,6 +12179,28 @@ static int acl_cat_match(const char *category, size_t category_len,
         "module", "monitor", "psync", "replconf", "replicaof", "save",
         "sentinel", "shutdown", "slaveof", "slowlog"
     };
+    static const char *const fast[] = {
+        "append", "arcount", "ardel", "arget", "arinsert", "arlen",
+        "armget", "armset", "arnext", "arseek", "arset", "asking",
+        "auth", "bitfield_ro", "bzpopmax", "bzpopmin", "dbsize", "decr",
+        "decrby", "delex", "digest", "discard", "echo", "exists", "expire",
+        "expireat", "expiretime", "get", "getbit", "getdel", "getex",
+        "getset", "hdel", "hello", "hexists", "hexpire", "hexpireat",
+        "hexpiretime", "hget", "hgetdel", "hgetex", "hincrby", "hincrbyfloat",
+        "hlen", "hmget", "hmset", "hpersist", "hpexpire", "hpexpireat",
+        "hpexpiretime", "hpttl", "hset", "hsetex", "hsetnx", "hstrlen",
+        "httl", "incr", "incrby", "incrbyfloat", "increx", "lastsave", "llen",
+        "lolwut", "lpop", "lpush", "lpushx", "mget", "move", "multi", "persist",
+        "pexpire", "pexpireat", "pexpiretime", "pfadd", "ping", "pttl", "publish",
+        "quit", "readonly", "readwrite", "renamenx", "reset", "role", "rpop",
+        "rpush", "rpushx", "sadd", "scard", "select", "setnx", "sismember",
+        "smismember", "smove", "spop", "spublish", "srem", "strlen", "swapdb",
+        "time", "touch", "ttl", "type", "unlink", "unwatch", "watch", "xack",
+        "xackdel", "xadd", "xautoclaim", "xcfgset", "xclaim", "xdel", "xdelex",
+        "xidmprecord", "xlen", "xnack", "xsetid", "zadd", "zcard", "zcount",
+        "zincrby", "zlexcount", "zmscore", "zpopmax", "zpopmin", "zrank", "zrem",
+        "zrevrank", "zscore"
+    };
     const char *name = cmd_name(id);
 
     if (name == NULL)
@@ -12237,13 +12259,7 @@ static int acl_cat_match(const char *category, size_t category_len,
     if (ci_equal(category, category_len, "admin"))
         return acl_name_in(name, admin, sizeof(admin) / sizeof(admin[0]));
     if (ci_equal(category, category_len, "fast"))
-        return (cmd_is_write(id) || strcmp(name, "get") == 0 ||
-               strcmp(name, "ping") == 0 || strcmp(name, "exists") == 0 ||
-               strcmp(name, "dbsize") == 0 || strcmp(name, "ttl") == 0 ||
-               strcmp(name, "pttl") == 0) &&
-               strcmp(name, "sort") != 0 && strcmp(name, "sort_ro") != 0 &&
-               strcmp(name, "keys") != 0 && strcmp(name, "scan") != 0 &&
-               strcmp(name, "migrate") != 0;
+        return acl_name_in(name, fast, sizeof(fast) / sizeof(fast[0]));
     if (ci_equal(category, category_len, "slow"))
         return !acl_cat_match("fast", 4, id);
     return -1;

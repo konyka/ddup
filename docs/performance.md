@@ -3389,3 +3389,10 @@ fixed command-ID table once and uses static name lists/prefix checks, with no he
 allocation, locks, or changes to normal authorization dispatch. Existing `read` and
 `write` checks remain O(1) per command; type/control categories add bounded string
 comparisons proportional to the command table size.
+
+### Phase 493: exact fast/slow classification
+
+The `fast` category uses a static 129-name set derived from Redis 8 `FAST` command
+metadata, and `slow` is its complement over the registered command table. Lookup is a
+bounded linear scan on the cold introspection path with no allocation; command dispatch
+and ACL authorization hot paths are unchanged.
