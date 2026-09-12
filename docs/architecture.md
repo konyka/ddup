@@ -1651,3 +1651,11 @@ ACL 授权现在按各命令真实语法解析 `LMPOP/ZMPOP` 的 `numkeys`（参
 `REPLCONF` 无子命令时返回 `OK`，与 Redis 8 的控制面兼容；带有 `ACK/GETACK`
 等已实现子命令时继续执行原有复制握手语义。命令表最小 arity 与处理器保持一致，
 避免复制探测请求在 queue-time 被错误拒绝。
+
+## Phase 492：ACL CAT 全类别过滤
+
+`ACL CAT <category>` 现在支持 Redis 8 的全部固定类别，而不仅是
+`read/write/connection/keyspace`。数据类型类别按命令名映射（例如 `set`、
+`stream`、`hash`、`bitmap`），访问/控制类别覆盖 `pubsub`、`transaction`、
+`scripting`、`blocking`、`dangerous`、`admin`、`fast` 与 `slow`。映射使用静态
+常量和命令 ID 元数据，不分配堆内存；未知类别仍 fail-closed 返回标准错误。

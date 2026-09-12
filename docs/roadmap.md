@@ -1345,3 +1345,5 @@
     访问模式、事务和脚本类别（Phase 490）
   - [x] REPLCONF 空参数形式：返回 OK 并与 Redis 8 最小 arity 对齐，保留现有
     ACK/GETACK 复制握手行为（Phase 491）
+  - [x] ACL CAT 全类别过滤：支持 Redis 8 数据类型、访问模式、阻塞、危险、管理、
+    事务、脚本与发布订阅类别，未知类别 fail-closed（Phase 492）

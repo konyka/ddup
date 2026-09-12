@@ -12112,6 +12112,143 @@ static void command_monitor(session *s, const resp_value *argv, size_t argc,
     resp_write_simple_string(out, "OK", 2);
 }
 
+static int acl_name_in(const char *name, const char *const *items,
+                       size_t count)
+{
+    size_t i;
+    for (i = 0; i < count; i++)
+        if (strcmp(name, items[i]) == 0)
+            return 1;
+    return 0;
+}
+
+/* ACL CAT metadata is queried infrequently, so a compact name-based mapping
+ * keeps the command hot path unchanged while covering Redis categories. */
+static int acl_cat_match(const char *category, size_t category_len,
+                         uint16_t id)
+{
+    static const char *const strings[] = {
+        "append", "decr", "decrby", "delex", "digest", "get", "getdel",
+        "getex", "getrange", "getset", "incr", "incrby", "incrbyfloat",
+        "increx", "lcs", "mget", "mset", "msetex", "msetnx", "psetex",
+        "set", "setex", "setnx", "setrange", "strlen", "substr"
+    };
+    static const char *const sets[] = {
+        "sadd", "scard", "sdiff", "sdiffcard", "sdiffstore", "sinter",
+        "sintercard", "sinterstore", "sismember", "smembers", "smismember",
+        "smove", "spop", "srandmember", "srem", "sscan", "sunion",
+        "sunioncard", "sunionstore", "sort", "sort_ro"
+    };
+    static const char *const lists[] = {
+        "blmove", "blmovem", "blmpop", "blpop", "brpop", "brpoplpush",
+        "lindex", "linsert", "llen", "lmove", "lmovem", "lmpop", "lpop",
+        "lpos", "lpush", "lpushx", "lrange", "lrem", "lset", "ltrim",
+        "rpop", "rpoplpush", "rpush", "rpushx", "sort", "sort_ro"
+    };
+    static const char *const hashes[] = {
+        "hdel", "hexists", "hexpire", "hexpireat", "hexpiretime", "hget",
+        "hgetall", "hgetdel", "hgetex", "himport", "hincrby", "hincrbyfloat",
+        "hkeys", "hlen", "hmget", "hmset", "hpersist", "hpexpire",
+        "hpexpireat", "hpexpiretime", "hpttl", "hrandfield", "hscan", "hset",
+        "hsetex", "hsetnx", "hstrlen", "httl", "hvals"
+    };
+    static const char *const pubsub[] = {
+        "psubscribe", "publish", "pubsub", "punsubscribe", "spublish",
+        "ssubscribe", "subscribe", "sunsubscribe", "unsubscribe"
+    };
+    static const char *const transactions[] = {
+        "discard", "exec", "multi", "unwatch", "watch"
+    };
+    static const char *const connection[] = {
+        "asking", "auth", "client", "echo", "hello", "ping", "quit",
+        "readonly", "readwrite", "reset", "select", "wait", "waitaof"
+    };
+    static const char *const blocking[] = {
+        "blmove", "blmovem", "blmpop", "blpop", "brpop", "brpoplpush",
+        "bzmpop", "bzpopmax", "bzpopmin", "wait", "waitaof", "xread",
+        "xreadgroup"
+    };
+    static const char *const dangerous[] = {
+        "flushall", "flushdb", "info", "keys", "lastsave", "migrate",
+        "restore", "restore-asking", "role", "sflush", "sort", "sort_ro",
+        "swapdb", "trimslots"
+    };
+    static const char *const admin[] = {
+        "acl", "bgrewriteaof", "bgsave", "client", "cluster", "config",
+        "debug", "failover", "function", "info", "latency", "memory",
+        "module", "monitor", "psync", "replconf", "replicaof", "save",
+        "sentinel", "shutdown", "slaveof", "slowlog"
+    };
+    const char *name = cmd_name(id);
+
+    if (name == NULL)
+        return 0;
+    if (ci_equal(category, category_len, "read"))
+        return !cmd_is_write(id);
+    if (ci_equal(category, category_len, "write"))
+        return cmd_is_write(id);
+    if (ci_equal(category, category_len, "connection"))
+        return acl_name_in(name, connection, sizeof(connection) / sizeof(connection[0]));
+    if (ci_equal(category, category_len, "keyspace"))
+        return id == CMD_GET || id == CMD_SET || id == CMD_DEL ||
+               id == CMD_EXISTS || id == CMD_MGET || id == CMD_MSET ||
+               id == CMD_UNLINK || id == CMD_TOUCH || id == CMD_EXPIRE ||
+               id == CMD_PEXPIRE || id == CMD_EXPIREAT || id == CMD_PEXPIREAT ||
+               id == CMD_EXPIRETIME || id == CMD_PEXPIRETIME || id == CMD_TTL ||
+               id == CMD_PTTL || id == CMD_PERSIST || id == CMD_TYPE ||
+               id == CMD_KEYS || id == CMD_SCAN || id == CMD_RANDOMKEY ||
+               id == CMD_RENAME || id == CMD_RENAMENX || id == CMD_COPY ||
+               id == CMD_DUMP || id == CMD_RESTORE || id == CMD_RESTORE_ASKING ||
+               id == CMD_MOVE || id == CMD_DBSIZE;
+    if (ci_equal(category, category_len, "string"))
+        return acl_name_in(name, strings, sizeof(strings) / sizeof(strings[0]));
+    if (ci_equal(category, category_len, "set"))
+        return acl_name_in(name, sets, sizeof(sets) / sizeof(sets[0]));
+    if (ci_equal(category, category_len, "sortedset"))
+        return name[0] == 'z' || strcmp(name, "bzpopmin") == 0 ||
+               strcmp(name, "bzpopmax") == 0 || strcmp(name, "bzmpop") == 0 ||
+               strcmp(name, "sort") == 0 || strcmp(name, "sort_ro") == 0;
+    if (ci_equal(category, category_len, "list"))
+        return acl_name_in(name, lists, sizeof(lists) / sizeof(lists[0]));
+    if (ci_equal(category, category_len, "hash"))
+        return acl_name_in(name, hashes, sizeof(hashes) / sizeof(hashes[0]));
+    if (ci_equal(category, category_len, "bitmap"))
+        return strncmp(name, "bit", 3) == 0 || strcmp(name, "getbit") == 0 ||
+               strcmp(name, "setbit") == 0;
+    if (ci_equal(category, category_len, "hyperloglog"))
+        return strncmp(name, "pf", 2) == 0;
+    if (ci_equal(category, category_len, "geo"))
+        return strncmp(name, "geo", 3) == 0;
+    if (ci_equal(category, category_len, "stream"))
+        return name[0] == 'x';
+    if (ci_equal(category, category_len, "pubsub"))
+        return acl_name_in(name, pubsub, sizeof(pubsub) / sizeof(pubsub[0]));
+    if (ci_equal(category, category_len, "transaction"))
+        return acl_name_in(name, transactions, sizeof(transactions) / sizeof(transactions[0]));
+    if (ci_equal(category, category_len, "scripting"))
+        return strcmp(name, "eval") == 0 || strcmp(name, "evalsha") == 0 ||
+               strcmp(name, "eval_ro") == 0 || strcmp(name, "evalsha_ro") == 0 ||
+               strcmp(name, "fcall") == 0 || strcmp(name, "fcall_ro") == 0 ||
+               strcmp(name, "script") == 0 || strcmp(name, "function") == 0;
+    if (ci_equal(category, category_len, "blocking"))
+        return acl_name_in(name, blocking, sizeof(blocking) / sizeof(blocking[0]));
+    if (ci_equal(category, category_len, "dangerous"))
+        return acl_name_in(name, dangerous, sizeof(dangerous) / sizeof(dangerous[0]));
+    if (ci_equal(category, category_len, "admin"))
+        return acl_name_in(name, admin, sizeof(admin) / sizeof(admin[0]));
+    if (ci_equal(category, category_len, "fast"))
+        return (cmd_is_write(id) || strcmp(name, "get") == 0 ||
+               strcmp(name, "ping") == 0 || strcmp(name, "exists") == 0 ||
+               strcmp(name, "dbsize") == 0 || strcmp(name, "ttl") == 0 ||
+               strcmp(name, "pttl") == 0) &&
+               strcmp(name, "sort") != 0 && strcmp(name, "sort_ro") != 0 &&
+               strcmp(name, "keys") != 0 && strcmp(name, "scan") != 0 &&
+               strcmp(name, "migrate") != 0;
+    if (ci_equal(category, category_len, "slow"))
+        return !acl_cat_match("fast", 4, id);
+    return -1;
+}
+
 static void command_acl(session *s, const resp_value *argv, size_t argc,
                         resp_buf *out)
 {
@@ -12192,30 +12329,19 @@ static void command_acl(session *s, const resp_value *argv, size_t argc,
             return;
         }
         if (!arg_str(&argv[2], &category, &category_len) ||
-            (!ci_equal(category, category_len, "read") &&
-             !ci_equal(category, category_len, "write") &&
-             !ci_equal(category, category_len, "connection") &&
-             !ci_equal(category, category_len, "keyspace"))) {
+            acl_cat_match(category, category_len, CMD_PING) < 0) {
             resp_write_error(out, "ERR unknown category", 20);
             return;
         }
         for (i = 1; i <= CMD_MAX; i++) {
             int match = 0;
-            if (ci_equal(category, category_len, "write")) match = cmd_is_write((uint16_t)i);
-            else if (ci_equal(category, category_len, "read")) match = !cmd_is_write((uint16_t)i);
-            else if (ci_equal(category, category_len, "connection"))
-                match = i == CMD_PING || i == CMD_ECHO || i == CMD_AUTH || i == CMD_QUIT || i == CMD_SELECT;
-            else match = i == CMD_GET || i == CMD_SET || i == CMD_DEL || i == CMD_EXISTS;
+            match = acl_cat_match(category, category_len, (uint16_t)i);
             if (match && cmd_name((uint16_t)i) != NULL) count++;
         }
         resp_write_array_header(out, count);
         for (i = 1; i <= CMD_MAX; i++) {
             int match = 0;
-            if (ci_equal(category, category_len, "write")) match = cmd_is_write((uint16_t)i);
-            else if (ci_equal(category, category_len, "read")) match = !cmd_is_write((uint16_t)i);
-            else if (ci_equal(category, category_len, "connection"))
-                match = i == CMD_PING || i == CMD_ECHO || i == CMD_AUTH || i == CMD_QUIT || i == CMD_SELECT;
-            else match = i == CMD_GET || i == CMD_SET || i == CMD_DEL || i == CMD_EXISTS;
+            match = acl_cat_match(category, category_len, (uint16_t)i);
             if (match && cmd_name((uint16_t)i) != NULL)
                 resp_write_bulk(out, cmd_name((uint16_t)i), strlen(cmd_name((uint16_t)i)));
         }

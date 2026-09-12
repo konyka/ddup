@@ -3381,3 +3381,11 @@ authorization and data-plane throughput unchanged.
 
 The empty `REPLCONF` form takes a constant-time reply branch before subcommand parsing;
 it performs no allocation, socket operation, or replication-state mutation.
+
+### Phase 492: ACL CAT category filtering
+
+Category filtering runs only on the cold `ACL CAT` introspection path. It scans the
+fixed command-ID table once and uses static name lists/prefix checks, with no heap
+allocation, locks, or changes to normal authorization dispatch. Existing `read` and
+`write` checks remain O(1) per command; type/control categories add bounded string
+comparisons proportional to the command table size.
