@@ -3352,3 +3352,9 @@ deterministic for blocking and administrative commands.
 Correcting the static minimum/maximum arity keeps validation on the existing O(1)
 command-table lookup. Invalid `HDEL`/`PFDEBUG` requests fail before queue allocation
 or replay, reducing wasted transaction work without affecting valid command paths.
+
+### Phase 487: PFDEBUG ACL write classification
+
+The PFDEBUG flag correction reuses the existing fixed-bitset ACL lookup. It adds no
+runtime work beyond the already-required permission check and prevents read-only
+users from entering the debug handler.

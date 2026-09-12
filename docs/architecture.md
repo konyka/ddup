@@ -1619,3 +1619,9 @@ Redis 8 的返回形状。无该选项时继续返回整数 rank，未知选项�
 `HDEL` 的最小参数数目固定为 key 加至少一个 field，`PFDEBUG` 的参数数目固定
 为三个。MULTI 队列阶段因此会立即记录参数错误，后续 `EXEC` 返回
 `EXECABORT`，不会把非法请求延迟为事务内元素级错误。
+
+## Phase 487：PFDEBUG ACL 写分类
+
+`PFDEBUG` 的 command metadata 现在标记为 write，与 Redis 的 `WRITE` 标志一致。
+因此仅拥有 `@read` 的 ACL 用户不能执行该管理/调试命令；默认用户和显式写权限
+路径保持原有 dispatch 行为。

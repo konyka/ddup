@@ -116,6 +116,7 @@ static void test_acl_categories_and_keyless_commands(void)
     resp_value ping[1] = {rv("PING")};
     resp_value getv[2] = {rv("GET"), rv("k")};
     resp_value setv[3] = {rv("SET"), rv("k"), rv("v")};
+    resp_value pfdebug[3] = {rv("PFDEBUG"), rv("ENCODING"), rv("hll")};
     const acl_user *u;
     acl_init(&r, NULL);
     DD_CHECK(acl_setuser(&r, "reader", 6, rules, 3) == 0);
@@ -124,6 +125,7 @@ static void test_acl_categories_and_keyless_commands(void)
     DD_CHECK(acl_authorize(u, CMD_PING, ping, 1) == 1);
     DD_CHECK(acl_authorize(u, CMD_GET, getv, 2) == 1);
     DD_CHECK(acl_authorize(u, CMD_SET, setv, 3) == 0);
+    DD_CHECK(acl_authorize(u, CMD_PFDEBUG, pfdebug, 3) == 0);
 }
 
 static void test_acl_rule_rendering(void)

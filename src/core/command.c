@@ -23694,7 +23694,7 @@ static const cmd_entry CMD_TABLE[] = {
     {"sort_ro", CMD_SORT_RO, 2, -1, 0, 0},
     {"pfadd", CMD_PFADD, 2, -1, 0, CMD_WRITE},
     {"pfcount", CMD_PFCOUNT, 2, -1, 0, 0},
-    {"pfdebug", CMD_PFDEBUG, 3, 3, 0, 0},
+    {"pfdebug", CMD_PFDEBUG, 3, 3, 0, CMD_WRITE},
     {"pfmerge", CMD_PFMERGE, 2, -1, 0, CMD_WRITE},
     {"pfselftest", CMD_PFSELFTEST, 1, 1, 0, 0},
     {"geoadd", CMD_GEOADD, 5, -1, 0, CMD_WRITE},
