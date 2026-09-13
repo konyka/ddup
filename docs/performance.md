@@ -3562,3 +3562,9 @@ constant-time response and allocation profile.
 Negative `numreplicas` values now take the same immediate O(1) response path as an
 already-satisfied target. Timeout validation remains a single sign check before any
 blocking or accounting, with no allocation or data-plane cost.
+
+### Phase 520: WAIT/WAITAOF timeout overflow guard
+
+The replication control path performs a 64-bit saturation check before deriving an
+absolute deadline. Overflowing values fail in constant time without blocking,
+allocation, or changes to the normal request path.

@@ -364,6 +364,8 @@ static void test_server_management_commands(void)
     EXPECT_REPLY(":0\r\n");
     cmd(3, "WAIT", "0", "-1");
     EXPECT_REPLY("-ERR timeout is negative\r\n");
+    cmd(3, "WAIT", "0", "9223372036854775807");
+    EXPECT_REPLY("-ERR timeout is out of range\r\n");
     cmd(4, "WAITAOF", "0", "0", "-1");
     EXPECT_REPLY("-ERR timeout is negative\r\n");
     cmd(4, "WAITAOF", "2", "0", "0");

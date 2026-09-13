@@ -1815,3 +1815,9 @@ fail-closed。ddup 当前快照后端仍在同一安全生命周期内执行保�
 `WAIT` 的 `numreplicas` 遵循 Redis 实现：负值不会触发参数错误，而是作为已满足
 的目标立即返回当前确认副本数（单机模型为 `0`）。timeout 仍要求非负整数，并在
 阻塞注册前拒绝负值。
+
+## Phase 520：WAIT/WAITAOF timeout 溢出保护
+
+`WAIT` 与 `WAITAOF` 在非负 timeout 检查后，以 64 位饱和边界验证
+`timeout + now_ms` 不会溢出；极大 timeout 返回 `ERR timeout is out of range`，
+避免截止时间回绕导致异常长时间阻塞或立即超时。

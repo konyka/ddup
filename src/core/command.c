@@ -11980,6 +11980,7 @@ static void command_wait(session *s, const resp_value *argv, size_t argc,
     const char *nv, *tv;
     size_t nl, tl;
     long long numreplicas, timeout;
+    uint64_t now_ms;
     (void)s;
     if (argc != 3 || !arg_str(&argv[1], &nv, &nl) ||
         !arg_str(&argv[2], &tv, &tl) || !parse_i64(nv, nl, &numreplicas) ||
@@ -11989,6 +11990,12 @@ static void command_wait(session *s, const resp_value *argv, size_t argc,
     }
     if (timeout < 0) {
         resp_write_error(out, "ERR timeout is negative", sizeof("ERR timeout is negative") - 1);
+        return;
+    }
+    now_ms = pal_now_ms();
+    if (now_ms > (uint64_t)LLONG_MAX ||
+        (uint64_t)timeout > (uint64_t)LLONG_MAX - now_ms) {
+        resp_write_error(out, "ERR timeout is out of range", sizeof("ERR timeout is out of range") - 1);
         return;
     }
     (void)timeout;
@@ -12002,6 +12009,7 @@ static void command_waitaof(session *s, const resp_value *argv, size_t argc,
     const char *n1, *n2, *tv;
     size_t l1, l2, tl;
     long long local, replicas, timeout;
+    uint64_t now_ms;
     (void)s;
     if (argc != 4 || !arg_str(&argv[1], &n1, &l1) ||
         !arg_str(&argv[2], &n2, &l2) || !arg_str(&argv[3], &tv, &tl) ||
@@ -12016,6 +12024,12 @@ static void command_waitaof(session *s, const resp_value *argv, size_t argc,
     }
     if (timeout < 0) {
         resp_write_error(out, "ERR timeout is negative", sizeof("ERR timeout is negative") - 1);
+        return;
+    }
+    now_ms = pal_now_ms();
+    if (now_ms > (uint64_t)LLONG_MAX ||
+        (uint64_t)timeout > (uint64_t)LLONG_MAX - now_ms) {
+        resp_write_error(out, "ERR timeout is out of range", sizeof("ERR timeout is out of range") - 1);
         return;
     }
     (void)timeout;

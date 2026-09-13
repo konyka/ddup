@@ -1402,3 +1402,5 @@
     越界值在 AOF 状态查询前返回 `ERR syntax error`（Phase 518）
   - [x] WAIT 副本数量兼容：允许 Redis 语义中的负 `numreplicas`，立即返回当前
     确认数；timeout 仍在阻塞前执行非负校验（Phase 519）
+  - [x] WAIT/WAITAOF timeout 溢出保护：拒绝导致绝对截止时间回绕的极大值，
+    返回 `ERR timeout is out of range`（Phase 520）

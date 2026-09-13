@@ -557,6 +557,10 @@ AOF 状态查询前返回 `ERR syntax error`；`numreplicas` 保持非负整数�
 `WAIT` 副本数量补充复核（Phase 519）：负 `numreplicas` 按 Redis 语义立即返回当前
 确认数（ddup 单机为 `0`），不再错误拒绝；timeout 的非负约束保持不变。
 
+`WAIT`/`WAITAOF` timeout 溢出补充复核（Phase 520）：极大非负 timeout 在计算绝对
+截止时间前通过 64 位饱和检查，溢出时返回 `ERR timeout is out of range`，避免时间
+回绕。
+
 - 数据面命令优先实现，保证核心语义与复杂度级别一致。
 - hash 字段 TTL 采用字段级绝对过期时间元数据，listpack 与 rh_table 两
   编码下均 O(fields) 查询/清理；过期字段惰性删除，读路径零额外 malloc。
