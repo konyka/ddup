@@ -1400,3 +1400,5 @@
     在阻塞/副本计数前 fail-closed（Phase 517）
   - [x] WAITAOF 本地确认参数边界：`numlocal` 仅接受 Redis 8 定义的 `0`/`1`，
     越界值在 AOF 状态查询前返回 `ERR syntax error`（Phase 518）
+  - [x] WAIT 副本数量兼容：允许 Redis 语义中的负 `numreplicas`，立即返回当前
+    确认数；timeout 仍在阻塞前执行非负校验（Phase 519）

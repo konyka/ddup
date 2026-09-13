@@ -3556,3 +3556,9 @@ existing O(1) response path with no allocation or data-plane overhead.
 The cold WAITAOF parser adds one upper-bound check for `numlocal`. Out-of-range
 values fail before AOF accounting or blocking, while valid requests keep the same
 constant-time response and allocation profile.
+
+### Phase 519: WAIT replica count compatibility
+
+Negative `numreplicas` values now take the same immediate O(1) response path as an
+already-satisfied target. Timeout validation remains a single sign check before any
+blocking or accounting, with no allocation or data-plane cost.

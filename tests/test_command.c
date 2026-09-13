@@ -360,6 +360,8 @@ static void test_server_management_commands(void)
     EXPECT_REPLY(":0\r\n");
     cmd(4, "WAITAOF", "1", "1", "0");
     EXPECT_REPLY("*2\r\n:0\r\n:0\r\n");
+    cmd(3, "WAIT", "-1", "0");
+    EXPECT_REPLY(":0\r\n");
     cmd(3, "WAIT", "0", "-1");
     EXPECT_REPLY("-ERR timeout is negative\r\n");
     cmd(4, "WAITAOF", "0", "0", "-1");

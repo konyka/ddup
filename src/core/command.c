@@ -11987,10 +11987,6 @@ static void command_wait(session *s, const resp_value *argv, size_t argc,
         resp_write_error(out, ERR_SYNTAX, sizeof(ERR_SYNTAX) - 1);
         return;
     }
-    if (numreplicas < 0) {
-        resp_write_error(out, "ERR Number of replicas can't be negative", sizeof("ERR Number of replicas can't be negative") - 1);
-        return;
-    }
     if (timeout < 0) {
         resp_write_error(out, "ERR timeout is negative", sizeof("ERR timeout is negative") - 1);
         return;

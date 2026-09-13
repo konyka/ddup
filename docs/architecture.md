@@ -1809,3 +1809,9 @@ fail-closed。ddup 当前快照后端仍在同一安全生命周期内执行保�
 `WAITAOF` 的 `numlocal` 参数现在限制为 `0` 或 `1`，与 Redis 8 的布尔本地确认
 语义一致。负值和大于 `1` 的值在副本/AOF 状态查询及阻塞注册前返回
 `ERR syntax error`；`numreplicas` 仍要求非负整数。
+
+## Phase 519：WAIT 副本数量兼容
+
+`WAIT` 的 `numreplicas` 遵循 Redis 实现：负值不会触发参数错误，而是作为已满足
+的目标立即返回当前确认副本数（单机模型为 `0`）。timeout 仍要求非负整数，并在
+阻塞注册前拒绝负值。
