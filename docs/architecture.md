@@ -1782,3 +1782,11 @@ fail-closed。ddup 当前快照后端仍在同一安全生命周期内执行保�
 选项组合以及未知 token 均在调用统一 server shutdown hook 前返回标准参数错误。
 `ABORT` 在当前没有可取消的计划关停时返回 `ERR Shutdown was not scheduled`；
 实际关停仍由 home worker/server hook 协调全部 worker，避免局部状态变更。
+
+## Phase 515：FAILOVER 选项语法校验
+
+`FAILOVER` 现在在检查副本拓扑前严格验证 Redis 8 语法：支持 `ABORT`、
+`TIMEOUT <milliseconds>` 以及 `TO <host> <port> [FORCE] [TIMEOUT <milliseconds>]`
+组合。主机不能为空、端口必须为 0..65535、超时必须为非负整数；未知、重复或
+缺失参数统一返回 `ERR syntax error`，不会触发任何 failover 状态变化。通过语法
+校验的请求继续复用现有无副本错误/控制面实现。

@@ -3530,3 +3530,10 @@ comparisons. It performs no allocation, queue operation, or persistence I/O befo
 validation completes; invalid and conflicting options therefore fail closed without
 mutating shutdown state. Valid options reuse the existing server hook and add no
 data-plane hot-path overhead.
+
+### Phase 515: FAILOVER option grammar validation
+
+The cold management path validates the bounded FAILOVER grammar with fixed token
+comparisons and integer parsing before consulting replica state. Invalid requests do
+not allocate, enqueue, acquire topology locks, or mutate failover state; valid forms
+reuse the existing no-replica response path and add no data-plane overhead.

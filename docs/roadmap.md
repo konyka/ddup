@@ -1392,3 +1392,5 @@
     入队与快照渲染回归（Phase 513）
   - [x] SHUTDOWN 选项兼容：支持 SAVE/NOSAVE/NOW/FORCE/ABORT，冲突、重复和未知
     token 在关停状态变更前 fail-closed，并覆盖服务端回归测试（Phase 514）
+  - [x] FAILOVER 选项语法校验：严格解析 TO/FORCE/ABORT/TIMEOUT 组合，非法
+    token、缺失参数和范围错误在拓扑状态查询前返回 `ERR syntax error`（Phase 515）

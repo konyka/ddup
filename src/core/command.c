@@ -12076,22 +12076,57 @@ static void write_unknown_command_error(resp_buf *out, const char *name,
 static void command_failover(session *s, const resp_value *argv, size_t argc,
                              resp_buf *out)
 {
+    const char *token;
+    size_t token_len;
+    long long number;
     (void)s;
     if (argc == 1) {
         static const char E[] = "ERR FAILOVER requires connected replicas.";
         resp_write_error(out, E, sizeof(E) - 1);
         return;
     }
-    /* Optional TO/ABORT/TIMEOUT arguments are accepted syntactically. The
-     * standalone cache has no coordinated failover state machine. */
-    if (argc == 2) {
-        const char *ab;
-        size_t abl;
-        if (arg_str(&argv[1], &ab, &abl) && ci_equal(ab, abl, "ABORT")) {
-            resp_write_simple_string(out, "OK", 2);
-            return;
-        }
+
+    /* Validate Redis' option grammar before consulting the local topology. */
+    if (argc == 2 && arg_str(&argv[1], &token, &token_len) &&
+        ci_equal(token, token_len, "ABORT")) {
+        resp_write_simple_string(out, "OK", 2);
+        return;
     }
+    if (argc == 3 && arg_str(&argv[1], &token, &token_len) &&
+        ci_equal(token, token_len, "TIMEOUT") &&
+        arg_str(&argv[2], &token, &token_len) &&
+        parse_i64(token, token_len, &number) && number >= 0) {
+        goto no_replicas;
+    }
+    if (argc >= 4 && arg_str(&argv[1], &token, &token_len) &&
+        ci_equal(token, token_len, "TO")) {
+        if (!arg_str(&argv[2], &token, &token_len) || token_len == 0 ||
+            !arg_str(&argv[3], &token, &token_len) ||
+            !parse_i64(token, token_len, &number) || number < 0 ||
+            number > 65535)
+            goto syntax;
+        if (argc == 4)
+            goto no_replicas;
+        if (argc == 5 && arg_str(&argv[4], &token, &token_len) &&
+            ci_equal(token, token_len, "FORCE"))
+            goto no_replicas;
+        if (argc == 6 && arg_str(&argv[4], &token, &token_len) &&
+            ci_equal(token, token_len, "TIMEOUT") &&
+            arg_str(&argv[5], &token, &token_len) &&
+            parse_i64(token, token_len, &number) && number >= 0)
+            goto no_replicas;
+        if (argc == 7 && arg_str(&argv[4], &token, &token_len) &&
+            ci_equal(token, token_len, "FORCE") &&
+            arg_str(&argv[5], &token, &token_len) &&
+            ci_equal(token, token_len, "TIMEOUT") &&
+            arg_str(&argv[6], &token, &token_len) &&
+            parse_i64(token, token_len, &number) && number >= 0)
+            goto no_replicas;
+    }
+syntax:
+    resp_write_error(out, ERR_SYNTAX, sizeof(ERR_SYNTAX) - 1);
+    return;
+no_replicas:
     {
         static const char E[] = "ERR FAILOVER requires connected replicas.";
         resp_write_error(out, E, sizeof(E) - 1);

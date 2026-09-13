@@ -368,6 +368,14 @@ static void test_server_management_commands(void)
     EXPECT_REPLY("+OK\r\n");
     cmd(2, "FAILOVER", "ABORT");
     EXPECT_REPLY("+OK\r\n");
+    cmd(2, "FAILOVER", "BOGUS");
+    EXPECT_REPLY("-ERR syntax error\r\n");
+    cmd(3, "FAILOVER", "TO", "127.0.0.1");
+    EXPECT_REPLY("-ERR syntax error\r\n");
+    cmd(4, "FAILOVER", "TO", "127.0.0.1", "6379");
+    DD_CHECK(g_out.len > 0 && g_out.data[0] == '-');
+    cmd(6, "FAILOVER", "TO", "127.0.0.1", "6379", "FORCE", "ABORT");
+    EXPECT_REPLY("-ERR syntax error\r\n");
     cmd(1, "FAILOVER");
     DD_CHECK(g_out.len > 0 && g_out.data[0] == '-');
     cmd(1, "MONITOR");

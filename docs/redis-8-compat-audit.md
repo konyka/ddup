@@ -539,6 +539,10 @@ bounded channel state as `&*` and an empty rule set.
 
 ## 实现策略（性能优先）
 
+管理命令语法补充复核（Phase 515）：`FAILOVER` 的 `TO`/`FORCE`/`ABORT`/`TIMEOUT`
+组合在拓扑查询前做严格 fail-closed 校验；非法 token、缺失参数、端口越界和负超时
+均返回 `ERR syntax error`，合法语法继续沿用无副本环境的既有错误语义。
+
 - 数据面命令优先实现，保证核心语义与复杂度级别一致。
 - hash 字段 TTL 采用字段级绝对过期时间元数据，listpack 与 rh_table 两
   编码下均 O(fields) 查询/清理；过期字段惰性删除，读路径零额外 malloc。
