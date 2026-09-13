@@ -3568,3 +3568,9 @@ blocking or accounting, with no allocation or data-plane cost.
 The replication control path performs a 64-bit saturation check before deriving an
 absolute deadline. Overflowing values fail in constant time without blocking,
 allocation, or changes to the normal request path.
+
+### Phase 521: MEMORY MALLOC-STATS response
+
+`MALLOC-STATS` formats one bounded allocator line on the stack and emits a bulk
+reply. The cold management path performs no heap allocation or global scan; normal
+memory accounting and data commands retain their existing cost.

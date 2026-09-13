@@ -561,6 +561,10 @@ AOF 状态查询前返回 `ERR syntax error`；`numreplicas` 保持非负整数�
 截止时间前通过 64 位饱和检查，溢出时返回 `ERR timeout is out of range`，避免时间
 回绕。
 
+`MEMORY MALLOC-STATS` 兼容补充复核（Phase 521）：命令返回 bulk allocator 统计文本，
+包含当前 `used_memory`，避免原先以简单字符串 `OK` 占位；输出在固定缓冲区内生成，
+不暴露平台专属 allocator 内部结构。
+
 - 数据面命令优先实现，保证核心语义与复杂度级别一致。
 - hash 字段 TTL 采用字段级绝对过期时间元数据，listpack 与 rh_table 两
   编码下均 O(fields) 查询/清理；过期字段惰性删除，读路径零额外 malloc。

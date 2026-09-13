@@ -8013,9 +8013,19 @@ static void command_memory(session *s, const resp_value *argv, size_t argc,
         resp_write_simple_string(out, "Everything is ok", 17);
         return;
     }
-    if ((ci_equal(sub, sl, "PURGE") || ci_equal(sub, sl, "MALLOC-STATS")) &&
-        argc == 2) {
+    if (ci_equal(sub, sl, "PURGE") && argc == 2) {
         resp_write_simple_string(out, "OK", 2);
+        return;
+    }
+    if (ci_equal(sub, sl, "MALLOC-STATS") && argc == 2) {
+        char stats[96];
+        int n = snprintf(stats, sizeof(stats),
+                         "ddup_allocator used_memory=%llu",
+                         (unsigned long long)s->d->used_memory);
+        if (n < 0 || (size_t)n >= sizeof(stats))
+            resp_write_error(out, ERR_SYNTAX, sizeof(ERR_SYNTAX) - 1);
+        else
+            resp_write_bulk(out, stats, (size_t)n);
         return;
     }
     resp_write_error(out, "ERR unknown MEMORY subcommand",

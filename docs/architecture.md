@@ -1821,3 +1821,9 @@ fail-closed。ddup 当前快照后端仍在同一安全生命周期内执行保�
 `WAIT` 与 `WAITAOF` 在非负 timeout 检查后，以 64 位饱和边界验证
 `timeout + now_ms` 不会溢出；极大 timeout 返回 `ERR timeout is out of range`，
 避免截止时间回绕导致异常长时间阻塞或立即超时。
+
+## Phase 521：MEMORY MALLOC-STATS 响应收敛
+
+`MEMORY MALLOC-STATS` 返回 bulk allocator 统计文本，包含 ddup 当前
+`used_memory` 计数；不伪造底层 malloc 实现专属字段。响应在固定栈缓冲区中生成，
+不引入堆分配或数据面锁，`MEMORY PURGE` 仍返回同步 `OK`。
