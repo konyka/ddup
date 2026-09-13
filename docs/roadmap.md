@@ -1398,3 +1398,5 @@
     LISTENING-PORT 的缺值和非整数值在复制状态变更前 fail-closed（Phase 516）
   - [x] WAIT/WAITAOF 超时边界校验：拒绝负 timeout 并保持 Redis 标准错误文本，
     在阻塞/副本计数前 fail-closed（Phase 517）
+  - [x] WAITAOF 本地确认参数边界：`numlocal` 仅接受 Redis 8 定义的 `0`/`1`，
+    越界值在 AOF 状态查询前返回 `ERR syntax error`（Phase 518）

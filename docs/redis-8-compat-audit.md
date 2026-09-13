@@ -551,6 +551,9 @@ bounded channel state as `&*` and an empty rule set.
 负值在阻塞注册前返回 `ERR timeout is negative`；合法零 timeout 与无副本模型的
 `0`/`[0,0]` 响应保持不变。
 
+`WAITAOF` 参数边界补充复核（Phase 518）：`numlocal` 仅接受 `0` 或 `1`，越界值在
+AOF 状态查询前返回 `ERR syntax error`；`numreplicas` 保持非负整数约束。
+
 - 数据面命令优先实现，保证核心语义与复杂度级别一致。
 - hash 字段 TTL 采用字段级绝对过期时间元数据，listpack 与 rh_table 两
   编码下均 O(fields) 查询/清理；过期字段惰性删除，读路径零额外 malloc。

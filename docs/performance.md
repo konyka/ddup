@@ -3550,3 +3550,9 @@ their existing cost.
 The replication control path adds a single sign check after integer parsing. Negative
 timeouts fail before blocking or replica/AOF accounting; valid requests retain the
 existing O(1) response path with no allocation or data-plane overhead.
+
+### Phase 518: WAITAOF local confirmation bounds
+
+The cold WAITAOF parser adds one upper-bound check for `numlocal`. Out-of-range
+values fail before AOF accounting or blocking, while valid requests keep the same
+constant-time response and allocation profile.

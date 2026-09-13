@@ -1803,3 +1803,9 @@ fail-closed。ddup 当前快照后端仍在同一安全生命周期内执行保�
 `WAIT` 与 `WAITAOF` 对 timeout 参数执行 Redis 兼容的非负整数检查；负值在任何
 阻塞注册、副本计数或 AOF 状态查询前返回 `ERR timeout is negative`。现有无副本
 模型仍分别返回 `0` 与 `[0,0]`，合法零 timeout 语义不变。
+
+## Phase 518：WAITAOF 本地确认参数边界
+
+`WAITAOF` 的 `numlocal` 参数现在限制为 `0` 或 `1`，与 Redis 8 的布尔本地确认
+语义一致。负值和大于 `1` 的值在副本/AOF 状态查询及阻塞注册前返回
+`ERR syntax error`；`numreplicas` 仍要求非负整数。
