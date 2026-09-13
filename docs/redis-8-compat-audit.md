@@ -547,6 +547,10 @@ bounded channel state as `&*` and an empty rule set.
 `LISTENING-PORT` 的值必须为整数；缺值或 malformed 值在复制状态改变前 fail-closed，
 而空参数、`GETACK *` 及未知选项的兼容应答保持不变。
 
+复制等待边界补充复核（Phase 517）：`WAIT`/`WAITAOF` 的 timeout 必须为非负整数，
+负值在阻塞注册前返回 `ERR timeout is negative`；合法零 timeout 与无副本模型的
+`0`/`[0,0]` 响应保持不变。
+
 - 数据面命令优先实现，保证核心语义与复杂度级别一致。
 - hash 字段 TTL 采用字段级绝对过期时间元数据，listpack 与 rh_table 两
   编码下均 O(fields) 查询/清理；过期字段惰性删除，读路径零额外 malloc。

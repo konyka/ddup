@@ -1396,3 +1396,5 @@
     token、缺失参数和范围错误在拓扑状态查询前返回 `ERR syntax error`（Phase 515）
   - [x] REPLCONF 选项值校验：保持空参数兼容与 GETACK 应答，同时对 ACK/
     LISTENING-PORT 的缺值和非整数值在复制状态变更前 fail-closed（Phase 516）
+  - [x] WAIT/WAITAOF 超时边界校验：拒绝负 timeout 并保持 Redis 标准错误文本，
+    在阻塞/副本计数前 fail-closed（Phase 517）

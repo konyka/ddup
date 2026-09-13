@@ -1797,3 +1797,9 @@ fail-closed。ddup 当前快照后端仍在同一安全生命周期内执行保�
 应答，同时要求 `ACK` 与 `LISTENING-PORT` 选项携带可解析整数值。选项和值必须
 成对出现；缺值、非整数值在任何复制状态更新前返回 `ERR syntax error`。校验使用
 固定参数扫描，无堆分配，不增加普通数据命令热路径开销。
+
+## Phase 517：WAIT/WAITAOF 超时边界校验
+
+`WAIT` 与 `WAITAOF` 对 timeout 参数执行 Redis 兼容的非负整数检查；负值在任何
+阻塞注册、副本计数或 AOF 状态查询前返回 `ERR timeout is negative`。现有无副本
+模型仍分别返回 `0` 与 `[0,0]`，合法零 timeout 语义不变。

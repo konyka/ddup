@@ -3544,3 +3544,9 @@ Replication control parsing adds one parity check and bounded integer parse for
 `ACK`/`LISTENING-PORT` pairs. Malformed requests are rejected before state changes,
 with no allocation or queue activity; handshake and ordinary command paths retain
 their existing cost.
+
+### Phase 517: WAIT/WAITAOF timeout bounds
+
+The replication control path adds a single sign check after integer parsing. Negative
+timeouts fail before blocking or replica/AOF accounting; valid requests retain the
+existing O(1) response path with no allocation or data-plane overhead.
