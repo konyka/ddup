@@ -3522,3 +3522,11 @@ mutation.
 The command-table arity correction removes a queue-time false rejection for multiple
 INFO sections. It adds no runtime allocation or scan; execution still renders one
 bounded snapshot and section-token validation remains linear in the supplied arguments.
+
+### Phase 514: SHUTDOWN option compatibility
+
+`SHUTDOWN` option parsing uses a fixed bitmask and at most `argc - 1` bounded token
+comparisons. It performs no allocation, queue operation, or persistence I/O before
+validation completes; invalid and conflicting options therefore fail closed without
+mutating shutdown state. Valid options reuse the existing server hook and add no
+data-plane hot-path overhead.

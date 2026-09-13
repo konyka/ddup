@@ -1774,3 +1774,11 @@ fail-closed。ddup 当前快照后端仍在同一安全生命周期内执行保�
 命令表将 `INFO` 的最大参数数调整为无限（`-1`），与其已实现的多 section
 处理器一致。这样 `INFO SERVER STATS` 在 `MULTI` 中可正常入队，并在 `EXEC`
 时复用同一有界快照渲染；无效 RESP 类型仍由执行层 fail-closed。
+
+## Phase 514：SHUTDOWN 选项兼容
+
+`SHUTDOWN` 接受 Redis 8 的 `SAVE`、`NOSAVE`、`NOW`、`FORCE` 和 `ABORT` 选项。
+选项由无分配的位掩码解析：重复 token、`SAVE`/`NOSAVE` 冲突、`ABORT` 与其他
+选项组合以及未知 token 均在调用统一 server shutdown hook 前返回标准参数错误。
+`ABORT` 在当前没有可取消的计划关停时返回 `ERR Shutdown was not scheduled`；
+实际关停仍由 home worker/server hook 协调全部 worker，避免局部状态变更。

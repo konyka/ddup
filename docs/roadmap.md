@@ -1390,3 +1390,5 @@
     清空前拒绝，并覆盖多数据库回归测试（Phase 512）
   - [x] INFO 多 section 事务兼容：命令表允许多个 section 参数，覆盖 MULTI/EXEC
     入队与快照渲染回归（Phase 513）
+  - [x] SHUTDOWN 选项兼容：支持 SAVE/NOSAVE/NOW/FORCE/ABORT，冲突、重复和未知
+    token 在关停状态变更前 fail-closed，并覆盖服务端回归测试（Phase 514）

@@ -1472,6 +1472,59 @@ static void test_shutdown_command(void)
     server_destroy(s);
 }
 
+static void test_shutdown_options(void)
+{
+    server *s = make_server();
+    pal_socket_t c;
+    int iter = 0;
+    DD_CHECK(s != NULL);
+    if (s == NULL)
+        return;
+    c = connect_client(s);
+    DD_CHECK_EQ_INT(27, pal_send(c, "*2\r\n$8\r\nSHUTDOWN\r\n$3\r\nNOW\r\n", 27));
+    while (!server_shutdown_requested(s) && iter++ < 10000)
+        server_run_once(s, 50);
+    DD_CHECK_EQ_INT(1, server_shutdown_requested(s));
+    pal_close(c);
+    server_destroy(s);
+
+    s = make_server();
+    DD_CHECK(s != NULL);
+    if (s == NULL)
+        return;
+    c = connect_client(s);
+    roundtrip(s, c, "*2\r\n$8\r\nSHUTDOWN\r\n$5\r\nABORT\r\n",
+              "-ERR Shutdown was not scheduled\r\n");
+    DD_CHECK_EQ_INT(0, server_shutdown_requested(s));
+    roundtrip(s, c, "*3\r\n$8\r\nSHUTDOWN\r\n$4\r\nSAVE\r\n$6\r\nNOSAVE\r\n",
+              "-ERR wrong number of arguments for 'shutdown' command\r\n");
+    DD_CHECK_EQ_INT(0, server_shutdown_requested(s));
+    roundtrip(s, c, "*3\r\n$8\r\nSHUTDOWN\r\n$3\r\nNOW\r\n$3\r\nNOW\r\n",
+              "-ERR wrong number of arguments for 'shutdown' command\r\n");
+    DD_CHECK_EQ_INT(0, server_shutdown_requested(s));
+    roundtrip(s, c, "*2\r\n$8\r\nSHUTDOWN\r\n$7\r\nUNKNOWN\r\n",
+              "-ERR wrong number of arguments for 'shutdown' command\r\n");
+    DD_CHECK_EQ_INT(0, server_shutdown_requested(s));
+    pal_close(c);
+    server_destroy(s);
+
+    s = make_server();
+    DD_CHECK(s != NULL);
+    if (s == NULL)
+        return;
+    c = connect_client(s);
+    DD_CHECK_EQ_INT((int)(sizeof("*4\r\n$8\r\nSHUTDOWN\r\n$6\r\nNOSAVE\r\n$3\r\nNOW\r\n$5\r\nFORCE\r\n") - 1),
+                    pal_send(c,
+        "*4\r\n$8\r\nSHUTDOWN\r\n$6\r\nNOSAVE\r\n$3\r\nNOW\r\n$5\r\nFORCE\r\n",
+        sizeof("*4\r\n$8\r\nSHUTDOWN\r\n$6\r\nNOSAVE\r\n$3\r\nNOW\r\n$5\r\nFORCE\r\n") - 1));
+    iter = 0;
+    while (!server_shutdown_requested(s) && iter++ < 10000)
+        server_run_once(s, 50);
+    DD_CHECK_EQ_INT(1, server_shutdown_requested(s));
+    pal_close(c);
+    server_destroy(s);
+}
+
 static void test_connection_buf_pool(void)
 {
     server *s = make_server();
@@ -1819,6 +1872,7 @@ static void run_all_tests(void)
     DD_RUN(test_auth_over_socket);
     DD_RUN(test_acl_fast_path_enforces_permissions);
     DD_RUN(test_shutdown_command);
+    DD_RUN(test_shutdown_options);
     DD_RUN(test_blocking_pop_over_socket);
     DD_RUN(test_connection_buf_pool);
     DD_RUN(test_pipeline_2000);

@@ -22739,8 +22739,41 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
     }
 
     if (cmd_id == CMD_SHUTDOWN) {
-        if (argc != 1) {
-            wrong_args(out, "shutdown");
+        unsigned seen = 0;
+        size_t i;
+        for (i = 1; i < argc; i++) {
+            const char *option;
+            size_t option_len;
+            unsigned bit;
+            if (!arg_str(&argv[i], &option, &option_len)) {
+                wrong_args(out, "shutdown");
+                return;
+            }
+            if (ci_equal(option, option_len, "SAVE")) bit = 1u;
+            else if (ci_equal(option, option_len, "NOSAVE")) bit = 2u;
+            else if (ci_equal(option, option_len, "NOW")) bit = 4u;
+            else if (ci_equal(option, option_len, "FORCE")) bit = 8u;
+            else if (ci_equal(option, option_len, "ABORT")) bit = 16u;
+            else {
+                wrong_args(out, "shutdown");
+                return;
+            }
+            if ((seen & bit) != 0 ||
+                ((bit == 1u || bit == 2u) && (seen & 3u) != 0) ||
+                (bit == 16u && argc != 2)) {
+                if (bit == 16u && argc == 2) {
+                    resp_write_error(out, "ERR Shutdown was not scheduled",
+                                     sizeof("ERR Shutdown was not scheduled") - 1);
+                } else {
+                    wrong_args(out, "shutdown");
+                }
+                return;
+            }
+            seen |= bit;
+        }
+        if ((seen & 16u) != 0) {
+            resp_write_error(out, "ERR Shutdown was not scheduled",
+                             sizeof("ERR Shutdown was not scheduled") - 1);
             return;
         }
         if (s->request_shutdown != NULL) {
@@ -23907,7 +23940,7 @@ static const cmd_entry CMD_TABLE[] = {
     {"replicaof", CMD_REPLICAOF, 3, 3, 0, 0},
     {"save", CMD_SAVE, 1, 1, 0, 0},
     {"lastsave", CMD_LASTSAVE, 1, 1, 0, 0},
-    {"shutdown", CMD_SHUTDOWN, 1, 1, 0, 0},
+    {"shutdown", CMD_SHUTDOWN, 1, -1, 0, 0},
     {"cluster", CMD_CLUSTER, 2, -1, 0, 0},
     {"auth", CMD_AUTH, 2, 3, 0, 0},
     {"select", CMD_SELECT, 2, 2, 0, 0},
