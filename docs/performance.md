@@ -3516,3 +3516,9 @@ Each flush command adds at most one bounded token validation before the existing
 database-clear path. `ASYNC`/`SYNC` are compatibility selectors; no extra worker,
 queue, allocation, or lock is introduced, and invalid input is rejected before
 mutation.
+
+### Phase 513: INFO multi-section metadata
+
+The command-table arity correction removes a queue-time false rejection for multiple
+INFO sections. It adds no runtime allocation or scan; execution still renders one
+bounded snapshot and section-token validation remains linear in the supplied arguments.

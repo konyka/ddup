@@ -371,6 +371,9 @@ unknown extra tokens retain the standard wrong-arity error.
 `FLUSHDB` and `FLUSHALL` accept `ASYNC`/`SYNC` selectors and reject unknown
 selectors before mutation; the ddup backend intentionally keeps synchronous
 atomic clearing for deterministic lifecycle behavior.
+`INFO` metadata now permits multiple section arguments in the command table, so
+the already-supported `INFO SERVER STATS` form also queues correctly inside
+`MULTI` and executes as one bounded snapshot.
   `ACL DRYRUN` resolves the target user and command/key arguments through the
   existing authorization path, returning `OK` or `NOPERM` without side effects;
   unknown users and commands fail closed.

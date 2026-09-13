@@ -1388,3 +1388,5 @@
     fail-closed，并覆盖管理命令回归（Phase 511）
   - [x] FLUSHDB/FLUSHALL 模式选项：接受 Redis 8 `ASYNC`/`SYNC`，未知模式在
     清空前拒绝，并覆盖多数据库回归测试（Phase 512）
+  - [x] INFO 多 section 事务兼容：命令表允许多个 section 参数，覆盖 MULTI/EXEC
+    入队与快照渲染回归（Phase 513）

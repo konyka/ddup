@@ -23846,7 +23846,7 @@ static const cmd_entry CMD_TABLE[] = {
     {"dbsize", CMD_DBSIZE, 1, 1, 0, 0},
     {"flushdb", CMD_FLUSHDB, 1, 2, 0, CMD_WRITE},
     {"config", CMD_CONFIG, 2, -1, 0, 0},
-    {"info", CMD_INFO, 1, 1, 0, 0},
+    {"info", CMD_INFO, 1, -1, 0, 0},
     {"hset", CMD_HSET, 4, -1, 2, CMD_WRITE},
     {"hmset", CMD_HMSET, 4, -1, 2, CMD_WRITE},
     {"hget", CMD_HGET, 3, 3, 0, 0},

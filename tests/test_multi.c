@@ -97,6 +97,32 @@ static void test_multi_discard(void)
     db_destroy(&d);
 }
 
+static void test_multi_info_sections(void)
+{
+    db d;
+    session *s;
+    resp_buf out;
+    db_init(&d);
+    resp_buf_init(&out);
+    s = session_create(&d);
+
+    exec_sess(s, T0, &out, 1, "MULTI");
+    EXPECT(out, "+OK\r\n");
+    /* INFO accepts multiple section names and must remain queueable. */
+    exec_sess(s, T0, &out, 3, "INFO", "SERVER", "STATS");
+    EXPECT(out, "+QUEUED\r\n");
+    exec_sess(s, T0, &out, 1, "EXEC");
+    resp_buf_reserve(&out, 1);
+    out.data[out.len] = '\0';
+    DD_CHECK(out.len > 0 && out.data[0] == '*');
+    DD_CHECK(strstr(out.data, "# Memory") != NULL);
+    DD_CHECK(strstr(out.data, "# Stats") != NULL);
+
+    session_free(s);
+    resp_buf_free(&out);
+    db_destroy(&d);
+}
+
 static void test_multi_execabort(void)
 {
     db d;
@@ -362,6 +388,7 @@ int main(void)
 {
     DD_RUN(test_multi_exec_basic);
     DD_RUN(test_multi_discard);
+    DD_RUN(test_multi_info_sections);
     DD_RUN(test_multi_execabort);
     DD_RUN(test_watch_dirty_by_other_session);
     DD_RUN(test_watch_variants);

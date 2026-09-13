@@ -1768,3 +1768,9 @@ fail-closed。ddup 当前快照后端仍在同一安全生命周期内执行保�
 `FLUSHDB` 与 `FLUSHALL` 接受 Redis 8 的可选 `ASYNC`/`SYNC` token；ddup 仍使用
 原子同步清空实现，保证现有 watch、统计和多数据库生命周期不变。未知模式和
 额外参数在执行前返回标准参数错误，不会触发清空或产生部分状态。
+
+## Phase 513：INFO 多 section 事务元数据
+
+命令表将 `INFO` 的最大参数数调整为无限（`-1`），与其已实现的多 section
+处理器一致。这样 `INFO SERVER STATS` 在 `MULTI` 中可正常入队，并在 `EXEC`
+时复用同一有界快照渲染；无效 RESP 类型仍由执行层 fail-closed。
