@@ -1394,3 +1394,5 @@
     token 在关停状态变更前 fail-closed，并覆盖服务端回归测试（Phase 514）
   - [x] FAILOVER 选项语法校验：严格解析 TO/FORCE/ABORT/TIMEOUT 组合，非法
     token、缺失参数和范围错误在拓扑状态查询前返回 `ERR syntax error`（Phase 515）
+  - [x] REPLCONF 选项值校验：保持空参数兼容与 GETACK 应答，同时对 ACK/
+    LISTENING-PORT 的缺值和非整数值在复制状态变更前 fail-closed（Phase 516）

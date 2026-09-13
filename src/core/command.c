@@ -12023,14 +12023,21 @@ static void command_waitaof(session *s, const resp_value *argv, size_t argc,
 static void command_replconf(session *s, const resp_value *argv, size_t argc,
                              resp_buf *out)
 {
-    const char *sub;
-    size_t sl;
+    const char *sub, *value_text;
+    size_t sl, vl;
+    long long value;
     (void)s;
     if (argc == 1) {
         resp_write_simple_string(out, "OK", 2);
         return;
     }
-    if (!arg_str(&argv[1], &sub, &sl)) {
+    if ((argc & 1u) == 0 || !arg_str(&argv[1], &sub, &sl)) {
+        resp_write_error(out, ERR_SYNTAX, sizeof(ERR_SYNTAX) - 1);
+        return;
+    }
+    if ((ci_equal(sub, sl, "ACK") || ci_equal(sub, sl, "LISTENING-PORT")) &&
+        (!arg_str(&argv[2], &value_text, &vl) ||
+         !parse_i64(value_text, vl, &value))) {
         resp_write_error(out, ERR_SYNTAX, sizeof(ERR_SYNTAX) - 1);
         return;
     }

@@ -3537,3 +3537,10 @@ The cold management path validates the bounded FAILOVER grammar with fixed token
 comparisons and integer parsing before consulting replica state. Invalid requests do
 not allocate, enqueue, acquire topology locks, or mutate failover state; valid forms
 reuse the existing no-replica response path and add no data-plane overhead.
+
+### Phase 516: REPLCONF option value validation
+
+Replication control parsing adds one parity check and bounded integer parse for
+`ACK`/`LISTENING-PORT` pairs. Malformed requests are rejected before state changes,
+with no allocation or queue activity; handshake and ordinary command paths retain
+their existing cost.

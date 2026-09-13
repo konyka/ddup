@@ -543,6 +543,10 @@ bounded channel state as `&*` and an empty rule set.
 组合在拓扑查询前做严格 fail-closed 校验；非法 token、缺失参数、端口越界和负超时
 均返回 `ERR syntax error`，合法语法继续沿用无副本环境的既有错误语义。
 
+复制控制面补充复核（Phase 516）：`REPLCONF` 选项和值严格成对，`ACK` 与
+`LISTENING-PORT` 的值必须为整数；缺值或 malformed 值在复制状态改变前 fail-closed，
+而空参数、`GETACK *` 及未知选项的兼容应答保持不变。
+
 - 数据面命令优先实现，保证核心语义与复杂度级别一致。
 - hash 字段 TTL 采用字段级绝对过期时间元数据，listpack 与 rh_table 两
   编码下均 O(fields) 查询/清理；过期字段惰性删除，读路径零额外 malloc。

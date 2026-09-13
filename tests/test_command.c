@@ -366,6 +366,14 @@ static void test_server_management_commands(void)
     EXPECT_REPLY("*3\r\n$8\r\nREPLCONF\r\n$3\r\nACK\r\n:0\r\n");
     cmd(1, "REPLCONF");
     EXPECT_REPLY("+OK\r\n");
+    cmd(2, "REPLCONF", "ACK");
+    EXPECT_REPLY("-ERR syntax error\r\n");
+    cmd(3, "REPLCONF", "ACK", "not-a-number");
+    EXPECT_REPLY("-ERR syntax error\r\n");
+    cmd(3, "REPLCONF", "LISTENING-PORT", "not-a-number");
+    EXPECT_REPLY("-ERR syntax error\r\n");
+    cmd(3, "REPLCONF", "UNKNOWN", "value");
+    EXPECT_REPLY("+OK\r\n");
     cmd(2, "FAILOVER", "ABORT");
     EXPECT_REPLY("+OK\r\n");
     cmd(2, "FAILOVER", "BOGUS");
