@@ -1408,3 +1408,5 @@
     `used_memory`，保持无分配冷路径和确定性输出（Phase 521）
   - [x] MEMORY DOCTOR RESP 类型收敛：按 Redis 8 字符串 schema 返回 bulk 诊断
     报告，避免 simple string 类型差异（Phase 522）
+  - [x] MEMORY STATS 字段收敛：返回 Redis 8 统计对象的稳定核心字段，包括
+    `peak.allocated`、`total.allocated`、`keys.count` 和 `dataset.bytes`（Phase 523）

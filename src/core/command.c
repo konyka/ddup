@@ -8004,9 +8004,19 @@ static void command_memory(session *s, const resp_value *argv, size_t argc,
         return;
     }
     if (ci_equal(sub, sl, "STATS") && argc == 2) {
-        resp_write_array_header(out, 2);
-        resp_write_bulk(out, "used_memory", 11);
-        resp_write_integer(out, (long long)s->d->used_memory);
+        uint64_t keys = rh_size(&s->d->table);
+        uint64_t dataset = s->d->used_memory;
+        resp_write_array_header(out, 10);
+        resp_write_bulk(out, "peak.allocated", sizeof("peak.allocated") - 1);
+        resp_write_integer(out, (long long)dataset);
+        resp_write_bulk(out, "total.allocated", sizeof("total.allocated") - 1);
+        resp_write_integer(out, (long long)dataset);
+        resp_write_bulk(out, "startup.allocated", sizeof("startup.allocated") - 1);
+        resp_write_integer(out, 0);
+        resp_write_bulk(out, "keys.count", sizeof("keys.count") - 1);
+        resp_write_integer(out, (long long)keys);
+        resp_write_bulk(out, "dataset.bytes", sizeof("dataset.bytes") - 1);
+        resp_write_integer(out, (long long)dataset);
         return;
     }
     if (ci_equal(sub, sl, "DOCTOR") && argc == 2) {

@@ -105,7 +105,9 @@ static void test_memory_usage_stats(void)
 
     cmd(2, "MEMORY", "STATS");
     DD_CHECK(g_out.len > 1 && g_out.data[0] == '*');
-    DD_CHECK(strstr(g_out.data, "used_memory") != NULL);
+    DD_CHECK(strstr(g_out.data, "peak.allocated") != NULL);
+    DD_CHECK(strstr(g_out.data, "keys.count") != NULL);
+    DD_CHECK(strstr(g_out.data, "dataset.bytes") != NULL);
 
     cmd(2, "MEMORY", "DOCTOR");
     DD_CHECK(g_out.len > 1 && g_out.data[0] == '$');

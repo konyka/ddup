@@ -568,6 +568,10 @@ AOF 状态查询前返回 `ERR syntax error`；`numreplicas` 保持非负整数�
 `MEMORY DOCTOR` RESP 类型补充复核（Phase 522）：诊断报告按 Redis 8 schema 使用
 bulk string 返回，内容保持确定性的 `Everything is ok`。
 
+`MEMORY STATS` 字段补充复核（Phase 523）：返回 Redis 8 统计对象的稳定核心字段，
+覆盖分配峰值/累计值、启动开销、键数量和数据集字节数；字段值不伪造平台专属
+allocator 指标，使用 ddup 现有 O(1) 计数。
+
 - 数据面命令优先实现，保证核心语义与复杂度级别一致。
 - hash 字段 TTL 采用字段级绝对过期时间元数据，listpack 与 rh_table 两
   编码下均 O(fields) 查询/清理；过期字段惰性删除，读路径零额外 malloc。

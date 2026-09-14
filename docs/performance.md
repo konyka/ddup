@@ -3579,3 +3579,9 @@ memory accounting and data commands retain their existing cost.
 
 The doctor response switches to one bounded bulk payload. Formatting remains O(1)
 with no allocation beyond the existing response buffer and no data-plane impact.
+
+### Phase 523: MEMORY STATS core fields
+
+`MEMORY STATS` emits five bounded key/value pairs using existing counters and one
+O(1) table-size lookup. The expanded response adds no allocation, lock, or full-keyspace
+scan beyond the response buffer.
