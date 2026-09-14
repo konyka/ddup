@@ -12134,7 +12134,8 @@ static void command_failover(session *s, const resp_value *argv, size_t argc,
     /* Validate Redis' option grammar before consulting the local topology. */
     if (argc == 2 && arg_str(&argv[1], &token, &token_len) &&
         ci_equal(token, token_len, "ABORT")) {
-        resp_write_simple_string(out, "OK", 2);
+        resp_write_error(out, "ERR No failover in progress.",
+                         sizeof("ERR No failover in progress.") - 1);
         return;
     }
     if (argc == 3 && arg_str(&argv[1], &token, &token_len) &&

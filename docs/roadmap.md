@@ -1410,3 +1410,5 @@
     报告，避免 simple string 类型差异（Phase 522）
   - [x] MEMORY STATS 字段收敛：返回 Redis 8 统计对象的稳定核心字段，包括
     `peak.allocated`、`total.allocated`、`keys.count` 和 `dataset.bytes`（Phase 523）
+  - [x] FAILOVER ABORT 错误语义：无进行中故障转移时返回 Redis 兼容的
+    `ERR No failover in progress.`，避免误报成功（Phase 524）

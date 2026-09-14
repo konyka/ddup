@@ -388,7 +388,7 @@ static void test_server_management_commands(void)
     cmd(3, "REPLCONF", "UNKNOWN", "value");
     EXPECT_REPLY("+OK\r\n");
     cmd(2, "FAILOVER", "ABORT");
-    EXPECT_REPLY("+OK\r\n");
+    EXPECT_REPLY("-ERR No failover in progress.\r\n");
     cmd(2, "FAILOVER", "BOGUS");
     EXPECT_REPLY("-ERR syntax error\r\n");
     cmd(3, "FAILOVER", "TO", "127.0.0.1");

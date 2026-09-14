@@ -572,6 +572,9 @@ bulk string 返回，内容保持确定性的 `Everything is ok`。
 覆盖分配峰值/累计值、启动开销、键数量和数据集字节数；字段值不伪造平台专属
 allocator 指标，使用 ddup 现有 O(1) 计数。
 
+`FAILOVER ABORT` 兼容补充复核（Phase 524）：无进行中故障转移时返回
+`ERR No failover in progress.`，不再错误返回 `+OK`。
+
 - 数据面命令优先实现，保证核心语义与复杂度级别一致。
 - hash 字段 TTL 采用字段级绝对过期时间元数据，listpack 与 rh_table 两
   编码下均 O(fields) 查询/清理；过期字段惰性删除，读路径零额外 malloc。

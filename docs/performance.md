@@ -3585,3 +3585,8 @@ with no allocation beyond the existing response buffer and no data-plane impact.
 `MEMORY STATS` emits five bounded key/value pairs using existing counters and one
 O(1) table-size lookup. The expanded response adds no allocation, lock, or full-keyspace
 scan beyond the response buffer.
+
+### Phase 524: FAILOVER ABORT semantics
+
+`FAILOVER ABORT` performs one state check and emits the bounded error response when
+no failover is active. The path performs no allocation, queueing, or topology mutation.

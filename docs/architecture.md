@@ -1840,3 +1840,9 @@ fail-closed。ddup 当前快照后端仍在同一安全生命周期内执行保�
 `peak.allocated`、`total.allocated`、`startup.allocated`、`keys.count` 和
 `dataset.bytes`。字段值来自 ddup 的增量内存计数与哈希表大小，响应为固定数量
 的 bulk key/value 对，不执行额外全库扫描。
+
+## Phase 524：FAILOVER ABORT 错误语义
+
+`FAILOVER ABORT` 在 ddup 没有进行中故障转移状态时返回
+`ERR No failover in progress.`，与 Redis 8 行为一致；该请求不会修改副本、拓扑
+或故障转移状态。
