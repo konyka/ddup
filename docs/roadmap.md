@@ -1406,3 +1406,5 @@
     返回 `ERR timeout is out of range`（Phase 520）
   - [x] MEMORY MALLOC-STATS 响应收敛：返回 bulk allocator 统计文本并包含当前
     `used_memory`，保持无分配冷路径和确定性输出（Phase 521）
+  - [x] MEMORY DOCTOR RESP 类型收敛：按 Redis 8 字符串 schema 返回 bulk 诊断
+    报告，避免 simple string 类型差异（Phase 522）

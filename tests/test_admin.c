@@ -108,7 +108,8 @@ static void test_memory_usage_stats(void)
     DD_CHECK(strstr(g_out.data, "used_memory") != NULL);
 
     cmd(2, "MEMORY", "DOCTOR");
-    DD_CHECK(g_out.len > 1);
+    DD_CHECK(g_out.len > 1 && g_out.data[0] == '$');
+    DD_CHECK(strstr(g_out.data, "Everything is ok") != NULL);
     cmd(2, "MEMORY", "NOPE");
     EXPECT_REPLY("-ERR unknown MEMORY subcommand\r\n");
 }

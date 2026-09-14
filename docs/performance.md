@@ -3574,3 +3574,8 @@ allocation, or changes to the normal request path.
 `MALLOC-STATS` formats one bounded allocator line on the stack and emits a bulk
 reply. The cold management path performs no heap allocation or global scan; normal
 memory accounting and data commands retain their existing cost.
+
+### Phase 522: MEMORY DOCTOR reply type
+
+The doctor response switches to one bounded bulk payload. Formatting remains O(1)
+with no allocation beyond the existing response buffer and no data-plane impact.

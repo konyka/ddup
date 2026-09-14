@@ -1827,3 +1827,9 @@ fail-closed。ddup 当前快照后端仍在同一安全生命周期内执行保�
 `MEMORY MALLOC-STATS` 返回 bulk allocator 统计文本，包含 ddup 当前
 `used_memory` 计数；不伪造底层 malloc 实现专属字段。响应在固定栈缓冲区中生成，
 不引入堆分配或数据面锁，`MEMORY PURGE` 仍返回同步 `OK`。
+
+## Phase 522：MEMORY DOCTOR RESP 类型收敛
+
+`MEMORY DOCTOR` 现在以 bulk string 返回诊断报告 `Everything is ok`，与 Redis
+8 的字符串 reply schema 对齐；报告仍为确定性的单机内存模型结果，不引入额外
+扫描或持久化操作。

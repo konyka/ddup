@@ -8010,7 +8010,7 @@ static void command_memory(session *s, const resp_value *argv, size_t argc,
         return;
     }
     if (ci_equal(sub, sl, "DOCTOR") && argc == 2) {
-        resp_write_simple_string(out, "Everything is ok", 17);
+        resp_write_bulk(out, "Everything is ok", 17);
         return;
     }
     if (ci_equal(sub, sl, "PURGE") && argc == 2) {
