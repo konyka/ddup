@@ -81,6 +81,7 @@ def _fixture(tmp):
                 "missing_top: bitfield_ro xadd",
                 "missing_containers: ",
                 "missing_sub: cluster links",
+                "arity_mismatches: ",
                 "AUDIT-BASELINE-END -->",
                 "",
                 "## Missing",
@@ -132,6 +133,19 @@ def test_fails_on_stale_report_entry(tmp):
     _write(report, text)
     proc = run_audit(tmp, "--check")
     assert proc.returncode != 0, "stale report entry must fail --check"
+    assert "get" in proc.stdout + proc.stderr
+
+
+def test_fails_on_arity_mismatch(tmp):
+    # Redis metadata says GET requires two arguments; a stale table entry must
+    # make the audit fail even though the command name is present.
+    cmd_c = os.path.join(tmp, "src", "core", "command.c")
+    with open(cmd_c, encoding="utf-8") as fh:
+        text = fh.read()
+    _write(cmd_c, text.replace('{"get", CMD_GET, 2, 2, 0, 0},',
+                               '{"get", CMD_GET, 3, 3, 0, 0},'))
+    proc = run_audit(tmp, "--check")
+    assert proc.returncode != 0, "arity mismatch must fail --check"
     assert "get" in proc.stdout + proc.stderr
 
 
@@ -238,6 +252,7 @@ def test_alternate_report_baseline_is_selected(tmp):
         "missing_top: bitfield_ro xadd\n"
         "missing_containers: \n"
         "missing_sub: cluster links\n"
+        "arity_mismatches: \n"
         "AUDIT-BASELINE-END -->\n",
     )
     default_report = os.path.join(tmp, "docs", "redis-compat-audit.md")
@@ -309,6 +324,7 @@ def main():
             test_ok_when_report_matches,
             test_fails_on_undocumented_missing,
             test_fails_on_stale_report_entry,
+            test_fails_on_arity_mismatch,
             test_underscore_command_name_preserved,
             test_hyphen_command_name_parsed,
             test_missing_container_reported,
@@ -328,7 +344,7 @@ def main():
                 print(f"{fn.__name__}: FAILED: {exc}")
             finally:
                 shutil.rmtree(fixture, ignore_errors=True)
-        print(f"---\n{12 - failures}/12 audit tool tests passed")
+        print(f"---\n{13 - failures}/13 audit tool tests passed")
     finally:
         if failures and not args.keep:
             shutil.rmtree(tmp, ignore_errors=True)

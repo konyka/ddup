@@ -1422,3 +1422,5 @@
     当前 290，并加入文档一致性回归（Phase 528）
   - [x] MSETEX Redis 8 arity 对齐：命令表最小参数从 2 修正为 4，防止缺少
     key/value 对的请求进入执行或事务队列（Phase 529）
+  - [x] Redis 命令审计 arity 门禁：审计工具比较官方 JSON 与 `CMD_TABLE` 的
+    顶层最小 arity，并在报告基线中锁定零差异（Phase 530）

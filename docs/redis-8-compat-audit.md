@@ -591,6 +591,10 @@ Redis 8.10.1 兼容目标，避免连接协商仍暴露 Redis 7.2.15 旧基线�
 参数数 `-4`（至少四个 RESP 参数），与实际 `numkeys + key/value` 校验一致；
 TDD 锁定 `cmd_min_argc`/`cmd_max_argc`，避免不完整批次在 MULTI 中错误入队。
 
+命令审计 arity 门禁（Phase 530）：审计工具现在比较 Redis 官方 JSON 与 ddup
+`CMD_TABLE` 的顶层最小 arity；`arity_mismatches` 基线为空，任何新差异都会使
+`--check` 失败。
+
 - 数据面命令优先实现，保证核心语义与复杂度级别一致。
 - hash 字段 TTL 采用字段级绝对过期时间元数据，listpack 与 rh_table 两
   编码下均 O(fields) 查询/清理；过期字段惰性删除，读路径零额外 malloc。
@@ -634,6 +638,7 @@ ACL SETUSER 别名在固定容量临时副本上原子应用：`allkeys`/`~*` �
 ## 审计基线（机器断言，勿手改格式）
 
 <!-- AUDIT-BASELINE-START
+arity_mismatches:
 missing_top:
 missing_containers:
 AUDIT-BASELINE-END -->

@@ -3621,3 +3621,9 @@ the check runs only in the management/test path and adds no runtime overhead.
 `MSETEX` now advertises the Redis 8 minimum arity of four arguments in `CMD_TABLE`.
 Queue-time validation rejects incomplete key/value batches before mutation; valid
 execution remains unchanged and the metadata lookup is constant time.
+
+### Phase 530: command arity audit gate
+
+The compatibility audit parses Redis command `arity` metadata and compares the
+absolute minimum against `CMD_TABLE`. This runs only during the read-only audit and
+CTest tool tests; normal command dispatch has no added work or allocation.

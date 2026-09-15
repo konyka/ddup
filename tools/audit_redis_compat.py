@@ -13,6 +13,7 @@ Outputs (--json) a stable machine-readable report containing:
   * missing_containers: container names with *no* implemented subcommand;
   * missing_subs:     "<CONTAINER> <SUB>" pairs missing inside implemented
                       containers.
+  * arity_mismatches: top-level commands whose minimum arity differs from Redis.
 
 --check additionally asserts that the gap matches the baseline block in
 docs/redis-compat-audit.md (AUDIT-BASELINE-START/END HTML comment).  Any
@@ -90,24 +91,28 @@ def load_redis_commands(json_dir, tag):
             key = norm(container + " " + cmd_name) if container else norm(cmd_name)
             if key in entries:
                 raise SystemExit(f"error: duplicate command entry {key!r} in {path}")
+            arity = meta.get("arity")
+            if not isinstance(arity, int) or arity == 0:
+                raise SystemExit(f"error: {path} command arity must be a non-zero integer")
             entries[key] = {
                 "name": cmd_name,
                 "container": container,
                 "group": meta.get("group", ""),
                 "summary": meta.get("summary", ""),
+                "arity": abs(arity),
             }
     return entries, files
 
 
-def read_cmd_table(command_c):
-    """Return the sorted top-level command names from CMD_TABLE."""
+def read_cmd_metadata(command_c):
+    """Return top-level command metadata parsed from CMD_TABLE."""
     try:
         with open(command_c, encoding="utf-8") as fh:
             text = fh.read()
     except OSError as exc:
         raise SystemExit(f"error: cannot read {command_c}: {exc}")
 
-    top = []
+    top = {}
     in_table = False
     for line in text.splitlines():
         if "CMD_TABLE[]" in line:
@@ -116,14 +121,19 @@ def read_cmd_table(command_c):
         if in_table:
             if line.startswith("};"):
                 break
-            m = re.search(r'\{\s*"([a-z][a-z0-9_-]*)"\s*,', line)
+            m = re.search(r'\{\s*"([a-z][a-z0-9_-]*)"\s*,\s*CMD_[A-Z0-9_]+\s*,\s*(-?\d+)\s*,', line)
             if m:
-                top.append(m.group(1))
-    return sorted(set(top))
+                top[m.group(1)] = abs(int(m.group(2)))
+    return top
 
 
-def compute_gap(entries, top_levels, repo_root=None):
-    """Return (missing_top, missing_containers, missing_subs, by_group)."""
+def read_cmd_table(command_c):
+    """Return the sorted top-level command names from CMD_TABLE."""
+    return sorted(read_cmd_metadata(command_c))
+
+
+def compute_gap(entries, top_levels, repo_root=None, top_metadata=None):
+    """Return gap sets plus arity mismatches for top-level commands."""
     redis_top = sorted({k for k in entries if " " not in k})
     missing_top = sorted(set(redis_top) - set(top_levels))
 
@@ -208,7 +218,14 @@ def compute_gap(entries, top_levels, repo_root=None):
     for key in missing_top:
         by_group[entries[key]["group"]].append(entries[key]["name"])
 
-    return missing_top, missing_containers, missing_subs, by_group
+    arity_mismatches = []
+    if top_metadata is not None:
+        for key, meta in entries.items():
+            if meta["container"] is None and key in top_metadata:
+                if meta["arity"] != top_metadata[key]:
+                    arity_mismatches.append(
+                        f"{key} redis={meta['arity']} ddup={top_metadata[key]}")
+    return missing_top, missing_containers, missing_subs, by_group, arity_mismatches
 
 
 def parse_report_baseline(report_path):
@@ -225,6 +242,7 @@ def parse_report_baseline(report_path):
     missing_top = set()
     missing_containers = set()
     missing_subs = set()
+    arity_mismatches = set()
     for line in block.splitlines():
         line = line.strip()
         if line.startswith("missing_top:"):
@@ -235,10 +253,13 @@ def parse_report_baseline(report_path):
             pair = line.split(":", 1)[1].strip()
             if pair:
                 missing_subs.add(norm(pair))
+        elif line.startswith("arity_mismatches:"):
+            arity_mismatches = {x for x in line.split(":", 1)[1].split()}
     return {
         "missing_top": missing_top,
         "missing_containers": missing_containers,
         "missing_subs": missing_subs,
+        "arity_mismatches": arity_mismatches,
     }
 
 
@@ -297,10 +318,11 @@ def main():
 
     entries, file_count = load_redis_commands(json_dir, args.tag)
     command_c = os.path.join(args.repo, "src", "core", "command.c")
-    top_levels = read_cmd_table(command_c)
+    top_metadata = read_cmd_metadata(command_c)
+    top_levels = sorted(top_metadata)
 
-    missing_top, missing_containers, missing_subs, by_group = compute_gap(
-        entries, top_levels, args.repo)
+    missing_top, missing_containers, missing_subs, by_group, arity_mismatches = compute_gap(
+        entries, top_levels, args.repo, top_metadata)
 
     report = {
         "baseline": {
@@ -312,6 +334,7 @@ def main():
         "missing_top": missing_top,
         "missing_containers": missing_containers,
         "missing_subs": missing_subs,
+        "arity_mismatches": arity_mismatches,
         "by_group": {g: sorted(names) for g, names in sorted(by_group.items())},
     }
 
@@ -346,6 +369,14 @@ def main():
         if subs_stale:
             problems.append("implemented but still listed as missing subcommands: "
                             + " ".join(sorted(subs_stale)))
+        arity_extra = set(arity_mismatches) - baseline["arity_mismatches"]
+        if arity_extra:
+            problems.append("undocumented arity mismatches: "
+                            + " ".join(sorted(arity_extra)))
+        arity_stale = baseline["arity_mismatches"] - set(arity_mismatches)
+        if arity_stale:
+            problems.append("resolved arity mismatches still listed: "
+                            + " ".join(sorted(arity_stale)))
         if problems:
             raise SystemExit("audit FAILED\n- " + "\n- ".join(problems))
         if args.emit_json:

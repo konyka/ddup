@@ -88,4 +88,5 @@
 ## 审计基线（机器断言，勿手改格式）
 
 <!-- AUDIT-BASELINE-START
+arity_mismatches:
 AUDIT-BASELINE-END -->
