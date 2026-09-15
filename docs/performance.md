@@ -3639,3 +3639,9 @@ and has no runtime or benchmark overhead.
 Arity mismatch entries now use a single whitespace-free token, so non-empty reports
 round-trip through the baseline parser without losing the Redis and ddup values. This
 is confined to the audit tool and has no runtime or benchmark overhead.
+
+### Phase 533: human-readable arity audit output
+
+The default audit output now prints the arity mismatch count and each encoded token,
+while `--check` and JSON output remain unchanged. This affects only the read-only
+maintenance tool and adds no runtime or benchmark overhead.

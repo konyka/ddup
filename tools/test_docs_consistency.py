@@ -26,6 +26,7 @@ def main():
     assert "Redis 7.2.15 command-compat audit" not in cmake
     assert "Redis 7/8" in audit_tool and "`src/commands/*.json`" in audit_tool
     assert "Redis 7.x `src/commands/*.json`" not in audit_tool
+    assert "arity mismatches" in audit_tool
     print("documentation consistency tests: ok")
 
 

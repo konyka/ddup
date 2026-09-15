@@ -386,6 +386,9 @@ def main():
             print(f"audit OK: gap matches {report_path}")
             print(f"  redis entries={len(entries)} ddup top-level={len(top_levels)}")
             print(f"  missing top={len(missing_top)} containers={len(missing_containers)} subs={len(missing_subs)}")
+            print(f"  arity mismatches={len(arity_mismatches)}")
+            for mismatch in arity_mismatches:
+                print(f"    {mismatch}")
         return
 
     if args.emit_json:
@@ -398,6 +401,7 @@ def main():
     print(f"missing top-level: {len(missing_top)}")
     print(f"missing containers: {len(missing_containers)}")
     print(f"missing subcommands: {len(missing_subs)}")
+    print(f"arity mismatches: {len(arity_mismatches)}")
     print()
     print("## Missing containers")
     for c in missing_containers:
@@ -406,6 +410,10 @@ def main():
     print("## Missing subcommands")
     for s in missing_subs:
         print(f"- {s}")
+    print()
+    print("## Arity mismatches")
+    for mismatch in arity_mismatches:
+        print(f"- {mismatch}")
     print()
     print("## Missing top-level by group")
     for g, names in sorted(by_group.items()):

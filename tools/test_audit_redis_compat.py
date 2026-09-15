@@ -165,6 +165,18 @@ def test_arity_mismatch_can_be_baselined(tmp):
     assert proc.returncode == 0, proc.stdout + proc.stderr
 
 
+def test_human_output_lists_arity_mismatches(tmp):
+    cmd_c = os.path.join(tmp, "src", "core", "command.c")
+    with open(cmd_c, encoding="utf-8") as fh:
+        text = fh.read()
+    _write(cmd_c, text.replace('{"get", CMD_GET, 2, 2, 0, 0},',
+                               '{"get", CMD_GET, 3, 3, 0, 0},'))
+    proc = run_audit(tmp)
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    assert "arity mismatches: 1" in proc.stdout
+    assert "get(redis=2,ddup=3)" in proc.stdout
+
+
 def test_underscore_command_name_preserved(tmp):
     proc = run_audit(tmp, "--json")
     assert proc.returncode == 0, proc.stdout + proc.stderr
@@ -342,6 +354,7 @@ def main():
             test_fails_on_stale_report_entry,
             test_fails_on_arity_mismatch,
             test_arity_mismatch_can_be_baselined,
+            test_human_output_lists_arity_mismatches,
             test_underscore_command_name_preserved,
             test_hyphen_command_name_parsed,
             test_missing_container_reported,
@@ -361,7 +374,7 @@ def main():
                 print(f"{fn.__name__}: FAILED: {exc}")
             finally:
                 shutil.rmtree(fixture, ignore_errors=True)
-        print(f"---\n{14 - failures}/14 audit tool tests passed")
+        print(f"---\n{15 - failures}/15 audit tool tests passed")
     finally:
         if failures and not args.keep:
             shutil.rmtree(tmp, ignore_errors=True)

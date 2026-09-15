@@ -1428,3 +1428,5 @@
     `src/commands/*.json` 元数据（Phase 531）
   - [x] arity 差异报告格式收敛：使用无空格的 `cmd(redis=N,ddup=N)` token，
     确保非空差异可稳定写入和校验基线（Phase 532）
+  - [x] arity 审计人类输出补齐：默认文本模式显示差异数量与具体 token，避免
+    仅使用 `--json` 才能发现元数据漂移（Phase 533）

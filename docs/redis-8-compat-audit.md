@@ -602,6 +602,9 @@ arity 差异报告格式补充（Phase 532）：差异现在编码为单个无�
 `command(redis=N,ddup=N)`，非空差异可以稳定写入 `arity_mismatches` 基线并由
 `--check` 往返校验；当前 Redis 8.10.1 差异仍为零。
 
+arity 审计输出补充（Phase 533）：默认文本模式现在显示差异数量及具体
+`command(redis=N,ddup=N)` token，维护者无需切换 `--json` 即可定位元数据漂移。
+
 - 数据面命令优先实现，保证核心语义与复杂度级别一致。
 - hash 字段 TTL 采用字段级绝对过期时间元数据，listpack 与 rh_table 两
   编码下均 O(fields) 查询/清理；过期字段惰性删除，读路径零额外 malloc。
