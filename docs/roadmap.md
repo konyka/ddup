@@ -1424,3 +1424,5 @@
     key/value 对的请求进入执行或事务队列（Phase 529）
   - [x] Redis 命令审计 arity 门禁：审计工具比较官方 JSON 与 `CMD_TABLE` 的
     顶层最小 arity，并在报告基线中锁定零差异（Phase 530）
+  - [x] Redis 7/8 审计入口说明同步：CMake 与审计工具文档明确支持两代官方
+    `src/commands/*.json` 元数据（Phase 531）

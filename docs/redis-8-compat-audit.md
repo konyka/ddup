@@ -595,6 +595,9 @@ TDD 锁定 `cmd_min_argc`/`cmd_max_argc`，避免不完整批次在 MULTI 中错
 `CMD_TABLE` 的顶层最小 arity；`arity_mismatches` 基线为空，任何新差异都会使
 `--check` 失败。
 
+审计入口说明补充（Phase 531）：CMake 与工具文档已明确 Redis 7/8 两代官方命令
+元数据均受版本感知审计覆盖。
+
 - 数据面命令优先实现，保证核心语义与复杂度级别一致。
 - hash 字段 TTL 采用字段级绝对过期时间元数据，listpack 与 rh_table 两
   编码下均 O(fields) 查询/清理；过期字段惰性删除，读路径零额外 malloc。

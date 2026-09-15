@@ -343,7 +343,7 @@ add_custom_target(check
 )
 
 # ---------------------------------------------------------------------------
-# Redis 7.2.15 command-compat audit (read-only; zero runtime cost).
+# Redis 7/8 command-compat audit (read-only; zero runtime cost).
 # Runs when python3 and a Redis src/commands JSON tree are available, so
 # plain `ctest` stays green on machines without a Redis checkout.
 # ---------------------------------------------------------------------------

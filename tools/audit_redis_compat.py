@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Redis command-compat audit for ddup.
 
-Computes the command gap between a Redis 7.x `src/commands/*.json` tree and
+Computes the command gap and minimum-arity drift between a Redis 7/8
+`src/commands/*.json` tree and
 the ddup command table in src/core/command.c.  Command names are normalized
 to lowercase; container subcommands are emitted as "<CONTAINER> <SUB>".
 

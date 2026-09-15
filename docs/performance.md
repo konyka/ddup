@@ -3627,3 +3627,9 @@ execution remains unchanged and the metadata lookup is constant time.
 The compatibility audit parses Redis command `arity` metadata and compares the
 absolute minimum against `CMD_TABLE`. This runs only during the read-only audit and
 CTest tool tests; normal command dispatch has no added work or allocation.
+
+### Phase 531: audit version documentation
+
+Build comments and audit-tool documentation now state Redis 7/8 support explicitly,
+matching the version-aware report selection and arity gate. This is documentation-only
+and has no runtime or benchmark overhead.
