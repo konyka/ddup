@@ -1,7 +1,7 @@
 # Redis 7.2.15 命令兼容性盘点
 
 > 基线：Redis 7.2.15 官方 `src/commands/*.json`（392 个 JSON、392 条命令条目；242 个顶层命令 + 150 个容器子命令）。
-> 对照：ddup `src/core/command.c` `CMD_TABLE`（221 个顶层命令）。
+> 对照：ddup `src/core/command.c` `CMD_TABLE`（290 个顶层命令）。
 > 生成：`python3 tools/audit_redis_compat.py --redis-json <Redis src/commands> --json`，机器可复算；`--check` 校验本文档 AUDIT-BASELINE 块与代码一致。
 
 ## 总览

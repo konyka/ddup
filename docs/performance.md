@@ -3609,3 +3609,9 @@ does not add work to command execution beyond the existing bounded response writ
 The compatibility audit now distinguishes implemented blocking list/stream waiters from
 the documented migration limitation of non-migratable proactor connections. This is a
 documentation-only correction and adds no runtime overhead.
+
+### Phase 528: audit metadata count guard
+
+The Redis 7 compatibility report now records the current 290-entry top-level command
+table. A static documentation test guards this count and the retired 221-entry claim;
+the check runs only in the management/test path and adds no runtime overhead.

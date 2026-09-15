@@ -17,6 +17,8 @@ def main():
     assert '"Redis ver. " DDUP_REDIS_COMPAT_VERSION_LITERAL "\\n"' in command
     assert "分布式锁脚本" in redis_compat
     assert "Garnet/单机缓存存储不适配项（如分布式锁脚本、阻塞语义）" not in redis_compat
+    assert "ddup `src/core/command.c` `CMD_TABLE`（290 个顶层命令）" in redis_compat
+    assert "CMD_TABLE`（221 个顶层命令）" not in redis_compat
     print("documentation consistency tests: ok")
 
 
