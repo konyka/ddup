@@ -575,6 +575,10 @@ allocator 指标，使用 ddup 现有 O(1) 计数。
 `FAILOVER ABORT` 兼容补充复核（Phase 524）：无进行中故障转移时返回
 `ERR No failover in progress.`，不再错误返回 `+OK`。
 
+文档一致性补充复核（Phase 525）：架构章节已同步 `MEMORY MALLOC-STATS` 的 bulk
+统计实现与 `MEMORY PURGE` 的同步 `OK` 行为；CTest 新增固定断言，防止实现完成后
+再次出现过期的“占位响应”描述。
+
 - 数据面命令优先实现，保证核心语义与复杂度级别一致。
 - hash 字段 TTL 采用字段级绝对过期时间元数据，listpack 与 rh_table 两
   编码下均 O(fields) 查询/清理；过期字段惰性删除，读路径零额外 malloc。

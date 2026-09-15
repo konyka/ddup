@@ -353,6 +353,7 @@ if(Python3_Interpreter_FOUND)
     ddup_add_test(test_benchmark_report tools/test_benchmark_report.py)
     ddup_add_test(test_sanitize_config tools/test_sanitize_config.py)
     ddup_add_test(test_ci_config tools/test_ci_config.py)
+    ddup_add_test(test_docs_consistency tools/test_docs_consistency.py)
 endif()
 if(Python3_Interpreter_FOUND AND DEFINED REDIS_COMMANDS_DIR)
     ddup_add_test(test_redis_compat tools/audit_redis_compat.py

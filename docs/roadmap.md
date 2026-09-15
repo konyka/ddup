@@ -1412,3 +1412,5 @@
     `peak.allocated`、`total.allocated`、`keys.count` 和 `dataset.bytes`（Phase 523）
   - [x] FAILOVER ABORT 错误语义：无进行中故障转移时返回 Redis 兼容的
     `ERR No failover in progress.`，避免误报成功（Phase 524）
+  - [x] 架构文档与 MEMORY 管理命令实现同步：移除过期的
+    `MALLOC-STATS` 占位响应描述，明确 bulk 统计与 PURGE 行为（Phase 525）

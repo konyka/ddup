@@ -256,7 +256,8 @@
   连接 id 单调递增，name 内联在 `conn` 中（无额外堆分配）。`KILL` 只标记
   `close_after_send`，待当前回复刷出后关闭目标连接。
 - `MEMORY USAGE/STATS` 复用既有增量内存记账与对象额外内存估算，无热路径逐次
-  遍历；`PURGE/MALLOC-STATS` 为无分配占位兼容响应。
+  遍历；`MEMORY MALLOC-STATS` 在固定栈缓冲区中生成 bulk allocator 统计文本，
+  `MEMORY PURGE` 保持同步 `OK` 兼容响应。
 - `SLOWLOG` 采用 128 条环形缓冲（新条目尾插、读取时逆序），每条深拷贝命令
   argv；默认阈值 10000us，`server_set_slowlog_threshold()` 可调（0 记录全部）。
   计时复用 commandstats 的 `pal_now_us`，无慢日志时不增加时钟读取。

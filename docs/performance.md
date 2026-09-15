@@ -3590,3 +3590,10 @@ scan beyond the response buffer.
 
 `FAILOVER ABORT` performs one state check and emits the bounded error response when
 no failover is active. The path performs no allocation, queueing, or topology mutation.
+
+### Phase 525: documentation consistency guard
+
+The architecture documentation now describes the implemented `MALLOC-STATS` bulk
+statistics path and synchronous `PURGE` response. A small Python regression test is
+registered with CTest to prevent future documentation drift; it has no runtime or
+data-plane cost.
