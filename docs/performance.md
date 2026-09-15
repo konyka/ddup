@@ -3597,3 +3597,9 @@ The architecture documentation now describes the implemented `MALLOC-STATS` bulk
 statistics path and synchronous `PURGE` response. A small Python regression test is
 registered with CTest to prevent future documentation drift; it has no runtime or
 data-plane cost.
+
+### Phase 526: Redis 8.10.1 metadata alignment
+
+`HELLO` and `LOLWUT` now reuse one static compatibility-version constant, avoiding
+duplicated literals and keeping the cold metadata path allocation-free. The change
+does not add work to command execution beyond the existing bounded response writes.

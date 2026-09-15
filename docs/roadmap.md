@@ -1414,3 +1414,5 @@
     `ERR No failover in progress.`，避免误报成功（Phase 524）
   - [x] 架构文档与 MEMORY 管理命令实现同步：移除过期的
     `MALLOC-STATS` 占位响应描述，明确 bulk 统计与 PURGE 行为（Phase 525）
+  - [x] Redis 8.10.1 版本元数据统一：`HELLO` 与 `LOLWUT` 不再硬编码 Redis 7.2.15，
+    并由 TDD 回归锁定兼容目标（Phase 526）

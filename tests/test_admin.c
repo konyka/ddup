@@ -403,11 +403,11 @@ static void test_lolwut(void)
 {
     cmd(1, "LOLWUT");
     DD_CHECK(g_out.len > 1 && g_out.data[0] == '$');
-    DD_CHECK(strstr(g_out.data, "Redis ver.") != NULL);
+    DD_CHECK(strstr(g_out.data, "Redis ver. 8.10.1") != NULL);
 
     cmd(3, "LOLWUT", "VERSION", "5");
     DD_CHECK(g_out.len > 1 && g_out.data[0] == '$');
-    DD_CHECK(strstr(g_out.data, "Redis ver.") != NULL);
+    DD_CHECK(strstr(g_out.data, "Redis ver. 8.10.1") != NULL);
 
     cmd(3, "LOLWUT", "VERSION", "99");
     DD_CHECK(g_out.len > 5 && g_out.data[0] == '-');

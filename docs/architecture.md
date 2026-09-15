@@ -252,6 +252,8 @@
 - `COMMAND COUNT/LIST/INFO/GETKEYS/DOCS` 直接遍历稳定命令 ID 表（`CMD_TABLE`）
   生成元数据，不引入运行时额外字符串查找；`GETKEYS` 与集群/mt 路由共用同一套
   命令键位规则。
+- `HELLO` 与 `LOLWUT` 的版本元数据统一报告 Redis 8.10.1 兼容目标，避免命令审计
+  已升级而连接协商/趣味命令仍宣称旧基线。
 - `CLIENT ID/SETNAME/GETNAME/LIST/KILL` 通过 session 钩子访问 server 连接表；
   连接 id 单调递增，name 内联在 `conn` 中（无额外堆分配）。`KILL` 只标记
   `close_after_send`，待当前回复刷出后关闭目标连接。

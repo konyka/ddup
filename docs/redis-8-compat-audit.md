@@ -579,6 +579,10 @@ allocator 指标，使用 ddup 现有 O(1) 计数。
 统计实现与 `MEMORY PURGE` 的同步 `OK` 行为；CTest 新增固定断言，防止实现完成后
 再次出现过期的“占位响应”描述。
 
+版本元数据补充复核（Phase 526）：`HELLO version` 与 `LOLWUT` 输出统一为
+Redis 8.10.1 兼容目标，避免连接协商仍暴露 Redis 7.2.15 旧基线；静态 TDD
+断言同时锁定实现常量和 ASCII art 标题。
+
 - 数据面命令优先实现，保证核心语义与复杂度级别一致。
 - hash 字段 TTL 采用字段级绝对过期时间元数据，listpack 与 rh_table 两
   编码下均 O(fields) 查询/清理；过期字段惰性删除，读路径零额外 malloc。

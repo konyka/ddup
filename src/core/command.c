@@ -5406,6 +5406,10 @@ static int is_write_command(const char *name, size_t nlen)
     return cmd_is_write(cmd_resolve(name, nlen));
 }
 
+/* Report the Redis compatibility target consistently across metadata commands. */
+#define DDUP_REDIS_COMPAT_VERSION_LITERAL "8.10.1"
+static const char DDUP_REDIS_COMPAT_VERSION[] = DDUP_REDIS_COMPAT_VERSION_LITERAL;
+
 /* Drop every key and expiry from one logical db without disturbing its
  * configuration (maxmemory, policy, cluster metadata, ...). Used by both
  * FLUSHDB and FLUSHALL. */
@@ -5434,7 +5438,8 @@ static void hello_reply(resp_buf *out, int proto)
     resp_write_bulk(out, "server", 6);
     resp_write_bulk(out, "redis", 5);
     resp_write_bulk(out, "version", 7);
-    resp_write_bulk(out, "7.2.15", 6);
+    resp_write_bulk(out, DDUP_REDIS_COMPAT_VERSION,
+                    sizeof(DDUP_REDIS_COMPAT_VERSION) - 1);
     resp_write_bulk(out, "proto", 5);
     resp_write_integer(out, proto);
     resp_write_bulk(out, "id", 2);
@@ -17478,7 +17483,7 @@ static void command_dispatch(session *s, const resp_value *argv, size_t argc,
 
     if (cmd_id == CMD_LOLWUT) {
         static const char art[] =
-            "Redis ver. 7.2.15\n"
+            "Redis ver. " DDUP_REDIS_COMPAT_VERSION_LITERAL "\n"
             "   /\\_/\\\n"
             "  ( o.o )\n"
             "   > ^ <\n";

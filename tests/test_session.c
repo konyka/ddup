@@ -546,7 +546,7 @@ static void test_hello(void)
     EXPECT(out,
            "*14\r\n"
            "$6\r\nserver\r\n$5\r\nredis\r\n"
-           "$7\r\nversion\r\n$6\r\n7.2.15\r\n"
+           "$7\r\nversion\r\n$6\r\n8.10.1\r\n"
            "$5\r\nproto\r\n:2\r\n"
            "$2\r\nid\r\n:0\r\n"
            "$4\r\nmode\r\n$10\r\nstandalone\r\n"
@@ -557,7 +557,7 @@ static void test_hello(void)
     EXPECT(out,
            "%7\r\n"
            "$6\r\nserver\r\n$5\r\nredis\r\n"
-           "$7\r\nversion\r\n$6\r\n7.2.15\r\n"
+           "$7\r\nversion\r\n$6\r\n8.10.1\r\n"
            "$5\r\nproto\r\n:3\r\n"
            "$2\r\nid\r\n:0\r\n"
            "$4\r\nmode\r\n$10\r\nstandalone\r\n"
