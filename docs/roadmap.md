@@ -1426,3 +1426,5 @@
     顶层最小 arity，并在报告基线中锁定零差异（Phase 530）
   - [x] Redis 7/8 审计入口说明同步：CMake 与审计工具文档明确支持两代官方
     `src/commands/*.json` 元数据（Phase 531）
+  - [x] arity 差异报告格式收敛：使用无空格的 `cmd(redis=N,ddup=N)` token，
+    确保非空差异可稳定写入和校验基线（Phase 532）

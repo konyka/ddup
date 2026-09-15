@@ -3633,3 +3633,9 @@ CTest tool tests; normal command dispatch has no added work or allocation.
 Build comments and audit-tool documentation now state Redis 7/8 support explicitly,
 matching the version-aware report selection and arity gate. This is documentation-only
 and has no runtime or benchmark overhead.
+
+### Phase 532: arity mismatch report encoding
+
+Arity mismatch entries now use a single whitespace-free token, so non-empty reports
+round-trip through the baseline parser without losing the Redis and ddup values. This
+is confined to the audit tool and has no runtime or benchmark overhead.

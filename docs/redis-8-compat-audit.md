@@ -598,6 +598,10 @@ TDD 锁定 `cmd_min_argc`/`cmd_max_argc`，避免不完整批次在 MULTI 中错
 审计入口说明补充（Phase 531）：CMake 与工具文档已明确 Redis 7/8 两代官方命令
 元数据均受版本感知审计覆盖。
 
+arity 差异报告格式补充（Phase 532）：差异现在编码为单个无空格 token
+`command(redis=N,ddup=N)`，非空差异可以稳定写入 `arity_mismatches` 基线并由
+`--check` 往返校验；当前 Redis 8.10.1 差异仍为零。
+
 - 数据面命令优先实现，保证核心语义与复杂度级别一致。
 - hash 字段 TTL 采用字段级绝对过期时间元数据，listpack 与 rh_table 两
   编码下均 O(fields) 查询/清理；过期字段惰性删除，读路径零额外 malloc。

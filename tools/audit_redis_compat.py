@@ -225,7 +225,7 @@ def compute_gap(entries, top_levels, repo_root=None, top_metadata=None):
             if meta["container"] is None and key in top_metadata:
                 if meta["arity"] != top_metadata[key]:
                     arity_mismatches.append(
-                        f"{key} redis={meta['arity']} ddup={top_metadata[key]}")
+                        f"{key}(redis={meta['arity']},ddup={top_metadata[key]})")
     return missing_top, missing_containers, missing_subs, by_group, arity_mismatches
 
 

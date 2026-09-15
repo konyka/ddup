@@ -149,6 +149,22 @@ def test_fails_on_arity_mismatch(tmp):
     assert "get" in proc.stdout + proc.stderr
 
 
+def test_arity_mismatch_can_be_baselined(tmp):
+    cmd_c = os.path.join(tmp, "src", "core", "command.c")
+    with open(cmd_c, encoding="utf-8") as fh:
+        text = fh.read()
+    _write(cmd_c, text.replace('{"get", CMD_GET, 2, 2, 0, 0},',
+                               '{"get", CMD_GET, 3, 3, 0, 0},'))
+    report = os.path.join(tmp, "docs", "redis-compat-audit.md")
+    with open(report, encoding="utf-8") as fh:
+        text = fh.read()
+    text = text.replace("arity_mismatches: ",
+                        "arity_mismatches: get(redis=2,ddup=3)")
+    _write(report, text)
+    proc = run_audit(tmp, "--check")
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+
+
 def test_underscore_command_name_preserved(tmp):
     proc = run_audit(tmp, "--json")
     assert proc.returncode == 0, proc.stdout + proc.stderr
@@ -325,6 +341,7 @@ def main():
             test_fails_on_undocumented_missing,
             test_fails_on_stale_report_entry,
             test_fails_on_arity_mismatch,
+            test_arity_mismatch_can_be_baselined,
             test_underscore_command_name_preserved,
             test_hyphen_command_name_parsed,
             test_missing_container_reported,
@@ -344,7 +361,7 @@ def main():
                 print(f"{fn.__name__}: FAILED: {exc}")
             finally:
                 shutil.rmtree(fixture, ignore_errors=True)
-        print(f"---\n{13 - failures}/13 audit tool tests passed")
+        print(f"---\n{14 - failures}/14 audit tool tests passed")
     finally:
         if failures and not args.keep:
             shutil.rmtree(tmp, ignore_errors=True)
