@@ -71,6 +71,13 @@ static void test_arity_helpers(void)
     DD_CHECK_EQ_INT(3, cmd_min_argc(mset_id));
     DD_CHECK_EQ_INT(-1, cmd_max_argc(mset_id));
     DD_CHECK_EQ_INT(1, cmd_parity(mset_id)); /* odd parity */
+
+    /* Redis 8 MSETEX requires numkeys plus at least one key/value pair. */
+    {
+        uint16_t msetex_id = cmd_resolve("MSETEX", 6);
+        DD_CHECK_EQ_INT(4, cmd_min_argc(msetex_id));
+        DD_CHECK_EQ_INT(-1, cmd_max_argc(msetex_id));
+    }
 }
 
 int main(void)

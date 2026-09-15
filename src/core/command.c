@@ -24202,7 +24202,7 @@ static const cmd_entry CMD_TABLE[] = {
     {"sunioncard", CMD_SUNIONCARD, 3, -1, 0, 0},
     {"sdiffcard", CMD_SDIFFCARD, 3, -1, 0, 0},
     {"increx", CMD_INCREX, 2, -1, 0, CMD_WRITE},
-    {"msetex", CMD_MSETEX, 2, -1, 0, CMD_WRITE},
+    {"msetex", CMD_MSETEX, 4, -1, 0, CMD_WRITE},
     {"delex", CMD_DELEX, 2, -1, 0, CMD_WRITE},
     {"digest", CMD_DIGEST, 2, 2, 0, 0},
     {"sflush", CMD_SFLUSH, 3, -1, 0, CMD_WRITE},

@@ -19,6 +19,7 @@ def main():
     assert "Garnet/单机缓存存储不适配项（如分布式锁脚本、阻塞语义）" not in redis_compat
     assert "ddup `src/core/command.c` `CMD_TABLE`（290 个顶层命令）" in redis_compat
     assert "CMD_TABLE`（221 个顶层命令）" not in redis_compat
+    assert '{"msetex", CMD_MSETEX, 4, -1, 0, CMD_WRITE}' in command
     print("documentation consistency tests: ok")
 
 

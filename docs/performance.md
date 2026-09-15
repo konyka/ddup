@@ -3615,3 +3615,9 @@ documentation-only correction and adds no runtime overhead.
 The Redis 7 compatibility report now records the current 290-entry top-level command
 table. A static documentation test guards this count and the retired 221-entry claim;
 the check runs only in the management/test path and adds no runtime overhead.
+
+### Phase 529: MSETEX arity metadata
+
+`MSETEX` now advertises the Redis 8 minimum arity of four arguments in `CMD_TABLE`.
+Queue-time validation rejects incomplete key/value batches before mutation; valid
+execution remains unchanged and the metadata lookup is constant time.

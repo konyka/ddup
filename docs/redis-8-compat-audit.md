@@ -587,6 +587,10 @@ Redis 8.10.1 兼容目标，避免连接协商仍暴露 Redis 7.2.15 旧基线�
 命令计数已更新为当前 290；文档一致性测试拒绝过期的 221 计数，避免审计说明与
 源码规模漂移。
 
+`MSETEX` arity 补充复核（Phase 529）：命令元数据现在报告 Redis 8.10.1 的最小
+参数数 `-4`（至少四个 RESP 参数），与实际 `numkeys + key/value` 校验一致；
+TDD 锁定 `cmd_min_argc`/`cmd_max_argc`，避免不完整批次在 MULTI 中错误入队。
+
 - 数据面命令优先实现，保证核心语义与复杂度级别一致。
 - hash 字段 TTL 采用字段级绝对过期时间元数据，listpack 与 rh_table 两
   编码下均 O(fields) 查询/清理；过期字段惰性删除，读路径零额外 malloc。
