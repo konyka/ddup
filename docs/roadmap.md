@@ -1416,3 +1416,5 @@
     `MALLOC-STATS` 占位响应描述，明确 bulk 统计与 PURGE 行为（Phase 525）
   - [x] Redis 8.10.1 版本元数据统一：`HELLO` 与 `LOLWUT` 不再硬编码 Redis 7.2.15，
     并由 TDD 回归锁定兼容目标（Phase 526）
+  - [x] 兼容范围文档校准：移除“阻塞语义不实施”的过期排除项，明确阻塞 pop/stream
+    已实现及不可迁移后端的限制（Phase 527）

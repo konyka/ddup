@@ -598,6 +598,10 @@ Redis 8.10.1 兼容目标，避免连接协商仍暴露 Redis 7.2.15 旧基线�
 
 ## 架构差异（无用户可见剩余项）
 
+阻塞 pop 与 stream `BLOCK` 语义不属于范围外排除；它们已通过 session waiter 和
+server 就绪循环实现。仅 IOCP/io_uring-op 等无法安全迁移连接的 mt 场景返回明确
+的迁移限制错误。
+
 ACL SETUSER 别名在固定容量临时副本上原子应用：`allkeys`/`~*` 与
 `allchannels`/`&*` 会先清空对应旧 pattern，再设置全开标志；`resetpass` 清除
 `nopass` 标志并恢复密码校验。这样别名组合不会残留互相矛盾的状态，授权路径仍为

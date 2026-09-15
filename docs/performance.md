@@ -3603,3 +3603,9 @@ data-plane cost.
 `HELLO` and `LOLWUT` now reuse one static compatibility-version constant, avoiding
 duplicated literals and keeping the cold metadata path allocation-free. The change
 does not add work to command execution beyond the existing bounded response writes.
+
+### Phase 527: compatibility-scope documentation alignment
+
+The compatibility audit now distinguishes implemented blocking list/stream waiters from
+the documented migration limitation of non-migratable proactor connections. This is a
+documentation-only correction and adds no runtime overhead.
